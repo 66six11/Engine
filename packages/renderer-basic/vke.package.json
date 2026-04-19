@@ -1,0 +1,13 @@
+{
+  "name": "com.vke.renderer-basic",
+  "version": "0.1.0",
+  "displayName": "VkEngine Basic Renderer",
+  "description": "Initial renderer package that wires frame orchestration and render graph passes.",
+  "dependencies": [
+    "com.vke.core",
+    "com.vke.rhi-vulkan",
+    "com.vke.rendergraph",
+    "com.vke.shader-slang"
+  ],
+  "targets": ["vke-renderer-basic"]
+}

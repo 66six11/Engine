@@ -1,0 +1,8 @@
+{
+  "name": "com.vke.shader-slang",
+  "version": "0.1.0",
+  "displayName": "VkEngine Slang Shader Tools",
+  "description": "Slang shader compilation, SPIR-V validation, and shader metadata.",
+  "dependencies": ["com.vke.core"],
+  "targets": ["vke-shader-slang"]
+}

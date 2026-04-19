@@ -3,7 +3,7 @@
 ## 基础选择
 
 - 平台：Windows 桌面端优先。
-- 构建系统：CMake 3.29 或更新版本。
+- 构建系统：CMake 3.28 或更新版本。
 - 包管理器：Conan 2.x。
 - 编译器：MSVC v143，Visual Studio 2022。
 - 编程语言：C++23。
@@ -33,7 +33,7 @@
 
 ## CMake 策略
 
-- 使用 `cmake_minimum_required(VERSION 3.29)`。
+- 使用 `cmake_minimum_required(VERSION 3.28)`。
 - 使用 `target_compile_features(<target> PUBLIC cxx_std_23)` 表达 C++23 要求。
 - 关闭非标准扩展：`CMAKE_CXX_EXTENSIONS OFF`。
 - 使用 `CMakePresets.json` 固化 configure/build/test 入口。

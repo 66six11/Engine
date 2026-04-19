@@ -1,0 +1,12 @@
+{
+  "name": "com.vke.apps.sample-viewer",
+  "version": "0.1.0",
+  "displayName": "VkEngine Sample Viewer",
+  "description": "Minimal host application for renderer smoke tests.",
+  "dependencies": [
+    "com.vke.core",
+    "com.vke.window-glfw",
+    "com.vke.renderer-basic"
+  ],
+  "targets": ["vke-sample-viewer-host"]
+}

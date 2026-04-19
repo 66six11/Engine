@@ -1,0 +1,8 @@
+{
+  "name": "com.vke.platform",
+  "version": "0.1.0",
+  "displayName": "VkEngine Platform",
+  "description": "Platform abstractions shared by host applications and packages.",
+  "dependencies": ["com.vke.core"],
+  "targets": ["vke-platform"]
+}

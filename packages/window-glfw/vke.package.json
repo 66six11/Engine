@@ -1,0 +1,8 @@
+{
+  "name": "com.vke.window-glfw",
+  "version": "0.1.0",
+  "displayName": "VkEngine GLFW Window",
+  "description": "GLFW-backed window and Vulkan surface integration.",
+  "dependencies": ["com.vke.core", "com.vke.platform"],
+  "targets": ["vke-window-glfw"]
+}

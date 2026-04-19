@@ -1,0 +1,8 @@
+{
+  "name": "com.vke.rhi-vulkan",
+  "version": "0.1.0",
+  "displayName": "VkEngine Vulkan RHI",
+  "description": "Vulkan device, queues, swapchain, memory allocation, and synchronization.",
+  "dependencies": ["com.vke.core"],
+  "targets": ["vke-rhi-vulkan"]
+}
