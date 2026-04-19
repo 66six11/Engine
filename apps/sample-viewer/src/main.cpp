@@ -1,5 +1,6 @@
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
+#include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
 
 #include <cstdlib>
@@ -43,6 +44,36 @@ int runSmokeWindow() {
     return EXIT_SUCCESS;
 }
 
+int runSmokeVulkan() {
+    auto glfw = vke::GlfwInstance::create();
+    if (!glfw) {
+        vke::logError(glfw.error().message);
+        return EXIT_FAILURE;
+    }
+
+    auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+    if (!extensions) {
+        vke::logError(extensions.error().message);
+        return EXIT_FAILURE;
+    }
+
+    const vke::VulkanContextDesc desc{
+        .applicationName = "VkEngine Vulkan Smoke",
+        .requiredInstanceExtensions = *extensions,
+    };
+
+    auto context = vke::VulkanContext::create(desc);
+    if (!context) {
+        vke::logError(context.error().message);
+        return EXIT_FAILURE;
+    }
+
+    const auto& info = context->deviceInfo();
+    std::cout << "Vulkan device: " << info.name << " API "
+              << vke::vulkanVersionString(info.apiVersion) << '\n';
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -57,7 +88,11 @@ int main(int argc, char** argv) {
         return runSmokeWindow();
     }
 
+    if (hasArg(args, "--smoke-vulkan")) {
+        return runSmokeVulkan();
+    }
+
     printVersion();
-    std::cout << "Usage: vke-sample-viewer [--version] [--smoke-window]\n";
+    std::cout << "Usage: vke-sample-viewer [--version] [--smoke-window] [--smoke-vulkan]\n";
     return EXIT_SUCCESS;
 }

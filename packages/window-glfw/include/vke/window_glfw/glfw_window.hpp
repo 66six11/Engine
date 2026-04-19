@@ -4,6 +4,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 struct GLFWwindow;
 
@@ -57,5 +58,6 @@ private:
 };
 
 [[nodiscard]] std::string glfwLastErrorMessage(std::string_view fallback);
+[[nodiscard]] Result<std::vector<std::string>> glfwRequiredVulkanInstanceExtensions(const GlfwInstance& instance);
 
 } // namespace vke

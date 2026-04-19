@@ -4,6 +4,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <cstdint>
 #include <utility>
 
 namespace vke {
@@ -24,6 +25,26 @@ std::string glfwLastErrorMessage(std::string_view fallback) {
     }
 
     return std::string{description};
+}
+
+Result<std::vector<std::string>> glfwRequiredVulkanInstanceExtensions(const GlfwInstance&) {
+    if (glfwVulkanSupported() != GLFW_TRUE) {
+        return std::unexpected{glfwError("GLFW reports that Vulkan is not supported.")};
+    }
+
+    std::uint32_t count = 0;
+    const char** extensions = glfwGetRequiredInstanceExtensions(&count);
+    if (extensions == nullptr || count == 0) {
+        return std::unexpected{glfwError("GLFW did not return required Vulkan instance extensions.")};
+    }
+
+    std::vector<std::string> result;
+    result.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        result.emplace_back(extensions[index]);
+    }
+
+    return result;
 }
 
 GlfwInstance::GlfwInstance(bool initialized)

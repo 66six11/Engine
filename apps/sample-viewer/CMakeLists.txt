@@ -7,6 +7,7 @@ add_executable(vke::sample_viewer ALIAS vke-sample-viewer)
 target_link_libraries(vke-sample-viewer
     PRIVATE
         vke::core
+        vke::rhi_vulkan
         vke::window_glfw
         vke::renderer_basic
 )
