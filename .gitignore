@@ -1,0 +1,33 @@
+# Build output
+/build*/
+/out/
+/.vs/
+
+# Conan
+/.conan/
+/conanbuild*/
+/conan_cache/
+
+# CMake generated files
+/CMakeUserPresets.json
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/compile_commands.json
+
+# Visual Studio
+*.suo
+*.user
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Runtime logs and captures
+*.log
+*.dmp
+*.rdc
+
+# Generated shader artifacts
+/generated/
+/shaders/generated/
+*.spv
