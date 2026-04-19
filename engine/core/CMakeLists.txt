@@ -1,8 +1,11 @@
-add_library(vke-core INTERFACE)
+add_library(vke-core STATIC
+    src/log.cpp
+)
+
 add_library(vke::core ALIAS vke-core)
 
 target_include_directories(vke-core
-    INTERFACE
+    PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
