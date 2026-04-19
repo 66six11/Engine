@@ -13,6 +13,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 namespace vke {
@@ -74,6 +75,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     const std::string_view message = callbackData != nullptr && callbackData->pMessage != nullptr
         ? callbackData->pMessage
         : "Vulkan validation message without text.";
+
+    // Some third-party overlay layers advertise an older Vulkan API version than the app requests.
+    // Keep validation output focused on engine issues instead of known external layer noise.
+    if (message.contains("Layer VK_LAYER_OBS_HOOK uses API version")
+        && message.contains("older than the application specified API version")) {
+        return VK_FALSE;
+    }
 
     if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
         logError(message);
