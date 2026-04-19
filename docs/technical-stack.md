@@ -11,6 +11,7 @@
 - GPU 内存管理：Vulkan Memory Allocator。
 - 窗口与输入：GLFW。
 - 渲染架构：render graph。
+- 文件与包组织：package-first，应用、编辑器和工具作为 host 组合 packages。
 
 ## 初始依赖
 
@@ -37,6 +38,17 @@
 - 关闭非标准扩展：`CMAKE_CXX_EXTENSIONS OFF`。
 - 使用 `CMakePresets.json` 固化 configure/build/test 入口。
 - Conan 生成目录和构建目录不进入源码管理。
+- 每个 package 独立 CMake target，并提供 `vke::<name>` alias。
+- app target 只链接需要的 package，不直接 include package 的 private `src/`。
+
+## Package 策略
+
+- 采用 `apps/`、`engine/`、`packages/` 三层结构。
+- `engine/core` 只放稳定基础设施，不依赖 Vulkan、GLFW、Slang 或 editor。
+- `packages/rhi-vulkan`、`packages/rendergraph`、`packages/shader-slang` 等功能包可以独立
+  被 app/editor 引入。
+- 后续每个 package 增加 `vke.package.json` manifest，记录名称、版本、依赖、CMake target。
+- editor 是 host，不是 engine 核心的一部分；runtime app 不链接 editor packages。
 
 ## Conan 策略
 

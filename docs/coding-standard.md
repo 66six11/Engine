@@ -21,10 +21,11 @@
 
 ## 文件组织
 
-- 公共头文件：`include/vke/<module>/<name>.hpp`。
-- 私有实现：`src/<module>/<name>.cpp`。
-- 内部头文件：`src/<module>/<name>.hpp`。
-- 测试：`tests/<module>/<name>_tests.cpp`。
+- 公共头文件：`engine/<module>/include/vke/<module>/<name>.hpp` 或
+  `packages/<package>/include/vke/<package>/<name>.hpp`。
+- 私有实现：`engine/<module>/src/<name>.cpp` 或 `packages/<package>/src/<name>.cpp`。
+- 内部头文件：对应模块或 package 的 `src/<name>.hpp`。
+- 测试：`tests/<module>/<name>_tests.cpp` 或 `packages/<package>/tests/<name>_tests.cpp`。
 - shader：`shaders/<domain>/<name>.<stage>.<ext>`。
 
 ## 错误处理

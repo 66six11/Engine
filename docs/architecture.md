@@ -5,17 +5,23 @@
 先做一个小而完整的 Vulkan renderer，用最少功能证明 render graph 从声明、编译、同步到
 执行、present 的完整流程。第一个稳定 frame 比大而全的抽象更重要。
 
+架构原则是 package-first，而不是 app-first。VkEngine 不应该把所有功能打包进一个
+monolithic application；它应该提供一个小核心和一组可组合 package，让 sample app、
+runtime app、editor 和后续工具按需引入能力。
+
 ## 模块边界
 
-- `platform`：GLFW window、输入轮询、OS 集成、surface 创建。
-- `core`：日志、错误类型、文件系统辅助、断言、构建配置。
-- `rhi`：Vulkan instance、physical device 选择、logical device、queue、swapchain、
+- `engine/core`：日志、错误类型、文件系统辅助、断言、构建配置。
+- `engine/platform`：平台抽象接口和最小 OS 集成。
+- `packages/window-glfw`：GLFW window、输入轮询、Vulkan surface 创建。
+- `packages/rhi-vulkan`：Vulkan instance、physical device 选择、logical device、queue、swapchain、
   allocator、command pool、descriptor、pipeline、同步原语。
-- `rendergraph`：graph builder、resource registry、pass declaration、graph compiler、
+- `packages/rendergraph`：graph builder、resource registry、pass declaration、graph compiler、
   barrier planner、transient resource 生命周期、执行器。
-- `renderer`：frame orchestration、和场景无关的渲染 pass、present。
-- `shader`：shader build product、SPIR-V 加载、validation hook、未来 reflection。
-- `app`：可执行入口和 sample scene。
+- `packages/renderer-basic`：frame orchestration、和场景无关的渲染 pass、present。
+- `packages/shader-slang`：shader build product、SPIR-V 加载、validation hook、未来 reflection。
+- `apps/sample-viewer`：可执行 sample host。
+- `apps/editor`：未来编辑器 host，只组合 packages，不拥有 renderer 核心实现。
 
 ## 所有权模型
 
@@ -101,3 +107,4 @@
 - shader hot reload。
 - asset loading 与 scene graph。
 - depth prepass、G-buffer、lighting、postprocess、UI pass。
+- package manifest、package registry、editor package browser。

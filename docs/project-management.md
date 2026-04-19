@@ -11,15 +11,21 @@ VkEngine/
     windows-msvc-debug
     windows-msvc-release
   docs/
-  include/vke/
-  src/
-    app/
+  apps/
+    sample-viewer/
+    editor/
+  engine/
     core/
     platform/
-    rhi/
+  packages/
+    window-glfw/
+    rhi-vulkan/
     rendergraph/
-    renderer/
-    shader/
+    renderer-basic/
+    shader-slang/
+    asset-core/
+    editor-core/
+  package-registry/
   shaders/
   tests/
   tools/
@@ -29,6 +35,7 @@ VkEngine/
 
 - 每个变更绑定一个里程碑。
 - 首帧跑通前避免大规模重构。
+- 优先维护 package 边界，避免把 runtime、editor、renderer 全塞进一个 app。
 - 构建文件、依赖文件和 renderer 代码如果互相影响，应一起审核。
 - 构建目录、Conan 输出目录、生成的 toolchain/preset 不提交。
 
@@ -44,15 +51,16 @@ VkEngine/
 ## 初始任务拆分
 
 1. 创建 CMake、Conan、preset、dependency profile 骨架。
-2. 添加 `core` 日志、错误、断言工具。
-3. 添加 GLFW window 和 Vulkan surface。
-4. 添加 Vulkan instance/device/queue/allocator。
-5. 添加 swapchain 和 frame pacing。
-6. 添加 render graph builder/compiler 骨架。
-7. 添加 clear pass。
-8. 添加 shader build 路径和 triangle pass。
-9. 添加 resize/recreate 路径。
-10. 添加 validation checklist 和 smoke test 文档。
+2. 建立 `apps/`、`engine/`、`packages/` 的 package-first 目录和 CMake target 边界。
+3. 添加 `engine/core` 日志、错误、断言工具。
+4. 添加 `packages/window-glfw` 的 GLFW window 和 Vulkan surface。
+5. 添加 `packages/rhi-vulkan` 的 Vulkan instance/device/queue/allocator。
+6. 添加 swapchain 和 frame pacing。
+7. 添加 `packages/rendergraph` builder/compiler 骨架。
+8. 添加 clear pass。
+9. 添加 `packages/shader-slang` shader build 路径和 triangle pass。
+10. 添加 resize/recreate 路径。
+11. 添加 validation checklist 和 smoke test 文档。
 
 ## 第一版引擎 Definition Of Done
 
@@ -75,3 +83,5 @@ VkEngine/
   缓解：显式处理暂停、最小化和 recreate。
 - 依赖漂移：未 pin 的 Conan 依赖可能改变行为。
   缓解：首次 bootstrap 成功后生成 lockfile。
+- 包边界膨胀：为了快速跑通，代码容易滑向 monolithic app。
+  缓解：从第一版 CMake target 开始按 `apps/engine/packages` 分层，app 只组合 package。
