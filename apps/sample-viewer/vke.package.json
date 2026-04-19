@@ -8,5 +8,5 @@
     "com.vke.window-glfw",
     "com.vke.renderer-basic"
   ],
-  "targets": ["vke-sample-viewer-host"]
+  "targets": ["vke-sample-viewer"]
 }

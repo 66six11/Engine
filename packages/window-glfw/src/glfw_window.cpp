@@ -1,0 +1,117 @@
+#include "vke/window_glfw/glfw_window.hpp"
+
+#include "vke/core/error.hpp"
+
+#include <GLFW/glfw3.h>
+
+#include <utility>
+
+namespace vke {
+namespace {
+
+Error glfwError(std::string_view fallback) {
+    return Error{ErrorDomain::Platform, 0, glfwLastErrorMessage(fallback)};
+}
+
+} // namespace
+
+std::string glfwLastErrorMessage(std::string_view fallback) {
+    const char* description = nullptr;
+    const int code = glfwGetError(&description);
+
+    if (code == GLFW_NO_ERROR || description == nullptr) {
+        return std::string{fallback};
+    }
+
+    return std::string{description};
+}
+
+GlfwInstance::GlfwInstance(bool initialized)
+    : initialized_(initialized) {}
+
+GlfwInstance::GlfwInstance(GlfwInstance&& other) noexcept
+    : initialized_(std::exchange(other.initialized_, false)) {}
+
+GlfwInstance& GlfwInstance::operator=(GlfwInstance&& other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+
+    if (initialized_) {
+        glfwTerminate();
+    }
+
+    initialized_ = std::exchange(other.initialized_, false);
+    return *this;
+}
+
+GlfwInstance::~GlfwInstance() {
+    if (initialized_) {
+        glfwTerminate();
+    }
+}
+
+Result<GlfwInstance> GlfwInstance::create() {
+    if (glfwInit() != GLFW_TRUE) {
+        return std::unexpected{glfwError("Failed to initialize GLFW.")};
+    }
+
+    return GlfwInstance{true};
+}
+
+GlfwWindow::GlfwWindow(GLFWwindow* window)
+    : window_(window) {}
+
+GlfwWindow::GlfwWindow(GlfwWindow&& other) noexcept
+    : window_(std::exchange(other.window_, nullptr)) {}
+
+GlfwWindow& GlfwWindow::operator=(GlfwWindow&& other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+
+    if (window_ != nullptr) {
+        glfwDestroyWindow(window_);
+    }
+
+    window_ = std::exchange(other.window_, nullptr);
+    return *this;
+}
+
+GlfwWindow::~GlfwWindow() {
+    if (window_ != nullptr) {
+        glfwDestroyWindow(window_);
+    }
+}
+
+Result<GlfwWindow> GlfwWindow::create(const GlfwInstance&, const WindowDesc& desc) {
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_VISIBLE, desc.visible ? GLFW_TRUE : GLFW_FALSE);
+
+    GLFWwindow* window = glfwCreateWindow(desc.width, desc.height, desc.title.c_str(), nullptr, nullptr);
+    if (window == nullptr) {
+        return std::unexpected{glfwError("Failed to create GLFW window.")};
+    }
+
+    return GlfwWindow{window};
+}
+
+bool GlfwWindow::shouldClose() const {
+    return window_ == nullptr || glfwWindowShouldClose(window_) == GLFW_TRUE;
+}
+
+void GlfwWindow::pollEvents() const {
+    glfwPollEvents();
+}
+
+void GlfwWindow::requestClose() {
+    if (window_ != nullptr) {
+        glfwSetWindowShouldClose(window_, GLFW_TRUE);
+    }
+}
+
+GLFWwindow* GlfwWindow::nativeHandle() const {
+    return window_;
+}
+
+} // namespace vke
