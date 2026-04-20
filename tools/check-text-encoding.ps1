@@ -63,6 +63,7 @@ $ForbidBomFileNames = [System.Collections.Generic.HashSet[string]]::new([System.
 $IgnoredDirectories = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 @(
     ".git",
+    ".idea",
     ".vs",
     "build",
     "out",

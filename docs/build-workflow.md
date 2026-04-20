@@ -46,6 +46,12 @@ cmake --build --preset conan-release
 `-DCMAKE_TOOLCHAIN_FILE=...` 作为常规路径，也不要直接编辑 Conan 生成的 preset。项目级
 cache 选项通过 `conanfile.py` 写入 `CMakeToolchain`。
 
+CLion 会把 CMake preset 导入为只读 CMake profile，并默认绑定 CLion 的默认 toolchain。
+如果默认 toolchain 是 MinGW，IDE 会提示 CMake 实际使用的 MSVC 与配置的 MinGW 不兼容。
+`conanfile.py` 会在 Conan 生成的 configure preset 中写入 JetBrains vendor 字段，把
+`conan-default` 绑定到名为 `Visual Studio` 的 CLion toolchain。该名称必须和
+`Settings > Build, Execution, Deployment > Toolchains` 中的工具链名称一致。
+
 ## 本地覆盖
 
 个人机器上的临时配置放在 `CMakeUserPresets.json`。该文件只用于本地覆盖，并已被

@@ -100,3 +100,5 @@
   `cmake --build --preset conan-debug`、`cmake --build --preset conan-release`。
 - 不让项目提交的 `CMakePresets.json` include Conan 生成文件，避免生成物缺失时
   preset 继承链断开。
+- CLion 导入 preset 时默认绑定默认 toolchain；需要通过
+  `vendor["jetbrains.com/clion"].toolchain` 指定项目 toolchain。

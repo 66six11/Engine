@@ -2,6 +2,7 @@
 /build*/
 /out/
 /.vs/
+/.idea/
 
 # Conan
 /.conan/

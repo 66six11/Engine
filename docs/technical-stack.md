@@ -62,6 +62,8 @@
 - `CMakeToolchain` 保持默认 `CMakeUserPresets.json` 输出；不提交
   `CMakeUserPresets.json` 或 `build/generators/CMakePresets.json`。
 - 项目级 CMake cache 选项通过 `CMakeToolchain.cache_variables` 设置。
+- Conan 生成 CMake presets 后，`conanfile.py` 会补充 CLion 的 JetBrains vendor 字段，
+  将 preset 绑定到名为 `Visual Studio` 的 CLion toolchain，避免 IDE 默认落到 MinGW。
 - Windows MSVC profile 明确 `compiler=msvc`、`compiler.version=194`、
   `compiler.cppstd=23`、`arch=x86_64`。
 - 首次跑通后生成 lockfile，避免依赖版本漂移。
