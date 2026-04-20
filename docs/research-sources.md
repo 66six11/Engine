@@ -82,11 +82,21 @@
 
 - CMake Visual Studio 17 2022 generator：https://cmake.org/cmake/help/latest/generator/Visual%20Studio%2017%202022.html
 - CMake CXX_STANDARD：https://cmake.org/cmake/help/latest/prop_tgt/CXX_STANDARD.html
+- CMake presets manual：https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
 - Conan 2 CMakeToolchain：https://docs.conan.io/2/reference/tools/cmake/cmaketoolchain.html
 - Conan 2 CMakeDeps：https://docs.conan.io/2/reference/tools/cmake/cmakedeps.html
+- Conan CMakePresets workflow：https://docs.conan.io/2/examples/tools/cmake/cmake_toolchain/build_project_cmake_presets.html
+- Conan extending own CMakePresets：https://docs.conan.io/2/examples/tools/cmake/cmake_toolchain/extend_own_cmake_presets.html
 
 结论：
 
 - CMake 支持 Visual Studio 17 2022 generator，默认使用 v143 toolset。
 - Conan 2 推荐 `CMakeToolchain` 搭配 `CMakeDeps` 使用。
 - Conan 生成的 presets 和 toolchain 文件应该被视为构建产物，不手写、不提交。
+- 项目共享配置保留在 `CMakePresets.json`；开发者本地配置使用
+  `CMakeUserPresets.json` 且不提交。
+- 本项目采用 Conan 官方默认 workflow：`conan install` 生成 `CMakeUserPresets.json`
+  和 `build/generators/CMakePresets.json`，再用 `cmake --preset conan-default`、
+  `cmake --build --preset conan-debug`、`cmake --build --preset conan-release`。
+- 不让项目提交的 `CMakePresets.json` include Conan 生成文件，避免生成物缺失时
+  preset 继承链断开。

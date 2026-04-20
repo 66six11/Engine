@@ -5,7 +5,8 @@
 - 平台：Windows 桌面端优先。
 - 构建系统：CMake 3.28 或更新版本。
 - 包管理器：Conan 2.x。
-- 编译器：MSVC v143，Visual Studio 2022。
+- 编译器：MSVC C++ 编译器；当前 Windows profile 固定 `compiler=msvc`、
+  `compiler.version=194`、`compiler.cppstd=23`。
 - 编程语言：C++23。
 - 图形 API：Vulkan 1.4。
 - GPU 内存管理：Vulkan Memory Allocator。
@@ -36,7 +37,11 @@
 - 使用 `cmake_minimum_required(VERSION 3.28)`。
 - 使用 `target_compile_features(<target> PUBLIC cxx_std_23)` 表达 C++23 要求。
 - 关闭非标准扩展：`CMAKE_CXX_EXTENSIONS OFF`。
-- 使用 `CMakePresets.json` 固化 configure/build/test 入口。
+- 使用 Conan 生成的 CMake presets 作为常规 configure/build 入口。
+- 项目提交的 `CMakePresets.json` 不 include Conan 生成文件，避免本地生成物缺失时导致
+  preset 继承链断开。
+- 常规构建流程先运行 `conan install` 生成 `conan_toolchain.cmake`、CMake dependency
+  config 和 Conan presets，再使用 `cmake --preset` / `cmake --build --preset`。
 - Conan 生成目录和构建目录不进入源码管理。
 - 每个 package 独立 CMake target，并提供 `vke::<name>` alias。
 - app target 只链接需要的 package，不直接 include package 的 private `src/`。
@@ -54,7 +59,11 @@
 
 - 使用 Conan 2 profile 区分 `Debug`、`RelWithDebInfo`、`Release`。
 - 使用 `CMakeToolchain` 和 `CMakeDeps`。
-- VS 2022 profile 明确 `compiler=msvc`、`compiler.cppstd=23`、`arch=x86_64`。
+- `CMakeToolchain` 保持默认 `CMakeUserPresets.json` 输出；不提交
+  `CMakeUserPresets.json` 或 `build/generators/CMakePresets.json`。
+- 项目级 CMake cache 选项通过 `CMakeToolchain.cache_variables` 设置。
+- Windows MSVC profile 明确 `compiler=msvc`、`compiler.version=194`、
+  `compiler.cppstd=23`、`arch=x86_64`。
 - 首次跑通后生成 lockfile，避免依赖版本漂移。
 
 ## Vulkan 1.4 策略

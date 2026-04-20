@@ -20,6 +20,8 @@ class VkEngineConan(ConanFile):
 
     def generate(self):
         toolchain = CMakeToolchain(self)
+        toolchain.cache_variables["VKE_BUILD_APPS"] = "ON"
+        toolchain.cache_variables["VKE_BUILD_TESTS"] = "OFF"
         toolchain.generate()
 
         deps = CMakeDeps(self)
