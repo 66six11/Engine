@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <vulkan/vulkan.h>
+
 #include <string>
 #include <string_view>
 #include <vector>
@@ -61,5 +63,7 @@ namespace vke {
     [[nodiscard]] std::string glfwLastErrorMessage(std::string_view fallback);
     [[nodiscard]] Result<std::vector<std::string>>
     glfwRequiredVulkanInstanceExtensions(const GlfwInstance& instance);
+    [[nodiscard]] Result<VkSurfaceKHR> glfwCreateVulkanSurface(const GlfwWindow& window,
+                                                               VkInstance instance);
 
 } // namespace vke

@@ -1,5 +1,7 @@
 ﻿#include "vke/window_glfw/glfw_window.hpp"
 
+#include <vulkan/vulkan.h>
+
 #include <GLFW/glfw3.h>
 #include <cstdint>
 #include <span>
@@ -47,6 +49,25 @@ namespace vke {
         }
 
         return result;
+    }
+
+    Result<VkSurfaceKHR> glfwCreateVulkanSurface(const GlfwWindow& window, VkInstance instance) {
+        if (window.nativeHandle() == nullptr) {
+            return std::unexpected{glfwError("Cannot create Vulkan surface for a null window.")};
+        }
+
+        VkSurfaceKHR surface = VK_NULL_HANDLE;
+        const VkResult result =
+            glfwCreateWindowSurface(instance, window.nativeHandle(), nullptr, &surface);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{Error{
+                ErrorDomain::Vulkan,
+                static_cast<int>(result),
+                glfwLastErrorMessage("Failed to create Vulkan window surface."),
+            }};
+        }
+
+        return surface;
     }
 
     GlfwInstance::GlfwInstance(bool initialized) : initialized_(initialized) {}

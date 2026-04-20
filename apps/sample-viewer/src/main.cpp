@@ -54,9 +54,20 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        auto window =
+            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Vulkan Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
         const vke::VulkanContextDesc desc{
             .applicationName = "VkEngine Vulkan Smoke",
             .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
         };
 
         auto context = vke::VulkanContext::create(desc);

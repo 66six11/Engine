@@ -22,6 +22,7 @@ namespace vke {
 
         constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
         constexpr std::string_view kDebugUtilsExtension{VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+        constexpr const char* kSwapchainExtension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
 
         Error vkError(std::string message, VkResult result = VK_ERROR_UNKNOWN) {
             if (result != VK_SUCCESS) {
@@ -51,6 +52,29 @@ namespace vke {
             std::vector<VkExtensionProperties> extensions(count);
             if (count > 0) {
                 vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
+            }
+
+            return extensions;
+        }
+
+        Result<std::vector<VkExtensionProperties>>
+        enumerateDeviceExtensions(VkPhysicalDevice device) {
+            std::uint32_t count = 0;
+            VkResult result =
+                vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
+            if (result != VK_SUCCESS) {
+                return std::unexpected{
+                    vkError("Failed to enumerate Vulkan device extensions", result)};
+            }
+
+            std::vector<VkExtensionProperties> extensions(count);
+            if (count > 0) {
+                result = vkEnumerateDeviceExtensionProperties(device, nullptr, &count,
+                                                              extensions.data());
+                if (result != VK_SUCCESS) {
+                    return std::unexpected{
+                        vkError("Failed to enumerate Vulkan device extensions", result)};
+                }
             }
 
             return extensions;
@@ -137,7 +161,25 @@ namespace vke {
             std::uint32_t graphicsFamily{};
         };
 
-        std::optional<QueueSelection> selectQueues(VkPhysicalDevice physicalDevice) {
+        Result<bool> queueSupportsPresentation(VkPhysicalDevice physicalDevice,
+                                               std::uint32_t queueFamily, VkSurfaceKHR surface) {
+            if (surface == VK_NULL_HANDLE) {
+                return true;
+            }
+
+            VkBool32 supported = VK_FALSE;
+            const VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(
+                physicalDevice, queueFamily, surface, &supported);
+            if (result != VK_SUCCESS) {
+                return std::unexpected{
+                    vkError("Failed to query Vulkan queue presentation support", result)};
+            }
+
+            return supported == VK_TRUE;
+        }
+
+        Result<std::optional<QueueSelection>> selectQueues(VkPhysicalDevice physicalDevice,
+                                                           VkSurfaceKHR surface) {
             std::uint32_t count = 0;
             vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
 
@@ -147,7 +189,12 @@ namespace vke {
             }
 
             for (std::uint32_t index = 0; index < queues.size(); ++index) {
-                if ((queues[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+                auto supportsPresent = queueSupportsPresentation(physicalDevice, index, surface);
+                if (!supportsPresent) {
+                    return std::unexpected{std::move(supportsPresent.error())};
+                }
+
+                if ((queues[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0 && *supportsPresent) {
                     return QueueSelection{index};
                 }
             }
@@ -164,20 +211,41 @@ namespace vke {
             return properties.apiVersion >= VK_API_VERSION_1_4;
         }
 
+        Result<bool> supportsSwapchain(VkPhysicalDevice device, bool required) {
+            if (!required) {
+                return true;
+            }
+
+            auto extensions = enumerateDeviceExtensions(device);
+            if (!extensions) {
+                return std::unexpected{std::move(extensions.error())};
+            }
+
+            return hasExtension(*extensions, kSwapchainExtension);
+        }
+
         struct PhysicalDeviceCandidate {
             VkPhysicalDevice device{VK_NULL_HANDLE};
             VkPhysicalDeviceProperties properties{};
             QueueSelection queues{};
         };
 
-        std::optional<PhysicalDeviceCandidate> choosePhysicalDevice(VkInstance instance,
-                                                                    bool requireVulkan14) {
+        Result<std::optional<PhysicalDeviceCandidate>>
+        choosePhysicalDevice(VkInstance instance, VkSurfaceKHR surface, bool requireVulkan14) {
             std::uint32_t count = 0;
-            vkEnumeratePhysicalDevices(instance, &count, nullptr);
+            VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
+            if (result != VK_SUCCESS) {
+                return std::unexpected{
+                    vkError("Failed to enumerate Vulkan physical devices", result)};
+            }
 
             std::vector<VkPhysicalDevice> devices(count);
             if (count > 0) {
-                vkEnumeratePhysicalDevices(instance, &count, devices.data());
+                result = vkEnumeratePhysicalDevices(instance, &count, devices.data());
+                if (result != VK_SUCCESS) {
+                    return std::unexpected{
+                        vkError("Failed to enumerate Vulkan physical devices", result)};
+                }
             }
 
             std::optional<PhysicalDeviceCandidate> best;
@@ -186,15 +254,25 @@ namespace vke {
                 VkPhysicalDeviceProperties properties{};
                 vkGetPhysicalDeviceProperties(device, &properties);
 
-                const auto queues = selectQueues(device);
-                if (!queues || !supportsRequiredVersion(properties, requireVulkan14)) {
+                auto queues = selectQueues(device, surface);
+                if (!queues) {
+                    return std::unexpected{std::move(queues.error())};
+                }
+
+                auto swapchainSupported = supportsSwapchain(device, surface != VK_NULL_HANDLE);
+                if (!swapchainSupported) {
+                    return std::unexpected{std::move(swapchainSupported.error())};
+                }
+
+                if (!*queues || !supportsRequiredVersion(properties, requireVulkan14) ||
+                    !*swapchainSupported) {
                     continue;
                 }
 
                 PhysicalDeviceCandidate candidate{
                     .device = device,
                     .properties = properties,
-                    .queues = *queues,
+                    .queues = **queues,
                 };
                 if (!best || properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
                     best = candidate;
@@ -278,7 +356,8 @@ namespace vke {
 
         Result<VkDevice> createDevice(VkPhysicalDevice physicalDevice,
                                       std::uint32_t graphicsQueueFamily,
-                                      VkPhysicalDeviceVulkan13Features features13) {
+                                      VkPhysicalDeviceVulkan13Features features13,
+                                      bool enableSwapchain) {
             constexpr float kQueuePriority = 1.0F;
 
             VkDeviceQueueCreateInfo queueInfo{};
@@ -296,6 +375,13 @@ namespace vke {
             createInfo.pNext = &features2;
             createInfo.queueCreateInfoCount = 1;
             createInfo.pQueueCreateInfos = &queueInfo;
+
+            std::array<const char*, 1> swapchainExtensions{kSwapchainExtension};
+            if (enableSwapchain) {
+                createInfo.enabledExtensionCount =
+                    static_cast<std::uint32_t>(swapchainExtensions.size());
+                createInfo.ppEnabledExtensionNames = swapchainExtensions.data();
+            }
 
             VkDevice device = VK_NULL_HANDLE;
             const VkResult result = vkCreateDevice(physicalDevice, &createInfo, nullptr, &device);
@@ -382,6 +468,7 @@ namespace vke {
 
         instance_ = std::exchange(other.instance_, VK_NULL_HANDLE);
         debugMessenger_ = std::exchange(other.debugMessenger_, VK_NULL_HANDLE);
+        surface_ = std::exchange(other.surface_, VK_NULL_HANDLE);
         physicalDevice_ = std::exchange(other.physicalDevice_, VK_NULL_HANDLE);
         device_ = std::exchange(other.device_, VK_NULL_HANDLE);
         graphicsQueue_ = std::exchange(other.graphicsQueue_, VK_NULL_HANDLE);
@@ -404,6 +491,10 @@ namespace vke {
             vkDestroyDevice(device_, nullptr);
         }
 
+        if (surface_ != VK_NULL_HANDLE) {
+            vkDestroySurfaceKHR(instance_, surface_, nullptr);
+        }
+
         if (debugMessenger_ != VK_NULL_HANDLE) {
             destroyDebugMessenger(instance_, debugMessenger_);
         }
@@ -414,6 +505,7 @@ namespace vke {
 
         instance_ = VK_NULL_HANDLE;
         debugMessenger_ = VK_NULL_HANDLE;
+        surface_ = VK_NULL_HANDLE;
         physicalDevice_ = VK_NULL_HANDLE;
         device_ = VK_NULL_HANDLE;
         graphicsQueue_ = VK_NULL_HANDLE;
@@ -459,10 +551,27 @@ namespace vke {
             }
         }
 
-        auto candidate = choosePhysicalDevice(context.instance_, desc.requireVulkan14);
-        if (!candidate) {
-            return std::unexpected{vkError("Failed to find a Vulkan 1.4 graphics device")};
+        if (desc.createSurface) {
+            auto surface = desc.createSurface(context.instance_);
+            if (!surface) {
+                return std::unexpected{std::move(surface.error())};
+            }
+
+            context.surface_ = *surface;
         }
+
+        auto candidate =
+            choosePhysicalDevice(context.instance_, context.surface_, desc.requireVulkan14);
+        if (!candidate) {
+            return std::unexpected{std::move(candidate.error())};
+        }
+
+        if (!*candidate) {
+            return std::unexpected{
+                vkError("Failed to find a Vulkan 1.4 graphics and presentation device")};
+        }
+
+        const PhysicalDeviceCandidate& selected = **candidate;
 
         VkPhysicalDeviceVulkan13Features features13{};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -470,7 +579,7 @@ namespace vke {
         VkPhysicalDeviceFeatures2 queriedFeatures{};
         queriedFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         queriedFeatures.pNext = &features13;
-        vkGetPhysicalDeviceFeatures2(candidate->device, &queriedFeatures);
+        vkGetPhysicalDeviceFeatures2(selected.device, &queriedFeatures);
 
         if (features13.synchronization2 != VK_TRUE || features13.dynamicRendering != VK_TRUE) {
             return std::unexpected{
@@ -482,14 +591,15 @@ namespace vke {
         features13.synchronization2 = VK_TRUE;
         features13.dynamicRendering = VK_TRUE;
 
-        auto device = createDevice(candidate->device, candidate->queues.graphicsFamily, features13);
+        auto device = createDevice(selected.device, selected.queues.graphicsFamily, features13,
+                                   context.surface_ != VK_NULL_HANDLE);
         if (!device) {
             return std::unexpected{std::move(device.error())};
         }
 
-        context.physicalDevice_ = candidate->device;
+        context.physicalDevice_ = selected.device;
         context.device_ = *device;
-        context.graphicsQueueFamily_ = candidate->queues.graphicsFamily;
+        context.graphicsQueueFamily_ = selected.queues.graphicsFamily;
         vkGetDeviceQueue(context.device_, context.graphicsQueueFamily_, 0, &context.graphicsQueue_);
 
         auto allocator =
@@ -500,10 +610,10 @@ namespace vke {
 
         context.allocator_ = *allocator;
         context.deviceInfo_ = VulkanDeviceInfo{
-            .name = candidate->properties.deviceName,
-            .vendorId = candidate->properties.vendorID,
-            .deviceId = candidate->properties.deviceID,
-            .apiVersion = candidate->properties.apiVersion,
+            .name = selected.properties.deviceName,
+            .vendorId = selected.properties.vendorID,
+            .deviceId = selected.properties.deviceID,
+            .apiVersion = selected.properties.apiVersion,
             .graphicsQueueFamily = context.graphicsQueueFamily_,
         };
 
@@ -515,6 +625,10 @@ namespace vke {
 
     VkInstance VulkanContext::instance() const {
         return instance_;
+    }
+
+    VkSurfaceKHR VulkanContext::surface() const {
+        return surface_;
     }
 
     VkPhysicalDevice VulkanContext::physicalDevice() const {

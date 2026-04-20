@@ -1,4 +1,5 @@
 find_package(glfw3 CONFIG REQUIRED)
+find_package(VulkanHeaders CONFIG REQUIRED)
 
 add_library(vke-window-glfw STATIC
     src/glfw_window.cpp
@@ -15,6 +16,7 @@ target_link_libraries(vke-window-glfw
     PUBLIC
         vke::core
         vke::platform
+        vulkan-headers::vulkan-headers
         glfw
 )
 
