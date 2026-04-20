@@ -1,4 +1,4 @@
-#include "vke/core/log.hpp"
+﻿#include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
