@@ -1,138 +1,140 @@
 ﻿#include "vke/window_glfw/glfw_window.hpp"
 
-#include "vke/core/error.hpp"
-
 #include <GLFW/glfw3.h>
-
 #include <cstdint>
+#include <span>
 #include <utility>
 
+#include "vke/core/error.hpp"
+
 namespace vke {
-namespace {
+    namespace {
 
-Error glfwError(std::string_view fallback) {
-    return Error{ErrorDomain::Platform, 0, glfwLastErrorMessage(fallback)};
-}
+        Error glfwError(std::string_view fallback) {
+            return Error{ErrorDomain::Platform, 0, glfwLastErrorMessage(fallback)};
+        }
 
-} // namespace
+    } // namespace
 
-std::string glfwLastErrorMessage(std::string_view fallback) {
-    const char* description = nullptr;
-    const int code = glfwGetError(&description);
+    std::string glfwLastErrorMessage(std::string_view fallback) {
+        const char* description = nullptr;
+        const int code = glfwGetError(&description);
 
-    if (code == GLFW_NO_ERROR || description == nullptr) {
-        return std::string{fallback};
+        if (code == GLFW_NO_ERROR || description == nullptr) {
+            return std::string{fallback};
+        }
+
+        return std::string{description};
     }
 
-    return std::string{description};
-}
+    Result<std::vector<std::string>>
+    glfwRequiredVulkanInstanceExtensions([[maybe_unused]] const GlfwInstance& instance) {
+        if (glfwVulkanSupported() != GLFW_TRUE) {
+            return std::unexpected{glfwError("GLFW reports that Vulkan is not supported.")};
+        }
 
-Result<std::vector<std::string>> glfwRequiredVulkanInstanceExtensions(const GlfwInstance&) {
-    if (glfwVulkanSupported() != GLFW_TRUE) {
-        return std::unexpected{glfwError("GLFW reports that Vulkan is not supported.")};
+        std::uint32_t count = 0;
+        const char** extensions = glfwGetRequiredInstanceExtensions(&count);
+        if (extensions == nullptr || count == 0) {
+            return std::unexpected{
+                glfwError("GLFW did not return required Vulkan instance extensions.")};
+        }
+
+        std::vector<std::string> result;
+        result.reserve(count);
+        for (const char* extension : std::span{extensions, count}) {
+            result.emplace_back(extension);
+        }
+
+        return result;
     }
 
-    std::uint32_t count = 0;
-    const char** extensions = glfwGetRequiredInstanceExtensions(&count);
-    if (extensions == nullptr || count == 0) {
-        return std::unexpected{glfwError("GLFW did not return required Vulkan instance extensions.")};
-    }
+    GlfwInstance::GlfwInstance(bool initialized) : initialized_(initialized) {}
 
-    std::vector<std::string> result;
-    result.reserve(count);
-    for (std::uint32_t index = 0; index < count; ++index) {
-        result.emplace_back(extensions[index]);
-    }
+    GlfwInstance::GlfwInstance(GlfwInstance&& other) noexcept
+        : initialized_(std::exchange(other.initialized_, false)) {}
 
-    return result;
-}
+    GlfwInstance& GlfwInstance::operator=(GlfwInstance&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
 
-GlfwInstance::GlfwInstance(bool initialized)
-    : initialized_(initialized) {}
+        if (initialized_) {
+            glfwTerminate();
+        }
 
-GlfwInstance::GlfwInstance(GlfwInstance&& other) noexcept
-    : initialized_(std::exchange(other.initialized_, false)) {}
-
-GlfwInstance& GlfwInstance::operator=(GlfwInstance&& other) noexcept {
-    if (this == &other) {
+        initialized_ = std::exchange(other.initialized_, false);
         return *this;
     }
 
-    if (initialized_) {
-        glfwTerminate();
+    GlfwInstance::~GlfwInstance() {
+        if (initialized_) {
+            glfwTerminate();
+        }
     }
 
-    initialized_ = std::exchange(other.initialized_, false);
-    return *this;
-}
+    Result<GlfwInstance> GlfwInstance::create() {
+        if (glfwInit() != GLFW_TRUE) {
+            return std::unexpected{glfwError("Failed to initialize GLFW.")};
+        }
 
-GlfwInstance::~GlfwInstance() {
-    if (initialized_) {
-        glfwTerminate();
-    }
-}
-
-Result<GlfwInstance> GlfwInstance::create() {
-    if (glfwInit() != GLFW_TRUE) {
-        return std::unexpected{glfwError("Failed to initialize GLFW.")};
+        return GlfwInstance{true};
     }
 
-    return GlfwInstance{true};
-}
+    GlfwWindow::GlfwWindow(GLFWwindow* window) : window_(window) {}
 
-GlfwWindow::GlfwWindow(GLFWwindow* window)
-    : window_(window) {}
+    GlfwWindow::GlfwWindow(GlfwWindow&& other) noexcept
+        : window_(std::exchange(other.window_, nullptr)) {}
 
-GlfwWindow::GlfwWindow(GlfwWindow&& other) noexcept
-    : window_(std::exchange(other.window_, nullptr)) {}
+    GlfwWindow& GlfwWindow::operator=(GlfwWindow&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
 
-GlfwWindow& GlfwWindow::operator=(GlfwWindow&& other) noexcept {
-    if (this == &other) {
+        if (window_ != nullptr) {
+            glfwDestroyWindow(window_);
+        }
+
+        window_ = std::exchange(other.window_, nullptr);
         return *this;
     }
 
-    if (window_ != nullptr) {
-        glfwDestroyWindow(window_);
+    GlfwWindow::~GlfwWindow() {
+        if (window_ != nullptr) {
+            glfwDestroyWindow(window_);
+        }
     }
 
-    window_ = std::exchange(other.window_, nullptr);
-    return *this;
-}
+    Result<GlfwWindow> GlfwWindow::create([[maybe_unused]] const GlfwInstance& instance,
+                                          const WindowDesc& desc) {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        glfwWindowHint(GLFW_VISIBLE, desc.visible ? GLFW_TRUE : GLFW_FALSE);
 
-GlfwWindow::~GlfwWindow() {
-    if (window_ != nullptr) {
-        glfwDestroyWindow(window_);
-    }
-}
+        GLFWwindow* window =
+            glfwCreateWindow(desc.width, desc.height, desc.title.c_str(), nullptr, nullptr);
+        if (window == nullptr) {
+            return std::unexpected{glfwError("Failed to create GLFW window.")};
+        }
 
-Result<GlfwWindow> GlfwWindow::create(const GlfwInstance&, const WindowDesc& desc) {
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_VISIBLE, desc.visible ? GLFW_TRUE : GLFW_FALSE);
-
-    GLFWwindow* window = glfwCreateWindow(desc.width, desc.height, desc.title.c_str(), nullptr, nullptr);
-    if (window == nullptr) {
-        return std::unexpected{glfwError("Failed to create GLFW window.")};
+        return GlfwWindow{window};
     }
 
-    return GlfwWindow{window};
-}
-
-bool GlfwWindow::shouldClose() const {
-    return window_ == nullptr || glfwWindowShouldClose(window_) == GLFW_TRUE;
-}
-
-void GlfwWindow::pollEvents() const {
-    glfwPollEvents();
-}
-
-void GlfwWindow::requestClose() {
-    if (window_ != nullptr) {
-        glfwSetWindowShouldClose(window_, GLFW_TRUE);
+    bool GlfwWindow::shouldClose() const {
+        return window_ == nullptr || glfwWindowShouldClose(window_) == GLFW_TRUE;
     }
-}
 
-GLFWwindow* GlfwWindow::nativeHandle() const {
-    return window_;
-}
+    void GlfwWindow::pollEvents() {
+        glfwPollEvents();
+    }
+
+    void GlfwWindow::requestClose() {
+        if (window_ != nullptr) {
+            glfwSetWindowShouldClose(window_, GLFW_TRUE);
+        }
+    }
+
+    GLFWwindow* GlfwWindow::nativeHandle() const {
+        return window_;
+    }
 
 } // namespace vke

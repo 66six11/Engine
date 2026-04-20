@@ -9,6 +9,7 @@ Checks: >
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-type-union-access,
+  -modernize-use-trailing-return-type,
   -readability-magic-numbers
 WarningsAsErrors: ''
 HeaderFilterRegex: '^(include|src)/'
