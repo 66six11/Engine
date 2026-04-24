@@ -1,58 +1,59 @@
 # 构建流程
 
-本项目的 CMake/Conan 入口遵循 Conan 官方推荐的 `CMakeToolchain` + `CMakeDeps` +
-`CMakePresets` 流程。
+本项目使用 Conan 2 + CMake Presets。日常开发以 MSVC 预设为主，代码检查以 ClangCL 预设为主；四个入口全部使用 Ninja 生成器。
 
-## 依据
+## 预设约定
 
-- Conan `CMakeToolchain` 生成 `conan_toolchain.cmake`，并生成包含 generator、toolchain
-  路径、binaryDir、build/test preset 的 `CMakePresets.json`。
-- Conan `CMakeToolchain` 应和 `CMakeDeps` 配套使用，不混用旧的 `cmake` 或
-  `cmake_paths` generator。
-- CMake 官方定位是：`CMakePresets.json` 可提交为项目共享配置，
-  `CMakeUserPresets.json` 是开发者本地配置，不提交。
-- 本项目采用 Conan 官方默认方式：Conan 生成根目录 `CMakeUserPresets.json`，它 include
-  `build/generators/CMakePresets.json`。项目提交的 `CMakePresets.json` 不 include 生成文件，
-  避免在干净仓库或清理 build 目录后出现断链。
+- `msvc-debug`：日常 Debug 构建。
+- `msvc-release`：日常 Release 构建。
+- `clangcl-debug`：Debug 代码检查构建，启用 `clang-tidy`。
+- `clangcl-release`：Release 代码检查构建，启用 `clang-tidy`。
 
-## 首次或依赖变更后
+Visual Studio 中直接选择这四个项目级 preset 即可。`msvc-*` 负责常规编辑、IntelliSense 和构建；`clangcl-*` 用作第二编译器验证和 `clang-tidy` 检查。
 
-先生成 Conan toolchain、dependency config 和 presets：
+## 目录约定
 
-```powershell
-conan install . --profile:host=profiles/windows-msvc-debug --profile:build=profiles/windows-msvc-debug --build=missing
-conan install . --profile:host=profiles/windows-msvc-release --profile:build=profiles/windows-msvc-release --build=missing
-```
+- `build/conan/*`：Conan 生成的 toolchain、依赖配置和环境脚本。
+- `build/cmake/*`：CMake/Visual Studio/Ninja 的实际构建目录。
 
-这一步会生成：
+这两个目录必须分开。Visual Studio 删除 CMake cache 时可能会清理 `build/cmake/*`，但不应该删除 `build/conan/*`，否则会再次出现 `Could not find toolchain file`。
 
-- `build/generators/conan_toolchain.cmake`
-- `build/generators/CMakePresets.json`
-- `CMakeUserPresets.json`
+## 生成 Conan 文件
 
-这些文件都是本地生成物，不提交。
-
-## 配置与构建
-
-Conan 生成物存在后，统一通过项目 preset 进入 CMake：
+首次构建、清理 `build` 目录后，或者依赖/profile 改动后，先生成 Conan toolchain 和依赖配置：
 
 ```powershell
-cmake --preset conan-default
-cmake --build --preset conan-debug
-cmake --build --preset conan-release
+.\scripts\bootstrap-conan.ps1
 ```
 
-`conan-default`、`conan-debug` 和 `conan-release` 都由 `conan install` 生成。不要手写
-`-DCMAKE_TOOLCHAIN_FILE=...` 作为常规路径，也不要直接编辑 Conan 生成的 preset。项目级
-cache 选项通过 `conanfile.py` 写入 `CMakeToolchain`。
+这些命令会生成本地文件，例如：
 
-CLion 会把 CMake preset 导入为只读 CMake profile，并默认绑定 CLion 的默认 toolchain。
-如果默认 toolchain 是 MinGW，IDE 会提示 CMake 实际使用的 MSVC 与配置的 MinGW 不兼容。
-`conanfile.py` 会在 Conan 生成的 configure preset 中写入 JetBrains vendor 字段，把
-`conan-default` 绑定到名为 `Visual Studio` 的 CLion toolchain。该名称必须和
-`Settings > Build, Execution, Deployment > Toolchains` 中的工具链名称一致。
+- `build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake`
+- `build/conan/msvc-release/Release/generators/conan_toolchain.cmake`
+- `build/conan/clangcl-debug/Debug/generators/conan_toolchain.cmake`
+- `build/conan/clangcl-release/Release/generators/conan_toolchain.cmake`
+- `ConanPresets.json`
 
-## 本地覆盖
+这些都是本地生成物，不提交到版本库，也不要手动编辑。
 
-个人机器上的临时配置放在 `CMakeUserPresets.json`。该文件只用于本地覆盖，并已被
-`.gitignore` 忽略。
+## 构建命令
+
+在 Visual Studio 的 CMake 集成中，选择对应 preset 后配置和构建即可。
+
+如果在普通 PowerShell 中构建 Ninja + MSVC/ClangCL，需要先加载 Conan 生成的 VS 编译环境：
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
+cmd /c "build\conan\msvc-release\Release\generators\conanbuild.bat && cmake --preset msvc-release && cmake --build --preset msvc-release"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
+cmd /c "build\conan\clangcl-release\Release\generators\conanbuild.bat && cmake --preset clangcl-release && cmake --build --preset clangcl-release"
+```
+
+也可以从 “Developer PowerShell for VS 2022” 进入项目目录后运行 `cmake --preset ...` 和 `cmake --build --preset ...`。
+
+## 日常建议
+
+- 平时开发优先使用 `msvc-debug`。
+- 提交前至少跑一次 `clangcl-debug`，让 ClangCL 和 `clang-tidy` 帮我们抓 MSVC 不容易暴露的问题。
+- 做发布或性能验证时使用 `msvc-release`。
+- 需要更严格检查发布配置时再跑 `clangcl-release`。

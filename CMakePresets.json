@@ -4,5 +4,169 @@
     "major": 3,
     "minor": 28,
     "patch": 0
-  }
+  },
+  "configurePresets": [
+    {
+      "name": "msvc-debug",
+      "displayName": "MSVC Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cmake/msvc-debug",
+      "toolchainFile": "${sourceDir}/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "23",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
+        "VKE_BUILD_APPS": "ON",
+        "VKE_BUILD_TESTS": "OFF",
+        "VKE_ENABLE_CLANG_TIDY": "OFF"
+      }
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "MSVC Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cmake/msvc-release",
+      "toolchainFile": "${sourceDir}/build/conan/msvc-release/Release/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "23",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
+        "VKE_BUILD_APPS": "ON",
+        "VKE_BUILD_TESTS": "OFF",
+        "VKE_ENABLE_CLANG_TIDY": "OFF"
+      }
+    },
+    {
+      "name": "clangcl-debug",
+      "displayName": "ClangCL Debug Check",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cmake/clangcl-debug",
+      "toolchainFile": "${sourceDir}/build/conan/clangcl-debug/Debug/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "23",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
+        "VKE_BUILD_APPS": "ON",
+        "VKE_BUILD_TESTS": "OFF",
+        "VKE_ENABLE_CLANG_TIDY": "ON"
+      },
+      "vendor": {
+        "microsoft.com/VisualStudioSettings/CMake/1.0": {
+          "hostOS": [
+            "Windows"
+          ],
+          "intelliSenseMode": "windows-clang-x64",
+          "intelliSenseOptions": {
+            "additionalCompilerArgs": [
+              "/std:c++latest",
+              "/Zc:__cplusplus"
+            ]
+          },
+          "enableClangTidyCodeAnalysis": true
+        }
+      }
+    },
+    {
+      "name": "clangcl-release",
+      "displayName": "ClangCL Release Check",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cmake/clangcl-release",
+      "toolchainFile": "${sourceDir}/build/conan/clangcl-release/Release/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "23",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
+        "VKE_BUILD_APPS": "ON",
+        "VKE_BUILD_TESTS": "OFF",
+        "VKE_ENABLE_CLANG_TIDY": "ON"
+      },
+      "vendor": {
+        "microsoft.com/VisualStudioSettings/CMake/1.0": {
+          "hostOS": [
+            "Windows"
+          ],
+          "intelliSenseMode": "windows-clang-x64",
+          "intelliSenseOptions": {
+            "additionalCompilerArgs": [
+              "/std:c++latest",
+              "/Zc:__cplusplus"
+            ]
+          },
+          "enableClangTidyCodeAnalysis": true
+        }
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-debug",
+      "displayName": "MSVC Debug",
+      "configurePreset": "msvc-debug",
+      "jobs": 20
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "MSVC Release",
+      "configurePreset": "msvc-release",
+      "jobs": 20
+    },
+    {
+      "name": "clangcl-debug",
+      "displayName": "ClangCL Debug Check",
+      "configurePreset": "clangcl-debug",
+      "jobs": 20
+    },
+    {
+      "name": "clangcl-release",
+      "displayName": "ClangCL Release Check",
+      "configurePreset": "clangcl-release",
+      "jobs": 20
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "msvc-debug",
+      "displayName": "MSVC Debug Tests",
+      "configurePreset": "msvc-debug",
+      "execution": {
+        "jobs": 20
+      }
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "MSVC Release Tests",
+      "configurePreset": "msvc-release",
+      "execution": {
+        "jobs": 20
+      }
+    },
+    {
+      "name": "clangcl-debug",
+      "displayName": "ClangCL Debug Check Tests",
+      "configurePreset": "clangcl-debug",
+      "execution": {
+        "jobs": 20
+      }
+    },
+    {
+      "name": "clangcl-release",
+      "displayName": "ClangCL Release Check Tests",
+      "configurePreset": "clangcl-release",
+      "execution": {
+        "jobs": 20
+      }
+    }
+  ]
 }

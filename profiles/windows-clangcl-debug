@@ -1,0 +1,15 @@
+[settings]
+os=Windows
+arch=x86_64
+compiler=clang
+compiler.version=19
+compiler.cppstd=23
+compiler.runtime=dynamic
+compiler.runtime_type=Debug
+compiler.runtime_version=v144
+build_type=Debug
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+tools.cmake.cmake_layout:build_folder=build/conan/clangcl-debug
+tools.build:compiler_executables={"c": "clang-cl", "cpp": "clang-cl"}

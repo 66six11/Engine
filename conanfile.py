@@ -23,23 +23,34 @@ class VkEngineConan(ConanFile):
 
     def generate(self):
         toolchain = CMakeToolchain(self)
+        toolchain.user_presets_path = "ConanPresets.json"
         toolchain.cache_variables["VKE_BUILD_APPS"] = "ON"
         toolchain.cache_variables["VKE_BUILD_TESTS"] = "OFF"
+        toolchain.cache_variables["VKE_ENABLE_CLANG_TIDY"] = "OFF"
+        toolchain.cache_variables["CMAKE_CXX_STANDARD"] = "23"
+        toolchain.cache_variables["CMAKE_CXX_STANDARD_REQUIRED"] = "ON"
+        toolchain.cache_variables["CMAKE_CXX_EXTENSIONS"] = "OFF"
         toolchain.generate()
-        self._add_clion_toolchain_to_presets()
+        self._remove_legacy_user_presets()
 
         deps = CMakeDeps(self)
         deps.generate()
 
-    def _add_clion_toolchain_to_presets(self):
-        presets_path = Path(self.generators_folder) / "CMakePresets.json"
-        if not presets_path.exists():
+    def _remove_legacy_user_presets(self):
+        user_presets_path = Path(self.source_folder) / "CMakeUserPresets.json"
+        if not user_presets_path.exists():
             return
 
-        presets = json.loads(presets_path.read_text(encoding="utf-8"))
-        for preset in presets.get("configurePresets", []):
-            vendor = preset.setdefault("vendor", {})
-            clion = vendor.setdefault("jetbrains.com/clion", {})
-            clion["toolchain"] = "Visual Studio"
+        try:
+            user_presets = json.loads(user_presets_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
 
-        presets_path.write_text(json.dumps(presets, indent=4) + "\n", encoding="utf-8")
+        include_entries = user_presets.get("include", [])
+        is_legacy_conan_user_presets = (
+            user_presets.get("vendor", {}).get("conan") == {}
+            and "build/generators/CMakePresets.json" in include_entries
+        )
+
+        if is_legacy_conan_user_presets:
+            user_presets_path.unlink()

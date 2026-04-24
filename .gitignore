@@ -8,8 +8,10 @@
 /.conan/
 /conanbuild*/
 /conan_cache/
+__pycache__/
 
 # CMake generated files
+/ConanPresets.json
 /CMakeUserPresets.json
 /CMakeFiles/
 /CMakeCache.txt

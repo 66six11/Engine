@@ -294,8 +294,11 @@ namespace vke {
         Result<VkInstance> createInstance(const VulkanContextDesc& desc, bool validationAvailable,
                                           bool debugUtilsAvailable) {
             std::uint32_t loaderVersion = VK_API_VERSION_1_0;
-            if (vkEnumerateInstanceVersion != nullptr) {
-                const VkResult versionResult = vkEnumerateInstanceVersion(&loaderVersion);
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            const auto enumerateInstanceVersion = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+                vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceVersion"));
+            if (enumerateInstanceVersion != nullptr) {
+                const VkResult versionResult = enumerateInstanceVersion(&loaderVersion);
                 if (versionResult != VK_SUCCESS) {
                     return std::unexpected{
                         vkError("Failed to enumerate Vulkan instance version", versionResult)};
