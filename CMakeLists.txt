@@ -9,6 +9,11 @@ project(
 
 option(VKE_BUILD_APPS "Build VkEngine host applications." ON)
 option(VKE_BUILD_TESTS "Build VkEngine tests." OFF)
+option(VKE_ENABLE_CLANG_TIDY "Enable clang-tidy for supported builds and Visual Studio presets." OFF)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 

@@ -6,3 +6,7 @@ compiler.version=194
 compiler.cppstd=23
 compiler.runtime=dynamic
 build_type=Debug
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+tools.cmake.cmake_layout:build_folder=build/conan/msvc-debug
