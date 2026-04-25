@@ -170,6 +170,55 @@ namespace vke {
             }
         }
 
+        Result<VkImageView> createImageView(VkDevice device, VkImage image, VkFormat format) {
+            VkImageViewCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            createInfo.image = image;
+            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            createInfo.format = format;
+            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            createInfo.subresourceRange.baseMipLevel = 0;
+            createInfo.subresourceRange.levelCount = 1;
+            createInfo.subresourceRange.baseArrayLayer = 0;
+            createInfo.subresourceRange.layerCount = 1;
+
+            VkImageView imageView = VK_NULL_HANDLE;
+            const VkResult result = vkCreateImageView(device, &createInfo, nullptr, &imageView);
+            if (result != VK_SUCCESS) {
+                return std::unexpected{
+                    vkError("Failed to create Vulkan swapchain image view", result)};
+            }
+
+            return imageView;
+        }
+
+        void destroyImageViews(VkDevice device, std::span<const VkImageView> imageViews) {
+            for (VkImageView imageView : imageViews) {
+                vkDestroyImageView(device, imageView, nullptr);
+            }
+        }
+
+        Result<std::vector<VkImageView>> createImageViews(VkDevice device,
+                                                          std::span<const VkImage> images,
+                                                          VkFormat format) {
+            std::vector<VkImageView> imageViews;
+            imageViews.reserve(images.size());
+            for (VkImage image : images) {
+                auto imageView = createImageView(device, image, format);
+                if (!imageView) {
+                    destroyImageViews(device, imageViews);
+                    return std::unexpected{std::move(imageView.error())};
+                }
+                imageViews.push_back(*imageView);
+            }
+
+            return imageViews;
+        }
+
         Result<VkSwapchainKHR> createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device,
                                                VkSurfaceKHR surface, std::uint32_t queueFamily,
                                                const VulkanFrameLoopDesc& desc, VkFormat& format,
@@ -180,9 +229,12 @@ namespace vke {
                 return std::unexpected{std::move(capabilities.error())};
             }
 
-            if ((capabilities->supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0) {
+            constexpr VkImageUsageFlags kRequiredUsage =
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+            if ((capabilities->supportedUsageFlags & kRequiredUsage) != kRequiredUsage) {
                 return std::unexpected{vkError(
-                    "Vulkan surface does not support transfer-destination swapchain images")};
+                    "Vulkan surface does not support transfer-destination and color-attachment "
+                    "swapchain images")};
             }
 
             auto formats = querySurfaceFormats(physicalDevice, surface);
@@ -216,7 +268,8 @@ namespace vke {
             createInfo.imageColorSpace = surfaceFormat.colorSpace;
             createInfo.imageExtent = imageExtent;
             createInfo.imageArrayLayers = 1;
-            createInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+            createInfo.imageUsage =
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
             createInfo.queueFamilyIndexCount = 1;
             createInfo.pQueueFamilyIndices = &queueFamily;
@@ -345,7 +398,7 @@ namespace vke {
             return barrier;
         }
 
-        Result<void> recordClearCommandsInStartedBuffer(
+        Result<VulkanFrameRecordResult> recordClearCommandsInStartedBuffer(
             const VulkanFrameRecordContext& context) {
             const VkImageMemoryBarrier2 transferBarrier = imageBarrier(ImageBarrierDesc{
                 .image = context.image,
@@ -385,7 +438,9 @@ namespace vke {
             dependencyInfo.pImageMemoryBarriers = &presentBarrier;
             vkCmdPipelineBarrier2(context.commandBuffer, &dependencyInfo);
 
-            return {};
+            return VulkanFrameRecordResult{
+                .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            };
         }
 
     } // namespace
@@ -411,6 +466,7 @@ namespace vke {
         extent_ = std::exchange(other.extent_, VkExtent2D{});
         targetExtent_ = std::exchange(other.targetExtent_, VkExtent2D{});
         images_ = std::move(other.images_);
+        imageViews_ = std::move(other.imageViews_);
         commandPool_ = std::exchange(other.commandPool_, VK_NULL_HANDLE);
         commandBuffer_ = std::exchange(other.commandBuffer_, VK_NULL_HANDLE);
         imageAvailable_ = std::exchange(other.imageAvailable_, VK_NULL_HANDLE);
@@ -441,6 +497,7 @@ namespace vke {
         if (commandPool_ != VK_NULL_HANDLE) {
             vkDestroyCommandPool(device_, commandPool_, nullptr);
         }
+        destroyImageViews(device_, imageViews_);
         if (swapchain_ != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(device_, swapchain_, nullptr);
         }
@@ -455,6 +512,7 @@ namespace vke {
         extent_ = {};
         targetExtent_ = {};
         images_.clear();
+        imageViews_.clear();
         commandPool_ = VK_NULL_HANDLE;
         commandBuffer_ = VK_NULL_HANDLE;
         imageAvailable_ = VK_NULL_HANDLE;
@@ -494,6 +552,13 @@ namespace vke {
             return std::unexpected{std::move(images.error())};
         }
         frameLoop.images_ = std::move(*images);
+
+        auto imageViews =
+            createImageViews(frameLoop.device_, frameLoop.images_, frameLoop.format_);
+        if (!imageViews) {
+            return std::unexpected{std::move(imageViews.error())};
+        }
+        frameLoop.imageViews_ = std::move(*imageViews);
 
         auto commandPool = createCommandPool(frameLoop.device_, frameLoop.graphicsQueueFamily_);
         if (!commandPool) {
@@ -564,6 +629,7 @@ namespace vke {
         auto newSwapchain = createSwapchain(physicalDevice_, device_, surface_, graphicsQueueFamily_,
                                             desc, newFormat, newExtent, oldSwapchain);
         if (!newSwapchain) {
+            destroyImageViews(device_, imageViews_);
             if (oldSwapchain != VK_NULL_HANDLE) {
                 vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
             }
@@ -571,6 +637,7 @@ namespace vke {
             swapchain_ = VK_NULL_HANDLE;
             format_ = VK_FORMAT_UNDEFINED;
             extent_ = {};
+            imageViews_.clear();
             images_.clear();
             return std::unexpected{std::move(newSwapchain.error())};
         }
@@ -578,6 +645,7 @@ namespace vke {
         auto newImages = getSwapchainImages(device_, *newSwapchain);
         if (!newImages) {
             vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
+            destroyImageViews(device_, imageViews_);
             if (oldSwapchain != VK_NULL_HANDLE) {
                 vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
             }
@@ -585,13 +653,15 @@ namespace vke {
             swapchain_ = VK_NULL_HANDLE;
             format_ = VK_FORMAT_UNDEFINED;
             extent_ = {};
+            imageViews_.clear();
             images_.clear();
             return std::unexpected{std::move(newImages.error())};
         }
 
-        auto newRenderFinished = createSemaphores(device_, newImages->size());
-        if (!newRenderFinished) {
+        auto newImageViews = createImageViews(device_, *newImages, newFormat);
+        if (!newImageViews) {
             vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
+            destroyImageViews(device_, imageViews_);
             if (oldSwapchain != VK_NULL_HANDLE) {
                 vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
             }
@@ -599,6 +669,24 @@ namespace vke {
             swapchain_ = VK_NULL_HANDLE;
             format_ = VK_FORMAT_UNDEFINED;
             extent_ = {};
+            imageViews_.clear();
+            images_.clear();
+            return std::unexpected{std::move(newImageViews.error())};
+        }
+
+        auto newRenderFinished = createSemaphores(device_, newImages->size());
+        if (!newRenderFinished) {
+            destroyImageViews(device_, *newImageViews);
+            vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
+            destroyImageViews(device_, imageViews_);
+            if (oldSwapchain != VK_NULL_HANDLE) {
+                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
+            }
+
+            swapchain_ = VK_NULL_HANDLE;
+            format_ = VK_FORMAT_UNDEFINED;
+            extent_ = {};
+            imageViews_.clear();
             images_.clear();
             for (VkSemaphore semaphore : renderFinished_) {
                 vkDestroySemaphore(device_, semaphore, nullptr);
@@ -610,11 +698,13 @@ namespace vke {
         for (VkSemaphore semaphore : renderFinished_) {
             vkDestroySemaphore(device_, semaphore, nullptr);
         }
+        destroyImageViews(device_, imageViews_);
 
         swapchain_ = *newSwapchain;
         format_ = newFormat;
         extent_ = newExtent;
         images_ = std::move(*newImages);
+        imageViews_ = std::move(*newImageViews);
         renderFinished_ = std::move(*newRenderFinished);
 
         if (oldSwapchain != VK_NULL_HANDLE) {
@@ -624,7 +714,7 @@ namespace vke {
         return VulkanFrameStatus::Recreated;
     }
 
-    Result<void> VulkanFrameLoop::recordFrameCommands(
+    Result<VulkanFrameRecordResult> VulkanFrameLoop::recordFrameCommands(
         std::uint32_t imageIndex, const VulkanFrameRecordCallback& record) {
         if (!record) {
             return std::unexpected{vkError("Cannot record a Vulkan frame without a callback")};
@@ -647,6 +737,7 @@ namespace vke {
         auto recorded = record(VulkanFrameRecordContext{
             .commandBuffer = commandBuffer_,
             .image = images_[imageIndex],
+            .imageView = imageViews_[imageIndex],
             .imageIndex = imageIndex,
             .format = format_,
             .extent = extent_,
@@ -661,10 +752,11 @@ namespace vke {
             return std::unexpected{vkError("Failed to end Vulkan command buffer", result)};
         }
 
-        return {};
+        return *recorded;
     }
 
-    Result<void> VulkanFrameLoop::recordClearCommands(std::uint32_t imageIndex) {
+    Result<VulkanFrameRecordResult> VulkanFrameLoop::recordClearCommands(
+        std::uint32_t imageIndex) {
         return recordFrameCommands(imageIndex, recordClearCommandsInStartedBuffer);
     }
 
@@ -710,7 +802,8 @@ namespace vke {
         VkSemaphoreSubmitInfo waitInfo{};
         waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         waitInfo.semaphore = imageAvailable_;
-        waitInfo.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        waitInfo.stageMask = recorded->waitStageMask == 0 ? VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
+                                                          : recorded->waitStageMask;
 
         VkCommandBufferSubmitInfo commandInfo{};
         commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;

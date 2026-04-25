@@ -5,12 +5,13 @@
 #include <expected>
 #include <iostream>
 #include <span>
+#include <string>
 #include <string_view>
 #include <thread>
 
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
-#include "vke/renderer_basic/clear_frame.hpp"
+#include "vke/renderer_basic_vulkan/clear_frame.hpp"
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
@@ -89,7 +90,8 @@ namespace {
         return EXIT_SUCCESS;
     }
 
-    int runSmokeFrame() {
+    int runSmokeFrame(const vke::VulkanFrameRecordCallback& record, std::string_view title,
+                      VkClearColorValue clearColor) {
         auto glfw = vke::GlfwInstance::create();
         if (!glfw) {
             vke::logError(glfw.error().message);
@@ -103,14 +105,14 @@ namespace {
         }
 
         auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Frame Smoke"});
+            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = std::string{title}});
         if (!window) {
             vke::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
         const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Frame Smoke",
+            .applicationName = std::string{title},
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
@@ -130,7 +132,7 @@ namespace {
             *context, vke::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
-                          .clearColor = {{0.02F, 0.12F, 0.18F, 1.0F}},
+                          .clearColor = clearColor,
                       });
         if (!frameLoop) {
             vke::logError(frameLoop.error().message);
@@ -142,7 +144,7 @@ namespace {
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
-            auto status = frameLoop->renderFrame(vke::recordBasicClearFrame);
+            auto status = frameLoop->renderFrame(record);
             if (!status) {
                 vke::logError(status.error().message);
                 return EXIT_FAILURE;
@@ -161,6 +163,17 @@ namespace {
         std::cout << "Rendered frames: " << extent.width << 'x' << extent.height << '\n';
         window->requestClose();
         return EXIT_SUCCESS;
+    }
+
+    int runSmokeFrame() {
+        return runSmokeFrame(vke::recordBasicClearFrame, "VkEngine Frame Smoke",
+                             VkClearColorValue{{0.02F, 0.12F, 0.18F, 1.0F}});
+    }
+
+    int runSmokeDynamicRendering() {
+        return runSmokeFrame(vke::recordBasicDynamicClearFrame,
+                             "VkEngine Dynamic Rendering Smoke",
+                             VkClearColorValue{{0.18F, 0.06F, 0.14F, 1.0F}});
     }
 
     int runSmokeRenderGraph() {
@@ -260,9 +273,13 @@ int main(int argc, char** argv) {
             return runSmokeRenderGraph();
         }
 
+        if (hasArg(args, "--smoke-dynamic-rendering")) {
+            return runSmokeDynamicRendering();
+        }
+
         printVersion();
         std::cout << "Usage: vke-sample-viewer [--version] [--smoke-window] [--smoke-vulkan] "
-                     "[--smoke-frame] [--smoke-rendergraph]\n";
+                     "[--smoke-frame] [--smoke-rendergraph] [--smoke-dynamic-rendering]\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         vke::logError(exception.what());

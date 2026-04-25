@@ -55,7 +55,9 @@
 - execute 支持消费已有 `RenderGraphCompileResult`，避免需要外部读取编译结果时重复编译。
 - `--smoke-rendergraph` 会输出 resources、passes、transitions 的 Markdown 调试表格，便于对齐类似 RenderGraph Viewer 的资源视图。
 - Vulkan adapter 能把 RenderGraph transition 转换为 `VkImageMemoryBarrier2`。
-- `--smoke-frame` 已通过 `renderer-basic` 提供的 `recordBasicClearFrame` callback 使用 RenderGraph 编译结果录制 clear frame barriers。
+- `--smoke-frame` 已通过 `renderer-basic-vulkan` 提供的 `recordBasicClearFrame` callback 使用 RenderGraph 编译结果录制 clear frame barriers。
+- `--smoke-dynamic-rendering` 已通过 `renderer-basic-vulkan::recordBasicDynamicClearFrame` 使用 RenderGraph color write 和 `vkCmdBeginRendering` clear backbuffer。
+- frame callback 会返回 acquire semaphore 的 wait stage，避免 transfer clear 与 color attachment clear 共用错误同步阶段。
 - RenderGraph public API 保持后端无关；Vulkan layout/stage/access 翻译归属 `packages/rhi-vulkan`，规范见 `docs/rendergraph-rhi-boundary.md`。
 
 ## 里程碑 4：Triangle Pass
@@ -67,6 +69,7 @@
 - 使用 dynamic rendering 创建 graphics pipeline。
 - triangle pass 声明 color attachment write access。
 - graph 能把 swapchain image transition 到 rendering 和 present 所需 layout。
+- 当前已具备 dynamic rendering clear smoke；下一步接入 shader module、pipeline layout 和 triangle graphics pipeline。
 
 ## 里程碑 5：可审核基线
 

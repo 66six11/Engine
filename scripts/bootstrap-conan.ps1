@@ -3,6 +3,11 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+$generatedPreset = Join-Path $root "ConanPresets.json"
+if (Test-Path -LiteralPath $generatedPreset) {
+    Remove-Item -LiteralPath $generatedPreset -Force
+}
+
 $profiles = @(
     "windows-msvc-debug",
     "windows-msvc-release",

@@ -27,14 +27,19 @@ namespace vke {
     struct VulkanFrameRecordContext {
         VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
         VkImage image{VK_NULL_HANDLE};
+        VkImageView imageView{VK_NULL_HANDLE};
         std::uint32_t imageIndex{0};
         VkFormat format{VK_FORMAT_UNDEFINED};
         VkExtent2D extent{};
         VkClearColorValue clearColor{};
     };
 
+    struct VulkanFrameRecordResult {
+        VkPipelineStageFlags2 waitStageMask{VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+    };
+
     using VulkanFrameRecordCallback =
-        std::function<Result<void>(const VulkanFrameRecordContext&)>;
+        std::function<Result<VulkanFrameRecordResult>(const VulkanFrameRecordContext&)>;
 
     class VulkanFrameLoop {
     public:
@@ -59,8 +64,9 @@ namespace vke {
     private:
         void destroy();
         [[nodiscard]] Result<VulkanFrameStatus> recreateSwapchain();
-        [[nodiscard]] Result<void> recordClearCommands(std::uint32_t imageIndex);
-        [[nodiscard]] Result<void> recordFrameCommands(
+        [[nodiscard]] Result<VulkanFrameRecordResult> recordClearCommands(
+            std::uint32_t imageIndex);
+        [[nodiscard]] Result<VulkanFrameRecordResult> recordFrameCommands(
             std::uint32_t imageIndex, const VulkanFrameRecordCallback& record);
 
         VkDevice device_{VK_NULL_HANDLE};
@@ -74,6 +80,7 @@ namespace vke {
         VkExtent2D extent_{};
         VkExtent2D targetExtent_{};
         std::vector<VkImage> images_;
+        std::vector<VkImageView> imageViews_;
 
         VkCommandPool commandPool_{VK_NULL_HANDLE};
         VkCommandBuffer commandBuffer_{VK_NULL_HANDLE};
