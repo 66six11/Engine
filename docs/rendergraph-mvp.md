@@ -52,6 +52,8 @@
 - `vke-sample-viewer --smoke-rendergraph` 构建一个导入 backbuffer 的单 pass graph。
 - 编译结果输出 transfer-dst transition 和 present final transition，匹配当前 clear frame 使用的 `vkCmdClearColorImage` 路径。
 - execute 路径会按编译后的 pass 顺序调用 pass callback，并向 callback 暴露 transitions、color writes 与 transfer writes。
+- execute 支持消费已有 `RenderGraphCompileResult`，避免需要外部读取编译结果时重复编译。
+- `--smoke-rendergraph` 会输出 resources、passes、transitions 的 Markdown 调试表格，便于对齐类似 RenderGraph Viewer 的资源视图。
 - Vulkan adapter 能把 RenderGraph transition 转换为 `VkImageMemoryBarrier2`。
 - `--smoke-frame` 已通过 `renderer-basic` 提供的 `recordBasicClearFrame` callback 使用 RenderGraph 编译结果录制 clear frame barriers。
 - RenderGraph public API 保持后端无关；Vulkan layout/stage/access 翻译归属 `packages/rhi-vulkan`，规范见 `docs/rendergraph-rhi-boundary.md`。

@@ -191,7 +191,19 @@ namespace vke {
                 return std::unexpected{std::move(compiled.error())};
             }
 
-            for (std::size_t index = 0; index < compiled->passes.size(); ++index) {
+            return execute(*compiled);
+        }
+
+        [[nodiscard]] Result<void> execute(const RenderGraphCompileResult& compiled) const {
+            if (compiled.passes.size() != passes_.size()) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Compiled render graph pass count does not match the graph.",
+                }};
+            }
+
+            for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphPassCallback& callback = passes_[index].callback;
                 if (!callback) {
                     return std::unexpected{Error{
@@ -201,7 +213,7 @@ namespace vke {
                     }};
                 }
 
-                const RenderGraphCompiledPass& pass = compiled->passes[index];
+                const RenderGraphCompiledPass& pass = compiled.passes[index];
                 auto executed = callback(RenderGraphPassContext{
                     .name = pass.name,
                     .transitionsBefore = pass.transitionsBefore,
@@ -214,6 +226,64 @@ namespace vke {
             }
 
             return {};
+        }
+
+        [[nodiscard]] std::string formatDebugTables(
+            const RenderGraphCompileResult& compiled) const {
+            std::string output;
+            output += "### RenderGraph Resources\n\n";
+            output += "| # | Name | Format | Extent | Initial | Final |\n";
+            output += "|---:|---|---|---:|---|---|\n";
+            for (std::size_t index = 0; index < images_.size(); ++index) {
+                const RenderGraphImageDesc& image = images_[index];
+                output += "| ";
+                output += std::to_string(index);
+                output += " | ";
+                output += image.name;
+                output += " | ";
+                output += imageFormatName(image.format);
+                output += " | ";
+                output += std::to_string(image.extent.width);
+                output += "x";
+                output += std::to_string(image.extent.height);
+                output += " | ";
+                output += imageStateName(image.initialState);
+                output += " | ";
+                output += imageStateName(image.finalState);
+                output += " |\n";
+            }
+
+            output += "\n### RenderGraph Passes\n\n";
+            output += "| # | Name | Before Transitions | Color Writes | Transfer Writes |\n";
+            output += "|---:|---|---:|---|---|\n";
+            for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
+                const RenderGraphCompiledPass& pass = compiled.passes[index];
+                output += "| ";
+                output += std::to_string(index);
+                output += " | ";
+                output += pass.name;
+                output += " | ";
+                output += std::to_string(pass.transitionsBefore.size());
+                output += " | ";
+                output += imageHandleList(pass.colorWrites);
+                output += " | ";
+                output += imageHandleList(pass.transferWrites);
+                output += " |\n";
+            }
+
+            output += "\n### RenderGraph Transitions\n\n";
+            output += "| Phase | Pass | Image | Old State | New State |\n";
+            output += "|---|---|---|---|---|\n";
+            for (const RenderGraphCompiledPass& pass : compiled.passes) {
+                for (const RenderGraphImageTransition& transition : pass.transitionsBefore) {
+                    appendTransitionRow(output, "Before", pass.name, transition);
+                }
+            }
+            for (const RenderGraphImageTransition& transition : compiled.finalTransitions) {
+                appendTransitionRow(output, "Final", "-", transition);
+            }
+
+            return output;
         }
 
     private:
@@ -259,6 +329,72 @@ namespace vke {
                 .oldState = oldState,
                 .newState = newState,
             };
+        }
+
+        [[nodiscard]] static std::string_view imageFormatName(RenderGraphImageFormat format) {
+            switch (format) {
+            case RenderGraphImageFormat::B8G8R8A8Srgb:
+                return "B8G8R8A8Srgb";
+            case RenderGraphImageFormat::Undefined:
+            default:
+                return "Undefined";
+            }
+        }
+
+        [[nodiscard]] static std::string_view imageStateName(RenderGraphImageState state) {
+            switch (state) {
+            case RenderGraphImageState::ColorAttachment:
+                return "ColorAttachment";
+            case RenderGraphImageState::TransferDst:
+                return "TransferDst";
+            case RenderGraphImageState::Present:
+                return "Present";
+            case RenderGraphImageState::Undefined:
+            default:
+                return "Undefined";
+            }
+        }
+
+        [[nodiscard]] std::string imageHandleLabel(RenderGraphImageHandle image) const {
+            std::string label = "#";
+            label += std::to_string(image.index);
+            if (image.index < images_.size() && !images_[image.index].name.empty()) {
+                label += " ";
+                label += images_[image.index].name;
+            }
+            return label;
+        }
+
+        [[nodiscard]] std::string imageHandleList(
+            std::span<const RenderGraphImageHandle> images) const {
+            if (images.empty()) {
+                return "-";
+            }
+
+            std::string labels;
+            for (std::size_t index = 0; index < images.size(); ++index) {
+                if (index > 0) {
+                    labels += ", ";
+                }
+                labels += imageHandleLabel(images[index]);
+            }
+            return labels;
+        }
+
+        void appendTransitionRow(std::string& output, std::string_view phase,
+                                 std::string_view passName,
+                                 const RenderGraphImageTransition& transition) const {
+            output += "| ";
+            output += phase;
+            output += " | ";
+            output += passName;
+            output += " | ";
+            output += imageHandleLabel(transition.image);
+            output += " | ";
+            output += imageStateName(transition.oldState);
+            output += " | ";
+            output += imageStateName(transition.newState);
+            output += " |\n";
         }
 
         std::vector<RenderGraphImageDesc> images_;

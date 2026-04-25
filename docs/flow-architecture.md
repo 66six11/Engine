@@ -145,11 +145,13 @@ flowchart TD
     Track["按 image 当前 state 追踪转换"]
     PassPlan["生成 RenderGraphCompiledPass"]
     Final["生成 finalTransitions"]
-    Execute["execute()"]
+    DebugTables["formatDebugTables(compiled)"]
+    Execute["execute(compiled)"]
     Callbacks["按编译后 pass 顺序调用 callback"]
 
     Import --> AddPass --> Writes --> Callback
     Callback --> Compile --> Track --> PassPlan --> Final
+    Final --> DebugTables
     Compile --> Execute --> Callbacks
 ```
 
@@ -185,15 +187,16 @@ flowchart TD
 - `vulkanImageBarrier` 已实现。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
+- `--smoke-rendergraph` 已输出 resources、passes、transitions 的 Markdown 调试表格。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>renderer-basic 接管 clear frame orchestration"]
-    Step1["下一步:<br/>抽出 compiled graph execution<br/>避免 clear 路径重复 compile"]
-    Step2["再下一步:<br/>Triangle pass + dynamic rendering"]
-    Step3["之后:<br/>shader-slang 接入 triangle shader"]
+    Now["当前:<br/>compiled graph execution + debug tables"]
+    Step1["下一步:<br/>Triangle pass + dynamic rendering"]
+    Step2["再下一步:<br/>shader-slang 接入 triangle shader"]
+    Step3["之后:<br/>Vulkan pipeline objects"]
     Step4["之后:<br/>renderer-basic 接管更完整 frame orchestration"]
 
     Now --> Step1 --> Step2 --> Step3 --> Step4
@@ -203,5 +206,5 @@ flowchart TD
 
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 作为 RenderGraph 与 Vulkan frame callback 的组合层。
-3. 为 RenderGraph 增加 compiled graph execution 入口，避免当前 clear frame 先 `compile()` 再 `execute()` 的重复编译。
-4. 再接入 dynamic rendering triangle pass。
+3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
+4. 接入 dynamic rendering triangle pass。

@@ -199,6 +199,9 @@ namespace {
             vke::logError("Render graph did not produce a final transition.");
             return EXIT_FAILURE;
         }
+
+        std::cout << graph.formatDebugTables(*compiled) << '\n';
+
         const auto vulkanFinalTransition =
             vke::vulkanImageTransition(compiled->finalTransitions.front());
         if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||

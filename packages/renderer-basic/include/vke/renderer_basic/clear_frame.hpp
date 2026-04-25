@@ -73,7 +73,7 @@ namespace vke {
             return std::unexpected{std::move(compiled.error())};
         }
 
-        auto executed = graph.execute();
+        auto executed = graph.execute(*compiled);
         if (!executed) {
             return std::unexpected{std::move(executed.error())};
         }
