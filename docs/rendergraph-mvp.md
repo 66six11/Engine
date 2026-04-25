@@ -45,12 +45,14 @@
 - [x] 当前 swapchain image 作为 graph image import。
 - [x] 至少一个 pass 写入 swapchain image。
 - [x] compiler 能输出有序 pass list 和必要 layout transition。
-- [ ] execution 能通过 pass callback 录制命令。
+- [x] execution 能通过 pass callback 录制命令。
 
 当前基线：
 
 - `vke-sample-viewer --smoke-rendergraph` 构建一个导入 backbuffer 的单 pass graph。
 - 编译结果输出 color attachment transition 和 present final transition。
+- execute 路径会按编译后的 pass 顺序调用 pass callback，并向 callback 暴露 transitions 与 color writes。
+- RenderGraph public API 保持后端无关；Vulkan layout/stage/access 翻译归属 `packages/rhi-vulkan`，规范见 `docs/rendergraph-rhi-boundary.md`。
 
 ## 里程碑 4：Triangle Pass
 

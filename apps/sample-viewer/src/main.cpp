@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <exception>
+#include <expected>
 #include <iostream>
 #include <span>
 #include <string_view>
@@ -12,6 +13,7 @@
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "vke/rhi_vulkan/vulkan_render_graph.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
 
 namespace {
@@ -164,23 +166,57 @@ namespace {
         vke::RenderGraph graph;
         const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
             .name = "Backbuffer",
-            .format = VK_FORMAT_B8G8R8A8_SRGB,
-            .extent = VkExtent2D{.width = 1280, .height = 720},
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
+            .initialState = vke::RenderGraphImageState::Undefined,
+            .finalState = vke::RenderGraphImageState::Present,
         });
 
-        graph.addPass("ClearColor").writeColor(backbuffer);
+        int callbackCount = 0;
+        graph.addPass("ClearColor")
+            .writeColor(backbuffer)
+            .execute([&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                if (context.name != "ClearColor" || context.transitionsBefore.size() != 1 ||
+                    context.colorWrites.size() != 1) {
+                    return std::unexpected{vke::Error{
+                        vke::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph execute callback received unexpected pass context.",
+                    }};
+                }
+
+                ++callbackCount;
+                return {};
+            });
 
         auto compiled = graph.compile();
         if (!compiled) {
             vke::logError(compiled.error().message);
             return EXIT_FAILURE;
         }
+        if (compiled->finalTransitions.empty()) {
+            vke::logError("Render graph did not produce a final transition.");
+            return EXIT_FAILURE;
+        }
+        const auto vulkanFinalTransition =
+            vke::vulkanImageTransition(compiled->finalTransitions.front());
+        if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+            vulkanFinalTransition.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+            vke::logError("Render graph Vulkan transition mapping produced unexpected layouts.");
+            return EXIT_FAILURE;
+        }
+
+        auto executed = graph.execute();
+        if (!executed) {
+            vke::logError(executed.error().message);
+            return EXIT_FAILURE;
+        }
 
         std::cout << "Render graph passes: " << compiled->passes.size()
-                  << ", final transitions: " << compiled->finalTransitions.size() << '\n';
-        return compiled->passes.size() == 1 && compiled->finalTransitions.size() == 1
+                  << ", final transitions: " << compiled->finalTransitions.size()
+                  << ", callbacks: " << callbackCount << '\n';
+        return compiled->passes.size() == 1 && compiled->finalTransitions.size() == 1 &&
+                       callbackCount == 1
                    ? EXIT_SUCCESS
                    : EXIT_FAILURE;
     }

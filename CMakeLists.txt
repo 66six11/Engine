@@ -23,8 +23,8 @@ add_subdirectory(engine/core)
 add_subdirectory(engine/platform)
 
 add_subdirectory(packages/window-glfw)
-add_subdirectory(packages/rhi-vulkan)
 add_subdirectory(packages/rendergraph)
+add_subdirectory(packages/rhi-vulkan)
 add_subdirectory(packages/shader-slang)
 add_subdirectory(packages/renderer-basic)
 

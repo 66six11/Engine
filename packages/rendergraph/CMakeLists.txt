@@ -9,7 +9,6 @@ target_include_directories(vke-rendergraph
 target_link_libraries(vke-rendergraph
     INTERFACE
         vke::core
-        vke::rhi_vulkan
 )
 
 vke_configure_target(vke-rendergraph)

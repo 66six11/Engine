@@ -6,6 +6,8 @@
   "dependencies": [
     "com.vke.core",
     "com.vke.window-glfw",
+    "com.vke.rendergraph",
+    "com.vke.rhi-vulkan",
     "com.vke.renderer-basic"
   ],
   "targets": ["vke-sample-viewer"]

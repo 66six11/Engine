@@ -1,9 +1,9 @@
 ﻿#pragma once
 
-#include <vulkan/vulkan.h>
-
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -21,24 +21,36 @@ namespace vke {
                                              RenderGraphImageHandle) = default;
     };
 
+    struct RenderGraphExtent2D {
+        std::uint32_t width{};
+        std::uint32_t height{};
+    };
+
+    enum class RenderGraphImageFormat {
+        Undefined,
+        B8G8R8A8Srgb,
+    };
+
+    enum class RenderGraphImageState {
+        Undefined,
+        ColorAttachment,
+        TransferDst,
+        Present,
+    };
+
     struct RenderGraphImageDesc {
         std::string name;
-        VkImage image{VK_NULL_HANDLE};
-        VkFormat format{VK_FORMAT_UNDEFINED};
-        VkExtent2D extent{};
-        VkImageLayout initialLayout{VK_IMAGE_LAYOUT_UNDEFINED};
-        VkImageLayout finalLayout{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+        RenderGraphImageFormat format{RenderGraphImageFormat::Undefined};
+        RenderGraphExtent2D extent{};
+        RenderGraphImageState initialState{RenderGraphImageState::Undefined};
+        RenderGraphImageState finalState{RenderGraphImageState::Present};
     };
 
     struct RenderGraphImageTransition {
         RenderGraphImageHandle image{};
         std::string imageName;
-        VkImageLayout oldLayout{VK_IMAGE_LAYOUT_UNDEFINED};
-        VkImageLayout newLayout{VK_IMAGE_LAYOUT_UNDEFINED};
-        VkPipelineStageFlags2 srcStageMask{VK_PIPELINE_STAGE_2_NONE};
-        VkAccessFlags2 srcAccessMask{};
-        VkPipelineStageFlags2 dstStageMask{VK_PIPELINE_STAGE_2_NONE};
-        VkAccessFlags2 dstAccessMask{};
+        RenderGraphImageState oldState{RenderGraphImageState::Undefined};
+        RenderGraphImageState newState{RenderGraphImageState::Undefined};
     };
 
     struct RenderGraphCompiledPass {
@@ -52,16 +64,20 @@ namespace vke {
         std::vector<RenderGraphImageTransition> finalTransitions;
     };
 
+    struct RenderGraphPassContext {
+        std::string_view name;
+        std::span<const RenderGraphImageTransition> transitionsBefore;
+        std::span<const RenderGraphImageHandle> colorWrites;
+    };
+
+    using RenderGraphPassCallback = std::function<Result<void>(RenderGraphPassContext)>;
+
     class RenderGraph {
     private:
         struct Pass {
             std::string name;
             std::vector<RenderGraphImageHandle> colorWrites;
-        };
-
-        struct RenderGraphImageUsage {
-            VkPipelineStageFlags2 stageMask{VK_PIPELINE_STAGE_2_NONE};
-            VkAccessFlags2 accessMask{};
+            RenderGraphPassCallback callback;
         };
 
     public:
@@ -74,6 +90,11 @@ namespace vke {
 
             [[nodiscard]] std::string_view name() const {
                 return graph_->passes_[passIndex_].name;
+            }
+
+            PassBuilder& execute(RenderGraphPassCallback callback) {
+                graph_->passes_[passIndex_].callback = std::move(callback);
+                return *this;
             }
 
         private:
@@ -103,10 +124,10 @@ namespace vke {
         }
 
         [[nodiscard]] Result<RenderGraphCompileResult> compile() const {
-            std::vector<VkImageLayout> currentLayouts;
-            currentLayouts.reserve(images_.size());
+            std::vector<RenderGraphImageState> currentStates;
+            currentStates.reserve(images_.size());
             for (const RenderGraphImageDesc& image : images_) {
-                currentLayouts.push_back(image.initialLayout);
+                currentStates.push_back(image.initialState);
             }
 
             RenderGraphCompileResult result;
@@ -125,18 +146,12 @@ namespace vke {
                     }
 
                     const RenderGraphImageDesc& image = images_[imageHandle.index];
-                    const VkImageLayout requiredLayout =
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-                    if (currentLayouts[imageHandle.index] != requiredLayout) {
+                    constexpr RenderGraphImageState requiredState =
+                        RenderGraphImageState::ColorAttachment;
+                    if (currentStates[imageHandle.index] != requiredState) {
                         compiledPass.transitionsBefore.push_back(makeTransition(
-                            imageHandle, image, currentLayouts[imageHandle.index], requiredLayout,
-                            usageForLayout(currentLayouts[imageHandle.index]),
-                            RenderGraphImageUsage{
-                                .stageMask =
-                                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                .accessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                            }));
-                        currentLayouts[imageHandle.index] = requiredLayout;
+                            imageHandle, image, currentStates[imageHandle.index], requiredState));
+                        currentStates[imageHandle.index] = requiredState;
                     }
                 }
 
@@ -145,7 +160,7 @@ namespace vke {
 
             for (std::size_t index = 0; index < images_.size(); ++index) {
                 const RenderGraphImageDesc& image = images_[index];
-                if (currentLayouts[index] == image.finalLayout) {
+                if (currentStates[index] == image.finalState) {
                     continue;
                 }
 
@@ -153,11 +168,40 @@ namespace vke {
                     .index = static_cast<std::uint32_t>(index),
                 };
                 result.finalTransitions.push_back(makeTransition(
-                    imageHandle, image, currentLayouts[index], image.finalLayout,
-                    usageForLayout(currentLayouts[index]), usageForLayout(image.finalLayout)));
+                    imageHandle, image, currentStates[index], image.finalState));
             }
 
             return result;
+        }
+
+        [[nodiscard]] Result<void> execute() const {
+            auto compiled = compile();
+            if (!compiled) {
+                return std::unexpected{std::move(compiled.error())};
+            }
+
+            for (std::size_t index = 0; index < compiled->passes.size(); ++index) {
+                const RenderGraphPassCallback& callback = passes_[index].callback;
+                if (!callback) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass is missing an execute callback.",
+                    }};
+                }
+
+                const RenderGraphCompiledPass& pass = compiled->passes[index];
+                auto executed = callback(RenderGraphPassContext{
+                    .name = pass.name,
+                    .transitionsBefore = pass.transitionsBefore,
+                    .colorWrites = pass.colorWrites,
+                });
+                if (!executed) {
+                    return std::unexpected{std::move(executed.error())};
+                }
+            }
+
+            return {};
         }
 
     private:
@@ -173,38 +217,14 @@ namespace vke {
             return {};
         }
 
-        [[nodiscard]] static RenderGraphImageUsage usageForLayout(VkImageLayout layout) {
-            switch (layout) {
-            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                return RenderGraphImageUsage{
-                    .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    .accessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                };
-            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-                return RenderGraphImageUsage{
-                    .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                    .accessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                };
-            case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-            case VK_IMAGE_LAYOUT_UNDEFINED:
-            default:
-                return {};
-            }
-        }
-
         [[nodiscard]] static RenderGraphImageTransition makeTransition(
             RenderGraphImageHandle imageHandle, const RenderGraphImageDesc& image,
-            VkImageLayout oldLayout, VkImageLayout newLayout, RenderGraphImageUsage srcUsage,
-            RenderGraphImageUsage dstUsage) {
+            RenderGraphImageState oldState, RenderGraphImageState newState) {
             return RenderGraphImageTransition{
                 .image = imageHandle,
                 .imageName = image.name,
-                .oldLayout = oldLayout,
-                .newLayout = newLayout,
-                .srcStageMask = srcUsage.stageMask,
-                .srcAccessMask = srcUsage.accessMask,
-                .dstStageMask = dstUsage.stageMask,
-                .dstAccessMask = dstUsage.accessMask,
+                .oldState = oldState,
+                .newState = newState,
             };
         }
 

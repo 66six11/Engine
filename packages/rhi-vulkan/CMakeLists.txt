@@ -9,6 +9,9 @@ add_library(vke-rhi-vulkan STATIC
 
 add_library(vke::rhi_vulkan ALIAS vke-rhi-vulkan)
 
+add_library(vke-rhi-vulkan-rendergraph INTERFACE)
+add_library(vke::rhi_vulkan_rendergraph ALIAS vke-rhi-vulkan-rendergraph)
+
 target_include_directories(vke-rhi-vulkan
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -23,4 +26,11 @@ target_link_libraries(vke-rhi-vulkan
         GPUOpen::VulkanMemoryAllocator
 )
 
+target_link_libraries(vke-rhi-vulkan-rendergraph
+    INTERFACE
+        vke::rhi_vulkan
+        vke::rendergraph
+)
+
 vke_configure_target(vke-rhi-vulkan)
+vke_configure_target(vke-rhi-vulkan-rendergraph)

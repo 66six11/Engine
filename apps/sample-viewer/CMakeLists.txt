@@ -9,6 +9,7 @@ target_link_libraries(vke-sample-viewer
         vke::core
         vke::rendergraph
         vke::rhi_vulkan
+        vke::rhi_vulkan_rendergraph
         vke::window_glfw
         vke::renderer_basic
 )

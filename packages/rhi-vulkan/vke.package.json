@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "displayName": "VkEngine Vulkan RHI",
   "description": "Vulkan device, queues, swapchain, memory allocation, and synchronization.",
-  "dependencies": ["com.vke.core"],
-  "targets": ["vke-rhi-vulkan"]
+  "dependencies": ["com.vke.core", "com.vke.rendergraph"],
+  "targets": ["vke-rhi-vulkan", "vke-rhi-vulkan-rendergraph"]
 }

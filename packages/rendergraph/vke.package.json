@@ -2,7 +2,7 @@
   "name": "com.vke.rendergraph",
   "version": "0.1.0",
   "displayName": "VkEngine Render Graph",
-  "description": "Declarative frame graph, resource lifetime, and barrier planning.",
-  "dependencies": ["com.vke.core", "com.vke.rhi-vulkan"],
+  "description": "Backend-agnostic frame graph, resource lifetime, and barrier planning.",
+  "dependencies": ["com.vke.core"],
   "targets": ["vke-rendergraph"]
 }
