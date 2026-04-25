@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -171,7 +173,8 @@ namespace vke {
         Result<VkSwapchainKHR> createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device,
                                                VkSurfaceKHR surface, std::uint32_t queueFamily,
                                                const VulkanFrameLoopDesc& desc, VkFormat& format,
-                                               VkExtent2D& extent) {
+                                               VkExtent2D& extent,
+                                               VkSwapchainKHR oldSwapchain = VK_NULL_HANDLE) {
             auto capabilities = querySurfaceCapabilities(physicalDevice, surface);
             if (!capabilities) {
                 return std::unexpected{std::move(capabilities.error())};
@@ -221,6 +224,7 @@ namespace vke {
             createInfo.compositeAlpha = chooseCompositeAlpha(capabilities->supportedCompositeAlpha);
             createInfo.presentMode = presentMode;
             createInfo.clipped = VK_TRUE;
+            createInfo.oldSwapchain = oldSwapchain;
 
             VkSwapchainKHR swapchain = VK_NULL_HANDLE;
             const VkResult result = vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain);
@@ -275,6 +279,26 @@ namespace vke {
             }
 
             return semaphore;
+        }
+
+        Result<std::vector<VkSemaphore>> createSemaphores(VkDevice device, std::size_t count) {
+            std::vector<VkSemaphore> semaphores;
+            semaphores.reserve(count);
+
+            for (std::size_t index = 0; index < count; ++index) {
+                auto semaphore = createSemaphore(device);
+                if (!semaphore) {
+                    for (VkSemaphore created : semaphores) {
+                        vkDestroySemaphore(device, created, nullptr);
+                    }
+
+                    return std::unexpected{std::move(semaphore.error())};
+                }
+
+                semaphores.push_back(*semaphore);
+            }
+
+            return semaphores;
         }
 
         Result<VkFence> createFence(VkDevice device) {
@@ -335,11 +359,12 @@ namespace vke {
         swapchain_ = std::exchange(other.swapchain_, VK_NULL_HANDLE);
         format_ = std::exchange(other.format_, VK_FORMAT_UNDEFINED);
         extent_ = std::exchange(other.extent_, VkExtent2D{});
+        targetExtent_ = std::exchange(other.targetExtent_, VkExtent2D{});
         images_ = std::move(other.images_);
         commandPool_ = std::exchange(other.commandPool_, VK_NULL_HANDLE);
         commandBuffer_ = std::exchange(other.commandBuffer_, VK_NULL_HANDLE);
         imageAvailable_ = std::exchange(other.imageAvailable_, VK_NULL_HANDLE);
-        renderFinished_ = std::exchange(other.renderFinished_, VK_NULL_HANDLE);
+        renderFinished_ = std::exchange(other.renderFinished_, {});
         inFlight_ = std::exchange(other.inFlight_, VK_NULL_HANDLE);
         clearColor_ = other.clearColor_;
         return *this;
@@ -357,8 +382,8 @@ namespace vke {
         if (inFlight_ != VK_NULL_HANDLE) {
             vkDestroyFence(device_, inFlight_, nullptr);
         }
-        if (renderFinished_ != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device_, renderFinished_, nullptr);
+        for (VkSemaphore semaphore : renderFinished_) {
+            vkDestroySemaphore(device_, semaphore, nullptr);
         }
         if (imageAvailable_ != VK_NULL_HANDLE) {
             vkDestroySemaphore(device_, imageAvailable_, nullptr);
@@ -378,11 +403,12 @@ namespace vke {
         swapchain_ = VK_NULL_HANDLE;
         format_ = VK_FORMAT_UNDEFINED;
         extent_ = {};
+        targetExtent_ = {};
         images_.clear();
         commandPool_ = VK_NULL_HANDLE;
         commandBuffer_ = VK_NULL_HANDLE;
         imageAvailable_ = VK_NULL_HANDLE;
-        renderFinished_ = VK_NULL_HANDLE;
+        renderFinished_.clear();
         inFlight_ = VK_NULL_HANDLE;
     }
 
@@ -400,6 +426,10 @@ namespace vke {
         frameLoop.graphicsQueue_ = context.graphicsQueue();
         frameLoop.graphicsQueueFamily_ = context.graphicsQueueFamily();
         frameLoop.clearColor_ = desc.clearColor;
+        frameLoop.targetExtent_ = VkExtent2D{
+            .width = desc.width,
+            .height = desc.height,
+        };
 
         auto swapchain = createSwapchain(frameLoop.physicalDevice_, frameLoop.device_,
                                          frameLoop.surface_, frameLoop.graphicsQueueFamily_, desc,
@@ -433,11 +463,11 @@ namespace vke {
         }
         frameLoop.imageAvailable_ = *imageAvailable;
 
-        auto renderFinished = createSemaphore(frameLoop.device_);
+        auto renderFinished = createSemaphores(frameLoop.device_, frameLoop.images_.size());
         if (!renderFinished) {
             return std::unexpected{std::move(renderFinished.error())};
         }
-        frameLoop.renderFinished_ = *renderFinished;
+        frameLoop.renderFinished_ = std::move(*renderFinished);
 
         auto fence = createFence(frameLoop.device_);
         if (!fence) {
@@ -446,6 +476,102 @@ namespace vke {
         frameLoop.inFlight_ = *fence;
 
         return frameLoop;
+    }
+
+    void VulkanFrameLoop::setTargetExtent(std::uint32_t width, std::uint32_t height) {
+        targetExtent_ = VkExtent2D{
+            .width = width,
+            .height = height,
+        };
+    }
+
+    Result<VulkanFrameStatus> VulkanFrameLoop::recreateSwapchain() {
+        if (targetExtent_.width == 0 || targetExtent_.height == 0) {
+            return VulkanFrameStatus::OutOfDate;
+        }
+
+        VkResult result = vkWaitForFences(device_, 1, &inFlight_, VK_TRUE, UINT64_MAX);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vkError("Failed to wait for Vulkan frame fence before swapchain recreation", result)};
+        }
+
+        result = vkQueueWaitIdle(graphicsQueue_);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vkError("Failed to wait for Vulkan queue before swapchain recreation", result)};
+        }
+
+        const VkSwapchainKHR oldSwapchain = swapchain_;
+        VulkanFrameLoopDesc desc{
+            .width = targetExtent_.width,
+            .height = targetExtent_.height,
+            .clearColor = clearColor_,
+        };
+
+        VkFormat newFormat = VK_FORMAT_UNDEFINED;
+        VkExtent2D newExtent{};
+        auto newSwapchain = createSwapchain(physicalDevice_, device_, surface_, graphicsQueueFamily_,
+                                            desc, newFormat, newExtent, oldSwapchain);
+        if (!newSwapchain) {
+            if (oldSwapchain != VK_NULL_HANDLE) {
+                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
+            }
+
+            swapchain_ = VK_NULL_HANDLE;
+            format_ = VK_FORMAT_UNDEFINED;
+            extent_ = {};
+            images_.clear();
+            return std::unexpected{std::move(newSwapchain.error())};
+        }
+
+        auto newImages = getSwapchainImages(device_, *newSwapchain);
+        if (!newImages) {
+            vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
+            if (oldSwapchain != VK_NULL_HANDLE) {
+                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
+            }
+
+            swapchain_ = VK_NULL_HANDLE;
+            format_ = VK_FORMAT_UNDEFINED;
+            extent_ = {};
+            images_.clear();
+            return std::unexpected{std::move(newImages.error())};
+        }
+
+        auto newRenderFinished = createSemaphores(device_, newImages->size());
+        if (!newRenderFinished) {
+            vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
+            if (oldSwapchain != VK_NULL_HANDLE) {
+                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
+            }
+
+            swapchain_ = VK_NULL_HANDLE;
+            format_ = VK_FORMAT_UNDEFINED;
+            extent_ = {};
+            images_.clear();
+            for (VkSemaphore semaphore : renderFinished_) {
+                vkDestroySemaphore(device_, semaphore, nullptr);
+            }
+            renderFinished_.clear();
+            return std::unexpected{std::move(newRenderFinished.error())};
+        }
+
+        for (VkSemaphore semaphore : renderFinished_) {
+            vkDestroySemaphore(device_, semaphore, nullptr);
+        }
+
+        swapchain_ = *newSwapchain;
+        format_ = newFormat;
+        extent_ = newExtent;
+        images_ = std::move(*newImages);
+        renderFinished_ = std::move(*newRenderFinished);
+
+        if (oldSwapchain != VK_NULL_HANDLE) {
+            vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
+        }
+
+        return VulkanFrameStatus::Recreated;
     }
 
     Result<void> VulkanFrameLoop::recordClearCommands(std::uint32_t imageIndex) {
@@ -500,6 +626,10 @@ namespace vke {
     }
 
     Result<VulkanFrameStatus> VulkanFrameLoop::renderFrame() {
+        if (swapchain_ == VK_NULL_HANDLE) {
+            return recreateSwapchain();
+        }
+
         VkResult result = vkWaitForFences(device_, 1, &inFlight_, VK_TRUE, UINT64_MAX);
         if (result != VK_SUCCESS) {
             return std::unexpected{vkError("Failed to wait for Vulkan frame fence", result)};
@@ -509,12 +639,15 @@ namespace vke {
         result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailable_,
                                        VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            return VulkanFrameStatus::OutOfDate;
+            return recreateSwapchain();
         }
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             return std::unexpected{vkError("Failed to acquire Vulkan swapchain image", result)};
         }
         const bool acquiredSuboptimal = result == VK_SUBOPTIMAL_KHR;
+        if (imageIndex >= renderFinished_.size()) {
+            return std::unexpected{vkError("Acquired Vulkan swapchain image index is out of range")};
+        }
 
         result = vkResetFences(device_, 1, &inFlight_);
         if (result != VK_SUCCESS) {
@@ -537,7 +670,7 @@ namespace vke {
 
         VkSemaphoreSubmitInfo signalInfo{};
         signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfo.semaphore = renderFinished_;
+        signalInfo.semaphore = renderFinished_[imageIndex];
         signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
         VkSubmitInfo2 submitInfo{};
@@ -557,19 +690,24 @@ namespace vke {
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &renderFinished_;
+        presentInfo.pWaitSemaphores = &renderFinished_[imageIndex];
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &swapchain_;
         presentInfo.pImageIndices = &imageIndex;
 
         result = vkQueuePresentKHR(graphicsQueue_, &presentInfo);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            return VulkanFrameStatus::OutOfDate;
+            return recreateSwapchain();
         }
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             return std::unexpected{vkError("Failed to present Vulkan swapchain image", result)};
         }
         if (acquiredSuboptimal || result == VK_SUBOPTIMAL_KHR) {
+            auto recreated = recreateSwapchain();
+            if (!recreated) {
+                return std::unexpected{std::move(recreated.error())};
+            }
+
             return VulkanFrameStatus::Suboptimal;
         }
 

@@ -1,9 +1,11 @@
 ﻿#include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <span>
 #include <string_view>
+#include <thread>
 
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
@@ -131,16 +133,30 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto status = frameLoop->renderFrame();
-        if (!status) {
-            vke::logError(status.error().message);
-            return EXIT_FAILURE;
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame();
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during frame smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
         }
 
         const VkExtent2D extent = frameLoop->extent();
-        std::cout << "Rendered frame: " << extent.width << 'x' << extent.height << '\n';
+        std::cout << "Rendered frames: " << extent.width << 'x' << extent.height << '\n';
         window->requestClose();
-        return *status == vke::VulkanFrameStatus::OutOfDate ? EXIT_FAILURE : EXIT_SUCCESS;
+        return EXIT_SUCCESS;
     }
 
 } // namespace

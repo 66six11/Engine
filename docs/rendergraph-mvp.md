@@ -29,13 +29,13 @@
 
 - [x] swapchain image 可以 acquire 和 present。
 - [x] frame fence 与 semaphore 能避免 CPU/GPU hazard。
-- [ ] resize/out-of-date 路径不会崩溃。
+- [x] resize/out-of-date 路径不会崩溃。
 - [x] command buffer 能录制并提交到 graphics queue。
 
 当前基线：
 
 - `vke-sample-viewer --smoke-frame` 创建 swapchain，清理当前 backbuffer，并 present 一帧。
-- out-of-date/suboptimal 已作为 `VulkanFrameStatus` 返回；下一步需要接入 swapchain recreate。
+- out-of-date/suboptimal 已接入 swapchain recreate；窗口最小化等零尺寸情况会返回 `OutOfDate`，等待调用方在恢复尺寸后继续渲染。
 
 ## 里程碑 3：第一个 Render Graph
 

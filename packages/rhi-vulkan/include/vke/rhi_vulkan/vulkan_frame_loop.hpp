@@ -20,6 +20,7 @@ namespace vke {
         Presented,
         Suboptimal,
         OutOfDate,
+        Recreated,
     };
 
     class VulkanFrameLoop {
@@ -34,6 +35,7 @@ namespace vke {
         [[nodiscard]] static Result<VulkanFrameLoop> create(const VulkanContext& context,
                                                             const VulkanFrameLoopDesc& desc);
 
+        void setTargetExtent(std::uint32_t width, std::uint32_t height);
         [[nodiscard]] Result<VulkanFrameStatus> renderFrame();
 
         [[nodiscard]] VkFormat format() const;
@@ -41,6 +43,7 @@ namespace vke {
 
     private:
         void destroy();
+        [[nodiscard]] Result<VulkanFrameStatus> recreateSwapchain();
         [[nodiscard]] Result<void> recordClearCommands(std::uint32_t imageIndex);
 
         VkDevice device_{VK_NULL_HANDLE};
@@ -52,12 +55,13 @@ namespace vke {
         VkSwapchainKHR swapchain_{VK_NULL_HANDLE};
         VkFormat format_{VK_FORMAT_UNDEFINED};
         VkExtent2D extent_{};
+        VkExtent2D targetExtent_{};
         std::vector<VkImage> images_;
 
         VkCommandPool commandPool_{VK_NULL_HANDLE};
         VkCommandBuffer commandBuffer_{VK_NULL_HANDLE};
         VkSemaphore imageAvailable_{VK_NULL_HANDLE};
-        VkSemaphore renderFinished_{VK_NULL_HANDLE};
+        std::vector<VkSemaphore> renderFinished_;
         VkFence inFlight_{VK_NULL_HANDLE};
         VkClearColorValue clearColor_{{0.02F, 0.04F, 0.08F, 1.0F}};
     };
