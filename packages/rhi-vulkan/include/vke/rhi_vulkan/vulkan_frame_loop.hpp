@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "vke/core/result.hpp"
@@ -23,6 +24,18 @@ namespace vke {
         Recreated,
     };
 
+    struct VulkanFrameRecordContext {
+        VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
+        VkImage image{VK_NULL_HANDLE};
+        std::uint32_t imageIndex{0};
+        VkFormat format{VK_FORMAT_UNDEFINED};
+        VkExtent2D extent{};
+        VkClearColorValue clearColor{};
+    };
+
+    using VulkanFrameRecordCallback =
+        std::function<Result<void>(const VulkanFrameRecordContext&)>;
+
     class VulkanFrameLoop {
     public:
         VulkanFrameLoop() = default;
@@ -37,6 +50,8 @@ namespace vke {
 
         void setTargetExtent(std::uint32_t width, std::uint32_t height);
         [[nodiscard]] Result<VulkanFrameStatus> renderFrame();
+        [[nodiscard]] Result<VulkanFrameStatus> renderFrame(
+            const VulkanFrameRecordCallback& record);
 
         [[nodiscard]] VkFormat format() const;
         [[nodiscard]] VkExtent2D extent() const;
@@ -45,6 +60,8 @@ namespace vke {
         void destroy();
         [[nodiscard]] Result<VulkanFrameStatus> recreateSwapchain();
         [[nodiscard]] Result<void> recordClearCommands(std::uint32_t imageIndex);
+        [[nodiscard]] Result<void> recordFrameCommands(
+            std::uint32_t imageIndex, const VulkanFrameRecordCallback& record);
 
         VkDevice device_{VK_NULL_HANDLE};
         VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};

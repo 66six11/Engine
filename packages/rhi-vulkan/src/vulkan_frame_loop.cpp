@@ -338,6 +338,39 @@ namespace vke {
             return barrier;
         }
 
+        Result<void> recordClearCommandsInStartedBuffer(
+            const VulkanFrameRecordContext& context) {
+            const VkImageMemoryBarrier2 transferBarrier = imageBarrier(
+                context.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                VK_ACCESS_2_TRANSFER_WRITE_BIT);
+
+            VkDependencyInfo dependencyInfo{};
+            dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependencyInfo.imageMemoryBarrierCount = 1;
+            dependencyInfo.pImageMemoryBarriers = &transferBarrier;
+            vkCmdPipelineBarrier2(context.commandBuffer, &dependencyInfo);
+
+            VkImageSubresourceRange clearRange{};
+            clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            clearRange.baseMipLevel = 0;
+            clearRange.levelCount = 1;
+            clearRange.baseArrayLayer = 0;
+            clearRange.layerCount = 1;
+            vkCmdClearColorImage(context.commandBuffer, context.image,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &context.clearColor, 1,
+                                 &clearRange);
+
+            const VkImageMemoryBarrier2 presentBarrier = imageBarrier(
+                context.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_NONE, 0);
+            dependencyInfo.pImageMemoryBarriers = &presentBarrier;
+            vkCmdPipelineBarrier2(context.commandBuffer, &dependencyInfo);
+
+            return {};
+        }
+
     } // namespace
 
     VulkanFrameLoop::VulkanFrameLoop(VulkanFrameLoop&& other) noexcept {
@@ -574,7 +607,12 @@ namespace vke {
         return VulkanFrameStatus::Recreated;
     }
 
-    Result<void> VulkanFrameLoop::recordClearCommands(std::uint32_t imageIndex) {
+    Result<void> VulkanFrameLoop::recordFrameCommands(
+        std::uint32_t imageIndex, const VulkanFrameRecordCallback& record) {
+        if (!record) {
+            return std::unexpected{vkError("Cannot record a Vulkan frame without a callback")};
+        }
+
         const VkResult resetResult = vkResetCommandBuffer(commandBuffer_, 0);
         if (resetResult != VK_SUCCESS) {
             return std::unexpected{vkError("Failed to reset Vulkan command buffer", resetResult)};
@@ -589,33 +627,17 @@ namespace vke {
             return std::unexpected{vkError("Failed to begin Vulkan command buffer", result)};
         }
 
-        const VkImage image = images_[imageIndex];
-        const VkImageMemoryBarrier2 transferBarrier =
-            imageBarrier(image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                         VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                         VK_ACCESS_2_TRANSFER_WRITE_BIT);
-
-        VkDependencyInfo dependencyInfo{};
-        dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependencyInfo.imageMemoryBarrierCount = 1;
-        dependencyInfo.pImageMemoryBarriers = &transferBarrier;
-        vkCmdPipelineBarrier2(commandBuffer_, &dependencyInfo);
-
-        VkImageSubresourceRange clearRange{};
-        clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        clearRange.baseMipLevel = 0;
-        clearRange.levelCount = 1;
-        clearRange.baseArrayLayer = 0;
-        clearRange.layerCount = 1;
-        vkCmdClearColorImage(commandBuffer_, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                             &clearColor_, 1, &clearRange);
-
-        const VkImageMemoryBarrier2 presentBarrier =
-            imageBarrier(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                         VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_NONE, 0);
-        dependencyInfo.pImageMemoryBarriers = &presentBarrier;
-        vkCmdPipelineBarrier2(commandBuffer_, &dependencyInfo);
+        auto recorded = record(VulkanFrameRecordContext{
+            .commandBuffer = commandBuffer_,
+            .image = images_[imageIndex],
+            .imageIndex = imageIndex,
+            .format = format_,
+            .extent = extent_,
+            .clearColor = clearColor_,
+        });
+        if (!recorded) {
+            return std::unexpected{std::move(recorded.error())};
+        }
 
         result = vkEndCommandBuffer(commandBuffer_);
         if (result != VK_SUCCESS) {
@@ -625,7 +647,16 @@ namespace vke {
         return {};
     }
 
+    Result<void> VulkanFrameLoop::recordClearCommands(std::uint32_t imageIndex) {
+        return recordFrameCommands(imageIndex, recordClearCommandsInStartedBuffer);
+    }
+
     Result<VulkanFrameStatus> VulkanFrameLoop::renderFrame() {
+        return renderFrame(recordClearCommandsInStartedBuffer);
+    }
+
+    Result<VulkanFrameStatus> VulkanFrameLoop::renderFrame(
+        const VulkanFrameRecordCallback& record) {
         if (swapchain_ == VK_NULL_HANDLE) {
             return recreateSwapchain();
         }
@@ -649,14 +680,14 @@ namespace vke {
             return std::unexpected{vkError("Acquired Vulkan swapchain image index is out of range")};
         }
 
+        auto recorded = recordFrameCommands(imageIndex, record);
+        if (!recorded) {
+            return std::unexpected{std::move(recorded.error())};
+        }
+
         result = vkResetFences(device_, 1, &inFlight_);
         if (result != VK_SUCCESS) {
             return std::unexpected{vkError("Failed to reset Vulkan frame fence", result)};
-        }
-
-        auto recorded = recordClearCommands(imageIndex);
-        if (!recorded) {
-            return std::unexpected{std::move(recorded.error())};
         }
 
         VkSemaphoreSubmitInfo waitInfo{};

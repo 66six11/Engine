@@ -88,6 +88,76 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    vke::RenderGraphImageFormat renderGraphFormat(VkFormat format) {
+        switch (format) {
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return vke::RenderGraphImageFormat::B8G8R8A8Srgb;
+        default:
+            return vke::RenderGraphImageFormat::Undefined;
+        }
+    }
+
+    vke::Result<void> recordRenderGraphClear(const vke::VulkanFrameRecordContext& frame) {
+        vke::RenderGraph graph;
+        const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
+            .name = "Backbuffer",
+            .format = renderGraphFormat(frame.format),
+            .extent = vke::RenderGraphExtent2D{
+                .width = frame.extent.width,
+                .height = frame.extent.height,
+            },
+            .initialState = vke::RenderGraphImageState::Undefined,
+            .finalState = vke::RenderGraphImageState::Present,
+        });
+
+        graph.addPass("ClearColor")
+            .writeTransfer(backbuffer)
+            .execute([&frame](vke::RenderGraphPassContext pass) -> vke::Result<void> {
+                for (const vke::RenderGraphImageTransition& transition :
+                     pass.transitionsBefore) {
+                    const VkImageMemoryBarrier2 barrier =
+                        vke::vulkanImageBarrier(transition, frame.image);
+                    VkDependencyInfo dependencyInfo{};
+                    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                    dependencyInfo.imageMemoryBarrierCount = 1;
+                    dependencyInfo.pImageMemoryBarriers = &barrier;
+                    vkCmdPipelineBarrier2(frame.commandBuffer, &dependencyInfo);
+                }
+
+                VkImageSubresourceRange clearRange{};
+                clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                clearRange.baseMipLevel = 0;
+                clearRange.levelCount = 1;
+                clearRange.baseArrayLayer = 0;
+                clearRange.layerCount = 1;
+                vkCmdClearColorImage(frame.commandBuffer, frame.image,
+                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &frame.clearColor, 1,
+                                     &clearRange);
+                return {};
+            });
+
+        auto compiled = graph.compile();
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto executed = graph.execute();
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        for (const vke::RenderGraphImageTransition& transition : compiled->finalTransitions) {
+            const VkImageMemoryBarrier2 barrier = vke::vulkanImageBarrier(transition, frame.image);
+            VkDependencyInfo dependencyInfo{};
+            dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependencyInfo.imageMemoryBarrierCount = 1;
+            dependencyInfo.pImageMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(frame.commandBuffer, &dependencyInfo);
+        }
+
+        return {};
+    }
+
     int runSmokeFrame() {
         auto glfw = vke::GlfwInstance::create();
         if (!glfw) {
@@ -141,7 +211,7 @@ namespace {
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
-            auto status = frameLoop->renderFrame();
+            auto status = frameLoop->renderFrame(recordRenderGraphClear);
             if (!status) {
                 vke::logError(status.error().message);
                 return EXIT_FAILURE;

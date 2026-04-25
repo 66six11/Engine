@@ -81,8 +81,8 @@ flowchart TD
 
 - `--smoke-window` 已接入窗口创建。
 - `--smoke-vulkan` 已接入 Vulkan context/device 创建。
-- `--smoke-frame` 已接入 swapchain acquire、clear、present。
-- `--smoke-rendergraph` 目前是 RenderGraph CPU 编译和 Vulkan adapter 验证入口，尚未接入主 frame loop 命令录制。
+- `--smoke-frame` 已接入 swapchain acquire、RenderGraph-driven clear、present。
+- `--smoke-rendergraph` 是 RenderGraph CPU 编译和 Vulkan adapter 字段验证入口。
 
 ## 当前 Frame Loop 流程
 
@@ -96,36 +96,40 @@ flowchart TD
     Render["renderFrame"]
     Wait["wait in-flight fence"]
     Acquire["vkAcquireNextImageKHR"]
-    Record["recordClearCommands"]
+    Record["renderFrame(callback)"]
+    GraphClear["recordRenderGraphClear"]
     Submit["vkQueueSubmit2"]
     Present["vkQueuePresentKHR"]
     Recreate["recreateSwapchain"]
 
     Create --> Swapchain --> Images --> Cmd --> Sync
     Render --> Wait --> Acquire
-    Acquire -->|success/suboptimal| Record --> Submit --> Present
+    Acquire -->|success/suboptimal| Record --> GraphClear --> Submit --> Present
     Acquire -->|out of date| Recreate
     Present -->|out of date/suboptimal| Recreate
 ```
 
-`recordClearCommands` 当前真实录制流程：
+`--smoke-frame` 当前真实录制流程：
 
 ```mermaid
 flowchart TD
     Begin["vkBeginCommandBuffer"]
-    ToTransfer["barrier:<br/>Undefined -> TransferDst"]
+    BuildGraph["Build RenderGraph<br/>Backbuffer + ClearColor transfer write"]
+    Compile["compile()"]
+    ToTransfer["adapter barrier:<br/>Undefined -> TransferDst"]
     Clear["vkCmdClearColorImage"]
-    ToPresent["barrier:<br/>TransferDst -> Present"]
+    ToPresent["adapter barrier:<br/>TransferDst -> Present"]
     End["vkEndCommandBuffer"]
 
-    Begin --> ToTransfer --> Clear --> ToPresent --> End
+    Begin --> BuildGraph --> Compile --> ToTransfer --> Clear --> ToPresent --> End
 ```
 
 状态：
 
 - 已接入真实 Vulkan 命令录制。
-- 目前 barrier 仍由 `vulkan_frame_loop.cpp` 手写。
-- 下一步目标是让 frame loop 或 renderer-basic 通过 RenderGraph 编译结果驱动这两个 barrier。
+- `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
+- 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
+- 下一步目标是把 `recordRenderGraphClear` 从 sample-viewer 下沉到 `renderer-basic` 或专门的 recording adapter。
 
 ## RenderGraph 编译与执行流程
 
@@ -178,15 +182,15 @@ flowchart TD
 - `vulkanImageTransition` 已实现。
 - `vulkanImageBarrier` 已实现。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
-- 主 frame loop 尚未消费 RenderGraph 编译结果。
+- `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>frame loop 手写 barrier<br/>RenderGraph smoke 验证 adapter"]
+    Now["当前:<br/>sample-viewer 用 RenderGraph callback 录制 clear frame"]
     Step1["下一步:<br/>抽出 clear pass/recording adapter"]
-    Step2["再下一步:<br/>recordClearCommands 使用 RenderGraph transitions"]
+    Step2["再下一步:<br/>renderer-basic 接管 clear frame orchestration"]
     Step3["之后:<br/>Triangle pass + dynamic rendering"]
     Step4["之后:<br/>renderer-basic 接管 frame orchestration"]
 
@@ -197,5 +201,5 @@ flowchart TD
 
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 在 `renderer-basic` 或适配层中组合 `VulkanFrameLoop`、RenderGraph 和 Vulkan barrier helper。
-3. 让 clear frame 的两次 layout transition 从 RenderGraph compile result 生成。
+3. 将 sample-viewer 中的 RenderGraph clear recording 下沉，避免 app 持有渲染编排细节。
 4. 再接入 dynamic rendering triangle pass。
