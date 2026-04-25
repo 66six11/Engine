@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,11 @@ namespace vke {
         int height{720};
         std::string title{"VkEngine"};
         bool visible{true};
+    };
+
+    struct WindowFramebufferExtent {
+        std::uint32_t width{};
+        std::uint32_t height{};
     };
 
     class GlfwInstance {
@@ -49,6 +55,7 @@ namespace vke {
                                                        const WindowDesc& desc);
 
         [[nodiscard]] bool shouldClose() const;
+        [[nodiscard]] WindowFramebufferExtent framebufferExtent() const;
         static void pollEvents();
         void requestClose();
 

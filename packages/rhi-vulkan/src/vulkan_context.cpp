@@ -488,6 +488,12 @@ namespace vke {
             return "VK_ERROR_FEATURE_NOT_PRESENT";
         case VK_ERROR_INCOMPATIBLE_DRIVER:
             return "VK_ERROR_INCOMPATIBLE_DRIVER";
+        case VK_SUBOPTIMAL_KHR:
+            return "VK_SUBOPTIMAL_KHR";
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return "VK_ERROR_OUT_OF_DATE_KHR";
+        case VK_ERROR_SURFACE_LOST_KHR:
+            return "VK_ERROR_SURFACE_LOST_KHR";
         default:
             return "VkResult(" + std::to_string(static_cast<int>(result)) + ")";
         }

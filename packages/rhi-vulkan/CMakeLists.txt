@@ -3,6 +3,7 @@ find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 add_library(vke-rhi-vulkan STATIC
+    src/vulkan_frame_loop.cpp
     src/vulkan_context.cpp
 )
 

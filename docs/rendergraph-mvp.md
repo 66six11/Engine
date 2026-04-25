@@ -27,10 +27,15 @@
 
 退出条件：
 
-- swapchain image 可以 acquire 和 present。
-- frame fence 与 semaphore 能避免 CPU/GPU hazard。
-- resize/out-of-date 路径不会崩溃。
-- command buffer 能录制并提交到 graphics queue。
+- [x] swapchain image 可以 acquire 和 present。
+- [x] frame fence 与 semaphore 能避免 CPU/GPU hazard。
+- [ ] resize/out-of-date 路径不会崩溃。
+- [x] command buffer 能录制并提交到 graphics queue。
+
+当前基线：
+
+- `vke-sample-viewer --smoke-frame` 创建 swapchain，清理当前 backbuffer，并 present 一帧。
+- out-of-date/suboptimal 已作为 `VulkanFrameStatus` 返回；下一步需要接入 swapchain recreate。
 
 ## 里程碑 3：第一个 Render Graph
 

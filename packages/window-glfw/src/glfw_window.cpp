@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <utility>
@@ -142,6 +143,20 @@ namespace vke {
 
     bool GlfwWindow::shouldClose() const {
         return window_ == nullptr || glfwWindowShouldClose(window_) == GLFW_TRUE;
+    }
+
+    WindowFramebufferExtent GlfwWindow::framebufferExtent() const {
+        if (window_ == nullptr) {
+            return {};
+        }
+
+        int width = 0;
+        int height = 0;
+        glfwGetFramebufferSize(window_, &width, &height);
+        return WindowFramebufferExtent{
+            .width = static_cast<std::uint32_t>(std::max(width, 0)),
+            .height = static_cast<std::uint32_t>(std::max(height, 0)),
+        };
     }
 
     void GlfwWindow::pollEvents() {
