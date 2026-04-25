@@ -41,11 +41,16 @@
 
 退出条件：
 
-- graph builder 能创建 pass node 和 resource handle。
-- 当前 swapchain image 作为 graph image import。
-- 至少一个 pass 写入 swapchain image。
-- compiler 能输出有序 pass list 和必要 layout transition。
-- execution 能通过 pass callback 录制命令。
+- [x] graph builder 能创建 pass node 和 resource handle。
+- [x] 当前 swapchain image 作为 graph image import。
+- [x] 至少一个 pass 写入 swapchain image。
+- [x] compiler 能输出有序 pass list 和必要 layout transition。
+- [ ] execution 能通过 pass callback 录制命令。
+
+当前基线：
+
+- `vke-sample-viewer --smoke-rendergraph` 构建一个导入 backbuffer 的单 pass graph。
+- 编译结果输出 color attachment transition 和 present final transition。
 
 ## 里程碑 4：Triangle Pass
 

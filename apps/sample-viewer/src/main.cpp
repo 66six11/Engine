@@ -9,6 +9,7 @@
 
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
+#include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
@@ -159,6 +160,31 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    int runSmokeRenderGraph() {
+        vke::RenderGraph graph;
+        const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
+            .name = "Backbuffer",
+            .format = VK_FORMAT_B8G8R8A8_SRGB,
+            .extent = VkExtent2D{.width = 1280, .height = 720},
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        });
+
+        graph.addPass("ClearColor").writeColor(backbuffer);
+
+        auto compiled = graph.compile();
+        if (!compiled) {
+            vke::logError(compiled.error().message);
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Render graph passes: " << compiled->passes.size()
+                  << ", final transitions: " << compiled->finalTransitions.size() << '\n';
+        return compiled->passes.size() == 1 && compiled->finalTransitions.size() == 1
+                   ? EXIT_SUCCESS
+                   : EXIT_FAILURE;
+    }
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -181,9 +207,13 @@ int main(int argc, char** argv) {
             return runSmokeFrame();
         }
 
+        if (hasArg(args, "--smoke-rendergraph")) {
+            return runSmokeRenderGraph();
+        }
+
         printVersion();
         std::cout << "Usage: vke-sample-viewer [--version] [--smoke-window] [--smoke-vulkan] "
-                     "[--smoke-frame]\n";
+                     "[--smoke-frame] [--smoke-rendergraph]\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         vke::logError(exception.what());
