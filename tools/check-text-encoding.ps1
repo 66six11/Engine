@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$Root = ".",
     [switch]$Fix,
     [switch]$VerboseList
@@ -22,8 +22,7 @@ $RequireBomExtensions = [System.Collections.Generic.HashSet[string]]::new([Syste
     ".hpp",
     ".hxx",
     ".ipp",
-    ".inl",
-    ".ps1"
+    ".inl"
 ) | ForEach-Object { [void]$RequireBomExtensions.Add($_) }
 
 $ForbidBomExtensions = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -31,6 +30,7 @@ $ForbidBomExtensions = [System.Collections.Generic.HashSet[string]]::new([System
     ".cmake",
     ".json",
     ".md",
+    ".ps1",
     ".py",
     ".slang",
     ".vert",

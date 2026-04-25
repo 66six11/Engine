@@ -33,28 +33,58 @@ namespace vke {
             return Error{ErrorDomain::Vulkan, static_cast<int>(result), std::move(message)};
         }
 
-        std::vector<VkLayerProperties> enumerateInstanceLayers() {
-            std::uint32_t count = 0;
-            vkEnumerateInstanceLayerProperties(&count, nullptr);
+        Result<std::vector<VkLayerProperties>> enumerateInstanceLayers() {
+            while (true) {
+                std::uint32_t count = 0;
+                VkResult result = vkEnumerateInstanceLayerProperties(&count, nullptr);
+                if (result != VK_SUCCESS) {
+                    return std::unexpected{
+                        vkError("Failed to enumerate Vulkan instance layers", result)};
+                }
 
-            std::vector<VkLayerProperties> layers(count);
-            if (count > 0) {
-                vkEnumerateInstanceLayerProperties(&count, layers.data());
+                std::vector<VkLayerProperties> layers(count);
+                if (count == 0) {
+                    return layers;
+                }
+
+                result = vkEnumerateInstanceLayerProperties(&count, layers.data());
+                if (result == VK_SUCCESS) {
+                    layers.resize(count);
+                    return layers;
+                }
+
+                if (result != VK_INCOMPLETE) {
+                    return std::unexpected{
+                        vkError("Failed to enumerate Vulkan instance layers", result)};
+                }
             }
-
-            return layers;
         }
 
-        std::vector<VkExtensionProperties> enumerateInstanceExtensions() {
-            std::uint32_t count = 0;
-            vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+        Result<std::vector<VkExtensionProperties>> enumerateInstanceExtensions() {
+            while (true) {
+                std::uint32_t count = 0;
+                VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+                if (result != VK_SUCCESS) {
+                    return std::unexpected{
+                        vkError("Failed to enumerate Vulkan instance extensions", result)};
+                }
 
-            std::vector<VkExtensionProperties> extensions(count);
-            if (count > 0) {
-                vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
+                std::vector<VkExtensionProperties> extensions(count);
+                if (count == 0) {
+                    return extensions;
+                }
+
+                result = vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
+                if (result == VK_SUCCESS) {
+                    extensions.resize(count);
+                    return extensions;
+                }
+
+                if (result != VK_INCOMPLETE) {
+                    return std::unexpected{
+                        vkError("Failed to enumerate Vulkan instance extensions", result)};
+                }
             }
-
-            return extensions;
         }
 
         Result<std::vector<VkExtensionProperties>>
@@ -291,8 +321,14 @@ namespace vke {
             return pointers;
         }
 
-        Result<VkInstance> createInstance(const VulkanContextDesc& desc, bool validationAvailable,
-                                          bool debugUtilsAvailable) {
+        struct InstanceCreateResult {
+            VkInstance instance{VK_NULL_HANDLE};
+            std::uint32_t apiVersion{VK_API_VERSION_1_3};
+        };
+
+        Result<InstanceCreateResult> createInstance(const VulkanContextDesc& desc,
+                                                    bool validationAvailable,
+                                                    bool debugUtilsAvailable) {
             std::uint32_t loaderVersion = VK_API_VERSION_1_0;
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             const auto enumerateInstanceVersion = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
@@ -305,8 +341,11 @@ namespace vke {
                 }
             }
 
-            if (desc.requireVulkan14 && loaderVersion < VK_API_VERSION_1_4) {
-                return std::unexpected{vkError("Vulkan loader does not support Vulkan 1.4")};
+            const std::uint32_t requestedApiVersion =
+                desc.requireVulkan14 ? VK_API_VERSION_1_4 : VK_API_VERSION_1_3;
+            if (loaderVersion < requestedApiVersion) {
+                return std::unexpected{vkError("Vulkan loader does not support Vulkan " +
+                                               vulkanVersionString(requestedApiVersion))};
             }
 
             std::vector<std::string> extensions{
@@ -332,7 +371,7 @@ namespace vke {
                 0, kEngineVersion.major, kEngineVersion.minor, kEngineVersion.patch);
             appInfo.pEngineName = kEngineName.data();
             appInfo.engineVersion = appInfo.applicationVersion;
-            appInfo.apiVersion = desc.requireVulkan14 ? VK_API_VERSION_1_4 : VK_API_VERSION_1_3;
+            appInfo.apiVersion = requestedApiVersion;
 
             auto debugInfo = debugMessengerCreateInfo();
 
@@ -354,7 +393,10 @@ namespace vke {
                 return std::unexpected{vkError("Failed to create Vulkan instance", result)};
             }
 
-            return instance;
+            return InstanceCreateResult{
+                .instance = instance,
+                .apiVersion = requestedApiVersion,
+            };
         }
 
         Result<VkDevice> createDevice(VkPhysicalDevice physicalDevice,
@@ -396,12 +438,12 @@ namespace vke {
         }
 
         Result<VmaAllocator> createAllocator(VkInstance instance, VkPhysicalDevice physicalDevice,
-                                             VkDevice device) {
+                                             VkDevice device, std::uint32_t apiVersion) {
             VmaAllocatorCreateInfo createInfo{};
             createInfo.instance = instance;
             createInfo.physicalDevice = physicalDevice;
             createInfo.device = device;
-            createInfo.vulkanApiVersion = VK_API_VERSION_1_4;
+            createInfo.vulkanApiVersion = apiVersion;
 
             VmaAllocator allocator = nullptr;
             const VkResult result = vmaCreateAllocator(&createInfo, &allocator);
@@ -470,6 +512,7 @@ namespace vke {
         destroy();
 
         instance_ = std::exchange(other.instance_, VK_NULL_HANDLE);
+        instanceApiVersion_ = std::exchange(other.instanceApiVersion_, VK_API_VERSION_1_3);
         debugMessenger_ = std::exchange(other.debugMessenger_, VK_NULL_HANDLE);
         surface_ = std::exchange(other.surface_, VK_NULL_HANDLE);
         physicalDevice_ = std::exchange(other.physicalDevice_, VK_NULL_HANDLE);
@@ -507,6 +550,7 @@ namespace vke {
         }
 
         instance_ = VK_NULL_HANDLE;
+        instanceApiVersion_ = VK_API_VERSION_1_3;
         debugMessenger_ = VK_NULL_HANDLE;
         surface_ = VK_NULL_HANDLE;
         physicalDevice_ = VK_NULL_HANDLE;
@@ -518,20 +562,27 @@ namespace vke {
 
     Result<VulkanContext> VulkanContext::create(const VulkanContextDesc& desc) {
         const auto layers = enumerateInstanceLayers();
-        const auto extensions = enumerateInstanceExtensions();
+        if (!layers) {
+            return std::unexpected{std::move(layers.error())};
+        }
 
-        const bool validationAvailable = hasLayer(layers, kValidationLayer);
+        const auto extensions = enumerateInstanceExtensions();
+        if (!extensions) {
+            return std::unexpected{std::move(extensions.error())};
+        }
+
+        const bool validationAvailable = hasLayer(*layers, kValidationLayer);
         if (desc.enableValidation && !validationAvailable) {
             return std::unexpected{vkError("Requested Vulkan validation layer is not available")};
         }
 
-        const bool debugUtilsAvailable = hasExtension(extensions, kDebugUtilsExtension);
+        const bool debugUtilsAvailable = hasExtension(*extensions, kDebugUtilsExtension);
         if (desc.enableValidation && !debugUtilsAvailable) {
             return std::unexpected{vkError("Requested VK_EXT_debug_utils is not available")};
         }
 
         for (const std::string& extension : desc.requiredInstanceExtensions) {
-            if (!hasExtension(extensions, extension)) {
+            if (!hasExtension(*extensions, extension)) {
                 return std::unexpected{
                     vkError("Required Vulkan instance extension is not available: " + extension)};
             }
@@ -543,7 +594,8 @@ namespace vke {
         }
 
         VulkanContext context;
-        context.instance_ = *instance;
+        context.instance_ = instance->instance;
+        context.instanceApiVersion_ = instance->apiVersion;
 
         if (desc.enableValidation) {
             auto debugInfo = debugMessengerCreateInfo();
@@ -606,7 +658,8 @@ namespace vke {
         vkGetDeviceQueue(context.device_, context.graphicsQueueFamily_, 0, &context.graphicsQueue_);
 
         auto allocator =
-            createAllocator(context.instance_, context.physicalDevice_, context.device_);
+            createAllocator(context.instance_, context.physicalDevice_, context.device_,
+                            context.instanceApiVersion_);
         if (!allocator) {
             return std::unexpected{std::move(allocator.error())};
         }
@@ -628,6 +681,10 @@ namespace vke {
 
     VkInstance VulkanContext::instance() const {
         return instance_;
+    }
+
+    std::uint32_t VulkanContext::instanceApiVersion() const {
+        return instanceApiVersion_;
     }
 
     VkSurfaceKHR VulkanContext::surface() const {

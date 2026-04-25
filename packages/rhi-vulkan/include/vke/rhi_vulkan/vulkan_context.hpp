@@ -46,6 +46,7 @@ namespace vke {
         [[nodiscard]] static Result<VulkanContext> create(const VulkanContextDesc& desc);
 
         [[nodiscard]] VkInstance instance() const;
+        [[nodiscard]] std::uint32_t instanceApiVersion() const;
         [[nodiscard]] VkSurfaceKHR surface() const;
         [[nodiscard]] VkPhysicalDevice physicalDevice() const;
         [[nodiscard]] VkDevice device() const;
@@ -58,6 +59,7 @@ namespace vke {
         void destroy();
 
         VkInstance instance_{VK_NULL_HANDLE};
+        std::uint32_t instanceApiVersion_{VK_API_VERSION_1_3};
         VkDebugUtilsMessengerEXT debugMessenger_{VK_NULL_HANDLE};
         VkSurfaceKHR surface_{VK_NULL_HANDLE};
         VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};

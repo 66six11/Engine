@@ -87,7 +87,6 @@ namespace {
 int main(int argc, char** argv) {
     try {
         std::span<char*> args{argv, static_cast<std::size_t>(argc)};
-
         if (hasArg(args, "--version")) {
             printVersion();
             return EXIT_SUCCESS;

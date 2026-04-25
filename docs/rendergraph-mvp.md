@@ -2,8 +2,7 @@
 
 ## 目标
 
-跑通一个能 present 的完整 render graph frame。MVP 成功标准是：窗口打开，并且通过
-graph-declared pass 呈现确定性的 clear color 或 triangle。
+跑通一个能 present 的完整 render graph frame。MVP 成功标准是：窗口打开，并且通过 graph-declared pass 呈现确定性的 clear color 或 triangle。
 
 ## 非目标
 
@@ -60,7 +59,7 @@ graph-declared pass 呈现确定性的 clear color 或 triangle。
 - 构建脚本和依赖 profile 已文档化。
 - Debug 日志能输出 render graph pass order 和 resource transition。
 - 普通启动、渲染一帧、关闭路径没有已知 validation error。
-- 有基础 smoke test 指令。
+- 有基础 smoke test 命令。
 
 ## MVP Graph 示例
 
@@ -93,5 +92,4 @@ graph.addPass("Triangle")
     });
 ```
 
-真实实现中不建议在 hot path 用字符串查 pipeline；但早期 debug log 和 graph visualization
-可以接受。
+真实实现中不建议在 hot path 用字符串查 pipeline；但早期 debug log 和 graph visualization 可以接受。
