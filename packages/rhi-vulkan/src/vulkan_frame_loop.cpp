@@ -354,10 +354,11 @@ namespace vke {
             return semaphores;
         }
 
-        Result<VkFence> createFence(VkDevice device) {
+        Result<VkFence> createFence(VkDevice device,
+                                    VkFenceCreateFlags flags = VK_FENCE_CREATE_SIGNALED_BIT) {
             VkFenceCreateInfo createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            createInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            createInfo.flags = flags;
 
             VkFence fence = VK_NULL_HANDLE;
             const VkResult result = vkCreateFence(device, &createInfo, nullptr, &fence);
@@ -366,6 +367,41 @@ namespace vke {
             }
 
             return fence;
+        }
+
+        Result<void> drainAcquiredImageSemaphore(VkDevice device, VkQueue queue,
+                                                 VkSemaphore semaphore) {
+            auto fence = createFence(device, 0);
+            if (!fence) {
+                return std::unexpected{std::move(fence.error())};
+            }
+            const VkFence recoveryFence = *fence;
+
+            VkSemaphoreSubmitInfo waitInfo{};
+            waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+            waitInfo.semaphore = semaphore;
+            waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+            VkSubmitInfo2 submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+            submitInfo.waitSemaphoreInfoCount = 1;
+            submitInfo.pWaitSemaphoreInfos = &waitInfo;
+
+            VkResult result = vkQueueSubmit2(queue, 1, &submitInfo, recoveryFence);
+            if (result != VK_SUCCESS) {
+                vkDestroyFence(device, recoveryFence, nullptr);
+                return std::unexpected{
+                    vkError("Failed to submit Vulkan acquire recovery wait", result)};
+            }
+
+            result = vkWaitForFences(device, 1, &recoveryFence, VK_TRUE, UINT64_MAX);
+            vkDestroyFence(device, recoveryFence, nullptr);
+            if (result != VK_SUCCESS) {
+                return std::unexpected{
+                    vkError("Failed to wait for Vulkan acquire recovery fence", result)};
+            }
+
+            return {};
         }
 
         struct ImageBarrierDesc {
@@ -786,11 +822,21 @@ namespace vke {
         }
         const bool acquiredSuboptimal = result == VK_SUBOPTIMAL_KHR;
         if (imageIndex >= renderFinished_.size()) {
+            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
+            if (!drained) {
+                return std::unexpected{std::move(drained.error())};
+            }
+
             return std::unexpected{vkError("Acquired Vulkan swapchain image index is out of range")};
         }
 
         auto recorded = recordFrameCommands(imageIndex, record);
         if (!recorded) {
+            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
+            if (!drained) {
+                return std::unexpected{std::move(drained.error())};
+            }
+
             return std::unexpected{std::move(recorded.error())};
         }
 
