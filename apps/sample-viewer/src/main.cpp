@@ -174,10 +174,10 @@ namespace {
 
         int callbackCount = 0;
         graph.addPass("ClearColor")
-            .writeColor(backbuffer)
+            .writeTransfer(backbuffer)
             .execute([&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
                 if (context.name != "ClearColor" || context.transitionsBefore.size() != 1 ||
-                    context.colorWrites.size() != 1) {
+                    !context.colorWrites.empty() || context.transferWrites.size() != 1) {
                     return std::unexpected{vke::Error{
                         vke::ErrorDomain::RenderGraph,
                         0,
@@ -200,9 +200,18 @@ namespace {
         }
         const auto vulkanFinalTransition =
             vke::vulkanImageTransition(compiled->finalTransitions.front());
-        if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+        if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||
             vulkanFinalTransition.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
             vke::logError("Render graph Vulkan transition mapping produced unexpected layouts.");
+            return EXIT_FAILURE;
+        }
+        const VkImageMemoryBarrier2 barrier =
+            vke::vulkanImageBarrier(vulkanFinalTransition, VK_NULL_HANDLE);
+        if (barrier.oldLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||
+            barrier.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR ||
+            barrier.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            barrier.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT) {
+            vke::logError("Render graph Vulkan barrier mapping produced unexpected masks.");
             return EXIT_FAILURE;
         }
 

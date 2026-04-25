@@ -87,4 +87,32 @@ namespace vke {
         };
     }
 
+    [[nodiscard]] inline VkImageMemoryBarrier2 vulkanImageBarrier(
+        const VulkanRenderGraphImageTransition& transition, VkImage image,
+        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT) {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = transition.srcStageMask;
+        barrier.srcAccessMask = transition.srcAccessMask;
+        barrier.dstStageMask = transition.dstStageMask;
+        barrier.dstAccessMask = transition.dstAccessMask;
+        barrier.oldLayout = transition.oldLayout;
+        barrier.newLayout = transition.newLayout;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange.aspectMask = aspectMask;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        return barrier;
+    }
+
+    [[nodiscard]] inline VkImageMemoryBarrier2 vulkanImageBarrier(
+        const RenderGraphImageTransition& transition, VkImage image,
+        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT) {
+        return vulkanImageBarrier(vulkanImageTransition(transition), image, aspectMask);
+    }
+
 } // namespace vke

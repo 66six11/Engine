@@ -50,8 +50,9 @@
 当前基线：
 
 - `vke-sample-viewer --smoke-rendergraph` 构建一个导入 backbuffer 的单 pass graph。
-- 编译结果输出 color attachment transition 和 present final transition。
-- execute 路径会按编译后的 pass 顺序调用 pass callback，并向 callback 暴露 transitions 与 color writes。
+- 编译结果输出 transfer-dst transition 和 present final transition，匹配当前 clear frame 使用的 `vkCmdClearColorImage` 路径。
+- execute 路径会按编译后的 pass 顺序调用 pass callback，并向 callback 暴露 transitions、color writes 与 transfer writes。
+- Vulkan adapter 能把 RenderGraph transition 转换为 `VkImageMemoryBarrier2`。
 - RenderGraph public API 保持后端无关；Vulkan layout/stage/access 翻译归属 `packages/rhi-vulkan`，规范见 `docs/rendergraph-rhi-boundary.md`。
 
 ## 里程碑 4：Triangle Pass

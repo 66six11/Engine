@@ -57,6 +57,7 @@ namespace vke {
         std::string name;
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
+        std::vector<RenderGraphImageHandle> transferWrites;
     };
 
     struct RenderGraphCompileResult {
@@ -68,6 +69,7 @@ namespace vke {
         std::string_view name;
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
+        std::span<const RenderGraphImageHandle> transferWrites;
     };
 
     using RenderGraphPassCallback = std::function<Result<void>(RenderGraphPassContext)>;
@@ -77,6 +79,7 @@ namespace vke {
         struct Pass {
             std::string name;
             std::vector<RenderGraphImageHandle> colorWrites;
+            std::vector<RenderGraphImageHandle> transferWrites;
             RenderGraphPassCallback callback;
         };
 
@@ -85,6 +88,11 @@ namespace vke {
         public:
             PassBuilder& writeColor(RenderGraphImageHandle image) {
                 graph_->passes_[passIndex_].colorWrites.push_back(image);
+                return *this;
+            }
+
+            PassBuilder& writeTransfer(RenderGraphImageHandle image) {
+                graph_->passes_[passIndex_].transferWrites.push_back(image);
                 return *this;
             }
 
@@ -137,22 +145,21 @@ namespace vke {
                 RenderGraphCompiledPass compiledPass{
                     .name = pass.name,
                     .colorWrites = pass.colorWrites,
+                    .transferWrites = pass.transferWrites,
                 };
 
-                for (RenderGraphImageHandle imageHandle : pass.colorWrites) {
-                    auto validated = validateImageHandle(imageHandle);
-                    if (!validated) {
-                        return std::unexpected{std::move(validated.error())};
-                    }
+                auto colorTransitions = transitionImages(pass.colorWrites,
+                                                         RenderGraphImageState::ColorAttachment,
+                                                         currentStates, compiledPass);
+                if (!colorTransitions) {
+                    return std::unexpected{std::move(colorTransitions.error())};
+                }
 
-                    const RenderGraphImageDesc& image = images_[imageHandle.index];
-                    constexpr RenderGraphImageState requiredState =
-                        RenderGraphImageState::ColorAttachment;
-                    if (currentStates[imageHandle.index] != requiredState) {
-                        compiledPass.transitionsBefore.push_back(makeTransition(
-                            imageHandle, image, currentStates[imageHandle.index], requiredState));
-                        currentStates[imageHandle.index] = requiredState;
-                    }
+                auto transferTransitions = transitionImages(pass.transferWrites,
+                                                            RenderGraphImageState::TransferDst,
+                                                            currentStates, compiledPass);
+                if (!transferTransitions) {
+                    return std::unexpected{std::move(transferTransitions.error())};
                 }
 
                 result.passes.push_back(std::move(compiledPass));
@@ -195,6 +202,7 @@ namespace vke {
                     .name = pass.name,
                     .transitionsBefore = pass.transitionsBefore,
                     .colorWrites = pass.colorWrites,
+                    .transferWrites = pass.transferWrites,
                 });
                 if (!executed) {
                     return std::unexpected{std::move(executed.error())};
@@ -212,6 +220,27 @@ namespace vke {
                     0,
                     "Render graph image handle is out of range.",
                 }};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> transitionImages(
+            std::span<const RenderGraphImageHandle> imageHandles,
+            RenderGraphImageState requiredState, std::vector<RenderGraphImageState>& currentStates,
+            RenderGraphCompiledPass& compiledPass) const {
+            for (RenderGraphImageHandle imageHandle : imageHandles) {
+                auto validated = validateImageHandle(imageHandle);
+                if (!validated) {
+                    return std::unexpected{std::move(validated.error())};
+                }
+
+                const RenderGraphImageDesc& image = images_[imageHandle.index];
+                if (currentStates[imageHandle.index] != requiredState) {
+                    compiledPass.transitionsBefore.push_back(makeTransition(
+                        imageHandle, image, currentStates[imageHandle.index], requiredState));
+                    currentStates[imageHandle.index] = requiredState;
+                }
             }
 
             return {};
