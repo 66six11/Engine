@@ -43,9 +43,11 @@ python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
+build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
+build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
 ```
 
 如果某个 smoke 命令尚不存在，审查回复必须说明原因，不能默默跳过。
@@ -84,6 +86,7 @@ build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-
 - 使用 `vkQueueSubmit2` 时，`VkSemaphoreSubmitInfo::stageMask` 必须覆盖等待资源的首次实际使用阶段。
 - transfer clear 路径可等待 `VK_PIPELINE_STAGE_2_TRANSFER_BIT`。
 - dynamic rendering color attachment 路径应等待 `VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT`。
+- triangle dynamic rendering 路径应等待 `VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT`，并用 dynamic viewport/scissor 覆盖当前 swapchain extent。
 - 若 callback 无法精确声明阶段，短期 fallback 可使用 `VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT`，但应记录为待细化问题。
 - layout transition 应由 RenderGraph 编译结果经 Vulkan adapter 生成，避免在业务层手写重复 barrier。
 

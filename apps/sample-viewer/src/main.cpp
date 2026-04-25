@@ -1,20 +1,26 @@
 ﻿#include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <cstdlib>
 #include <exception>
 #include <expected>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <span>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
 #include "vke/renderer_basic_vulkan/clear_frame.hpp"
+#include "vke/renderer_basic_vulkan/triangle_frame.hpp"
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "vke/rhi_vulkan/vulkan_pipeline.hpp"
 #include "vke/rhi_vulkan/vulkan_render_graph.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
 
@@ -28,6 +34,40 @@ namespace {
     void printVersion() {
         std::cout << vke::kEngineName << ' ' << vke::kEngineVersion.major << '.'
                   << vke::kEngineVersion.minor << '.' << vke::kEngineVersion.patch << '\n';
+    }
+
+    vke::Result<std::vector<std::uint32_t>> readSpirvFile(const std::filesystem::path& path) {
+        std::ifstream file{path, std::ios::binary | std::ios::ate};
+        if (!file) {
+            return std::unexpected{vke::Error{
+                vke::ErrorDomain::Shader,
+                0,
+                "Failed to open SPIR-V file: " + path.string(),
+            }};
+        }
+
+        const std::streamsize size = file.tellg();
+        if (size <= 0 || size % static_cast<std::streamsize>(sizeof(std::uint32_t)) != 0) {
+            return std::unexpected{vke::Error{
+                vke::ErrorDomain::Shader,
+                0,
+                "SPIR-V file size is invalid: " + path.string(),
+            }};
+        }
+
+        std::vector<char> bytes(static_cast<std::size_t>(size));
+        file.seekg(0, std::ios::beg);
+        if (!file.read(bytes.data(), size)) {
+            return std::unexpected{vke::Error{
+                vke::ErrorDomain::Shader,
+                0,
+                "Failed to read SPIR-V file: " + path.string(),
+            }};
+        }
+
+        std::vector<std::uint32_t> words(bytes.size() / sizeof(std::uint32_t));
+        std::memcpy(words.data(), bytes.data(), bytes.size());
+        return words;
     }
 
     int runSmokeWindow() {
@@ -176,6 +216,140 @@ namespace {
                              VkClearColorValue{{0.18F, 0.06F, 0.14F, 1.0F}});
     }
 
+    int runSmokeTriangle() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window =
+            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Triangle Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Triangle Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = vke::VulkanFrameLoop::create(
+            *context, vke::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.015F, 0.02F, 0.025F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            vke::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{VKE_SAMPLE_SHADER_OUTPUT_DIR};
+        auto vertexCode = readSpirvFile(shaderDir / "basic_triangle.vert.spv");
+        if (!vertexCode) {
+            vke::logError(vertexCode.error().message);
+            return EXIT_FAILURE;
+        }
+        auto fragmentCode = readSpirvFile(shaderDir / "basic_triangle.frag.spv");
+        if (!fragmentCode) {
+            vke::logError(fragmentCode.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto vertexShader = vke::VulkanShaderModule::create(vke::VulkanShaderModuleDesc{
+            .device = context->device(),
+            .code = *vertexCode,
+        });
+        if (!vertexShader) {
+            vke::logError(vertexShader.error().message);
+            return EXIT_FAILURE;
+        }
+        auto fragmentShader = vke::VulkanShaderModule::create(vke::VulkanShaderModuleDesc{
+            .device = context->device(),
+            .code = *fragmentCode,
+        });
+        if (!fragmentShader) {
+            vke::logError(fragmentShader.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto pipelineLayout = vke::VulkanPipelineLayout::create(vke::VulkanPipelineLayoutDesc{
+            .device = context->device(),
+        });
+        if (!pipelineLayout) {
+            vke::logError(pipelineLayout.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto pipeline =
+            vke::VulkanGraphicsPipeline::createDynamicRendering(vke::VulkanGraphicsPipelineDesc{
+                .device = context->device(),
+                .layout = pipelineLayout->handle(),
+                .vertexShader = vertexShader->handle(),
+                .fragmentShader = fragmentShader->handle(),
+                .colorFormat = frameLoop->format(),
+            });
+        if (!pipeline) {
+            vke::logError(pipeline.error().message);
+            return EXIT_FAILURE;
+        }
+
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(
+                [&pipeline](const vke::VulkanFrameRecordContext& recordContext) {
+                    return vke::recordBasicTriangleFrame(recordContext, pipeline->handle());
+                });
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during triangle smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered triangle frames: " << extent.width << 'x' << extent.height << '\n';
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            vke::logError("Failed to wait for Vulkan queue before triangle pipeline teardown: " +
+                          vke::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
     int runSmokeRenderGraph() {
         vke::RenderGraph graph;
         const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
@@ -277,9 +451,14 @@ int main(int argc, char** argv) {
             return runSmokeDynamicRendering();
         }
 
+        if (hasArg(args, "--smoke-triangle")) {
+            return runSmokeTriangle();
+        }
+
         printVersion();
         std::cout << "Usage: vke-sample-viewer [--version] [--smoke-window] [--smoke-vulkan] "
-                     "[--smoke-frame] [--smoke-rendergraph] [--smoke-dynamic-rendering]\n";
+                     "[--smoke-frame] [--smoke-rendergraph] [--smoke-dynamic-rendering] "
+                     "[--smoke-triangle]\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         vke::logError(exception.what());

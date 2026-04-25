@@ -64,10 +64,13 @@ flowchart TD
     FrameSmoke["--smoke-frame"]
     RGSmoke["--smoke-rendergraph"]
     DynamicSmoke["--smoke-dynamic-rendering"]
+    TriangleSmoke["--smoke-triangle"]
     GLFW["GlfwInstance / GlfwWindow"]
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
+    ShaderBuild["glslc + spirv-val<br/>triangle SPIR-V"]
+    Pipeline["shader modules<br/>pipeline layout<br/>graphics pipeline"]
 
     Start --> Args
     Args --> WindowSmoke
@@ -75,6 +78,7 @@ flowchart TD
     Args --> FrameSmoke
     Args --> RGSmoke
     Args --> DynamicSmoke
+    Args --> TriangleSmoke
     WindowSmoke --> GLFW
     VulkanSmoke --> GLFW
     VulkanSmoke --> Ext
@@ -85,6 +89,11 @@ flowchart TD
     DynamicSmoke --> GLFW
     DynamicSmoke --> Ext
     DynamicSmoke --> Context
+    TriangleSmoke --> GLFW
+    TriangleSmoke --> Ext
+    TriangleSmoke --> Context
+    TriangleSmoke --> ShaderBuild
+    TriangleSmoke --> Pipeline
     Context --> Device
 ```
 
@@ -94,6 +103,7 @@ flowchart TD
 - `--smoke-vulkan` 已接入 Vulkan context/device 创建。
 - `--smoke-frame` 已接入 swapchain acquire、RenderGraph-driven clear、present。
 - `--smoke-dynamic-rendering` 已接入 swapchain acquire、RenderGraph color write、dynamic rendering clear、present。
+- `--smoke-triangle` 已接入 shader module、pipeline layout、dynamic-rendering graphics pipeline、RenderGraph color write、draw、present。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译和 Vulkan adapter 字段验证入口。
 
 ## 当前 Frame Loop 流程
@@ -111,6 +121,7 @@ flowchart TD
     Acquire["vkAcquireNextImageKHR"]
     Record["renderFrame(callback)"]
     GraphClear["renderer-basic-vulkan<br/>recordBasicClearFrame"]
+    Triangle["renderer-basic-vulkan<br/>recordBasicTriangleFrame"]
     WaitStage["record result<br/>acquire wait stage"]
     Submit["vkQueueSubmit2"]
     Present["vkQueuePresentKHR"]
@@ -119,6 +130,7 @@ flowchart TD
     Create --> Swapchain --> Images --> Views --> Cmd --> Sync
     Render --> Wait --> Acquire
     Acquire -->|success/suboptimal| Record --> GraphClear --> WaitStage --> Submit --> Present
+    Record --> Triangle --> WaitStage
     Acquire -->|out of date| Recreate
     Present -->|out of date/suboptimal| Recreate
 ```
@@ -154,11 +166,34 @@ flowchart TD
     Begin --> BuildGraph --> Compile --> ToColor --> BeginRendering --> EndRendering --> ToPresent --> End
 ```
 
+`--smoke-triangle` 当前真实录制流程：
+
+```mermaid
+flowchart TD
+    ShaderBuild["glslc 编译 GLSL<br/>spirv-val 验证 SPIR-V"]
+    ShaderModules["VulkanShaderModule"]
+    Layout["VulkanPipelineLayout"]
+    Pipeline["VulkanGraphicsPipeline<br/>dynamic rendering"]
+    Begin["vkBeginCommandBuffer"]
+    BuildGraph["Build RenderGraph<br/>Backbuffer + Triangle color write"]
+    Compile["compile()"]
+    ToColor["adapter barrier:<br/>Undefined -> ColorAttachment"]
+    BeginRendering["vkCmdBeginRendering<br/>loadOp clear"]
+    Draw["bind pipeline<br/>set viewport/scissor<br/>vkCmdDraw(3)"]
+    EndRendering["vkCmdEndRendering"]
+    ToPresent["adapter barrier:<br/>ColorAttachment -> Present"]
+    End["vkEndCommandBuffer"]
+
+    ShaderBuild --> ShaderModules --> Layout --> Pipeline
+    Begin --> BuildGraph --> Compile --> ToColor --> BeginRendering --> Draw --> EndRendering --> ToPresent --> End
+```
+
 状态：
 
 - 已接入真实 Vulkan 命令录制。
 - `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
 - `--smoke-dynamic-rendering` 已验证 swapchain image view、dynamic rendering attachment clear 和 `ColorAttachment -> Present` transition。
+- `--smoke-triangle` 已验证 shader module、pipeline layout、dynamic rendering graphics pipeline、viewport/scissor dynamic state 和 triangle draw。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -224,9 +259,9 @@ flowchart TD
 ```mermaid
 flowchart TD
     Now["当前:<br/>dynamic rendering clear smoke"]
-    Step1["下一步:<br/>Vulkan pipeline objects"]
-    Step2["再下一步:<br/>Triangle pass + shaders"]
-    Step3["之后:<br/>shader-slang 接入 triangle shader"]
+    Step1["已接入:<br/>Vulkan pipeline objects"]
+    Step2["已接入:<br/>Triangle pass + GLSL shaders"]
+    Step3["下一步:<br/>shader-slang 接入 triangle shader"]
     Step4["之后:<br/>renderer-basic 接管更完整 frame orchestration"]
 
     Now --> Step1 --> Step2 --> Step3 --> Step4
@@ -237,4 +272,4 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. 接入 pipeline layout、shader module 和最小 triangle graphics pipeline。
+4. 将当前 app 侧 GLSL shader 构建迁移到 `shader-slang` package，形成可复用 shader build target。
