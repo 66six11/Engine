@@ -315,21 +315,28 @@ namespace vke {
             return fence;
         }
 
-        VkImageMemoryBarrier2
-        imageBarrier(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
-                     VkPipelineStageFlags2 srcStageMask, VkAccessFlags2 srcAccessMask,
-                     VkPipelineStageFlags2 dstStageMask, VkAccessFlags2 dstAccessMask) {
+        struct ImageBarrierDesc {
+            VkImage image{VK_NULL_HANDLE};
+            VkImageLayout oldLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+            VkImageLayout newLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+            VkPipelineStageFlags2 srcStageMask{};
+            VkAccessFlags2 srcAccessMask{};
+            VkPipelineStageFlags2 dstStageMask{};
+            VkAccessFlags2 dstAccessMask{};
+        };
+
+        VkImageMemoryBarrier2 imageBarrier(const ImageBarrierDesc& desc) {
             VkImageMemoryBarrier2 barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            barrier.srcStageMask = srcStageMask;
-            barrier.srcAccessMask = srcAccessMask;
-            barrier.dstStageMask = dstStageMask;
-            barrier.dstAccessMask = dstAccessMask;
-            barrier.oldLayout = oldLayout;
-            barrier.newLayout = newLayout;
+            barrier.srcStageMask = desc.srcStageMask;
+            barrier.srcAccessMask = desc.srcAccessMask;
+            barrier.dstStageMask = desc.dstStageMask;
+            barrier.dstAccessMask = desc.dstAccessMask;
+            barrier.oldLayout = desc.oldLayout;
+            barrier.newLayout = desc.newLayout;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image;
+            barrier.image = desc.image;
             barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             barrier.subresourceRange.baseMipLevel = 0;
             barrier.subresourceRange.levelCount = 1;
@@ -340,10 +347,15 @@ namespace vke {
 
         Result<void> recordClearCommandsInStartedBuffer(
             const VulkanFrameRecordContext& context) {
-            const VkImageMemoryBarrier2 transferBarrier = imageBarrier(
-                context.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                VK_ACCESS_2_TRANSFER_WRITE_BIT);
+            const VkImageMemoryBarrier2 transferBarrier = imageBarrier(ImageBarrierDesc{
+                .image = context.image,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+                .srcAccessMask = 0,
+                .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            });
 
             VkDependencyInfo dependencyInfo{};
             dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -361,10 +373,15 @@ namespace vke {
                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &context.clearColor, 1,
                                  &clearRange);
 
-            const VkImageMemoryBarrier2 presentBarrier = imageBarrier(
-                context.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_NONE, 0);
+            const VkImageMemoryBarrier2 presentBarrier = imageBarrier(ImageBarrierDesc{
+                .image = context.image,
+                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                .dstStageMask = VK_PIPELINE_STAGE_2_NONE,
+                .dstAccessMask = 0,
+            });
             dependencyInfo.pImageMemoryBarriers = &presentBarrier;
             vkCmdPipelineBarrier2(context.commandBuffer, &dependencyInfo);
 

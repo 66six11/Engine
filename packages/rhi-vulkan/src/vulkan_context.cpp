@@ -567,12 +567,12 @@ namespace vke {
     }
 
     Result<VulkanContext> VulkanContext::create(const VulkanContextDesc& desc) {
-        const auto layers = enumerateInstanceLayers();
+        auto layers = enumerateInstanceLayers();
         if (!layers) {
             return std::unexpected{std::move(layers.error())};
         }
 
-        const auto extensions = enumerateInstanceExtensions();
+        auto extensions = enumerateInstanceExtensions();
         if (!extensions) {
             return std::unexpected{std::move(extensions.error())};
         }

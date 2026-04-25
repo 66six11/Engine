@@ -126,6 +126,9 @@ namespace vke {
         PassBuilder addPass(std::string name) {
             Pass pass{
                 .name = std::move(name),
+                .colorWrites = {},
+                .transferWrites = {},
+                .callback = {},
             };
             passes_.push_back(std::move(pass));
             return PassBuilder{*this, passes_.size() - 1};
@@ -144,6 +147,7 @@ namespace vke {
             for (const Pass& pass : passes_) {
                 RenderGraphCompiledPass compiledPass{
                     .name = pass.name,
+                    .transitionsBefore = {},
                     .colorWrites = pass.colorWrites,
                     .transferWrites = pass.transferWrites,
                 };

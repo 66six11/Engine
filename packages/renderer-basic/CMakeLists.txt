@@ -10,6 +10,7 @@ target_link_libraries(vke-renderer-basic
     INTERFACE
         vke::core
         vke::rhi_vulkan
+        vke::rhi_vulkan_rendergraph
         vke::rendergraph
         vke::shader_slang
 )
