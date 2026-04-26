@@ -1,6 +1,8 @@
 add_library(vke-renderer-basic INTERFACE)
 add_library(vke::renderer_basic ALIAS vke-renderer-basic)
-add_library(vke-renderer-basic-vulkan INTERFACE)
+add_library(vke-renderer-basic-vulkan
+    src/basic_triangle_renderer.cpp
+)
 add_library(vke::renderer_basic_vulkan ALIAS vke-renderer-basic-vulkan)
 
 set(VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
@@ -51,8 +53,13 @@ target_link_libraries(vke-renderer-basic
         vke::shader_slang
 )
 
+target_include_directories(vke-renderer-basic-vulkan
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
 target_link_libraries(vke-renderer-basic-vulkan
-    INTERFACE
+    PUBLIC
         vke::renderer_basic
         vke::rhi_vulkan
         vke::rhi_vulkan_rendergraph

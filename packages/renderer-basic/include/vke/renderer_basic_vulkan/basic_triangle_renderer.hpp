@@ -1,0 +1,43 @@
+﻿#pragma once
+
+#include <filesystem>
+
+#include <vulkan/vulkan.h>
+
+#include "vke/core/result.hpp"
+#include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "vke/rhi_vulkan/vulkan_pipeline.hpp"
+
+namespace vke {
+
+    struct BasicTriangleRendererDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        std::filesystem::path shaderDirectory;
+    };
+
+    class BasicTriangleRenderer {
+    public:
+        BasicTriangleRenderer() = default;
+        BasicTriangleRenderer(const BasicTriangleRenderer&) = delete;
+        BasicTriangleRenderer& operator=(const BasicTriangleRenderer&) = delete;
+        BasicTriangleRenderer(BasicTriangleRenderer&& other) noexcept;
+        BasicTriangleRenderer& operator=(BasicTriangleRenderer&& other) noexcept;
+        ~BasicTriangleRenderer() = default;
+
+        [[nodiscard]] static Result<BasicTriangleRenderer> create(
+            const BasicTriangleRendererDesc& desc);
+        [[nodiscard]] Result<VulkanFrameRecordResult> recordFrame(
+            const VulkanFrameRecordContext& frame);
+
+    private:
+        [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VulkanShaderModule vertexShader_;
+        VulkanShaderModule fragmentShader_;
+        VulkanPipelineLayout pipelineLayout_;
+        VulkanGraphicsPipeline pipeline_;
+        VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
+    };
+
+} // namespace vke
