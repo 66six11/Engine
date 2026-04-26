@@ -98,7 +98,8 @@ namespace vke {
                                  &clearRange);
         }
 
-        void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline) {
+        void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
+                                BasicDrawItem drawItem) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = frame.imageView;
@@ -133,7 +134,8 @@ namespace vke {
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
-            vkCmdDraw(frame.commandBuffer, 3, 1, 0, 0);
+            vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,
+                      drawItem.firstVertex, drawItem.firstInstance);
             vkCmdEndRendering(frame.commandBuffer);
         }
 
@@ -155,6 +157,7 @@ namespace vke {
         pipelineLayout_ = std::move(other.pipelineLayout_);
         pipeline_ = std::move(other.pipeline_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
+        drawItem_ = std::exchange(other.drawItem_, basicTriangleDrawItem());
         return *this;
     }
 
@@ -163,6 +166,10 @@ namespace vke {
         if (desc.device == VK_NULL_HANDLE) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0, "Cannot create triangle renderer without a device"}};
+        }
+        if (desc.drawItem.vertexCount == 0 || desc.drawItem.instanceCount == 0) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0, "Triangle renderer draw item must draw something"}};
         }
 
         auto vertexCode = readSpirvFile(desc.shaderDirectory / "basic_triangle.vert.spv");
@@ -201,6 +208,7 @@ namespace vke {
         renderer.vertexShader_ = std::move(*vertexShader);
         renderer.fragmentShader_ = std::move(*fragmentShader);
         renderer.pipelineLayout_ = std::move(*pipelineLayout);
+        renderer.drawItem_ = desc.drawItem;
         return renderer;
     }
 
@@ -247,7 +255,7 @@ namespace vke {
             .writeColor(backbuffer)
             .execute([&frame, this](RenderGraphPassContext pass) -> Result<void> {
                 recordTransitions(frame, pass.transitionsBefore);
-                recordTriangleDraw(frame, pipeline_.handle());
+                recordTriangleDraw(frame, pipeline_.handle(), drawItem_);
                 return {};
             });
 

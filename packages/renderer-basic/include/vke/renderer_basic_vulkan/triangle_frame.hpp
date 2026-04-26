@@ -7,6 +7,7 @@
 
 #include "vke/core/result.hpp"
 #include "vke/renderer_basic/clear_frame_graph.hpp"
+#include "vke/renderer_basic/draw_item.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "vke/rhi_vulkan/vulkan_render_graph.hpp"
 
@@ -50,13 +51,14 @@ namespace vke {
     } // namespace detail
 
     [[nodiscard]] inline Result<VulkanFrameRecordResult> recordBasicTriangleFrame(
-        const VulkanFrameRecordContext& frame, VkPipeline pipeline) {
+        const VulkanFrameRecordContext& frame, VkPipeline pipeline,
+        BasicDrawItem drawItem = basicTriangleDrawItem()) {
         RenderGraph graph;
         const auto backbuffer = graph.importImage(detail::triangleBackbufferDesc(frame));
 
         graph.addPass("Triangle")
             .writeColor(backbuffer)
-            .execute([&frame, pipeline](RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, pipeline, drawItem](RenderGraphPassContext pass) -> Result<void> {
                 for (const RenderGraphImageTransition& transition : pass.transitionsBefore) {
                     detail::recordTriangleImageBarrier(frame.commandBuffer, transition,
                                                        frame.image);
@@ -99,7 +101,8 @@ namespace vke {
                 vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
                 vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
-                vkCmdDraw(frame.commandBuffer, 3, 1, 0, 0);
+                vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,
+                          drawItem.firstVertex, drawItem.firstInstance);
                 vkCmdEndRendering(frame.commandBuffer);
                 return {};
             });
