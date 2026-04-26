@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "vke/core/result.hpp"
+#include "vke/rhi_vulkan/vulkan_error.hpp"
 
 struct VmaAllocator_T;
 using VmaAllocator = VmaAllocator_T*;
@@ -69,8 +70,5 @@ namespace vke {
         VmaAllocator allocator_{nullptr};
         VulkanDeviceInfo deviceInfo_{};
     };
-
-    [[nodiscard]] std::string vkResultName(VkResult result);
-    [[nodiscard]] std::string vulkanVersionString(std::uint32_t version);
 
 } // namespace vke

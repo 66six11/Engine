@@ -4,23 +4,9 @@
 #include <string>
 #include <utility>
 
-#include "vke/core/error.hpp"
-#include "vke/rhi_vulkan/vulkan_context.hpp"
+#include "vke/rhi_vulkan/vulkan_error.hpp"
 
 namespace vke {
-    namespace {
-
-        Error vkError(std::string message, VkResult result = VK_ERROR_UNKNOWN) {
-            if (result != VK_SUCCESS) {
-                message += ": ";
-                message += vkResultName(result);
-            }
-
-            return Error{ErrorDomain::Vulkan, static_cast<int>(result), std::move(message)};
-        }
-
-    } // namespace
-
     VulkanShaderModule::VulkanShaderModule(VulkanShaderModule&& other) noexcept {
         *this = std::move(other);
     }
@@ -51,10 +37,10 @@ namespace vke {
 
     Result<VulkanShaderModule> VulkanShaderModule::create(const VulkanShaderModuleDesc& desc) {
         if (desc.device == VK_NULL_HANDLE) {
-            return std::unexpected{vkError("Cannot create a Vulkan shader module without a device")};
+            return std::unexpected{vulkanError("Cannot create a Vulkan shader module without a device")};
         }
         if (desc.code.empty()) {
-            return std::unexpected{vkError("Cannot create a Vulkan shader module without SPIR-V")};
+            return std::unexpected{vulkanError("Cannot create a Vulkan shader module without SPIR-V")};
         }
 
         VkShaderModuleCreateInfo createInfo{};
@@ -67,7 +53,7 @@ namespace vke {
         const VkResult result = vkCreateShaderModule(desc.device, &createInfo, nullptr,
                                                      &shaderModule.shaderModule_);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to create Vulkan shader module", result)};
+            return std::unexpected{vulkanError("Failed to create Vulkan shader module", result)};
         }
 
         return shaderModule;
@@ -110,7 +96,7 @@ namespace vke {
         const VulkanPipelineLayoutDesc& desc) {
         if (desc.device == VK_NULL_HANDLE) {
             return std::unexpected{
-                vkError("Cannot create a Vulkan pipeline layout without a device")};
+                vulkanError("Cannot create a Vulkan pipeline layout without a device")};
         }
 
         VkPipelineLayoutCreateInfo createInfo{};
@@ -121,7 +107,7 @@ namespace vke {
         const VkResult result = vkCreatePipelineLayout(desc.device, &createInfo, nullptr,
                                                        &pipelineLayout.pipelineLayout_);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to create Vulkan pipeline layout", result)};
+            return std::unexpected{vulkanError("Failed to create Vulkan pipeline layout", result)};
         }
 
         return pipelineLayout;
@@ -166,7 +152,7 @@ namespace vke {
             desc.vertexShader == VK_NULL_HANDLE || desc.fragmentShader == VK_NULL_HANDLE ||
             desc.colorFormat == VK_FORMAT_UNDEFINED) {
             return std::unexpected{
-                vkError("Cannot create a Vulkan graphics pipeline from incomplete inputs")};
+                vulkanError("Cannot create a Vulkan graphics pipeline from incomplete inputs")};
         }
 
         std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
@@ -253,7 +239,7 @@ namespace vke {
                                                           &createInfo, nullptr,
                                                           &pipeline.pipeline_);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to create Vulkan graphics pipeline", result)};
+            return std::unexpected{vulkanError("Failed to create Vulkan graphics pipeline", result)};
         }
 
         return pipeline;

@@ -7,20 +7,10 @@
 
 #include <vk_mem_alloc.h>
 
-#include "vke/core/error.hpp"
-#include "vke/rhi_vulkan/vulkan_context.hpp"
+#include "vke/rhi_vulkan/vulkan_error.hpp"
 
 namespace vke {
     namespace {
-
-        Error vkError(std::string message, VkResult result = VK_ERROR_UNKNOWN) {
-            if (result != VK_SUCCESS) {
-                message += ": ";
-                message += vkResultName(result);
-            }
-
-            return Error{ErrorDomain::Vulkan, static_cast<int>(result), std::move(message)};
-        }
 
         VmaMemoryUsage vmaMemoryUsage(VulkanBufferMemoryUsage usage) {
             switch (usage) {
@@ -83,7 +73,7 @@ namespace vke {
         if (desc.device == VK_NULL_HANDLE || desc.allocator == nullptr || desc.size == 0 ||
             desc.usage == 0) {
             return std::unexpected{
-                vkError("Cannot create a Vulkan buffer from incomplete inputs")};
+                vulkanError("Cannot create a Vulkan buffer from incomplete inputs")};
         }
 
         VkBufferCreateInfo bufferInfo{};
@@ -104,7 +94,7 @@ namespace vke {
         const VkResult result = vmaCreateBuffer(desc.allocator, &bufferInfo, &allocationInfo,
                                                 &buffer.buffer_, &buffer.allocation_, nullptr);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to create Vulkan buffer", result)};
+            return std::unexpected{vulkanError("Failed to create Vulkan buffer", result)};
         }
 
         return buffer;
@@ -112,16 +102,16 @@ namespace vke {
 
     Result<void> VulkanBuffer::upload(std::span<const std::byte> bytes) {
         if (buffer_ == VK_NULL_HANDLE || allocation_ == nullptr || allocator_ == nullptr) {
-            return std::unexpected{vkError("Cannot upload to an uninitialized Vulkan buffer")};
+            return std::unexpected{vulkanError("Cannot upload to an uninitialized Vulkan buffer")};
         }
         if (bytes.size_bytes() > size_) {
-            return std::unexpected{vkError("Cannot upload more data than the Vulkan buffer holds")};
+            return std::unexpected{vulkanError("Cannot upload more data than the Vulkan buffer holds")};
         }
 
         void* mapped = nullptr;
         const VkResult mapResult = vmaMapMemory(allocator_, allocation_, &mapped);
         if (mapResult != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to map Vulkan buffer memory", mapResult)};
+            return std::unexpected{vulkanError("Failed to map Vulkan buffer memory", mapResult)};
         }
 
         std::memcpy(mapped, bytes.data(), bytes.size_bytes());
@@ -129,7 +119,7 @@ namespace vke {
                                                         bytes.size_bytes());
         vmaUnmapMemory(allocator_, allocation_);
         if (flushResult != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to flush Vulkan buffer memory", flushResult)};
+            return std::unexpected{vulkanError("Failed to flush Vulkan buffer memory", flushResult)};
         }
 
         return {};

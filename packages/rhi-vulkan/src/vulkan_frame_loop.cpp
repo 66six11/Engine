@@ -9,19 +9,10 @@
 #include <string>
 #include <utility>
 
-#include "vke/core/error.hpp"
+#include "vke/rhi_vulkan/vulkan_error.hpp"
 
 namespace vke {
     namespace {
-
-        Error vkError(std::string message, VkResult result = VK_ERROR_UNKNOWN) {
-            if (result != VK_SUCCESS) {
-                message += ": ";
-                message += vkResultName(result);
-            }
-
-            return Error{ErrorDomain::Vulkan, static_cast<int>(result), std::move(message)};
-        }
 
         Result<VkSurfaceCapabilitiesKHR> querySurfaceCapabilities(VkPhysicalDevice physicalDevice,
                                                                   VkSurfaceKHR surface) {
@@ -30,7 +21,7 @@ namespace vke {
                 vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
             if (result != VK_SUCCESS) {
                 return std::unexpected{
-                    vkError("Failed to query Vulkan surface capabilities", result)};
+                    vulkanError("Failed to query Vulkan surface capabilities", result)};
             }
 
             return capabilities;
@@ -42,7 +33,7 @@ namespace vke {
             VkResult result =
                 vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &count, nullptr);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vkError("Failed to query Vulkan surface formats", result)};
+                return std::unexpected{vulkanError("Failed to query Vulkan surface formats", result)};
             }
 
             std::vector<VkSurfaceFormatKHR> formats(count);
@@ -51,7 +42,7 @@ namespace vke {
                                                               formats.data());
                 if (result != VK_SUCCESS) {
                     return std::unexpected{
-                        vkError("Failed to query Vulkan surface formats", result)};
+                        vulkanError("Failed to query Vulkan surface formats", result)};
                 }
             }
 
@@ -65,7 +56,7 @@ namespace vke {
                 vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &count, nullptr);
             if (result != VK_SUCCESS) {
                 return std::unexpected{
-                    vkError("Failed to query Vulkan surface present modes", result)};
+                    vulkanError("Failed to query Vulkan surface present modes", result)};
             }
 
             std::vector<VkPresentModeKHR> presentModes(count);
@@ -74,7 +65,7 @@ namespace vke {
                                                                    presentModes.data());
                 if (result != VK_SUCCESS) {
                     return std::unexpected{
-                        vkError("Failed to query Vulkan surface present modes", result)};
+                        vulkanError("Failed to query Vulkan surface present modes", result)};
                 }
             }
 
@@ -149,7 +140,7 @@ namespace vke {
                 VkResult result = vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr);
                 if (result != VK_SUCCESS) {
                     return std::unexpected{
-                        vkError("Failed to query Vulkan swapchain images", result)};
+                        vulkanError("Failed to query Vulkan swapchain images", result)};
                 }
 
                 std::vector<VkImage> images(count);
@@ -165,7 +156,7 @@ namespace vke {
 
                 if (result != VK_INCOMPLETE) {
                     return std::unexpected{
-                        vkError("Failed to query Vulkan swapchain images", result)};
+                        vulkanError("Failed to query Vulkan swapchain images", result)};
                 }
             }
         }
@@ -190,7 +181,7 @@ namespace vke {
             const VkResult result = vkCreateImageView(device, &createInfo, nullptr, &imageView);
             if (result != VK_SUCCESS) {
                 return std::unexpected{
-                    vkError("Failed to create Vulkan swapchain image view", result)};
+                    vulkanError("Failed to create Vulkan swapchain image view", result)};
             }
 
             return imageView;
@@ -232,7 +223,7 @@ namespace vke {
             constexpr VkImageUsageFlags kRequiredUsage =
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             if ((capabilities->supportedUsageFlags & kRequiredUsage) != kRequiredUsage) {
-                return std::unexpected{vkError(
+                return std::unexpected{vulkanError(
                     "Vulkan surface does not support transfer-destination and color-attachment "
                     "swapchain images")};
             }
@@ -242,7 +233,7 @@ namespace vke {
                 return std::unexpected{std::move(formats.error())};
             }
             if (formats->empty()) {
-                return std::unexpected{vkError("Vulkan surface returned no supported formats")};
+                return std::unexpected{vulkanError("Vulkan surface returned no supported formats")};
             }
 
             auto presentModes = queryPresentModes(physicalDevice, surface);
@@ -250,14 +241,14 @@ namespace vke {
                 return std::unexpected{std::move(presentModes.error())};
             }
             if (presentModes->empty()) {
-                return std::unexpected{vkError("Vulkan surface returned no present modes")};
+                return std::unexpected{vulkanError("Vulkan surface returned no present modes")};
             }
 
             const VkSurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(*formats);
             const VkPresentModeKHR presentMode = choosePresentMode(*presentModes);
             const VkExtent2D imageExtent = chooseExtent(*capabilities, desc.width, desc.height);
             if (imageExtent.width == 0 || imageExtent.height == 0) {
-                return std::unexpected{vkError("Cannot create a zero-sized Vulkan swapchain")};
+                return std::unexpected{vulkanError("Cannot create a zero-sized Vulkan swapchain")};
             }
 
             VkSwapchainCreateInfoKHR createInfo{};
@@ -282,7 +273,7 @@ namespace vke {
             VkSwapchainKHR swapchain = VK_NULL_HANDLE;
             const VkResult result = vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vkError("Failed to create Vulkan swapchain", result)};
+                return std::unexpected{vulkanError("Failed to create Vulkan swapchain", result)};
             }
 
             format = surfaceFormat.format;
@@ -299,7 +290,7 @@ namespace vke {
             VkCommandPool commandPool = VK_NULL_HANDLE;
             const VkResult result = vkCreateCommandPool(device, &createInfo, nullptr, &commandPool);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vkError("Failed to create Vulkan command pool", result)};
+                return std::unexpected{vulkanError("Failed to create Vulkan command pool", result)};
             }
 
             return commandPool;
@@ -315,7 +306,7 @@ namespace vke {
             VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
             const VkResult result = vkAllocateCommandBuffers(device, &allocateInfo, &commandBuffer);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vkError("Failed to allocate Vulkan command buffer", result)};
+                return std::unexpected{vulkanError("Failed to allocate Vulkan command buffer", result)};
             }
 
             return commandBuffer;
@@ -328,7 +319,7 @@ namespace vke {
             VkSemaphore semaphore = VK_NULL_HANDLE;
             const VkResult result = vkCreateSemaphore(device, &createInfo, nullptr, &semaphore);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vkError("Failed to create Vulkan semaphore", result)};
+                return std::unexpected{vulkanError("Failed to create Vulkan semaphore", result)};
             }
 
             return semaphore;
@@ -363,7 +354,7 @@ namespace vke {
             VkFence fence = VK_NULL_HANDLE;
             const VkResult result = vkCreateFence(device, &createInfo, nullptr, &fence);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vkError("Failed to create Vulkan fence", result)};
+                return std::unexpected{vulkanError("Failed to create Vulkan fence", result)};
             }
 
             return fence;
@@ -391,14 +382,14 @@ namespace vke {
             if (result != VK_SUCCESS) {
                 vkDestroyFence(device, recoveryFence, nullptr);
                 return std::unexpected{
-                    vkError("Failed to submit Vulkan acquire recovery wait", result)};
+                    vulkanError("Failed to submit Vulkan acquire recovery wait", result)};
             }
 
             result = vkWaitForFences(device, 1, &recoveryFence, VK_TRUE, UINT64_MAX);
             vkDestroyFence(device, recoveryFence, nullptr);
             if (result != VK_SUCCESS) {
                 return std::unexpected{
-                    vkError("Failed to wait for Vulkan acquire recovery fence", result)};
+                    vulkanError("Failed to wait for Vulkan acquire recovery fence", result)};
             }
 
             return {};
@@ -560,7 +551,7 @@ namespace vke {
                                                     const VulkanFrameLoopDesc& desc) {
         if (context.surface() == VK_NULL_HANDLE) {
             return std::unexpected{
-                vkError("Cannot create a Vulkan frame loop without a presentation surface")};
+                vulkanError("Cannot create a Vulkan frame loop without a presentation surface")};
         }
 
         VulkanFrameLoop frameLoop;
@@ -644,13 +635,13 @@ namespace vke {
         VkResult result = vkWaitForFences(device_, 1, &inFlight_, VK_TRUE, UINT64_MAX);
         if (result != VK_SUCCESS) {
             return std::unexpected{
-                vkError("Failed to wait for Vulkan frame fence before swapchain recreation", result)};
+                vulkanError("Failed to wait for Vulkan frame fence before swapchain recreation", result)};
         }
 
         result = vkQueueWaitIdle(graphicsQueue_);
         if (result != VK_SUCCESS) {
             return std::unexpected{
-                vkError("Failed to wait for Vulkan queue before swapchain recreation", result)};
+                vulkanError("Failed to wait for Vulkan queue before swapchain recreation", result)};
         }
 
         const VkSwapchainKHR oldSwapchain = swapchain_;
@@ -753,12 +744,12 @@ namespace vke {
     Result<VulkanFrameRecordResult> VulkanFrameLoop::recordFrameCommands(
         std::uint32_t imageIndex, const VulkanFrameRecordCallback& record) {
         if (!record) {
-            return std::unexpected{vkError("Cannot record a Vulkan frame without a callback")};
+            return std::unexpected{vulkanError("Cannot record a Vulkan frame without a callback")};
         }
 
         const VkResult resetResult = vkResetCommandBuffer(commandBuffer_, 0);
         if (resetResult != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to reset Vulkan command buffer", resetResult)};
+            return std::unexpected{vulkanError("Failed to reset Vulkan command buffer", resetResult)};
         }
 
         VkCommandBufferBeginInfo beginInfo{};
@@ -767,7 +758,7 @@ namespace vke {
 
         VkResult result = vkBeginCommandBuffer(commandBuffer_, &beginInfo);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to begin Vulkan command buffer", result)};
+            return std::unexpected{vulkanError("Failed to begin Vulkan command buffer", result)};
         }
 
         auto recorded = record(VulkanFrameRecordContext{
@@ -785,7 +776,7 @@ namespace vke {
 
         result = vkEndCommandBuffer(commandBuffer_);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to end Vulkan command buffer", result)};
+            return std::unexpected{vulkanError("Failed to end Vulkan command buffer", result)};
         }
 
         return *recorded;
@@ -808,7 +799,7 @@ namespace vke {
 
         VkResult result = vkWaitForFences(device_, 1, &inFlight_, VK_TRUE, UINT64_MAX);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to wait for Vulkan frame fence", result)};
+            return std::unexpected{vulkanError("Failed to wait for Vulkan frame fence", result)};
         }
 
         std::uint32_t imageIndex = 0;
@@ -818,7 +809,7 @@ namespace vke {
             return recreateSwapchain();
         }
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            return std::unexpected{vkError("Failed to acquire Vulkan swapchain image", result)};
+            return std::unexpected{vulkanError("Failed to acquire Vulkan swapchain image", result)};
         }
         const bool acquiredSuboptimal = result == VK_SUBOPTIMAL_KHR;
         if (imageIndex >= renderFinished_.size()) {
@@ -827,7 +818,7 @@ namespace vke {
                 return std::unexpected{std::move(drained.error())};
             }
 
-            return std::unexpected{vkError("Acquired Vulkan swapchain image index is out of range")};
+            return std::unexpected{vulkanError("Acquired Vulkan swapchain image index is out of range")};
         }
 
         auto recorded = recordFrameCommands(imageIndex, record);
@@ -842,7 +833,7 @@ namespace vke {
 
         result = vkResetFences(device_, 1, &inFlight_);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to reset Vulkan frame fence", result)};
+            return std::unexpected{vulkanError("Failed to reset Vulkan frame fence", result)};
         }
 
         VkSemaphoreSubmitInfo waitInfo{};
@@ -871,7 +862,7 @@ namespace vke {
 
         result = vkQueueSubmit2(graphicsQueue_, 1, &submitInfo, inFlight_);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vkError("Failed to submit Vulkan frame commands", result)};
+            return std::unexpected{vulkanError("Failed to submit Vulkan frame commands", result)};
         }
 
         VkPresentInfoKHR presentInfo{};
@@ -887,7 +878,7 @@ namespace vke {
             return recreateSwapchain();
         }
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            return std::unexpected{vkError("Failed to present Vulkan swapchain image", result)};
+            return std::unexpected{vulkanError("Failed to present Vulkan swapchain image", result)};
         }
         if (acquiredSuboptimal || result == VK_SUBOPTIMAL_KHR) {
             auto recreated = recreateSwapchain();
