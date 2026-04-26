@@ -6,6 +6,7 @@
 
 #include "vke/core/result.hpp"
 #include "vke/renderer_basic/draw_item.hpp"
+#include "vke/rhi_vulkan/vulkan_buffer.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "vke/rhi_vulkan/vulkan_pipeline.hpp"
 
@@ -13,6 +14,7 @@ namespace vke {
 
     struct BasicTriangleRendererDesc {
         VkDevice device{VK_NULL_HANDLE};
+        VmaAllocator allocator{};
         std::filesystem::path shaderDirectory;
         BasicDrawItem drawItem{basicTriangleDrawItem()};
     };
@@ -39,6 +41,7 @@ namespace vke {
         VulkanShaderModule fragmentShader_;
         VulkanPipelineLayout pipelineLayout_;
         VulkanGraphicsPipeline pipeline_;
+        VulkanBuffer vertexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         BasicDrawItem drawItem_{basicTriangleDrawItem()};
     };

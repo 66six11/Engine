@@ -51,7 +51,7 @@ namespace vke {
     } // namespace detail
 
     [[nodiscard]] inline Result<VulkanFrameRecordResult> recordBasicTriangleFrame(
-        const VulkanFrameRecordContext& frame, VkPipeline pipeline,
+        const VulkanFrameRecordContext& frame, VkPipeline pipeline, VkBuffer vertexBuffer,
         BasicDrawItem drawItem = basicTriangleDrawItem()) {
         RenderGraph graph;
         const auto backbuffer = graph.importImage(detail::triangleBackbufferDesc(frame));
@@ -99,6 +99,9 @@ namespace vke {
 
                 vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
                 vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                constexpr VkDeviceSize vertexBufferOffset = 0;
+                vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &vertexBuffer,
+                                       &vertexBufferOffset);
                 vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
                 vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
                 vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,

@@ -63,6 +63,8 @@ namespace vke {
         VkShaderModule vertexShader{VK_NULL_HANDLE};
         VkShaderModule fragmentShader{VK_NULL_HANDLE};
         VkFormat colorFormat{VK_FORMAT_UNDEFINED};
+        std::span<const VkVertexInputBindingDescription> vertexBindings;
+        std::span<const VkVertexInputAttributeDescription> vertexAttributes;
     };
 
     class VulkanGraphicsPipeline {

@@ -228,6 +228,7 @@ namespace {
         const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
         auto triangleRenderer = vke::BasicTriangleRenderer::create(vke::BasicTriangleRendererDesc{
             .device = context->device(),
+            .allocator = context->allocator(),
             .shaderDirectory = shaderDir,
         });
         if (!triangleRenderer) {

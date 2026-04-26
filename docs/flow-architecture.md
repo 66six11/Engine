@@ -70,7 +70,7 @@ flowchart TD
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
     ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle SPIR-V"]
-    RendererObject["BasicTriangleRenderer<br/>shader modules / pipeline layout / pipeline<br/>BasicDrawItem"]
+    RendererObject["BasicTriangleRenderer<br/>shader modules / pipeline layout / vertex buffer / pipeline<br/>BasicDrawItem"]
 
     Start --> Args
     Args --> WindowSmoke
@@ -172,7 +172,7 @@ flowchart TD
 flowchart TD
     ShaderBuild["shader-slang package<br/>slangc 编译 Slang<br/>spirv-val 验证 SPIR-V"]
     RendererObject["BasicTriangleRenderer"]
-    PipelineObjects["VulkanShaderModule<br/>VulkanPipelineLayout<br/>VulkanGraphicsPipeline"]
+    PipelineObjects["VulkanShaderModule<br/>VulkanPipelineLayout<br/>VulkanBuffer<br/>VulkanGraphicsPipeline"]
     Begin["vkBeginCommandBuffer"]
     BuildGraph["Build RenderGraph<br/>Backbuffer + ClearColor transfer write<br/>+ Triangle color write"]
     Compile["compile()"]
@@ -180,7 +180,7 @@ flowchart TD
     Clear["vkCmdClearColorImage"]
     ToColor["adapter barrier:<br/>TransferDst -> ColorAttachment"]
     BeginRendering["vkCmdBeginRendering<br/>loadOp load"]
-    Draw["bind pipeline<br/>set viewport/scissor<br/>vkCmdDraw(3)"]
+    Draw["bind pipeline<br/>bind vertex buffer<br/>set viewport/scissor<br/>vkCmdDraw(3)"]
     EndRendering["vkCmdEndRendering"]
     ToPresent["adapter barrier:<br/>ColorAttachment -> Present"]
     End["vkEndCommandBuffer"]
@@ -194,7 +194,7 @@ flowchart TD
 - 已接入真实 Vulkan 命令录制。
 - `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
 - `--smoke-dynamic-rendering` 已验证 swapchain image view、dynamic rendering attachment clear 和 `ColorAttachment -> Present` transition。
-- `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、`BasicTriangleRenderer` 管理的 shader module、pipeline layout、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
+- `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、`BasicTriangleRenderer` 管理的 shader module、pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 和 triangle shader/pipeline 装配已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -266,9 +266,10 @@ flowchart TD
     Step4["已接入:<br/>renderer-basic-vulkan 接管 triangle 装配"]
     Step5["已接入:<br/>renderer-basic 接管 ClearColor + Triangle graph"]
     Step6["已接入:<br/>BasicDrawItem draw 参数"]
-    Step7["之后:<br/>vertex buffer / mesh asset 路线"]
+    Step7["已接入:<br/>host-upload vertex buffer"]
+    Step8["之后:<br/>mesh asset 路线"]
 
-    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7
+    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7 --> Step8
 ```
 
 建议推进顺序：
@@ -276,4 +277,4 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. 当前只抽象 `BasicDrawItem` 的 draw 参数，后续再扩展 vertex buffer / mesh asset，不在当前 MVP 阶段提前扩大 mesh 架构。
+4. 当前只接入固定顶点数据与 host-upload vertex buffer，后续再扩展 mesh asset，不在当前 MVP 阶段提前扩大 mesh 架构。

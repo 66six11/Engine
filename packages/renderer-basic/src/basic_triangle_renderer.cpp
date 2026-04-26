@@ -1,9 +1,11 @@
 ﻿#include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstring>
 #include <expected>
 #include <fstream>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -98,8 +100,37 @@ namespace vke {
                                  &clearRange);
         }
 
+        [[nodiscard]] std::array<VkVertexInputBindingDescription, 1>
+        basicVertexInputBindings() {
+            return std::array{
+                VkVertexInputBindingDescription{
+                    .binding = 0,
+                    .stride = sizeof(BasicVertex),
+                    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+                },
+            };
+        }
+
+        [[nodiscard]] std::array<VkVertexInputAttributeDescription, 2>
+        basicVertexInputAttributes() {
+            return std::array{
+                VkVertexInputAttributeDescription{
+                    .location = 0,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32_SFLOAT,
+                    .offset = offsetof(BasicVertex, position),
+                },
+                VkVertexInputAttributeDescription{
+                    .location = 1,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32B32_SFLOAT,
+                    .offset = offsetof(BasicVertex, color),
+                },
+            };
+        }
+
         void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
-                                BasicDrawItem drawItem) {
+                                VkBuffer vertexBuffer, BasicDrawItem drawItem) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = frame.imageView;
@@ -132,6 +163,8 @@ namespace vke {
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            constexpr VkDeviceSize vertexBufferOffset = 0;
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &vertexBuffer, &vertexBufferOffset);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
             vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,
@@ -156,6 +189,7 @@ namespace vke {
         fragmentShader_ = std::move(other.fragmentShader_);
         pipelineLayout_ = std::move(other.pipelineLayout_);
         pipeline_ = std::move(other.pipeline_);
+        vertexBuffer_ = std::move(other.vertexBuffer_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         drawItem_ = std::exchange(other.drawItem_, basicTriangleDrawItem());
         return *this;
@@ -166,6 +200,10 @@ namespace vke {
         if (desc.device == VK_NULL_HANDLE) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0, "Cannot create triangle renderer without a device"}};
+        }
+        if (desc.allocator == nullptr) {
+            return std::unexpected{Error{ErrorDomain::Vulkan, 0,
+                                         "Cannot create triangle renderer without an allocator"}};
         }
         if (desc.drawItem.vertexCount == 0 || desc.drawItem.instanceCount == 0) {
             return std::unexpected{
@@ -203,11 +241,28 @@ namespace vke {
             return std::unexpected{std::move(pipelineLayout.error())};
         }
 
+        constexpr auto vertices = basicTriangleVertices();
+        auto vertexBuffer = VulkanBuffer::create(VulkanBufferDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .size = sizeof(vertices),
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+        });
+        if (!vertexBuffer) {
+            return std::unexpected{std::move(vertexBuffer.error())};
+        }
+        auto uploaded = vertexBuffer->upload(std::as_bytes(std::span{vertices}));
+        if (!uploaded) {
+            return std::unexpected{std::move(uploaded.error())};
+        }
+
         BasicTriangleRenderer renderer;
         renderer.device_ = desc.device;
         renderer.vertexShader_ = std::move(*vertexShader);
         renderer.fragmentShader_ = std::move(*fragmentShader);
         renderer.pipelineLayout_ = std::move(*pipelineLayout);
+        renderer.vertexBuffer_ = std::move(*vertexBuffer);
         renderer.drawItem_ = desc.drawItem;
         return renderer;
     }
@@ -217,12 +272,17 @@ namespace vke {
             return {};
         }
 
+        const auto bindings = basicVertexInputBindings();
+        const auto attributes = basicVertexInputAttributes();
+
         auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
             .device = device_,
             .layout = pipelineLayout_.handle(),
             .vertexShader = vertexShader_.handle(),
             .fragmentShader = fragmentShader_.handle(),
             .colorFormat = colorFormat,
+            .vertexBindings = bindings,
+            .vertexAttributes = attributes,
         });
         if (!pipeline) {
             return std::unexpected{std::move(pipeline.error())};
@@ -255,7 +315,7 @@ namespace vke {
             .writeColor(backbuffer)
             .execute([&frame, this](RenderGraphPassContext pass) -> Result<void> {
                 recordTransitions(frame, pass.transitionsBefore);
-                recordTriangleDraw(frame, pipeline_.handle(), drawItem_);
+                recordTriangleDraw(frame, pipeline_.handle(), vertexBuffer_.handle(), drawItem_);
                 return {};
             });
 
