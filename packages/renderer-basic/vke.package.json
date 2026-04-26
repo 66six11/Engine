@@ -9,5 +9,9 @@
     "com.vke.rhi-vulkan",
     "com.vke.shader-slang"
   ],
-  "targets": ["vke-renderer-basic", "vke-renderer-basic-vulkan"]
+  "targets": [
+    "vke-renderer-basic",
+    "vke-renderer-basic-vulkan",
+    "vke-renderer-basic-shaders"
+  ]
 }

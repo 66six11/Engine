@@ -401,6 +401,7 @@ namespace vke {
 
         Result<VkDevice> createDevice(VkPhysicalDevice physicalDevice,
                                       std::uint32_t graphicsQueueFamily,
+                                      VkPhysicalDeviceVulkan11Features features11,
                                       VkPhysicalDeviceVulkan13Features features13,
                                       bool enableSwapchain) {
             constexpr float kQueuePriority = 1.0F;
@@ -413,7 +414,8 @@ namespace vke {
 
             VkPhysicalDeviceFeatures2 features2{};
             features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-            features2.pNext = &features13;
+            features2.pNext = &features11;
+            features11.pNext = &features13;
 
             VkDeviceCreateInfo createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -634,26 +636,38 @@ namespace vke {
 
         const PhysicalDeviceCandidate& selected = **candidate;
 
+        VkPhysicalDeviceVulkan11Features features11{};
+        features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+
         VkPhysicalDeviceVulkan13Features features13{};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 
         VkPhysicalDeviceFeatures2 queriedFeatures{};
         queriedFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        queriedFeatures.pNext = &features13;
+        queriedFeatures.pNext = &features11;
+        features11.pNext = &features13;
         vkGetPhysicalDeviceFeatures2(selected.device, &queriedFeatures);
 
         if (features13.synchronization2 != VK_TRUE || features13.dynamicRendering != VK_TRUE) {
             return std::unexpected{
                 vkError("Selected device does not support synchronization2 and dynamic rendering")};
         }
+        if (features11.shaderDrawParameters != VK_TRUE) {
+            return std::unexpected{
+                vkError("Selected device does not support shaderDrawParameters")};
+        }
+
+        features11 = {};
+        features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        features11.shaderDrawParameters = VK_TRUE;
 
         features13 = {};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         features13.synchronization2 = VK_TRUE;
         features13.dynamicRendering = VK_TRUE;
 
-        auto device = createDevice(selected.device, selected.queues.graphicsFamily, features13,
-                                   context.surface_ != VK_NULL_HANDLE);
+        auto device = createDevice(selected.device, selected.queues.graphicsFamily, features11,
+                                   features13, context.surface_ != VK_NULL_HANDLE);
         if (!device) {
             return std::unexpected{std::move(device.error())};
         }

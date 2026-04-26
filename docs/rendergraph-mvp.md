@@ -57,7 +57,7 @@
 - Vulkan adapter 能把 RenderGraph transition 转换为 `VkImageMemoryBarrier2`。
 - `--smoke-frame` 已通过 `renderer-basic-vulkan` 提供的 `recordBasicClearFrame` callback 使用 RenderGraph 编译结果录制 clear frame barriers。
 - `--smoke-dynamic-rendering` 已通过 `renderer-basic-vulkan::recordBasicDynamicClearFrame` 使用 RenderGraph color write 和 `vkCmdBeginRendering` clear backbuffer。
-- `--smoke-triangle` 已通过 `glslc` 编译、`spirv-val` 验证、Vulkan shader module、pipeline layout 和 dynamic-rendering graphics pipeline 呈现最小三角形。
+- `--smoke-triangle` 已通过 `shader-slang` package 调用 `slangc` 编译 Slang、`spirv-val` 验证、Vulkan shader module、pipeline layout 和 dynamic-rendering graphics pipeline 呈现最小三角形。
 - frame callback 会返回 acquire semaphore 的 wait stage，避免 transfer clear 与 color attachment clear 共用错误同步阶段。
 - RenderGraph public API 保持后端无关；Vulkan layout/stage/access 翻译归属 `packages/rhi-vulkan`，规范见 `docs/rendergraph-rhi-boundary.md`。
 
@@ -70,7 +70,7 @@
 - 使用 dynamic rendering 创建 graphics pipeline。
 - triangle pass 声明 color attachment write access。
 - graph 能把 swapchain image transition 到 rendering 和 present 所需 layout。
-- 当前已具备 shader module、pipeline layout、triangle graphics pipeline 和 `--smoke-triangle`；下一步把 shader 构建迁移到 `shader-slang` package，并补齐 shader manifest / reflection 基线。
+- 当前已具备 shader module、pipeline layout、triangle graphics pipeline、`--smoke-triangle`、Slang shader 构建 target 和最小 shader manifest；下一步让 renderer package 接管更完整的 frame orchestration。
 
 ## 里程碑 5：可审核基线
 

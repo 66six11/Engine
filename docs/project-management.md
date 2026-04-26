@@ -58,7 +58,7 @@ VkEngine/
 6. 添加 swapchain 和 frame pacing。
 7. 添加 `packages/rendergraph` builder/compiler 骨架。
 8. 添加 clear pass。
-9. 添加 `packages/shader-slang` shader build 路径和 triangle pass。
+9. 添加 `packages/shader-slang` shader build 路径和 triangle pass。[x]
 10. 添加 resize/recreate 路径。
 11. 添加 validation checklist 和 smoke test 文档。
 

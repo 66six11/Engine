@@ -1,0 +1,21 @@
+{
+  "name": "basic_triangle",
+  "source": "basic_triangle.slang",
+  "outputs": [
+    {
+      "entry": "vertexMain",
+      "stage": "vertex",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "basic_triangle.vert.spv"
+    },
+    {
+      "entry": "fragmentMain",
+      "stage": "fragment",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "basic_triangle.frag.spv"
+    }
+  ],
+  "validation": "spirv-val"
+}

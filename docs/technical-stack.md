@@ -86,13 +86,13 @@ MVP 默认路线：
 - shader 源码使用 Slang。
 - 构建期或显式 shader build 命令通过 `slangc` 编译为 Vulkan SPIR-V。
 - 运行前或构建期执行 SPIR-V validation。
-- shader reflection 等第一个 render graph pass 稳定后再接入。
+- shader manifest 先记录 source、entry point、stage、target、output 与 validator；自动 reflection 等后续 render graph pass 稳定后再接入。
 
 Slang 状态：
 
 - Slang 作为默认 shader 语言。
-- 需要固定 compiler 版本，并把 `slangc` 命令行、entry point、stage、target profile、
-  output 路径和 `spirv-val` 检查写入构建流程。
+- `packages/shader-slang` 提供 `vke_add_slang_shader()`，把 `slangc` 命令行、entry point、stage、
+  target profile、output 路径和 `spirv-val` 检查写入构建流程。
 - 如果 Slang 的包管理集成暂时不顺，允许用预安装工具或 `tools/` 下的显式路径过渡，但
   不能静默依赖开发者环境。
 

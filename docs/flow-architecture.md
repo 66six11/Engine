@@ -69,7 +69,7 @@ flowchart TD
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
-    ShaderBuild["glslc + spirv-val<br/>triangle SPIR-V"]
+    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle SPIR-V"]
     Pipeline["shader modules<br/>pipeline layout<br/>graphics pipeline"]
 
     Start --> Args
@@ -170,7 +170,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    ShaderBuild["glslc 编译 GLSL<br/>spirv-val 验证 SPIR-V"]
+    ShaderBuild["shader-slang package<br/>slangc 编译 Slang<br/>spirv-val 验证 SPIR-V"]
     ShaderModules["VulkanShaderModule"]
     Layout["VulkanPipelineLayout"]
     Pipeline["VulkanGraphicsPipeline<br/>dynamic rendering"]
@@ -193,7 +193,7 @@ flowchart TD
 - 已接入真实 Vulkan 命令录制。
 - `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
 - `--smoke-dynamic-rendering` 已验证 swapchain image view、dynamic rendering attachment clear 和 `ColorAttachment -> Present` transition。
-- `--smoke-triangle` 已验证 shader module、pipeline layout、dynamic rendering graphics pipeline、viewport/scissor dynamic state 和 triangle draw。
+- `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、shader module、pipeline layout、dynamic rendering graphics pipeline、viewport/scissor dynamic state 和 triangle draw。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -260,8 +260,8 @@ flowchart TD
 flowchart TD
     Now["当前:<br/>dynamic rendering clear smoke"]
     Step1["已接入:<br/>Vulkan pipeline objects"]
-    Step2["已接入:<br/>Triangle pass + GLSL shaders"]
-    Step3["下一步:<br/>shader-slang 接入 triangle shader"]
+    Step2["已接入:<br/>Triangle pass"]
+    Step3["已接入:<br/>shader-slang triangle shader"]
     Step4["之后:<br/>renderer-basic 接管更完整 frame orchestration"]
 
     Now --> Step1 --> Step2 --> Step3 --> Step4
@@ -272,4 +272,4 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. 将当前 app 侧 GLSL shader 构建迁移到 `shader-slang` package，形成可复用 shader build target。
+4. 下一步让 `renderer-basic` 接管更完整的 frame orchestration，减少 sample app 内的 pipeline/shader 装配细节。

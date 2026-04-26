@@ -264,7 +264,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_SAMPLE_SHADER_OUTPUT_DIR};
+        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
         auto vertexCode = readSpirvFile(shaderDir / "basic_triangle.vert.spv");
         if (!vertexCode) {
             vke::logError(vertexCode.error().message);
