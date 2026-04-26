@@ -11,9 +11,8 @@
 #include <vector>
 
 #include "vke/core/error.hpp"
-#include "vke/renderer_basic/clear_frame_graph.hpp"
+#include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "vke/rendergraph/render_graph.hpp"
-#include "vke/rhi_vulkan/vulkan_render_graph.hpp"
 
 namespace vke {
     namespace {
@@ -47,45 +46,6 @@ namespace vke {
             std::vector<std::uint32_t> words(bytes.size() / sizeof(std::uint32_t));
             std::memcpy(words.data(), bytes.data(), bytes.size());
             return words;
-        }
-
-        [[nodiscard]] RenderGraphImageFormat renderGraphImageFormat(VkFormat format) {
-            switch (format) {
-            case VK_FORMAT_B8G8R8A8_SRGB:
-                return RenderGraphImageFormat::B8G8R8A8Srgb;
-            default:
-                return RenderGraphImageFormat::Undefined;
-            }
-        }
-
-        [[nodiscard]] RenderGraphExtent2D renderGraphExtent(VkExtent2D extent) {
-            return RenderGraphExtent2D{
-                .width = extent.width,
-                .height = extent.height,
-            };
-        }
-
-        [[nodiscard]] RenderGraphImageDesc backbufferDesc(
-            const VulkanFrameRecordContext& frame) {
-            return vke::backbufferDesc(renderGraphImageFormat(frame.format),
-                                       renderGraphExtent(frame.extent));
-        }
-
-        void recordImageBarrier(VkCommandBuffer commandBuffer,
-                                const RenderGraphImageTransition& transition, VkImage image) {
-            const VkImageMemoryBarrier2 barrier = vulkanImageBarrier(transition, image);
-            VkDependencyInfo dependencyInfo{};
-            dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependencyInfo.imageMemoryBarrierCount = 1;
-            dependencyInfo.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
-        }
-
-        void recordTransitions(const VulkanFrameRecordContext& frame,
-                               std::span<const RenderGraphImageTransition> transitions) {
-            for (const RenderGraphImageTransition& transition : transitions) {
-                recordImageBarrier(frame.commandBuffer, transition, frame.image);
-            }
         }
 
         void recordTransferClear(const VulkanFrameRecordContext& frame) {
@@ -301,12 +261,12 @@ namespace vke {
         }
 
         RenderGraph graph;
-        const auto backbuffer = graph.importImage(backbufferDesc(frame));
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
 
         graph.addPass("ClearColor")
             .writeTransfer(backbuffer)
             .execute([&frame](RenderGraphPassContext pass) -> Result<void> {
-                recordTransitions(frame, pass.transitionsBefore);
+                recordRenderGraphTransitions(frame, pass.transitionsBefore);
                 recordTransferClear(frame);
                 return {};
             });
@@ -314,7 +274,7 @@ namespace vke {
         graph.addPass("Triangle")
             .writeColor(backbuffer)
             .execute([&frame, this](RenderGraphPassContext pass) -> Result<void> {
-                recordTransitions(frame, pass.transitionsBefore);
+                recordRenderGraphTransitions(frame, pass.transitionsBefore);
                 recordTriangleDraw(frame, pipeline_.handle(), vertexBuffer_.handle(), drawItem_);
                 return {};
             });
@@ -329,7 +289,7 @@ namespace vke {
             return std::unexpected{std::move(executed.error())};
         }
 
-        recordTransitions(frame, compiled->finalTransitions);
+        recordRenderGraphTransitions(frame, compiled->finalTransitions);
 
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,

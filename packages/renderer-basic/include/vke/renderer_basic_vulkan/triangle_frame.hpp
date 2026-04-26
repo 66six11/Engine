@@ -6,63 +6,22 @@
 #include <vulkan/vulkan.h>
 
 #include "vke/core/result.hpp"
-#include "vke/renderer_basic/clear_frame_graph.hpp"
 #include "vke/renderer_basic/draw_item.hpp"
+#include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
-#include "vke/rhi_vulkan/vulkan_render_graph.hpp"
 
 namespace vke {
-    namespace detail {
-
-        [[nodiscard]] inline RenderGraphImageFormat triangleRenderGraphImageFormat(
-            VkFormat format) {
-            switch (format) {
-            case VK_FORMAT_B8G8R8A8_SRGB:
-                return RenderGraphImageFormat::B8G8R8A8Srgb;
-            default:
-                return RenderGraphImageFormat::Undefined;
-            }
-        }
-
-        [[nodiscard]] inline RenderGraphExtent2D triangleRenderGraphExtent(VkExtent2D extent) {
-            return RenderGraphExtent2D{
-                .width = extent.width,
-                .height = extent.height,
-            };
-        }
-
-        [[nodiscard]] inline RenderGraphImageDesc triangleBackbufferDesc(
-            const VulkanFrameRecordContext& frame) {
-            return vke::backbufferDesc(triangleRenderGraphImageFormat(frame.format),
-                                       triangleRenderGraphExtent(frame.extent));
-        }
-
-        inline void recordTriangleImageBarrier(VkCommandBuffer commandBuffer,
-                                               const RenderGraphImageTransition& transition,
-                                               VkImage image) {
-            const VkImageMemoryBarrier2 barrier = vulkanImageBarrier(transition, image);
-            VkDependencyInfo dependencyInfo{};
-            dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependencyInfo.imageMemoryBarrierCount = 1;
-            dependencyInfo.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
-        }
-
-    } // namespace detail
-
     [[nodiscard]] inline Result<VulkanFrameRecordResult> recordBasicTriangleFrame(
         const VulkanFrameRecordContext& frame, VkPipeline pipeline, VkBuffer vertexBuffer,
         BasicDrawItem drawItem = basicTriangleDrawItem()) {
         RenderGraph graph;
-        const auto backbuffer = graph.importImage(detail::triangleBackbufferDesc(frame));
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
 
         graph.addPass("Triangle")
             .writeColor(backbuffer)
-            .execute([&frame, pipeline, drawItem](RenderGraphPassContext pass) -> Result<void> {
-                for (const RenderGraphImageTransition& transition : pass.transitionsBefore) {
-                    detail::recordTriangleImageBarrier(frame.commandBuffer, transition,
-                                                       frame.image);
-                }
+            .execute([&frame, pipeline, vertexBuffer,
+                      drawItem](RenderGraphPassContext pass) -> Result<void> {
+                recordRenderGraphTransitions(frame, pass.transitionsBefore);
 
                 VkRenderingAttachmentInfo colorAttachment{};
                 colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -120,9 +79,7 @@ namespace vke {
             return std::unexpected{std::move(executed.error())};
         }
 
-        for (const RenderGraphImageTransition& transition : compiled->finalTransitions) {
-            detail::recordTriangleImageBarrier(frame.commandBuffer, transition, frame.image);
-        }
+        recordRenderGraphTransitions(frame, compiled->finalTransitions);
 
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
