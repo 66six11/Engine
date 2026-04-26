@@ -33,7 +33,8 @@ namespace vke {
             VkResult result =
                 vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &count, nullptr);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vulkanError("Failed to query Vulkan surface formats", result)};
+                return std::unexpected{
+                    vulkanError("Failed to query Vulkan surface formats", result)};
             }
 
             std::vector<VkSurfaceFormatKHR> formats(count);
@@ -193,9 +194,8 @@ namespace vke {
             }
         }
 
-        Result<std::vector<VkImageView>> createImageViews(VkDevice device,
-                                                          std::span<const VkImage> images,
-                                                          VkFormat format) {
+        Result<std::vector<VkImageView>>
+        createImageViews(VkDevice device, std::span<const VkImage> images, VkFormat format) {
             std::vector<VkImageView> imageViews;
             imageViews.reserve(images.size());
             for (VkImage image : images) {
@@ -306,7 +306,8 @@ namespace vke {
             VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
             const VkResult result = vkAllocateCommandBuffers(device, &allocateInfo, &commandBuffer);
             if (result != VK_SUCCESS) {
-                return std::unexpected{vulkanError("Failed to allocate Vulkan command buffer", result)};
+                return std::unexpected{
+                    vulkanError("Failed to allocate Vulkan command buffer", result)};
             }
 
             return commandBuffer;
@@ -425,8 +426,8 @@ namespace vke {
             return barrier;
         }
 
-        Result<VulkanFrameRecordResult> recordClearCommandsInStartedBuffer(
-            const VulkanFrameRecordContext& context) {
+        Result<VulkanFrameRecordResult>
+        recordClearCommandsInStartedBuffer(const VulkanFrameRecordContext& context) {
             const VkImageMemoryBarrier2 transferBarrier = imageBarrier(ImageBarrierDesc{
                 .image = context.image,
                 .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -580,8 +581,7 @@ namespace vke {
         }
         frameLoop.images_ = std::move(*images);
 
-        auto imageViews =
-            createImageViews(frameLoop.device_, frameLoop.images_, frameLoop.format_);
+        auto imageViews = createImageViews(frameLoop.device_, frameLoop.images_, frameLoop.format_);
         if (!imageViews) {
             return std::unexpected{std::move(imageViews.error())};
         }
@@ -634,8 +634,8 @@ namespace vke {
 
         VkResult result = vkWaitForFences(device_, 1, &inFlight_, VK_TRUE, UINT64_MAX);
         if (result != VK_SUCCESS) {
-            return std::unexpected{
-                vulkanError("Failed to wait for Vulkan frame fence before swapchain recreation", result)};
+            return std::unexpected{vulkanError(
+                "Failed to wait for Vulkan frame fence before swapchain recreation", result)};
         }
 
         result = vkQueueWaitIdle(graphicsQueue_);
@@ -653,8 +653,9 @@ namespace vke {
 
         VkFormat newFormat = VK_FORMAT_UNDEFINED;
         VkExtent2D newExtent{};
-        auto newSwapchain = createSwapchain(physicalDevice_, device_, surface_, graphicsQueueFamily_,
-                                            desc, newFormat, newExtent, oldSwapchain);
+        auto newSwapchain =
+            createSwapchain(physicalDevice_, device_, surface_, graphicsQueueFamily_, desc,
+                            newFormat, newExtent, oldSwapchain);
         if (!newSwapchain) {
             destroyImageViews(device_, imageViews_);
             if (oldSwapchain != VK_NULL_HANDLE) {
@@ -741,15 +742,17 @@ namespace vke {
         return VulkanFrameStatus::Recreated;
     }
 
-    Result<VulkanFrameRecordResult> VulkanFrameLoop::recordFrameCommands(
-        std::uint32_t imageIndex, const VulkanFrameRecordCallback& record) {
+    Result<VulkanFrameRecordResult>
+    VulkanFrameLoop::recordFrameCommands(std::uint32_t imageIndex,
+                                         const VulkanFrameRecordCallback& record) {
         if (!record) {
             return std::unexpected{vulkanError("Cannot record a Vulkan frame without a callback")};
         }
 
         const VkResult resetResult = vkResetCommandBuffer(commandBuffer_, 0);
         if (resetResult != VK_SUCCESS) {
-            return std::unexpected{vulkanError("Failed to reset Vulkan command buffer", resetResult)};
+            return std::unexpected{
+                vulkanError("Failed to reset Vulkan command buffer", resetResult)};
         }
 
         VkCommandBufferBeginInfo beginInfo{};
@@ -771,19 +774,22 @@ namespace vke {
             .clearColor = clearColor_,
         });
         if (!recorded) {
+            [[maybe_unused]] const VkResult resetAfterRecordFailure =
+                vkResetCommandBuffer(commandBuffer_, 0);
             return std::unexpected{std::move(recorded.error())};
         }
 
         result = vkEndCommandBuffer(commandBuffer_);
         if (result != VK_SUCCESS) {
+            [[maybe_unused]] const VkResult resetAfterEndFailure =
+                vkResetCommandBuffer(commandBuffer_, 0);
             return std::unexpected{vulkanError("Failed to end Vulkan command buffer", result)};
         }
 
         return *recorded;
     }
 
-    Result<VulkanFrameRecordResult> VulkanFrameLoop::recordClearCommands(
-        std::uint32_t imageIndex) {
+    Result<VulkanFrameRecordResult> VulkanFrameLoop::recordClearCommands(std::uint32_t imageIndex) {
         return recordFrameCommands(imageIndex, recordClearCommandsInStartedBuffer);
     }
 
@@ -791,8 +797,8 @@ namespace vke {
         return renderFrame(recordClearCommandsInStartedBuffer);
     }
 
-    Result<VulkanFrameStatus> VulkanFrameLoop::renderFrame(
-        const VulkanFrameRecordCallback& record) {
+    Result<VulkanFrameStatus>
+    VulkanFrameLoop::renderFrame(const VulkanFrameRecordCallback& record) {
         if (swapchain_ == VK_NULL_HANDLE) {
             return recreateSwapchain();
         }
@@ -818,7 +824,8 @@ namespace vke {
                 return std::unexpected{std::move(drained.error())};
             }
 
-            return std::unexpected{vulkanError("Acquired Vulkan swapchain image index is out of range")};
+            return std::unexpected{
+                vulkanError("Acquired Vulkan swapchain image index is out of range")};
         }
 
         auto recorded = recordFrameCommands(imageIndex, record);
@@ -862,6 +869,16 @@ namespace vke {
 
         result = vkQueueSubmit2(graphicsQueue_, 1, &submitInfo, inFlight_);
         if (result != VK_SUCCESS) {
+            auto replacementFence = createFence(device_);
+            if (!replacementFence) {
+                return std::unexpected{vulkanError(
+                    "Failed to submit Vulkan frame commands and recover the frame fence: " +
+                        replacementFence.error().message,
+                    result)};
+            }
+
+            vkDestroyFence(device_, inFlight_, nullptr);
+            inFlight_ = *replacementFence;
             return std::unexpected{vulkanError("Failed to submit Vulkan frame commands", result)};
         }
 

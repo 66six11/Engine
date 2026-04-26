@@ -21,17 +21,15 @@ namespace vke {
             return Error{ErrorDomain::Shader, 0, std::move(message)};
         }
 
-        [[nodiscard]] Result<std::vector<std::uint32_t>> readSpirvFile(
-            const std::filesystem::path& path) {
+        [[nodiscard]] Result<std::vector<std::uint32_t>>
+        readSpirvFile(const std::filesystem::path& path) {
             std::ifstream file{path, std::ios::binary | std::ios::ate};
             if (!file) {
-                return std::unexpected{shaderError("Failed to open SPIR-V file: " +
-                                                   path.string())};
+                return std::unexpected{shaderError("Failed to open SPIR-V file: " + path.string())};
             }
 
             const std::streamsize size = file.tellg();
-            if (size <= 0 ||
-                size % static_cast<std::streamsize>(sizeof(std::uint32_t)) != 0) {
+            if (size <= 0 || size % static_cast<std::streamsize>(sizeof(std::uint32_t)) != 0) {
                 return std::unexpected{
                     shaderError("SPIR-V file size is invalid: " + path.string())};
             }
@@ -39,8 +37,7 @@ namespace vke {
             std::vector<char> bytes(static_cast<std::size_t>(size));
             file.seekg(0, std::ios::beg);
             if (!file.read(bytes.data(), size)) {
-                return std::unexpected{
-                    shaderError("Failed to read SPIR-V file: " + path.string())};
+                return std::unexpected{shaderError("Failed to read SPIR-V file: " + path.string())};
             }
 
             std::vector<std::uint32_t> words(bytes.size() / sizeof(std::uint32_t));
@@ -60,8 +57,7 @@ namespace vke {
                                  &clearRange);
         }
 
-        [[nodiscard]] std::array<VkVertexInputBindingDescription, 1>
-        basicVertexInputBindings() {
+        [[nodiscard]] std::array<VkVertexInputBindingDescription, 1> basicVertexInputBindings() {
             return std::array{
                 VkVertexInputBindingDescription{
                     .binding = 0,
@@ -138,8 +134,8 @@ namespace vke {
         *this = std::move(other);
     }
 
-    BasicTriangleRenderer& BasicTriangleRenderer::operator=(
-        BasicTriangleRenderer&& other) noexcept {
+    BasicTriangleRenderer&
+    BasicTriangleRenderer::operator=(BasicTriangleRenderer&& other) noexcept {
         if (this == &other) {
             return *this;
         }
@@ -155,8 +151,8 @@ namespace vke {
         return *this;
     }
 
-    Result<BasicTriangleRenderer> BasicTriangleRenderer::create(
-        const BasicTriangleRendererDesc& desc) {
+    Result<BasicTriangleRenderer>
+    BasicTriangleRenderer::create(const BasicTriangleRendererDesc& desc) {
         if (desc.device == VK_NULL_HANDLE) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0, "Cannot create triangle renderer without a device"}};
@@ -253,8 +249,8 @@ namespace vke {
         return {};
     }
 
-    Result<VulkanFrameRecordResult> BasicTriangleRenderer::recordFrame(
-        const VulkanFrameRecordContext& frame) {
+    Result<VulkanFrameRecordResult>
+    BasicTriangleRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
         auto pipeline = ensurePipeline(frame.format);
         if (!pipeline) {
             return std::unexpected{std::move(pipeline.error())};
@@ -262,19 +258,28 @@ namespace vke {
 
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
 
         graph.addPass("ClearColor")
             .writeTransfer(backbuffer)
-            .execute([&frame](RenderGraphPassContext pass) -> Result<void> {
-                recordRenderGraphTransitions(frame, pass.transitionsBefore);
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
                 recordTransferClear(frame);
                 return {};
             });
 
         graph.addPass("Triangle")
             .writeColor(backbuffer)
-            .execute([&frame, this](RenderGraphPassContext pass) -> Result<void> {
-                recordRenderGraphTransitions(frame, pass.transitionsBefore);
+            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
                 recordTriangleDraw(frame, pipeline_.handle(), vertexBuffer_.handle(), drawItem_);
                 return {};
             });
@@ -289,7 +294,11 @@ namespace vke {
             return std::unexpected{std::move(executed.error())};
         }
 
-        recordRenderGraphTransitions(frame, compiled->finalTransitions);
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
 
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,

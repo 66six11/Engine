@@ -195,6 +195,7 @@ flowchart TD
 - `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
 - `--smoke-dynamic-rendering` 已验证 swapchain image view、dynamic rendering attachment clear 和 `ColorAttachment -> Present` transition。
 - `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、`BasicTriangleRenderer` 管理的 shader module、pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
+- RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage` binding 查找真实 Vulkan image；当前 smoke 只绑定 Backbuffer，后续 depth/transient image 必须显式加入 binding 表。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 和 triangle shader/pipeline 装配已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -238,12 +239,15 @@ flowchart TD
 ```mermaid
 flowchart TD
     RGTransition["RenderGraphImageTransition<br/>oldState/newState"]
+    Binding["RenderGraphImageHandle -> VkImage binding"]
     VkTransition["VulkanRenderGraphImageTransition<br/>oldLayout/newLayout<br/>stage/access"]
     Barrier["VkImageMemoryBarrier2"]
     CmdBarrier["vkCmdPipelineBarrier2"]
 
     RGTransition -->|"vulkanImageTransition"| VkTransition
-    VkTransition -->|"vulkanImageBarrier"| Barrier
+    RGTransition -->|"image handle"| Binding
+    VkTransition -->|"vulkanImageBarrier + bound VkImage"| Barrier
+    Binding --> Barrier
     Barrier --> CmdBarrier
 ```
 
@@ -251,6 +255,7 @@ flowchart TD
 
 - `vulkanImageTransition` 已实现。
 - `vulkanImageBarrier` 已实现。
+- `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、transitions 的 Markdown 调试表格。

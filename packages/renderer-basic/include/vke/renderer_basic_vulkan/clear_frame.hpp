@@ -1,25 +1,31 @@
 ﻿#pragma once
 
+#include <vulkan/vulkan.h>
+
+#include <array>
 #include <expected>
 #include <utility>
 
-#include <vulkan/vulkan.h>
-
 #include "vke/core/result.hpp"
-#include "vke/rendergraph/render_graph.hpp"
 #include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
+#include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 
 namespace vke {
-    [[nodiscard]] inline Result<VulkanFrameRecordResult> recordBasicClearFrame(
-        const VulkanFrameRecordContext& frame) {
+    [[nodiscard]] inline Result<VulkanFrameRecordResult>
+    recordBasicClearFrame(const VulkanFrameRecordContext& frame) {
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
 
         graph.addPass("ClearColor")
             .writeTransfer(backbuffer)
-            .execute([&frame](RenderGraphPassContext pass) -> Result<void> {
-                recordRenderGraphTransitions(frame, pass.transitionsBefore);
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
 
                 VkImageSubresourceRange clearRange{};
                 clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -43,22 +49,31 @@ namespace vke {
             return std::unexpected{std::move(executed.error())};
         }
 
-        recordRenderGraphTransitions(frame, compiled->finalTransitions);
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
 
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
         };
     }
 
-    [[nodiscard]] inline Result<VulkanFrameRecordResult> recordBasicDynamicClearFrame(
-        const VulkanFrameRecordContext& frame) {
+    [[nodiscard]] inline Result<VulkanFrameRecordResult>
+    recordBasicDynamicClearFrame(const VulkanFrameRecordContext& frame) {
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
 
         graph.addPass("DynamicClearColor")
             .writeColor(backbuffer)
-            .execute([&frame](RenderGraphPassContext pass) -> Result<void> {
-                recordRenderGraphTransitions(frame, pass.transitionsBefore);
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
 
                 VkRenderingAttachmentInfo colorAttachment{};
                 colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -95,7 +110,11 @@ namespace vke {
             return std::unexpected{std::move(executed.error())};
         }
 
-        recordRenderGraphTransitions(frame, compiled->finalTransitions);
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
 
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,

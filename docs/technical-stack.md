@@ -24,6 +24,12 @@
 - `vulkan-memory-allocator`：GPU 内存分配。
 - `glm`：可选数学库。第一阶段可以使用，后续也可以替换为项目自研 math 层。
 
+Vulkan loader/binding 策略：
+
+- 当前代码使用 raw Vulkan C headers，也就是直接 include `<vulkan/vulkan.h>`。
+- 运行时 dispatch 依赖 Vulkan SDK 或系统 loader，CMake 通过 `Vulkan::Vulkan` 链接。
+- MVP 阶段暂不引入 Volk 或 Vulkan-Hpp；如果后续切换 loader/wrapper，需要先更新 `rhi-vulkan` 边界和所有 public header 策略。
+
 工具依赖：
 
 - Vulkan SDK tools：`vulkaninfo`、validation layers、SPIR-V 工具。
