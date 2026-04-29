@@ -266,16 +266,13 @@ flowchart TD
 ```mermaid
 flowchart TD
     Now["当前:<br/>交互式 triangle viewer"]
-    Step1["已接入:<br/>Vulkan pipeline objects"]
-    Step2["已接入:<br/>Triangle pass"]
-    Step3["已接入:<br/>shader-slang triangle shader"]
-    Step4["已接入:<br/>renderer-basic-vulkan 接管 triangle 装配"]
-    Step5["已接入:<br/>renderer-basic 接管 ClearColor + Triangle graph"]
-    Step6["已接入:<br/>BasicDrawItem draw 参数"]
-    Step7["已接入:<br/>host-upload vertex buffer"]
-    Step8["之后:<br/>mesh asset 路线"]
+    Step1["下一步:<br/>Slang reflection JSON"]
+    Step2["之后:<br/>descriptor/layout 契约"]
+    Step3["之后:<br/>RenderGraph transient image"]
+    Step4["之后:<br/>depth attachment MVP"]
+    Step5["之后:<br/>mesh asset / index buffer"]
 
-    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7 --> Step8
+    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5
 ```
 
 建议推进顺序：
@@ -283,4 +280,6 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. 当前只接入固定顶点数据与 host-upload vertex buffer，后续再扩展 mesh asset，不在当前 MVP 阶段提前扩大 mesh 架构。
+4. 先做 Slang reflection JSON，再让 descriptor/layout 契约消费 reflection，避免 renderer 继续扩大手写 shader layout 假设。
+5. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
+6. mesh asset 路线放在 shader/layout/resource 生命周期稳定之后。

@@ -1,6 +1,7 @@
 # 资料与依据
 
-研究日期：2026-04-19
+初始研究日期：2026-04-19
+最近核对日期：2026-04-29
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -46,12 +47,14 @@
 - Slang 文档：https://shader-slang.org/docs/
 - Slang 用户指南：https://shader-slang.org/slang/user-guide/
 - Slang 命令行文档：https://shader-slang.org/slang/user-guide/command-line-slangc-reference/
+- Slang reflection API：https://docs.shader-slang.org/en/stable/external/slang/docs/user-guide/09-reflection.html
 - Khronos Vulkan Samples Slang shader language sample：https://docs.vulkan.org/samples/latest/samples/extensions/shader_object/slang_shaders/README.html
 
 结论：
 
 - Slang 是面向实时图形的 shader 语言和编译器，官方文档描述了 SPIR-V/Vulkan 目标。
 - Slang 可以通过 `slangc` 输出 SPIR-V，并通过 entry point 与 stage 参数选择 shader stage。
+- Slang reflection 数据应通过 API 获取，例如编译链接后的 component type 可提供 `ProgramLayout`。
 - Khronos Vulkan Samples 已提供 Slang shader language 示例，说明它可以用于 Vulkan 管线。
 - Slang 仍然需要和 Vulkan feature/capability 对齐；输出 SPIR-V 后必须走 `spirv-val`。
 
@@ -69,12 +72,48 @@
 
 - VMA 产品页：https://gpuopen.com/vulkan-memory-allocator/
 - VMA 仓库：https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+- VMA recommended usage patterns：https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html
 
 结论：
 
 - VMA 是 MIT 许可的单头文件 Vulkan 内存分配库。
 - 引擎应该通过一个 allocator facade 集中管理 buffer/image allocation，避免在各模块散落
   `vkAllocateMemory`。
+- RenderGraph transient image 可优先使用 VMA 的自动 memory usage 策略，再按实际用途细化。
+
+## 下一阶段 Vulkan 资源与同步
+
+一手资料：
+
+- Vulkan dynamic rendering proposal：https://github.khronos.org/Vulkan-Site/features/latest/features/proposals/VK_KHR_dynamic_rendering.html
+- Vulkan synchronization spec：https://github.khronos.org/Vulkan-Site/spec/latest/chapters/synchronization.html
+- Vulkan descriptor indexing sample：https://docs.vulkan.org/samples/latest/samples/extensions/descriptor_indexing/README.html
+- Blender Vulkan render graph：https://developer.blender.org/docs/features/gpu/vulkan/render_graph/
+
+结论：
+
+- dynamic rendering 继续作为主路径，新增 color/depth attachment 时不回退到传统 render pass。
+- 每新增一个 RenderGraph resource state，都必须同步定义 Vulkan layout、stage、access 和 barrier 验证。
+- descriptor indexing/bindless 暂缓；先完成固定 descriptor set/binding 和 pipeline layout 契约。
+- Blender 的 Vulkan render graph 文档强调让后端重排 transfer/compute/draw 并生成同步 barrier；当前项目可先借鉴调试节点和 barrier 可视化，不急于引入多线程 context。
+
+## 优秀案例
+
+一手资料和成熟项目资料：
+
+- Frostbite FrameGraph GDC Vault：https://www.gdcvault.com/play/1024612/FrameGraph-Extensible-RenderingArc
+- Frostbite FrameGraph slides：https://www.slideshare.net/slideshow/framegraph-extensible-rendering-architecture-in-frostbite/72795495
+- Unreal Rendering Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/rendering-dependency-graph?application_version=4.27
+- Granite renderer：https://github.com/Themaister/Granite
+- vuk render graph：https://vuk.readthedocs.io/en/latest/topics/rendergraph.html
+- Diligent Render State Packager：https://diligentgraphics.github.io/docs/d6/d8b/DiligentSamples_Tutorials_Tutorial25_StatePackager_readme.html
+
+结论：
+
+- Frostbite 和 Unreal RDG 都强调整帧图、延迟执行、资源生命周期和 barrier 由 graph 编译阶段统一管理。
+- Granite 和 vuk 对 Vulkan 工程更贴近：transient/imported resource、access annotation、deferred destruction、upload allocator 都适合作为 VkEngine 中期参考。
+- Diligent 的 Render State Notation/Packager 说明 shader、pipeline 和 resource signature 可以逐步转成离线可审查产物；这支持 VkEngine 先做 reflection JSON，再做 pipeline layout 契约。
+- 这些案例都不意味着下一步要直接引入大型 renderer、async compute、bindless 或多线程 context；当前阶段仍以小 smoke 闭环验证每个抽象。
 
 ## CMake、Conan、MSVC
 
@@ -87,6 +126,7 @@
 - Conan 2 CMakeDeps：https://docs.conan.io/2/reference/tools/cmake/cmakedeps.html
 - Conan CMakePresets workflow：https://docs.conan.io/2/examples/tools/cmake/cmake_toolchain/build_project_cmake_presets.html
 - Conan extending own CMakePresets：https://docs.conan.io/2/examples/tools/cmake/cmake_toolchain/extend_own_cmake_presets.html
+- Conan 2 lockfiles：https://docs.conan.io/2/tutorial/versioning/lockfiles.html
 
 结论：
 

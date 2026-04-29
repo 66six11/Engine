@@ -69,6 +69,14 @@ VkEngine/
 - resource lifetime 和 synchronization 决策在代码和日志中可见。
 - shader 语言决策已确认，或已改为可工作的编译链路。
 
+## 下一阶段任务拆分
+
+1. 增加 Slang reflection 基线，输出可审查的 `*.reflection.json`。[ ]
+2. 基于 reflection 建立 descriptor set/binding 和 pipeline layout 契约。[ ]
+3. 增加 RenderGraph transient image 声明、Vulkan binding 和 `--smoke-transient`。[ ]
+4. 增加 depth attachment 抽象状态、Vulkan 翻译和 `--smoke-depth-triangle`。[ ]
+5. 从固定顶点数据扩展到最小 mesh asset/index buffer 路线和 `--smoke-mesh`。[ ]
+
 ## 风险表
 
 - Slang 工具链集成：Slang 支持 Vulkan SPIR-V，但 compiler 获取、版本 pin 和 Conan/CMake
@@ -85,3 +93,7 @@ VkEngine/
   缓解：提交 `conan.lock` 并让 bootstrap 自动使用；依赖改动时审查 lockfile diff。
 - 包边界膨胀：为了快速跑通，代码容易滑向 monolithic app。
   缓解：从第一版 CMake target 开始按 `apps/engine/packages` 分层，app 只组合 package。
+- Shader reflection 风险：Slang reflection 需要接入 API，而不是只靠 `slangc` 命令行。
+  缓解：先生成 JSON 作为构建产物，不直接生成 C++ 代码；descriptor/layout 自动化放到下一步。
+- Transient/depth 同步风险：新增 image 状态会扩大 layout、stage、access 组合。
+  缓解：每新增一种 RenderGraph state 都同时增加 Vulkan adapter 单元验证和 smoke。

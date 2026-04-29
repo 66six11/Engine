@@ -10,8 +10,9 @@
 2. `technical-stack.md` - 平台、依赖、Vulkan、shader、CMake/Conan 策略。
 3. `architecture.md` - 模块边界、所有权、生命周期和 RenderGraph 设计。
 4. `flow-architecture.md` - 当前包依赖、启动流程、frame loop、RenderGraph/RHI 数据流。
-5. `review-workflow.md` - 每次审查、修复和提交前必须执行的门禁。
-6. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
+5. `next-development-plan.md` - 下一阶段 shader reflection、descriptor、transient/depth 和 mesh 路线。
+6. `review-workflow.md` - 每次审查、修复和提交前必须执行的门禁。
+7. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
 
 ## 知识分类
 
@@ -22,7 +23,7 @@
 | 架构设计 | `architecture.md`、`flow-architecture.md`、`package-architecture.md` | 记录 package-first 组织、对象生命周期、流程图和依赖方向。 |
 | RenderGraph | `rendergraph-mvp.md`、`rendergraph-rhi-boundary.md` | 记录 MVP 闭环、API 草图、后端无关边界和 Vulkan 翻译归属。 |
 | 工程规范 | `coding-standard.md`、`encoding-policy.md`、`review-workflow.md` | 记录编码规范、文本编码策略、审查和提交门禁。 |
-| 项目节奏 | `project-management.md` | 记录仓库布局、里程碑、Definition of Done 和风险表。 |
+| 项目节奏 | `project-management.md`、`next-development-plan.md` | 记录仓库布局、里程碑、Definition of Done、风险表和下一阶段开发顺序。 |
 
 ## 当前门禁状态
 
@@ -42,7 +43,7 @@
 
 ## 近期重点
 
-- 将 Slang compiler 版本记录保持在 shader metadata 和构建审查输出中。
-- 在 shader metadata 基线上继续扩展 reflection 字段。
-- 将无参数交互式 viewer 的 resize/minimize 手动验证记录纳入回归审查节奏。
+- 优先实现 Slang reflection 基线，生成可审查的 `*.reflection.json`。
+- 在 reflection 基线上建立 descriptor/layout 契约。
+- 接入 RenderGraph transient image 和 depth attachment smoke。
 - 维护 `conan.lock`，依赖改动时重新生成并审查 recipe revision 变化。
