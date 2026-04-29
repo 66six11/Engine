@@ -2,6 +2,8 @@
 
 ## 仓库布局
 
+当前仓库布局：
+
 ```text
 VkEngine/
   CMakeLists.txt
@@ -13,7 +15,6 @@ VkEngine/
   docs/
   apps/
     sample-viewer/
-    editor/
   engine/
     core/
     platform/
@@ -23,13 +24,11 @@ VkEngine/
     rendergraph/
     renderer-basic/
     shader-slang/
-    asset-core/
-    editor-core/
-  package-registry/
-  shaders/
-  tests/
   tools/
 ```
+
+后续可能新增 `apps/editor/`、`tests/`、`package-registry/`、`packages/asset-core/`、
+`packages/editor-core/` 等目录，但新增前应先明确 package 边界和 CMake target 关系。
 
 ## 变更策略
 
@@ -50,17 +49,17 @@ VkEngine/
 
 ## 初始任务拆分
 
-1. 创建 CMake、Conan、preset、dependency profile 骨架。
-2. 建立 `apps/`、`engine/`、`packages/` 的 package-first 目录和 CMake target 边界。
-3. 添加 `engine/core` 日志、错误、断言工具。
-4. 添加 `packages/window-glfw` 的 GLFW window 和 Vulkan surface。
-5. 添加 `packages/rhi-vulkan` 的 Vulkan instance/device/queue/allocator。
-6. 添加 swapchain 和 frame pacing。
-7. 添加 `packages/rendergraph` builder/compiler 骨架。
-8. 添加 clear pass。
+1. 创建 CMake、Conan、preset、dependency profile 骨架。[x]
+2. 建立 `apps/`、`engine/`、`packages/` 的 package-first 目录和 CMake target 边界。[x]
+3. 添加 `engine/core` 日志、错误、断言工具。[x]
+4. 添加 `packages/window-glfw` 的 GLFW window 和 Vulkan surface。[x]
+5. 添加 `packages/rhi-vulkan` 的 Vulkan instance/device/queue/allocator。[x]
+6. 添加 swapchain 和 frame pacing。[x]
+7. 添加 `packages/rendergraph` builder/compiler 骨架。[x]
+8. 添加 clear pass。[x]
 9. 添加 `packages/shader-slang` shader build 路径和 triangle pass。[x]
 10. 添加 resize/recreate 路径。
-11. 添加 validation checklist 和 smoke test 文档。
+11. 添加 validation checklist 和 smoke test 文档。[x]
 
 ## 第一版引擎 Definition Of Done
 

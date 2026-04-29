@@ -1,36 +1,48 @@
-# VkEngine 开发准备包
+# VkEngine 知识库
 
-这里是 VkEngine 第一个里程碑的开发前审核材料。当前阶段只做 Scope、Research、
-Design，不直接写运行时代码，目标是先把技术路线、编码规范、项目组织和 render graph
-最小闭环说清楚。
+这里是 VkEngine 的项目知识入口。根目录 `README.md` 面向快速上手；本目录记录技术依据、架构决策、构建流程、审查门禁和后续演进计划。
 
-## 建议审核顺序
+## 快速阅读路径
 
-1. `research-sources.md` - 一手资料、版本依据和高风险技术点。
-2. `technical-stack.md` - 工具链、依赖、CMake/Conan/MSVC/Vulkan 策略。
-3. `build-workflow.md` - Conan 生成 preset、CMake 继承 preset 的本地构建流程。
-4. `architecture.md` - 模块边界、对象所有权、生命周期和 render graph 设计。
-5. `rendergraph-mvp.md` - 首个 render graph 闭环的最小里程碑。
-6. `flow-architecture.md` - 当前运行流程、包依赖、RenderGraph/RHI 数据流和下一步接入计划。
-7. `rendergraph-rhi-boundary.md` - RenderGraph 与具体 RHI/Vulkan 后端之间的类型和依赖边界。
-8. `review-workflow.md` - 审查、设计审查、clang、smoke 和提交前门禁。
-9. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
-10. `package-architecture.md` - 类 Unity package 的模块化文件与包管理设计。
-11. `encoding-policy.md` - UTF-8 BOM 使用边界、检查脚本和工具兼容性说明。
-12. `project-management.md` - 仓库布局、任务拆分、门禁和风险表。
+新开发者建议按下面顺序阅读：
+
+1. `build-workflow.md` - 本地 bootstrap、configure、build 和 preset 使用方式。
+2. `technical-stack.md` - 平台、依赖、Vulkan、shader、CMake/Conan 策略。
+3. `architecture.md` - 模块边界、所有权、生命周期和 RenderGraph 设计。
+4. `flow-architecture.md` - 当前包依赖、启动流程、frame loop、RenderGraph/RHI 数据流。
+5. `review-workflow.md` - 每次审查、修复和提交前必须执行的门禁。
+6. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
+
+## 知识分类
+
+| 分类 | 文档 | 用途 |
+| --- | --- | --- |
+| 上手与构建 | `build-workflow.md` | 解释 Conan 生成物、CMake Presets、Visual Studio/Ninja 构建入口。 |
+| 技术依据 | `research-sources.md`、`technical-stack.md` | 记录一手资料、版本依据、依赖和工具链决策。 |
+| 架构设计 | `architecture.md`、`flow-architecture.md`、`package-architecture.md` | 记录 package-first 组织、对象生命周期、流程图和依赖方向。 |
+| RenderGraph | `rendergraph-mvp.md`、`rendergraph-rhi-boundary.md` | 记录 MVP 闭环、API 草图、后端无关边界和 Vulkan 翻译归属。 |
+| 工程规范 | `coding-standard.md`、`encoding-policy.md`、`review-workflow.md` | 记录编码规范、文本编码策略、审查和提交门禁。 |
+| 项目节奏 | `project-management.md` | 记录仓库布局、里程碑、Definition of Done 和风险表。 |
 
 ## 当前门禁状态
 
-- Scope：Windows 桌面端，Vulkan 1.4，C++23，GLFW，VMA，CMake，Conan，MSVC。
-- Research：已在 2026-04-19 核对官方公开资料。
-- Design：已准备初版设计供你审核。
+- Scope：Windows 桌面端，Vulkan 1.4，C++23，GLFW，VMA，CMake，Conan，MSVC/ClangCL。
+- Research：已有官方资料索引；涉及最新 SDK、扩展、工具行为时仍需重新核对一手资料。
+- Design：已形成 package-first、RenderGraph/RHI 边界、frame loop 和 shader pipeline 初版设计。
 - Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、dynamic rendering clear 和 triangle smoke。
+- Validation：提交前按 `review-workflow.md` 运行编码检查、构建、smoke 和 Vulkan/C++ 审查脚本。
 
-## 需要你重点确认
+## 文档维护规则
 
-shader 语言已更正为 Slang。当前 triangle smoke 暂用 GLSL + `glslc` + `spirv-val`
-验证 pipeline 对象和动态渲染路径；下一步需要把 shader 编译迁移到 `shader-slang`
-package，固定 Slang compiler 版本，并把 shader metadata / reflection 基线纳入构建流程。
+- 根目录 `README.md` 只保留项目简介、快速开始、常用命令和文档入口。
+- 本目录文档承载详细设计、决策依据和门禁规则。
+- 修改包依赖、CMake target、smoke 命令、RenderGraph 语义、frame loop、shader pipeline 或 Vulkan 生命周期时，必须同步相关文档。
+- 文档中的“当前状态”应描述仓库真实状态；未来计划需要明确写成“后续”或“计划”。
+- Markdown 文件按 `encoding-policy.md` 使用 UTF-8 without BOM。
 
-文件组织方向已调整为 package-first：引擎核心保持小而稳定，render graph、renderer、
-editor 等能力通过 `packages/` 目录独立组合，最终应用和编辑器只是不同 host。
+## 近期重点
+
+- 固定并记录 Slang compiler 获取方式和版本。
+- 将 shader metadata/reflection 基线纳入 `shader-slang` 构建流程。
+- 补齐 resize/recreate 路径和对应 smoke。
+- 在首次稳定构建后生成 Conan lockfile，降低依赖漂移风险。
