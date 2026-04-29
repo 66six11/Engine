@@ -66,7 +66,7 @@
 退出条件：
 
 - 最小 vertex/fragment shader 能编译为 SPIR-V。
-- shader build 路径包含 SPIR-V validation。
+- shader build 路径包含 SPIR-V validation，并生成记录 entry/stage/profile、工具路径和工具版本的 metadata。
 - 使用 dynamic rendering 创建 graphics pipeline。
 - triangle pass 声明 color attachment write access。
 - graph 能把 swapchain image transition 到 rendering 和 present 所需 layout。

@@ -72,7 +72,8 @@ Vulkan loader/binding 策略：
   将 preset 绑定到名为 `Visual Studio` 的 CLion toolchain，避免 IDE 默认落到 MinGW。
 - Windows MSVC profile 明确 `compiler=msvc`、`compiler.version=194`、
   `compiler.cppstd=23`、`arch=x86_64`。
-- 首次跑通后生成 lockfile，避免依赖版本漂移。
+- 仓库提交 `conan.lock`，`scripts/bootstrap-conan.ps1` 会在存在 lockfile 时自动用于
+  `conan install`，避免依赖 recipe revision 漂移。
 
 ## Vulkan 1.4 策略
 
@@ -99,6 +100,8 @@ Slang 状态：
 - Slang 作为默认 shader 语言。
 - `packages/shader-slang` 提供 `vke_add_slang_shader()`，把 `slangc` 命令行、entry point、stage、
   target profile、output 路径和 `spirv-val` 检查写入构建流程。
+- `vke_add_slang_shader()` 可生成 `.metadata.json`，记录 source、entry、stage、profile、
+  output、`slangc` 路径/版本和 `spirv-val` 路径/版本，作为 shader metadata/reflection 的基线。
 - 如果 Slang 的包管理集成暂时不顺，允许用预安装工具或 `tools/` 下的显式路径过渡，但
   不能静默依赖开发者环境。
 

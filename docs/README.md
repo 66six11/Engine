@@ -42,7 +42,7 @@
 
 ## 近期重点
 
-- 固定并记录 Slang compiler 获取方式和版本。
-- 将 shader metadata/reflection 基线纳入 `shader-slang` 构建流程。
+- 将 Slang compiler 版本记录保持在 shader metadata 和构建审查输出中。
+- 在 shader metadata 基线上继续扩展 reflection 字段。
 - 将无参数交互式 viewer 的 resize/minimize 手动验证记录纳入回归审查节奏。
-- 在首次稳定构建后生成 Conan lockfile，降低依赖漂移风险。
+- 维护 `conan.lock`，依赖改动时重新生成并审查 recipe revision 变化。

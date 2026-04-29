@@ -73,7 +73,7 @@ VkEngine/
 
 - Slang 工具链集成：Slang 支持 Vulkan SPIR-V，但 compiler 获取、版本 pin 和 Conan/CMake
   集成需要明确。
-  缓解：固定 `slangc` 版本，记录命令行，shader 输出统一走 `spirv-val`。
+  缓解：shader metadata 记录 `slangc` 路径/版本，shader 输出统一走 `spirv-val`。
 - Vulkan 1.4 可用性：本机驱动可能不暴露 Vulkan 1.4。
   缓解：请求 1.4，输出能力报告，再决定 fail fast 或支持 1.3 fallback。
 - 同步复杂度：render graph barrier 很容易细节错误。
@@ -81,7 +81,7 @@ VkEngine/
 - Swapchain resize：自动 smoke 已覆盖 zero extent 和主动 recreate；真实交互 resize/minimize
   已在无参数 sample viewer 中手动验证通过。
   缓解：保留 `--smoke-resize` 作为回归门禁；后续若接入平台 resize 事件回调，再补充事件级验证记录。
-- 依赖漂移：未 pin 的 Conan 依赖可能改变行为。
-  缓解：首次 bootstrap 成功后生成 lockfile。
+- 依赖漂移：未审查的 Conan 依赖升级可能改变行为。
+  缓解：提交 `conan.lock` 并让 bootstrap 自动使用；依赖改动时审查 lockfile diff。
 - 包边界膨胀：为了快速跑通，代码容易滑向 monolithic app。
   缓解：从第一版 CMake target 开始按 `apps/engine/packages` 分层，app 只组合 package。

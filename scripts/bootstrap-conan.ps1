@@ -15,10 +15,16 @@ $profiles = @(
     "windows-clangcl-release"
 )
 
+$lockfile = Join-Path $root "conan.lock"
+$lockfileArgs = @()
+if (Test-Path -LiteralPath $lockfile) {
+    $lockfileArgs = @("--lockfile=$lockfile")
+}
+
 foreach ($profile in $profiles) {
     $profilePath = "profiles/$profile"
     Write-Host "==> conan install $profile"
-    conan install . --profile:host=$profilePath --profile:build=$profilePath --build=missing
+    conan install . --profile:host=$profilePath --profile:build=$profilePath @lockfileArgs --build=missing
 }
 
 Write-Host ""

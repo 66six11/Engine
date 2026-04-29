@@ -1,0 +1,13 @@
+{
+    "version": "0.5",
+    "requires": [
+        "vulkan-memory-allocator/3.3.0#5393b5bc9a6b8a2fb9612df877706608%1761667136.618",
+        "vulkan-headers/1.4.313.0#83efc4aabdbe58d53aeae9494a720f7e%1747979764.107",
+        "opengl/system#cfcf523b9d2bad75cbf377f56562634c%1762526044.744",
+        "glm/1.0.1#94392c53a527f7d830119b84fe80c754%1713951421.775",
+        "glfw/3.4#41cc24c744dc4c80571f5dd10dcd9cda%1732635892.515"
+    ],
+    "build_requires": [],
+    "python_requires": [],
+    "config_requires": []
+}

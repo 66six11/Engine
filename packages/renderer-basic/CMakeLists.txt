@@ -15,8 +15,14 @@ set(VKE_RENDERER_BASIC_TRIANGLE_SHADER_MANIFEST
 set(VKE_RENDERER_BASIC_TRIANGLE_VERT_SPV
     "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_triangle.vert.spv"
 )
+set(VKE_RENDERER_BASIC_TRIANGLE_VERT_METADATA
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_triangle.vert.metadata.json"
+)
 set(VKE_RENDERER_BASIC_TRIANGLE_FRAG_SPV
     "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_triangle.frag.spv"
+)
+set(VKE_RENDERER_BASIC_TRIANGLE_FRAG_METADATA
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_triangle.frag.metadata.json"
 )
 
 vke_add_slang_shader(vke-renderer-basic-triangle-vert
@@ -24,6 +30,7 @@ vke_add_slang_shader(vke-renderer-basic-triangle-vert
     ENTRY vertexMain
     STAGE vertex
     OUTPUT "${VKE_RENDERER_BASIC_TRIANGLE_VERT_SPV}"
+    METADATA_OUTPUT "${VKE_RENDERER_BASIC_TRIANGLE_VERT_METADATA}"
     DEPENDS "${VKE_RENDERER_BASIC_TRIANGLE_SHADER_MANIFEST}"
 )
 
@@ -32,6 +39,7 @@ vke_add_slang_shader(vke-renderer-basic-triangle-frag
     ENTRY fragmentMain
     STAGE fragment
     OUTPUT "${VKE_RENDERER_BASIC_TRIANGLE_FRAG_SPV}"
+    METADATA_OUTPUT "${VKE_RENDERER_BASIC_TRIANGLE_FRAG_METADATA}"
     DEPENDS "${VKE_RENDERER_BASIC_TRIANGLE_SHADER_MANIFEST}"
 )
 
