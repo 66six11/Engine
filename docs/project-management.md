@@ -79,8 +79,8 @@ VkEngine/
 - 同步复杂度：render graph barrier 很容易细节错误。
   缓解：首版单 queue、只用 synchronization2、开启详细 debug log 和 sync validation。
 - Swapchain resize：自动 smoke 已覆盖 zero extent 和主动 recreate；真实交互 resize/minimize
-  仍可能出现连续 out-of-date surface。
-  缓解：保留 `--smoke-resize`，后续接入窗口 resize 事件和交互验证记录。
+  已在无参数 sample viewer 中手动验证通过。
+  缓解：保留 `--smoke-resize` 作为回归门禁；后续若接入平台 resize 事件回调，再补充事件级验证记录。
 - 依赖漂移：未 pin 的 Conan 依赖可能改变行为。
   缓解：首次 bootstrap 成功后生成 lockfile。
 - 包边界膨胀：为了快速跑通，代码容易滑向 monolithic app。

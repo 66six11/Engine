@@ -195,6 +195,7 @@ flowchart TD
 - `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
 - `--smoke-dynamic-rendering` 已验证 swapchain image view、dynamic rendering attachment clear 和 `ColorAttachment -> Present` transition。
 - `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、`BasicTriangleRenderer` 管理的 shader module、pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
+- 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage` binding 查找真实 Vulkan image；当前 smoke 只绑定 Backbuffer，后续 depth/transient image 必须显式加入 binding 表。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
@@ -264,7 +265,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>dynamic rendering clear smoke"]
+    Now["当前:<br/>交互式 triangle viewer"]
     Step1["已接入:<br/>Vulkan pipeline objects"]
     Step2["已接入:<br/>Triangle pass"]
     Step3["已接入:<br/>shader-slang triangle shader"]

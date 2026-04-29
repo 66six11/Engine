@@ -29,7 +29,7 @@
 - Scope：Windows 桌面端，Vulkan 1.4，C++23，GLFW，VMA，CMake，Conan，MSVC/ClangCL。
 - Research：已有官方资料索引；涉及最新 SDK、扩展、工具行为时仍需重新核对一手资料。
 - Design：已形成 package-first、RenderGraph/RHI 边界、frame loop 和 shader pipeline 初版设计。
-- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、dynamic rendering clear 和 triangle smoke。
+- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、dynamic rendering clear、resize/recreate smoke、triangle smoke 和无参数交互式 triangle viewer。
 - Validation：提交前按 `review-workflow.md` 运行编码检查、构建、smoke 和 Vulkan/C++ 审查脚本。
 
 ## 文档维护规则
@@ -44,5 +44,5 @@
 
 - 固定并记录 Slang compiler 获取方式和版本。
 - 将 shader metadata/reflection 基线纳入 `shader-slang` 构建流程。
-- 补齐 resize/recreate 路径和对应 smoke。
+- 将无参数交互式 viewer 的 resize/minimize 手动验证记录纳入回归审查节奏。
 - 在首次稳定构建后生成 Conan lockfile，降低依赖漂移风险。
