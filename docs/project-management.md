@@ -63,8 +63,8 @@ VkEngine/
 
 ## 第一版引擎 Definition Of Done
 
-- 开发者能根据文档 configure、build、run。
-- 窗口能通过 render graph execution 呈现 clear color 或 triangle。
+- 开发者能根据文档 configure、build、run，并能无参数启动交互式 sample viewer。
+- 窗口能通过 render graph execution 持续呈现 triangle，并保留 clear/dynamic clear smoke。
 - validation layer 在普通 startup-frame-shutdown 路径没有已知 error。
 - resource lifetime 和 synchronization 决策在代码和日志中可见。
 - shader 语言决策已确认，或已改为可工作的编译链路。

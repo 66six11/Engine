@@ -57,3 +57,13 @@ cmd /c "build\conan\clangcl-release\Release\generators\conanbuild.bat && cmake -
 - 提交前至少跑一次 `clangcl-debug`，让 ClangCL 和 `clang-tidy` 帮我们抓 MSVC 不容易暴露的问题。
 - 做发布或性能验证时使用 `msvc-release`。
 - 需要更严格检查发布配置时再跑 `clangcl-release`。
+
+## 运行方式
+
+无参数启动 sample viewer 会进入正常交互式运行状态，打开窗口并持续渲染 triangle：
+
+```powershell
+build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe
+```
+
+需要自动验证时使用 `--smoke-*` 入口。完整提交前 smoke 清单见 `docs/review-workflow.md`。
