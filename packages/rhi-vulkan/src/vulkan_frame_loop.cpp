@@ -840,6 +840,14 @@ namespace vke {
 
         result = vkResetFences(device_, 1, &inFlight_);
         if (result != VK_SUCCESS) {
+            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
+            if (!drained) {
+                return std::unexpected{vulkanError("Failed to reset Vulkan frame fence and recover "
+                                                   "the acquired image semaphore: " +
+                                                       drained.error().message,
+                                                   result)};
+            }
+
             return std::unexpected{vulkanError("Failed to reset Vulkan frame fence", result)};
         }
 
@@ -869,6 +877,7 @@ namespace vke {
 
         result = vkQueueSubmit2(graphicsQueue_, 1, &submitInfo, inFlight_);
         if (result != VK_SUCCESS) {
+            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
             auto replacementFence = createFence(device_);
             if (!replacementFence) {
                 return std::unexpected{vulkanError(
@@ -879,6 +888,14 @@ namespace vke {
 
             vkDestroyFence(device_, inFlight_, nullptr);
             inFlight_ = *replacementFence;
+            if (!drained) {
+                return std::unexpected{vulkanError(
+                    "Failed to submit Vulkan frame commands and recover the acquired image "
+                    "semaphore: " +
+                        drained.error().message,
+                    result)};
+            }
+
             return std::unexpected{vulkanError("Failed to submit Vulkan frame commands", result)};
         }
 
