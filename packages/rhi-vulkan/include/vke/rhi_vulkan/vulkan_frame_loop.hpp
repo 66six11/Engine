@@ -54,20 +54,37 @@ namespace vke {
                                                             const VulkanFrameLoopDesc& desc);
 
         void setTargetExtent(std::uint32_t width, std::uint32_t height);
+        [[nodiscard]] Result<VulkanFrameStatus> recreate();
         [[nodiscard]] Result<VulkanFrameStatus> renderFrame();
-        [[nodiscard]] Result<VulkanFrameStatus> renderFrame(
-            const VulkanFrameRecordCallback& record);
+        [[nodiscard]] Result<VulkanFrameStatus>
+        renderFrame(const VulkanFrameRecordCallback& record);
 
         [[nodiscard]] VkFormat format() const;
         [[nodiscard]] VkExtent2D extent() const;
 
     private:
+        struct AcquiredImage {
+            std::uint32_t imageIndex{0};
+            bool suboptimal{false};
+        };
+
+        struct FrameAcquireResult {
+            VulkanFrameStatus status{VulkanFrameStatus::Presented};
+            bool hasImage{false};
+            AcquiredImage image{};
+        };
+
         void destroy();
         [[nodiscard]] Result<VulkanFrameStatus> recreateSwapchain();
-        [[nodiscard]] Result<VulkanFrameRecordResult> recordClearCommands(
-            std::uint32_t imageIndex);
-        [[nodiscard]] Result<VulkanFrameRecordResult> recordFrameCommands(
-            std::uint32_t imageIndex, const VulkanFrameRecordCallback& record);
+        [[nodiscard]] Result<void> recoverAcquiredImageSemaphore();
+        [[nodiscard]] Result<FrameAcquireResult> acquireNextImage();
+        [[nodiscard]] Result<void> submitRecordedFrame(std::uint32_t imageIndex,
+                                                       const VulkanFrameRecordResult& recorded);
+        [[nodiscard]] Result<VulkanFrameStatus> presentFrame(std::uint32_t imageIndex,
+                                                             bool acquiredSuboptimal);
+        [[nodiscard]] Result<VulkanFrameRecordResult> recordClearCommands(std::uint32_t imageIndex);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordFrameCommands(std::uint32_t imageIndex, const VulkanFrameRecordCallback& record);
 
         VkDevice device_{VK_NULL_HANDLE};
         VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};

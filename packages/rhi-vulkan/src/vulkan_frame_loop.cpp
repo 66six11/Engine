@@ -627,6 +627,10 @@ namespace vke {
         };
     }
 
+    Result<VulkanFrameStatus> VulkanFrameLoop::recreate() {
+        return recreateSwapchain();
+    }
+
     Result<VulkanFrameStatus> VulkanFrameLoop::recreateSwapchain() {
         if (targetExtent_.width == 0 || targetExtent_.height == 0) {
             return VulkanFrameStatus::OutOfDate;
@@ -742,6 +746,150 @@ namespace vke {
         return VulkanFrameStatus::Recreated;
     }
 
+    Result<void> VulkanFrameLoop::recoverAcquiredImageSemaphore() {
+        return drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
+    }
+
+    Result<VulkanFrameLoop::FrameAcquireResult> VulkanFrameLoop::acquireNextImage() {
+        VkResult result = vkWaitForFences(device_, 1, &inFlight_, VK_TRUE, UINT64_MAX);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{vulkanError("Failed to wait for Vulkan frame fence", result)};
+        }
+
+        std::uint32_t imageIndex = 0;
+        result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailable_,
+                                       VK_NULL_HANDLE, &imageIndex);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            auto recreated = recreateSwapchain();
+            if (!recreated) {
+                return std::unexpected{std::move(recreated.error())};
+            }
+
+            return FrameAcquireResult{
+                .status = *recreated,
+                .hasImage = false,
+                .image = {},
+            };
+        }
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            return std::unexpected{vulkanError("Failed to acquire Vulkan swapchain image", result)};
+        }
+
+        if (imageIndex >= renderFinished_.size()) {
+            auto drained = recoverAcquiredImageSemaphore();
+            if (!drained) {
+                return std::unexpected{std::move(drained.error())};
+            }
+
+            return std::unexpected{
+                vulkanError("Acquired Vulkan swapchain image index is out of range")};
+        }
+
+        return FrameAcquireResult{
+            .status = VulkanFrameStatus::Presented,
+            .hasImage = true,
+            .image =
+                AcquiredImage{
+                    .imageIndex = imageIndex,
+                    .suboptimal = result == VK_SUBOPTIMAL_KHR,
+                },
+        };
+    }
+
+    Result<void> VulkanFrameLoop::submitRecordedFrame(std::uint32_t imageIndex,
+                                                      const VulkanFrameRecordResult& recorded) {
+        VkResult result = vkResetFences(device_, 1, &inFlight_);
+        if (result != VK_SUCCESS) {
+            auto drained = recoverAcquiredImageSemaphore();
+            if (!drained) {
+                return std::unexpected{vulkanError("Failed to reset Vulkan frame fence and recover "
+                                                   "the acquired image semaphore: " +
+                                                       drained.error().message,
+                                                   result)};
+            }
+
+            return std::unexpected{vulkanError("Failed to reset Vulkan frame fence", result)};
+        }
+
+        VkSemaphoreSubmitInfo waitInfo{};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        waitInfo.semaphore = imageAvailable_;
+        waitInfo.stageMask = recorded.waitStageMask == 0 ? VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
+                                                         : recorded.waitStageMask;
+
+        VkCommandBufferSubmitInfo commandInfo{};
+        commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        commandInfo.commandBuffer = commandBuffer_;
+
+        VkSemaphoreSubmitInfo signalInfo{};
+        signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signalInfo.semaphore = renderFinished_[imageIndex];
+        signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        VkSubmitInfo2 submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submitInfo.waitSemaphoreInfoCount = 1;
+        submitInfo.pWaitSemaphoreInfos = &waitInfo;
+        submitInfo.commandBufferInfoCount = 1;
+        submitInfo.pCommandBufferInfos = &commandInfo;
+        submitInfo.signalSemaphoreInfoCount = 1;
+        submitInfo.pSignalSemaphoreInfos = &signalInfo;
+
+        result = vkQueueSubmit2(graphicsQueue_, 1, &submitInfo, inFlight_);
+        if (result == VK_SUCCESS) {
+            return {};
+        }
+
+        auto drained = recoverAcquiredImageSemaphore();
+        auto replacementFence = createFence(device_);
+        if (!replacementFence) {
+            return std::unexpected{
+                vulkanError("Failed to submit Vulkan frame commands and recover the frame fence: " +
+                                replacementFence.error().message,
+                            result)};
+        }
+
+        vkDestroyFence(device_, inFlight_, nullptr);
+        inFlight_ = *replacementFence;
+        if (!drained) {
+            return std::unexpected{vulkanError("Failed to submit Vulkan frame commands and recover "
+                                               "the acquired image semaphore: " +
+                                                   drained.error().message,
+                                               result)};
+        }
+
+        return std::unexpected{vulkanError("Failed to submit Vulkan frame commands", result)};
+    }
+
+    Result<VulkanFrameStatus> VulkanFrameLoop::presentFrame(std::uint32_t imageIndex,
+                                                            bool acquiredSuboptimal) {
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &renderFinished_[imageIndex];
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &swapchain_;
+        presentInfo.pImageIndices = &imageIndex;
+
+        const VkResult result = vkQueuePresentKHR(graphicsQueue_, &presentInfo);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            return recreateSwapchain();
+        }
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            return std::unexpected{vulkanError("Failed to present Vulkan swapchain image", result)};
+        }
+        if (acquiredSuboptimal || result == VK_SUBOPTIMAL_KHR) {
+            auto recreated = recreateSwapchain();
+            if (!recreated) {
+                return std::unexpected{std::move(recreated.error())};
+            }
+
+            return VulkanFrameStatus::Suboptimal;
+        }
+
+        return VulkanFrameStatus::Presented;
+    }
+
     Result<VulkanFrameRecordResult>
     VulkanFrameLoop::recordFrameCommands(std::uint32_t imageIndex,
                                          const VulkanFrameRecordCallback& record) {
@@ -803,34 +951,18 @@ namespace vke {
             return recreateSwapchain();
         }
 
-        VkResult result = vkWaitForFences(device_, 1, &inFlight_, VK_TRUE, UINT64_MAX);
-        if (result != VK_SUCCESS) {
-            return std::unexpected{vulkanError("Failed to wait for Vulkan frame fence", result)};
+        auto acquired = acquireNextImage();
+        if (!acquired) {
+            return std::unexpected{std::move(acquired.error())};
+        }
+        if (!acquired->hasImage) {
+            return acquired->status;
         }
 
-        std::uint32_t imageIndex = 0;
-        result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailable_,
-                                       VK_NULL_HANDLE, &imageIndex);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            return recreateSwapchain();
-        }
-        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            return std::unexpected{vulkanError("Failed to acquire Vulkan swapchain image", result)};
-        }
-        const bool acquiredSuboptimal = result == VK_SUBOPTIMAL_KHR;
-        if (imageIndex >= renderFinished_.size()) {
-            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
-            if (!drained) {
-                return std::unexpected{std::move(drained.error())};
-            }
-
-            return std::unexpected{
-                vulkanError("Acquired Vulkan swapchain image index is out of range")};
-        }
-
-        auto recorded = recordFrameCommands(imageIndex, record);
+        const AcquiredImage image = acquired->image;
+        auto recorded = recordFrameCommands(image.imageIndex, record);
         if (!recorded) {
-            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
+            auto drained = recoverAcquiredImageSemaphore();
             if (!drained) {
                 return std::unexpected{std::move(drained.error())};
             }
@@ -838,92 +970,12 @@ namespace vke {
             return std::unexpected{std::move(recorded.error())};
         }
 
-        result = vkResetFences(device_, 1, &inFlight_);
-        if (result != VK_SUCCESS) {
-            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
-            if (!drained) {
-                return std::unexpected{vulkanError("Failed to reset Vulkan frame fence and recover "
-                                                   "the acquired image semaphore: " +
-                                                       drained.error().message,
-                                                   result)};
-            }
-
-            return std::unexpected{vulkanError("Failed to reset Vulkan frame fence", result)};
+        auto submitted = submitRecordedFrame(image.imageIndex, *recorded);
+        if (!submitted) {
+            return std::unexpected{std::move(submitted.error())};
         }
 
-        VkSemaphoreSubmitInfo waitInfo{};
-        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        waitInfo.semaphore = imageAvailable_;
-        waitInfo.stageMask = recorded->waitStageMask == 0 ? VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
-                                                          : recorded->waitStageMask;
-
-        VkCommandBufferSubmitInfo commandInfo{};
-        commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        commandInfo.commandBuffer = commandBuffer_;
-
-        VkSemaphoreSubmitInfo signalInfo{};
-        signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfo.semaphore = renderFinished_[imageIndex];
-        signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-        VkSubmitInfo2 submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submitInfo.waitSemaphoreInfoCount = 1;
-        submitInfo.pWaitSemaphoreInfos = &waitInfo;
-        submitInfo.commandBufferInfoCount = 1;
-        submitInfo.pCommandBufferInfos = &commandInfo;
-        submitInfo.signalSemaphoreInfoCount = 1;
-        submitInfo.pSignalSemaphoreInfos = &signalInfo;
-
-        result = vkQueueSubmit2(graphicsQueue_, 1, &submitInfo, inFlight_);
-        if (result != VK_SUCCESS) {
-            auto drained = drainAcquiredImageSemaphore(device_, graphicsQueue_, imageAvailable_);
-            auto replacementFence = createFence(device_);
-            if (!replacementFence) {
-                return std::unexpected{vulkanError(
-                    "Failed to submit Vulkan frame commands and recover the frame fence: " +
-                        replacementFence.error().message,
-                    result)};
-            }
-
-            vkDestroyFence(device_, inFlight_, nullptr);
-            inFlight_ = *replacementFence;
-            if (!drained) {
-                return std::unexpected{vulkanError(
-                    "Failed to submit Vulkan frame commands and recover the acquired image "
-                    "semaphore: " +
-                        drained.error().message,
-                    result)};
-            }
-
-            return std::unexpected{vulkanError("Failed to submit Vulkan frame commands", result)};
-        }
-
-        VkPresentInfoKHR presentInfo{};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &renderFinished_[imageIndex];
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = &swapchain_;
-        presentInfo.pImageIndices = &imageIndex;
-
-        result = vkQueuePresentKHR(graphicsQueue_, &presentInfo);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            return recreateSwapchain();
-        }
-        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            return std::unexpected{vulkanError("Failed to present Vulkan swapchain image", result)};
-        }
-        if (acquiredSuboptimal || result == VK_SUBOPTIMAL_KHR) {
-            auto recreated = recreateSwapchain();
-            if (!recreated) {
-                return std::unexpected{std::move(recreated.error())};
-            }
-
-            return VulkanFrameStatus::Suboptimal;
-        }
-
-        return VulkanFrameStatus::Presented;
+        return presentFrame(image.imageIndex, image.suboptimal);
     }
 
     VkFormat VulkanFrameLoop::format() const {

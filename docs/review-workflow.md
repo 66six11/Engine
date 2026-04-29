@@ -43,10 +43,12 @@ python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
+build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
+build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
 ```
 

@@ -58,7 +58,7 @@ VkEngine/
 7. 添加 `packages/rendergraph` builder/compiler 骨架。[x]
 8. 添加 clear pass。[x]
 9. 添加 `packages/shader-slang` shader build 路径和 triangle pass。[x]
-10. 添加 resize/recreate 路径。
+10. 添加基础 resize/recreate 路径和专项 smoke。[x]
 11. 添加 validation checklist 和 smoke test 文档。[x]
 
 ## 第一版引擎 Definition Of Done
@@ -78,8 +78,9 @@ VkEngine/
   缓解：请求 1.4，输出能力报告，再决定 fail fast 或支持 1.3 fallback。
 - 同步复杂度：render graph barrier 很容易细节错误。
   缓解：首版单 queue、只用 synchronization2、开启详细 debug log 和 sync validation。
-- Swapchain resize：Windows resize/minimize 可能出现 zero extent 或 out-of-date surface。
-  缓解：显式处理暂停、最小化和 recreate。
+- Swapchain resize：自动 smoke 已覆盖 zero extent 和主动 recreate；真实交互 resize/minimize
+  仍可能出现连续 out-of-date surface。
+  缓解：保留 `--smoke-resize`，后续接入窗口 resize 事件和交互验证记录。
 - 依赖漂移：未 pin 的 Conan 依赖可能改变行为。
   缓解：首次 bootstrap 成功后生成 lockfile。
 - 包边界膨胀：为了快速跑通，代码容易滑向 monolithic app。

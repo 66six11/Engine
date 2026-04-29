@@ -105,8 +105,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = std::string{title}});
+        auto window = vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = std::string{title}});
         if (!window) {
             vke::logError(window.error().message);
             return EXIT_FAILURE;
@@ -129,12 +128,11 @@ namespace {
 
         vke::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
-                          .width = framebuffer.width,
-                          .height = framebuffer.height,
-                          .clearColor = clearColor,
-                      });
+        auto frameLoop = vke::VulkanFrameLoop::create(*context, vke::VulkanFrameLoopDesc{
+                                                                    .width = framebuffer.width,
+                                                                    .height = framebuffer.height,
+                                                                    .clearColor = clearColor,
+                                                                });
         if (!frameLoop) {
             vke::logError(frameLoop.error().message);
             return EXIT_FAILURE;
@@ -172,9 +170,115 @@ namespace {
     }
 
     int runSmokeDynamicRendering() {
-        return runSmokeFrame(vke::recordBasicDynamicClearFrame,
-                             "VkEngine Dynamic Rendering Smoke",
+        return runSmokeFrame(vke::recordBasicDynamicClearFrame, "VkEngine Dynamic Rendering Smoke",
                              VkClearColorValue{{0.18F, 0.06F, 0.14F, 1.0F}});
+    }
+
+    int runSmokeResize() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window =
+            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Resize Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Resize Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = vke::VulkanFrameLoop::create(
+            *context, vke::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.06F, 0.10F, 0.18F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            vke::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto firstFrame = frameLoop->renderFrame(vke::recordBasicDynamicClearFrame);
+        if (!firstFrame) {
+            vke::logError(firstFrame.error().message);
+            return EXIT_FAILURE;
+        }
+        if (*firstFrame == vke::VulkanFrameStatus::OutOfDate) {
+            vke::logError("Initial resize smoke frame was unexpectedly out of date.");
+            return EXIT_FAILURE;
+        }
+
+        frameLoop->setTargetExtent(0, 0);
+        auto zeroExtent = frameLoop->recreate();
+        if (!zeroExtent) {
+            vke::logError(zeroExtent.error().message);
+            return EXIT_FAILURE;
+        }
+        if (*zeroExtent != vke::VulkanFrameStatus::OutOfDate) {
+            vke::logError("Zero-sized resize smoke did not report OutOfDate.");
+            return EXIT_FAILURE;
+        }
+
+        vke::GlfwWindow::pollEvents();
+        const auto restoredFramebuffer = window->framebufferExtent();
+        frameLoop->setTargetExtent(restoredFramebuffer.width, restoredFramebuffer.height);
+        auto recreated = frameLoop->recreate();
+        if (!recreated) {
+            vke::logError(recreated.error().message);
+            return EXIT_FAILURE;
+        }
+        if (*recreated != vke::VulkanFrameStatus::Recreated) {
+            vke::logError("Resize smoke did not recreate the swapchain after extent restore.");
+            return EXIT_FAILURE;
+        }
+
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(vke::recordBasicDynamicClearFrame);
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during resize smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Resize smoke frames: " << extent.width << 'x' << extent.height << '\n';
+        window->requestClose();
+        return EXIT_SUCCESS;
     }
 
     int runSmokeTriangle() {
@@ -373,6 +477,10 @@ int main(int argc, char** argv) {
             return runSmokeDynamicRendering();
         }
 
+        if (hasArg(args, "--smoke-resize")) {
+            return runSmokeResize();
+        }
+
         if (hasArg(args, "--smoke-triangle")) {
             return runSmokeTriangle();
         }
@@ -380,7 +488,7 @@ int main(int argc, char** argv) {
         printVersion();
         std::cout << "Usage: vke-sample-viewer [--version] [--smoke-window] [--smoke-vulkan] "
                      "[--smoke-frame] [--smoke-rendergraph] [--smoke-dynamic-rendering] "
-                     "[--smoke-triangle]\n";
+                     "[--smoke-resize] [--smoke-triangle]\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         vke::logError(exception.what());
