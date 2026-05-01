@@ -37,10 +37,12 @@ namespace vke {
 
     Result<VulkanShaderModule> VulkanShaderModule::create(const VulkanShaderModuleDesc& desc) {
         if (desc.device == VK_NULL_HANDLE) {
-            return std::unexpected{vulkanError("Cannot create a Vulkan shader module without a device")};
+            return std::unexpected{
+                vulkanError("Cannot create a Vulkan shader module without a device")};
         }
         if (desc.code.empty()) {
-            return std::unexpected{vulkanError("Cannot create a Vulkan shader module without SPIR-V")};
+            return std::unexpected{
+                vulkanError("Cannot create a Vulkan shader module without SPIR-V")};
         }
 
         VkShaderModuleCreateInfo createInfo{};
@@ -50,8 +52,11 @@ namespace vke {
 
         VulkanShaderModule shaderModule;
         shaderModule.device_ = desc.device;
-        const VkResult result = vkCreateShaderModule(desc.device, &createInfo, nullptr,
-                                                     &shaderModule.shaderModule_);
+        const auto createShaderModule = [&]() -> VkResult {
+            return vkCreateShaderModule(desc.device, &createInfo, nullptr,
+                                        &shaderModule.shaderModule_);
+        };
+        const VkResult result = createShaderModule();
         if (result != VK_SUCCESS) {
             return std::unexpected{vulkanError("Failed to create Vulkan shader module", result)};
         }
@@ -67,8 +72,7 @@ namespace vke {
         *this = std::move(other);
     }
 
-    VulkanPipelineLayout& VulkanPipelineLayout::operator=(
-        VulkanPipelineLayout&& other) noexcept {
+    VulkanPipelineLayout& VulkanPipelineLayout::operator=(VulkanPipelineLayout&& other) noexcept {
         if (this == &other) {
             return *this;
         }
@@ -92,8 +96,8 @@ namespace vke {
         pipelineLayout_ = VK_NULL_HANDLE;
     }
 
-    Result<VulkanPipelineLayout> VulkanPipelineLayout::create(
-        const VulkanPipelineLayoutDesc& desc) {
+    Result<VulkanPipelineLayout>
+    VulkanPipelineLayout::create(const VulkanPipelineLayoutDesc& desc) {
         if (desc.device == VK_NULL_HANDLE) {
             return std::unexpected{
                 vulkanError("Cannot create a Vulkan pipeline layout without a device")};
@@ -101,6 +105,11 @@ namespace vke {
 
         VkPipelineLayoutCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        createInfo.setLayoutCount = static_cast<std::uint32_t>(desc.setLayouts.size());
+        createInfo.pSetLayouts = desc.setLayouts.data();
+        createInfo.pushConstantRangeCount =
+            static_cast<std::uint32_t>(desc.pushConstantRanges.size());
+        createInfo.pPushConstantRanges = desc.pushConstantRanges.data();
 
         VulkanPipelineLayout pipelineLayout;
         pipelineLayout.device_ = desc.device;
@@ -121,8 +130,8 @@ namespace vke {
         *this = std::move(other);
     }
 
-    VulkanGraphicsPipeline& VulkanGraphicsPipeline::operator=(
-        VulkanGraphicsPipeline&& other) noexcept {
+    VulkanGraphicsPipeline&
+    VulkanGraphicsPipeline::operator=(VulkanGraphicsPipeline&& other) noexcept {
         if (this == &other) {
             return *this;
         }
@@ -146,8 +155,8 @@ namespace vke {
         pipeline_ = VK_NULL_HANDLE;
     }
 
-    Result<VulkanGraphicsPipeline> VulkanGraphicsPipeline::createDynamicRendering(
-        const VulkanGraphicsPipelineDesc& desc) {
+    Result<VulkanGraphicsPipeline>
+    VulkanGraphicsPipeline::createDynamicRendering(const VulkanGraphicsPipelineDesc& desc) {
         if (desc.device == VK_NULL_HANDLE || desc.layout == VK_NULL_HANDLE ||
             desc.vertexShader == VK_NULL_HANDLE || desc.fragmentShader == VK_NULL_HANDLE ||
             desc.colorFormat == VK_FORMAT_UNDEFINED) {
@@ -195,10 +204,8 @@ namespace vke {
         multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                                              VK_COLOR_COMPONENT_G_BIT |
-                                              VK_COLOR_COMPONENT_B_BIT |
-                                              VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -235,11 +242,11 @@ namespace vke {
 
         VulkanGraphicsPipeline pipeline;
         pipeline.device_ = desc.device;
-        const VkResult result = vkCreateGraphicsPipelines(desc.device, VK_NULL_HANDLE, 1,
-                                                          &createInfo, nullptr,
-                                                          &pipeline.pipeline_);
+        const VkResult result = vkCreateGraphicsPipelines(
+            desc.device, VK_NULL_HANDLE, 1, &createInfo, nullptr, &pipeline.pipeline_);
         if (result != VK_SUCCESS) {
-            return std::unexpected{vulkanError("Failed to create Vulkan graphics pipeline", result)};
+            return std::unexpected{
+                vulkanError("Failed to create Vulkan graphics pipeline", result)};
         }
 
         return pipeline;

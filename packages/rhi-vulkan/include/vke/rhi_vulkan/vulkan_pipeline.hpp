@@ -35,6 +35,8 @@ namespace vke {
 
     struct VulkanPipelineLayoutDesc {
         VkDevice device{VK_NULL_HANDLE};
+        std::span<const VkDescriptorSetLayout> setLayouts;
+        std::span<const VkPushConstantRange> pushConstantRanges;
     };
 
     class VulkanPipelineLayout {
@@ -46,8 +48,8 @@ namespace vke {
         VulkanPipelineLayout& operator=(VulkanPipelineLayout&& other) noexcept;
         ~VulkanPipelineLayout();
 
-        [[nodiscard]] static Result<VulkanPipelineLayout> create(
-            const VulkanPipelineLayoutDesc& desc);
+        [[nodiscard]] static Result<VulkanPipelineLayout>
+        create(const VulkanPipelineLayoutDesc& desc);
         [[nodiscard]] VkPipelineLayout handle() const;
 
     private:
@@ -76,8 +78,8 @@ namespace vke {
         VulkanGraphicsPipeline& operator=(VulkanGraphicsPipeline&& other) noexcept;
         ~VulkanGraphicsPipeline();
 
-        [[nodiscard]] static Result<VulkanGraphicsPipeline> createDynamicRendering(
-            const VulkanGraphicsPipelineDesc& desc);
+        [[nodiscard]] static Result<VulkanGraphicsPipeline>
+        createDynamicRendering(const VulkanGraphicsPipelineDesc& desc);
         [[nodiscard]] VkPipeline handle() const;
 
     private:

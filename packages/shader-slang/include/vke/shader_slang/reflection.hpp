@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,13 @@ namespace vke {
         std::uint32_t pushConstantCount{};
     };
 
+    struct ShaderResourceSignature {
+        std::uint32_t descriptorBindingCount{};
+        std::uint32_t pushConstantCount{};
+    };
+
     [[nodiscard]] Result<ShaderReflection> readShaderReflection(const std::filesystem::path& path);
+    [[nodiscard]] ShaderResourceSignature
+    shaderResourceSignature(std::span<const ShaderReflection> shaders);
 
 } // namespace vke

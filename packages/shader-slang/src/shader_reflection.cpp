@@ -367,4 +367,13 @@ namespace vke {
         };
     }
 
+    ShaderResourceSignature shaderResourceSignature(std::span<const ShaderReflection> shaders) {
+        ShaderResourceSignature signature;
+        for (const ShaderReflection& shader : shaders) {
+            signature.descriptorBindingCount += shader.descriptorBindingCount;
+            signature.pushConstantCount += shader.pushConstantCount;
+        }
+        return signature;
+    }
+
 } // namespace vke

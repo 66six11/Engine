@@ -201,6 +201,20 @@ namespace vke {
                 return std::unexpected{std::move(fragmentResources.error())};
             }
 
+            const std::array shaderReflections{*vertexReflection, *fragmentReflection};
+            const ShaderResourceSignature signature = shaderResourceSignature(shaderReflections);
+            auto descriptorSignature =
+                expectUint(signature.descriptorBindingCount, 0,
+                           "Triangle pipeline layout descriptor binding signature");
+            if (!descriptorSignature) {
+                return std::unexpected{std::move(descriptorSignature.error())};
+            }
+            auto pushConstantSignature = expectUint(
+                signature.pushConstantCount, 0, "Triangle pipeline layout push constant signature");
+            if (!pushConstantSignature) {
+                return std::unexpected{std::move(pushConstantSignature.error())};
+            }
+
             return {};
         }
 
@@ -356,6 +370,8 @@ namespace vke {
 
         auto pipelineLayout = VulkanPipelineLayout::create(VulkanPipelineLayoutDesc{
             .device = desc.device,
+            .setLayouts = {},
+            .pushConstantRanges = {},
         });
         if (!pipelineLayout) {
             return std::unexpected{std::move(pipelineLayout.error())};
