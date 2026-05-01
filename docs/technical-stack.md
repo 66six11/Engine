@@ -102,6 +102,9 @@ Slang 状态：
   target profile、output 路径和 `spirv-val` 检查写入构建流程。
 - `vke_add_slang_shader()` 可生成 `.metadata.json`，记录 source、entry、stage、profile、
   output、`slangc` 路径/版本和 `spirv-val` 路径/版本，作为 shader metadata/reflection 的基线。
+- `vke_add_slang_shader()` 可生成 `.reflection.json`，由 `vke-slang-reflect` 通过 Slang API
+  读取 `ProgramLayout`，输出 entry、stage、vertex inputs、descriptor bindings、push constants
+  和 Slang API version。当前 reflection 作为可审查构建产物，不自动生成 C++。
 - 如果 Slang 的包管理集成暂时不顺，允许用预安装工具或 `tools/` 下的显式路径过渡，但
   不能静默依赖开发者环境。
 

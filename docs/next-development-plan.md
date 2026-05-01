@@ -2,6 +2,8 @@
 
 研究日期：2026-04-29
 
+更新日期：2026-05-01
+
 ## 当前基线
 
 第一版 MVP 已经具备可运行、可审查、可复现的稳定基线：
@@ -10,6 +12,8 @@
 - `--smoke-frame`、`--smoke-rendergraph`、`--smoke-dynamic-rendering`、`--smoke-resize`、
   `--smoke-triangle` 已作为回归入口。
 - Slang shader 构建会输出 SPIR-V、执行 `spirv-val`，并生成记录工具路径和版本的 metadata。
+- `packages/shader-slang/tools/slang_reflect.cpp` 已接入 Slang API reflection，triangle shader
+  会生成 `basic_triangle.vert.reflection.json` 和 `basic_triangle.frag.reflection.json`。
 - Conan 依赖已通过 `conan.lock` 锁定 recipe revision。
 
 下一阶段目标不是立刻扩成完整 renderer，而是先把 shader layout、资源绑定、transient
@@ -52,20 +56,20 @@
 
 | 阶段 | 目标 | 主要改动 | 验收标准 |
 | --- | --- | --- | --- |
-| 1 | Slang reflection 基线 | 在 `packages/shader-slang` 增加 reflection 工具或 API 封装，输出 `*.reflection.json` | triangle shader 生成 entry、stage、vertex inputs、descriptor set/binding、push constant 信息；现有 smoke 不退化 |
+| 1 | Slang reflection 基线 | 已在 `packages/shader-slang` 增加 reflection 工具，输出 `*.reflection.json` | triangle shader 生成 entry、stage、vertex inputs、descriptor set/binding、push constant 信息；现有 smoke 不退化 |
 | 2 | Descriptor/Layout 契约 | 用 reflection JSON 校验或生成 pipeline layout 输入，减少 renderer 手写 layout 假设 | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
 | 3 | RenderGraph transient image | 增加 transient image 声明、Vulkan image/image view/VMA allocation 和 binding 表接入 | 新增 `--smoke-transient`，验证非 backbuffer image transition 和 binding |
 | 4 | Depth attachment MVP | 增加 depth 抽象状态、Vulkan depth layout/stage/access 翻译、dynamic rendering depth attachment | 新增 `--smoke-depth-triangle`，validation 无 error/warning |
 | 5 | Mesh asset 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |
 
-## 阶段 1 设计草案
+## 阶段 1 状态
 
-优先实现 Slang reflection 基线，原因是它对后续 descriptor、pipeline layout、material、mesh
+Slang reflection 基线已接入，原因是它对后续 descriptor、pipeline layout、material、mesh
 输入都提供契约，而且不会扩大 RenderGraph/Vulkan resource 生命周期风险。
 
-建议范围：
+当前范围：
 
-- 新增 `packages/shader-slang/tools/` 或 `tools/shader-reflect/`，使用 Slang API 读取 shader。
+- 新增 `packages/shader-slang/tools/slang_reflect.cpp`，使用 Slang API 读取 shader。
 - 输入继续沿用 `*.shader.json`：source、entry、stage、profile、target。
 - 输出 `*.reflection.json`：entry、stage、vertex inputs、descriptor bindings、push constants、
   compiler version、source path。

@@ -69,7 +69,7 @@ flowchart TD
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
-    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle SPIR-V"]
+    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle SPIR-V + reflection JSON"]
     RendererObject["BasicTriangleRenderer<br/>shader modules / pipeline layout / vertex buffer / pipeline<br/>BasicDrawItem"]
 
     Start --> Args
@@ -170,7 +170,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    ShaderBuild["shader-slang package<br/>slangc 编译 Slang<br/>spirv-val 验证 SPIR-V"]
+    ShaderBuild["shader-slang package<br/>slangc 编译 Slang<br/>spirv-val 验证 SPIR-V<br/>Slang API 生成 reflection JSON"]
     RendererObject["BasicTriangleRenderer"]
     PipelineObjects["VulkanShaderModule<br/>VulkanPipelineLayout<br/>VulkanBuffer<br/>VulkanGraphicsPipeline"]
     Begin["vkBeginCommandBuffer"]
@@ -194,7 +194,7 @@ flowchart TD
 - 已接入真实 Vulkan 命令录制。
 - `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
 - `--smoke-dynamic-rendering` 已验证 swapchain image view、dynamic rendering attachment clear 和 `ColorAttachment -> Present` transition。
-- `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、`BasicTriangleRenderer` 管理的 shader module、pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
+- `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、reflection JSON、`BasicTriangleRenderer` 管理的 shader module、pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage` binding 查找真实 Vulkan image；当前 smoke 只绑定 Backbuffer，后续 depth/transient image 必须显式加入 binding 表。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
@@ -265,14 +265,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>交互式 triangle viewer"]
-    Step1["下一步:<br/>Slang reflection JSON"]
-    Step2["之后:<br/>descriptor/layout 契约"]
-    Step3["之后:<br/>RenderGraph transient image"]
-    Step4["之后:<br/>depth attachment MVP"]
-    Step5["之后:<br/>mesh asset / index buffer"]
+    Now["当前:<br/>Slang reflection JSON"]
+    Step1["下一步:<br/>descriptor/layout 契约"]
+    Step2["之后:<br/>RenderGraph transient image"]
+    Step3["之后:<br/>depth attachment MVP"]
+    Step4["之后:<br/>mesh asset / index buffer"]
 
-    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5
+    Now --> Step1 --> Step2 --> Step3 --> Step4
 ```
 
 建议推进顺序：
@@ -280,6 +279,6 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. 先做 Slang reflection JSON，再让 descriptor/layout 契约消费 reflection，避免 renderer 继续扩大手写 shader layout 假设。
+4. Slang reflection JSON 已接入；下一步让 descriptor/layout 契约消费 reflection，避免 renderer 继续扩大手写 shader layout 假设。
 5. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
 6. mesh asset 路线放在 shader/layout/resource 生命周期稳定之后。

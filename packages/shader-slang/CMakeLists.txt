@@ -1,6 +1,30 @@
 add_library(vke-shader-slang INTERFACE)
 add_library(vke::shader_slang ALIAS vke-shader-slang)
 
+find_path(VKE_SLANG_INCLUDE_DIR
+    NAMES slang/slang.h
+    HINTS
+        "$ENV{VULKAN_SDK}/Include"
+        "C:/VulkanSDK/1.4.321.1/Include"
+    REQUIRED
+)
+
+find_library(VKE_SLANG_LIBRARY
+    NAMES slang slang.lib
+    HINTS
+        "$ENV{VULKAN_SDK}/Lib"
+        "C:/VulkanSDK/1.4.321.1/Lib"
+    REQUIRED
+)
+
+find_file(VKE_SLANG_DLL
+    NAMES slang.dll
+    HINTS
+        "$ENV{VULKAN_SDK}/Bin"
+        "C:/VulkanSDK/1.4.321.1/Bin"
+    REQUIRED
+)
+
 find_program(VKE_SLANGC_EXECUTABLE
     NAMES slangc slangc.exe
     HINTS
@@ -15,9 +39,32 @@ find_program(VKE_SPIRV_VAL_EXECUTABLE
         "C:/VulkanSDK/1.4.321.1/Bin"
 )
 
+add_executable(vke-slang-reflect
+    tools/slang_reflect.cpp
+)
+
+target_include_directories(vke-slang-reflect
+    PRIVATE
+        "${VKE_SLANG_INCLUDE_DIR}"
+)
+
+target_link_libraries(vke-slang-reflect
+    PRIVATE
+        "${VKE_SLANG_LIBRARY}"
+)
+
+add_custom_command(TARGET vke-slang-reflect POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${VKE_SLANG_DLL}"
+        "$<TARGET_FILE_DIR:vke-slang-reflect>"
+    VERBATIM
+)
+
+vke_configure_target(vke-slang-reflect)
+
 function(vke_add_slang_shader target)
     set(options)
-    set(one_value_args SOURCE ENTRY STAGE OUTPUT PROFILE METADATA_OUTPUT)
+    set(one_value_args SOURCE ENTRY STAGE OUTPUT PROFILE METADATA_OUTPUT REFLECTION_OUTPUT)
     set(multi_value_args DEPENDS)
     cmake_parse_arguments(VKE_SLANG_SHADER
         "${options}"
@@ -69,6 +116,19 @@ function(vke_add_slang_shader target)
         )
     endif()
 
+    if(VKE_SLANG_SHADER_REFLECTION_OUTPUT)
+        list(APPEND shader_outputs "${VKE_SLANG_SHADER_REFLECTION_OUTPUT}")
+        set(reflection_command
+            COMMAND "$<TARGET_FILE:vke-slang-reflect>"
+                --source "${VKE_SLANG_SHADER_SOURCE}"
+                --entry "${VKE_SLANG_SHADER_ENTRY}"
+                --stage "${VKE_SLANG_SHADER_STAGE}"
+                --profile "${VKE_SLANG_SHADER_PROFILE}"
+                --target spirv
+                --output "${VKE_SLANG_SHADER_REFLECTION_OUTPUT}"
+        )
+    endif()
+
     add_custom_command(
         OUTPUT ${shader_outputs}
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${output_dir}"
@@ -81,8 +141,10 @@ function(vke_add_slang_shader target)
                 -o "${VKE_SLANG_SHADER_OUTPUT}"
         COMMAND "${VKE_SPIRV_VAL_EXECUTABLE}" "${VKE_SLANG_SHADER_OUTPUT}"
         ${metadata_command}
+        ${reflection_command}
         DEPENDS
             "${VKE_SLANG_SHADER_SOURCE}"
+            vke-slang-reflect
             ${VKE_SLANG_SHADER_DEPENDS}
         VERBATIM
     )
