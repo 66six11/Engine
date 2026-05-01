@@ -14,6 +14,8 @@
 - Slang shader 构建会输出 SPIR-V、执行 `spirv-val`，并生成记录工具路径和版本的 metadata。
 - `packages/shader-slang/tools/slang_reflect.cpp` 已接入 Slang API reflection，triangle shader
   会生成 `basic_triangle.vert.reflection.json` 和 `basic_triangle.frag.reflection.json`。
+- `packages/shader-slang` 已提供 reflection JSON 读取模型，`BasicTriangleRenderer` 会在创建时校验
+  triangle shader entry/stage、vertex inputs、descriptor bindings 和 push constants 契约。
 - Conan 依赖已通过 `conan.lock` 锁定 recipe revision。
 
 下一阶段目标不是立刻扩成完整 renderer，而是先把 shader layout、资源绑定、transient
@@ -57,7 +59,7 @@
 | 阶段 | 目标 | 主要改动 | 验收标准 |
 | --- | --- | --- | --- |
 | 1 | Slang reflection 基线 | 已在 `packages/shader-slang` 增加 reflection 工具，输出 `*.reflection.json` | triangle shader 生成 entry、stage、vertex inputs、descriptor set/binding、push constant 信息；现有 smoke 不退化 |
-| 2 | Descriptor/Layout 契约 | 用 reflection JSON 校验或生成 pipeline layout 输入，减少 renderer 手写 layout 假设 | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
+| 2 | Descriptor/Layout 契约 | 已开始用 reflection JSON 校验 triangle shader 契约；后续生成或校验 pipeline layout/resource signature | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
 | 3 | RenderGraph transient image | 增加 transient image 声明、Vulkan image/image view/VMA allocation 和 binding 表接入 | 新增 `--smoke-transient`，验证非 backbuffer image transition 和 binding |
 | 4 | Depth attachment MVP | 增加 depth 抽象状态、Vulkan depth layout/stage/access 翻译、dynamic rendering depth attachment | 新增 `--smoke-depth-triangle`，validation 无 error/warning |
 | 5 | Mesh asset 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |
@@ -81,6 +83,27 @@ Slang reflection 基线已接入，原因是它对后续 descriptor、pipeline l
 - `basic_triangle.vert.reflection.json` 和 `basic_triangle.frag.reflection.json` 可重复生成。
 - `--smoke-triangle` 继续通过。
 - 文档更新 `flow-architecture.md`、`technical-stack.md` 和本文件。
+
+## 阶段 2 状态
+
+Descriptor/Layout 契约已开始消费 reflection JSON。当前实现保持 Vulkan pipeline layout 不变，
+只在 `BasicTriangleRenderer::create()` 期间校验 triangle shader 契约，避免在 descriptor 系统
+尚未完整前引入资源绑定行为变化。
+
+当前范围：
+
+- `packages/shader-slang` 提供 `readShaderReflection()`，读取 entry、stage、vertex inputs、
+  descriptor binding 数量和 push constant 数量。
+- `renderer-basic-vulkan` 校验 triangle vertex shader 的 `POSITION0` 和 `COLOR0` 输入。
+- `renderer-basic-vulkan` 校验 triangle vertex/fragment shader 当前没有 descriptor binding 和
+  push constant。
+- 缺失 reflection JSON 或字段不匹配会返回 `ErrorDomain::Shader`，并带具体字段上下文。
+
+后续范围：
+
+- 用 reflection descriptor bindings 定义固定 descriptor set/layout 契约。
+- 让 `VulkanPipelineLayoutDesc` 接收 descriptor set layout 和 push constant range。
+- 在 material/resource binding 路线稳定前，继续暂缓 bindless 和自动 C++ codegen。
 
 ## 暂缓事项
 

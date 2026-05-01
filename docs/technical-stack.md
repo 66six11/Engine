@@ -105,6 +105,9 @@ Slang 状态：
 - `vke_add_slang_shader()` 可生成 `.reflection.json`，由 `vke-slang-reflect` 通过 Slang API
   读取 `ProgramLayout`，输出 entry、stage、vertex inputs、descriptor bindings、push constants
   和 Slang API version。当前 reflection 作为可审查构建产物，不自动生成 C++。
+- `packages/shader-slang` 提供 reflection JSON 读取模型，renderer 可以在启动或构建验证路径消费
+  reflection 契约。当前 triangle renderer 会校验 shader entry/stage、vertex input layout、
+  descriptor binding 和 push constant 计数。
 - 如果 Slang 的包管理集成暂时不顺，允许用预安装工具或 `tools/` 下的显式路径过渡，但
   不能静默依赖开发者环境。
 

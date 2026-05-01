@@ -7,18 +7,42 @@
 #include <fstream>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "vke/core/error.hpp"
 #include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "vke/rendergraph/render_graph.hpp"
+#include "vke/shader_slang/reflection.hpp"
 
 namespace vke {
     namespace {
 
         [[nodiscard]] Error shaderError(std::string message) {
             return Error{ErrorDomain::Shader, 0, std::move(message)};
+        }
+
+        [[nodiscard]] Result<void> expectString(std::string_view actual, std::string_view expected,
+                                                std::string_view context) {
+            if (actual == expected) {
+                return {};
+            }
+
+            return std::unexpected{shaderError(std::string{context} + " expected '" +
+                                               std::string{expected} + "' but found '" +
+                                               std::string{actual} + "'")};
+        }
+
+        [[nodiscard]] Result<void> expectUint(std::uint32_t actual, std::uint32_t expected,
+                                              std::string_view context) {
+            if (actual == expected) {
+                return {};
+            }
+
+            return std::unexpected{shaderError(std::string{context} + " expected " +
+                                               std::to_string(expected) + " but found " +
+                                               std::to_string(actual))};
         }
 
         [[nodiscard]] Result<std::vector<std::uint32_t>>
@@ -43,6 +67,141 @@ namespace vke {
             std::vector<std::uint32_t> words(bytes.size() / sizeof(std::uint32_t));
             std::memcpy(words.data(), bytes.data(), bytes.size());
             return words;
+        }
+
+        [[nodiscard]] const ShaderVertexInputReflection*
+        findVertexInput(const ShaderReflection& reflection, std::string_view semantic,
+                        std::uint32_t semanticIndex) {
+            for (const ShaderVertexInputReflection& input : reflection.vertexInputs) {
+                if (input.semantic == semantic && input.semanticIndex == semanticIndex) {
+                    return &input;
+                }
+            }
+
+            return nullptr;
+        }
+
+        [[nodiscard]] Result<void>
+        validateVertexInput(const ShaderReflection& reflection, std::string_view semantic,
+                            std::uint32_t semanticIndex, std::uint32_t expectedLocation,
+                            std::string_view expectedScalarType, std::uint32_t expectedRowCount,
+                            std::uint32_t expectedColumnCount) {
+            const ShaderVertexInputReflection* input =
+                findVertexInput(reflection, semantic, semanticIndex);
+            if (input == nullptr) {
+                return std::unexpected{
+                    shaderError("Missing shader vertex input semantic: " + std::string{semantic} +
+                                std::to_string(semanticIndex))};
+            }
+
+            auto location = expectUint(input->location, expectedLocation,
+                                       "Shader vertex input " + std::string{semantic} +
+                                           std::to_string(semanticIndex) + " location");
+            if (!location) {
+                return std::unexpected{std::move(location.error())};
+            }
+            auto scalarType = expectString(input->scalarType, expectedScalarType,
+                                           "Shader vertex input " + std::string{semantic} +
+                                               std::to_string(semanticIndex) + " scalarType");
+            if (!scalarType) {
+                return std::unexpected{std::move(scalarType.error())};
+            }
+            auto rowCount = expectUint(input->rowCount, expectedRowCount,
+                                       "Shader vertex input " + std::string{semantic} +
+                                           std::to_string(semanticIndex) + " rowCount");
+            if (!rowCount) {
+                return std::unexpected{std::move(rowCount.error())};
+            }
+            auto columnCount = expectUint(input->columnCount, expectedColumnCount,
+                                          "Shader vertex input " + std::string{semantic} +
+                                              std::to_string(semanticIndex) + " columnCount");
+            if (!columnCount) {
+                return std::unexpected{std::move(columnCount.error())};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> validateNoResourceBindings(const ShaderReflection& reflection,
+                                                              std::string_view shaderName) {
+            auto descriptorCount =
+                expectUint(reflection.descriptorBindingCount, 0,
+                           std::string{shaderName} + " descriptor binding count");
+            if (!descriptorCount) {
+                return std::unexpected{std::move(descriptorCount.error())};
+            }
+
+            auto pushConstantCount = expectUint(reflection.pushConstantCount, 0,
+                                                std::string{shaderName} + " push constant count");
+            if (!pushConstantCount) {
+                return std::unexpected{std::move(pushConstantCount.error())};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateBasicTriangleReflection(const std::filesystem::path& shaderDirectory) {
+            auto vertexReflection =
+                readShaderReflection(shaderDirectory / "basic_triangle.vert.reflection.json");
+            if (!vertexReflection) {
+                return std::unexpected{std::move(vertexReflection.error())};
+            }
+            auto fragmentReflection =
+                readShaderReflection(shaderDirectory / "basic_triangle.frag.reflection.json");
+            if (!fragmentReflection) {
+                return std::unexpected{std::move(fragmentReflection.error())};
+            }
+
+            auto vertexEntry = expectString(vertexReflection->entry, "vertexMain",
+                                            "Triangle vertex shader reflection entry");
+            if (!vertexEntry) {
+                return std::unexpected{std::move(vertexEntry.error())};
+            }
+            auto vertexStage = expectString(vertexReflection->stage, "vertex",
+                                            "Triangle vertex shader reflection stage");
+            if (!vertexStage) {
+                return std::unexpected{std::move(vertexStage.error())};
+            }
+            auto fragmentEntry = expectString(fragmentReflection->entry, "fragmentMain",
+                                              "Triangle fragment shader reflection entry");
+            if (!fragmentEntry) {
+                return std::unexpected{std::move(fragmentEntry.error())};
+            }
+            auto fragmentStage = expectString(fragmentReflection->stage, "fragment",
+                                              "Triangle fragment shader reflection stage");
+            if (!fragmentStage) {
+                return std::unexpected{std::move(fragmentStage.error())};
+            }
+
+            auto vertexInputCount =
+                expectUint(static_cast<std::uint32_t>(vertexReflection->vertexInputs.size()), 2,
+                           "Triangle vertex shader input count");
+            if (!vertexInputCount) {
+                return std::unexpected{std::move(vertexInputCount.error())};
+            }
+            auto position =
+                validateVertexInput(*vertexReflection, "POSITION", 0, 0, "float32", 1, 2);
+            if (!position) {
+                return std::unexpected{std::move(position.error())};
+            }
+            auto color = validateVertexInput(*vertexReflection, "COLOR", 0, 1, "float32", 1, 3);
+            if (!color) {
+                return std::unexpected{std::move(color.error())};
+            }
+
+            auto vertexResources =
+                validateNoResourceBindings(*vertexReflection, "Triangle vertex shader");
+            if (!vertexResources) {
+                return std::unexpected{std::move(vertexResources.error())};
+            }
+            auto fragmentResources =
+                validateNoResourceBindings(*fragmentReflection, "Triangle fragment shader");
+            if (!fragmentResources) {
+                return std::unexpected{std::move(fragmentResources.error())};
+            }
+
+            return {};
         }
 
         void recordTransferClear(const VulkanFrameRecordContext& frame) {
@@ -173,6 +332,11 @@ namespace vke {
         auto fragmentCode = readSpirvFile(desc.shaderDirectory / "basic_triangle.frag.spv");
         if (!fragmentCode) {
             return std::unexpected{std::move(fragmentCode.error())};
+        }
+
+        auto reflection = validateBasicTriangleReflection(desc.shaderDirectory);
+        if (!reflection) {
+            return std::unexpected{std::move(reflection.error())};
         }
 
         auto vertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{

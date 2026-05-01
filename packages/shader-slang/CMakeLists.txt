@@ -1,4 +1,6 @@
-add_library(vke-shader-slang INTERFACE)
+add_library(vke-shader-slang
+  src/shader_reflection.cpp
+)
 add_library(vke::shader_slang ALIAS vke-shader-slang)
 
 find_path(VKE_SLANG_INCLUDE_DIR
@@ -153,12 +155,12 @@ function(vke_add_slang_shader target)
 endfunction()
 
 target_include_directories(vke-shader-slang
-    INTERFACE
+    PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(vke-shader-slang
-    INTERFACE
+    PUBLIC
         vke::core
 )
 
