@@ -6,11 +6,7 @@
 #include <span>
 
 #include "vke/core/result.hpp"
-
-struct VmaAllocator_T;
-using VmaAllocator = VmaAllocator_T*;
-struct VmaAllocation_T;
-using VmaAllocation = VmaAllocation_T*;
+#include "vke/rhi_vulkan/vma_fwd.hpp"
 
 namespace vke {
 

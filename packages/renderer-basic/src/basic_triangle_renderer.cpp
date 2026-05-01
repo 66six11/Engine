@@ -416,6 +416,8 @@ namespace vke {
             .layout = pipelineLayout_.handle(),
             .vertexShader = vertexShader_.handle(),
             .fragmentShader = fragmentShader_.handle(),
+            .vertexEntryPoint = "main",
+            .fragmentEntryPoint = "main",
             .colorFormat = colorFormat,
             .vertexBindings = bindings,
             .vertexAttributes = attributes,

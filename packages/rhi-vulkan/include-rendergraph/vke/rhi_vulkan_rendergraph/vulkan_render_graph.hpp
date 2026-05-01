@@ -23,12 +23,12 @@ namespace vke {
 
     [[nodiscard]] inline VkFormat vulkanFormat(RenderGraphImageFormat format) {
         switch (format) {
+        case RenderGraphImageFormat::Undefined:
+            return VK_FORMAT_UNDEFINED;
         case RenderGraphImageFormat::B8G8R8A8Srgb:
             return VK_FORMAT_B8G8R8A8_SRGB;
-        case RenderGraphImageFormat::Undefined:
-        default:
-            return VK_FORMAT_UNDEFINED;
         }
+        return VK_FORMAT_UNDEFINED;
     }
 
     [[nodiscard]] inline VkExtent2D vulkanExtent(RenderGraphExtent2D extent) {
@@ -40,21 +40,23 @@ namespace vke {
 
     [[nodiscard]] inline VkImageLayout vulkanImageLayout(RenderGraphImageState state) {
         switch (state) {
+        case RenderGraphImageState::Undefined:
+            return VK_IMAGE_LAYOUT_UNDEFINED;
         case RenderGraphImageState::ColorAttachment:
             return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         case RenderGraphImageState::TransferDst:
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         case RenderGraphImageState::Present:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        case RenderGraphImageState::Undefined:
-        default:
-            return VK_IMAGE_LAYOUT_UNDEFINED;
         }
+        return VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
-    [[nodiscard]] inline VulkanRenderGraphImageUsage vulkanImageUsage(
-        RenderGraphImageState state) {
+    [[nodiscard]] inline VulkanRenderGraphImageUsage vulkanImageUsage(RenderGraphImageState state) {
         switch (state) {
+        case RenderGraphImageState::Undefined:
+        case RenderGraphImageState::Present:
+            return {};
         case RenderGraphImageState::ColorAttachment:
             return VulkanRenderGraphImageUsage{
                 .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -65,15 +67,12 @@ namespace vke {
                 .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .accessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
             };
-        case RenderGraphImageState::Present:
-        case RenderGraphImageState::Undefined:
-        default:
-            return {};
         }
+        return {};
     }
 
-    [[nodiscard]] inline VulkanRenderGraphImageTransition vulkanImageTransition(
-        const RenderGraphImageTransition& transition) {
+    [[nodiscard]] inline VulkanRenderGraphImageTransition
+    vulkanImageTransition(const RenderGraphImageTransition& transition) {
         const VulkanRenderGraphImageUsage srcUsage = vulkanImageUsage(transition.oldState);
         const VulkanRenderGraphImageUsage dstUsage = vulkanImageUsage(transition.newState);
         return VulkanRenderGraphImageTransition{
@@ -87,9 +86,9 @@ namespace vke {
         };
     }
 
-    [[nodiscard]] inline VkImageMemoryBarrier2 vulkanImageBarrier(
-        const VulkanRenderGraphImageTransition& transition, VkImage image,
-        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT) {
+    [[nodiscard]] inline VkImageMemoryBarrier2
+    vulkanImageBarrier(const VulkanRenderGraphImageTransition& transition, VkImage image,
+                       VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT) {
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         barrier.srcStageMask = transition.srcStageMask;
@@ -109,9 +108,9 @@ namespace vke {
         return barrier;
     }
 
-    [[nodiscard]] inline VkImageMemoryBarrier2 vulkanImageBarrier(
-        const RenderGraphImageTransition& transition, VkImage image,
-        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT) {
+    [[nodiscard]] inline VkImageMemoryBarrier2
+    vulkanImageBarrier(const RenderGraphImageTransition& transition, VkImage image,
+                       VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT) {
         return vulkanImageBarrier(vulkanImageTransition(transition), image, aspectMask);
     }
 

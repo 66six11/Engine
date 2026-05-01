@@ -107,7 +107,8 @@ Slang 状态：
   和 Slang API version。当前 reflection 作为可审查构建产物，不自动生成 C++。
 - `packages/shader-slang` 提供 reflection JSON 读取模型，renderer 可以在启动或构建验证路径消费
   reflection 契约。当前 triangle renderer 会校验 shader entry/stage、vertex input layout、
-  descriptor binding 和 push constant 计数。
+  descriptor binding 和 push constant resource signature；signature 会保留资源明细并合并
+  stage visibility。
 - `VulkanPipelineLayoutDesc` 已能接收 descriptor set layouts 和 push constant ranges；当前
   triangle shader 仍使用空 resource signature，后续 material/resource binding 会在此接口上扩展。
 - 如果 Slang 的包管理集成暂时不顺，允许用预安装工具或 `tools/` 下的显式路径过渡，但

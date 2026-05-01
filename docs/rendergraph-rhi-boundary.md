@@ -71,6 +71,6 @@ RenderGraph 编译结果只携带 `RenderGraphImageHandle` 和抽象状态，不
 
 - `vke/rhi_vulkan/vulkan_context.hpp`
 - `vke/rhi_vulkan/vulkan_frame_loop.hpp`
-- `vke/rhi_vulkan/vulkan_render_graph.hpp`
+- `vke/rhi_vulkan_rendergraph/vulkan_render_graph.hpp`
 
 通用 RenderGraph 文档或调试输出可以提到 Vulkan 概念，但不能把 Vulkan 类型作为通用 API 契约。

@@ -16,7 +16,7 @@
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
-#include "vke/rhi_vulkan/vulkan_render_graph.hpp"
+#include "vke/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
 
 namespace {

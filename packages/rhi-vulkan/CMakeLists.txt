@@ -34,5 +34,10 @@ target_link_libraries(vke-rhi-vulkan-rendergraph
         vke::rendergraph
 )
 
+target_include_directories(vke-rhi-vulkan-rendergraph
+    INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include-rendergraph"
+)
+
 vke_configure_target(vke-rhi-vulkan)
 vke_configure_target(vke-rhi-vulkan-rendergraph)

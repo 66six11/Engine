@@ -159,20 +159,24 @@ namespace vke {
     VulkanGraphicsPipeline::createDynamicRendering(const VulkanGraphicsPipelineDesc& desc) {
         if (desc.device == VK_NULL_HANDLE || desc.layout == VK_NULL_HANDLE ||
             desc.vertexShader == VK_NULL_HANDLE || desc.fragmentShader == VK_NULL_HANDLE ||
+            desc.vertexEntryPoint.empty() || desc.fragmentEntryPoint.empty() ||
             desc.colorFormat == VK_FORMAT_UNDEFINED) {
             return std::unexpected{
                 vulkanError("Cannot create a Vulkan graphics pipeline from incomplete inputs")};
         }
 
+        const std::string vertexEntryPoint{desc.vertexEntryPoint};
+        const std::string fragmentEntryPoint{desc.fragmentEntryPoint};
+
         std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
         stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
         stages[0].module = desc.vertexShader;
-        stages[0].pName = "main";
+        stages[0].pName = vertexEntryPoint.c_str();
         stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
         stages[1].module = desc.fragmentShader;
-        stages[1].pName = "main";
+        stages[1].pName = fragmentEntryPoint.c_str();
 
         VkPipelineVertexInputStateCreateInfo vertexInput{};
         vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

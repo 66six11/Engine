@@ -10,10 +10,8 @@
 #include <vector>
 
 #include "vke/core/result.hpp"
+#include "vke/rhi_vulkan/vma_fwd.hpp"
 #include "vke/rhi_vulkan/vulkan_error.hpp"
-
-struct VmaAllocator_T;
-using VmaAllocator = VmaAllocator_T*;
 
 namespace vke {
 

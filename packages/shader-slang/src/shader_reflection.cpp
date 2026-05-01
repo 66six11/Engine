@@ -25,6 +25,16 @@ namespace vke {
             std::string_view name;
         };
 
+        struct DescriptorBindingParseQuery {
+            std::string_view json;
+            std::string_view stageVisibility;
+        };
+
+        struct PushConstantParseQuery {
+            std::string_view json;
+            std::string_view fallbackStageVisibility;
+        };
+
         [[nodiscard]] Result<std::string> readTextFile(const std::filesystem::path& path) {
             std::ifstream file{path, std::ios::binary | std::ios::ate};
             if (!file) {
@@ -286,6 +296,122 @@ namespace vke {
             };
         }
 
+        [[nodiscard]] Result<ShaderDescriptorBindingReflection>
+        parseDescriptorBinding(DescriptorBindingParseQuery query) {
+            auto name = parseStringProperty(query.json, "name");
+            if (!name) {
+                return std::unexpected{std::move(name.error())};
+            }
+            auto set = parseUintProperty(query.json, "set");
+            if (!set) {
+                return std::unexpected{std::move(set.error())};
+            }
+            auto binding = parseUintProperty(query.json, "binding");
+            if (!binding) {
+                return std::unexpected{std::move(binding.error())};
+            }
+            auto kind = parseStringProperty(query.json, "kind");
+            if (!kind) {
+                return std::unexpected{std::move(kind.error())};
+            }
+            auto count = parseUintProperty(query.json, "count");
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
+            }
+            auto category = parseStringProperty(query.json, "category");
+            if (!category) {
+                return std::unexpected{std::move(category.error())};
+            }
+
+            return ShaderDescriptorBindingReflection{
+                .name = std::move(*name),
+                .set = *set,
+                .binding = *binding,
+                .kind = std::move(*kind),
+                .count = *count,
+                .category = std::move(*category),
+                .stageVisibility = std::string{query.stageVisibility},
+            };
+        }
+
+        [[nodiscard]] Result<ShaderPushConstantReflection>
+        parsePushConstant(PushConstantParseQuery query) {
+            auto name = parseStringProperty(query.json, "name");
+            if (!name) {
+                return std::unexpected{std::move(name.error())};
+            }
+            auto offset = parseUintProperty(query.json, "offset");
+            if (!offset) {
+                return std::unexpected{std::move(offset.error())};
+            }
+            auto size = parseUintProperty(query.json, "size");
+            if (!size) {
+                return std::unexpected{std::move(size.error())};
+            }
+            auto stage = parseStringProperty(query.json, "stage");
+            std::string stageVisibility =
+                stage ? std::move(*stage) : std::string{query.fallbackStageVisibility};
+
+            return ShaderPushConstantReflection{
+                .name = std::move(*name),
+                .offset = *offset,
+                .size = *size,
+                .stageVisibility = std::move(stageVisibility),
+            };
+        }
+
+        void mergeStageVisibility(std::string& merged, std::string_view stageVisibility) {
+            if (stageVisibility.empty()) {
+                return;
+            }
+            if (merged.empty()) {
+                merged = std::string{stageVisibility};
+                return;
+            }
+
+            std::size_t begin = 0;
+            const std::string_view mergedView{merged};
+            while (begin <= merged.size()) {
+                const std::size_t end = merged.find('|', begin);
+                const std::size_t tokenEnd = end == std::string::npos ? merged.size() : end;
+                const std::string_view token = mergedView.substr(begin, tokenEnd - begin);
+                if (token == stageVisibility) {
+                    return;
+                }
+                if (end == std::string::npos) {
+                    break;
+                }
+                begin = end + 1;
+            }
+
+            merged += '|';
+            merged += stageVisibility;
+        }
+
+        void mergeDescriptorBinding(std::vector<ShaderDescriptorBindingReflection>& bindings,
+                                    const ShaderDescriptorBindingReflection& binding) {
+            for (ShaderDescriptorBindingReflection& existing : bindings) {
+                if (existing.set == binding.set && existing.binding == binding.binding) {
+                    mergeStageVisibility(existing.stageVisibility, binding.stageVisibility);
+                    return;
+                }
+            }
+
+            bindings.push_back(binding);
+        }
+
+        void mergePushConstant(std::vector<ShaderPushConstantReflection>& pushConstants,
+                               const ShaderPushConstantReflection& pushConstant) {
+            for (ShaderPushConstantReflection& existing : pushConstants) {
+                if (existing.offset == pushConstant.offset && existing.size == pushConstant.size) {
+                    mergeStageVisibility(existing.stageVisibility, pushConstant.stageVisibility);
+                    return;
+                }
+            }
+
+            pushConstants.push_back(pushConstant);
+        }
+
     } // namespace
 
     Result<ShaderReflection> readShaderReflection(const std::filesystem::path& path) {
@@ -344,6 +470,16 @@ namespace vke {
         if (!descriptorObjects) {
             return std::unexpected{std::move(descriptorObjects.error())};
         }
+        std::vector<ShaderDescriptorBindingReflection> descriptorBindings;
+        descriptorBindings.reserve(descriptorObjects->size());
+        for (const std::string_view object : *descriptorObjects) {
+            auto descriptorBinding = parseDescriptorBinding(
+                DescriptorBindingParseQuery{.json = object, .stageVisibility = *stage});
+            if (!descriptorBinding) {
+                return std::unexpected{std::move(descriptorBinding.error())};
+            }
+            descriptorBindings.push_back(std::move(*descriptorBinding));
+        }
 
         auto pushConstantArray = parseArrayProperty(*text, "pushConstants");
         if (!pushConstantArray) {
@@ -354,6 +490,19 @@ namespace vke {
         if (!pushConstantObjects) {
             return std::unexpected{std::move(pushConstantObjects.error())};
         }
+        std::vector<ShaderPushConstantReflection> pushConstants;
+        pushConstants.reserve(pushConstantObjects->size());
+        for (const std::string_view object : *pushConstantObjects) {
+            auto pushConstant = parsePushConstant(
+                PushConstantParseQuery{.json = object, .fallbackStageVisibility = *stage});
+            if (!pushConstant) {
+                return std::unexpected{std::move(pushConstant.error())};
+            }
+            pushConstants.push_back(std::move(*pushConstant));
+        }
+
+        const auto descriptorBindingCount = static_cast<std::uint32_t>(descriptorBindings.size());
+        const auto pushConstantCount = static_cast<std::uint32_t>(pushConstants.size());
 
         return ShaderReflection{
             .source = std::move(*source),
@@ -362,17 +511,26 @@ namespace vke {
             .profile = std::move(*profile),
             .target = std::move(*target),
             .vertexInputs = std::move(vertexInputs),
-            .descriptorBindingCount = static_cast<std::uint32_t>(descriptorObjects->size()),
-            .pushConstantCount = static_cast<std::uint32_t>(pushConstantObjects->size()),
+            .descriptorBindings = std::move(descriptorBindings),
+            .pushConstants = std::move(pushConstants),
+            .descriptorBindingCount = descriptorBindingCount,
+            .pushConstantCount = pushConstantCount,
         };
     }
 
     ShaderResourceSignature shaderResourceSignature(std::span<const ShaderReflection> shaders) {
         ShaderResourceSignature signature;
         for (const ShaderReflection& shader : shaders) {
-            signature.descriptorBindingCount += shader.descriptorBindingCount;
-            signature.pushConstantCount += shader.pushConstantCount;
+            for (const ShaderDescriptorBindingReflection& binding : shader.descriptorBindings) {
+                mergeDescriptorBinding(signature.descriptorBindings, binding);
+            }
+            for (const ShaderPushConstantReflection& pushConstant : shader.pushConstants) {
+                mergePushConstant(signature.pushConstants, pushConstant);
+            }
         }
+        signature.descriptorBindingCount =
+            static_cast<std::uint32_t>(signature.descriptorBindings.size());
+        signature.pushConstantCount = static_cast<std::uint32_t>(signature.pushConstants.size());
         return signature;
     }
 

@@ -99,7 +99,8 @@ Descriptor/Layout 契约已开始消费 reflection JSON。当前实现保持 Vul
 - `renderer-basic-vulkan` 校验 triangle vertex shader 的 `POSITION0` 和 `COLOR0` 输入。
 - `renderer-basic-vulkan` 校验 triangle vertex/fragment shader 当前没有 descriptor binding 和
   push constant。
-- `shader-slang` 可合并 shader reflection 得到 resource signature 计数。
+- `shader-slang` 可合并 shader reflection 得到 resource signature 明细；descriptor binding
+  按 `(set,binding)` 合并，push constant 按 `(offset,size)` 合并，并保留 stage visibility。
 - `VulkanPipelineLayoutDesc` 可接收 descriptor set layouts 和 push constant ranges，triangle
   renderer 当前显式创建空 layout。
 - 缺失 reflection JSON 或字段不匹配会返回 `ErrorDomain::Shader`，并带具体字段上下文。

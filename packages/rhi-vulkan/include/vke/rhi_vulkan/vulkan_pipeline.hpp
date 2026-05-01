@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 #include "vke/core/result.hpp"
 
@@ -64,6 +65,8 @@ namespace vke {
         VkPipelineLayout layout{VK_NULL_HANDLE};
         VkShaderModule vertexShader{VK_NULL_HANDLE};
         VkShaderModule fragmentShader{VK_NULL_HANDLE};
+        std::string_view vertexEntryPoint{"main"};
+        std::string_view fragmentEntryPoint{"main"};
         VkFormat colorFormat{VK_FORMAT_UNDEFINED};
         std::span<const VkVertexInputBindingDescription> vertexBindings;
         std::span<const VkVertexInputAttributeDescription> vertexAttributes;

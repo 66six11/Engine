@@ -10,7 +10,7 @@
 #include "vke/renderer_basic/clear_frame_graph.hpp"
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
-#include "vke/rhi_vulkan/vulkan_render_graph.hpp"
+#include "vke/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
 
 namespace vke {
 
