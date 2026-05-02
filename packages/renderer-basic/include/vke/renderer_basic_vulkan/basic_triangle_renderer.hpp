@@ -1,8 +1,9 @@
 ﻿#pragma once
 
-#include <filesystem>
-
 #include <vulkan/vulkan.h>
+
+#include <filesystem>
+#include <vector>
 
 #include "vke/core/result.hpp"
 #include "vke/renderer_basic/draw_item.hpp"
@@ -28,10 +29,10 @@ namespace vke {
         BasicTriangleRenderer& operator=(BasicTriangleRenderer&& other) noexcept;
         ~BasicTriangleRenderer() = default;
 
-        [[nodiscard]] static Result<BasicTriangleRenderer> create(
-            const BasicTriangleRendererDesc& desc);
-        [[nodiscard]] Result<VulkanFrameRecordResult> recordFrame(
-            const VulkanFrameRecordContext& frame);
+        [[nodiscard]] static Result<BasicTriangleRenderer>
+        create(const BasicTriangleRendererDesc& desc);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordFrame(const VulkanFrameRecordContext& frame);
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
@@ -39,6 +40,7 @@ namespace vke {
         VkDevice device_{VK_NULL_HANDLE};
         VulkanShaderModule vertexShader_;
         VulkanShaderModule fragmentShader_;
+        std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
         VulkanGraphicsPipeline pipeline_;
         VulkanBuffer vertexBuffer_;

@@ -68,6 +68,65 @@ namespace vke {
         return shaderModule_;
     }
 
+    VulkanDescriptorSetLayout::VulkanDescriptorSetLayout(
+        VulkanDescriptorSetLayout&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanDescriptorSetLayout&
+    VulkanDescriptorSetLayout::operator=(VulkanDescriptorSetLayout&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        destroy();
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        descriptorSetLayout_ = std::exchange(other.descriptorSetLayout_, VK_NULL_HANDLE);
+        return *this;
+    }
+
+    VulkanDescriptorSetLayout::~VulkanDescriptorSetLayout() {
+        destroy();
+    }
+
+    void VulkanDescriptorSetLayout::destroy() {
+        if (descriptorSetLayout_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, nullptr);
+        }
+
+        device_ = VK_NULL_HANDLE;
+        descriptorSetLayout_ = VK_NULL_HANDLE;
+    }
+
+    Result<VulkanDescriptorSetLayout>
+    VulkanDescriptorSetLayout::create(const VulkanDescriptorSetLayoutDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                vulkanError("Cannot create a Vulkan descriptor set layout without a device")};
+        }
+
+        VkDescriptorSetLayoutCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        createInfo.flags = desc.flags;
+        createInfo.bindingCount = static_cast<std::uint32_t>(desc.bindings.size());
+        createInfo.pBindings = desc.bindings.data();
+
+        VulkanDescriptorSetLayout descriptorSetLayout;
+        descriptorSetLayout.device_ = desc.device;
+        const VkResult result = vkCreateDescriptorSetLayout(
+            desc.device, &createInfo, nullptr, &descriptorSetLayout.descriptorSetLayout_);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vulkanError("Failed to create Vulkan descriptor set layout", result)};
+        }
+
+        return descriptorSetLayout;
+    }
+
+    VkDescriptorSetLayout VulkanDescriptorSetLayout::handle() const {
+        return descriptorSetLayout_;
+    }
+
     VulkanPipelineLayout::VulkanPipelineLayout(VulkanPipelineLayout&& other) noexcept {
         *this = std::move(other);
     }

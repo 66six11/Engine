@@ -88,9 +88,10 @@ Slang reflection 基线已接入，原因是它对后续 descriptor、pipeline l
 
 ## 阶段 2 状态
 
-Descriptor/Layout 契约已开始消费 reflection JSON。当前实现保持 Vulkan pipeline layout 不变，
-只在 `BasicTriangleRenderer::create()` 期间校验 triangle shader 契约，避免在 descriptor 系统
-尚未完整前引入资源绑定行为变化。
+Descriptor/Layout 契约已开始消费 reflection JSON。当前实现会在
+`BasicTriangleRenderer::create()` 期间校验 triangle shader 契约，并把合并后的
+`ShaderResourceSignature` 映射为固定 Vulkan descriptor set layout / push constant ranges，
+再创建 pipeline layout。当前 triangle signature 仍为空，因此尚未引入 descriptor set 绑定行为。
 
 当前范围：
 
@@ -101,14 +102,15 @@ Descriptor/Layout 契约已开始消费 reflection JSON。当前实现保持 Vul
   push constant。
 - `shader-slang` 可合并 shader reflection 得到 resource signature 明细；descriptor binding
   按 `(set,binding)` 合并，push constant 按 `(offset,size)` 合并，并保留 stage visibility。
+- `rhi-vulkan` 提供 `VulkanDescriptorSetLayout` RAII wrapper。
 - `VulkanPipelineLayoutDesc` 可接收 descriptor set layouts 和 push constant ranges，triangle
-  renderer 当前显式创建空 layout。
+  renderer 通过 reflection-derived signature 创建 pipeline layout。
 - 缺失 reflection JSON 或字段不匹配会返回 `ErrorDomain::Shader`，并带具体字段上下文。
 
 后续范围：
 
-- 用 reflection descriptor bindings 定义固定 descriptor set/layout 契约。
-- 增加固定 descriptor set layout RAII wrapper，并由 reflection descriptor bindings 创建或校验。
+- 增加最小 descriptor smoke，验证非空 descriptor signature 能创建 layout 并报清楚 mismatch。
+- 增加 descriptor pool / descriptor set allocation / bind 路线，再进入 material/resource binding。
 - 在 material/resource binding 路线稳定前，继续暂缓 bindless 和自动 C++ codegen。
 
 ## 暂缓事项

@@ -279,6 +279,6 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. Slang reflection JSON 已接入并由 triangle renderer 消费校验；`VulkanPipelineLayoutDesc` 已能表达 descriptor set layouts 和 push constant ranges。下一步让固定 descriptor set layout 消费 reflection，避免 renderer 扩大手写 shader layout 假设。
+4. Slang reflection JSON 已接入并由 triangle renderer 消费校验；固定 descriptor set layout RAII 和 reflection-derived pipeline layout 创建路径已接入。下一步增加非空 descriptor signature smoke，验证 layout mismatch 能清楚报错。
 5. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
 6. mesh asset 路线放在 shader/layout/resource 生命周期稳定之后。

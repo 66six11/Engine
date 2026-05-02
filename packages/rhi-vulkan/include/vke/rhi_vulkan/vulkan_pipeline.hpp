@@ -34,6 +34,32 @@ namespace vke {
         VkShaderModule shaderModule_{VK_NULL_HANDLE};
     };
 
+    struct VulkanDescriptorSetLayoutDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        std::span<const VkDescriptorSetLayoutBinding> bindings;
+        VkDescriptorSetLayoutCreateFlags flags{};
+    };
+
+    class VulkanDescriptorSetLayout {
+    public:
+        VulkanDescriptorSetLayout() = default;
+        VulkanDescriptorSetLayout(const VulkanDescriptorSetLayout&) = delete;
+        VulkanDescriptorSetLayout& operator=(const VulkanDescriptorSetLayout&) = delete;
+        VulkanDescriptorSetLayout(VulkanDescriptorSetLayout&& other) noexcept;
+        VulkanDescriptorSetLayout& operator=(VulkanDescriptorSetLayout&& other) noexcept;
+        ~VulkanDescriptorSetLayout();
+
+        [[nodiscard]] static Result<VulkanDescriptorSetLayout>
+        create(const VulkanDescriptorSetLayoutDesc& desc);
+        [[nodiscard]] VkDescriptorSetLayout handle() const;
+
+    private:
+        void destroy();
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VkDescriptorSetLayout descriptorSetLayout_{VK_NULL_HANDLE};
+    };
+
     struct VulkanPipelineLayoutDesc {
         VkDevice device{VK_NULL_HANDLE};
         std::span<const VkDescriptorSetLayout> setLayouts;
