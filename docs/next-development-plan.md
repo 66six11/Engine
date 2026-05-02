@@ -10,7 +10,7 @@
 
 - 无参数 sample viewer 可以持续渲染 triangle。
 - `--smoke-frame`、`--smoke-rendergraph`、`--smoke-dynamic-rendering`、`--smoke-resize`、
-  `--smoke-triangle` 已作为回归入口。
+  `--smoke-triangle`、`--smoke-descriptor-layout` 已作为回归入口。
 - Slang shader 构建会输出 SPIR-V、执行 `spirv-val`，并生成记录工具路径和版本的 metadata。
 - `packages/shader-slang/tools/slang_reflect.cpp` 已接入 Slang API reflection，triangle shader
   会生成 `basic_triangle.vert.reflection.json` 和 `basic_triangle.frag.reflection.json`。
@@ -105,11 +105,13 @@ Descriptor/Layout 契约已开始消费 reflection JSON。当前实现会在
 - `rhi-vulkan` 提供 `VulkanDescriptorSetLayout` RAII wrapper。
 - `VulkanPipelineLayoutDesc` 可接收 descriptor set layouts 和 push constant ranges，triangle
   renderer 通过 reflection-derived signature 创建 pipeline layout。
+- `--smoke-descriptor-layout` 已验证非空 descriptor signature：`descriptor_layout.slang`
+  反射出 set 0 / binding 0 / `constantBuffer`，并能创建固定 descriptor set layout
+  和 pipeline layout。
 - 缺失 reflection JSON 或字段不匹配会返回 `ErrorDomain::Shader`，并带具体字段上下文。
 
 后续范围：
 
-- 增加最小 descriptor smoke，验证非空 descriptor signature 能创建 layout 并报清楚 mismatch。
 - 增加 descriptor pool / descriptor set allocation / bind 路线，再进入 material/resource binding。
 - 在 material/resource binding 路线稳定前，继续暂缓 bindless 和自动 C++ codegen。
 

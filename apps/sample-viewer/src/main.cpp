@@ -34,7 +34,8 @@ namespace {
     void printUsage() {
         std::cout << "Usage: vke-sample-viewer [--help] [--version] [--smoke-window] "
                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
-                     "[--smoke-dynamic-rendering] [--smoke-resize] [--smoke-triangle]\n";
+                     "[--smoke-dynamic-rendering] [--smoke-resize] [--smoke-triangle] "
+                     "[--smoke-descriptor-layout]\n";
     }
 
     bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
@@ -390,6 +391,57 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    int runSmokeDescriptorLayout() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = vke::GlfwWindow::create(
+            *glfw, vke::WindowDesc{.title = "VkEngine Descriptor Layout Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Descriptor Layout Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto validated =
+            vke::validateBasicDescriptorLayoutSmoke(vke::BasicDescriptorLayoutSmokeDesc{
+                .device = context->device(),
+                .shaderDirectory = shaderDir,
+            });
+        if (!validated) {
+            vke::logError(validated.error().message);
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Descriptor layout smoke: set 0 binding 0 constantBuffer fragment\n";
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
     int runInteractiveViewer() {
         auto glfw = vke::GlfwInstance::create();
         if (!glfw) {
@@ -621,6 +673,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-triangle")) {
             return runSmokeTriangle();
+        }
+
+        if (hasArg(args, "--smoke-descriptor-layout")) {
+            return runSmokeDescriptorLayout();
         }
 
         printVersion();

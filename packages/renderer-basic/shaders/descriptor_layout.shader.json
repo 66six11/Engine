@@ -1,0 +1,14 @@
+{
+  "name": "descriptor_layout",
+  "source": "descriptor_layout.slang",
+  "outputs": [
+    {
+      "entry": "descriptorFragmentMain",
+      "stage": "fragment",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "descriptor_layout.frag.spv"
+    }
+  ],
+  "validation": "spirv-val"
+}

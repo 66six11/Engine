@@ -30,6 +30,21 @@ set(VKE_RENDERER_BASIC_TRIANGLE_FRAG_METADATA
 set(VKE_RENDERER_BASIC_TRIANGLE_FRAG_REFLECTION
     "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_triangle.frag.reflection.json"
 )
+set(VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/descriptor_layout.slang"
+)
+set(VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/descriptor_layout.shader.json"
+)
+set(VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_SPV
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.frag.spv"
+)
+set(VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_METADATA
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.frag.metadata.json"
+)
+set(VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_REFLECTION
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.frag.reflection.json"
+)
 
 vke_add_slang_shader(vke-renderer-basic-triangle-vert
     SOURCE "${VKE_RENDERER_BASIC_TRIANGLE_SHADER_SOURCE}"
@@ -51,10 +66,21 @@ vke_add_slang_shader(vke-renderer-basic-triangle-frag
     DEPENDS "${VKE_RENDERER_BASIC_TRIANGLE_SHADER_MANIFEST}"
 )
 
+vke_add_slang_shader(vke-renderer-basic-descriptor-frag
+    SOURCE "${VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_SOURCE}"
+    ENTRY descriptorFragmentMain
+    STAGE fragment
+    OUTPUT "${VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_SPV}"
+    METADATA_OUTPUT "${VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_REFLECTION}"
+    DEPENDS "${VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_MANIFEST}"
+)
+
 add_custom_target(vke-renderer-basic-shaders
     DEPENDS
         vke-renderer-basic-triangle-vert
         vke-renderer-basic-triangle-frag
+        vke-renderer-basic-descriptor-frag
 )
 
 target_include_directories(vke-renderer-basic

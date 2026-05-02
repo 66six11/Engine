@@ -20,6 +20,14 @@ namespace vke {
         BasicDrawItem drawItem{basicTriangleDrawItem()};
     };
 
+    struct BasicDescriptorLayoutSmokeDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        std::filesystem::path shaderDirectory;
+    };
+
+    [[nodiscard]] Result<void>
+    validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc);
+
     class BasicTriangleRenderer {
     public:
         BasicTriangleRenderer() = default;

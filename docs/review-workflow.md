@@ -45,11 +45,13 @@ build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rende
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
+build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descriptor-layout
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
+build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descriptor-layout
 ```
 
 如果某个 smoke 命令尚不存在，审查回复必须说明原因，不能默默跳过。

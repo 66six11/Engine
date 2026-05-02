@@ -381,6 +381,67 @@ namespace vke {
             return signature;
         }
 
+        [[nodiscard]] Result<ShaderResourceSignature>
+        validateDescriptorLayoutReflection(const std::filesystem::path& shaderDirectory) {
+            auto fragmentReflection =
+                readShaderReflection(shaderDirectory / "descriptor_layout.frag.reflection.json");
+            if (!fragmentReflection) {
+                return std::unexpected{std::move(fragmentReflection.error())};
+            }
+
+            auto fragmentEntry = expectString(fragmentReflection->entry, "descriptorFragmentMain",
+                                              "Descriptor layout fragment shader reflection entry");
+            if (!fragmentEntry) {
+                return std::unexpected{std::move(fragmentEntry.error())};
+            }
+            auto fragmentStage = expectString(fragmentReflection->stage, "fragment",
+                                              "Descriptor layout fragment shader reflection stage");
+            if (!fragmentStage) {
+                return std::unexpected{std::move(fragmentStage.error())};
+            }
+
+            const std::array shaderReflections{*fragmentReflection};
+            ShaderResourceSignature signature = shaderResourceSignature(shaderReflections);
+            auto descriptorSignature =
+                expectUint(signature.descriptorBindingCount, 1,
+                           "Descriptor layout smoke descriptor binding signature");
+            if (!descriptorSignature) {
+                return std::unexpected{std::move(descriptorSignature.error())};
+            }
+            auto pushConstantSignature = expectUint(
+                signature.pushConstantCount, 0, "Descriptor layout smoke push constant signature");
+            if (!pushConstantSignature) {
+                return std::unexpected{std::move(pushConstantSignature.error())};
+            }
+
+            const ShaderDescriptorBindingReflection& binding = signature.descriptorBindings.front();
+            auto set = expectUint(binding.set, 0, "Descriptor layout smoke descriptor set");
+            if (!set) {
+                return std::unexpected{std::move(set.error())};
+            }
+            auto bindingIndex =
+                expectUint(binding.binding, 0, "Descriptor layout smoke descriptor binding");
+            if (!bindingIndex) {
+                return std::unexpected{std::move(bindingIndex.error())};
+            }
+            auto count = expectUint(binding.count, 1, "Descriptor layout smoke descriptor count");
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
+            }
+            auto kind = expectString(binding.kind, "constantBuffer",
+                                     "Descriptor layout smoke descriptor kind");
+            if (!kind) {
+                return std::unexpected{std::move(kind.error())};
+            }
+            auto stage = expectString(binding.stageVisibility, "fragment",
+                                      "Descriptor layout smoke descriptor stage");
+            if (!stage) {
+                return std::unexpected{std::move(stage.error())};
+            }
+
+            return signature;
+        }
+
         void recordTransferClear(const VulkanFrameRecordContext& frame) {
             VkImageSubresourceRange clearRange{};
             clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -465,6 +526,26 @@ namespace vke {
         }
 
     } // namespace
+
+    Result<void> validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot validate descriptor layout smoke without a device"}};
+        }
+
+        auto signature = validateDescriptorLayoutReflection(desc.shaderDirectory);
+        if (!signature) {
+            return std::unexpected{std::move(signature.error())};
+        }
+
+        auto resources = createPipelineLayoutResources(desc.device, *signature);
+        if (!resources) {
+            return std::unexpected{std::move(resources.error())};
+        }
+
+        return {};
+    }
 
     BasicTriangleRenderer::BasicTriangleRenderer(BasicTriangleRenderer&& other) noexcept {
         *this = std::move(other);

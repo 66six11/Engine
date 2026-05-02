@@ -65,12 +65,14 @@ flowchart TD
     RGSmoke["--smoke-rendergraph"]
     DynamicSmoke["--smoke-dynamic-rendering"]
     TriangleSmoke["--smoke-triangle"]
+    DescriptorSmoke["--smoke-descriptor-layout"]
     GLFW["GlfwInstance / GlfwWindow"]
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
-    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle SPIR-V + reflection JSON"]
+    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor SPIR-V + reflection JSON"]
     RendererObject["BasicTriangleRenderer<br/>shader modules / pipeline layout / vertex buffer / pipeline<br/>BasicDrawItem"]
+    DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout"]
 
     Start --> Args
     Args --> WindowSmoke
@@ -79,6 +81,7 @@ flowchart TD
     Args --> RGSmoke
     Args --> DynamicSmoke
     Args --> TriangleSmoke
+    Args --> DescriptorSmoke
     WindowSmoke --> GLFW
     VulkanSmoke --> GLFW
     VulkanSmoke --> Ext
@@ -94,6 +97,11 @@ flowchart TD
     TriangleSmoke --> Context
     TriangleSmoke --> ShaderBuild
     TriangleSmoke --> RendererObject
+    DescriptorSmoke --> GLFW
+    DescriptorSmoke --> Ext
+    DescriptorSmoke --> Context
+    DescriptorSmoke --> ShaderBuild
+    DescriptorSmoke --> DescriptorLayout
     Context --> Device
 ```
 
@@ -104,6 +112,7 @@ flowchart TD
 - `--smoke-frame` 已接入 swapchain acquire、RenderGraph-driven clear、present。
 - `--smoke-dynamic-rendering` 已接入 swapchain acquire、RenderGraph color write、dynamic rendering clear、present。
 - `--smoke-triangle` 已接入 `BasicTriangleRenderer`、dynamic-rendering graphics pipeline、RenderGraph color write、draw、present。
+- `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout / pipeline layout 的创建验证。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译和 Vulkan adapter 字段验证入口。
 
 ## 当前 Frame Loop 流程
@@ -194,7 +203,8 @@ flowchart TD
 - 已接入真实 Vulkan 命令录制。
 - `--smoke-frame` 的 clear/present barriers 已由 RenderGraph compile result 经 Vulkan adapter 生成。
 - `--smoke-dynamic-rendering` 已验证 swapchain image view、dynamic rendering attachment clear 和 `ColorAttachment -> Present` transition。
-- `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、reflection JSON、triangle shader 契约校验、`BasicTriangleRenderer` 管理的 shader module、pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
+- `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、reflection JSON、triangle shader 契约校验、`BasicTriangleRenderer` 管理的 shader module、reflection-derived pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
+- `--smoke-descriptor-layout` 已验证 `descriptor_layout.slang` 的非空 reflection signature 可映射为固定 descriptor set layout 和 pipeline layout；当前只验证 layout 契约，不分配或绑定 descriptor set。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage` binding 查找真实 Vulkan image；当前 smoke 只绑定 Backbuffer，后续 depth/transient image 必须显式加入 binding 表。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
