@@ -55,6 +55,7 @@ namespace vke {
 
     struct RenderGraphCompiledPass {
         std::string name;
+        std::string type;
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
         std::vector<RenderGraphImageHandle> transferWrites;
@@ -67,6 +68,7 @@ namespace vke {
 
     struct RenderGraphPassContext {
         std::string_view name;
+        std::string_view type;
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
         std::span<const RenderGraphImageHandle> transferWrites;
@@ -74,10 +76,48 @@ namespace vke {
 
     using RenderGraphPassCallback = std::function<Result<void>(RenderGraphPassContext)>;
 
+    class RenderGraphExecutorRegistry {
+    public:
+        RenderGraphExecutorRegistry& registerExecutor(std::string type,
+                                                      RenderGraphPassCallback callback) {
+            for (Executor& executor : executors_) {
+                if (executor.type == type) {
+                    executor.callback = std::move(callback);
+                    return *this;
+                }
+            }
+
+            executors_.push_back(Executor{
+                .type = std::move(type),
+                .callback = std::move(callback),
+            });
+            return *this;
+        }
+
+        [[nodiscard]] const RenderGraphPassCallback* find(std::string_view type) const {
+            for (const Executor& executor : executors_) {
+                if (executor.type == type) {
+                    return &executor.callback;
+                }
+            }
+
+            return nullptr;
+        }
+
+    private:
+        struct Executor {
+            std::string type;
+            RenderGraphPassCallback callback;
+        };
+
+        std::vector<Executor> executors_;
+    };
+
     class RenderGraph {
     private:
         struct Pass {
             std::string name;
+            std::string type;
             std::vector<RenderGraphImageHandle> colorWrites;
             std::vector<RenderGraphImageHandle> transferWrites;
             RenderGraphPassCallback callback;
@@ -100,6 +140,10 @@ namespace vke {
                 return graph_->passes_[passIndex_].name;
             }
 
+            [[nodiscard]] std::string_view type() const {
+                return graph_->passes_[passIndex_].type;
+            }
+
             PassBuilder& execute(RenderGraphPassCallback callback) {
                 graph_->passes_[passIndex_].callback = std::move(callback);
                 return *this;
@@ -109,8 +153,7 @@ namespace vke {
             friend class RenderGraph;
 
             PassBuilder(RenderGraph& graph, std::size_t passIndex)
-                : graph_(&graph)
-                , passIndex_(passIndex) {}
+                : graph_(&graph), passIndex_(passIndex) {}
 
             RenderGraph* graph_{};
             std::size_t passIndex_{};
@@ -126,6 +169,19 @@ namespace vke {
         PassBuilder addPass(std::string name) {
             Pass pass{
                 .name = std::move(name),
+                .type = {},
+                .colorWrites = {},
+                .transferWrites = {},
+                .callback = {},
+            };
+            passes_.push_back(std::move(pass));
+            return PassBuilder{*this, passes_.size() - 1};
+        }
+
+        PassBuilder addPass(std::string name, std::string type) {
+            Pass pass{
+                .name = std::move(name),
+                .type = std::move(type),
                 .colorWrites = {},
                 .transferWrites = {},
                 .callback = {},
@@ -147,21 +203,22 @@ namespace vke {
             for (const Pass& pass : passes_) {
                 RenderGraphCompiledPass compiledPass{
                     .name = pass.name,
+                    .type = pass.type,
                     .transitionsBefore = {},
                     .colorWrites = pass.colorWrites,
                     .transferWrites = pass.transferWrites,
                 };
 
-                auto colorTransitions = transitionImages(pass.colorWrites,
-                                                         RenderGraphImageState::ColorAttachment,
-                                                         currentStates, compiledPass);
+                auto colorTransitions =
+                    transitionImages(pass.colorWrites, RenderGraphImageState::ColorAttachment,
+                                     currentStates, compiledPass);
                 if (!colorTransitions) {
                     return std::unexpected{std::move(colorTransitions.error())};
                 }
 
-                auto transferTransitions = transitionImages(pass.transferWrites,
-                                                            RenderGraphImageState::TransferDst,
-                                                            currentStates, compiledPass);
+                auto transferTransitions =
+                    transitionImages(pass.transferWrites, RenderGraphImageState::TransferDst,
+                                     currentStates, compiledPass);
                 if (!transferTransitions) {
                     return std::unexpected{std::move(transferTransitions.error())};
                 }
@@ -178,8 +235,8 @@ namespace vke {
                 const RenderGraphImageHandle imageHandle{
                     .index = static_cast<std::uint32_t>(index),
                 };
-                result.finalTransitions.push_back(makeTransition(
-                    imageHandle, image, currentStates[index], image.finalState));
+                result.finalTransitions.push_back(
+                    makeTransition(imageHandle, image, currentStates[index], image.finalState));
             }
 
             return result;
@@ -194,7 +251,30 @@ namespace vke {
             return execute(*compiled);
         }
 
+        [[nodiscard]] Result<void>
+        execute(const RenderGraphExecutorRegistry& executorRegistry) const {
+            auto compiled = compile();
+            if (!compiled) {
+                return std::unexpected{std::move(compiled.error())};
+            }
+
+            return execute(*compiled, executorRegistry);
+        }
+
         [[nodiscard]] Result<void> execute(const RenderGraphCompileResult& compiled) const {
+            return execute(compiled, nullptr);
+        }
+
+        [[nodiscard]] Result<void>
+        execute(const RenderGraphCompileResult& compiled,
+                const RenderGraphExecutorRegistry& executorRegistry) const {
+            return execute(compiled, &executorRegistry);
+        }
+
+    private:
+        [[nodiscard]] Result<void>
+        execute(const RenderGraphCompileResult& compiled,
+                const RenderGraphExecutorRegistry* executorRegistry) const {
             if (compiled.passes.size() != passes_.size()) {
                 return std::unexpected{Error{
                     ErrorDomain::RenderGraph,
@@ -204,18 +284,22 @@ namespace vke {
             }
 
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
-                const RenderGraphPassCallback& callback = passes_[index].callback;
-                if (!callback) {
+                const RenderGraphCompiledPass& pass = compiled.passes[index];
+                const RenderGraphPassCallback* callback = &passes_[index].callback;
+                if (!*callback && executorRegistry != nullptr) {
+                    callback = executorRegistry->find(pass.type);
+                }
+                if (callback == nullptr || !*callback) {
                     return std::unexpected{Error{
                         ErrorDomain::RenderGraph,
                         0,
-                        "Render graph pass is missing an execute callback.",
+                        missingCallbackMessage(pass),
                     }};
                 }
 
-                const RenderGraphCompiledPass& pass = compiled.passes[index];
-                auto executed = callback(RenderGraphPassContext{
+                auto executed = (*callback)(RenderGraphPassContext{
                     .name = pass.name,
+                    .type = pass.type,
                     .transitionsBefore = pass.transitionsBefore,
                     .colorWrites = pass.colorWrites,
                     .transferWrites = pass.transferWrites,
@@ -228,8 +312,9 @@ namespace vke {
             return {};
         }
 
-        [[nodiscard]] std::string formatDebugTables(
-            const RenderGraphCompileResult& compiled) const {
+    public:
+        [[nodiscard]] std::string
+        formatDebugTables(const RenderGraphCompileResult& compiled) const {
             std::string output;
             output += "### RenderGraph Resources\n\n";
             output += "| # | Name | Format | Extent | Initial | Final |\n";
@@ -254,14 +339,16 @@ namespace vke {
             }
 
             output += "\n### RenderGraph Passes\n\n";
-            output += "| # | Name | Before Transitions | Color Writes | Transfer Writes |\n";
-            output += "|---:|---|---:|---|---|\n";
+            output += "| # | Name | Type | Before Transitions | Color Writes | Transfer Writes |\n";
+            output += "|---:|---|---|---:|---|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
                 output += std::to_string(index);
                 output += " | ";
                 output += pass.name;
+                output += " | ";
+                output += pass.type.empty() ? "-" : pass.type;
                 output += " | ";
                 output += std::to_string(pass.transitionsBefore.size());
                 output += " | ";
@@ -299,10 +386,11 @@ namespace vke {
             return {};
         }
 
-        [[nodiscard]] Result<void> transitionImages(
-            std::span<const RenderGraphImageHandle> imageHandles,
-            RenderGraphImageState requiredState, std::vector<RenderGraphImageState>& currentStates,
-            RenderGraphCompiledPass& compiledPass) const {
+        [[nodiscard]] Result<void>
+        transitionImages(std::span<const RenderGraphImageHandle> imageHandles,
+                         RenderGraphImageState requiredState,
+                         std::vector<RenderGraphImageState>& currentStates,
+                         RenderGraphCompiledPass& compiledPass) const {
             for (RenderGraphImageHandle imageHandle : imageHandles) {
                 auto validated = validateImageHandle(imageHandle);
                 if (!validated) {
@@ -320,9 +408,9 @@ namespace vke {
             return {};
         }
 
-        [[nodiscard]] static RenderGraphImageTransition makeTransition(
-            RenderGraphImageHandle imageHandle, const RenderGraphImageDesc& image,
-            RenderGraphImageState oldState, RenderGraphImageState newState) {
+        [[nodiscard]] static RenderGraphImageTransition
+        makeTransition(RenderGraphImageHandle imageHandle, const RenderGraphImageDesc& image,
+                       RenderGraphImageState oldState, RenderGraphImageState newState) {
             return RenderGraphImageTransition{
                 .image = imageHandle,
                 .imageName = image.name,
@@ -355,6 +443,20 @@ namespace vke {
             }
         }
 
+        [[nodiscard]] static std::string
+        missingCallbackMessage(const RenderGraphCompiledPass& pass) {
+            std::string message = "Render graph pass '";
+            message += pass.name;
+            message += "'";
+            if (!pass.type.empty()) {
+                message += " of type '";
+                message += pass.type;
+                message += "'";
+            }
+            message += " is missing an execute callback.";
+            return message;
+        }
+
         [[nodiscard]] std::string imageHandleLabel(RenderGraphImageHandle image) const {
             std::string label = "#";
             label += std::to_string(image.index);
@@ -365,8 +467,8 @@ namespace vke {
             return label;
         }
 
-        [[nodiscard]] std::string imageHandleList(
-            std::span<const RenderGraphImageHandle> images) const {
+        [[nodiscard]] std::string
+        imageHandleList(std::span<const RenderGraphImageHandle> images) const {
             if (images.empty()) {
                 return "-";
             }

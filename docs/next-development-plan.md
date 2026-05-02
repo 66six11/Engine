@@ -2,7 +2,7 @@
 
 研究日期：2026-04-29
 
-更新日期：2026-05-01
+更新日期：2026-05-02
 
 ## 当前基线
 
@@ -18,6 +18,7 @@
   triangle shader entry/stage、vertex inputs、descriptor bindings 和 push constants 契约。
 - `VulkanPipelineLayoutDesc` 已能接收 descriptor set layouts 和 push constant ranges，当前
   triangle shader 仍显式使用空 resource signature。
+- RenderGraph pass 已具备可选 `type` 字段和 `RenderGraphExecutorRegistry` 执行入口，后续脚本系统可以先生成 pass 声明和资源访问，再由 C++/后端 executor 承担实际录制。
 - Conan 依赖已通过 `conan.lock` 锁定 recipe revision。
 
 下一阶段目标不是立刻扩成完整 renderer，而是先把 shader layout、资源绑定、transient
@@ -51,6 +52,7 @@
 | --- | --- | --- | --- |
 | Frostbite FrameGraph | pass setup 和 execution 分离；setup 阶段声明资源读写，execution 阶段只消费解析后的资源 | 继续要求 RenderGraph pass 在声明期暴露 resource access；后续 reflection/descriptor 信息也先进入声明或 metadata 层 | 不直接复制大型 world renderer/feature 系统，避免超出当前 package 边界 |
 | Unreal RDG | 整帧延迟编译、dependency-sorted execute、资源 alias、barrier/memory 管理和开发期 validation | 先从 validation 和调试表开始：缺失 binding、非法 state、未声明资源访问都应在 compile/record 阶段报错 | 暂缓 async compute、alias memory 和 RDG Insights 级别工具 |
+| Unity Render Graph | pass data、resource usage 和 execute function 分离；兼容期允许 unsafe pass 但推荐显式资源声明 | 脚本层只生成 pass type、参数和 read/write 声明，执行由已注册 executor 接管；C++ callback 继续作为快速原生路径 | 不让脚本直接写 Vulkan 命令或绕过 RenderGraph resource declaration |
 | Granite | Vulkan 侧实践强调 render graph、deferred destruction、自动 descriptor/pipeline、linear upload allocator | 后续 mesh 阶段优先做 staging/linear upload 和 deferred destruction 规则，再扩大 descriptor 自动化 | Granite 后端偏 Vulkan-first；VkEngine 的通用 RenderGraph 层仍保持后端无关 |
 | vuk | 资源通过 access-annotated pass 参数进入图；直接捕获外部资源会绕过自动同步；transient/persistent 资源区分清楚 | `--smoke-transient` 设计应区分 declare transient image 和 import/acquire persistent resource；pass callback 不直接偷用未绑定 VkImage | 暂缓 futures、多 queue 自动调度和跨 graph composition |
 | Blender Vulkan render graph | 后端可把 draw/compute/transfer 命令收集成 graph，再重排并生成同步 barrier | depth/transient 阶段可把 transfer clear、dynamic rendering begin/end、draw 拆成更清楚的后端节点或调试事件 | 不把 Blender GPU module 的多线程 context 模型提前搬进当前单窗口 sample |

@@ -216,21 +216,24 @@ flowchart TD
 ```mermaid
 flowchart TD
     Import["importImage(RenderGraphImageDesc)"]
-    AddPass["addPass(name)"]
+    AddPass["addPass(name, type)"]
     Writes["writeColor / writeTransfer"]
-    Callback["execute(callback)"]
+    Callback["execute(callback)<br/>可选 C++ 快速路径"]
+    Registry["RenderGraphExecutorRegistry<br/>按 pass type 查找 executor"]
     Compile["compile()"]
     Track["按 image 当前 state 追踪转换"]
-    PassPlan["生成 RenderGraphCompiledPass"]
+    PassPlan["生成 RenderGraphCompiledPass<br/>name / type / resource writes"]
     Final["生成 finalTransitions"]
     DebugTables["formatDebugTables(compiled)"]
-    Execute["execute(compiled)"]
-    Callbacks["按编译后 pass 顺序调用 callback"]
+    Execute["execute(compiled)<br/>或 execute(compiled, registry)"]
+    Callbacks["按编译后 pass 顺序调用 callback/executor"]
 
     Import --> AddPass --> Writes --> Callback
+    Writes --> Registry
     Callback --> Compile --> Track --> PassPlan --> Final
     Final --> DebugTables
-    Compile --> Execute --> Callbacks
+    Compile --> Execute
+    Registry --> Execute --> Callbacks
 ```
 
 当前抽象状态：
@@ -244,6 +247,7 @@ flowchart TD
 
 - `writeColor(image)` 会要求 image 进入 `ColorAttachment`。
 - `writeTransfer(image)` 会要求 image 进入 `TransferDst`。
+- `pass.type` 是稳定的逻辑 executor key，便于后续脚本系统只声明 pass 类型、参数和资源访问；具体 Vulkan/C++ 录制仍由后端 executor 接管。
 
 ## RenderGraph 到 Vulkan 的翻译流程
 

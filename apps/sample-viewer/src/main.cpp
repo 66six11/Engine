@@ -568,21 +568,7 @@ namespace {
         });
 
         int callbackCount = 0;
-        graph.addPass("ClearColor")
-            .writeTransfer(backbuffer)
-            .execute([&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
-                if (context.name != "ClearColor" || context.transitionsBefore.size() != 1 ||
-                    !context.colorWrites.empty() || context.transferWrites.size() != 1) {
-                    return std::unexpected{vke::Error{
-                        vke::ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph execute callback received unexpected pass context.",
-                    }};
-                }
-
-                ++callbackCount;
-                return {};
-            });
+        graph.addPass("ClearColor", "basic.clear-transfer").writeTransfer(backbuffer);
 
         auto compiled = graph.compile();
         if (!compiled) {
@@ -613,7 +599,25 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto executed = graph.execute();
+        vke::RenderGraphExecutorRegistry executors;
+        executors.registerExecutor(
+            "basic.clear-transfer",
+            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                if (context.name != "ClearColor" || context.type != "basic.clear-transfer" ||
+                    context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
+                    context.transferWrites.size() != 1) {
+                    return std::unexpected{vke::Error{
+                        vke::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph executor received unexpected pass context.",
+                    }};
+                }
+
+                ++callbackCount;
+                return {};
+            });
+
+        auto executed = graph.execute(*compiled, executors);
         if (!executed) {
             vke::logError(executed.error().message);
             return EXIT_FAILURE;
