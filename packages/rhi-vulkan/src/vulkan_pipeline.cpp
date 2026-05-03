@@ -275,6 +275,14 @@ namespace vke {
         colorBlend.attachmentCount = 1;
         colorBlend.pAttachments = &colorBlendAttachment;
 
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable =
+            desc.depthFormat != VK_FORMAT_UNDEFINED ? VK_TRUE : VK_FALSE;
+        depthStencil.depthWriteEnable =
+            desc.depthFormat != VK_FORMAT_UNDEFINED ? VK_TRUE : VK_FALSE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
         constexpr std::array dynamicStates{
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR,
@@ -288,6 +296,7 @@ namespace vke {
         renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingInfo.colorAttachmentCount = 1;
         renderingInfo.pColorAttachmentFormats = &desc.colorFormat;
+        renderingInfo.depthAttachmentFormat = desc.depthFormat;
 
         VkGraphicsPipelineCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -299,6 +308,7 @@ namespace vke {
         createInfo.pViewportState = &viewportState;
         createInfo.pRasterizationState = &rasterization;
         createInfo.pMultisampleState = &multisample;
+        createInfo.pDepthStencilState = &depthStencil;
         createInfo.pColorBlendState = &colorBlend;
         createInfo.pDynamicState = &dynamicState;
         createInfo.layout = desc.layout;

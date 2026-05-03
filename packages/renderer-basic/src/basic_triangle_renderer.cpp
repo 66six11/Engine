@@ -483,13 +483,27 @@ namespace vke {
         }
 
         void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
-                                VkBuffer vertexBuffer, BasicDrawItem drawItem) {
+                                VkBuffer vertexBuffer, BasicDrawItem drawItem,
+                                VkImageView depthImageView = VK_NULL_HANDLE) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = frame.imageView;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingAttachmentInfo depthAttachment{};
+            depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            depthAttachment.imageView = depthImageView;
+            depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            depthAttachment.clearValue = VkClearValue{
+                .depthStencil = VkClearDepthStencilValue{
+                    .depth = 1.0F,
+                    .stencil = 0,
+                },
+            };
 
             VkRenderingInfo renderingInfo{};
             renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -500,6 +514,9 @@ namespace vke {
             renderingInfo.layerCount = 1;
             renderingInfo.colorAttachmentCount = 1;
             renderingInfo.pColorAttachments = &colorAttachment;
+            if (depthImageView != VK_NULL_HANDLE) {
+                renderingInfo.pDepthAttachment = &depthAttachment;
+            }
 
             const VkViewport viewport{
                 .x = 0.0F,
@@ -523,6 +540,89 @@ namespace vke {
             vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,
                       drawItem.firstVertex, drawItem.firstInstance);
             vkCmdEndRendering(frame.commandBuffer);
+        }
+
+        [[nodiscard]] bool usesImage(std::span<const RenderGraphImageHandle> images,
+                                     RenderGraphImageHandle image) {
+            return std::ranges::any_of(images, [image](RenderGraphImageHandle used) {
+                return used == image;
+            });
+        }
+
+        [[nodiscard]] VkImageUsageFlags transientUsageFlags(
+            const RenderGraphCompileResult& compiled, RenderGraphImageHandle image) {
+            VkImageUsageFlags usage{};
+            for (const RenderGraphCompiledPass& pass : compiled.passes) {
+                if (usesImage(pass.transferWrites, image)) {
+                    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                }
+                if (usesImage(pass.colorWrites, image)) {
+                    usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+                }
+                if (usesImage(pass.shaderReads, image) ||
+                    usesImage(pass.depthSampledReads, image)) {
+                    usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+                }
+                if (usesImage(pass.depthReads, image) || usesImage(pass.depthWrites, image)) {
+                    usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                }
+            }
+            return usage;
+        }
+
+        [[nodiscard]] Result<void> prepareTransientResources(
+            VkDevice device, VmaAllocator allocator, const RenderGraphCompileResult& compiled,
+            std::vector<VulkanRenderGraphImageBinding>& bindings,
+            std::vector<VulkanImage>& transientImages,
+            std::vector<VulkanImageView>& transientImageViews) {
+            transientImageViews.clear();
+            transientImages.clear();
+
+            for (const RenderGraphTransientImageAllocation& allocation :
+                 compiled.transientImages) {
+                const VkFormat format = vulkanFormat(allocation.format);
+                const VkImageAspectFlags aspectMask =
+                    basicRenderGraphImageAspect(allocation.format);
+                const VkImageUsageFlags usage =
+                    transientUsageFlags(compiled, allocation.image);
+
+                auto image = VulkanImage::create(VulkanImageDesc{
+                    .device = device,
+                    .allocator = allocator,
+                    .format = format,
+                    .extent =
+                        VkExtent2D{
+                            .width = allocation.extent.width,
+                            .height = allocation.extent.height,
+                        },
+                    .usage = usage,
+                    .aspectMask = aspectMask,
+                });
+                if (!image) {
+                    return std::unexpected{std::move(image.error())};
+                }
+
+                auto imageView = VulkanImageView::create(VulkanImageViewDesc{
+                    .device = device,
+                    .image = image->handle(),
+                    .format = image->format(),
+                    .aspectMask = image->aspectMask(),
+                });
+                if (!imageView) {
+                    return std::unexpected{std::move(imageView.error())};
+                }
+
+                bindings.push_back(VulkanRenderGraphImageBinding{
+                    .image = allocation.image,
+                    .vulkanImage = image->handle(),
+                    .vulkanImageView = imageView->handle(),
+                    .aspectMask = image->aspectMask(),
+                });
+                transientImages.push_back(std::move(*image));
+                transientImageViews.push_back(std::move(*imageView));
+            }
+
+            return {};
         }
 
     } // namespace
@@ -564,7 +664,11 @@ namespace vke {
         pipelineLayout_ = std::move(other.pipelineLayout_);
         pipeline_ = std::move(other.pipeline_);
         vertexBuffer_ = std::move(other.vertexBuffer_);
+        transientImages_ = std::move(other.transientImages_);
+        transientImageViews_ = std::move(other.transientImageViews_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
+        pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
+        allocator_ = std::exchange(other.allocator_, nullptr);
         drawItem_ = std::exchange(other.drawItem_, basicTriangleDrawItem());
         return *this;
     }
@@ -636,6 +740,7 @@ namespace vke {
 
         BasicTriangleRenderer renderer;
         renderer.device_ = desc.device;
+        renderer.allocator_ = desc.allocator;
         renderer.vertexShader_ = std::move(*vertexShader);
         renderer.fragmentShader_ = std::move(*fragmentShader);
         renderer.descriptorSetLayouts_ = std::move(layoutResources->descriptorSetLayouts);
@@ -645,8 +750,10 @@ namespace vke {
         return renderer;
     }
 
-    Result<void> BasicTriangleRenderer::ensurePipeline(VkFormat colorFormat) {
-        if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat) {
+    Result<void> BasicTriangleRenderer::ensurePipeline(VkFormat colorFormat,
+                                                       VkFormat depthFormat) {
+        if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat &&
+            pipelineDepthFormat_ == depthFormat) {
             return {};
         }
 
@@ -661,6 +768,7 @@ namespace vke {
             .vertexEntryPoint = "main",
             .fragmentEntryPoint = "main",
             .colorFormat = colorFormat,
+            .depthFormat = depthFormat,
             .vertexBindings = bindings,
             .vertexAttributes = attributes,
         });
@@ -670,6 +778,7 @@ namespace vke {
 
         pipeline_ = std::move(*pipeline);
         pipelineFormat_ = colorFormat;
+        pipelineDepthFormat_ = depthFormat;
         return {};
     }
 
@@ -711,6 +820,86 @@ namespace vke {
         auto compiled = graph.compile();
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+
+        return VulkanFrameRecordResult{
+            .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        };
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicTriangleRenderer::recordFrameWithDepth(const VulkanFrameRecordContext& frame) {
+        constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
+        auto pipeline = ensurePipeline(frame.format, kDepthFormat);
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+
+        RenderGraph graph;
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const auto depth = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "DepthBuffer",
+            .format = RenderGraphImageFormat::D32Sfloat,
+            .extent = basicRenderGraphExtent(frame.extent),
+        });
+
+        std::vector<VulkanRenderGraphImageBinding> bindings;
+        bindings.reserve(2);
+        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+
+        graph.addPass("ClearColor")
+            .writeTransfer("target", backbuffer)
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+                recordTransferClear(frame);
+                return {};
+            });
+
+        graph.addPass("DepthTriangle")
+            .writeColor("target", backbuffer)
+            .writeDepth("depth", depth)
+            .execute([&frame, &bindings, depth, this](
+                         RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto depthBinding = findVulkanRenderGraphImage(depth, bindings);
+                if (!depthBinding) {
+                    return std::unexpected{std::move(depthBinding.error())};
+                }
+
+                recordTriangleDraw(frame, pipeline_.handle(), vertexBuffer_.handle(), drawItem_,
+                                   depthBinding->vulkanImageView);
+                return {};
+            });
+
+        auto compiled = graph.compile();
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto prepared = prepareTransientResources(device_, allocator_, *compiled, bindings,
+                                                  transientImages_, transientImageViews_);
+        if (!prepared) {
+            return std::unexpected{std::move(prepared.error())};
         }
 
         auto executed = graph.execute(*compiled);

@@ -45,12 +45,14 @@ build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rende
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
+build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-depth-triangle
 build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descriptor-layout
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
+build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-depth-triangle
 build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descriptor-layout
 ```
 

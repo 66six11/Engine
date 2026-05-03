@@ -9,6 +9,7 @@
 #include "vke/renderer_basic/draw_item.hpp"
 #include "vke/rhi_vulkan/vulkan_buffer.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "vke/rhi_vulkan/vulkan_image.hpp"
 #include "vke/rhi_vulkan/vulkan_pipeline.hpp"
 
 namespace vke {
@@ -41,11 +42,15 @@ namespace vke {
         create(const BasicTriangleRendererDesc& desc);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordFrameWithDepth(const VulkanFrameRecordContext& frame);
 
     private:
-        [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
+        [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat,
+                                                  VkFormat depthFormat = VK_FORMAT_UNDEFINED);
 
         VkDevice device_{VK_NULL_HANDLE};
+        VmaAllocator allocator_{};
         VulkanShaderModule vertexShader_;
         VulkanShaderModule fragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
@@ -53,6 +58,9 @@ namespace vke {
         VulkanGraphicsPipeline pipeline_;
         VulkanBuffer vertexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
+        VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
+        std::vector<VulkanImage> transientImages_;
+        std::vector<VulkanImageView> transientImageViews_;
         BasicDrawItem drawItem_{basicTriangleDrawItem()};
     };
 

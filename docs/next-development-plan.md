@@ -10,7 +10,7 @@
 
 - 无参数 sample viewer 可以持续渲染 triangle。
 - `--smoke-frame`、`--smoke-rendergraph`、`--smoke-dynamic-rendering`、`--smoke-resize`、
-  `--smoke-triangle`、`--smoke-descriptor-layout` 已作为回归入口。
+  `--smoke-triangle`、`--smoke-depth-triangle`、`--smoke-descriptor-layout` 已作为回归入口。
 - Slang shader 构建会输出 SPIR-V、执行 `spirv-val`，并生成记录工具路径和版本的 metadata。
 - `packages/shader-slang/tools/slang_reflect.cpp` 已接入 Slang API reflection，triangle shader
   会生成 `basic_triangle.vert.reflection.json` 和 `basic_triangle.frag.reflection.json`。
@@ -89,7 +89,7 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | 4 | RenderGraph access/state 扩展 | `ShaderRead(fragment/compute)`、`DepthAttachmentRead/Write`、`DepthSampledRead(fragment/compute)` 已接入，并同步 Vulkan layout/stage/access 翻译 | `--smoke-rendergraph` 已验证 shader-read、depth-write、depth-sampled-read transition、shader stage/domain、depth aspect barrier 和 Vulkan adapter 字段；尚不引入实际 shader sampling |
 | 5 | RenderGraph transient image | `createTransientImage()`、transient lifetime plan、debug table 和 `--smoke-transient` 已接入 | `--smoke-transient` 已验证非 backbuffer image transition、first/last pass、final shader stage 和 Vulkan adapter mapping |
 | 6 | PrepareBackend transient allocation | 已增加 Vulkan image/image view RAII、VMA-backed transient image 创建、usage/aspect 推导和 binding 表接入 | `--smoke-transient` 已升级为真实 transient VkImage 录制路径，validation 无 error/warning |
-| 7 | Depth attachment MVP | 增加 dynamic rendering depth attachment，复用已接入的 depth write/read 状态和 binding | 新增 `--smoke-depth-triangle`，validation 无 error/warning |
+| 7 | Depth attachment MVP | 已增加 dynamic rendering depth attachment、`D32Sfloat` transient depth image、depth aspect binding 和 depth-enabled pipeline | `--smoke-depth-triangle` 已接入，validation 无 error/warning |
 | 8 | 受控 command context skeleton | 在 C++ 中原型化未来脚本会调用的高级命令 API，但第一版只生成 command summary/debug IR，不承诺 Vulkan 执行；可包含 clear、set shader/texture、fullscreen draw 的描述 | 新增 command summary/debug 输出；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
 | 9 | Descriptor binding / fullscreen pass | 在固定 descriptor layout 基础上增加 descriptor pool、descriptor set allocation/bind，并让 `setTexture + drawFullscreenTriangle` 从 debug IR 走向真实 Vulkan 执行 | 新增 `--smoke-fullscreen-texture` 或等价 smoke，验证 shader 采样声明资源 |
 | 10 | Mesh asset / draw list 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload；必要时引入简化 draw list，而不是先暴露逐 object 脚本 draw loop | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |

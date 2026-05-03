@@ -35,7 +35,8 @@ namespace {
         std::cout << "Usage: vke-sample-viewer [--help] [--version] [--smoke-window] "
                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
-                     "[--smoke-triangle] [--smoke-descriptor-layout]\n";
+                     "[--smoke-triangle] [--smoke-depth-triangle] "
+                     "[--smoke-descriptor-layout]\n";
     }
 
     bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
@@ -378,7 +379,7 @@ namespace {
         return EXIT_SUCCESS;
     }
 
-    int runSmokeTriangle() {
+    int runSmokeTriangle(bool useDepth = false) {
         auto glfw = vke::GlfwInstance::create();
         if (!glfw) {
             vke::logError(glfw.error().message);
@@ -391,15 +392,16 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Triangle Smoke"});
+        const std::string_view title =
+            useDepth ? "VkEngine Depth Triangle Smoke" : "VkEngine Triangle Smoke";
+        auto window = vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = std::string{title}});
         if (!window) {
             vke::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
         const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Triangle Smoke",
+            .applicationName = std::string{title},
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
@@ -443,7 +445,11 @@ namespace {
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&triangleRenderer](const vke::VulkanFrameRecordContext& recordContext) {
+                [&triangleRenderer, useDepth](
+                    const vke::VulkanFrameRecordContext& recordContext) {
+                    if (useDepth) {
+                        return triangleRenderer->recordFrameWithDepth(recordContext);
+                    }
                     return triangleRenderer->recordFrame(recordContext);
                 });
             if (!status) {
@@ -452,7 +458,9 @@ namespace {
             }
 
             if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during triangle smoke.");
+                vke::logError(useDepth ? "Swapchain remained out of date during depth triangle "
+                                         "smoke."
+                                       : "Swapchain remained out of date during triangle smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -461,7 +469,8 @@ namespace {
         }
 
         const VkExtent2D extent = frameLoop->extent();
-        std::cout << "Rendered triangle frames: " << extent.width << 'x' << extent.height << '\n';
+        std::cout << (useDepth ? "Rendered depth triangle frames: " : "Rendered triangle frames: ")
+                  << extent.width << 'x' << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             vke::logError("Failed to wait for Vulkan queue before triangle pipeline teardown: " +
@@ -1169,6 +1178,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-triangle")) {
             return runSmokeTriangle();
+        }
+
+        if (hasArg(args, "--smoke-depth-triangle")) {
+            return runSmokeTriangle(true);
         }
 
         if (hasArg(args, "--smoke-descriptor-layout")) {

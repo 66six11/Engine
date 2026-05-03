@@ -94,6 +94,7 @@ namespace vke {
         std::string_view vertexEntryPoint{"main"};
         std::string_view fragmentEntryPoint{"main"};
         VkFormat colorFormat{VK_FORMAT_UNDEFINED};
+        VkFormat depthFormat{VK_FORMAT_UNDEFINED};
         std::span<const VkVertexInputBindingDescription> vertexBindings;
         std::span<const VkVertexInputAttributeDescription> vertexAttributes;
     };
