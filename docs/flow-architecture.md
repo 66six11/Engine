@@ -211,6 +211,31 @@ flowchart TD
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 和 triangle shader/pipeline 装配已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
 
+未来多 view/camera 边界：
+
+```mermaid
+flowchart TD
+    Frame["Frame"]
+    Views["Collect RenderViews<br/>Game / Scene / Preview / ReflectionProbe"]
+    RecordView["recordViewGraph(view)"]
+    CompileView["compile(view graph)"]
+    PrepareView["prepare backend resources"]
+    RecordViewCmd["record view commands"]
+    SharedCaches["shared caches<br/>shader / pipeline / descriptor layout"]
+    ViewLocal["view-local resources<br/>camera params / descriptors / transients"]
+
+    Frame --> Views --> RecordView --> CompileView --> PrepareView --> RecordViewCmd
+    SharedCaches --> PrepareView
+    ViewLocal --> PrepareView
+```
+
+- 当前 sample 只有一个 game view / swapchain target，但后续 editor 需要允许一帧多个 view graph。
+- Game View、Scene View、Preview View 共享 renderer、RenderGraph 和 Vulkan backend caches，但各自拥有
+  view-local camera params、descriptor sets、transient resources 和 compiled graph。
+- Scene View 可以额外 record grid、gizmos、selection outline、wire overlay、debug overlay 等 editor-only
+  pass；这些 pass 不能污染 Game View graph。
+- RenderGraph handle 只在单个 view graph 内有效；跨 view 共享资源必须由 resource manager 拥有并 import。
+
 ## RenderGraph 编译与执行流程
 
 ```mermaid
@@ -236,6 +261,33 @@ flowchart TD
     Registry --> Execute --> Callbacks
 ```
 
+每帧职责边界：
+
+```mermaid
+flowchart TD
+    FrameInput["Frame input<br/>camera / quality / debug / gameplay feature state"]
+    RecordGraph["RecordGraph<br/>resources + passes + slots + params + command summary"]
+    CompileGraph["CompileGraph<br/>schema validation + dependency + lifetime + state/barrier plan"]
+    PrepareBackend["PrepareBackend<br/>transient pool + descriptor allocator + shader/pipeline cache"]
+    RecordCommands["RecordCommands<br/>barriers + rendering/dispatch + descriptors + draws"]
+    Submit["Submit / Present"]
+
+    FrameInput --> RecordGraph --> CompileGraph --> PrepareBackend --> RecordCommands --> Submit
+```
+
+- `RecordGraph` 可以每帧运行，并允许普通 C++ 控制流决定哪些动态 feature 进入当前帧 graph。未来脚本
+  VM 也只应运行在这一段。
+- `compile()` 负责校验 pass/resource 声明、计算依赖、resource lifetime、final transitions、
+  barrier/layout plan、transient allocation plan 和调试表信息。
+- `compile()` 不负责 shader 编译、reflection 解析、descriptor set layout 创建、pipeline layout 创建、
+  graphics/compute pipeline 创建或长期 GPU resource 创建。
+- `PrepareBackend` 负责用 compiled graph 消费 shader cache、pipeline layout cache、pipeline cache、
+  descriptor allocator 和 transient resource pool。动态参数在这里或 RecordGraph 前进入 per-frame param
+  block、push constants 或 descriptor 更新。
+- `RecordCommands` 按 compiled graph 录制 Vulkan 命令，不再改变 graph topology，也不回调脚本 VM。
+- 动态 feature 应在 record/build 阶段决定是否把 pass 放进 graph；轻量常驻 feature 用参数控制，昂贵或
+  需要额外 RT/buffer 的 feature 用 active predicate 控制是否 record。
+
 当前抽象状态：
 
 - `Undefined`
@@ -245,9 +297,15 @@ flowchart TD
 
 当前 write 声明：
 
-- `writeColor(image)` 会要求 image 进入 `ColorAttachment`。
-- `writeTransfer(image)` 会要求 image 进入 `TransferDst`。
-- `pass.type` 是稳定的逻辑 executor key，便于后续脚本系统只声明 pass 类型、参数和资源访问；具体 Vulkan/C++ 录制仍由后端 executor 接管。
+- `writeColor("target", image)` / `writeColor(image)` 会要求 image 进入 `ColorAttachment`；旧的
+  无 slot API 暂时等价于 `"target"`。
+- `writeTransfer("target", image)` / `writeTransfer(image)` 会要求 image 进入 `TransferDst`；旧的
+  无 slot API 暂时等价于 `"target"`。
+- compiled pass 和 executor context 已携带 `colorWriteSlots` / `transferWriteSlots`，`--smoke-rendergraph`
+  会验证 slot name 并在调试表输出 slot。
+- `pass.type` 是当前 typed executor key，并会继续演进为执行模型 / pass opcode。它不等同于
+  RenderQueue 或 shader tag；脚本/工具未来应通过同一套 C++ builder 语义生成 pass 声明、资源访问、
+  typed params 和受控 command context。
 
 ## RenderGraph 到 Vulkan 的翻译流程
 
@@ -273,19 +331,22 @@ flowchart TD
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
-- `--smoke-rendergraph` 已输出 resources、passes、transitions 的 Markdown 调试表格。
+- `--smoke-rendergraph` 已输出 resources、passes、slots、transitions 的 Markdown 调试表格。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>pipeline layout/resource signature"]
-    Step1["下一步:<br/>fixed descriptor set layout"]
-    Step2["之后:<br/>RenderGraph transient image"]
-    Step3["之后:<br/>depth attachment MVP"]
-    Step4["之后:<br/>mesh asset / index buffer"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots"]
+    Step1["下一步:<br/>RenderGraph declaration v2<br/>typed params + schema"]
+    Step2["之后:<br/>RenderGraph access/state 扩展<br/>ShaderRead / DepthAttachmentRead/Write / DepthSampledRead"]
+    Step3["之后:<br/>RenderGraph transient image"]
+    Step4["之后:<br/>depth attachment MVP"]
+    Step5["之后:<br/>C++ command context skeleton<br/>debug IR only"]
+    Step6["之后:<br/>descriptor binding + fullscreen pass"]
+    Step7["之后:<br/>mesh asset / draw list MVP"]
 
-    Now --> Step1 --> Step2 --> Step3 --> Step4
+    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7
 ```
 
 建议推进顺序：
@@ -293,6 +354,9 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. Slang reflection JSON 已接入并由 triangle renderer 消费校验；固定 descriptor set layout RAII 和 reflection-derived pipeline layout 创建路径已接入。下一步增加非空 descriptor signature smoke，验证 layout mismatch 能清楚报错。
-5. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
-6. mesh asset 路线放在 shader/layout/resource 生命周期稳定之后。
+4. Slang reflection JSON、固定 descriptor set layout RAII、reflection-derived pipeline layout 和非空 descriptor signature smoke 已接入；下一步不急着进入脚本 VM，而是补齐 RenderGraph pass declaration v2。
+5. `pass.type` 只负责执行模型 / typed pass 分发；RenderQueue、shader pass tag 和 RendererList 等到 mesh/material 阶段再引入。
+6. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。
+7. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
+8. 受控 command context 先用 C++ 原型化未来脚本 API，但第一版只作为 debug IR/summary；`setTexture` 和 fullscreen draw 的真实 Vulkan 执行等 descriptor binding、pipeline key 和 state 翻译完整后再接入。
+9. mesh asset 路线放在 shader/layout/resource 生命周期稳定之后，并优先走 draw list，不提前暴露逐 object 脚本 draw loop。

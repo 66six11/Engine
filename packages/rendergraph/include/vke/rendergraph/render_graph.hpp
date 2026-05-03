@@ -53,12 +53,19 @@ namespace vke {
         RenderGraphImageState newState{RenderGraphImageState::Undefined};
     };
 
+    struct RenderGraphImageSlot {
+        std::string name;
+        RenderGraphImageHandle image{};
+    };
+
     struct RenderGraphCompiledPass {
         std::string name;
         std::string type;
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
         std::vector<RenderGraphImageHandle> transferWrites;
+        std::vector<RenderGraphImageSlot> colorWriteSlots;
+        std::vector<RenderGraphImageSlot> transferWriteSlots;
     };
 
     struct RenderGraphCompileResult {
@@ -72,6 +79,8 @@ namespace vke {
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
         std::span<const RenderGraphImageHandle> transferWrites;
+        std::span<const RenderGraphImageSlot> colorWriteSlots;
+        std::span<const RenderGraphImageSlot> transferWriteSlots;
     };
 
     using RenderGraphPassCallback = std::function<Result<void>(RenderGraphPassContext)>;
@@ -118,8 +127,8 @@ namespace vke {
         struct Pass {
             std::string name;
             std::string type;
-            std::vector<RenderGraphImageHandle> colorWrites;
-            std::vector<RenderGraphImageHandle> transferWrites;
+            std::vector<RenderGraphImageSlot> colorWriteSlots;
+            std::vector<RenderGraphImageSlot> transferWriteSlots;
             RenderGraphPassCallback callback;
         };
 
@@ -127,12 +136,26 @@ namespace vke {
         class PassBuilder {
         public:
             PassBuilder& writeColor(RenderGraphImageHandle image) {
-                graph_->passes_[passIndex_].colorWrites.push_back(image);
+                return writeColor("target", image);
+            }
+
+            PassBuilder& writeColor(std::string slotName, RenderGraphImageHandle image) {
+                graph_->passes_[passIndex_].colorWriteSlots.push_back(RenderGraphImageSlot{
+                    .name = std::move(slotName),
+                    .image = image,
+                });
                 return *this;
             }
 
             PassBuilder& writeTransfer(RenderGraphImageHandle image) {
-                graph_->passes_[passIndex_].transferWrites.push_back(image);
+                return writeTransfer("target", image);
+            }
+
+            PassBuilder& writeTransfer(std::string slotName, RenderGraphImageHandle image) {
+                graph_->passes_[passIndex_].transferWriteSlots.push_back(RenderGraphImageSlot{
+                    .name = std::move(slotName),
+                    .image = image,
+                });
                 return *this;
             }
 
@@ -170,8 +193,8 @@ namespace vke {
             Pass pass{
                 .name = std::move(name),
                 .type = {},
-                .colorWrites = {},
-                .transferWrites = {},
+                .colorWriteSlots = {},
+                .transferWriteSlots = {},
                 .callback = {},
             };
             passes_.push_back(std::move(pass));
@@ -182,8 +205,8 @@ namespace vke {
             Pass pass{
                 .name = std::move(name),
                 .type = std::move(type),
-                .colorWrites = {},
-                .transferWrites = {},
+                .colorWriteSlots = {},
+                .transferWriteSlots = {},
                 .callback = {},
             };
             passes_.push_back(std::move(pass));
@@ -201,24 +224,31 @@ namespace vke {
             result.passes.reserve(passes_.size());
 
             for (const Pass& pass : passes_) {
+                auto slotsValidated = validateWriteSlots(pass);
+                if (!slotsValidated) {
+                    return std::unexpected{std::move(slotsValidated.error())};
+                }
+
                 RenderGraphCompiledPass compiledPass{
                     .name = pass.name,
                     .type = pass.type,
                     .transitionsBefore = {},
-                    .colorWrites = pass.colorWrites,
-                    .transferWrites = pass.transferWrites,
+                    .colorWrites = imageHandles(pass.colorWriteSlots),
+                    .transferWrites = imageHandles(pass.transferWriteSlots),
+                    .colorWriteSlots = pass.colorWriteSlots,
+                    .transferWriteSlots = pass.transferWriteSlots,
                 };
 
-                auto colorTransitions =
-                    transitionImages(pass.colorWrites, RenderGraphImageState::ColorAttachment,
-                                     currentStates, compiledPass);
+                auto colorTransitions = transitionImages(compiledPass.colorWrites,
+                                                         RenderGraphImageState::ColorAttachment,
+                                                         currentStates, compiledPass);
                 if (!colorTransitions) {
                     return std::unexpected{std::move(colorTransitions.error())};
                 }
 
-                auto transferTransitions =
-                    transitionImages(pass.transferWrites, RenderGraphImageState::TransferDst,
-                                     currentStates, compiledPass);
+                auto transferTransitions = transitionImages(compiledPass.transferWrites,
+                                                            RenderGraphImageState::TransferDst,
+                                                            currentStates, compiledPass);
                 if (!transferTransitions) {
                     return std::unexpected{std::move(transferTransitions.error())};
                 }
@@ -303,6 +333,8 @@ namespace vke {
                     .transitionsBefore = pass.transitionsBefore,
                     .colorWrites = pass.colorWrites,
                     .transferWrites = pass.transferWrites,
+                    .colorWriteSlots = pass.colorWriteSlots,
+                    .transferWriteSlots = pass.transferWriteSlots,
                 });
                 if (!executed) {
                     return std::unexpected{std::move(executed.error())};
@@ -352,10 +384,18 @@ namespace vke {
                 output += " | ";
                 output += std::to_string(pass.transitionsBefore.size());
                 output += " | ";
-                output += imageHandleList(pass.colorWrites);
+                output += imageSlotList(pass.colorWriteSlots);
                 output += " | ";
-                output += imageHandleList(pass.transferWrites);
+                output += imageSlotList(pass.transferWriteSlots);
                 output += " |\n";
+            }
+
+            output += "\n### RenderGraph Slots\n\n";
+            output += "| Pass | Access | Slot | Image |\n";
+            output += "|---|---|---|---|\n";
+            for (const RenderGraphCompiledPass& pass : compiled.passes) {
+                appendSlotRows(output, pass.name, "ColorWrite", pass.colorWriteSlots);
+                appendSlotRows(output, pass.name, "TransferWrite", pass.transferWriteSlots);
             }
 
             output += "\n### RenderGraph Transitions\n\n";
@@ -384,6 +424,73 @@ namespace vke {
             }
 
             return {};
+        }
+
+        [[nodiscard]] Result<void> validateWriteSlots(const Pass& pass) const {
+            auto colorSlots = validateSlots(pass, pass.colorWriteSlots);
+            if (!colorSlots) {
+                return std::unexpected{std::move(colorSlots.error())};
+            }
+
+            auto transferSlots = validateSlots(pass, pass.transferWriteSlots);
+            if (!transferSlots) {
+                return std::unexpected{std::move(transferSlots.error())};
+            }
+
+            for (const RenderGraphImageSlot& colorSlot : pass.colorWriteSlots) {
+                for (const RenderGraphImageSlot& transferSlot : pass.transferWriteSlots) {
+                    if (colorSlot.name == transferSlot.name) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            duplicateSlotMessage(pass, colorSlot.name),
+                        }};
+                    }
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateSlots(const Pass& pass, std::span<const RenderGraphImageSlot> slots) const {
+            for (std::size_t index = 0; index < slots.size(); ++index) {
+                const RenderGraphImageSlot& slot = slots[index];
+                if (slot.name.empty()) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' has an unnamed resource slot.",
+                    }};
+                }
+
+                auto validated = validateImageHandle(slot.image);
+                if (!validated) {
+                    return std::unexpected{std::move(validated.error())};
+                }
+
+                for (std::size_t otherIndex = index + 1; otherIndex < slots.size(); ++otherIndex) {
+                    if (slot.name == slots[otherIndex].name) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            duplicateSlotMessage(pass, slot.name),
+                        }};
+                    }
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] static std::vector<RenderGraphImageHandle>
+        imageHandles(std::span<const RenderGraphImageSlot> slots) {
+            std::vector<RenderGraphImageHandle> handles;
+            handles.reserve(slots.size());
+            for (const RenderGraphImageSlot& slot : slots) {
+                handles.push_back(slot.image);
+            }
+            return handles;
         }
 
         [[nodiscard]] Result<void>
@@ -457,6 +564,16 @@ namespace vke {
             return message;
         }
 
+        [[nodiscard]] static std::string duplicateSlotMessage(const Pass& pass,
+                                                              std::string_view slotName) {
+            std::string message = "Render graph pass '";
+            message += pass.name;
+            message += "' declares duplicate resource slot '";
+            message += slotName;
+            message += "'.";
+            return message;
+        }
+
         [[nodiscard]] std::string imageHandleLabel(RenderGraphImageHandle image) const {
             std::string label = "#";
             label += std::to_string(image.index);
@@ -481,6 +598,47 @@ namespace vke {
                 labels += imageHandleLabel(images[index]);
             }
             return labels;
+        }
+
+        [[nodiscard]] std::string slotImageLabel(const RenderGraphImageSlot& slot) const {
+            std::string label = slot.name;
+            label += "=";
+            label += imageHandleLabel(slot.image);
+            return label;
+        }
+
+        [[nodiscard]] std::string imageSlotList(std::span<const RenderGraphImageSlot> slots) const {
+            if (slots.empty()) {
+                return "-";
+            }
+
+            std::string labels;
+            for (std::size_t index = 0; index < slots.size(); ++index) {
+                if (index > 0) {
+                    labels += ", ";
+                }
+                labels += slotImageLabel(slots[index]);
+            }
+            return labels;
+        }
+
+        void appendSlotRows(std::string& output, std::string_view passName, std::string_view access,
+                            std::span<const RenderGraphImageSlot> slots) const {
+            if (slots.empty()) {
+                return;
+            }
+
+            for (const RenderGraphImageSlot& slot : slots) {
+                output += "| ";
+                output += passName;
+                output += " | ";
+                output += access;
+                output += " | ";
+                output += slot.name;
+                output += " | ";
+                output += imageHandleLabel(slot.image);
+                output += " |\n";
+            }
         }
 
         void appendTransitionRow(std::string& output, std::string_view phase,

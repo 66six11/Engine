@@ -19,7 +19,7 @@ namespace vke {
         const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
 
         graph.addPass("ClearColor")
-            .writeTransfer(backbuffer)
+            .writeTransfer("target", backbuffer)
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
@@ -67,7 +67,7 @@ namespace vke {
         const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
 
         graph.addPass("DynamicClearColor")
-            .writeColor(backbuffer)
+            .writeColor("target", backbuffer)
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);

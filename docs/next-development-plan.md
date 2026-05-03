@@ -18,11 +18,14 @@
   triangle shader entry/stage、vertex inputs、descriptor bindings 和 push constants 契约。
 - `VulkanPipelineLayoutDesc` 已能接收 descriptor set layouts 和 push constant ranges，当前
   triangle shader 仍显式使用空 resource signature。
-- RenderGraph pass 已具备可选 `type` 字段和 `RenderGraphExecutorRegistry` 执行入口，后续脚本系统可以先生成 pass 声明和资源访问，再由 C++/后端 executor 承担实际录制。
+- RenderGraph pass 已具备可选 `type` 字段和 `RenderGraphExecutorRegistry` 执行入口。当前它是
+  C++ 快速路径和 typed pass 分发点，后续会演进为脚本/工具前端可生成的 pass 声明、参数和受控
+  command context 的共同入口。
 - Conan 依赖已通过 `conan.lock` 锁定 recipe revision。
 
-下一阶段目标不是立刻扩成完整 renderer，而是先把 shader layout、资源绑定、transient
-资源生命周期和同步边界做稳，再进入 mesh asset 路线。
+下一阶段目标不是立刻接入脚本或扩成完整 SRP，而是先把 RenderGraph 声明模型、shader
+layout、资源绑定、transient 资源生命周期和同步边界做稳。未来脚本系统只应复用同一套
+C++ builder / command context / compiled graph 语义，而不是引入另一套渲染路径。
 
 ## 一手资料结论
 
@@ -45,6 +48,24 @@
   资料：https://docs.vulkan.org/samples/latest/samples/extensions/descriptor_indexing/README.html
 - Conan lockfile 用于依赖快照和可复现依赖解析；当前已完成，后续依赖变更时审查 lockfile diff。
   资料：https://docs.conan.io/2/tutorial/versioning/lockfiles.html
+- Unity SRP/URP RenderGraph 的实用边界是：C# 在 record 阶段可以使用普通控制流创建 pass、填充
+  PassData 并显式声明资源使用；RenderGraph 编译主要分析这些声明，实际 render function 在编译后
+  通过受控 command context 执行。VkEngine 后续可以借鉴这个边界：脚本/工具可生成 graph 和受控命令，
+  但编译优化必须基于显式 resource access，而不是解析任意脚本闭包。
+  资料：https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-write-render-pass.html
+- Unity Core RP 的 RenderGraph 执行模型是每帧 setup、compile、execute；资源通过 graph handle
+  操作，pass 必须显式声明读写，graph 计算 resource lifetime，并可剔除输出未被使用的 pass。
+  资料：https://docs.unity.cn/cn/Packages-cn/com.unity.render-pipelines.core%4014.1/manual/render-graph-fundamentals.html
+- Unity `RenderGraphBuilder` 的 API 形态显示了需要覆盖的资源声明：`ReadTexture`、`WriteTexture`、
+  `UseColorBuffer`、`UseDepthBuffer`、`Read/WriteComputeBuffer`、`UseRendererList` 和 transient
+  texture/buffer；VkEngine 的 named slots 应覆盖同一类语义，而不是只提供位置参数。
+  资料：https://docs.unity.cn/Packages/com.unity.render-pipelines.core%4011.0/api/UnityEngine.Experimental.Rendering.RenderGraphModule.RenderGraphBuilder.html
+- Unity 的 `AddUnsafePass` 允许兼容式命令，但会降低优化能力，例如无法安全合并后续写同一 buffer 的 pass。
+  VkEngine 后续如提供 unsafe/native pass，应只作为迁移和调试逃生口。
+  资料：https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-unsafe-pass.html
+- Vulkan pipeline cache 可复用 pipeline construction 结果，既可在相关 pipeline 间复用，也可跨应用运行复用；
+  因此 pipeline 创建应在 backend/cache 层，不能落入每帧 RenderGraph compile。
+  资料：https://docs.vulkan.org/refpages/latest/refpages/source/VkPipelineCache.html
 
 ## 优秀案例借鉴
 
@@ -52,7 +73,7 @@
 | --- | --- | --- | --- |
 | Frostbite FrameGraph | pass setup 和 execution 分离；setup 阶段声明资源读写，execution 阶段只消费解析后的资源 | 继续要求 RenderGraph pass 在声明期暴露 resource access；后续 reflection/descriptor 信息也先进入声明或 metadata 层 | 不直接复制大型 world renderer/feature 系统，避免超出当前 package 边界 |
 | Unreal RDG | 整帧延迟编译、dependency-sorted execute、资源 alias、barrier/memory 管理和开发期 validation | 先从 validation 和调试表开始：缺失 binding、非法 state、未声明资源访问都应在 compile/record 阶段报错 | 暂缓 async compute、alias memory 和 RDG Insights 级别工具 |
-| Unity Render Graph | pass data、resource usage 和 execute function 分离；兼容期允许 unsafe pass 但推荐显式资源声明 | 脚本层只生成 pass type、参数和 read/write 声明，执行由已注册 executor 接管；C++ callback 继续作为快速原生路径 | 不让脚本直接写 Vulkan 命令或绕过 RenderGraph resource declaration |
+| Unity Render Graph | pass data、resource usage 和 render function 分离；record 阶段可用普通语言控制流构建图，compile 阶段依赖显式资源声明；兼容期允许 unsafe pass 但优化能力下降 | 当前先在 C++ builder 中形成 `PassParams`、named resource slots 和受控 command context；未来脚本只是这些 API 的前端 | 不把 Unity 的完整 SRP 层级、camera stack、RendererFeature 生态提前搬入 MVP |
 | Granite | Vulkan 侧实践强调 render graph、deferred destruction、自动 descriptor/pipeline、linear upload allocator | 后续 mesh 阶段优先做 staging/linear upload 和 deferred destruction 规则，再扩大 descriptor 自动化 | Granite 后端偏 Vulkan-first；VkEngine 的通用 RenderGraph 层仍保持后端无关 |
 | vuk | 资源通过 access-annotated pass 参数进入图；直接捕获外部资源会绕过自动同步；transient/persistent 资源区分清楚 | `--smoke-transient` 设计应区分 declare transient image 和 import/acquire persistent resource；pass callback 不直接偷用未绑定 VkImage | 暂缓 futures、多 queue 自动调度和跨 graph composition |
 | Blender Vulkan render graph | 后端可把 draw/compute/transfer 命令收集成 graph，再重排并生成同步 barrier | depth/transient 阶段可把 transfer clear、dynamic rendering begin/end、draw 拆成更清楚的后端节点或调试事件 | 不把 Blender GPU module 的多线程 context 模型提前搬进当前单窗口 sample |
@@ -64,9 +85,230 @@
 | --- | --- | --- | --- |
 | 1 | Slang reflection 基线 | 已在 `packages/shader-slang` 增加 reflection 工具，输出 `*.reflection.json` | triangle shader 生成 entry、stage、vertex inputs、descriptor set/binding、push constant 信息；现有 smoke 不退化 |
 | 2 | Descriptor/Layout 契约 | 已开始用 reflection JSON 校验 triangle shader 契约，并打通 pipeline layout/resource signature 接口 | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
-| 3 | RenderGraph transient image | 增加 transient image 声明、Vulkan image/image view/VMA allocation 和 binding 表接入 | 新增 `--smoke-transient`，验证非 backbuffer image transition 和 binding |
-| 4 | Depth attachment MVP | 增加 depth 抽象状态、Vulkan depth layout/stage/access 翻译、dynamic rendering depth attachment | 新增 `--smoke-depth-triangle`，validation 无 error/warning |
-| 5 | Mesh asset 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |
+| 3 | RenderGraph 声明模型 v2 | named write slots 已接入；下一步增加 typed pass params、最小 pass schema 和更清楚的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot 能进入 compiled pass 和 executor context；下一步继续覆盖 params/schema；旧 callback 路径不退化 |
+| 4 | RenderGraph access/state 扩展 | 增加后续 fullscreen/depth 所需的抽象访问状态，例如 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead`，并同步 Vulkan layout/stage/access 翻译 | 新增或扩展 rendergraph smoke，验证这些 state 的 transition、shader stage/domain、image usage/layout 匹配和 Vulkan adapter 字段，不引入实际 shader sampling |
+| 5 | RenderGraph transient image | 增加 transient image 声明、Vulkan image/image view/VMA allocation 和 binding 表接入 | 新增 `--smoke-transient`，验证非 backbuffer image transition、lifetime 和 binding |
+| 6 | Depth attachment MVP | 增加 dynamic rendering depth attachment，接入 depth write/read 状态和 binding | 新增 `--smoke-depth-triangle`，validation 无 error/warning |
+| 7 | 受控 command context skeleton | 在 C++ 中原型化未来脚本会调用的高级命令 API，但第一版只生成 command summary/debug IR，不承诺 Vulkan 执行；可包含 clear、set shader/texture、fullscreen draw 的描述 | 新增 command summary/debug 输出；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
+| 8 | Descriptor binding / fullscreen pass | 在固定 descriptor layout 基础上增加 descriptor pool、descriptor set allocation/bind，并让 `setTexture + drawFullscreenTriangle` 从 debug IR 走向真实 Vulkan 执行 | 新增 `--smoke-fullscreen-texture` 或等价 smoke，验证 shader 采样声明资源 |
+| 9 | Mesh asset / draw list 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload；必要时引入简化 draw list，而不是先暴露逐 object 脚本 draw loop | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |
+
+## RenderGraph 脚本前置原则
+
+当前不接入脚本系统，但从现在开始避免写出未来脚本难以映射的 C++ API：
+
+- 脚本/工具未来应运行在 build/record 阶段，用普通控制流创建资源、pass、参数和受控命令；脚本函数本身不保存进 compiled graph。
+- RenderGraph compile 只依赖显式声明的 resource access、pass type、params、schema 和受控 command summary；任意脚本闭包或 native callback 都视为不可分析黑盒。
+- 后端执行阶段不调用脚本语言 VM；它消费 compiled graph、barrier plan、descriptor plan 和受控 command context 产物。
+- 如果未来提供 unsafe/native pass，必须显式标记并降低优化假设；unsafe pass 不参与 aggressive alias、merge、reorder 等强优化，不能作为普通 pass 的默认路径。
+- `pass.type` 不等同于 RenderQueue 或 shader tag；它表示执行模型或 typed pass key。RenderQueue 和 shader pass tag 等到 mesh/material 阶段再引入。
+- `pass.type` 命名优先使用执行模型，例如 `builtin.transfer-clear`、`builtin.raster-fullscreen`、
+  `builtin.raster-draw-list`、`builtin.compute-dispatch`；业务语义放在 `pass.name`、params 或后续 feature
+  层，避免退化成大量不可优化的业务字符串 executor。
+- command context skeleton 第一版只作为 debug IR/summary；在 descriptor binding、pipeline key 和 resource
+  state 完整前，不承诺 `setTexture` 或 fullscreen draw 能真实落到 Vulkan。
+
+近期 API 形态应先在 C++ 中验证，例如：
+
+```cpp
+graph.addPass("ClearColor", "builtin.transfer-clear")
+    .writeTransfer("target", backbuffer)
+    .setParams(ClearTransferParams{.color = clearColor});
+```
+
+后续 fullscreen/后处理方向可以扩展为：
+
+```cpp
+graph.addRasterPass("BloomPrefilter")
+    .readTexture("source", sceneColor)
+    .writeColor("target", bloomHalf)
+    .record([](RenderGraphCommandList& cmd) {
+        cmd.setShader("Hidden/Bloom", "Prefilter");
+        cmd.setTexture("SourceTex", "source");
+        cmd.setFloat("Threshold", 1.2F);
+        cmd.drawFullscreenTriangle();
+    });
+```
+
+第一版 compiler 不需要理解每条命令的全部语义，只要求资源访问已在 pass builder 上显式声明；
+命令列表用于后续 pipeline/descriptor/debug 规划，并避免脚本直接触碰 Vulkan API。真实执行应等
+descriptor binding、pipeline key、resource state 和 Vulkan adapter 全部具备后再接入。
+
+## RenderGraph 编译性能原则
+
+RenderGraph 的 record/compile 路径需要按“可每帧运行”的标准设计。动态后处理、技能特效、
+调试视图、相机差异和质量开关都可能让当前帧 graph topology 变化；图的价值正是让这些变化在
+执行前变成可分析的 pass/resource 计划。
+
+每帧流程拆成四段：
+
+1. **RecordGraph**：根据 camera、quality、debug、演出/技能状态和 active predicate，创建当前帧
+   resource handle、pass、named slots、typed params 和 command summary。这里可以使用普通 C++ 控制流；
+   未来脚本也只应运行在这一段。
+2. **CompileGraph**：校验 schema 和 resource access，剔除无用 pass，计算依赖、lifetime、resource
+   state、barrier/layout plan、transient allocation plan 和 debug/profiling 表。该阶段只产生计划，不创建
+   长期 GPU 对象。
+3. **PrepareBackend**：根据 compiled graph 从 cache/pool 取得或创建真实 backend 对象，例如 transient
+   image/buffer、descriptor set、pipeline layout、pipeline 和 per-frame parameter buffer。
+4. **RecordCommands / Execute**：按 compiled pass 顺序录制 Vulkan command buffer，提交并 present。这里不再
+   改 graph topology，也不调用脚本 VM。
+
+每帧 compile 可以做的轻量工作：
+
+- 根据当前设置、演出状态和 feature active predicate 生成 pass/resource 声明。
+- 校验 pass type、schema、named resource slots、typed params 和显式 resource access。
+- 计算 pass 依赖、resource lifetime、final transition 和 barrier/layout plan。
+- 生成 transient resource allocation plan、command summary、debug table 和 profiling label。
+
+每帧 compile 不应该做的重型工作：
+
+- shader 编译、shader reflection 解析或磁盘 IO。
+- descriptor set layout、pipeline layout、graphics/compute pipeline 的重复创建。
+- 长期 GPU resource 创建、VMA allocation churn 或大量 heap allocation。
+- 脚本源码/字节码编译、任意脚本 VM 执行期回调或 native black-box 分支解析。
+
+因此后续需要逐步形成这些缓存/池：
+
+- `ShaderCache`：key 至少包含 shader asset/path、entry point、stage/profile、target、compiler/toolchain
+  version、defines 和 source/reflection 版本。value 包含 SPIR-V、shader module、reflection model。
+- `PipelineLayoutCache`：key 来自合并后的 descriptor set/binding、descriptor type/count、stage visibility
+  和 push constant ranges。value 包含 descriptor set layouts 和 pipeline layout。
+- `PipelineCache`：key 至少包含 shader pass ids、pipeline layout signature、render target formats、sample
+  count、depth/stencil state、blend state、primitive topology、vertex input layout 和 dynamic state flags。
+  Vulkan 的 `VkPipelineCache` 可作为 backend 的复用机制之一。
+- `DescriptorAllocator`：按 frame 或 per-flight frame arena 分配 descriptor set，key 为 descriptor set layout；
+  在 GPU fence 确认后回收/重置，避免每 pass 创建 descriptor pool/layout。
+- `TransientResourcePool`：按 compiled lifetime plan 分配/复用 image/buffer。image key 至少包含 format、
+  extent、mip/layer、sample count、usage flags 和 debug name class；buffer key 至少包含 size、usage 和
+  memory domain。Vulkan 侧可用 VMA `VMA_MEMORY_USAGE_AUTO` 选择 memory type。
+- `GraphTemplateCache`：暂缓；只有当 topology 稳定且 compile 成本成为瓶颈时，再按 active feature set、
+  render scale、formats、quality level、injection point 和 pass topology 复用拓扑排序、schema validation
+  和部分 lifetime plan。
+
+`PassSchema` 第一版建议字段：
+
+```cpp
+struct RenderGraphPassSchema {
+    std::string_view type;
+    RenderGraphQueueDomain queueDomain;
+    std::span<const ResourceSlotSchema> requiredReads;
+    std::span<const ResourceSlotSchema> requiredWrites;
+    std::span<const ResourceSlotSchema> optionalReads;
+    std::span<const ResourceSlotSchema> optionalWrites;
+    PassParamsTypeId paramsType;
+    std::span<const RenderGraphCommandKind> allowedCommands;
+    bool allowCulling;
+    bool hasSideEffects;
+};
+```
+
+slot schema 至少需要描述：
+
+- slot 名称，例如 `source`、`target`、`depth`、`objects`、`visibleList`。
+- resource kind，例如 texture/image、buffer、renderer/draw list。
+- abstract access，例如 `ShaderRead(fragment/compute/etc.)`、`ColorAttachmentWrite`、
+  `DepthAttachmentRead`、`DepthAttachmentWrite`、`DepthSampledRead`、`TransferDst`、
+  `StorageReadWrite`。depth 作为 attachment 读写与 depth texture 采样必须分开建模，避免混用
+  layout/stage/access。
+- 是否允许 transient、imported、persistent resource。
+- 是否允许多个绑定，例如 MRT color slots。
+
+command summary 第一版建议只保存数据，不保存脚本函数或裸指针：
+
+- `SetShader(shaderAsset, shaderPass)`：后续生成 pipeline key。
+- `SetTexture(bindingName, slotName)`：`slotName` 必须引用 pass builder 已声明的 read/write slot。
+- `SetFloat/SetInt/SetVec4(bindingName, valueOrParamHandle)`：值可以是当前帧 literal，也可以是
+  `FrameParamHandle`、`MaterialParamHandle` 等参数句柄。
+- `DrawFullscreenTriangle()`：只允许在 `builtin.raster-fullscreen` 一类 schema 中出现。
+- `ClearColor(slotName, color)`：只允许在 transfer/raster clear 类型中出现。
+
+动态参数通信规则：
+
+- 初期允许每帧 RecordGraph，把脚本/设置系统当前值复制为 command summary literal。
+- 后续为频繁变化的参数引入 `FrameParamTable`、`MaterialParamTable` 或 `PostParamBlock`；compiled graph
+  保存参数句柄，PrepareBackend/RecordCommands 阶段把当前值打包到 push constants、uniform buffer 或
+  descriptor。
+- 后端执行阶段不得回调脚本获取参数；参数必须在 RecordGraph 或 PrepareBackend 前进入参数表。
+
+动态 feature 的建议策略：
+
+- 轻量、常驻且需要连续演出混合的效果可以固定在 graph 中，用参数控制强度，例如 vignette、
+  color grading、exposure、debug overlay。
+- 昂贵或需要额外 RT/buffer 的效果应由 active predicate 控制是否 record，例如 bloom、DOF、
+  SSAO、SSR、motion blur、技能 mask composite。
+- 技能/演出类临时效果在淡入、激活、淡出期间 record pass；淡出结束且权重低于阈值若干帧后移除。
+- 为避免首次触发 hitch，技能或后处理 feature 可以预热 shader、reflection、pipeline layout 和
+  pipeline cache，但不需要长期执行对应 pass 或常驻 transient RT。
+
+示例：黑白闪技能可以在激活期间临时加入 `SkillFlashMask` draw-list pass 和
+`SkillBlackWhiteFlash` fullscreen composite pass；mask RT 是 transient image，`weight`、`phase`
+和受影响对象列表作为每帧参数/输入更新。技能未激活时，这些 pass 和 mask RT 不进入 graph。
+
+这类 feature 可以拆成：
+
+- `SkillFlashState`：由 gameplay/timeline 更新，包含 `active`、`weight`、`phase`、`affectedObjects`、
+  `cooldownFrames`。
+- `SkillFlashMask`：`type = builtin.raster-draw-list`，写 `mask` transient RT，draw list 由
+  `affectedObjects` 生成，shader tag 后续可为 `MaskOnly`。
+- `SkillBlackWhiteFlash`：`type = builtin.raster-fullscreen`，读 `sceneColor` 和 `mask`，写 post target，
+  参数为 `weight`、`phase`。
+- `active predicate`：`active || weight > epsilon || cooldownFrames > 0`；predicate 为 false 时不 record
+  这两个 pass，mask RT 也不会进入 transient allocation plan。
+
+## 多视图 / 多相机原则
+
+Unity SRP 在 Editor 中会为可见 Game View、Scene View、preview camera 等 view/camera 调用渲染；URP
+也会处理 game camera、Scene view camera、reflection probe 和 inspector preview 等不同 camera。
+VkEngine 后续 editor 不应假设一帧只有一个 RenderGraph。
+
+建议模型：
+
+```cpp
+enum class RenderViewKind {
+    Game,
+    Scene,
+    Preview,
+    ReflectionProbe,
+};
+
+struct RenderView {
+    RenderViewKind kind;
+    CameraData camera;
+    RenderTarget target;
+    RenderViewFlags flags;
+};
+```
+
+每帧流程：
+
+```cpp
+for (const RenderView& view : frameViews) {
+    RenderGraph graph;
+    renderer.recordViewGraph(graph, view);
+    RenderGraphCompileResult compiled = graph.compile();
+    backend.prepareAndRecord(compiled, view);
+}
+```
+
+Game View 和 Scene View 共享 renderer package、RenderGraph、Vulkan backend、shader/pipeline/descriptor
+cache 和 resource pools，但 graph topology 可以不同：
+
+- Game View 通常使用游戏 camera、game volume/postprocess、UI/camera stack，输出到 swapchain 或 game
+  viewport texture。
+- Scene View 使用 editor camera，可能关闭或替换部分 game postprocess，并额外加入 grid、gizmos、
+  selection outline、wire overlay、debug overlay 等 editor-only pass。
+- Preview View / asset inspector 可以使用更小的 target 和专用 lighting/背景 pass，但仍复用 backend caches。
+
+工程约束：
+
+- RenderGraph resource handle 只在单个 graph/view 内有效；跨 view 共享的 GPU resource 必须由 resource
+  manager 拥有，再作为 imported resource 进入各自 graph。
+- transient resources 默认只在单个 graph/view 内分配和复用；跨 view alias 以后再考虑。
+- pipeline、shader、descriptor layout 等 cache 应跨 view 共享；per-view dynamic params、camera buffer、
+  descriptor sets 和 transient resources 按 view/frame 隔离。
+- Scene View 的 editor-only pass 必须有独立 feature flag，不能污染 Game View graph。
+- 未来如支持 camera stacking，camera stack 是单个 view 内的多 camera composition；它不同于
+  Scene/Game/Preview 这些 view target。
 
 ## 阶段 1 状态
 
@@ -115,11 +357,19 @@ Descriptor/Layout 契约已开始消费 reflection JSON。当前实现会在
 后续范围：
 
 - 增加 descriptor pool / descriptor set allocation / bind 路线，再进入 material/resource binding。
+- 在进入 descriptor binding 前，先让 RenderGraph pass 拥有 named resource slots 和 typed params，
+  避免后续 fullscreen/postprocess pass 只能依赖位置参数或 ad hoc callback capture。
+- 在进入 fullscreen/postprocess 前，先扩展 `ShaderRead` 等抽象 state 和 Vulkan access/layout 翻译；
+  `ShaderRead` 需要携带 shader stage/domain，depth 需要区分 attachment read/write 与 sampled read，
+  并校验 image usage flags 与目标 layout/access 匹配；否则 `setTexture` 只能停留在 debug summary，
+  无法安全采样 graph resource。
 - 在 material/resource binding 路线稳定前，继续暂缓 bindless 和自动 C++ codegen。
 
 ## 暂缓事项
 
 - 暂缓 bindless/descriptor indexing，等固定 descriptor 契约稳定后再进入。
 - 暂缓 editor、asset database 和 package registry。
+- 暂缓脚本 VM 接入；当前只做脚本可映射的 C++ builder、typed params 和受控 command context。
+- 暂缓完整 Unity SRP 风格的 RenderPipelineAsset、RendererFeature、RendererList 和 ShaderLab metadata。
 - 暂缓 glTF/mesh importer，先做最小 mesh buffer 和 index buffer。
 - 暂缓多 queue/async transfer，当前仍保持 single graphics queue，降低同步复杂度。

@@ -568,7 +568,7 @@ namespace {
         });
 
         int callbackCount = 0;
-        graph.addPass("ClearColor", "basic.clear-transfer").writeTransfer(backbuffer);
+        graph.addPass("ClearColor", "basic.clear-transfer").writeTransfer("target", backbuffer);
 
         auto compiled = graph.compile();
         if (!compiled) {
@@ -605,7 +605,9 @@ namespace {
             [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
                 if (context.name != "ClearColor" || context.type != "basic.clear-transfer" ||
                     context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
-                    context.transferWrites.size() != 1) {
+                    context.transferWrites.size() != 1 || !context.colorWriteSlots.empty() ||
+                    context.transferWriteSlots.size() != 1 ||
+                    context.transferWriteSlots.front().name != "target") {
                     return std::unexpected{vke::Error{
                         vke::ErrorDomain::RenderGraph,
                         0,
