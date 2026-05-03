@@ -34,8 +34,8 @@ namespace {
     void printUsage() {
         std::cout << "Usage: vke-sample-viewer [--help] [--version] [--smoke-window] "
                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
-                     "[--smoke-dynamic-rendering] [--smoke-resize] [--smoke-triangle] "
-                     "[--smoke-descriptor-layout]\n";
+                     "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
+                     "[--smoke-triangle] [--smoke-descriptor-layout]\n";
     }
 
     bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
@@ -625,6 +625,57 @@ namespace {
             return false;
         }
 
+        const auto vulkanTransientWriteTransition =
+            vke::vulkanImageTransition(compiled.passes[4].transitionsBefore.front());
+        if (vulkanTransientWriteTransition.oldLayout != VK_IMAGE_LAYOUT_UNDEFINED ||
+            vulkanTransientWriteTransition.newLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+            vulkanTransientWriteTransition.srcStageMask != VK_PIPELINE_STAGE_2_NONE ||
+            vulkanTransientWriteTransition.srcAccessMask != 0 ||
+            vulkanTransientWriteTransition.dstStageMask !=
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT ||
+            vulkanTransientWriteTransition.dstAccessMask !=
+                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT) {
+            vke::logError("Render graph Vulkan transient write mapping produced unexpected masks.");
+            return false;
+        }
+
+        const auto vulkanTransientSampleTransition =
+            vke::vulkanImageTransition(compiled.passes[5].transitionsBefore.front());
+        if (vulkanTransientSampleTransition.oldLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+            vulkanTransientSampleTransition.newLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
+            vulkanTransientSampleTransition.srcStageMask !=
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT ||
+            vulkanTransientSampleTransition.srcAccessMask !=
+                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT ||
+            vulkanTransientSampleTransition.dstStageMask !=
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
+            vulkanTransientSampleTransition.dstAccessMask != VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) {
+            vke::logError(
+                "Render graph Vulkan transient sampled-read mapping produced unexpected masks.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool validateSmokeRenderGraphTransientPlan(const vke::RenderGraphCompileResult& compiled) {
+        if (compiled.transientImages.size() != 1) {
+            vke::logError("Render graph did not produce the expected transient allocation plan.");
+            return false;
+        }
+
+        const vke::RenderGraphTransientImageAllocation& transient =
+            compiled.transientImages.front();
+        if (transient.image.index != 2 || transient.imageName != "TransientColor" ||
+            transient.format != vke::RenderGraphImageFormat::B8G8R8A8Srgb ||
+            transient.extent.width != 640 || transient.extent.height != 360 ||
+            transient.firstPassIndex != 4 || transient.lastPassIndex != 5 ||
+            transient.finalState != vke::RenderGraphImageState::ShaderRead ||
+            transient.finalShaderStage != vke::RenderGraphShaderStage::Fragment) {
+            vke::logError("Render graph transient allocation plan contained unexpected fields.");
+            return false;
+        }
+
         return true;
     }
 
@@ -715,6 +766,44 @@ namespace {
         return {};
     }
 
+    vke::Result<void> validateTransientWriteContext(vke::RenderGraphPassContext context) {
+        if (context.name != "WriteTransientColor" || context.type != "basic.transient-color" ||
+            context.paramsType != "basic.transient-color.params" ||
+            context.transitionsBefore.size() != 1 || context.colorWrites.size() != 1 ||
+            !context.shaderReads.empty() || !hasNoDepthSlots(context) ||
+            !context.transferWrites.empty() || context.colorWriteSlots.size() != 1 ||
+            !context.shaderReadSlots.empty() || !context.transferWriteSlots.empty() ||
+            context.colorWriteSlots.front().name != "target") {
+            return std::unexpected{vke::Error{
+                vke::ErrorDomain::RenderGraph,
+                0,
+                "Render graph transient write executor received unexpected pass context.",
+            }};
+        }
+
+        return {};
+    }
+
+    vke::Result<void> validateTransientSampleContext(vke::RenderGraphPassContext context) {
+        if (context.name != "SampleTransientColor" ||
+            context.type != "basic.transient-sample-fragment" ||
+            context.paramsType != "basic.transient-sample-fragment.params" ||
+            context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
+            context.shaderReads.size() != 1 || !hasNoDepthSlots(context) ||
+            !context.transferWrites.empty() || !context.colorWriteSlots.empty() ||
+            context.shaderReadSlots.size() != 1 || !context.transferWriteSlots.empty() ||
+            context.shaderReadSlots.front().name != "source" ||
+            context.shaderReadSlots.front().shaderStage != vke::RenderGraphShaderStage::Fragment) {
+            return std::unexpected{vke::Error{
+                vke::ErrorDomain::RenderGraph,
+                0,
+                "Render graph transient sampled-read executor received unexpected pass context.",
+            }};
+        }
+
+        return {};
+    }
+
     void registerSmokeRenderGraphExecutors(vke::RenderGraphExecutorRegistry& executors,
                                            int& callbackCount) {
         executors.registerExecutor(
@@ -757,6 +846,26 @@ namespace {
                 ++callbackCount;
                 return {};
             });
+        executors.registerExecutor(
+            "basic.transient-color",
+            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                auto validated = validateTransientWriteContext(context);
+                if (!validated) {
+                    return validated;
+                }
+                ++callbackCount;
+                return {};
+            });
+        executors.registerExecutor(
+            "basic.transient-sample-fragment",
+            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                auto validated = validateTransientSampleContext(context);
+                if (!validated) {
+                    return validated;
+                }
+                ++callbackCount;
+                return {};
+            });
     }
 
     int runSmokeRenderGraph() {
@@ -776,6 +885,11 @@ namespace {
             .finalState = vke::RenderGraphImageState::DepthSampledRead,
             .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
         });
+        const auto transientColor = graph.createTransientImage(vke::RenderGraphImageDesc{
+            .name = "TransientColor",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 640, .height = 360},
+        });
 
         int callbackCount = 0;
         graph.addPass("ClearColor", "basic.clear-transfer")
@@ -790,6 +904,12 @@ namespace {
         graph.addPass("SampleDepth", "basic.depth-sample-fragment")
             .setParamsType("basic.depth-sample-fragment.params")
             .readDepthTexture("depth", depthBuffer, vke::RenderGraphShaderStage::Fragment);
+        graph.addPass("WriteTransientColor", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", transientColor);
+        graph.addPass("SampleTransientColor", "basic.transient-sample-fragment")
+            .setParamsType("basic.transient-sample-fragment.params")
+            .readTexture("source", transientColor, vke::RenderGraphShaderStage::Fragment);
 
         vke::RenderGraphSchemaRegistry schemas;
         schemas.registerSchema(vke::RenderGraphPassSchema{
@@ -844,6 +964,32 @@ namespace {
                     },
                 },
         });
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.transient-color",
+            .paramsType = "basic.transient-color.params",
+            .resourceSlots =
+                {
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = vke::RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+        });
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.transient-sample-fragment",
+            .paramsType = "basic.transient-sample-fragment.params",
+            .resourceSlots =
+                {
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = vke::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .optional = false,
+                    },
+                },
+        });
 
         auto compiled = graph.compile(schemas);
         if (!compiled) {
@@ -854,14 +1000,21 @@ namespace {
             vke::logError("Render graph did not produce a final transition.");
             return EXIT_FAILURE;
         }
-        if (compiled->passes.size() != 4 || compiled->passes[1].transitionsBefore.empty() ||
+        if (compiled->passes.size() != 6 || compiled->passes[1].transitionsBefore.empty() ||
             compiled->passes[2].transitionsBefore.empty() ||
-            compiled->passes[3].transitionsBefore.empty()) {
+            compiled->passes[3].transitionsBefore.empty() ||
+            compiled->passes[4].transitionsBefore.empty() ||
+            compiled->passes[5].transitionsBefore.empty() ||
+            compiled->transientImages.size() != 1) {
             vke::logError("Render graph did not produce the expected shader-read pass transition.");
             return EXIT_FAILURE;
         }
 
         std::cout << graph.formatDebugTables(*compiled) << '\n';
+
+        if (!validateSmokeRenderGraphTransientPlan(*compiled)) {
+            return EXIT_FAILURE;
+        }
 
         if (!validateSmokeRenderGraphVulkanMappings(*compiled)) {
             return EXIT_FAILURE;
@@ -879,8 +1032,8 @@ namespace {
         std::cout << "Render graph passes: " << compiled->passes.size()
                   << ", final transitions: " << compiled->finalTransitions.size()
                   << ", callbacks: " << callbackCount << '\n';
-        return compiled->passes.size() == 4 && compiled->finalTransitions.size() == 1 &&
-                       callbackCount == 4
+        return compiled->passes.size() == 6 && compiled->transientImages.size() == 1 &&
+                       compiled->finalTransitions.size() == 1 && callbackCount == 6
                    ? EXIT_SUCCESS
                    : EXIT_FAILURE;
     }
@@ -917,6 +1070,10 @@ int main(int argc, char** argv) {
         }
 
         if (hasArg(args, "--smoke-rendergraph")) {
+            return runSmokeRenderGraph();
+        }
+
+        if (hasArg(args, "--smoke-transient")) {
             return runSmokeRenderGraph();
         }
 

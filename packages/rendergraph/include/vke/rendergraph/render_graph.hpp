@@ -50,6 +50,11 @@ namespace vke {
         Compute,
     };
 
+    enum class RenderGraphImageLifetime {
+        Imported,
+        Transient,
+    };
+
     struct RenderGraphImageAccess {
         RenderGraphImageState state{RenderGraphImageState::Undefined};
         RenderGraphShaderStage shaderStage{RenderGraphShaderStage::None};
@@ -66,6 +71,7 @@ namespace vke {
         RenderGraphShaderStage initialShaderStage{RenderGraphShaderStage::None};
         RenderGraphImageState finalState{RenderGraphImageState::Present};
         RenderGraphShaderStage finalShaderStage{RenderGraphShaderStage::None};
+        RenderGraphImageLifetime lifetime{RenderGraphImageLifetime::Imported};
     };
 
     struct RenderGraphImageTransition {
@@ -124,8 +130,20 @@ namespace vke {
         std::vector<RenderGraphImageSlot> transferWriteSlots;
     };
 
+    struct RenderGraphTransientImageAllocation {
+        RenderGraphImageHandle image{};
+        std::string imageName;
+        RenderGraphImageFormat format{RenderGraphImageFormat::Undefined};
+        RenderGraphExtent2D extent{};
+        std::size_t firstPassIndex{};
+        std::size_t lastPassIndex{};
+        RenderGraphImageState finalState{RenderGraphImageState::Undefined};
+        RenderGraphShaderStage finalShaderStage{RenderGraphShaderStage::None};
+    };
+
     struct RenderGraphCompileResult {
         std::vector<RenderGraphCompiledPass> passes;
+        std::vector<RenderGraphTransientImageAllocation> transientImages;
         std::vector<RenderGraphImageTransition> finalTransitions;
     };
 
@@ -322,6 +340,19 @@ namespace vke {
         };
 
         [[nodiscard]] RenderGraphImageHandle importImage(RenderGraphImageDesc desc) {
+            desc.lifetime = RenderGraphImageLifetime::Imported;
+            images_.push_back(std::move(desc));
+            return RenderGraphImageHandle{
+                .index = static_cast<std::uint32_t>(images_.size() - 1),
+            };
+        }
+
+        [[nodiscard]] RenderGraphImageHandle createTransientImage(RenderGraphImageDesc desc) {
+            desc.lifetime = RenderGraphImageLifetime::Transient;
+            desc.initialState = RenderGraphImageState::Undefined;
+            desc.initialShaderStage = RenderGraphShaderStage::None;
+            desc.finalState = RenderGraphImageState::Undefined;
+            desc.finalShaderStage = RenderGraphShaderStage::None;
             images_.push_back(std::move(desc));
             return RenderGraphImageHandle{
                 .index = static_cast<std::uint32_t>(images_.size() - 1),
@@ -489,6 +520,17 @@ namespace vke {
 
             for (std::size_t index = 0; index < images_.size(); ++index) {
                 const RenderGraphImageDesc& image = images_[index];
+                if (image.lifetime == RenderGraphImageLifetime::Transient) {
+                    auto allocation =
+                        makeTransientAllocation(index, result.passes, currentAccesses[index]);
+                    if (!allocation) {
+                        return std::unexpected{std::move(allocation.error())};
+                    }
+
+                    result.transientImages.push_back(std::move(*allocation));
+                    continue;
+                }
+
                 const RenderGraphImageAccess finalAccess{
                     .state = image.finalState,
                     .shaderStage = image.finalShaderStage,
@@ -594,14 +636,16 @@ namespace vke {
         formatDebugTables(const RenderGraphCompileResult& compiled) const {
             std::string output;
             output += "### RenderGraph Resources\n\n";
-            output += "| # | Name | Format | Extent | Initial | Final |\n";
-            output += "|---:|---|---|---:|---|---|\n";
+            output += "| # | Name | Lifetime | Format | Extent | Initial | Final |\n";
+            output += "|---:|---|---|---|---:|---|---|\n";
             for (std::size_t index = 0; index < images_.size(); ++index) {
                 const RenderGraphImageDesc& image = images_[index];
                 output += "| ";
                 output += std::to_string(index);
                 output += " | ";
                 output += image.name;
+                output += " | ";
+                output += imageLifetimeName(image.lifetime);
                 output += " | ";
                 output += imageFormatName(image.format);
                 output += " | ";
@@ -669,6 +713,27 @@ namespace vke {
             }
             for (const RenderGraphImageTransition& transition : compiled.finalTransitions) {
                 appendTransitionRow(output, "Final", "-", transition);
+            }
+
+            output += "\n### RenderGraph Transients\n\n";
+            output += "| Image | Format | Extent | First Pass | Last Pass | Final Access |\n";
+            output += "|---|---|---:|---:|---:|---|\n";
+            for (const RenderGraphTransientImageAllocation& transient : compiled.transientImages) {
+                output += "| ";
+                output += imageHandleLabel(transient.image);
+                output += " | ";
+                output += imageFormatName(transient.format);
+                output += " | ";
+                output += std::to_string(transient.extent.width);
+                output += "x";
+                output += std::to_string(transient.extent.height);
+                output += " | ";
+                output += std::to_string(transient.firstPassIndex);
+                output += " | ";
+                output += std::to_string(transient.lastPassIndex);
+                output += " | ";
+                output += imageAccessName(transient.finalState, transient.finalShaderStage);
+                output += " |\n";
             }
 
             return output;
@@ -980,6 +1045,69 @@ namespace vke {
             return handles;
         }
 
+        [[nodiscard]] Result<RenderGraphTransientImageAllocation>
+        makeTransientAllocation(std::size_t imageIndex,
+                                std::span<const RenderGraphCompiledPass> passes,
+                                RenderGraphImageAccess finalAccess) const {
+            std::size_t firstPass = passes.size();
+            std::size_t lastPass{};
+            const RenderGraphImageHandle imageHandle{
+                .index = static_cast<std::uint32_t>(imageIndex),
+            };
+
+            for (std::size_t passIndex = 0; passIndex < passes.size(); ++passIndex) {
+                if (!passUsesImage(passes[passIndex], imageHandle)) {
+                    continue;
+                }
+
+                if (firstPass == passes.size()) {
+                    firstPass = passIndex;
+                }
+                lastPass = passIndex;
+            }
+
+            const RenderGraphImageDesc& image = images_[imageIndex];
+            if (firstPass == passes.size()) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Transient render graph image '" + image.name + "' is never used.",
+                }};
+            }
+
+            return RenderGraphTransientImageAllocation{
+                .image = imageHandle,
+                .imageName = image.name,
+                .format = image.format,
+                .extent = image.extent,
+                .firstPassIndex = firstPass,
+                .lastPassIndex = lastPass,
+                .finalState = finalAccess.state,
+                .finalShaderStage = finalAccess.shaderStage,
+            };
+        }
+
+        [[nodiscard]] static bool passUsesImage(const RenderGraphCompiledPass& pass,
+                                                RenderGraphImageHandle image) {
+            return slotsUseImage(pass.colorWriteSlots, image) ||
+                   slotsUseImage(pass.shaderReadSlots, image) ||
+                   slotsUseImage(pass.depthReadSlots, image) ||
+                   slotsUseImage(pass.depthWriteSlots, image) ||
+                   slotsUseImage(pass.depthSampledReadSlots, image) ||
+                   slotsUseImage(pass.transferWriteSlots, image);
+        }
+
+        [[nodiscard]] static bool slotsUseImage(std::span<const RenderGraphImageSlot> slots,
+                                                RenderGraphImageHandle image) {
+            for (const RenderGraphImageSlot& slot : slots) {
+                if (slot.image == image) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         [[nodiscard]] Result<void>
         transitionImages(std::span<const RenderGraphImageSlot> imageSlots,
                          RenderGraphImageAccess requiredAccess,
@@ -1053,6 +1181,16 @@ namespace vke {
             case RenderGraphImageState::Undefined:
             default:
                 return "Undefined";
+            }
+        }
+
+        [[nodiscard]] static std::string_view imageLifetimeName(RenderGraphImageLifetime lifetime) {
+            switch (lifetime) {
+            case RenderGraphImageLifetime::Transient:
+                return "Transient";
+            case RenderGraphImageLifetime::Imported:
+            default:
+                return "Imported";
             }
         }
 

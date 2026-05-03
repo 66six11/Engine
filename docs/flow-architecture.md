@@ -63,6 +63,7 @@ flowchart TD
     VulkanSmoke["--smoke-vulkan"]
     FrameSmoke["--smoke-frame"]
     RGSmoke["--smoke-rendergraph"]
+    TransientSmoke["--smoke-transient"]
     DynamicSmoke["--smoke-dynamic-rendering"]
     TriangleSmoke["--smoke-triangle"]
     DescriptorSmoke["--smoke-descriptor-layout"]
@@ -79,6 +80,7 @@ flowchart TD
     Args --> VulkanSmoke
     Args --> FrameSmoke
     Args --> RGSmoke
+    Args --> TransientSmoke
     Args --> DynamicSmoke
     Args --> TriangleSmoke
     Args --> DescriptorSmoke
@@ -114,6 +116,8 @@ flowchart TD
 - `--smoke-triangle` 已接入 `BasicTriangleRenderer`、dynamic-rendering graphics pipeline、RenderGraph color write、draw、present。
 - `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout / pipeline layout 的创建验证。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译和 Vulkan adapter 字段验证入口。
+- `--smoke-transient` 是 RenderGraph transient image 声明、lifetime plan 和 adapter 字段验证入口；当前复用
+  RenderGraph CPU smoke，不创建真实 Vulkan image/VMA allocation。
 
 ## 当前 Frame Loop 流程
 
@@ -341,15 +345,17 @@ flowchart TD
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
-- `--smoke-rendergraph` 已输出 resources、passes、slots、transitions 的 Markdown 调试表格，并验证
-  pass type、params type 和 slot schema。
+- `--smoke-rendergraph` 已输出 resources、passes、slots、transitions、transients 的 Markdown 调试表格，并验证
+  pass type、params type、slot schema 和 transient lifetime plan。
+- `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition 和
+  Vulkan adapter mapping；真实 image/image view/VMA allocation 仍留给 PrepareBackend 阶段。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead"]
-    Step1["下一步:<br/>RenderGraph transient image"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan"]
+    Step1["下一步:<br/>PrepareBackend transient allocation<br/>Vulkan image/image view/VMA"]
     Step2["之后:<br/>depth attachment MVP"]
     Step3["之后:<br/>C++ command context skeleton<br/>debug IR only"]
     Step4["之后:<br/>descriptor binding + fullscreen pass"]
@@ -359,6 +365,8 @@ flowchart TD
 
     DepthStateUpdate["2026-05-03:<br/>DepthAttachmentRead/Write<br/>DepthSampledRead(fragment/compute)<br/>adapter mapping smoke"]
     Now --> DepthStateUpdate
+    TransientUpdate["2026-05-04:<br/>createTransientImage<br/>transient lifetime plan<br/>--smoke-transient"]
+    Now --> TransientUpdate
 ```
 
 建议推进顺序：
