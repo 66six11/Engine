@@ -17,6 +17,8 @@ namespace vke {
     struct VulkanRenderGraphImageBinding {
         RenderGraphImageHandle image{};
         VkImage vulkanImage{VK_NULL_HANDLE};
+        VkImageView vulkanImageView{VK_NULL_HANDLE};
+        VkImageAspectFlags aspectMask{VK_IMAGE_ASPECT_COLOR_BIT};
     };
 
     [[nodiscard]] inline RenderGraphImageFormat basicRenderGraphImageFormat(VkFormat format) {
@@ -46,15 +48,29 @@ namespace vke {
         return VulkanRenderGraphImageBinding{
             .image = image,
             .vulkanImage = frame.image,
+            .vulkanImageView = frame.imageView,
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         };
     }
 
-    [[nodiscard]] inline Result<VkImage>
+    [[nodiscard]] inline VkImageAspectFlags basicRenderGraphImageAspect(
+        RenderGraphImageFormat format) {
+        switch (format) {
+        case RenderGraphImageFormat::D32Sfloat:
+            return VK_IMAGE_ASPECT_DEPTH_BIT;
+        case RenderGraphImageFormat::B8G8R8A8Srgb:
+        case RenderGraphImageFormat::Undefined:
+        default:
+            return VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
     findVulkanRenderGraphImage(RenderGraphImageHandle image,
                                std::span<const VulkanRenderGraphImageBinding> bindings) {
         for (const VulkanRenderGraphImageBinding& binding : bindings) {
             if (binding.image == image && binding.vulkanImage != VK_NULL_HANDLE) {
-                return binding.vulkanImage;
+                return binding;
             }
         }
 
@@ -74,7 +90,8 @@ namespace vke {
             return std::unexpected{std::move(image.error())};
         }
 
-        const VkImageMemoryBarrier2 barrier = vulkanImageBarrier(transition, *image);
+        const VkImageMemoryBarrier2 barrier =
+            vulkanImageBarrier(transition, image->vulkanImage, image->aspectMask);
         VkDependencyInfo dependencyInfo{};
         dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependencyInfo.imageMemoryBarrierCount = 1;

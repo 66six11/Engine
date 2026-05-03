@@ -7,6 +7,7 @@ add_library(vke-rhi-vulkan STATIC
     src/vulkan_context.cpp
     src/vulkan_pipeline.cpp
     src/vulkan_buffer.cpp
+    src/vulkan_image.cpp
 )
 
 add_library(vke::rhi_vulkan ALIAS vke-rhi-vulkan)

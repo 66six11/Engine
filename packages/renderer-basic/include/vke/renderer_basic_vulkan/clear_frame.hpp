@@ -5,11 +5,13 @@
 #include <array>
 #include <expected>
 #include <utility>
+#include <vector>
 
 #include "vke/core/result.hpp"
 #include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "vke/rhi_vulkan/vulkan_image.hpp"
 
 namespace vke {
     [[nodiscard]] inline Result<VulkanFrameRecordResult>
@@ -120,5 +122,195 @@ namespace vke {
             .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         };
     }
+
+    class BasicTransientFrameRecorder {
+    public:
+        BasicTransientFrameRecorder(VkDevice device, VmaAllocator allocator)
+            : device_{device}, allocator_{allocator} {}
+
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        record(const VulkanFrameRecordContext& frame) {
+            resetTransientResources();
+
+            RenderGraph graph;
+            const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+            const auto transientColor = graph.createTransientImage(RenderGraphImageDesc{
+                .name = "TransientColor",
+                .format = basicRenderGraphImageFormat(frame.format),
+                .extent = basicRenderGraphExtent(frame.extent),
+            });
+
+            std::vector<VulkanRenderGraphImageBinding> bindings;
+            bindings.reserve(2);
+            bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+
+            graph.addPass("ClearTransient")
+                .writeTransfer("target", transientColor)
+                .execute([&frame, &bindings,
+                          transientColor](RenderGraphPassContext pass) -> Result<void> {
+                    auto transitions =
+                        recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                    if (!transitions) {
+                        return std::unexpected{std::move(transitions.error())};
+                    }
+
+                    auto image = findVulkanRenderGraphImage(transientColor, bindings);
+                    if (!image) {
+                        return std::unexpected{std::move(image.error())};
+                    }
+
+                    const VkClearColorValue transientClear{{0.12F, 0.20F, 0.16F, 1.0F}};
+                    VkImageSubresourceRange clearRange{};
+                    clearRange.aspectMask = image->aspectMask;
+                    clearRange.baseMipLevel = 0;
+                    clearRange.levelCount = 1;
+                    clearRange.baseArrayLayer = 0;
+                    clearRange.layerCount = 1;
+                    vkCmdClearColorImage(frame.commandBuffer, image->vulkanImage,
+                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &transientClear, 1,
+                                         &clearRange);
+                    return {};
+                });
+
+            graph.addPass("PresentBackbufferAfterTransient")
+                .readTexture("source", transientColor, RenderGraphShaderStage::Fragment)
+                .writeTransfer("target", backbuffer)
+                .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                    auto transitions =
+                        recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                    if (!transitions) {
+                        return std::unexpected{std::move(transitions.error())};
+                    }
+
+                    VkImageSubresourceRange clearRange{};
+                    clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    clearRange.baseMipLevel = 0;
+                    clearRange.levelCount = 1;
+                    clearRange.baseArrayLayer = 0;
+                    clearRange.layerCount = 1;
+                    vkCmdClearColorImage(frame.commandBuffer, frame.image,
+                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &frame.clearColor, 1,
+                                         &clearRange);
+                    return {};
+                });
+
+            auto compiled = graph.compile();
+            if (!compiled) {
+                return std::unexpected{std::move(compiled.error())};
+            }
+
+            auto prepared = prepareTransientResources(*compiled, bindings);
+            if (!prepared) {
+                return std::unexpected{std::move(prepared.error())};
+            }
+
+            auto executed = graph.execute(*compiled);
+            if (!executed) {
+                return std::unexpected{std::move(executed.error())};
+            }
+
+            auto finalTransitions =
+                recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+            if (!finalTransitions) {
+                return std::unexpected{std::move(finalTransitions.error())};
+            }
+
+            return VulkanFrameRecordResult{
+                .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            };
+        }
+
+    private:
+        void resetTransientResources() {
+            transientImageViews_.clear();
+            transientImages_.clear();
+        }
+
+        [[nodiscard]] static VkImageUsageFlags transientUsageFlags(
+            const RenderGraphCompileResult& compiled, RenderGraphImageHandle image) {
+            VkImageUsageFlags usage{};
+            for (const RenderGraphCompiledPass& pass : compiled.passes) {
+                if (usesImage(pass.transferWrites, image)) {
+                    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                }
+                if (usesImage(pass.colorWrites, image)) {
+                    usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+                }
+                if (usesImage(pass.shaderReads, image) ||
+                    usesImage(pass.depthSampledReads, image)) {
+                    usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+                }
+                if (usesImage(pass.depthReads, image) || usesImage(pass.depthWrites, image)) {
+                    usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                }
+            }
+            return usage;
+        }
+
+        [[nodiscard]] static bool usesImage(std::span<const RenderGraphImageHandle> images,
+                                            RenderGraphImageHandle image) {
+            for (const RenderGraphImageHandle used : images) {
+                if (used == image) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] Result<void> prepareTransientResources(
+            const RenderGraphCompileResult& compiled,
+            std::vector<VulkanRenderGraphImageBinding>& bindings) {
+            for (const RenderGraphTransientImageAllocation& allocation :
+                 compiled.transientImages) {
+                const VkFormat format = vulkanFormat(allocation.format);
+                const VkImageAspectFlags aspectMask =
+                    basicRenderGraphImageAspect(allocation.format);
+                const VkImageUsageFlags usage =
+                    transientUsageFlags(compiled, allocation.image);
+
+                auto image = VulkanImage::create(VulkanImageDesc{
+                    .device = device_,
+                    .allocator = allocator_,
+                    .format = format,
+                    .extent =
+                        VkExtent2D{
+                            .width = allocation.extent.width,
+                            .height = allocation.extent.height,
+                        },
+                    .usage = usage,
+                    .aspectMask = aspectMask,
+                });
+                if (!image) {
+                    return std::unexpected{std::move(image.error())};
+                }
+
+                auto imageView = VulkanImageView::create(VulkanImageViewDesc{
+                    .device = device_,
+                    .image = image->handle(),
+                    .format = image->format(),
+                    .aspectMask = image->aspectMask(),
+                });
+                if (!imageView) {
+                    return std::unexpected{std::move(imageView.error())};
+                }
+
+                bindings.push_back(VulkanRenderGraphImageBinding{
+                    .image = allocation.image,
+                    .vulkanImage = image->handle(),
+                    .vulkanImageView = imageView->handle(),
+                    .aspectMask = image->aspectMask(),
+                });
+                transientImages_.push_back(std::move(*image));
+                transientImageViews_.push_back(std::move(*imageView));
+            }
+
+            return {};
+        }
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VmaAllocator allocator_{};
+        std::vector<VulkanImage> transientImages_;
+        std::vector<VulkanImageView> transientImageViews_;
+    };
 
 } // namespace vke

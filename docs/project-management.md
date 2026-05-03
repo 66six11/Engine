@@ -71,9 +71,9 @@ VkEngine/
 
 ## 下一阶段任务拆分
 
-1. 增加 Slang reflection 基线，输出可审查的 `*.reflection.json`。[ ]
-2. 基于 reflection 建立 descriptor set/binding 和 pipeline layout 契约。[ ]
-3. 增加 RenderGraph transient image 声明、Vulkan binding 和 `--smoke-transient`。[ ]
+1. 增加 Slang reflection 基线，输出可审查的 `*.reflection.json`。[x]
+2. 基于 reflection 建立 descriptor set/binding 和 pipeline layout 契约。[x]
+3. 增加 RenderGraph transient image 声明、Vulkan binding 和 `--smoke-transient`。[x]
 4. 增加 depth attachment 抽象状态、Vulkan 翻译和 `--smoke-depth-triangle`。[ ]
 5. 从固定顶点数据扩展到最小 mesh asset/index buffer 路线和 `--smoke-mesh`。[ ]
 

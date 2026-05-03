@@ -189,6 +189,88 @@ namespace {
                              VkClearColorValue{{0.18F, 0.06F, 0.14F, 1.0F}});
     }
 
+    int runSmokeTransient() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = vke::GlfwWindow::create(
+            *glfw, vke::WindowDesc{.title = "VkEngine Transient Image Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Transient Image Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::BasicTransientFrameRecorder recorder{context->device(), context->allocator()};
+
+        vke::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = vke::VulkanFrameLoop::create(
+            *context, vke::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.08F, 0.14F, 0.22F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            vke::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanFrameRecordCallback record =
+            [&recorder](const vke::VulkanFrameRecordContext& frame) {
+                return recorder.record(frame);
+            };
+
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(record);
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during transient smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered transient frames: " << extent.width << 'x' << extent.height
+                  << '\n';
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
     int runSmokeResize() {
         auto glfw = vke::GlfwInstance::create();
         if (!glfw) {
@@ -1074,7 +1156,7 @@ int main(int argc, char** argv) {
         }
 
         if (hasArg(args, "--smoke-transient")) {
-            return runSmokeRenderGraph();
+            return runSmokeTransient();
         }
 
         if (hasArg(args, "--smoke-dynamic-rendering")) {

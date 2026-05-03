@@ -116,8 +116,8 @@ flowchart TD
 - `--smoke-triangle` 已接入 `BasicTriangleRenderer`、dynamic-rendering graphics pipeline、RenderGraph color write、draw、present。
 - `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout / pipeline layout 的创建验证。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译和 Vulkan adapter 字段验证入口。
-- `--smoke-transient` 是 RenderGraph transient image 声明、lifetime plan 和 adapter 字段验证入口；当前复用
-  RenderGraph CPU smoke，不创建真实 Vulkan image/VMA allocation。
+- `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
+  image view 和 binding 表，并录制非 backbuffer image transition / clear。
 
 ## 当前 Frame Loop 流程
 
@@ -210,7 +210,8 @@ flowchart TD
 - `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、reflection JSON、triangle shader 契约校验、`BasicTriangleRenderer` 管理的 shader module、reflection-derived pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
 - `--smoke-descriptor-layout` 已验证 `descriptor_layout.slang` 的非空 reflection signature 可映射为固定 descriptor set layout 和 pipeline layout；当前只验证 layout 契约，不分配或绑定 descriptor set。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
-- RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage` binding 查找真实 Vulkan image；当前 smoke 只绑定 Backbuffer，后续 depth/transient image 必须显式加入 binding 表。
+- RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
+  Vulkan resource；Backbuffer 和 `--smoke-transient` 的 transient color image 都已显式加入 binding 表。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 和 triangle shader/pipeline 装配已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -347,26 +348,27 @@ flowchart TD
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、slots、transitions、transients 的 Markdown 调试表格，并验证
   pass type、params type、slot schema 和 transient lifetime plan。
-- `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition 和
-  Vulkan adapter mapping；真实 image/image view/VMA allocation 仍留给 PrepareBackend 阶段。
+- `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition、
+  Vulkan adapter mapping，以及真实 image/image view/VMA allocation 和 binding。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan"]
-    Step1["下一步:<br/>PrepareBackend transient allocation<br/>Vulkan image/image view/VMA"]
-    Step2["之后:<br/>depth attachment MVP"]
-    Step3["之后:<br/>C++ command context skeleton<br/>debug IR only"]
-    Step4["之后:<br/>descriptor binding + fullscreen pass"]
-    Step5["之后:<br/>mesh asset / draw list MVP"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke"]
+    Step1["下一步:<br/>depth attachment MVP"]
+    Step2["之后:<br/>C++ command context skeleton<br/>debug IR only"]
+    Step3["之后:<br/>descriptor binding + fullscreen pass"]
+    Step4["之后:<br/>mesh asset / draw list MVP"]
 
-    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5
+    Now --> Step1 --> Step2 --> Step3 --> Step4
 
     DepthStateUpdate["2026-05-03:<br/>DepthAttachmentRead/Write<br/>DepthSampledRead(fragment/compute)<br/>adapter mapping smoke"]
     Now --> DepthStateUpdate
     TransientUpdate["2026-05-04:<br/>createTransientImage<br/>transient lifetime plan<br/>--smoke-transient"]
     Now --> TransientUpdate
+    TransientVkUpdate["2026-05-04:<br/>VMA-backed transient image<br/>image view + binding table<br/>real transition recording"]
+    Now --> TransientVkUpdate
 ```
 
 建议推进顺序：

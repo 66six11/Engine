@@ -2,7 +2,7 @@
 
 研究日期：2026-04-29
 
-更新日期：2026-05-02
+更新日期：2026-05-04
 
 ## 当前基线
 
@@ -87,8 +87,8 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | 2 | Descriptor/Layout 契约 | 已开始用 reflection JSON 校验 triangle shader 契约，并打通 pipeline layout/resource signature 接口 | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
 | 3 | RenderGraph 声明模型 v2 | named write slots、params type id 和最小 pass schema 已接入；下一步继续补真实 typed params payload 和更细的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot、params type 和 schema 能进入 compiled pass 和 executor context；旧 callback 路径不退化 |
 | 4 | RenderGraph access/state 扩展 | `ShaderRead(fragment/compute)`、`DepthAttachmentRead/Write`、`DepthSampledRead(fragment/compute)` 已接入，并同步 Vulkan layout/stage/access 翻译 | `--smoke-rendergraph` 已验证 shader-read、depth-write、depth-sampled-read transition、shader stage/domain、depth aspect barrier 和 Vulkan adapter 字段；尚不引入实际 shader sampling |
-| 5 | RenderGraph transient image | `createTransientImage()`、transient lifetime plan、debug table 和 `--smoke-transient` 已接入；真实 Vulkan image/image view/VMA allocation 尚未接入 | `--smoke-transient` 已验证非 backbuffer image transition、first/last pass、final shader stage 和 Vulkan adapter mapping |
-| 6 | PrepareBackend transient allocation | 根据 compiled transient plan 增加 Vulkan image/image view/VMA allocation 和 binding 表接入 | `--smoke-transient` 升级为真实 transient VkImage 录制路径，validation 无 error/warning |
+| 5 | RenderGraph transient image | `createTransientImage()`、transient lifetime plan、debug table 和 `--smoke-transient` 已接入 | `--smoke-transient` 已验证非 backbuffer image transition、first/last pass、final shader stage 和 Vulkan adapter mapping |
+| 6 | PrepareBackend transient allocation | 已增加 Vulkan image/image view RAII、VMA-backed transient image 创建、usage/aspect 推导和 binding 表接入 | `--smoke-transient` 已升级为真实 transient VkImage 录制路径，validation 无 error/warning |
 | 7 | Depth attachment MVP | 增加 dynamic rendering depth attachment，复用已接入的 depth write/read 状态和 binding | 新增 `--smoke-depth-triangle`，validation 无 error/warning |
 | 8 | 受控 command context skeleton | 在 C++ 中原型化未来脚本会调用的高级命令 API，但第一版只生成 command summary/debug IR，不承诺 Vulkan 执行；可包含 clear、set shader/texture、fullscreen draw 的描述 | 新增 command summary/debug 输出；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
 | 9 | Descriptor binding / fullscreen pass | 在固定 descriptor layout 基础上增加 descriptor pool、descriptor set allocation/bind，并让 `setTexture + drawFullscreenTriangle` 从 debug IR 走向真实 Vulkan 执行 | 新增 `--smoke-fullscreen-texture` 或等价 smoke，验证 shader 采样声明资源 |
