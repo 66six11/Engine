@@ -58,9 +58,27 @@ namespace vke {
         RenderGraphImageHandle image{};
     };
 
+    enum class RenderGraphSlotAccess {
+        ColorWrite,
+        TransferWrite,
+    };
+
+    struct RenderGraphResourceSlotSchema {
+        std::string name;
+        RenderGraphSlotAccess access{RenderGraphSlotAccess::ColorWrite};
+        bool optional{};
+    };
+
+    struct RenderGraphPassSchema {
+        std::string type;
+        std::string paramsType;
+        std::vector<RenderGraphResourceSlotSchema> resourceSlots;
+    };
+
     struct RenderGraphCompiledPass {
         std::string name;
         std::string type;
+        std::string paramsType;
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
         std::vector<RenderGraphImageHandle> transferWrites;
@@ -76,6 +94,7 @@ namespace vke {
     struct RenderGraphPassContext {
         std::string_view name;
         std::string_view type;
+        std::string_view paramsType;
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
         std::span<const RenderGraphImageHandle> transferWrites;
@@ -84,6 +103,34 @@ namespace vke {
     };
 
     using RenderGraphPassCallback = std::function<Result<void>(RenderGraphPassContext)>;
+
+    class RenderGraphSchemaRegistry {
+    public:
+        RenderGraphSchemaRegistry& registerSchema(RenderGraphPassSchema schema) {
+            for (RenderGraphPassSchema& registered : schemas_) {
+                if (registered.type == schema.type) {
+                    registered = std::move(schema);
+                    return *this;
+                }
+            }
+
+            schemas_.push_back(std::move(schema));
+            return *this;
+        }
+
+        [[nodiscard]] const RenderGraphPassSchema* find(std::string_view type) const {
+            for (const RenderGraphPassSchema& schema : schemas_) {
+                if (schema.type == type) {
+                    return &schema;
+                }
+            }
+
+            return nullptr;
+        }
+
+    private:
+        std::vector<RenderGraphPassSchema> schemas_;
+    };
 
     class RenderGraphExecutorRegistry {
     public:
@@ -127,6 +174,7 @@ namespace vke {
         struct Pass {
             std::string name;
             std::string type;
+            std::string paramsType;
             std::vector<RenderGraphImageSlot> colorWriteSlots;
             std::vector<RenderGraphImageSlot> transferWriteSlots;
             RenderGraphPassCallback callback;
@@ -167,6 +215,11 @@ namespace vke {
                 return graph_->passes_[passIndex_].type;
             }
 
+            PassBuilder& setParamsType(std::string paramsType) {
+                graph_->passes_[passIndex_].paramsType = std::move(paramsType);
+                return *this;
+            }
+
             PassBuilder& execute(RenderGraphPassCallback callback) {
                 graph_->passes_[passIndex_].callback = std::move(callback);
                 return *this;
@@ -193,6 +246,7 @@ namespace vke {
             Pass pass{
                 .name = std::move(name),
                 .type = {},
+                .paramsType = {},
                 .colorWriteSlots = {},
                 .transferWriteSlots = {},
                 .callback = {},
@@ -205,6 +259,7 @@ namespace vke {
             Pass pass{
                 .name = std::move(name),
                 .type = std::move(type),
+                .paramsType = {},
                 .colorWriteSlots = {},
                 .transferWriteSlots = {},
                 .callback = {},
@@ -214,6 +269,17 @@ namespace vke {
         }
 
         [[nodiscard]] Result<RenderGraphCompileResult> compile() const {
+            return compile(nullptr);
+        }
+
+        [[nodiscard]] Result<RenderGraphCompileResult>
+        compile(const RenderGraphSchemaRegistry& schemaRegistry) const {
+            return compile(&schemaRegistry);
+        }
+
+    private:
+        [[nodiscard]] Result<RenderGraphCompileResult>
+        compile(const RenderGraphSchemaRegistry* schemaRegistry) const {
             std::vector<RenderGraphImageState> currentStates;
             currentStates.reserve(images_.size());
             for (const RenderGraphImageDesc& image : images_) {
@@ -229,9 +295,17 @@ namespace vke {
                     return std::unexpected{std::move(slotsValidated.error())};
                 }
 
+                if (schemaRegistry != nullptr) {
+                    auto schemaValidated = validateSchema(pass, *schemaRegistry);
+                    if (!schemaValidated) {
+                        return std::unexpected{std::move(schemaValidated.error())};
+                    }
+                }
+
                 RenderGraphCompiledPass compiledPass{
                     .name = pass.name,
                     .type = pass.type,
+                    .paramsType = pass.paramsType,
                     .transitionsBefore = {},
                     .colorWrites = imageHandles(pass.colorWriteSlots),
                     .transferWrites = imageHandles(pass.transferWriteSlots),
@@ -272,6 +346,7 @@ namespace vke {
             return result;
         }
 
+    public:
         [[nodiscard]] Result<void> execute() const {
             auto compiled = compile();
             if (!compiled) {
@@ -330,6 +405,7 @@ namespace vke {
                 auto executed = (*callback)(RenderGraphPassContext{
                     .name = pass.name,
                     .type = pass.type,
+                    .paramsType = pass.paramsType,
                     .transitionsBefore = pass.transitionsBefore,
                     .colorWrites = pass.colorWrites,
                     .transferWrites = pass.transferWrites,
@@ -371,8 +447,9 @@ namespace vke {
             }
 
             output += "\n### RenderGraph Passes\n\n";
-            output += "| # | Name | Type | Before Transitions | Color Writes | Transfer Writes |\n";
-            output += "|---:|---|---|---:|---|---|\n";
+            output += "| # | Name | Type | Params | Before Transitions | Color Writes | "
+                      "Transfer Writes |\n";
+            output += "|---:|---|---|---|---:|---|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
@@ -381,6 +458,8 @@ namespace vke {
                 output += pass.name;
                 output += " | ";
                 output += pass.type.empty() ? "-" : pass.type;
+                output += " | ";
+                output += pass.paramsType.empty() ? "-" : pass.paramsType;
                 output += " | ";
                 output += std::to_string(pass.transitionsBefore.size());
                 output += " | ";
@@ -450,6 +529,110 @@ namespace vke {
             }
 
             return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateSchema(const Pass& pass, const RenderGraphSchemaRegistry& schemaRegistry) const {
+            if (pass.type.empty()) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph pass '" + pass.name +
+                        "' cannot be schema-validated without a type.",
+                }};
+            }
+
+            const RenderGraphPassSchema* schema = schemaRegistry.find(pass.type);
+            if (schema == nullptr) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph pass '" + pass.name + "' has no registered schema for type '" +
+                        pass.type + "'.",
+                }};
+            }
+
+            if (pass.paramsType != schema->paramsType) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph pass '" + pass.name + "' expected params type '" +
+                        schema->paramsType + "' but found '" + pass.paramsType + "'.",
+                }};
+            }
+
+            auto colorSlots = validateSlotsAgainstSchema(
+                pass, pass.colorWriteSlots, RenderGraphSlotAccess::ColorWrite, *schema);
+            if (!colorSlots) {
+                return std::unexpected{std::move(colorSlots.error())};
+            }
+
+            auto transferSlots = validateSlotsAgainstSchema(
+                pass, pass.transferWriteSlots, RenderGraphSlotAccess::TransferWrite, *schema);
+            if (!transferSlots) {
+                return std::unexpected{std::move(transferSlots.error())};
+            }
+
+            for (const RenderGraphResourceSlotSchema& slotSchema : schema->resourceSlots) {
+                if (slotSchema.optional) {
+                    continue;
+                }
+                if (!hasSlot(pass, slotSchema)) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' is missing required slot '" +
+                            slotSchema.name + "'.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateSlotsAgainstSchema(const Pass& pass, std::span<const RenderGraphImageSlot> slots,
+                                   RenderGraphSlotAccess access,
+                                   const RenderGraphPassSchema& schema) const {
+            for (const RenderGraphImageSlot& slot : slots) {
+                if (findSlotSchema(schema, slot.name, access) == nullptr) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' declares slot '" + slot.name +
+                            "' that is not allowed by schema '" + schema.type + "'.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] bool hasSlot(const Pass& pass,
+                                   const RenderGraphResourceSlotSchema& slotSchema) const {
+            const std::span<const RenderGraphImageSlot> slots =
+                slotSchema.access == RenderGraphSlotAccess::ColorWrite
+                    ? std::span<const RenderGraphImageSlot>{pass.colorWriteSlots}
+                    : std::span<const RenderGraphImageSlot>{pass.transferWriteSlots};
+            for (const RenderGraphImageSlot& slot : slots) {
+                if (slot.name == slotSchema.name) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        [[nodiscard]] static const RenderGraphResourceSlotSchema*
+        findSlotSchema(const RenderGraphPassSchema& schema, std::string_view name,
+                       RenderGraphSlotAccess access) {
+            for (const RenderGraphResourceSlotSchema& slotSchema : schema.resourceSlots) {
+                if (slotSchema.name == name && slotSchema.access == access) {
+                    return &slotSchema;
+                }
+            }
+
+            return nullptr;
         }
 
         [[nodiscard]] Result<void>

@@ -303,6 +303,10 @@ flowchart TD
   无 slot API 暂时等价于 `"target"`。
 - compiled pass 和 executor context 已携带 `colorWriteSlots` / `transferWriteSlots`，`--smoke-rendergraph`
   会验证 slot name 并在调试表输出 slot。
+- `setParamsType("...")` 已接入最小 params type id；compiled pass 和 executor context 会携带该
+  type id，真实 typed params payload 后续再加。
+- `RenderGraphSchemaRegistry` / `RenderGraphPassSchema` 已接入最小 schema 验证：按 pass type 校验
+  params type、允许的 slot 和必需 slot。
 - `pass.type` 是当前 typed executor key，并会继续演进为执行模型 / pass opcode。它不等同于
   RenderQueue 或 shader tag；脚本/工具未来应通过同一套 C++ builder 语义生成 pass 声明、资源访问、
   typed params 和受控 command context。
@@ -331,22 +335,22 @@ flowchart TD
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
-- `--smoke-rendergraph` 已输出 resources、passes、slots、transitions 的 Markdown 调试表格。
+- `--smoke-rendergraph` 已输出 resources、passes、slots、transitions 的 Markdown 调试表格，并验证
+  pass type、params type 和 slot schema。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots"]
-    Step1["下一步:<br/>RenderGraph declaration v2<br/>typed params + schema"]
-    Step2["之后:<br/>RenderGraph access/state 扩展<br/>ShaderRead / DepthAttachmentRead/Write / DepthSampledRead"]
-    Step3["之后:<br/>RenderGraph transient image"]
-    Step4["之后:<br/>depth attachment MVP"]
-    Step5["之后:<br/>C++ command context skeleton<br/>debug IR only"]
-    Step6["之后:<br/>descriptor binding + fullscreen pass"]
-    Step7["之后:<br/>mesh asset / draw list MVP"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema"]
+    Step1["下一步:<br/>RenderGraph access/state 扩展<br/>ShaderRead / DepthAttachmentRead/Write / DepthSampledRead"]
+    Step2["之后:<br/>RenderGraph transient image"]
+    Step3["之后:<br/>depth attachment MVP"]
+    Step4["之后:<br/>C++ command context skeleton<br/>debug IR only"]
+    Step5["之后:<br/>descriptor binding + fullscreen pass"]
+    Step6["之后:<br/>mesh asset / draw list MVP"]
 
-    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7
+    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6
 ```
 
 建议推进顺序：

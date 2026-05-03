@@ -85,7 +85,7 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | --- | --- | --- | --- |
 | 1 | Slang reflection 基线 | 已在 `packages/shader-slang` 增加 reflection 工具，输出 `*.reflection.json` | triangle shader 生成 entry、stage、vertex inputs、descriptor set/binding、push constant 信息；现有 smoke 不退化 |
 | 2 | Descriptor/Layout 契约 | 已开始用 reflection JSON 校验 triangle shader 契约，并打通 pipeline layout/resource signature 接口 | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
-| 3 | RenderGraph 声明模型 v2 | named write slots 已接入；下一步增加 typed pass params、最小 pass schema 和更清楚的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot 能进入 compiled pass 和 executor context；下一步继续覆盖 params/schema；旧 callback 路径不退化 |
+| 3 | RenderGraph 声明模型 v2 | named write slots、params type id 和最小 pass schema 已接入；下一步继续补真实 typed params payload 和更细的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot、params type 和 schema 能进入 compiled pass 和 executor context；旧 callback 路径不退化 |
 | 4 | RenderGraph access/state 扩展 | 增加后续 fullscreen/depth 所需的抽象访问状态，例如 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead`，并同步 Vulkan layout/stage/access 翻译 | 新增或扩展 rendergraph smoke，验证这些 state 的 transition、shader stage/domain、image usage/layout 匹配和 Vulkan adapter 字段，不引入实际 shader sampling |
 | 5 | RenderGraph transient image | 增加 transient image 声明、Vulkan image/image view/VMA allocation 和 binding 表接入 | 新增 `--smoke-transient`，验证非 backbuffer image transition、lifetime 和 binding |
 | 6 | Depth attachment MVP | 增加 dynamic rendering depth attachment，接入 depth write/read 状态和 binding | 新增 `--smoke-depth-triangle`，validation 无 error/warning |

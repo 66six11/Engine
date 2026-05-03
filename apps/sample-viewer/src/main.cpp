@@ -568,9 +568,25 @@ namespace {
         });
 
         int callbackCount = 0;
-        graph.addPass("ClearColor", "basic.clear-transfer").writeTransfer("target", backbuffer);
+        graph.addPass("ClearColor", "basic.clear-transfer")
+            .setParamsType("basic.clear-transfer.params")
+            .writeTransfer("target", backbuffer);
 
-        auto compiled = graph.compile();
+        vke::RenderGraphSchemaRegistry schemas;
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.clear-transfer",
+            .paramsType = "basic.clear-transfer.params",
+            .resourceSlots =
+                {
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = vke::RenderGraphSlotAccess::TransferWrite,
+                        .optional = false,
+                    },
+                },
+        });
+
+        auto compiled = graph.compile(schemas);
         if (!compiled) {
             vke::logError(compiled.error().message);
             return EXIT_FAILURE;
@@ -604,6 +620,7 @@ namespace {
             "basic.clear-transfer",
             [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
                 if (context.name != "ClearColor" || context.type != "basic.clear-transfer" ||
+                    context.paramsType != "basic.clear-transfer.params" ||
                     context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
                     context.transferWrites.size() != 1 || !context.colorWriteSlots.empty() ||
                     context.transferWriteSlots.size() != 1 ||
