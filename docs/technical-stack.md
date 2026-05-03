@@ -78,13 +78,14 @@ Vulkan loader/binding 策略：
 ## Vulkan 1.4 策略
 
 - instance/device 创建时请求 Vulkan API version 1.4。
-- 查询并保存 `VkPhysicalDeviceVulkan11Features`、`VkPhysicalDeviceVulkan12Features`、
-  `VkPhysicalDeviceVulkan13Features`、`VkPhysicalDeviceVulkan14Features`。
+- 查询并启用当前实际使用的 feature：至少包括 `VkPhysicalDeviceVulkan13Features` 中的
+  `synchronization2` 和 `dynamicRendering`。Vulkan 1.4 feature 例如
+  `VkPhysicalDeviceVulkan14Features::dynamicRenderingLocalRead` 只在真正使用前接入查询、保存和启用链。
 - 默认使用 synchronization2：`vkQueueSubmit2`、`VkDependencyInfo`、
   `vkCmdPipelineBarrier2`。
 - MVP 使用 dynamic rendering，不使用传统 render pass/framebuffer 作为主路径。
 - swapchain、present mode、surface format、timeline semaphore、dynamic rendering local
-  read 都必须查询能力后再使用。
+  read 等能力都必须查询后再使用；未接入 feature chain 的能力不能写成默认可用。
 
 ## Shader 策略
 
