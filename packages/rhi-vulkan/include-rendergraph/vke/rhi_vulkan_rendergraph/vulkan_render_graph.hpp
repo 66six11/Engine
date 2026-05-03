@@ -27,6 +27,8 @@ namespace vke {
             return VK_FORMAT_UNDEFINED;
         case RenderGraphImageFormat::B8G8R8A8Srgb:
             return VK_FORMAT_B8G8R8A8_SRGB;
+        case RenderGraphImageFormat::D32Sfloat:
+            return VK_FORMAT_D32_SFLOAT;
         }
         return VK_FORMAT_UNDEFINED;
     }
@@ -45,6 +47,12 @@ namespace vke {
         case RenderGraphImageState::ColorAttachment:
             return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         case RenderGraphImageState::ShaderRead:
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        case RenderGraphImageState::DepthAttachmentRead:
+            return VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        case RenderGraphImageState::DepthAttachmentWrite:
+            return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        case RenderGraphImageState::DepthSampledRead:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         case RenderGraphImageState::TransferDst:
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -80,6 +88,23 @@ namespace vke {
                 .accessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
             };
         case RenderGraphImageState::ShaderRead:
+            return VulkanRenderGraphImageUsage{
+                .stageMask = vulkanShaderStage(shaderStage),
+                .accessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+            };
+        case RenderGraphImageState::DepthAttachmentRead:
+            return VulkanRenderGraphImageUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                .accessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+            };
+        case RenderGraphImageState::DepthAttachmentWrite:
+            return VulkanRenderGraphImageUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                .accessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            };
+        case RenderGraphImageState::DepthSampledRead:
             return VulkanRenderGraphImageUsage{
                 .stageMask = vulkanShaderStage(shaderStage),
                 .accessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,

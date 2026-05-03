@@ -348,15 +348,17 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)"]
-    Step1["下一步:<br/>DepthAttachmentRead/Write / DepthSampledRead"]
-    Step2["之后:<br/>RenderGraph transient image"]
-    Step3["之后:<br/>depth attachment MVP"]
-    Step4["之后:<br/>C++ command context skeleton<br/>debug IR only"]
-    Step5["之后:<br/>descriptor binding + fullscreen pass"]
-    Step6["之后:<br/>mesh asset / draw list MVP"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead"]
+    Step1["下一步:<br/>RenderGraph transient image"]
+    Step2["之后:<br/>depth attachment MVP"]
+    Step3["之后:<br/>C++ command context skeleton<br/>debug IR only"]
+    Step4["之后:<br/>descriptor binding + fullscreen pass"]
+    Step5["之后:<br/>mesh asset / draw list MVP"]
 
-    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6
+    Now --> Step1 --> Step2 --> Step3 --> Step4 --> Step5
+
+    DepthStateUpdate["2026-05-03:<br/>DepthAttachmentRead/Write<br/>DepthSampledRead(fragment/compute)<br/>adapter mapping smoke"]
+    Now --> DepthStateUpdate
 ```
 
 建议推进顺序：

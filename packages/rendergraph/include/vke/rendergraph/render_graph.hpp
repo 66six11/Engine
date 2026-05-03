@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -29,12 +30,16 @@ namespace vke {
     enum class RenderGraphImageFormat {
         Undefined,
         B8G8R8A8Srgb,
+        D32Sfloat,
     };
 
     enum class RenderGraphImageState {
         Undefined,
         ColorAttachment,
         ShaderRead,
+        DepthAttachmentRead,
+        DepthAttachmentWrite,
+        DepthSampledRead,
         TransferDst,
         Present,
     };
@@ -58,7 +63,9 @@ namespace vke {
         RenderGraphImageFormat format{RenderGraphImageFormat::Undefined};
         RenderGraphExtent2D extent{};
         RenderGraphImageState initialState{RenderGraphImageState::Undefined};
+        RenderGraphShaderStage initialShaderStage{RenderGraphShaderStage::None};
         RenderGraphImageState finalState{RenderGraphImageState::Present};
+        RenderGraphShaderStage finalShaderStage{RenderGraphShaderStage::None};
     };
 
     struct RenderGraphImageTransition {
@@ -79,6 +86,9 @@ namespace vke {
     enum class RenderGraphSlotAccess {
         ColorWrite,
         ShaderRead,
+        DepthAttachmentRead,
+        DepthAttachmentWrite,
+        DepthSampledRead,
         TransferWrite,
     };
 
@@ -102,9 +112,15 @@ namespace vke {
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
         std::vector<RenderGraphImageHandle> shaderReads;
+        std::vector<RenderGraphImageHandle> depthReads;
+        std::vector<RenderGraphImageHandle> depthWrites;
+        std::vector<RenderGraphImageHandle> depthSampledReads;
         std::vector<RenderGraphImageHandle> transferWrites;
         std::vector<RenderGraphImageSlot> colorWriteSlots;
         std::vector<RenderGraphImageSlot> shaderReadSlots;
+        std::vector<RenderGraphImageSlot> depthReadSlots;
+        std::vector<RenderGraphImageSlot> depthWriteSlots;
+        std::vector<RenderGraphImageSlot> depthSampledReadSlots;
         std::vector<RenderGraphImageSlot> transferWriteSlots;
     };
 
@@ -120,9 +136,15 @@ namespace vke {
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
         std::span<const RenderGraphImageHandle> shaderReads;
+        std::span<const RenderGraphImageHandle> depthReads;
+        std::span<const RenderGraphImageHandle> depthWrites;
+        std::span<const RenderGraphImageHandle> depthSampledReads;
         std::span<const RenderGraphImageHandle> transferWrites;
         std::span<const RenderGraphImageSlot> colorWriteSlots;
         std::span<const RenderGraphImageSlot> shaderReadSlots;
+        std::span<const RenderGraphImageSlot> depthReadSlots;
+        std::span<const RenderGraphImageSlot> depthWriteSlots;
+        std::span<const RenderGraphImageSlot> depthSampledReadSlots;
         std::span<const RenderGraphImageSlot> transferWriteSlots;
     };
 
@@ -201,6 +223,9 @@ namespace vke {
             std::string paramsType;
             std::vector<RenderGraphImageSlot> colorWriteSlots;
             std::vector<RenderGraphImageSlot> shaderReadSlots;
+            std::vector<RenderGraphImageSlot> depthReadSlots;
+            std::vector<RenderGraphImageSlot> depthWriteSlots;
+            std::vector<RenderGraphImageSlot> depthSampledReadSlots;
             std::vector<RenderGraphImageSlot> transferWriteSlots;
             RenderGraphPassCallback callback;
         };
@@ -223,6 +248,32 @@ namespace vke {
             PassBuilder& readTexture(std::string slotName, RenderGraphImageHandle image,
                                      RenderGraphShaderStage shaderStage) {
                 graph_->passes_[passIndex_].shaderReadSlots.push_back(RenderGraphImageSlot{
+                    .name = std::move(slotName),
+                    .image = image,
+                    .shaderStage = shaderStage,
+                });
+                return *this;
+            }
+
+            PassBuilder& readDepth(std::string slotName, RenderGraphImageHandle image) {
+                graph_->passes_[passIndex_].depthReadSlots.push_back(RenderGraphImageSlot{
+                    .name = std::move(slotName),
+                    .image = image,
+                });
+                return *this;
+            }
+
+            PassBuilder& writeDepth(std::string slotName, RenderGraphImageHandle image) {
+                graph_->passes_[passIndex_].depthWriteSlots.push_back(RenderGraphImageSlot{
+                    .name = std::move(slotName),
+                    .image = image,
+                });
+                return *this;
+            }
+
+            PassBuilder& readDepthTexture(std::string slotName, RenderGraphImageHandle image,
+                                          RenderGraphShaderStage shaderStage) {
+                graph_->passes_[passIndex_].depthSampledReadSlots.push_back(RenderGraphImageSlot{
                     .name = std::move(slotName),
                     .image = image,
                     .shaderStage = shaderStage,
@@ -284,6 +335,9 @@ namespace vke {
                 .paramsType = {},
                 .colorWriteSlots = {},
                 .shaderReadSlots = {},
+                .depthReadSlots = {},
+                .depthWriteSlots = {},
+                .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
                 .callback = {},
             };
@@ -298,6 +352,9 @@ namespace vke {
                 .paramsType = {},
                 .colorWriteSlots = {},
                 .shaderReadSlots = {},
+                .depthReadSlots = {},
+                .depthWriteSlots = {},
+                .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
                 .callback = {},
             };
@@ -322,7 +379,7 @@ namespace vke {
             for (const RenderGraphImageDesc& image : images_) {
                 currentAccesses.push_back(RenderGraphImageAccess{
                     .state = image.initialState,
-                    .shaderStage = RenderGraphShaderStage::None,
+                    .shaderStage = image.initialShaderStage,
                 });
             }
 
@@ -349,9 +406,15 @@ namespace vke {
                     .transitionsBefore = {},
                     .colorWrites = imageHandles(pass.colorWriteSlots),
                     .shaderReads = imageHandles(pass.shaderReadSlots),
+                    .depthReads = imageHandles(pass.depthReadSlots),
+                    .depthWrites = imageHandles(pass.depthWriteSlots),
+                    .depthSampledReads = imageHandles(pass.depthSampledReadSlots),
                     .transferWrites = imageHandles(pass.transferWriteSlots),
                     .colorWriteSlots = pass.colorWriteSlots,
                     .shaderReadSlots = pass.shaderReadSlots,
+                    .depthReadSlots = pass.depthReadSlots,
+                    .depthWriteSlots = pass.depthWriteSlots,
+                    .depthSampledReadSlots = pass.depthSampledReadSlots,
                     .transferWriteSlots = pass.transferWriteSlots,
                 };
 
@@ -377,6 +440,39 @@ namespace vke {
                     return std::unexpected{std::move(shaderReadTransitions.error())};
                 }
 
+                auto depthReadTransitions =
+                    transitionImages(compiledPass.depthReadSlots,
+                                     RenderGraphImageAccess{
+                                         .state = RenderGraphImageState::DepthAttachmentRead,
+                                         .shaderStage = RenderGraphShaderStage::None,
+                                     },
+                                     currentAccesses, compiledPass);
+                if (!depthReadTransitions) {
+                    return std::unexpected{std::move(depthReadTransitions.error())};
+                }
+
+                auto depthWriteTransitions =
+                    transitionImages(compiledPass.depthWriteSlots,
+                                     RenderGraphImageAccess{
+                                         .state = RenderGraphImageState::DepthAttachmentWrite,
+                                         .shaderStage = RenderGraphShaderStage::None,
+                                     },
+                                     currentAccesses, compiledPass);
+                if (!depthWriteTransitions) {
+                    return std::unexpected{std::move(depthWriteTransitions.error())};
+                }
+
+                auto depthSampledReadTransitions =
+                    transitionImages(compiledPass.depthSampledReadSlots,
+                                     RenderGraphImageAccess{
+                                         .state = RenderGraphImageState::DepthSampledRead,
+                                         .shaderStage = RenderGraphShaderStage::None,
+                                     },
+                                     currentAccesses, compiledPass);
+                if (!depthSampledReadTransitions) {
+                    return std::unexpected{std::move(depthSampledReadTransitions.error())};
+                }
+
                 auto transferTransitions =
                     transitionImages(compiledPass.transferWriteSlots,
                                      RenderGraphImageAccess{
@@ -395,7 +491,7 @@ namespace vke {
                 const RenderGraphImageDesc& image = images_[index];
                 const RenderGraphImageAccess finalAccess{
                     .state = image.finalState,
-                    .shaderStage = RenderGraphShaderStage::None,
+                    .shaderStage = image.finalShaderStage,
                 };
                 if (currentAccesses[index] == finalAccess) {
                     continue;
@@ -474,9 +570,15 @@ namespace vke {
                     .transitionsBefore = pass.transitionsBefore,
                     .colorWrites = pass.colorWrites,
                     .shaderReads = pass.shaderReads,
+                    .depthReads = pass.depthReads,
+                    .depthWrites = pass.depthWrites,
+                    .depthSampledReads = pass.depthSampledReads,
                     .transferWrites = pass.transferWrites,
                     .colorWriteSlots = pass.colorWriteSlots,
                     .shaderReadSlots = pass.shaderReadSlots,
+                    .depthReadSlots = pass.depthReadSlots,
+                    .depthWriteSlots = pass.depthWriteSlots,
+                    .depthSampledReadSlots = pass.depthSampledReadSlots,
                     .transferWriteSlots = pass.transferWriteSlots,
                 });
                 if (!executed) {
@@ -507,16 +609,17 @@ namespace vke {
                 output += "x";
                 output += std::to_string(image.extent.height);
                 output += " | ";
-                output += imageStateName(image.initialState);
+                output += imageAccessName(image.initialState, image.initialShaderStage);
                 output += " | ";
-                output += imageStateName(image.finalState);
+                output += imageAccessName(image.finalState, image.finalShaderStage);
                 output += " |\n";
             }
 
             output += "\n### RenderGraph Passes\n\n";
             output += "| # | Name | Type | Params | Before Transitions | Color Writes | "
-                      "Shader Reads | Transfer Writes |\n";
-            output += "|---:|---|---|---|---:|---|---|---|\n";
+                      "Shader Reads | Depth Reads | Depth Writes | Depth Sampled Reads | "
+                      "Transfer Writes |\n";
+            output += "|---:|---|---|---|---:|---|---|---|---|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
@@ -534,6 +637,12 @@ namespace vke {
                 output += " | ";
                 output += imageSlotList(pass.shaderReadSlots);
                 output += " | ";
+                output += imageSlotList(pass.depthReadSlots);
+                output += " | ";
+                output += imageSlotList(pass.depthWriteSlots);
+                output += " | ";
+                output += imageSlotList(pass.depthSampledReadSlots);
+                output += " | ";
                 output += imageSlotList(pass.transferWriteSlots);
                 output += " |\n";
             }
@@ -544,6 +653,9 @@ namespace vke {
             for (const RenderGraphCompiledPass& pass : compiled.passes) {
                 appendSlotRows(output, pass.name, "ColorWrite", pass.colorWriteSlots);
                 appendSlotRows(output, pass.name, "ShaderRead", pass.shaderReadSlots);
+                appendSlotRows(output, pass.name, "DepthAttachmentRead", pass.depthReadSlots);
+                appendSlotRows(output, pass.name, "DepthAttachmentWrite", pass.depthWriteSlots);
+                appendSlotRows(output, pass.name, "DepthSampledRead", pass.depthSampledReadSlots);
                 appendSlotRows(output, pass.name, "TransferWrite", pass.transferWriteSlots);
             }
 
@@ -586,41 +698,33 @@ namespace vke {
                 return std::unexpected{std::move(shaderReadSlots.error())};
             }
 
+            auto depthReadSlots = validateSlots(pass, pass.depthReadSlots);
+            if (!depthReadSlots) {
+                return std::unexpected{std::move(depthReadSlots.error())};
+            }
+
+            auto depthWriteSlots = validateSlots(pass, pass.depthWriteSlots);
+            if (!depthWriteSlots) {
+                return std::unexpected{std::move(depthWriteSlots.error())};
+            }
+
+            auto depthSampledReadSlots = validateDepthSampledReadSlots(pass);
+            if (!depthSampledReadSlots) {
+                return std::unexpected{std::move(depthSampledReadSlots.error())};
+            }
+
             auto transferSlots = validateSlots(pass, pass.transferWriteSlots);
             if (!transferSlots) {
                 return std::unexpected{std::move(transferSlots.error())};
             }
 
-            for (const RenderGraphImageSlot& colorSlot : pass.colorWriteSlots) {
-                for (const RenderGraphImageSlot& shaderReadSlot : pass.shaderReadSlots) {
-                    if (colorSlot.name == shaderReadSlot.name) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            duplicateSlotMessage(pass, colorSlot.name),
-                        }};
-                    }
-                }
-                for (const RenderGraphImageSlot& transferSlot : pass.transferWriteSlots) {
-                    if (colorSlot.name == transferSlot.name) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            duplicateSlotMessage(pass, colorSlot.name),
-                        }};
-                    }
-                }
-            }
-            for (const RenderGraphImageSlot& shaderReadSlot : pass.shaderReadSlots) {
-                for (const RenderGraphImageSlot& transferSlot : pass.transferWriteSlots) {
-                    if (shaderReadSlot.name == transferSlot.name) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            duplicateSlotMessage(pass, shaderReadSlot.name),
-                        }};
-                    }
-                }
+            const std::array<std::span<const RenderGraphImageSlot>, 6> slotGroups{
+                pass.colorWriteSlots, pass.shaderReadSlots,       pass.depthReadSlots,
+                pass.depthWriteSlots, pass.depthSampledReadSlots, pass.transferWriteSlots,
+            };
+            auto duplicateSlots = validateUniqueSlotNames(pass, slotGroups);
+            if (!duplicateSlots) {
+                return std::unexpected{std::move(duplicateSlots.error())};
             }
 
             return {};
@@ -666,6 +770,24 @@ namespace vke {
                 pass, pass.shaderReadSlots, RenderGraphSlotAccess::ShaderRead, *schema);
             if (!shaderReadSlots) {
                 return std::unexpected{std::move(shaderReadSlots.error())};
+            }
+
+            auto depthReadSlots = validateSlotsAgainstSchema(
+                pass, pass.depthReadSlots, RenderGraphSlotAccess::DepthAttachmentRead, *schema);
+            if (!depthReadSlots) {
+                return std::unexpected{std::move(depthReadSlots.error())};
+            }
+
+            auto depthWriteSlots = validateSlotsAgainstSchema(
+                pass, pass.depthWriteSlots, RenderGraphSlotAccess::DepthAttachmentWrite, *schema);
+            if (!depthWriteSlots) {
+                return std::unexpected{std::move(depthWriteSlots.error())};
+            }
+
+            auto depthSampledReadSlots = validateSlotsAgainstSchema(
+                pass, pass.depthSampledReadSlots, RenderGraphSlotAccess::DepthSampledRead, *schema);
+            if (!depthSampledReadSlots) {
+                return std::unexpected{std::move(depthSampledReadSlots.error())};
             }
 
             auto transferSlots = validateSlotsAgainstSchema(
@@ -742,6 +864,12 @@ namespace vke {
                 return pass.colorWriteSlots;
             case RenderGraphSlotAccess::ShaderRead:
                 return pass.shaderReadSlots;
+            case RenderGraphSlotAccess::DepthAttachmentRead:
+                return pass.depthReadSlots;
+            case RenderGraphSlotAccess::DepthAttachmentWrite:
+                return pass.depthWriteSlots;
+            case RenderGraphSlotAccess::DepthSampledRead:
+                return pass.depthSampledReadSlots;
             case RenderGraphSlotAccess::TransferWrite:
                 return pass.transferWriteSlots;
             }
@@ -799,6 +927,49 @@ namespace vke {
             return {};
         }
 
+        [[nodiscard]] Result<void> validateDepthSampledReadSlots(const Pass& pass) const {
+            auto slots = validateSlots(pass, pass.depthSampledReadSlots);
+            if (!slots) {
+                return std::unexpected{std::move(slots.error())};
+            }
+
+            for (const RenderGraphImageSlot& slot : pass.depthSampledReadSlots) {
+                if (slot.shaderStage == RenderGraphShaderStage::None) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' declares depth sampled read slot '" +
+                            slot.name + "' without a shader stage.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> validateUniqueSlotNames(
+            const Pass& pass,
+            std::span<const std::span<const RenderGraphImageSlot>> slotGroups) const {
+            for (std::size_t groupIndex = 0; groupIndex < slotGroups.size(); ++groupIndex) {
+                for (const RenderGraphImageSlot& slot : slotGroups[groupIndex]) {
+                    for (std::size_t otherGroupIndex = groupIndex + 1;
+                         otherGroupIndex < slotGroups.size(); ++otherGroupIndex) {
+                        for (const RenderGraphImageSlot& otherSlot : slotGroups[otherGroupIndex]) {
+                            if (slot.name == otherSlot.name) {
+                                return std::unexpected{Error{
+                                    ErrorDomain::RenderGraph,
+                                    0,
+                                    duplicateSlotMessage(pass, slot.name),
+                                }};
+                            }
+                        }
+                    }
+                }
+            }
+
+            return {};
+        }
+
         [[nodiscard]] static std::vector<RenderGraphImageHandle>
         imageHandles(std::span<const RenderGraphImageSlot> slots) {
             std::vector<RenderGraphImageHandle> handles;
@@ -822,7 +993,8 @@ namespace vke {
                 }
 
                 RenderGraphImageAccess slotAccess = requiredAccess;
-                if (slotAccess.state == RenderGraphImageState::ShaderRead) {
+                if (slotAccess.state == RenderGraphImageState::ShaderRead ||
+                    slotAccess.state == RenderGraphImageState::DepthSampledRead) {
                     slotAccess.shaderStage = slot.shaderStage;
                 }
 
@@ -854,6 +1026,8 @@ namespace vke {
             switch (format) {
             case RenderGraphImageFormat::B8G8R8A8Srgb:
                 return "B8G8R8A8Srgb";
+            case RenderGraphImageFormat::D32Sfloat:
+                return "D32Sfloat";
             case RenderGraphImageFormat::Undefined:
             default:
                 return "Undefined";
@@ -866,6 +1040,12 @@ namespace vke {
                 return "ColorAttachment";
             case RenderGraphImageState::ShaderRead:
                 return "ShaderRead";
+            case RenderGraphImageState::DepthAttachmentRead:
+                return "DepthAttachmentRead";
+            case RenderGraphImageState::DepthAttachmentWrite:
+                return "DepthAttachmentWrite";
+            case RenderGraphImageState::DepthSampledRead:
+                return "DepthSampledRead";
             case RenderGraphImageState::TransferDst:
                 return "TransferDst";
             case RenderGraphImageState::Present:
@@ -941,7 +1121,8 @@ namespace vke {
         [[nodiscard]] std::string imageAccessName(RenderGraphImageState state,
                                                   RenderGraphShaderStage shaderStage) const {
             std::string name{imageStateName(state)};
-            if (state == RenderGraphImageState::ShaderRead &&
+            if ((state == RenderGraphImageState::ShaderRead ||
+                 state == RenderGraphImageState::DepthSampledRead) &&
                 shaderStage != RenderGraphShaderStage::None) {
                 name += "(";
                 name += shaderStageName(shaderStage);
