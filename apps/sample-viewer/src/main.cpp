@@ -571,6 +571,9 @@ namespace {
         graph.addPass("ClearColor", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
             .writeTransfer("target", backbuffer);
+        graph.addPass("SampleColor", "basic.sample-fragment")
+            .setParamsType("basic.sample-fragment.params")
+            .readTexture("source", backbuffer, vke::RenderGraphShaderStage::Fragment);
 
         vke::RenderGraphSchemaRegistry schemas;
         schemas.registerSchema(vke::RenderGraphPassSchema{
@@ -581,6 +584,20 @@ namespace {
                     vke::RenderGraphResourceSlotSchema{
                         .name = "target",
                         .access = vke::RenderGraphSlotAccess::TransferWrite,
+                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+        });
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.sample-fragment",
+            .paramsType = "basic.sample-fragment.params",
+            .resourceSlots =
+                {
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = vke::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
                 },
@@ -595,23 +612,38 @@ namespace {
             vke::logError("Render graph did not produce a final transition.");
             return EXIT_FAILURE;
         }
+        if (compiled->passes.size() != 2 || compiled->passes[1].transitionsBefore.empty()) {
+            vke::logError("Render graph did not produce the expected shader-read pass transition.");
+            return EXIT_FAILURE;
+        }
 
         std::cout << graph.formatDebugTables(*compiled) << '\n';
 
         const auto vulkanFinalTransition =
             vke::vulkanImageTransition(compiled->finalTransitions.front());
-        if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||
+        if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             vulkanFinalTransition.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
             vke::logError("Render graph Vulkan transition mapping produced unexpected layouts.");
             return EXIT_FAILURE;
         }
         const VkImageMemoryBarrier2 barrier =
             vke::vulkanImageBarrier(vulkanFinalTransition, VK_NULL_HANDLE);
-        if (barrier.oldLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||
+        if (barrier.oldLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             barrier.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR ||
-            barrier.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
-            barrier.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT) {
+            barrier.srcStageMask != VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
+            barrier.srcAccessMask != VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) {
             vke::logError("Render graph Vulkan barrier mapping produced unexpected masks.");
+            return EXIT_FAILURE;
+        }
+        const auto vulkanShaderReadTransition =
+            vke::vulkanImageTransition(compiled->passes[1].transitionsBefore.front());
+        if (vulkanShaderReadTransition.oldLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||
+            vulkanShaderReadTransition.newLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
+            vulkanShaderReadTransition.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            vulkanShaderReadTransition.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT ||
+            vulkanShaderReadTransition.dstStageMask != VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
+            vulkanShaderReadTransition.dstAccessMask != VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) {
+            vke::logError("Render graph Vulkan shader-read mapping produced unexpected masks.");
             return EXIT_FAILURE;
         }
 
@@ -622,13 +654,36 @@ namespace {
                 if (context.name != "ClearColor" || context.type != "basic.clear-transfer" ||
                     context.paramsType != "basic.clear-transfer.params" ||
                     context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
-                    context.transferWrites.size() != 1 || !context.colorWriteSlots.empty() ||
+                    !context.shaderReads.empty() || context.transferWrites.size() != 1 ||
+                    !context.colorWriteSlots.empty() || !context.shaderReadSlots.empty() ||
                     context.transferWriteSlots.size() != 1 ||
                     context.transferWriteSlots.front().name != "target") {
                     return std::unexpected{vke::Error{
                         vke::ErrorDomain::RenderGraph,
                         0,
                         "Render graph executor received unexpected pass context.",
+                    }};
+                }
+
+                ++callbackCount;
+                return {};
+            });
+        executors.registerExecutor(
+            "basic.sample-fragment",
+            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                if (context.name != "SampleColor" || context.type != "basic.sample-fragment" ||
+                    context.paramsType != "basic.sample-fragment.params" ||
+                    context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
+                    context.shaderReads.size() != 1 || !context.transferWrites.empty() ||
+                    !context.colorWriteSlots.empty() || context.shaderReadSlots.size() != 1 ||
+                    !context.transferWriteSlots.empty() ||
+                    context.shaderReadSlots.front().name != "source" ||
+                    context.shaderReadSlots.front().shaderStage !=
+                        vke::RenderGraphShaderStage::Fragment) {
+                    return std::unexpected{vke::Error{
+                        vke::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph shader-read executor received unexpected pass context.",
                     }};
                 }
 
@@ -645,8 +700,8 @@ namespace {
         std::cout << "Render graph passes: " << compiled->passes.size()
                   << ", final transitions: " << compiled->finalTransitions.size()
                   << ", callbacks: " << callbackCount << '\n';
-        return compiled->passes.size() == 1 && compiled->finalTransitions.size() == 1 &&
-                       callbackCount == 1
+        return compiled->passes.size() == 2 && compiled->finalTransitions.size() == 1 &&
+                       callbackCount == 2
                    ? EXIT_SUCCESS
                    : EXIT_FAILURE;
     }

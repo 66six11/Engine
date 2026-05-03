@@ -292,6 +292,7 @@ flowchart TD
 
 - `Undefined`
 - `ColorAttachment`
+- `ShaderRead(fragment/compute)`
 - `TransferDst`
 - `Present`
 
@@ -301,8 +302,10 @@ flowchart TD
   无 slot API 暂时等价于 `"target"`。
 - `writeTransfer("target", image)` / `writeTransfer(image)` 会要求 image 进入 `TransferDst`；旧的
   无 slot API 暂时等价于 `"target"`。
-- compiled pass 和 executor context 已携带 `colorWriteSlots` / `transferWriteSlots`，`--smoke-rendergraph`
-  会验证 slot name 并在调试表输出 slot。
+- `readTexture("source", image, shaderStage)` 会要求 image 进入 `ShaderRead(shaderStage)`；当前 smoke
+  已验证 fragment shader-read，不执行真实 descriptor sampling。
+- compiled pass 和 executor context 已携带 `colorWriteSlots` / `shaderReadSlots` / `transferWriteSlots`，
+  `--smoke-rendergraph` 会验证 slot name、shader stage 并在调试表输出 slot。
 - `setParamsType("...")` 已接入最小 params type id；compiled pass 和 executor context 会携带该
   type id，真实 typed params payload 后续再加。
 - `RenderGraphSchemaRegistry` / `RenderGraphPassSchema` 已接入最小 schema 验证：按 pass type 校验
@@ -334,6 +337,9 @@ flowchart TD
 - `vulkanImageBarrier` 已实现。
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
+- `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
+  `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
+  `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、slots、transitions 的 Markdown 调试表格，并验证
   pass type、params type 和 slot schema。
@@ -342,8 +348,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema"]
-    Step1["下一步:<br/>RenderGraph access/state 扩展<br/>ShaderRead / DepthAttachmentRead/Write / DepthSampledRead"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)"]
+    Step1["下一步:<br/>DepthAttachmentRead/Write / DepthSampledRead"]
     Step2["之后:<br/>RenderGraph transient image"]
     Step3["之后:<br/>depth attachment MVP"]
     Step4["之后:<br/>C++ command context skeleton<br/>debug IR only"]

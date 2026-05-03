@@ -44,6 +44,8 @@ namespace vke {
             return VK_IMAGE_LAYOUT_UNDEFINED;
         case RenderGraphImageState::ColorAttachment:
             return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        case RenderGraphImageState::ShaderRead:
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         case RenderGraphImageState::TransferDst:
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         case RenderGraphImageState::Present:
@@ -52,7 +54,22 @@ namespace vke {
         return VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
-    [[nodiscard]] inline VulkanRenderGraphImageUsage vulkanImageUsage(RenderGraphImageState state) {
+    [[nodiscard]] inline VkPipelineStageFlags2
+    vulkanShaderStage(RenderGraphShaderStage shaderStage) {
+        switch (shaderStage) {
+        case RenderGraphShaderStage::Fragment:
+            return VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        case RenderGraphShaderStage::Compute:
+            return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        case RenderGraphShaderStage::None:
+        default:
+            return VK_PIPELINE_STAGE_2_NONE;
+        }
+    }
+
+    [[nodiscard]] inline VulkanRenderGraphImageUsage
+    vulkanImageUsage(RenderGraphImageState state,
+                     RenderGraphShaderStage shaderStage = RenderGraphShaderStage::None) {
         switch (state) {
         case RenderGraphImageState::Undefined:
         case RenderGraphImageState::Present:
@@ -61,6 +78,11 @@ namespace vke {
             return VulkanRenderGraphImageUsage{
                 .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                 .accessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            };
+        case RenderGraphImageState::ShaderRead:
+            return VulkanRenderGraphImageUsage{
+                .stageMask = vulkanShaderStage(shaderStage),
+                .accessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
             };
         case RenderGraphImageState::TransferDst:
             return VulkanRenderGraphImageUsage{
@@ -73,8 +95,10 @@ namespace vke {
 
     [[nodiscard]] inline VulkanRenderGraphImageTransition
     vulkanImageTransition(const RenderGraphImageTransition& transition) {
-        const VulkanRenderGraphImageUsage srcUsage = vulkanImageUsage(transition.oldState);
-        const VulkanRenderGraphImageUsage dstUsage = vulkanImageUsage(transition.newState);
+        const VulkanRenderGraphImageUsage srcUsage =
+            vulkanImageUsage(transition.oldState, transition.oldShaderStage);
+        const VulkanRenderGraphImageUsage dstUsage =
+            vulkanImageUsage(transition.newState, transition.newShaderStage);
         return VulkanRenderGraphImageTransition{
             .image = transition.image,
             .oldLayout = vulkanImageLayout(transition.oldState),
