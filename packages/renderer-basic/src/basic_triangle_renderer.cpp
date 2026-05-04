@@ -731,8 +731,13 @@ namespace vke {
             };
         }
 
+        struct BasicDrawBuffers {
+            VkBuffer vertex{VK_NULL_HANDLE};
+            VkBuffer index{VK_NULL_HANDLE};
+        };
+
         void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
-                                VkBuffer vertexBuffer, BasicDrawItem drawItem,
+                                BasicDrawBuffers buffers, BasicDrawItem drawItem,
                                 VkImageView depthImageView = VK_NULL_HANDLE) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -783,11 +788,20 @@ namespace vke {
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             constexpr VkDeviceSize vertexBufferOffset = 0;
-            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &vertexBuffer, &vertexBufferOffset);
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex, &vertexBufferOffset);
+            if (drawItem.indexCount > 0) {
+                vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, 0, VK_INDEX_TYPE_UINT16);
+            }
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
-            vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,
-                      drawItem.firstVertex, drawItem.firstInstance);
+            if (drawItem.indexCount > 0) {
+                vkCmdDrawIndexed(frame.commandBuffer, drawItem.indexCount, drawItem.instanceCount,
+                                 drawItem.firstIndex, drawItem.vertexOffset,
+                                 drawItem.firstInstance);
+            } else {
+                vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,
+                          drawItem.firstVertex, drawItem.firstInstance);
+            }
             vkCmdEndRendering(frame.commandBuffer);
         }
 
@@ -1458,6 +1472,7 @@ namespace vke {
         pipelineLayout_ = std::move(other.pipelineLayout_);
         pipeline_ = std::move(other.pipeline_);
         vertexBuffer_ = std::move(other.vertexBuffer_);
+        indexBuffer_ = std::move(other.indexBuffer_);
         transientImages_ = std::move(other.transientImages_);
         transientImageViews_ = std::move(other.transientImageViews_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
@@ -1477,7 +1492,11 @@ namespace vke {
             return std::unexpected{Error{ErrorDomain::Vulkan, 0,
                                          "Cannot create triangle renderer without an allocator"}};
         }
-        if (desc.drawItem.vertexCount == 0 || desc.drawItem.instanceCount == 0) {
+        const BasicDrawItem drawItem =
+            desc.meshKind == BasicMeshKind::IndexedQuad ? basicIndexedQuadDrawItem()
+                                                        : desc.drawItem;
+        if ((drawItem.vertexCount == 0 && drawItem.indexCount == 0) ||
+            drawItem.instanceCount == 0) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0, "Triangle renderer draw item must draw something"}};
         }
@@ -1516,20 +1535,44 @@ namespace vke {
             return std::unexpected{std::move(layoutResources.error())};
         }
 
-        constexpr auto vertices = basicTriangleVertices();
+        constexpr auto triangleVertices = basicTriangleVertices();
+        constexpr auto quadVertices = basicQuadVertices();
+        const std::span<const BasicVertex> vertices =
+            desc.meshKind == BasicMeshKind::IndexedQuad ? std::span<const BasicVertex>{quadVertices}
+                                                        : std::span<const BasicVertex>{triangleVertices};
         auto vertexBuffer = VulkanBuffer::create(VulkanBufferDesc{
             .device = desc.device,
             .allocator = desc.allocator,
-            .size = sizeof(vertices),
+            .size = vertices.size_bytes(),
             .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
         });
         if (!vertexBuffer) {
             return std::unexpected{std::move(vertexBuffer.error())};
         }
-        auto uploaded = vertexBuffer->upload(std::as_bytes(std::span{vertices}));
+        auto uploaded = vertexBuffer->upload(std::as_bytes(vertices));
         if (!uploaded) {
             return std::unexpected{std::move(uploaded.error())};
+        }
+
+        VulkanBuffer indexBuffer;
+        if (drawItem.indexCount > 0) {
+            constexpr auto indices = basicQuadIndices();
+            auto createdIndexBuffer = VulkanBuffer::create(VulkanBufferDesc{
+                .device = desc.device,
+                .allocator = desc.allocator,
+                .size = sizeof(indices),
+                .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+            });
+            if (!createdIndexBuffer) {
+                return std::unexpected{std::move(createdIndexBuffer.error())};
+            }
+            auto uploadedIndices = createdIndexBuffer->upload(std::as_bytes(std::span{indices}));
+            if (!uploadedIndices) {
+                return std::unexpected{std::move(uploadedIndices.error())};
+            }
+            indexBuffer = std::move(*createdIndexBuffer);
         }
 
         BasicTriangleRenderer renderer;
@@ -1540,7 +1583,8 @@ namespace vke {
         renderer.descriptorSetLayouts_ = std::move(layoutResources->descriptorSetLayouts);
         renderer.pipelineLayout_ = std::move(layoutResources->pipelineLayout);
         renderer.vertexBuffer_ = std::move(*vertexBuffer);
-        renderer.drawItem_ = desc.drawItem;
+        renderer.indexBuffer_ = std::move(indexBuffer);
+        renderer.drawItem_ = drawItem;
         return renderer;
     }
 
@@ -1607,7 +1651,12 @@ namespace vke {
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
                 }
-                recordTriangleDraw(frame, pipeline_.handle(), vertexBuffer_.handle(), drawItem_);
+                recordTriangleDraw(frame, pipeline_.handle(),
+                                   BasicDrawBuffers{
+                                       .vertex = vertexBuffer_.handle(),
+                                       .index = indexBuffer_.handle(),
+                                   },
+                                   drawItem_);
                 return {};
             });
 
@@ -1680,8 +1729,12 @@ namespace vke {
                     return std::unexpected{std::move(depthBinding.error())};
                 }
 
-                recordTriangleDraw(frame, pipeline_.handle(), vertexBuffer_.handle(), drawItem_,
-                                   depthBinding->vulkanImageView);
+                recordTriangleDraw(frame, pipeline_.handle(),
+                                   BasicDrawBuffers{
+                                       .vertex = vertexBuffer_.handle(),
+                                       .index = indexBuffer_.handle(),
+                                   },
+                                   drawItem_, depthBinding->vulkanImageView);
                 return {};
             });
 

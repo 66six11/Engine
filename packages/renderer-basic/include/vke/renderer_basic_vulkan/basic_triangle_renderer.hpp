@@ -18,6 +18,7 @@ namespace vke {
         VkDevice device{VK_NULL_HANDLE};
         VmaAllocator allocator{};
         std::filesystem::path shaderDirectory;
+        BasicMeshKind meshKind{BasicMeshKind::Triangle};
         BasicDrawItem drawItem{basicTriangleDrawItem()};
     };
 
@@ -99,6 +100,7 @@ namespace vke {
         VulkanPipelineLayout pipelineLayout_;
         VulkanGraphicsPipeline pipeline_;
         VulkanBuffer vertexBuffer_;
+        VulkanBuffer indexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
         std::vector<VulkanImage> transientImages_;
