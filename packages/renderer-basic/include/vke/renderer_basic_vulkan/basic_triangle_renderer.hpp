@@ -23,6 +23,7 @@ namespace vke {
 
     struct BasicDescriptorLayoutSmokeDesc {
         VkDevice device{VK_NULL_HANDLE};
+        VmaAllocator allocator{};
         std::filesystem::path shaderDirectory;
     };
 

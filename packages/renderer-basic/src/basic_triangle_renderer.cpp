@@ -633,6 +633,11 @@ namespace vke {
                 Error{ErrorDomain::Vulkan, 0,
                       "Cannot validate descriptor layout smoke without a device"}};
         }
+        if (desc.allocator == nullptr) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot validate descriptor layout smoke without an allocator"}};
+        }
 
         auto signature = validateDescriptorLayoutReflection(desc.shaderDirectory);
         if (!signature) {
@@ -643,6 +648,67 @@ namespace vke {
         if (!resources) {
             return std::unexpected{std::move(resources.error())};
         }
+
+        constexpr std::array<std::uint32_t, 4> uniformData{1, 2, 3, 4};
+        auto uniformBuffer = VulkanBuffer::create(VulkanBufferDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .size = sizeof(uniformData),
+            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+        });
+        if (!uniformBuffer) {
+            return std::unexpected{std::move(uniformBuffer.error())};
+        }
+        auto uploaded = uniformBuffer->upload(std::as_bytes(std::span{uniformData}));
+        if (!uploaded) {
+            return std::unexpected{std::move(uploaded.error())};
+        }
+
+        constexpr std::array poolSizes{
+            VulkanDescriptorPoolSize{
+                .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .count = 1,
+            },
+        };
+        auto descriptorPool = VulkanDescriptorPool::create(VulkanDescriptorPoolDesc{
+            .device = desc.device,
+            .maxSets = 1,
+            .poolSizes = poolSizes,
+        });
+        if (!descriptorPool) {
+            return std::unexpected{std::move(descriptorPool.error())};
+        }
+
+        if (resources->descriptorSetLayouts.empty()) {
+            return std::unexpected{Error{ErrorDomain::Vulkan, 0,
+                                         "Descriptor layout smoke produced no set layouts"}};
+        }
+        const std::array setLayouts{resources->descriptorSetLayouts.front().handle()};
+        auto descriptorSets = descriptorPool->allocate(VulkanDescriptorSetAllocationDesc{
+            .setLayouts = setLayouts,
+        });
+        if (!descriptorSets) {
+            return std::unexpected{std::move(descriptorSets.error())};
+        }
+        if (descriptorSets->size() != 1 || descriptorSets->front() == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Descriptor layout smoke failed to allocate one descriptor set"}};
+        }
+
+        const std::array descriptorWrites{
+            VulkanDescriptorBufferWrite{
+                .descriptorSet = descriptorSets->front(),
+                .binding = 0,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .buffer = uniformBuffer->handle(),
+                .offset = 0,
+                .range = uniformBuffer->size(),
+            },
+        };
+        updateVulkanDescriptorBuffers(desc.device, descriptorWrites);
 
         return {};
     }

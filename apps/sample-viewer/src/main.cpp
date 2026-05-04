@@ -522,6 +522,7 @@ namespace {
         auto validated =
             vke::validateBasicDescriptorLayoutSmoke(vke::BasicDescriptorLayoutSmokeDesc{
                 .device = context->device(),
+                .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
             });
         if (!validated) {
@@ -529,7 +530,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        std::cout << "Descriptor layout smoke: set 0 binding 0 constantBuffer fragment\n";
+        std::cout << "Descriptor layout smoke: set 0 binding 0 constantBuffer fragment allocated\n";
         window->requestClose();
         return EXIT_SUCCESS;
     }

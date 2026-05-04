@@ -74,7 +74,7 @@ flowchart TD
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
     ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor SPIR-V + reflection JSON"]
     RendererObject["BasicTriangleRenderer<br/>shader modules / pipeline layout / vertex buffer / pipeline<br/>BasicDrawItem"]
-    DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout"]
+    DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout<br/>descriptor pool / set / buffer write"]
 
     Start --> Args
     Args --> WindowSmoke
@@ -123,7 +123,8 @@ flowchart TD
 - `--smoke-triangle` 已接入 `BasicTriangleRenderer`、dynamic-rendering graphics pipeline、RenderGraph color write、draw、present。
 - `--smoke-depth-triangle` 已接入 `BasicTriangleRenderer::recordFrameWithDepth()`、transient depth image、
   dynamic-rendering depth attachment、depth-enabled pipeline 和 present。
-- `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout / pipeline layout 的创建验证。
+- `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout /
+  pipeline layout 的创建验证，并验证 descriptor pool、descriptor set allocation 和 uniform-buffer write。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译和 Vulkan adapter 字段验证入口。
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
   image view 和 binding 表，并录制非 backbuffer image transition / clear。
@@ -222,7 +223,9 @@ flowchart TD
 - `--smoke-depth-triangle` 已验证 `D32Sfloat` transient depth image、depth aspect binding、
   `Undefined -> DepthAttachmentWrite` transition、dynamic rendering depth attachment clear 和
   depth-enabled graphics pipeline。
-- `--smoke-descriptor-layout` 已验证 `descriptor_layout.slang` 的非空 reflection signature 可映射为固定 descriptor set layout 和 pipeline layout；当前只验证 layout 契约，不分配或绑定 descriptor set。
+- `--smoke-descriptor-layout` 已验证 `descriptor_layout.slang` 的非空 reflection signature 可映射为固定
+  descriptor set layout 和 pipeline layout，并能分配 descriptor set、写入 set 0 / binding 0 的 uniform
+  buffer descriptor；当前尚不在 draw call 中 bind descriptor set。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
   Vulkan resource；Backbuffer、`--smoke-transient` 的 transient color image 和
@@ -376,8 +379,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
-    Step1["下一步:<br/>descriptor binding + fullscreen pass"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set/write smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
+    Step1["下一步:<br/>image descriptor write + fullscreen pass"]
     Step2["之后:<br/>mesh asset / draw list MVP"]
     Step3["之后:<br/>deferred destruction / multi-view"]
 

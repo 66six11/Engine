@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <string_view>
+#include <vector>
 
 #include "vke/core/result.hpp"
 
@@ -59,6 +60,57 @@ namespace vke {
         VkDevice device_{VK_NULL_HANDLE};
         VkDescriptorSetLayout descriptorSetLayout_{VK_NULL_HANDLE};
     };
+
+    struct VulkanDescriptorPoolSize {
+        VkDescriptorType type{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER};
+        std::uint32_t count{};
+    };
+
+    struct VulkanDescriptorPoolDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        std::uint32_t maxSets{};
+        std::span<const VulkanDescriptorPoolSize> poolSizes;
+        VkDescriptorPoolCreateFlags flags{};
+    };
+
+    struct VulkanDescriptorSetAllocationDesc {
+        std::span<const VkDescriptorSetLayout> setLayouts;
+    };
+
+    struct VulkanDescriptorBufferWrite {
+        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+        std::uint32_t binding{};
+        std::uint32_t arrayElement{};
+        VkDescriptorType descriptorType{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER};
+        VkBuffer buffer{VK_NULL_HANDLE};
+        VkDeviceSize offset{};
+        VkDeviceSize range{VK_WHOLE_SIZE};
+    };
+
+    class VulkanDescriptorPool {
+    public:
+        VulkanDescriptorPool() = default;
+        VulkanDescriptorPool(const VulkanDescriptorPool&) = delete;
+        VulkanDescriptorPool& operator=(const VulkanDescriptorPool&) = delete;
+        VulkanDescriptorPool(VulkanDescriptorPool&& other) noexcept;
+        VulkanDescriptorPool& operator=(VulkanDescriptorPool&& other) noexcept;
+        ~VulkanDescriptorPool();
+
+        [[nodiscard]] static Result<VulkanDescriptorPool>
+        create(const VulkanDescriptorPoolDesc& desc);
+        [[nodiscard]] Result<std::vector<VkDescriptorSet>>
+        allocate(const VulkanDescriptorSetAllocationDesc& desc) const;
+        [[nodiscard]] VkDescriptorPool handle() const;
+
+    private:
+        void destroy();
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VkDescriptorPool descriptorPool_{VK_NULL_HANDLE};
+    };
+
+    void updateVulkanDescriptorBuffers(VkDevice device,
+                                       std::span<const VulkanDescriptorBufferWrite> writes);
 
     struct VulkanPipelineLayoutDesc {
         VkDevice device{VK_NULL_HANDLE};

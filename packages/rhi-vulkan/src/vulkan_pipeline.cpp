@@ -127,6 +127,136 @@ namespace vke {
         return descriptorSetLayout_;
     }
 
+    VulkanDescriptorPool::VulkanDescriptorPool(VulkanDescriptorPool&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanDescriptorPool&
+    VulkanDescriptorPool::operator=(VulkanDescriptorPool&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        destroy();
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        descriptorPool_ = std::exchange(other.descriptorPool_, VK_NULL_HANDLE);
+        return *this;
+    }
+
+    VulkanDescriptorPool::~VulkanDescriptorPool() {
+        destroy();
+    }
+
+    void VulkanDescriptorPool::destroy() {
+        if (descriptorPool_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+        }
+
+        device_ = VK_NULL_HANDLE;
+        descriptorPool_ = VK_NULL_HANDLE;
+    }
+
+    Result<VulkanDescriptorPool>
+    VulkanDescriptorPool::create(const VulkanDescriptorPoolDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE || desc.maxSets == 0 || desc.poolSizes.empty()) {
+            return std::unexpected{
+                vulkanError("Cannot create a Vulkan descriptor pool from incomplete inputs")};
+        }
+
+        std::vector<VkDescriptorPoolSize> poolSizes;
+        poolSizes.reserve(desc.poolSizes.size());
+        for (const VulkanDescriptorPoolSize& poolSize : desc.poolSizes) {
+            if (poolSize.count == 0) {
+                return std::unexpected{
+                    vulkanError("Cannot create a Vulkan descriptor pool with an empty pool size")};
+            }
+
+            poolSizes.push_back(VkDescriptorPoolSize{
+                .type = poolSize.type,
+                .descriptorCount = poolSize.count,
+            });
+        }
+
+        VkDescriptorPoolCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        createInfo.flags = desc.flags;
+        createInfo.maxSets = desc.maxSets;
+        createInfo.poolSizeCount = static_cast<std::uint32_t>(poolSizes.size());
+        createInfo.pPoolSizes = poolSizes.data();
+
+        VulkanDescriptorPool descriptorPool;
+        descriptorPool.device_ = desc.device;
+        const VkResult result = vkCreateDescriptorPool(desc.device, &createInfo, nullptr,
+                                                       &descriptorPool.descriptorPool_);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vulkanError("Failed to create Vulkan descriptor pool", result)};
+        }
+
+        return descriptorPool;
+    }
+
+    Result<std::vector<VkDescriptorSet>>
+    VulkanDescriptorPool::allocate(const VulkanDescriptorSetAllocationDesc& desc) const {
+        if (device_ == VK_NULL_HANDLE || descriptorPool_ == VK_NULL_HANDLE ||
+            desc.setLayouts.empty()) {
+            return std::unexpected{
+                vulkanError("Cannot allocate Vulkan descriptor sets from incomplete inputs")};
+        }
+
+        std::vector<VkDescriptorSet> descriptorSets(desc.setLayouts.size(), VK_NULL_HANDLE);
+        VkDescriptorSetAllocateInfo allocateInfo{};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocateInfo.descriptorPool = descriptorPool_;
+        allocateInfo.descriptorSetCount = static_cast<std::uint32_t>(desc.setLayouts.size());
+        allocateInfo.pSetLayouts = desc.setLayouts.data();
+
+        const VkResult result = vkAllocateDescriptorSets(device_, &allocateInfo,
+                                                         descriptorSets.data());
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vulkanError("Failed to allocate Vulkan descriptor sets", result)};
+        }
+
+        return descriptorSets;
+    }
+
+    VkDescriptorPool VulkanDescriptorPool::handle() const {
+        return descriptorPool_;
+    }
+
+    void updateVulkanDescriptorBuffers(
+        VkDevice device, std::span<const VulkanDescriptorBufferWrite> writes) {
+        std::vector<VkDescriptorBufferInfo> bufferInfos;
+        bufferInfos.reserve(writes.size());
+        std::vector<VkWriteDescriptorSet> descriptorWrites;
+        descriptorWrites.reserve(writes.size());
+
+        for (const VulkanDescriptorBufferWrite& write : writes) {
+            bufferInfos.push_back(VkDescriptorBufferInfo{
+                .buffer = write.buffer,
+                .offset = write.offset,
+                .range = write.range,
+            });
+
+            descriptorWrites.push_back(VkWriteDescriptorSet{
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = write.descriptorSet,
+                .dstBinding = write.binding,
+                .dstArrayElement = write.arrayElement,
+                .descriptorCount = 1,
+                .descriptorType = write.descriptorType,
+                .pImageInfo = nullptr,
+                .pBufferInfo = &bufferInfos.back(),
+                .pTexelBufferView = nullptr,
+            });
+        }
+
+        vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(descriptorWrites.size()),
+                               descriptorWrites.data(), 0, nullptr);
+    }
+
     VulkanPipelineLayout::VulkanPipelineLayout(VulkanPipelineLayout&& other) noexcept {
         *this = std::move(other);
     }
