@@ -37,7 +37,7 @@ namespace {
                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
                      "[--smoke-triangle] [--smoke-depth-triangle] "
-                     "[--smoke-descriptor-layout]\n";
+                     "[--smoke-descriptor-layout] [--smoke-fullscreen-texture]\n";
     }
 
     bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
@@ -531,6 +531,102 @@ namespace {
         }
 
         std::cout << "Descriptor layout smoke: set 0 bindings 0-2 buffer/image/sampler allocated\n";
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeFullscreenTexture() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = vke::GlfwWindow::create(
+            *glfw, vke::WindowDesc{.title = "VkEngine Fullscreen Texture Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Fullscreen Texture Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = vke::VulkanFrameLoop::create(
+            *context, vke::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.0F, 0.0F, 0.0F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            vke::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto renderer =
+            vke::BasicFullscreenTextureRenderer::create(vke::BasicFullscreenTextureRendererDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+            });
+        if (!renderer) {
+            vke::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(
+                [&renderer](const vke::VulkanFrameRecordContext& recordContext) {
+                    return renderer->recordFrame(recordContext);
+                });
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during fullscreen texture smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered fullscreen texture frames: " << extent.width << 'x' << extent.height
+                  << '\n';
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            vke::logError("Failed to wait for Vulkan queue before fullscreen texture teardown: " +
+                          vke::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
         window->requestClose();
         return EXIT_SUCCESS;
     }
@@ -1246,6 +1342,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-descriptor-layout")) {
             return runSmokeDescriptorLayout();
+        }
+
+        if (hasArg(args, "--smoke-fullscreen-texture")) {
+            return runSmokeFullscreenTexture();
         }
 
         printVersion();

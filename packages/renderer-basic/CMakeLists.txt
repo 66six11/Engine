@@ -36,6 +36,15 @@ set(VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_SOURCE
 set(VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_MANIFEST
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/descriptor_layout.shader.json"
 )
+set(VKE_RENDERER_BASIC_DESCRIPTOR_VERT_SPV
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.vert.spv"
+)
+set(VKE_RENDERER_BASIC_DESCRIPTOR_VERT_METADATA
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.vert.metadata.json"
+)
+set(VKE_RENDERER_BASIC_DESCRIPTOR_VERT_REFLECTION
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.vert.reflection.json"
+)
 set(VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_SPV
     "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.frag.spv"
 )
@@ -66,6 +75,16 @@ vke_add_slang_shader(vke-renderer-basic-triangle-frag
     DEPENDS "${VKE_RENDERER_BASIC_TRIANGLE_SHADER_MANIFEST}"
 )
 
+vke_add_slang_shader(vke-renderer-basic-descriptor-vert
+    SOURCE "${VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_SOURCE}"
+    ENTRY descriptorVertexMain
+    STAGE vertex
+    OUTPUT "${VKE_RENDERER_BASIC_DESCRIPTOR_VERT_SPV}"
+    METADATA_OUTPUT "${VKE_RENDERER_BASIC_DESCRIPTOR_VERT_METADATA}"
+    REFLECTION_OUTPUT "${VKE_RENDERER_BASIC_DESCRIPTOR_VERT_REFLECTION}"
+    DEPENDS "${VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_MANIFEST}"
+)
+
 vke_add_slang_shader(vke-renderer-basic-descriptor-frag
     SOURCE "${VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_SOURCE}"
     ENTRY descriptorFragmentMain
@@ -80,6 +99,7 @@ add_custom_target(vke-renderer-basic-shaders
     DEPENDS
         vke-renderer-basic-triangle-vert
         vke-renderer-basic-triangle-frag
+        vke-renderer-basic-descriptor-vert
         vke-renderer-basic-descriptor-frag
 )
 

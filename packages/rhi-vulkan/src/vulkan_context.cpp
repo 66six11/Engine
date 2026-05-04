@@ -395,6 +395,7 @@ namespace vke {
                                       std::uint32_t graphicsQueueFamily,
                                       VkPhysicalDeviceVulkan11Features features11,
                                       VkPhysicalDeviceVulkan13Features features13,
+                                      VkPhysicalDeviceVulkan14Features features14,
                                       bool enableSwapchain) {
             constexpr float kQueuePriority = 1.0F;
 
@@ -408,6 +409,7 @@ namespace vke {
             features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
             features2.pNext = &features11;
             features11.pNext = &features13;
+            features13.pNext = &features14;
 
             VkDeviceCreateInfo createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -634,10 +636,14 @@ namespace vke {
         VkPhysicalDeviceVulkan13Features features13{};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 
+        VkPhysicalDeviceVulkan14Features features14{};
+        features14.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
+
         VkPhysicalDeviceFeatures2 queriedFeatures{};
         queriedFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         queriedFeatures.pNext = &features11;
         features11.pNext = &features13;
+        features13.pNext = &features14;
         vkGetPhysicalDeviceFeatures2(selected.device, &queriedFeatures);
 
         if (features13.synchronization2 != VK_TRUE || features13.dynamicRendering != VK_TRUE) {
@@ -658,8 +664,12 @@ namespace vke {
         features13.synchronization2 = VK_TRUE;
         features13.dynamicRendering = VK_TRUE;
 
+        features14 = {};
+        features14.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
+
         auto device = createDevice(selected.device, selected.queues.graphicsFamily, features11,
-                                   features13, context.surface_ != VK_NULL_HANDLE);
+                                   features13, features14,
+                                   context.surface_ != VK_NULL_HANDLE);
         if (!device) {
             return std::unexpected{std::move(device.error())};
         }

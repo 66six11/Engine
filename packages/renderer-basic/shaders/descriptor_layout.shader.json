@@ -3,6 +3,13 @@
   "source": "descriptor_layout.slang",
   "outputs": [
     {
+      "entry": "descriptorVertexMain",
+      "stage": "vertex",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "descriptor_layout.vert.spv"
+    },
+    {
       "entry": "descriptorFragmentMain",
       "stage": "fragment",
       "profile": "glsl_450",

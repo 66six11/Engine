@@ -10,7 +10,8 @@
 
 - 无参数 sample viewer 可以持续渲染 triangle。
 - `--smoke-frame`、`--smoke-rendergraph`、`--smoke-dynamic-rendering`、`--smoke-resize`、
-  `--smoke-triangle`、`--smoke-depth-triangle`、`--smoke-descriptor-layout` 已作为回归入口。
+  `--smoke-triangle`、`--smoke-depth-triangle`、`--smoke-descriptor-layout`、
+  `--smoke-fullscreen-texture` 已作为回归入口。
 - Slang shader 构建会输出 SPIR-V、执行 `spirv-val`，并生成记录工具路径和版本的 metadata。
 - `packages/shader-slang/tools/slang_reflect.cpp` 已接入 Slang API reflection，triangle shader
   会生成 `basic_triangle.vert.reflection.json` 和 `basic_triangle.frag.reflection.json`。
@@ -21,6 +22,8 @@
 - `rhi-vulkan` 已提供最小 descriptor pool / descriptor set allocation / buffer + sampled image +
   sampler descriptor write helper；`--smoke-descriptor-layout` 已从 layout-only smoke 扩展为
   layout + pool + set + descriptor write 验证。
+- `--smoke-fullscreen-texture` 已把 descriptor set bind、sampled image descriptor update 和 fullscreen
+  dynamic-rendering draw 接入真实 Vulkan 录制路径。
 - RenderGraph pass 已具备可选 `type` 字段和 `RenderGraphExecutorRegistry` 执行入口。当前它是
   C++ 快速路径和 typed pass 分发点，后续会演进为脚本/工具前端可生成的 pass 声明、参数和受控
   command context 的共同入口。
@@ -97,7 +100,7 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | 6 | PrepareBackend transient allocation | 已增加 Vulkan image/image view RAII、VMA-backed transient image 创建、usage/aspect 推导和 binding 表接入 | `--smoke-transient` 已升级为真实 transient VkImage 录制路径，validation 无 error/warning |
 | 7 | Depth attachment MVP | 已增加 dynamic rendering depth attachment、`D32Sfloat` transient depth image、depth aspect binding 和 depth-enabled pipeline | `--smoke-depth-triangle` 已接入，validation 无 error/warning |
 | 8 | 受控 command context skeleton | 已增加 `RenderGraphCommandList`、`RenderGraphCommand`、compiled pass command summary、executor context command span 和 debug table 输出；`--smoke-rendergraph` 已覆盖 clear、set shader、set texture、float/vec4 参数和 fullscreen draw summary | command summary 可审查；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
-| 9 | Descriptor binding / fullscreen pass | 已增加最小 descriptor pool、descriptor set allocation、uniform-buffer write、sampled-image write 和 sampler write；下一步把 pipeline bind、descriptor bind 和 fullscreen draw 接上，让 `setTexture + drawFullscreenTriangle` 从 debug IR 走向真实 Vulkan 执行 | `--smoke-descriptor-layout` 已验证 descriptor set 分配和 buffer/image/sampler write；后续新增 `--smoke-fullscreen-texture` 或等价 smoke，验证 shader 真实采样声明资源 |
+| 9 | Descriptor binding / fullscreen pass | 已增加最小 descriptor pool、descriptor set allocation、uniform-buffer write、sampled-image write、sampler write、descriptor bind 和 fullscreen dynamic-rendering draw；下一步把该 smoke 路径收紧为可复用的 pass schema / params / pipeline key | `--smoke-descriptor-layout` 已验证 descriptor set 分配和 buffer/image/sampler write；`--smoke-fullscreen-texture` 已验证 shader 真实采样 transient source image |
 | 10 | Mesh asset / draw list 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload；必要时引入简化 draw list，而不是先暴露逐 object 脚本 draw loop | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |
 
 ## RenderGraph 脚本前置原则
@@ -112,8 +115,9 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 - `pass.type` 命名优先使用执行模型，例如 `builtin.transfer-clear`、`builtin.raster-fullscreen`、
   `builtin.raster-draw-list`、`builtin.compute-dispatch`；业务语义放在 `pass.name`、params 或后续 feature
   层，避免退化成大量不可优化的业务字符串 executor。
-- command context skeleton 第一版只作为 debug IR/summary；在 descriptor binding、pipeline key 和 resource
-  state 完整前，不承诺 `setTexture` 或 fullscreen draw 能真实落到 Vulkan。
+- command context skeleton 第一版仍主要作为 debug IR/summary；`--smoke-fullscreen-texture` 已验证
+  `setTexture` / fullscreen draw 的最小 Vulkan 路径，后续需要把 descriptor binding、pipeline key 和
+  typed params 从 smoke 形态收敛为稳定执行模型。
 
 近期 API 形态应先在 C++ 中验证，例如：
 
@@ -138,8 +142,9 @@ graph.addRasterPass("BloomPrefilter")
 ```
 
 第一版 compiler 不需要理解每条命令的全部语义，只要求资源访问已在 pass builder 上显式声明；
-命令列表用于后续 pipeline/descriptor/debug 规划，并避免脚本直接触碰 Vulkan API。真实执行应等
-descriptor binding、pipeline key、resource state 和 Vulkan adapter 全部具备后再接入。
+命令列表用于后续 pipeline/descriptor/debug 规划，并避免脚本直接触碰 Vulkan API。当前已有最小
+fullscreen texture 真实执行 smoke；通用执行仍应等 pipeline key、typed params、resource state 和
+Vulkan adapter 边界收紧后再扩大。
 
 ## RenderGraph 编译性能原则
 
@@ -364,7 +369,8 @@ Descriptor/Layout 契约已开始消费 reflection JSON。当前实现会在
 后续范围：
 
 - descriptor pool / descriptor set allocation / uniform-buffer / sampled-image / sampler write 已有
-  最小 RHI wrapper；下一步补 descriptor bind 和 fullscreen texture smoke，再进入 material/resource binding。
+  最小 RHI wrapper；descriptor bind 和 fullscreen texture smoke 已接入，下一步先收紧 fullscreen pass
+  schema/params/pipeline key，再进入 material/resource binding。
 - 在进入 descriptor binding 前，先让 RenderGraph pass 拥有 named resource slots 和 typed params，
   避免后续 fullscreen/postprocess pass 只能依赖位置参数或 ad hoc callback capture。
 - 在进入 fullscreen/postprocess 前，先扩展 `ShaderRead` 等抽象 state 和 Vulkan access/layout 翻译；

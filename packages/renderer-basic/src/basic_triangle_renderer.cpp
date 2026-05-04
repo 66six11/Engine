@@ -486,6 +486,37 @@ namespace vke {
             return signature;
         }
 
+        [[nodiscard]] Result<ShaderResourceSignature>
+        validateFullscreenTextureReflection(const std::filesystem::path& shaderDirectory) {
+            auto vertexReflection =
+                readShaderReflection(shaderDirectory / "descriptor_layout.vert.reflection.json");
+            if (!vertexReflection) {
+                return std::unexpected{std::move(vertexReflection.error())};
+            }
+            auto fragmentSignature = validateDescriptorLayoutReflection(shaderDirectory);
+            if (!fragmentSignature) {
+                return std::unexpected{std::move(fragmentSignature.error())};
+            }
+
+            auto vertexEntry = expectString(vertexReflection->entry, "descriptorVertexMain",
+                                            "Fullscreen vertex shader reflection entry");
+            if (!vertexEntry) {
+                return std::unexpected{std::move(vertexEntry.error())};
+            }
+            auto vertexStage = expectString(vertexReflection->stage, "vertex",
+                                            "Fullscreen vertex shader reflection stage");
+            if (!vertexStage) {
+                return std::unexpected{std::move(vertexStage.error())};
+            }
+            auto vertexInputCount =
+                expectUint(static_cast<std::uint32_t>(vertexReflection->vertexInputs.size()), 0,
+                           "Fullscreen vertex shader input count");
+            if (!vertexInputCount) {
+                return std::unexpected{std::move(vertexInputCount.error())};
+            }
+            return *fragmentSignature;
+        }
+
         void recordTransferClear(const VulkanFrameRecordContext& frame) {
             VkImageSubresourceRange clearRange{};
             clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -583,6 +614,53 @@ namespace vke {
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
             vkCmdDraw(frame.commandBuffer, drawItem.vertexCount, drawItem.instanceCount,
                       drawItem.firstVertex, drawItem.firstInstance);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
+        void recordFullscreenTextureDraw(const VulkanFrameRecordContext& frame,
+                                         VkPipeline pipeline,
+                                         VkPipelineLayout pipelineLayout,
+                                         VkDescriptorSet descriptorSet) {
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = frame.imageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            colorAttachment.clearValue = VkClearValue{
+                .color = VkClearColorValue{{0.0F, 0.0F, 0.0F, 1.0F}},
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = frame.extent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachments = &colorAttachment;
+
+            const VkViewport viewport{
+                .x = 0.0F,
+                .y = 0.0F,
+                .width = static_cast<float>(frame.extent.width),
+                .height = static_cast<float>(frame.extent.height),
+                .minDepth = 0.0F,
+                .maxDepth = 1.0F,
+            };
+            const VkRect2D scissor{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = frame.extent,
+            };
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdBindDescriptorSets(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+            vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
+            vkCmdDraw(frame.commandBuffer, 3, 1, 0, 0);
             vkCmdEndRendering(frame.commandBuffer);
         }
 
@@ -812,6 +890,331 @@ namespace vke {
         updateVulkanDescriptorImages(desc.device, imageDescriptorWrites);
 
         return {};
+    }
+
+    BasicFullscreenTextureRenderer::BasicFullscreenTextureRenderer(
+        BasicFullscreenTextureRenderer&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    BasicFullscreenTextureRenderer& BasicFullscreenTextureRenderer::operator=(
+        BasicFullscreenTextureRenderer&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        allocator_ = std::exchange(other.allocator_, nullptr);
+        vertexShader_ = std::move(other.vertexShader_);
+        fragmentShader_ = std::move(other.fragmentShader_);
+        descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
+        pipelineLayout_ = std::move(other.pipelineLayout_);
+        pipeline_ = std::move(other.pipeline_);
+        pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
+        descriptorPool_ = std::move(other.descriptorPool_);
+        descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
+        uniformBuffer_ = std::move(other.uniformBuffer_);
+        sampler_ = std::move(other.sampler_);
+        transientImages_ = std::move(other.transientImages_);
+        transientImageViews_ = std::move(other.transientImageViews_);
+        return *this;
+    }
+
+    Result<BasicFullscreenTextureRenderer>
+    BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot create fullscreen texture renderer without a device"}};
+        }
+        if (desc.allocator == nullptr) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot create fullscreen texture renderer without an allocator"}};
+        }
+
+        auto signature = validateFullscreenTextureReflection(desc.shaderDirectory);
+        if (!signature) {
+            return std::unexpected{std::move(signature.error())};
+        }
+        auto resources = createPipelineLayoutResources(desc.device, *signature);
+        if (!resources) {
+            return std::unexpected{std::move(resources.error())};
+        }
+        if (resources->descriptorSetLayouts.empty()) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Fullscreen texture renderer produced no descriptor set layout"}};
+        }
+
+        auto vertexCode = readSpirvFile(desc.shaderDirectory / "descriptor_layout.vert.spv");
+        if (!vertexCode) {
+            return std::unexpected{std::move(vertexCode.error())};
+        }
+        auto fragmentCode = readSpirvFile(desc.shaderDirectory / "descriptor_layout.frag.spv");
+        if (!fragmentCode) {
+            return std::unexpected{std::move(fragmentCode.error())};
+        }
+
+        auto vertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+            .device = desc.device,
+            .code = *vertexCode,
+        });
+        if (!vertexShader) {
+            return std::unexpected{std::move(vertexShader.error())};
+        }
+        auto fragmentShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+            .device = desc.device,
+            .code = *fragmentCode,
+        });
+        if (!fragmentShader) {
+            return std::unexpected{std::move(fragmentShader.error())};
+        }
+
+        constexpr std::array tint{1.0F, 1.0F, 1.0F, 1.0F};
+        auto uniformBuffer = VulkanBuffer::create(VulkanBufferDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .size = sizeof(tint),
+            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+        });
+        if (!uniformBuffer) {
+            return std::unexpected{std::move(uniformBuffer.error())};
+        }
+        auto uploaded = uniformBuffer->upload(std::as_bytes(std::span{tint}));
+        if (!uploaded) {
+            return std::unexpected{std::move(uploaded.error())};
+        }
+
+        auto sampler = VulkanSampler::create(VulkanSamplerDesc{.device = desc.device});
+        if (!sampler) {
+            return std::unexpected{std::move(sampler.error())};
+        }
+
+        constexpr std::array poolSizes{
+            VulkanDescriptorPoolSize{
+                .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .count = 1,
+            },
+            VulkanDescriptorPoolSize{
+                .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                .count = 1,
+            },
+            VulkanDescriptorPoolSize{
+                .type = VK_DESCRIPTOR_TYPE_SAMPLER,
+                .count = 1,
+            },
+        };
+        auto descriptorPool = VulkanDescriptorPool::create(VulkanDescriptorPoolDesc{
+            .device = desc.device,
+            .maxSets = 1,
+            .poolSizes = poolSizes,
+        });
+        if (!descriptorPool) {
+            return std::unexpected{std::move(descriptorPool.error())};
+        }
+
+        const std::array setLayouts{resources->descriptorSetLayouts.front().handle()};
+        auto descriptorSets = descriptorPool->allocate(VulkanDescriptorSetAllocationDesc{
+            .setLayouts = setLayouts,
+        });
+        if (!descriptorSets) {
+            return std::unexpected{std::move(descriptorSets.error())};
+        }
+        if (descriptorSets->size() != 1 || descriptorSets->front() == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Fullscreen texture renderer failed to allocate one descriptor set"}};
+        }
+
+        const std::array bufferWrites{
+            VulkanDescriptorBufferWrite{
+                .descriptorSet = descriptorSets->front(),
+                .binding = 0,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .buffer = uniformBuffer->handle(),
+                .offset = 0,
+                .range = uniformBuffer->size(),
+            },
+        };
+        updateVulkanDescriptorBuffers(desc.device, bufferWrites);
+
+        const std::array samplerWrites{
+            VulkanDescriptorImageWrite{
+                .descriptorSet = descriptorSets->front(),
+                .binding = 2,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+                .imageView = VK_NULL_HANDLE,
+                .sampler = sampler->handle(),
+                .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            },
+        };
+        updateVulkanDescriptorImages(desc.device, samplerWrites);
+
+        BasicFullscreenTextureRenderer renderer;
+        renderer.device_ = desc.device;
+        renderer.allocator_ = desc.allocator;
+        renderer.vertexShader_ = std::move(*vertexShader);
+        renderer.fragmentShader_ = std::move(*fragmentShader);
+        renderer.descriptorSetLayouts_ = std::move(resources->descriptorSetLayouts);
+        renderer.pipelineLayout_ = std::move(resources->pipelineLayout);
+        renderer.descriptorPool_ = std::move(*descriptorPool);
+        renderer.descriptorSet_ = descriptorSets->front();
+        renderer.uniformBuffer_ = std::move(*uniformBuffer);
+        renderer.sampler_ = std::move(*sampler);
+        return renderer;
+    }
+
+    Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat) {
+        if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat) {
+            return {};
+        }
+
+        auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
+            .device = device_,
+            .layout = pipelineLayout_.handle(),
+            .vertexShader = vertexShader_.handle(),
+            .fragmentShader = fragmentShader_.handle(),
+            .vertexEntryPoint = "main",
+            .fragmentEntryPoint = "main",
+            .colorFormat = colorFormat,
+            .vertexBindings = {},
+            .vertexAttributes = {},
+        });
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+
+        pipeline_ = std::move(*pipeline);
+        pipelineFormat_ = colorFormat;
+        return {};
+    }
+
+    Result<void> BasicFullscreenTextureRenderer::updateSourceDescriptor(
+        VkImageView sourceImageView) {
+        if (descriptorSet_ == VK_NULL_HANDLE || sourceImageView == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot update fullscreen source descriptor from incomplete inputs"}};
+        }
+
+        const std::array imageWrites{
+            VulkanDescriptorImageWrite{
+                .descriptorSet = descriptorSet_,
+                .binding = 1,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                .imageView = sourceImageView,
+                .sampler = VK_NULL_HANDLE,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            },
+        };
+        updateVulkanDescriptorImages(device_, imageWrites);
+        return {};
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicFullscreenTextureRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
+        auto pipeline = ensurePipeline(frame.format);
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+
+        transientImageViews_.clear();
+        transientImages_.clear();
+
+        RenderGraph graph;
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const auto source = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "FullscreenSource",
+            .format = basicRenderGraphImageFormat(frame.format),
+            .extent = basicRenderGraphExtent(frame.extent),
+        });
+
+        std::vector<VulkanRenderGraphImageBinding> bindings;
+        bindings.reserve(2);
+        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+
+        graph.addPass("ClearFullscreenSource", "builtin.transfer-clear")
+            .writeTransfer("target", source)
+            .execute([&frame, &bindings, source](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto sourceBinding = findVulkanRenderGraphImage(source, bindings);
+                if (!sourceBinding) {
+                    return std::unexpected{std::move(sourceBinding.error())};
+                }
+
+                const VkClearColorValue sourceColor{{0.18F, 0.36F, 0.95F, 1.0F}};
+                VkImageSubresourceRange clearRange{};
+                clearRange.aspectMask = sourceBinding->aspectMask;
+                clearRange.baseMipLevel = 0;
+                clearRange.levelCount = 1;
+                clearRange.baseArrayLayer = 0;
+                clearRange.layerCount = 1;
+                vkCmdClearColorImage(frame.commandBuffer, sourceBinding->vulkanImage,
+                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &sourceColor, 1,
+                                     &clearRange);
+                return {};
+            });
+
+        graph.addPass("FullscreenTexture", "builtin.raster-fullscreen")
+            .readTexture("source", source, RenderGraphShaderStage::Fragment)
+            .writeColor("target", backbuffer)
+            .execute([&frame, &bindings, source, this](
+                         RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto sourceBinding = findVulkanRenderGraphImage(source, bindings);
+                if (!sourceBinding) {
+                    return std::unexpected{std::move(sourceBinding.error())};
+                }
+                auto descriptor = updateSourceDescriptor(sourceBinding->vulkanImageView);
+                if (!descriptor) {
+                    return std::unexpected{std::move(descriptor.error())};
+                }
+
+                recordFullscreenTextureDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
+                                            descriptorSet_);
+                return {};
+            });
+
+        auto compiled = graph.compile();
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto prepared = prepareTransientResources(device_, allocator_, *compiled, bindings,
+                                                  transientImages_, transientImageViews_);
+        if (!prepared) {
+            return std::unexpected{std::move(prepared.error())};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+
+        return VulkanFrameRecordResult{
+            .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        };
     }
 
     BasicTriangleRenderer::BasicTriangleRenderer(BasicTriangleRenderer&& other) noexcept {
