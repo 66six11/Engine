@@ -1,4 +1,5 @@
 ﻿#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <exception>
@@ -770,6 +771,45 @@ namespace {
         return true;
     }
 
+    bool validateSmokeRenderGraphCommands(const vke::RenderGraphCompileResult& compiled) {
+        if (compiled.passes.size() != 6) {
+            vke::logError("Render graph command smoke received an unexpected pass count.");
+            return false;
+        }
+
+        const auto& clearCommands = compiled.passes[0].commands;
+        if (clearCommands.size() != 1 ||
+            clearCommands.front().kind != vke::RenderGraphCommandKind::ClearColor ||
+            clearCommands.front().name != "target") {
+            vke::logError("Render graph clear command summary contained unexpected fields.");
+            return false;
+        }
+
+        const auto& sampleCommands = compiled.passes[1].commands;
+        if (sampleCommands.size() != 4 ||
+            sampleCommands[0].kind != vke::RenderGraphCommandKind::SetShader ||
+            sampleCommands[0].name != "Hidden/SmokeSample" ||
+            sampleCommands[1].kind != vke::RenderGraphCommandKind::SetTexture ||
+            sampleCommands[1].secondaryName != "source" ||
+            sampleCommands[2].kind != vke::RenderGraphCommandKind::SetFloat ||
+            sampleCommands[3].kind != vke::RenderGraphCommandKind::DrawFullscreenTriangle) {
+            vke::logError("Render graph sample command summary contained unexpected fields.");
+            return false;
+        }
+
+        const auto& transientCommands = compiled.passes[5].commands;
+        if (transientCommands.size() != 4 ||
+            transientCommands[0].kind != vke::RenderGraphCommandKind::SetShader ||
+            transientCommands[1].kind != vke::RenderGraphCommandKind::SetTexture ||
+            transientCommands[2].kind != vke::RenderGraphCommandKind::SetVec4 ||
+            transientCommands[3].kind != vke::RenderGraphCommandKind::DrawFullscreenTriangle) {
+            vke::logError("Render graph transient command summary contained unexpected fields.");
+            return false;
+        }
+
+        return true;
+    }
+
     bool hasNoDepthSlots(vke::RenderGraphPassContext context) {
         return context.depthReads.empty() && context.depthWrites.empty() &&
                context.depthSampledReads.empty() && context.depthReadSlots.empty() &&
@@ -985,10 +1025,19 @@ namespace {
         int callbackCount = 0;
         graph.addPass("ClearColor", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
-            .writeTransfer("target", backbuffer);
+            .writeTransfer("target", backbuffer)
+            .recordCommands([](vke::RenderGraphCommandList& commands) {
+                commands.clearColor("target", std::array{0.02F, 0.12F, 0.18F, 1.0F});
+            });
         graph.addPass("SampleColor", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
-            .readTexture("source", backbuffer, vke::RenderGraphShaderStage::Fragment);
+            .readTexture("source", backbuffer, vke::RenderGraphShaderStage::Fragment)
+            .recordCommands([](vke::RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/SmokeSample", "Fragment")
+                    .setTexture("SourceTex", "source")
+                    .setFloat("Exposure", 1.0F)
+                    .drawFullscreenTriangle();
+            });
         graph.addPass("WriteDepth", "basic.depth-write")
             .setParamsType("basic.depth-write.params")
             .writeDepth("depth", depthBuffer);
@@ -1000,7 +1049,13 @@ namespace {
             .writeColor("target", transientColor);
         graph.addPass("SampleTransientColor", "basic.transient-sample-fragment")
             .setParamsType("basic.transient-sample-fragment.params")
-            .readTexture("source", transientColor, vke::RenderGraphShaderStage::Fragment);
+            .readTexture("source", transientColor, vke::RenderGraphShaderStage::Fragment)
+            .recordCommands([](vke::RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/TransientSample", "Fragment")
+                    .setTexture("SourceTex", "source")
+                    .setVec4("Tint", std::array{1.0F, 0.85F, 0.65F, 1.0F})
+                    .drawFullscreenTriangle();
+            });
 
         vke::RenderGraphSchemaRegistry schemas;
         schemas.registerSchema(vke::RenderGraphPassSchema{
@@ -1104,6 +1159,10 @@ namespace {
         std::cout << graph.formatDebugTables(*compiled) << '\n';
 
         if (!validateSmokeRenderGraphTransientPlan(*compiled)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphCommands(*compiled)) {
             return EXIT_FAILURE;
         }
 

@@ -264,6 +264,7 @@ flowchart TD
     AddPass["addPass(name, type)"]
     Writes["writeColor / writeTransfer"]
     Callback["execute(callback)<br/>可选 C++ 快速路径"]
+    Commands["command summary<br/>ClearColor / SetShader / SetTexture / DrawFullscreenTriangle"]
     Registry["RenderGraphExecutorRegistry<br/>按 pass type 查找 executor"]
     Compile["compile()"]
     Track["按 image 当前 state 追踪转换"]
@@ -273,8 +274,10 @@ flowchart TD
     Execute["execute(compiled)<br/>或 execute(compiled, registry)"]
     Callbacks["按编译后 pass 顺序调用 callback/executor"]
 
-    Import --> AddPass --> Writes --> Callback
+    Import --> AddPass --> Writes --> Commands
+    Writes --> Callback
     Writes --> Registry
+    Commands --> Compile
     Callback --> Compile --> Track --> PassPlan --> Final
     Final --> DebugTables
     Compile --> Execute
@@ -333,6 +336,9 @@ flowchart TD
 - `pass.type` 是当前 typed executor key，并会继续演进为执行模型 / pass opcode。它不等同于
   RenderQueue 或 shader tag；脚本/工具未来应通过同一套 C++ builder 语义生成 pass 声明、资源访问、
   typed params 和受控 command context。
+- 受控 command context skeleton 已接入：`RenderGraphCommandList` 可记录后端无关的 command summary，
+  当前覆盖 clear、shader/pass 名称、texture slot binding、标量/向量参数和 fullscreen triangle draw。
+  command summary 会进入 compiled pass、executor context 和 debug table；当前不执行 Vulkan 命令。
 
 ## RenderGraph 到 Vulkan 的翻译流程
 
@@ -361,8 +367,8 @@ flowchart TD
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
-- `--smoke-rendergraph` 已输出 resources、passes、slots、transitions、transients 的 Markdown 调试表格，并验证
-  pass type、params type、slot schema 和 transient lifetime plan。
+- `--smoke-rendergraph` 已输出 resources、passes、slots、commands、transitions、transients 的 Markdown
+  调试表格，并验证 pass type、params type、slot schema、command summary 和 transient lifetime plan。
 - `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition、
   Vulkan adapter mapping，以及真实 image/image view/VMA allocation 和 binding。
 
@@ -370,10 +376,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke"]
-    Step1["下一步:<br/>C++ command context skeleton<br/>debug IR only"]
-    Step2["之后:<br/>descriptor binding + fullscreen pass"]
-    Step3["之后:<br/>mesh asset / draw list MVP"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor layout smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + pass schema<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
+    Step1["下一步:<br/>descriptor binding + fullscreen pass"]
+    Step2["之后:<br/>mesh asset / draw list MVP"]
+    Step3["之后:<br/>deferred destruction / multi-view"]
 
     Now --> Step1 --> Step2 --> Step3
 
@@ -396,5 +402,5 @@ flowchart TD
 5. `pass.type` 只负责执行模型 / typed pass 分发；RenderQueue、shader pass tag 和 RendererList 等到 mesh/material 阶段再引入。
 6. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。
 7. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
-8. 受控 command context 先用 C++ 原型化未来脚本 API，但第一版只作为 debug IR/summary；`setTexture` 和 fullscreen draw 的真实 Vulkan 执行等 descriptor binding、pipeline key 和 state 翻译完整后再接入。
+8. 受控 command context 已用 C++ 原型化未来脚本 API；当前只作为 debug IR/summary，`setTexture` 和 fullscreen draw 的真实 Vulkan 执行等 descriptor binding、pipeline key 和 state 翻译完整后再接入。
 9. mesh asset 路线放在 shader/layout/resource 生命周期稳定之后，并优先走 draw list，不提前暴露逐 object 脚本 draw loop。

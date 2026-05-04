@@ -21,6 +21,9 @@
 - RenderGraph pass 已具备可选 `type` 字段和 `RenderGraphExecutorRegistry` 执行入口。当前它是
   C++ 快速路径和 typed pass 分发点，后续会演进为脚本/工具前端可生成的 pass 声明、参数和受控
   command context 的共同入口。
+- RenderGraph command context skeleton 已接入：pass 可记录 `ClearColor`、`SetShader`、
+  `SetTexture`、`SetFloat/SetInt/SetVec4` 和 `DrawFullscreenTriangle` 等后端无关 command summary；
+  当前只进入 compiled pass、executor context 和 debug table，不执行 Vulkan 命令。
 - Conan 依赖已通过 `conan.lock` 锁定 recipe revision。
 
 下一阶段目标不是立刻接入脚本或扩成完整 SRP，而是先把 RenderGraph 声明模型、shader
@@ -90,7 +93,7 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | 5 | RenderGraph transient image | `createTransientImage()`、transient lifetime plan、debug table 和 `--smoke-transient` 已接入 | `--smoke-transient` 已验证非 backbuffer image transition、first/last pass、final shader stage 和 Vulkan adapter mapping |
 | 6 | PrepareBackend transient allocation | 已增加 Vulkan image/image view RAII、VMA-backed transient image 创建、usage/aspect 推导和 binding 表接入 | `--smoke-transient` 已升级为真实 transient VkImage 录制路径，validation 无 error/warning |
 | 7 | Depth attachment MVP | 已增加 dynamic rendering depth attachment、`D32Sfloat` transient depth image、depth aspect binding 和 depth-enabled pipeline | `--smoke-depth-triangle` 已接入，validation 无 error/warning |
-| 8 | 受控 command context skeleton | 在 C++ 中原型化未来脚本会调用的高级命令 API，但第一版只生成 command summary/debug IR，不承诺 Vulkan 执行；可包含 clear、set shader/texture、fullscreen draw 的描述 | 新增 command summary/debug 输出；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
+| 8 | 受控 command context skeleton | 已增加 `RenderGraphCommandList`、`RenderGraphCommand`、compiled pass command summary、executor context command span 和 debug table 输出；`--smoke-rendergraph` 已覆盖 clear、set shader、set texture、float/vec4 参数和 fullscreen draw summary | command summary 可审查；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
 | 9 | Descriptor binding / fullscreen pass | 在固定 descriptor layout 基础上增加 descriptor pool、descriptor set allocation/bind，并让 `setTexture + drawFullscreenTriangle` 从 debug IR 走向真实 Vulkan 执行 | 新增 `--smoke-fullscreen-texture` 或等价 smoke，验证 shader 采样声明资源 |
 | 10 | Mesh asset / draw list 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload；必要时引入简化 draw list，而不是先暴露逐 object 脚本 draw loop | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |
 

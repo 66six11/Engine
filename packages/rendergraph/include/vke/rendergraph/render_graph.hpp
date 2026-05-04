@@ -111,10 +111,121 @@ namespace vke {
         std::vector<RenderGraphResourceSlotSchema> resourceSlots;
     };
 
+    enum class RenderGraphCommandKind {
+        SetShader,
+        SetTexture,
+        SetFloat,
+        SetInt,
+        SetVec4,
+        DrawFullscreenTriangle,
+        ClearColor,
+    };
+
+    struct RenderGraphCommand {
+        RenderGraphCommandKind kind{RenderGraphCommandKind::SetShader};
+        std::string name;
+        std::string secondaryName;
+        std::array<float, 4> floatValues{};
+        int intValue{};
+    };
+
+    class RenderGraphCommandList {
+    public:
+        RenderGraphCommandList& setShader(std::string shaderAsset, std::string shaderPass) {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::SetShader,
+                .name = std::move(shaderAsset),
+                .secondaryName = std::move(shaderPass),
+                .floatValues = {},
+                .intValue = 0,
+            });
+            return *this;
+        }
+
+        RenderGraphCommandList& setTexture(std::string bindingName, std::string slotName) {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::SetTexture,
+                .name = std::move(bindingName),
+                .secondaryName = std::move(slotName),
+                .floatValues = {},
+                .intValue = 0,
+            });
+            return *this;
+        }
+
+        RenderGraphCommandList& setFloat(std::string bindingName, float value) {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::SetFloat,
+                .name = std::move(bindingName),
+                .secondaryName = {},
+                .floatValues = {value, 0.0F, 0.0F, 0.0F},
+                .intValue = 0,
+            });
+            return *this;
+        }
+
+        RenderGraphCommandList& setInt(std::string bindingName, int value) {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::SetInt,
+                .name = std::move(bindingName),
+                .secondaryName = {},
+                .floatValues = {},
+                .intValue = value,
+            });
+            return *this;
+        }
+
+        RenderGraphCommandList& setVec4(std::string bindingName,
+                                        std::array<float, 4> value) {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::SetVec4,
+                .name = std::move(bindingName),
+                .secondaryName = {},
+                .floatValues = value,
+                .intValue = 0,
+            });
+            return *this;
+        }
+
+        RenderGraphCommandList& drawFullscreenTriangle() {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::DrawFullscreenTriangle,
+                .name = {},
+                .secondaryName = {},
+                .floatValues = {},
+                .intValue = 0,
+            });
+            return *this;
+        }
+
+        RenderGraphCommandList& clearColor(std::string slotName, std::array<float, 4> color) {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::ClearColor,
+                .name = std::move(slotName),
+                .secondaryName = {},
+                .floatValues = color,
+                .intValue = 0,
+            });
+            return *this;
+        }
+
+        [[nodiscard]] std::span<const RenderGraphCommand> commands() const {
+            return commands_;
+        }
+
+        [[nodiscard]] std::vector<RenderGraphCommand> takeCommands() && {
+            return std::move(commands_);
+        }
+
+    private:
+        std::vector<RenderGraphCommand> commands_;
+    };
+
     struct RenderGraphCompiledPass {
         std::string name;
         std::string type;
         std::string paramsType;
+        std::vector<RenderGraphCommand> commands;
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
         std::vector<RenderGraphImageHandle> shaderReads;
@@ -151,6 +262,7 @@ namespace vke {
         std::string_view name;
         std::string_view type;
         std::string_view paramsType;
+        std::span<const RenderGraphCommand> commands;
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
         std::span<const RenderGraphImageHandle> shaderReads;
@@ -245,6 +357,7 @@ namespace vke {
             std::vector<RenderGraphImageSlot> depthWriteSlots;
             std::vector<RenderGraphImageSlot> depthSampledReadSlots;
             std::vector<RenderGraphImageSlot> transferWriteSlots;
+            std::vector<RenderGraphCommand> commands;
             RenderGraphPassCallback callback;
         };
 
@@ -329,6 +442,18 @@ namespace vke {
                 return *this;
             }
 
+            PassBuilder& setCommands(RenderGraphCommandList commands) {
+                graph_->passes_[passIndex_].commands = std::move(commands).takeCommands();
+                return *this;
+            }
+
+            template <typename Recorder>
+            PassBuilder& recordCommands(Recorder&& recorder) {
+                RenderGraphCommandList commands;
+                std::forward<Recorder>(recorder)(commands);
+                return setCommands(std::move(commands));
+            }
+
         private:
             friend class RenderGraph;
 
@@ -370,6 +495,7 @@ namespace vke {
                 .depthWriteSlots = {},
                 .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
+                .commands = {},
                 .callback = {},
             };
             passes_.push_back(std::move(pass));
@@ -387,6 +513,7 @@ namespace vke {
                 .depthWriteSlots = {},
                 .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
+                .commands = {},
                 .callback = {},
             };
             passes_.push_back(std::move(pass));
@@ -434,6 +561,7 @@ namespace vke {
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
+                    .commands = pass.commands,
                     .transitionsBefore = {},
                     .colorWrites = imageHandles(pass.colorWriteSlots),
                     .shaderReads = imageHandles(pass.shaderReadSlots),
@@ -609,6 +737,7 @@ namespace vke {
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
+                    .commands = pass.commands,
                     .transitionsBefore = pass.transitionsBefore,
                     .colorWrites = pass.colorWrites,
                     .shaderReads = pass.shaderReads,
@@ -701,6 +830,13 @@ namespace vke {
                 appendSlotRows(output, pass.name, "DepthAttachmentWrite", pass.depthWriteSlots);
                 appendSlotRows(output, pass.name, "DepthSampledRead", pass.depthSampledReadSlots);
                 appendSlotRows(output, pass.name, "TransferWrite", pass.transferWriteSlots);
+            }
+
+            output += "\n### RenderGraph Commands\n\n";
+            output += "| Pass | # | Command | Detail |\n";
+            output += "|---|---:|---|---|\n";
+            for (const RenderGraphCompiledPass& pass : compiled.passes) {
+                appendCommandRows(output, pass);
             }
 
             output += "\n### RenderGraph Transitions\n\n";
@@ -1256,6 +1392,47 @@ namespace vke {
             }
         }
 
+        [[nodiscard]] static std::string_view commandKindName(RenderGraphCommandKind kind) {
+            switch (kind) {
+            case RenderGraphCommandKind::SetShader:
+                return "SetShader";
+            case RenderGraphCommandKind::SetTexture:
+                return "SetTexture";
+            case RenderGraphCommandKind::SetFloat:
+                return "SetFloat";
+            case RenderGraphCommandKind::SetInt:
+                return "SetInt";
+            case RenderGraphCommandKind::SetVec4:
+                return "SetVec4";
+            case RenderGraphCommandKind::DrawFullscreenTriangle:
+                return "DrawFullscreenTriangle";
+            case RenderGraphCommandKind::ClearColor:
+                return "ClearColor";
+            }
+            return "";
+        }
+
+        [[nodiscard]] static std::string commandDetail(const RenderGraphCommand& command) {
+            switch (command.kind) {
+            case RenderGraphCommandKind::SetShader:
+            case RenderGraphCommandKind::SetTexture:
+                return command.name + " -> " + command.secondaryName;
+            case RenderGraphCommandKind::SetFloat:
+                return command.name + " = " + std::to_string(command.floatValues[0]);
+            case RenderGraphCommandKind::SetInt:
+                return command.name + " = " + std::to_string(command.intValue);
+            case RenderGraphCommandKind::SetVec4:
+            case RenderGraphCommandKind::ClearColor:
+                return command.name + " = (" + std::to_string(command.floatValues[0]) + ", " +
+                       std::to_string(command.floatValues[1]) + ", " +
+                       std::to_string(command.floatValues[2]) + ", " +
+                       std::to_string(command.floatValues[3]) + ")";
+            case RenderGraphCommandKind::DrawFullscreenTriangle:
+                return "-";
+            }
+            return "-";
+        }
+
         [[nodiscard]] std::string imageAccessName(RenderGraphImageState state,
                                                   RenderGraphShaderStage shaderStage) const {
             std::string name{imageStateName(state)};
@@ -1316,6 +1493,22 @@ namespace vke {
                 }
                 output += " | ";
                 output += imageHandleLabel(slot.image);
+                output += " |\n";
+            }
+        }
+
+        void appendCommandRows(std::string& output,
+                               const RenderGraphCompiledPass& pass) const {
+            for (std::size_t index = 0; index < pass.commands.size(); ++index) {
+                const RenderGraphCommand& command = pass.commands[index];
+                output += "| ";
+                output += pass.name;
+                output += " | ";
+                output += std::to_string(index);
+                output += " | ";
+                output += commandKindName(command.kind);
+                output += " | ";
+                output += commandDetail(command);
                 output += " |\n";
             }
         }
