@@ -171,4 +171,70 @@ namespace vke {
         return imageView_;
     }
 
+    VulkanSampler::VulkanSampler(VulkanSampler&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanSampler& VulkanSampler::operator=(VulkanSampler&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        destroy();
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        sampler_ = std::exchange(other.sampler_, VK_NULL_HANDLE);
+        return *this;
+    }
+
+    VulkanSampler::~VulkanSampler() {
+        destroy();
+    }
+
+    void VulkanSampler::destroy() {
+        if (sampler_ != VK_NULL_HANDLE) {
+            vkDestroySampler(device_, sampler_, nullptr);
+        }
+
+        device_ = VK_NULL_HANDLE;
+        sampler_ = VK_NULL_HANDLE;
+    }
+
+    Result<VulkanSampler> VulkanSampler::create(const VulkanSamplerDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{vulkanError("Cannot create a Vulkan sampler without a device")};
+        }
+
+        VkSamplerCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        createInfo.magFilter = desc.magFilter;
+        createInfo.minFilter = desc.minFilter;
+        createInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        createInfo.addressModeU = desc.addressModeU;
+        createInfo.addressModeV = desc.addressModeV;
+        createInfo.addressModeW = desc.addressModeW;
+        createInfo.mipLodBias = 0.0F;
+        createInfo.anisotropyEnable = VK_FALSE;
+        createInfo.maxAnisotropy = 1.0F;
+        createInfo.compareEnable = VK_FALSE;
+        createInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        createInfo.minLod = 0.0F;
+        createInfo.maxLod = 0.0F;
+        createInfo.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+        createInfo.unnormalizedCoordinates = VK_FALSE;
+
+        VulkanSampler sampler;
+        sampler.device_ = desc.device;
+        const VkResult result = vkCreateSampler(desc.device, &createInfo, nullptr,
+                                                &sampler.sampler_);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{vulkanError("Failed to create Vulkan sampler", result)};
+        }
+
+        return sampler;
+    }
+
+    VkSampler VulkanSampler::handle() const {
+        return sampler_;
+    }
+
 } // namespace vke

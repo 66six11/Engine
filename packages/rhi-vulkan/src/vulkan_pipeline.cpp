@@ -257,6 +257,38 @@ namespace vke {
                                descriptorWrites.data(), 0, nullptr);
     }
 
+    void updateVulkanDescriptorImages(
+        VkDevice device, std::span<const VulkanDescriptorImageWrite> writes) {
+        std::vector<VkDescriptorImageInfo> imageInfos;
+        imageInfos.reserve(writes.size());
+        std::vector<VkWriteDescriptorSet> descriptorWrites;
+        descriptorWrites.reserve(writes.size());
+
+        for (const VulkanDescriptorImageWrite& write : writes) {
+            imageInfos.push_back(VkDescriptorImageInfo{
+                .sampler = write.sampler,
+                .imageView = write.imageView,
+                .imageLayout = write.imageLayout,
+            });
+
+            descriptorWrites.push_back(VkWriteDescriptorSet{
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = write.descriptorSet,
+                .dstBinding = write.binding,
+                .dstArrayElement = write.arrayElement,
+                .descriptorCount = 1,
+                .descriptorType = write.descriptorType,
+                .pImageInfo = &imageInfos.back(),
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr,
+            });
+        }
+
+        vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(descriptorWrites.size()),
+                               descriptorWrites.data(), 0, nullptr);
+    }
+
     VulkanPipelineLayout::VulkanPipelineLayout(VulkanPipelineLayout&& other) noexcept {
         *this = std::move(other);
     }

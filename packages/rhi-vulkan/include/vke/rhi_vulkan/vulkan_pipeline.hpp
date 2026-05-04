@@ -87,6 +87,16 @@ namespace vke {
         VkDeviceSize range{VK_WHOLE_SIZE};
     };
 
+    struct VulkanDescriptorImageWrite {
+        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+        std::uint32_t binding{};
+        std::uint32_t arrayElement{};
+        VkDescriptorType descriptorType{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE};
+        VkImageView imageView{VK_NULL_HANDLE};
+        VkSampler sampler{VK_NULL_HANDLE};
+        VkImageLayout imageLayout{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    };
+
     class VulkanDescriptorPool {
     public:
         VulkanDescriptorPool() = default;
@@ -111,6 +121,8 @@ namespace vke {
 
     void updateVulkanDescriptorBuffers(VkDevice device,
                                        std::span<const VulkanDescriptorBufferWrite> writes);
+    void updateVulkanDescriptorImages(VkDevice device,
+                                      std::span<const VulkanDescriptorImageWrite> writes);
 
     struct VulkanPipelineLayoutDesc {
         VkDevice device{VK_NULL_HANDLE};

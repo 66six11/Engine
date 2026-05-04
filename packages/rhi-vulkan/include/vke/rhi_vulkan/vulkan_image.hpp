@@ -71,4 +71,33 @@ namespace vke {
         VkImageView imageView_{VK_NULL_HANDLE};
     };
 
+    struct VulkanSamplerDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        VkFilter minFilter{VK_FILTER_LINEAR};
+        VkFilter magFilter{VK_FILTER_LINEAR};
+        VkSamplerAddressMode addressModeU{VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+        VkSamplerAddressMode addressModeV{VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+        VkSamplerAddressMode addressModeW{VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+    };
+
+    class VulkanSampler {
+    public:
+        VulkanSampler() = default;
+        VulkanSampler(const VulkanSampler&) = delete;
+        VulkanSampler& operator=(const VulkanSampler&) = delete;
+        VulkanSampler(VulkanSampler&& other) noexcept;
+        VulkanSampler& operator=(VulkanSampler&& other) noexcept;
+        ~VulkanSampler();
+
+        [[nodiscard]] static Result<VulkanSampler> create(const VulkanSamplerDesc& desc);
+
+        [[nodiscard]] VkSampler handle() const;
+
+    private:
+        void destroy();
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VkSampler sampler_{VK_NULL_HANDLE};
+    };
+
 } // namespace vke

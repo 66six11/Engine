@@ -208,6 +208,57 @@ namespace vke {
                                                binding.name + ": " + binding.kind)};
         }
 
+        [[nodiscard]] const ShaderDescriptorBindingReflection*
+        findDescriptorBinding(const ShaderResourceSignature& signature, std::uint32_t set,
+                              std::uint32_t binding) {
+            for (const ShaderDescriptorBindingReflection& descriptor :
+                 signature.descriptorBindings) {
+                if (descriptor.set == set && descriptor.binding == binding) {
+                    return &descriptor;
+                }
+            }
+
+            return nullptr;
+        }
+
+        [[nodiscard]] Result<void>
+        validateDescriptorBinding(const ShaderResourceSignature& signature, std::uint32_t set,
+                                  std::uint32_t binding, std::string_view expectedKind,
+                                  std::string_view context) {
+            const ShaderDescriptorBindingReflection* descriptor =
+                findDescriptorBinding(signature, set, binding);
+            if (descriptor == nullptr) {
+                return std::unexpected{shaderError(std::string{context} +
+                                                   " missing descriptor binding")};
+            }
+
+            auto descriptorSet = expectUint(descriptor->set, set, std::string{context} + " set");
+            if (!descriptorSet) {
+                return std::unexpected{std::move(descriptorSet.error())};
+            }
+            auto bindingIndex =
+                expectUint(descriptor->binding, binding, std::string{context} + " binding");
+            if (!bindingIndex) {
+                return std::unexpected{std::move(bindingIndex.error())};
+            }
+            auto count = expectUint(descriptor->count, 1, std::string{context} + " count");
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
+            }
+            auto kind = expectString(descriptor->kind, expectedKind,
+                                     std::string{context} + " kind");
+            if (!kind) {
+                return std::unexpected{std::move(kind.error())};
+            }
+            auto stage = expectString(descriptor->stageVisibility, "fragment",
+                                      std::string{context} + " stage");
+            if (!stage) {
+                return std::unexpected{std::move(stage.error())};
+            }
+
+            return {};
+        }
+
         struct PipelineLayoutResources {
             std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts;
             VulkanPipelineLayout pipelineLayout;
@@ -403,7 +454,7 @@ namespace vke {
             const std::array shaderReflections{*fragmentReflection};
             ShaderResourceSignature signature = shaderResourceSignature(shaderReflections);
             auto descriptorSignature =
-                expectUint(signature.descriptorBindingCount, 1,
+                expectUint(signature.descriptorBindingCount, 3,
                            "Descriptor layout smoke descriptor binding signature");
             if (!descriptorSignature) {
                 return std::unexpected{std::move(descriptorSignature.error())};
@@ -414,29 +465,22 @@ namespace vke {
                 return std::unexpected{std::move(pushConstantSignature.error())};
             }
 
-            const ShaderDescriptorBindingReflection& binding = signature.descriptorBindings.front();
-            auto set = expectUint(binding.set, 0, "Descriptor layout smoke descriptor set");
-            if (!set) {
-                return std::unexpected{std::move(set.error())};
+            auto constantBuffer = validateDescriptorBinding(
+                signature, 0, 0, "constantBuffer", "Descriptor layout smoke constant buffer");
+            if (!constantBuffer) {
+                return std::unexpected{std::move(constantBuffer.error())};
             }
-            auto bindingIndex =
-                expectUint(binding.binding, 0, "Descriptor layout smoke descriptor binding");
-            if (!bindingIndex) {
-                return std::unexpected{std::move(bindingIndex.error())};
+            auto texture =
+                validateDescriptorBinding(signature, 0, 1, "texture",
+                                          "Descriptor layout smoke sampled image");
+            if (!texture) {
+                return std::unexpected{std::move(texture.error())};
             }
-            auto count = expectUint(binding.count, 1, "Descriptor layout smoke descriptor count");
-            if (!count) {
-                return std::unexpected{std::move(count.error())};
-            }
-            auto kind = expectString(binding.kind, "constantBuffer",
-                                     "Descriptor layout smoke descriptor kind");
-            if (!kind) {
-                return std::unexpected{std::move(kind.error())};
-            }
-            auto stage = expectString(binding.stageVisibility, "fragment",
-                                      "Descriptor layout smoke descriptor stage");
-            if (!stage) {
-                return std::unexpected{std::move(stage.error())};
+            auto sampler =
+                validateDescriptorBinding(signature, 0, 2, "sampler",
+                                          "Descriptor layout smoke sampler");
+            if (!sampler) {
+                return std::unexpected{std::move(sampler.error())};
             }
 
             return signature;
@@ -665,9 +709,44 @@ namespace vke {
             return std::unexpected{std::move(uploaded.error())};
         }
 
+        auto sampledImage = VulkanImage::create(VulkanImageDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .format = VK_FORMAT_B8G8R8A8_SRGB,
+            .extent = VkExtent2D{.width = 1, .height = 1},
+            .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        });
+        if (!sampledImage) {
+            return std::unexpected{std::move(sampledImage.error())};
+        }
+        auto sampledImageView = VulkanImageView::create(VulkanImageViewDesc{
+            .device = desc.device,
+            .image = sampledImage->handle(),
+            .format = sampledImage->format(),
+            .aspectMask = sampledImage->aspectMask(),
+        });
+        if (!sampledImageView) {
+            return std::unexpected{std::move(sampledImageView.error())};
+        }
+        auto sampler = VulkanSampler::create(VulkanSamplerDesc{
+            .device = desc.device,
+        });
+        if (!sampler) {
+            return std::unexpected{std::move(sampler.error())};
+        }
+
         constexpr std::array poolSizes{
             VulkanDescriptorPoolSize{
                 .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .count = 1,
+            },
+            VulkanDescriptorPoolSize{
+                .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                .count = 1,
+            },
+            VulkanDescriptorPoolSize{
+                .type = VK_DESCRIPTOR_TYPE_SAMPLER,
                 .count = 1,
             },
         };
@@ -709,6 +788,28 @@ namespace vke {
             },
         };
         updateVulkanDescriptorBuffers(desc.device, descriptorWrites);
+
+        const std::array imageDescriptorWrites{
+            VulkanDescriptorImageWrite{
+                .descriptorSet = descriptorSets->front(),
+                .binding = 1,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                .imageView = sampledImageView->handle(),
+                .sampler = VK_NULL_HANDLE,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            },
+            VulkanDescriptorImageWrite{
+                .descriptorSet = descriptorSets->front(),
+                .binding = 2,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+                .imageView = VK_NULL_HANDLE,
+                .sampler = sampler->handle(),
+                .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            },
+        };
+        updateVulkanDescriptorImages(desc.device, imageDescriptorWrites);
 
         return {};
     }

@@ -530,7 +530,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        std::cout << "Descriptor layout smoke: set 0 binding 0 constantBuffer fragment allocated\n";
+        std::cout << "Descriptor layout smoke: set 0 bindings 0-2 buffer/image/sampler allocated\n";
         window->requestClose();
         return EXIT_SUCCESS;
     }
