@@ -116,14 +116,15 @@ flowchart TD
     TriangleSmoke["--smoke-triangle"]
     DepthTriangleSmoke["--smoke-depth-triangle"]
     MeshSmoke["--smoke-mesh"]
+    Mesh3DSmoke["--smoke-mesh-3d"]
     DescriptorSmoke["--smoke-descriptor-layout"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
     GLFW["GlfwInstance / GlfwWindow"]
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
-    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor SPIR-V + reflection JSON"]
-    RendererObject["BasicTriangleRenderer<br/>shader modules / pipeline layout / vertex/index buffer / pipeline<br/>BasicDrawItem"]
+    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d SPIR-V + reflection JSON"]
+    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer<br/>shader modules / pipeline layout / vertex/index buffer / pipeline<br/>BasicDrawItem / MVP push constants"]
     DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout<br/>descriptor pool / set / buffer + image + sampler write"]
 
     Start --> Args
@@ -136,6 +137,7 @@ flowchart TD
     Args --> TriangleSmoke
     Args --> DepthTriangleSmoke
     Args --> MeshSmoke
+    Args --> Mesh3DSmoke
     Args --> DescriptorSmoke
     Args --> FullscreenTextureSmoke
     WindowSmoke --> GLFW
@@ -163,6 +165,11 @@ flowchart TD
     MeshSmoke --> Context
     MeshSmoke --> ShaderBuild
     MeshSmoke --> RendererObject
+    Mesh3DSmoke --> GLFW
+    Mesh3DSmoke --> Ext
+    Mesh3DSmoke --> Context
+    Mesh3DSmoke --> ShaderBuild
+    Mesh3DSmoke --> RendererObject
     DescriptorSmoke --> GLFW
     DescriptorSmoke --> Ext
     DescriptorSmoke --> Context
@@ -187,6 +194,9 @@ flowchart TD
   dynamic-rendering depth attachment、depth-enabled pipeline 和 present。
 - `--smoke-mesh` 已接入 `BasicTriangleRenderer` 的 indexed quad path，创建 host-upload vertex/index
   buffers，并验证 `vkCmdBindIndexBuffer` + `vkCmdDrawIndexed`。
+- `--smoke-mesh-3d` 已接入独立 `BasicMesh3DRenderer`：创建 3D cube vertex/index buffer、显式
+  vertex-stage push constant range、固定 MVP 行向量、transient depth attachment，并验证
+  `vkCmdPushConstants` + indexed cube draw。
 - `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout /
   pipeline layout 的创建验证，并验证 descriptor pool、descriptor set allocation、uniform-buffer write、
   sampled-image write 和 sampler write。
@@ -302,12 +312,12 @@ flowchart TD
     Begin --> BuildGraph --> Compile --> ToColor --> BeginRendering --> EndRendering --> ToPresent --> End
 ```
 
-`--smoke-triangle` / `--smoke-depth-triangle` / `--smoke-mesh` 当前真实录制流程：
+`--smoke-triangle` / `--smoke-depth-triangle` / `--smoke-mesh` / `--smoke-mesh-3d` 当前真实录制流程：
 
 ```mermaid
 flowchart TD
     ShaderBuild["shader-slang package<br/>slangc 编译 Slang<br/>spirv-val 验证 SPIR-V<br/>Slang API 生成 reflection JSON"]
-    RendererObject["BasicTriangleRenderer"]
+    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer"]
     PipelineObjects["VulkanShaderModule<br/>VulkanPipelineLayout<br/>VulkanBuffer vertex/index<br/>VulkanGraphicsPipeline"]
     DepthObjects["depth path only<br/>VMA-backed transient depth image<br/>VkImageView<br/>depth-enabled pipeline"]
     Begin["vkBeginCommandBuffer"]
@@ -369,6 +379,8 @@ flowchart TD
 - `--smoke-triangle` 已验证 `shader-slang` 构建出的 Slang SPIR-V、reflection JSON、triangle shader 契约校验、`BasicTriangleRenderer` 管理的 shader module、reflection-derived pipeline layout、host-upload vertex buffer、dynamic rendering graphics pipeline、`BasicDrawItem` draw 参数、ClearColor + Triangle 两个 graph pass、viewport/scissor dynamic state 和 triangle draw。
 - `--smoke-mesh` 已验证最小 indexed mesh 数据、host-upload index buffer、`BasicDrawItem` indexed draw
   参数、`vkCmdBindIndexBuffer` 和 `vkCmdDrawIndexed`。
+- `--smoke-mesh-3d` 已验证最小 3D mesh path：固定 cube mesh、depth attachment、MVP push constants、
+  3D vertex input layout 和 indexed draw；当前只作为 renderer-basic-vulkan 的 smoke，不引入全局相机系统。
 - `--smoke-depth-triangle` 已验证 `D32Sfloat` transient depth image、depth aspect binding、
   `Undefined -> DepthAttachmentWrite` transition、dynamic rendering depth attachment clear 和
   depth-enabled graphics pipeline。
@@ -559,7 +571,7 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. Slang reflection JSON、固定 descriptor set layout RAII、reflection-derived pipeline layout 和非空 descriptor signature smoke 已接入；descriptor bind 和 fullscreen texture pass 已有 `--smoke-fullscreen-texture` 真实 Vulkan 路径，fullscreen clear/tint 已开始走 typed params payload；`--smoke-mesh` 已验证最小 indexed mesh。
+4. Slang reflection JSON、固定 descriptor set layout RAII、reflection-derived pipeline layout 和非空 descriptor signature smoke 已接入；descriptor bind 和 fullscreen texture pass 已有 `--smoke-fullscreen-texture` 真实 Vulkan 路径，fullscreen clear/tint 已开始走 typed params payload；`--smoke-mesh` 已验证最小 indexed mesh；`--smoke-mesh-3d` 已验证最小 3D cube、depth 和 MVP push constants。
 5. `pass.type` 只负责执行模型 / typed pass 分发；RenderQueue、shader pass tag 和 RendererList 等到 mesh/material 阶段再引入。
 6. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。
 7. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。

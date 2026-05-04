@@ -37,6 +37,7 @@ namespace {
                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
+                     "[--smoke-mesh-3d] "
                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture]\n";
     }
 
@@ -58,8 +59,7 @@ namespace {
         return "VkEngine Triangle Smoke";
     }
 
-    std::string_view triangleSmokeOutOfDateMessage(bool useDepth,
-                                                   vke::BasicMeshKind meshKind) {
+    std::string_view triangleSmokeOutOfDateMessage(bool useDepth, vke::BasicMeshKind meshKind) {
         if (meshKind == vke::BasicMeshKind::IndexedQuad) {
             return "Swapchain remained out of date during mesh smoke.";
         }
@@ -298,8 +298,7 @@ namespace {
         }
 
         const VkExtent2D extent = frameLoop->extent();
-        std::cout << "Rendered transient frames: " << extent.width << 'x' << extent.height
-                  << '\n';
+        std::cout << "Rendered transient frames: " << extent.width << 'x' << extent.height << '\n';
         window->requestClose();
         return EXIT_SUCCESS;
     }
@@ -478,8 +477,7 @@ namespace {
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&triangleRenderer, useDepth](
-                    const vke::VulkanFrameRecordContext& recordContext) {
+                [&triangleRenderer, useDepth](const vke::VulkanFrameRecordContext& recordContext) {
                     if (useDepth) {
                         return triangleRenderer->recordFrameWithDepth(recordContext);
                     }
@@ -561,6 +559,101 @@ namespace {
         }
 
         std::cout << "Descriptor layout smoke: set 0 bindings 0-2 buffer/image/sampler allocated\n";
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeMesh3D() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window =
+            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Mesh 3D Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Mesh 3D Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = vke::VulkanFrameLoop::create(
+            *context, vke::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.015F, 0.02F, 0.025F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            vke::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto meshRenderer = vke::BasicMesh3DRenderer::create(vke::BasicMesh3DRendererDesc{
+            .device = context->device(),
+            .allocator = context->allocator(),
+            .shaderDirectory = shaderDir,
+        });
+        if (!meshRenderer) {
+            vke::logError(meshRenderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(
+                [&meshRenderer](const vke::VulkanFrameRecordContext& recordContext) {
+                    return meshRenderer->recordFrame(recordContext);
+                });
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during mesh 3D smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered mesh 3D frames: " << extent.width << 'x' << extent.height << '\n';
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            vke::logError("Failed to wait for Vulkan queue before mesh 3D teardown: " +
+                          vke::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
         window->requestClose();
         return EXIT_SUCCESS;
     }
@@ -1326,9 +1419,8 @@ namespace {
         invalidCommandGraph.addPass("InvalidClearCommand", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
             .writeTransfer("target", invalidBackbuffer)
-            .recordCommands([](vke::RenderGraphCommandList& commands) {
-                commands.drawFullscreenTriangle();
-            });
+            .recordCommands(
+                [](vke::RenderGraphCommandList& commands) { commands.drawFullscreenTriangle(); });
         auto invalidCompiled = invalidCommandGraph.compile(schemas);
         if (invalidCompiled) {
             vke::logError("Render graph schema accepted an invalid command kind.");
@@ -1410,6 +1502,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-mesh")) {
             return runSmokeTriangle(false, vke::BasicMeshKind::IndexedQuad);
+        }
+
+        if (hasArg(args, "--smoke-mesh-3d")) {
+            return runSmokeMesh3D();
         }
 
         if (hasArg(args, "--smoke-descriptor-layout")) {

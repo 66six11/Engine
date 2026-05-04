@@ -34,6 +34,12 @@ namespace vke {
         std::filesystem::path shaderDirectory;
     };
 
+    struct BasicMesh3DRendererDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        VmaAllocator allocator{};
+        std::filesystem::path shaderDirectory;
+    };
+
     [[nodiscard]] Result<void>
     validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc);
 
@@ -43,8 +49,7 @@ namespace vke {
         BasicFullscreenTextureRenderer(const BasicFullscreenTextureRenderer&) = delete;
         BasicFullscreenTextureRenderer& operator=(const BasicFullscreenTextureRenderer&) = delete;
         BasicFullscreenTextureRenderer(BasicFullscreenTextureRenderer&& other) noexcept;
-        BasicFullscreenTextureRenderer&
-        operator=(BasicFullscreenTextureRenderer&& other) noexcept;
+        BasicFullscreenTextureRenderer& operator=(BasicFullscreenTextureRenderer&& other) noexcept;
         ~BasicFullscreenTextureRenderer() = default;
 
         [[nodiscard]] static Result<BasicFullscreenTextureRenderer>
@@ -106,6 +111,38 @@ namespace vke {
         std::vector<VulkanImage> transientImages_;
         std::vector<VulkanImageView> transientImageViews_;
         BasicDrawItem drawItem_{basicTriangleDrawItem()};
+    };
+
+    class BasicMesh3DRenderer {
+    public:
+        BasicMesh3DRenderer() = default;
+        BasicMesh3DRenderer(const BasicMesh3DRenderer&) = delete;
+        BasicMesh3DRenderer& operator=(const BasicMesh3DRenderer&) = delete;
+        BasicMesh3DRenderer(BasicMesh3DRenderer&& other) noexcept;
+        BasicMesh3DRenderer& operator=(BasicMesh3DRenderer&& other) noexcept;
+        ~BasicMesh3DRenderer() = default;
+
+        [[nodiscard]] static Result<BasicMesh3DRenderer>
+        create(const BasicMesh3DRendererDesc& desc);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordFrame(const VulkanFrameRecordContext& frame);
+
+    private:
+        [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat, VkFormat depthFormat);
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VmaAllocator allocator_{};
+        VulkanShaderModule vertexShader_;
+        VulkanShaderModule fragmentShader_;
+        std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
+        VulkanPipelineLayout pipelineLayout_;
+        VulkanGraphicsPipeline pipeline_;
+        VulkanBuffer vertexBuffer_;
+        VulkanBuffer indexBuffer_;
+        VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
+        VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
+        std::vector<VulkanImage> transientImages_;
+        std::vector<VulkanImageView> transientImageViews_;
     };
 
 } // namespace vke

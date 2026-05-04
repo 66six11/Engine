@@ -10,6 +10,11 @@ namespace vke {
         float color[3]{};
     };
 
+    struct BasicVertex3D {
+        float position[3]{};
+        float color[3]{};
+    };
+
     struct BasicDrawItem {
         std::uint32_t vertexCount{};
         std::uint32_t indexCount{};
@@ -41,6 +46,18 @@ namespace vke {
         return BasicDrawItem{
             .vertexCount = 0,
             .indexCount = 6,
+            .instanceCount = 1,
+            .firstVertex = 0,
+            .firstIndex = 0,
+            .vertexOffset = 0,
+            .firstInstance = 0,
+        };
+    }
+
+    [[nodiscard]] constexpr BasicDrawItem basicIndexedCubeDrawItem() {
+        return BasicDrawItem{
+            .vertexCount = 0,
+            .indexCount = 36,
             .instanceCount = 1,
             .firstVertex = 0,
             .firstIndex = 0,
@@ -89,6 +106,50 @@ namespace vke {
 
     [[nodiscard]] constexpr std::array<std::uint16_t, 6> basicQuadIndices() {
         return std::array<std::uint16_t, 6>{0, 1, 2, 2, 3, 0};
+    }
+
+    [[nodiscard]] constexpr std::array<BasicVertex3D, 8> basicCubeVertices() {
+        return std::array{
+            BasicVertex3D{
+                .position = {-0.55F, -0.55F, -0.55F},
+                .color = {0.95F, 0.24F, 0.18F},
+            },
+            BasicVertex3D{
+                .position = {0.55F, -0.55F, -0.55F},
+                .color = {0.12F, 0.72F, 0.36F},
+            },
+            BasicVertex3D{
+                .position = {0.55F, 0.55F, -0.55F},
+                .color = {0.18F, 0.38F, 0.95F},
+            },
+            BasicVertex3D{
+                .position = {-0.55F, 0.55F, -0.55F},
+                .color = {0.95F, 0.82F, 0.18F},
+            },
+            BasicVertex3D{
+                .position = {-0.55F, -0.55F, 0.55F},
+                .color = {0.10F, 0.78F, 0.82F},
+            },
+            BasicVertex3D{
+                .position = {0.55F, -0.55F, 0.55F},
+                .color = {0.86F, 0.32F, 0.72F},
+            },
+            BasicVertex3D{
+                .position = {0.55F, 0.55F, 0.55F},
+                .color = {0.90F, 0.48F, 0.18F},
+            },
+            BasicVertex3D{
+                .position = {-0.55F, 0.55F, 0.55F},
+                .color = {0.55F, 0.90F, 0.28F},
+            },
+        };
+    }
+
+    [[nodiscard]] constexpr std::array<std::uint16_t, 36> basicCubeIndices() {
+        return std::array<std::uint16_t, 36>{
+            0, 1, 2, 2, 3, 0, 4, 6, 5, 6, 4, 7, 0, 4, 5, 5, 1, 0,
+            3, 2, 6, 6, 7, 3, 1, 5, 6, 6, 2, 1, 0, 3, 7, 7, 4, 0,
+        };
     }
 
 } // namespace vke

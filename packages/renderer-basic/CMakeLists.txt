@@ -54,6 +54,30 @@ set(VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_METADATA
 set(VKE_RENDERER_BASIC_DESCRIPTOR_FRAG_REFLECTION
     "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/descriptor_layout.frag.reflection.json"
 )
+set(VKE_RENDERER_BASIC_MESH3D_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/basic_mesh3d.slang"
+)
+set(VKE_RENDERER_BASIC_MESH3D_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/basic_mesh3d.shader.json"
+)
+set(VKE_RENDERER_BASIC_MESH3D_VERT_SPV
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.vert.spv"
+)
+set(VKE_RENDERER_BASIC_MESH3D_VERT_METADATA
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.vert.metadata.json"
+)
+set(VKE_RENDERER_BASIC_MESH3D_VERT_REFLECTION
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.vert.reflection.json"
+)
+set(VKE_RENDERER_BASIC_MESH3D_FRAG_SPV
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.frag.spv"
+)
+set(VKE_RENDERER_BASIC_MESH3D_FRAG_METADATA
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.frag.metadata.json"
+)
+set(VKE_RENDERER_BASIC_MESH3D_FRAG_REFLECTION
+    "${VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.frag.reflection.json"
+)
 
 vke_add_slang_shader(vke-renderer-basic-triangle-vert
     SOURCE "${VKE_RENDERER_BASIC_TRIANGLE_SHADER_SOURCE}"
@@ -95,12 +119,34 @@ vke_add_slang_shader(vke-renderer-basic-descriptor-frag
     DEPENDS "${VKE_RENDERER_BASIC_DESCRIPTOR_SHADER_MANIFEST}"
 )
 
+vke_add_slang_shader(vke-renderer-basic-mesh3d-vert
+    SOURCE "${VKE_RENDERER_BASIC_MESH3D_SHADER_SOURCE}"
+    ENTRY mesh3DVertexMain
+    STAGE vertex
+    OUTPUT "${VKE_RENDERER_BASIC_MESH3D_VERT_SPV}"
+    METADATA_OUTPUT "${VKE_RENDERER_BASIC_MESH3D_VERT_METADATA}"
+    REFLECTION_OUTPUT "${VKE_RENDERER_BASIC_MESH3D_VERT_REFLECTION}"
+    DEPENDS "${VKE_RENDERER_BASIC_MESH3D_SHADER_MANIFEST}"
+)
+
+vke_add_slang_shader(vke-renderer-basic-mesh3d-frag
+    SOURCE "${VKE_RENDERER_BASIC_MESH3D_SHADER_SOURCE}"
+    ENTRY mesh3DFragmentMain
+    STAGE fragment
+    OUTPUT "${VKE_RENDERER_BASIC_MESH3D_FRAG_SPV}"
+    METADATA_OUTPUT "${VKE_RENDERER_BASIC_MESH3D_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${VKE_RENDERER_BASIC_MESH3D_FRAG_REFLECTION}"
+    DEPENDS "${VKE_RENDERER_BASIC_MESH3D_SHADER_MANIFEST}"
+)
+
 add_custom_target(vke-renderer-basic-shaders
     DEPENDS
         vke-renderer-basic-triangle-vert
         vke-renderer-basic-triangle-frag
         vke-renderer-basic-descriptor-vert
         vke-renderer-basic-descriptor-frag
+        vke-renderer-basic-mesh3d-vert
+        vke-renderer-basic-mesh3d-frag
 )
 
 target_include_directories(vke-renderer-basic

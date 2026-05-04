@@ -101,7 +101,7 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | 7 | Depth attachment MVP | 已增加 dynamic rendering depth attachment、`D32Sfloat` transient depth image、depth aspect binding 和 depth-enabled pipeline | `--smoke-depth-triangle` 已接入，validation 无 error/warning |
 | 8 | 受控 command context skeleton | 已增加 `RenderGraphCommandList`、`RenderGraphCommand`、compiled pass command summary、executor context command span 和 debug table 输出；`--smoke-rendergraph` 已覆盖 clear、set shader、set texture、float/vec4 参数和 fullscreen draw summary | command summary 可审查；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
 | 9 | Descriptor binding / fullscreen pass | 已增加最小 descriptor pool、descriptor set allocation、uniform-buffer write、sampled-image write、sampler write、descriptor bind 和 fullscreen dynamic-rendering draw；fullscreen 路径已开始使用可复用 pass schema、allowed command kind、typed params payload 和 command-derived pipeline key；下一步进入 mesh / draw list | `--smoke-descriptor-layout` 已验证 descriptor set 分配和 buffer/image/sampler write；`--smoke-fullscreen-texture` 已验证 shader 真实采样 transient source image |
-| 10 | Mesh asset / draw list 路线 | 已从固定顶点数据扩展到最小 indexed quad mesh、host-upload index buffer 和 indexed draw；下一步引入简化 draw list / resource upload，不提前暴露逐 object 脚本 draw loop | `--smoke-mesh` 已渲染 indexed quad；后续新增 draw list smoke |
+| 10 | Mesh asset / draw list 路线 | 已从固定顶点数据扩展到最小 indexed quad mesh、host-upload index buffer、indexed draw，以及独立 3D cube smoke；当前使用固定 MVP push constants，不引入全局相机系统；下一步引入简化 draw list / resource upload，不提前暴露逐 object 脚本 draw loop | `--smoke-mesh` 已渲染 indexed quad；`--smoke-mesh-3d` 已验证 3D vertex layout、depth 和 MVP push constants；后续新增 draw list smoke |
 
 ## RenderGraph 脚本前置原则
 

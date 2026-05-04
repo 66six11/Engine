@@ -1,0 +1,10 @@
+{
+  "name": "BasicMesh3D",
+  "passes": [
+    {
+      "name": "Forward",
+      "vertex": "mesh3DVertexMain",
+      "fragment": "mesh3DFragmentMain"
+    }
+  ]
+}

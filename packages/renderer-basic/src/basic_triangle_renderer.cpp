@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <expected>
 #include <fstream>
+#include <numbers>
 #include <span>
 #include <string>
 #include <string_view>
@@ -63,6 +65,13 @@ namespace vke {
 
         struct BasicFullscreenParams {
             std::array<float, 4> tint{};
+        };
+
+        struct BasicMesh3DPushConstants {
+            std::array<float, 4> mvpRow0{};
+            std::array<float, 4> mvpRow1{};
+            std::array<float, 4> mvpRow2{};
+            std::array<float, 4> mvpRow3{};
         };
 
         template <typename Params>
@@ -357,8 +366,8 @@ namespace vke {
             const ShaderDescriptorBindingReflection* descriptor =
                 findDescriptorBinding(signature, set, binding);
             if (descriptor == nullptr) {
-                return std::unexpected{shaderError(std::string{context} +
-                                                   " missing descriptor binding")};
+                return std::unexpected{
+                    shaderError(std::string{context} + " missing descriptor binding")};
             }
 
             auto descriptorSet = expectUint(descriptor->set, set, std::string{context} + " set");
@@ -374,8 +383,8 @@ namespace vke {
             if (!count) {
                 return std::unexpected{std::move(count.error())};
             }
-            auto kind = expectString(descriptor->kind, expectedKind,
-                                     std::string{context} + " kind");
+            auto kind =
+                expectString(descriptor->kind, expectedKind, std::string{context} + " kind");
             if (!kind) {
                 return std::unexpected{std::move(kind.error())};
             }
@@ -561,6 +570,59 @@ namespace vke {
             return signature;
         }
 
+        [[nodiscard]] Result<void>
+        validateMesh3DReflection(const std::filesystem::path& shaderDirectory) {
+            auto vertexReflection =
+                readShaderReflection(shaderDirectory / "basic_mesh3d.vert.reflection.json");
+            if (!vertexReflection) {
+                return std::unexpected{std::move(vertexReflection.error())};
+            }
+            auto fragmentReflection =
+                readShaderReflection(shaderDirectory / "basic_mesh3d.frag.reflection.json");
+            if (!fragmentReflection) {
+                return std::unexpected{std::move(fragmentReflection.error())};
+            }
+
+            auto vertexEntry = expectString(vertexReflection->entry, "mesh3DVertexMain",
+                                            "Mesh3D vertex shader reflection entry");
+            if (!vertexEntry) {
+                return std::unexpected{std::move(vertexEntry.error())};
+            }
+            auto vertexStage = expectString(vertexReflection->stage, "vertex",
+                                            "Mesh3D vertex shader reflection stage");
+            if (!vertexStage) {
+                return std::unexpected{std::move(vertexStage.error())};
+            }
+            auto fragmentEntry = expectString(fragmentReflection->entry, "mesh3DFragmentMain",
+                                              "Mesh3D fragment shader reflection entry");
+            if (!fragmentEntry) {
+                return std::unexpected{std::move(fragmentEntry.error())};
+            }
+            auto fragmentStage = expectString(fragmentReflection->stage, "fragment",
+                                              "Mesh3D fragment shader reflection stage");
+            if (!fragmentStage) {
+                return std::unexpected{std::move(fragmentStage.error())};
+            }
+
+            auto vertexInputCount =
+                expectUint(static_cast<std::uint32_t>(vertexReflection->vertexInputs.size()), 2,
+                           "Mesh3D vertex shader input count");
+            if (!vertexInputCount) {
+                return std::unexpected{std::move(vertexInputCount.error())};
+            }
+            auto position =
+                validateVertexInput(*vertexReflection, "POSITION", 0, 0, "float32", 1, 3);
+            if (!position) {
+                return std::unexpected{std::move(position.error())};
+            }
+            auto color = validateVertexInput(*vertexReflection, "COLOR", 0, 1, "float32", 1, 3);
+            if (!color) {
+                return std::unexpected{std::move(color.error())};
+            }
+
+            return {};
+        }
+
         [[nodiscard]] Result<ShaderResourceSignature>
         validateDescriptorLayoutReflection(const std::filesystem::path& shaderDirectory) {
             auto fragmentReflection =
@@ -599,15 +661,13 @@ namespace vke {
             if (!constantBuffer) {
                 return std::unexpected{std::move(constantBuffer.error())};
             }
-            auto texture =
-                validateDescriptorBinding(signature, 0, 1, "texture",
-                                          "Descriptor layout smoke sampled image");
+            auto texture = validateDescriptorBinding(signature, 0, 1, "texture",
+                                                     "Descriptor layout smoke sampled image");
             if (!texture) {
                 return std::unexpected{std::move(texture.error())};
             }
-            auto sampler =
-                validateDescriptorBinding(signature, 0, 2, "sampler",
-                                          "Descriptor layout smoke sampler");
+            auto sampler = validateDescriptorBinding(signature, 0, 2, "sampler",
+                                                     "Descriptor layout smoke sampler");
             if (!sampler) {
                 return std::unexpected{std::move(sampler.error())};
             }
@@ -731,6 +791,120 @@ namespace vke {
             };
         }
 
+        [[nodiscard]] std::array<VkVertexInputBindingDescription, 1> basicVertex3DInputBindings() {
+            return std::array{
+                VkVertexInputBindingDescription{
+                    .binding = 0,
+                    .stride = sizeof(BasicVertex3D),
+                    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+                },
+            };
+        }
+
+        [[nodiscard]] std::array<VkVertexInputAttributeDescription, 2>
+        basicVertex3DInputAttributes() {
+            return std::array{
+                VkVertexInputAttributeDescription{
+                    .location = 0,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32B32_SFLOAT,
+                    .offset = offsetof(BasicVertex3D, position),
+                },
+                VkVertexInputAttributeDescription{
+                    .location = 1,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32B32_SFLOAT,
+                    .offset = offsetof(BasicVertex3D, color),
+                },
+            };
+        }
+
+        using BasicMat4 = std::array<float, 16>;
+
+        [[nodiscard]] constexpr float basicMat4At(const BasicMat4& matrix, std::size_t row,
+                                                  std::size_t column) {
+            return matrix.at((row * 4U) + column);
+        }
+
+        [[nodiscard]] BasicMat4 multiplyBasicMat4(const BasicMat4& lhs, const BasicMat4& rhs) {
+            BasicMat4 result{};
+            for (std::size_t row = 0; row < 4; ++row) {
+                for (std::size_t column = 0; column < 4; ++column) {
+                    float value = 0.0F;
+                    for (std::size_t index = 0; index < 4; ++index) {
+                        value += basicMat4At(lhs, row, index) * basicMat4At(rhs, index, column);
+                    }
+                    result.at((row * 4U) + column) = value;
+                }
+            }
+            return result;
+        }
+
+        [[nodiscard]] BasicMat4 basicMesh3DModelMatrix() {
+            constexpr float kDegreesToRadians = std::numbers::pi_v<float> / 180.0F;
+            const float yaw = 32.0F * kDegreesToRadians;
+            const float pitch = -18.0F * kDegreesToRadians;
+            const float yawCos = std::cos(yaw);
+            const float yawSin = std::sin(yaw);
+            const float pitchCos = std::cos(pitch);
+            const float pitchSin = std::sin(pitch);
+
+            const BasicMat4 rotateY{
+                yawCos,  0.0F, yawSin, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
+                -yawSin, 0.0F, yawCos, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F,
+            };
+            const BasicMat4 rotateX{
+                1.0F, 0.0F,     0.0F,     0.0F, 0.0F, pitchCos, -pitchSin, 0.0F,
+                0.0F, pitchSin, pitchCos, 0.0F, 0.0F, 0.0F,     0.0F,      1.0F,
+            };
+            const BasicMat4 translate{
+                1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
+                0.0F, 0.0F, 1.0F, 3.0F, 0.0F, 0.0F, 0.0F, 1.0F,
+            };
+
+            return multiplyBasicMat4(translate, multiplyBasicMat4(rotateY, rotateX));
+        }
+
+        [[nodiscard]] BasicMat4 basicMesh3DProjectionMatrix(VkExtent2D extent) {
+            const float width = static_cast<float>(std::max(extent.width, 1U));
+            const float height = static_cast<float>(std::max(extent.height, 1U));
+            const float aspect = width / height;
+            constexpr float kNear = 0.1F;
+            constexpr float kFar = 32.0F;
+            constexpr float kFovYRadians = 60.0F * std::numbers::pi_v<float> / 180.0F;
+            const float focalLength = 1.0F / std::tan(kFovYRadians * 0.5F);
+
+            return BasicMat4{
+                focalLength / aspect,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                focalLength,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                kFar / (kFar - kNear),
+                (-kNear * kFar) / (kFar - kNear),
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+            };
+        }
+
+        [[nodiscard]] BasicMesh3DPushConstants basicMesh3DPushConstants(VkExtent2D extent) {
+            const BasicMat4 mvp =
+                multiplyBasicMat4(basicMesh3DProjectionMatrix(extent), basicMesh3DModelMatrix());
+            return BasicMesh3DPushConstants{
+                .mvpRow0 = {mvp[0], mvp[1], mvp[2], mvp[3]},
+                .mvpRow1 = {mvp[4], mvp[5], mvp[6], mvp[7]},
+                .mvpRow2 = {mvp[8], mvp[9], mvp[10], mvp[11]},
+                .mvpRow3 = {mvp[12], mvp[13], mvp[14], mvp[15]},
+            };
+        }
+
         struct BasicDrawBuffers {
             VkBuffer vertex{VK_NULL_HANDLE};
             VkBuffer index{VK_NULL_HANDLE};
@@ -753,10 +927,11 @@ namespace vke {
             depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             depthAttachment.clearValue = VkClearValue{
-                .depthStencil = VkClearDepthStencilValue{
-                    .depth = 1.0F,
-                    .stencil = 0,
-                },
+                .depthStencil =
+                    VkClearDepthStencilValue{
+                        .depth = 1.0F,
+                        .stencil = 0,
+                    },
             };
 
             VkRenderingInfo renderingInfo{};
@@ -805,8 +980,72 @@ namespace vke {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
-        void recordFullscreenTextureDraw(const VulkanFrameRecordContext& frame,
-                                         VkPipeline pipeline,
+        void recordMesh3DDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
+                              VkPipelineLayout pipelineLayout, BasicDrawBuffers buffers,
+                              VkImageView depthImageView) {
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = frame.imageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingAttachmentInfo depthAttachment{};
+            depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            depthAttachment.imageView = depthImageView;
+            depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            depthAttachment.clearValue = VkClearValue{
+                .depthStencil =
+                    VkClearDepthStencilValue{
+                        .depth = 1.0F,
+                        .stencil = 0,
+                    },
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = frame.extent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachments = &colorAttachment;
+            renderingInfo.pDepthAttachment = &depthAttachment;
+
+            const VkViewport viewport{
+                .x = 0.0F,
+                .y = 0.0F,
+                .width = static_cast<float>(frame.extent.width),
+                .height = static_cast<float>(frame.extent.height),
+                .minDepth = 0.0F,
+                .maxDepth = 1.0F,
+            };
+            const VkRect2D scissor{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = frame.extent,
+            };
+            const BasicMesh3DPushConstants pushConstants = basicMesh3DPushConstants(frame.extent);
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdPushConstants(frame.commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               static_cast<std::uint32_t>(sizeof(pushConstants)), &pushConstants);
+            constexpr VkDeviceSize vertexBufferOffset = 0;
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex, &vertexBufferOffset);
+            vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
+            vkCmdDrawIndexed(
+                frame.commandBuffer, basicIndexedCubeDrawItem().indexCount,
+                basicIndexedCubeDrawItem().instanceCount, basicIndexedCubeDrawItem().firstIndex,
+                basicIndexedCubeDrawItem().vertexOffset, basicIndexedCubeDrawItem().firstInstance);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
+        void recordFullscreenTextureDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
                                          VkPipelineLayout pipelineLayout,
                                          VkDescriptorSet descriptorSet) {
             VkRenderingAttachmentInfo colorAttachment{};
@@ -854,13 +1093,13 @@ namespace vke {
 
         [[nodiscard]] bool usesImage(std::span<const RenderGraphImageHandle> images,
                                      RenderGraphImageHandle image) {
-            return std::ranges::any_of(images, [image](RenderGraphImageHandle used) {
-                return used == image;
-            });
+            return std::ranges::any_of(
+                images, [image](RenderGraphImageHandle used) { return used == image; });
         }
 
-        [[nodiscard]] VkImageUsageFlags transientUsageFlags(
-            const RenderGraphCompileResult& compiled, RenderGraphImageHandle image) {
+        [[nodiscard]] VkImageUsageFlags
+        transientUsageFlags(const RenderGraphCompileResult& compiled,
+                            RenderGraphImageHandle image) {
             VkImageUsageFlags usage{};
             for (const RenderGraphCompiledPass& pass : compiled.passes) {
                 if (usesImage(pass.transferWrites, image)) {
@@ -880,21 +1119,20 @@ namespace vke {
             return usage;
         }
 
-        [[nodiscard]] Result<void> prepareTransientResources(
-            VkDevice device, VmaAllocator allocator, const RenderGraphCompileResult& compiled,
-            std::vector<VulkanRenderGraphImageBinding>& bindings,
-            std::vector<VulkanImage>& transientImages,
-            std::vector<VulkanImageView>& transientImageViews) {
+        [[nodiscard]] Result<void>
+        prepareTransientResources(VkDevice device, VmaAllocator allocator,
+                                  const RenderGraphCompileResult& compiled,
+                                  std::vector<VulkanRenderGraphImageBinding>& bindings,
+                                  std::vector<VulkanImage>& transientImages,
+                                  std::vector<VulkanImageView>& transientImageViews) {
             transientImageViews.clear();
             transientImages.clear();
 
-            for (const RenderGraphTransientImageAllocation& allocation :
-                 compiled.transientImages) {
+            for (const RenderGraphTransientImageAllocation& allocation : compiled.transientImages) {
                 const VkFormat format = vulkanFormat(allocation.format);
                 const VkImageAspectFlags aspectMask =
                     basicRenderGraphImageAspect(allocation.format);
-                const VkImageUsageFlags usage =
-                    transientUsageFlags(compiled, allocation.image);
+                const VkImageUsageFlags usage = transientUsageFlags(compiled, allocation.image);
 
                 auto image = VulkanImage::create(VulkanImageDesc{
                     .device = device,
@@ -1026,8 +1264,8 @@ namespace vke {
         }
 
         if (resources->descriptorSetLayouts.empty()) {
-            return std::unexpected{Error{ErrorDomain::Vulkan, 0,
-                                         "Descriptor layout smoke produced no set layouts"}};
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0, "Descriptor layout smoke produced no set layouts"}};
         }
         const std::array setLayouts{resources->descriptorSetLayouts.front().handle()};
         auto descriptorSets = descriptorPool->allocate(VulkanDescriptorSetAllocationDesc{
@@ -1085,8 +1323,8 @@ namespace vke {
         *this = std::move(other);
     }
 
-    BasicFullscreenTextureRenderer& BasicFullscreenTextureRenderer::operator=(
-        BasicFullscreenTextureRenderer&& other) noexcept {
+    BasicFullscreenTextureRenderer&
+    BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other) noexcept {
         if (this == &other) {
             return *this;
         }
@@ -1281,8 +1519,8 @@ namespace vke {
         return {};
     }
 
-    Result<void> BasicFullscreenTextureRenderer::updateSourceDescriptor(
-        VkImageView sourceImageView) {
+    Result<void>
+    BasicFullscreenTextureRenderer::updateSourceDescriptor(VkImageView sourceImageView) {
         if (descriptorSet_ == VK_NULL_HANDLE || sourceImageView == VK_NULL_HANDLE) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0,
@@ -1385,8 +1623,8 @@ namespace vke {
                     .setVec4("Tint", kFullscreenParams.tint)
                     .drawFullscreenTriangle();
             })
-            .execute([&frame, &bindings, source, this](
-                         RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings, source,
+                      this](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
@@ -1492,9 +1730,9 @@ namespace vke {
             return std::unexpected{Error{ErrorDomain::Vulkan, 0,
                                          "Cannot create triangle renderer without an allocator"}};
         }
-        const BasicDrawItem drawItem =
-            desc.meshKind == BasicMeshKind::IndexedQuad ? basicIndexedQuadDrawItem()
-                                                        : desc.drawItem;
+        const BasicDrawItem drawItem = desc.meshKind == BasicMeshKind::IndexedQuad
+                                           ? basicIndexedQuadDrawItem()
+                                           : desc.drawItem;
         if ((drawItem.vertexCount == 0 && drawItem.indexCount == 0) ||
             drawItem.instanceCount == 0) {
             return std::unexpected{
@@ -1538,8 +1776,9 @@ namespace vke {
         constexpr auto triangleVertices = basicTriangleVertices();
         constexpr auto quadVertices = basicQuadVertices();
         const std::span<const BasicVertex> vertices =
-            desc.meshKind == BasicMeshKind::IndexedQuad ? std::span<const BasicVertex>{quadVertices}
-                                                        : std::span<const BasicVertex>{triangleVertices};
+            desc.meshKind == BasicMeshKind::IndexedQuad
+                ? std::span<const BasicVertex>{quadVertices}
+                : std::span<const BasicVertex>{triangleVertices};
         auto vertexBuffer = VulkanBuffer::create(VulkanBufferDesc{
             .device = desc.device,
             .allocator = desc.allocator,
@@ -1588,8 +1827,7 @@ namespace vke {
         return renderer;
     }
 
-    Result<void> BasicTriangleRenderer::ensurePipeline(VkFormat colorFormat,
-                                                       VkFormat depthFormat) {
+    Result<void> BasicTriangleRenderer::ensurePipeline(VkFormat colorFormat, VkFormat depthFormat) {
         if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat &&
             pipelineDepthFormat_ == depthFormat) {
             return {};
@@ -1716,8 +1954,7 @@ namespace vke {
         graph.addPass("DepthTriangle")
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
-            .execute([&frame, &bindings, depth, this](
-                         RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
@@ -1735,6 +1972,243 @@ namespace vke {
                                        .index = indexBuffer_.handle(),
                                    },
                                    drawItem_, depthBinding->vulkanImageView);
+                return {};
+            });
+
+        auto compiled = graph.compile();
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto prepared = prepareTransientResources(device_, allocator_, *compiled, bindings,
+                                                  transientImages_, transientImageViews_);
+        if (!prepared) {
+            return std::unexpected{std::move(prepared.error())};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+
+        return VulkanFrameRecordResult{
+            .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        };
+    }
+
+    BasicMesh3DRenderer::BasicMesh3DRenderer(BasicMesh3DRenderer&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    BasicMesh3DRenderer& BasicMesh3DRenderer::operator=(BasicMesh3DRenderer&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        vertexShader_ = std::move(other.vertexShader_);
+        fragmentShader_ = std::move(other.fragmentShader_);
+        descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
+        pipelineLayout_ = std::move(other.pipelineLayout_);
+        pipeline_ = std::move(other.pipeline_);
+        vertexBuffer_ = std::move(other.vertexBuffer_);
+        indexBuffer_ = std::move(other.indexBuffer_);
+        transientImages_ = std::move(other.transientImages_);
+        transientImageViews_ = std::move(other.transientImageViews_);
+        pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
+        pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
+        allocator_ = std::exchange(other.allocator_, nullptr);
+        return *this;
+    }
+
+    Result<BasicMesh3DRenderer> BasicMesh3DRenderer::create(const BasicMesh3DRendererDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0, "Cannot create mesh 3D renderer without a device"}};
+        }
+        if (desc.allocator == nullptr) {
+            return std::unexpected{Error{ErrorDomain::Vulkan, 0,
+                                         "Cannot create mesh 3D renderer without an allocator"}};
+        }
+
+        auto vertexCode = readSpirvFile(desc.shaderDirectory / "basic_mesh3d.vert.spv");
+        if (!vertexCode) {
+            return std::unexpected{std::move(vertexCode.error())};
+        }
+        auto fragmentCode = readSpirvFile(desc.shaderDirectory / "basic_mesh3d.frag.spv");
+        if (!fragmentCode) {
+            return std::unexpected{std::move(fragmentCode.error())};
+        }
+
+        auto reflectionValidated = validateMesh3DReflection(desc.shaderDirectory);
+        if (!reflectionValidated) {
+            return std::unexpected{std::move(reflectionValidated.error())};
+        }
+
+        auto vertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+            .device = desc.device,
+            .code = *vertexCode,
+        });
+        if (!vertexShader) {
+            return std::unexpected{std::move(vertexShader.error())};
+        }
+        auto fragmentShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+            .device = desc.device,
+            .code = *fragmentCode,
+        });
+        if (!fragmentShader) {
+            return std::unexpected{std::move(fragmentShader.error())};
+        }
+
+        constexpr std::array pushConstantRanges{
+            VkPushConstantRange{
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                .offset = 0,
+                .size = static_cast<std::uint32_t>(sizeof(BasicMesh3DPushConstants)),
+            },
+        };
+        auto pipelineLayout = VulkanPipelineLayout::create(VulkanPipelineLayoutDesc{
+            .device = desc.device,
+            .setLayouts = {},
+            .pushConstantRanges = pushConstantRanges,
+        });
+        if (!pipelineLayout) {
+            return std::unexpected{std::move(pipelineLayout.error())};
+        }
+
+        constexpr auto vertices = basicCubeVertices();
+        auto vertexBuffer = VulkanBuffer::create(VulkanBufferDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .size = sizeof(vertices),
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+        });
+        if (!vertexBuffer) {
+            return std::unexpected{std::move(vertexBuffer.error())};
+        }
+        auto uploadedVertices = vertexBuffer->upload(std::as_bytes(std::span{vertices}));
+        if (!uploadedVertices) {
+            return std::unexpected{std::move(uploadedVertices.error())};
+        }
+
+        constexpr auto indices = basicCubeIndices();
+        auto indexBuffer = VulkanBuffer::create(VulkanBufferDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .size = sizeof(indices),
+            .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+        });
+        if (!indexBuffer) {
+            return std::unexpected{std::move(indexBuffer.error())};
+        }
+        auto uploadedIndices = indexBuffer->upload(std::as_bytes(std::span{indices}));
+        if (!uploadedIndices) {
+            return std::unexpected{std::move(uploadedIndices.error())};
+        }
+
+        BasicMesh3DRenderer renderer;
+        renderer.device_ = desc.device;
+        renderer.allocator_ = desc.allocator;
+        renderer.vertexShader_ = std::move(*vertexShader);
+        renderer.fragmentShader_ = std::move(*fragmentShader);
+        renderer.pipelineLayout_ = std::move(*pipelineLayout);
+        renderer.vertexBuffer_ = std::move(*vertexBuffer);
+        renderer.indexBuffer_ = std::move(*indexBuffer);
+        return renderer;
+    }
+
+    Result<void> BasicMesh3DRenderer::ensurePipeline(VkFormat colorFormat, VkFormat depthFormat) {
+        if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat &&
+            pipelineDepthFormat_ == depthFormat) {
+            return {};
+        }
+
+        const auto bindings = basicVertex3DInputBindings();
+        const auto attributes = basicVertex3DInputAttributes();
+
+        auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
+            .device = device_,
+            .layout = pipelineLayout_.handle(),
+            .vertexShader = vertexShader_.handle(),
+            .fragmentShader = fragmentShader_.handle(),
+            .vertexEntryPoint = "main",
+            .fragmentEntryPoint = "main",
+            .colorFormat = colorFormat,
+            .depthFormat = depthFormat,
+            .vertexBindings = bindings,
+            .vertexAttributes = attributes,
+        });
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+
+        pipeline_ = std::move(*pipeline);
+        pipelineFormat_ = colorFormat;
+        pipelineDepthFormat_ = depthFormat;
+        return {};
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicMesh3DRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
+        constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
+        auto pipeline = ensurePipeline(frame.format, kDepthFormat);
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+
+        RenderGraph graph;
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const auto depth = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "Mesh3DDepthBuffer",
+            .format = RenderGraphImageFormat::D32Sfloat,
+            .extent = basicRenderGraphExtent(frame.extent),
+        });
+
+        std::vector<VulkanRenderGraphImageBinding> bindings;
+        bindings.reserve(2);
+        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+
+        graph.addPass("ClearColor")
+            .writeTransfer("target", backbuffer)
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+                recordTransferClear(frame);
+                return {};
+            });
+
+        graph.addPass("Mesh3D")
+            .writeColor("target", backbuffer)
+            .writeDepth("depth", depth)
+            .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto depthBinding = findVulkanRenderGraphImage(depth, bindings);
+                if (!depthBinding) {
+                    return std::unexpected{std::move(depthBinding.error())};
+                }
+
+                recordMesh3DDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
+                                 BasicDrawBuffers{
+                                     .vertex = vertexBuffer_.handle(),
+                                     .index = indexBuffer_.handle(),
+                                 },
+                                 depthBinding->vulkanImageView);
                 return {};
             });
 
