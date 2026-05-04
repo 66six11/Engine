@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -7,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -226,6 +228,7 @@ namespace vke {
         std::string name;
         std::string type;
         std::string paramsType;
+        std::vector<std::byte> paramsData;
         std::vector<RenderGraphCommand> commands;
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
@@ -263,6 +266,7 @@ namespace vke {
         std::string_view name;
         std::string_view type;
         std::string_view paramsType;
+        std::span<const std::byte> paramsData;
         std::span<const RenderGraphCommand> commands;
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
@@ -352,6 +356,7 @@ namespace vke {
             std::string name;
             std::string type;
             std::string paramsType;
+            std::vector<std::byte> paramsData;
             std::vector<RenderGraphImageSlot> colorWriteSlots;
             std::vector<RenderGraphImageSlot> shaderReadSlots;
             std::vector<RenderGraphImageSlot> depthReadSlots;
@@ -438,6 +443,22 @@ namespace vke {
                 return *this;
             }
 
+            PassBuilder& setParamsData(std::vector<std::byte> paramsData) {
+                graph_->passes_[passIndex_].paramsData = std::move(paramsData);
+                return *this;
+            }
+
+            template <typename Params>
+            PassBuilder& setParams(std::string paramsType, const Params& params) {
+                static_assert(std::is_trivially_copyable_v<Params>,
+                              "RenderGraph pass params must be trivially copyable");
+                setParamsType(std::move(paramsType));
+                std::vector<std::byte> data(sizeof(Params));
+                const auto* bytes = reinterpret_cast<const std::byte*>(&params);
+                std::copy(bytes, bytes + sizeof(Params), data.begin());
+                return setParamsData(std::move(data));
+            }
+
             PassBuilder& execute(RenderGraphPassCallback callback) {
                 graph_->passes_[passIndex_].callback = std::move(callback);
                 return *this;
@@ -490,6 +511,7 @@ namespace vke {
                 .name = std::move(name),
                 .type = {},
                 .paramsType = {},
+                .paramsData = {},
                 .colorWriteSlots = {},
                 .shaderReadSlots = {},
                 .depthReadSlots = {},
@@ -508,6 +530,7 @@ namespace vke {
                 .name = std::move(name),
                 .type = std::move(type),
                 .paramsType = {},
+                .paramsData = {},
                 .colorWriteSlots = {},
                 .shaderReadSlots = {},
                 .depthReadSlots = {},
@@ -562,6 +585,7 @@ namespace vke {
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
+                    .paramsData = pass.paramsData,
                     .commands = pass.commands,
                     .transitionsBefore = {},
                     .colorWrites = imageHandles(pass.colorWriteSlots),
@@ -738,6 +762,7 @@ namespace vke {
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
+                    .paramsData = pass.paramsData,
                     .commands = pass.commands,
                     .transitionsBefore = pass.transitionsBefore,
                     .colorWrites = pass.colorWrites,

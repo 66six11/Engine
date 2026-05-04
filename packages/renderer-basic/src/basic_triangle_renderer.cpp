@@ -24,6 +24,10 @@ namespace vke {
             return Error{ErrorDomain::Shader, 0, std::move(message)};
         }
 
+        [[nodiscard]] Error renderGraphError(std::string message) {
+            return Error{ErrorDomain::RenderGraph, 0, std::move(message)};
+        }
+
         [[nodiscard]] Result<void> expectString(std::string_view actual, std::string_view expected,
                                                 std::string_view context) {
             if (actual == expected) {
@@ -44,6 +48,131 @@ namespace vke {
             return std::unexpected{shaderError(std::string{context} + " expected " +
                                                std::to_string(expected) + " but found " +
                                                std::to_string(actual))};
+        }
+
+        struct BasicFullscreenPipelineKey {
+            std::string shaderAsset;
+            std::string shaderPass;
+            std::string textureBinding;
+            std::string textureSlot;
+        };
+
+        struct BasicTransferClearParams {
+            std::array<float, 4> color{};
+        };
+
+        struct BasicFullscreenParams {
+            std::array<float, 4> tint{};
+        };
+
+        template <typename Params>
+        [[nodiscard]] Result<Params> readPassParams(RenderGraphPassContext pass,
+                                                    std::string_view expectedParamsType,
+                                                    std::string_view context) {
+            if (pass.paramsType != expectedParamsType) {
+                return std::unexpected{
+                    renderGraphError(std::string{context} + " expected params type '" +
+                                     std::string{expectedParamsType} + "' but found '" +
+                                     std::string{pass.paramsType} + "'")};
+            }
+            if (pass.paramsData.size() != sizeof(Params)) {
+                return std::unexpected{
+                    renderGraphError(std::string{context} + " expected params payload size " +
+                                     std::to_string(sizeof(Params)) + " but found " +
+                                     std::to_string(pass.paramsData.size()))};
+            }
+
+            Params params{};
+            std::memcpy(&params, pass.paramsData.data(), sizeof(Params));
+            return params;
+        }
+
+        [[nodiscard]] Result<void> expectCommandKind(const RenderGraphCommand& command,
+                                                     RenderGraphCommandKind expected,
+                                                     std::string_view context) {
+            if (command.kind == expected) {
+                return {};
+            }
+
+            return std::unexpected{
+                renderGraphError(std::string{context} + " command kind mismatch")};
+        }
+
+        [[nodiscard]] Result<BasicFullscreenPipelineKey>
+        basicFullscreenPipelineKey(RenderGraphPassContext pass) {
+            if (pass.commands.size() != 4) {
+                return std::unexpected{
+                    renderGraphError("Fullscreen pass expected exactly four commands")};
+            }
+
+            const RenderGraphCommand& shader = pass.commands[0];
+            const RenderGraphCommand& texture = pass.commands[1];
+            const RenderGraphCommand& tint = pass.commands[2];
+            const RenderGraphCommand& draw = pass.commands[3];
+
+            auto shaderKind =
+                expectCommandKind(shader, RenderGraphCommandKind::SetShader, "Fullscreen shader");
+            if (!shaderKind) {
+                return std::unexpected{std::move(shaderKind.error())};
+            }
+            auto textureKind = expectCommandKind(texture, RenderGraphCommandKind::SetTexture,
+                                                 "Fullscreen texture");
+            if (!textureKind) {
+                return std::unexpected{std::move(textureKind.error())};
+            }
+            auto tintKind =
+                expectCommandKind(tint, RenderGraphCommandKind::SetVec4, "Fullscreen tint");
+            if (!tintKind) {
+                return std::unexpected{std::move(tintKind.error())};
+            }
+            auto drawKind = expectCommandKind(draw, RenderGraphCommandKind::DrawFullscreenTriangle,
+                                              "Fullscreen draw");
+            if (!drawKind) {
+                return std::unexpected{std::move(drawKind.error())};
+            }
+
+            if (shader.name.empty() || shader.secondaryName.empty()) {
+                return std::unexpected{
+                    renderGraphError("Fullscreen pass requires a shader asset and pass")};
+            }
+            if (shader.name != "Hidden/DescriptorLayout" || shader.secondaryName != "Fullscreen") {
+                return std::unexpected{
+                    renderGraphError("Fullscreen pass shader command does not match the current "
+                                     "pipeline key")};
+            }
+            if (texture.name != "SourceTex" || texture.secondaryName != "source") {
+                return std::unexpected{
+                    renderGraphError("Fullscreen pass texture command must bind SourceTex "
+                                     "from the source slot")};
+            }
+            if (tint.name != "Tint") {
+                return std::unexpected{
+                    renderGraphError("Fullscreen pass tint command must target Tint")};
+            }
+
+            return BasicFullscreenPipelineKey{
+                .shaderAsset = shader.name,
+                .shaderPass = shader.secondaryName,
+                .textureBinding = texture.name,
+                .textureSlot = texture.secondaryName,
+            };
+        }
+
+        [[nodiscard]] Result<void>
+        validateFullscreenTintCommand(RenderGraphPassContext pass,
+                                      const BasicFullscreenParams& params) {
+            if (pass.commands.size() != 4) {
+                return std::unexpected{
+                    renderGraphError("Fullscreen pass expected exactly four commands")};
+            }
+
+            const RenderGraphCommand& tint = pass.commands[2];
+            if (tint.floatValues != params.tint) {
+                return std::unexpected{
+                    renderGraphError("Fullscreen tint command does not match typed params")};
+            }
+
+            return {};
         }
 
         [[nodiscard]] Result<std::vector<std::uint32_t>>
@@ -1183,11 +1312,18 @@ namespace vke {
         bindings.reserve(2);
         bindings.push_back(basicBackbufferBinding(backbuffer, frame));
 
+        constexpr BasicTransferClearParams kClearParams{
+            .color = {0.18F, 0.36F, 0.95F, 1.0F},
+        };
+        constexpr BasicFullscreenParams kFullscreenParams{
+            .tint = {1.0F, 1.0F, 1.0F, 1.0F},
+        };
+
         graph.addPass("ClearFullscreenSource", "builtin.transfer-clear")
-            .setParamsType("builtin.transfer-clear.params")
+            .setParams("builtin.transfer-clear.params", kClearParams)
             .writeTransfer("target", source)
-            .recordCommands([](RenderGraphCommandList& commands) {
-                commands.clearColor("target", std::array{0.18F, 0.36F, 0.95F, 1.0F});
+            .recordCommands([kClearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", kClearParams.color);
             })
             .execute([&frame, &bindings, source](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
@@ -1196,12 +1332,23 @@ namespace vke {
                     return std::unexpected{std::move(transitions.error())};
                 }
 
+                auto clearParams = readPassParams<BasicTransferClearParams>(
+                    pass, "builtin.transfer-clear.params", "Fullscreen source clear pass");
+                if (!clearParams) {
+                    return std::unexpected{std::move(clearParams.error())};
+                }
+
                 auto sourceBinding = findVulkanRenderGraphImage(source, bindings);
                 if (!sourceBinding) {
                     return std::unexpected{std::move(sourceBinding.error())};
                 }
 
-                const VkClearColorValue sourceColor{{0.18F, 0.36F, 0.95F, 1.0F}};
+                const VkClearColorValue sourceColor{{
+                    clearParams->color[0],
+                    clearParams->color[1],
+                    clearParams->color[2],
+                    clearParams->color[3],
+                }};
                 VkImageSubresourceRange clearRange{};
                 clearRange.aspectMask = sourceBinding->aspectMask;
                 clearRange.baseMipLevel = 0;
@@ -1215,13 +1362,13 @@ namespace vke {
             });
 
         graph.addPass("FullscreenTexture", "builtin.raster-fullscreen")
-            .setParamsType("builtin.raster-fullscreen.params")
+            .setParams("builtin.raster-fullscreen.params", kFullscreenParams)
             .readTexture("source", source, RenderGraphShaderStage::Fragment)
             .writeColor("target", backbuffer)
-            .recordCommands([](RenderGraphCommandList& commands) {
+            .recordCommands([kFullscreenParams](RenderGraphCommandList& commands) {
                 commands.setShader("Hidden/DescriptorLayout", "Fullscreen")
                     .setTexture("SourceTex", "source")
-                    .setVec4("Tint", std::array{1.0F, 1.0F, 1.0F, 1.0F})
+                    .setVec4("Tint", kFullscreenParams.tint)
                     .drawFullscreenTriangle();
             })
             .execute([&frame, &bindings, source, this](
@@ -1230,6 +1377,26 @@ namespace vke {
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto fullscreenParams = readPassParams<BasicFullscreenParams>(
+                    pass, "builtin.raster-fullscreen.params", "Fullscreen texture pass");
+                if (!fullscreenParams) {
+                    return std::unexpected{std::move(fullscreenParams.error())};
+                }
+
+                auto pipelineKey = basicFullscreenPipelineKey(pass);
+                if (!pipelineKey) {
+                    return std::unexpected{std::move(pipelineKey.error())};
+                }
+                auto tintCommand = validateFullscreenTintCommand(pass, *fullscreenParams);
+                if (!tintCommand) {
+                    return std::unexpected{std::move(tintCommand.error())};
+                }
+                if (pipelineKey->textureSlot != "source") {
+                    return std::unexpected{
+                        renderGraphError("Fullscreen pipeline key references an unknown texture "
+                                         "slot")};
                 }
 
                 auto sourceBinding = findVulkanRenderGraphImage(source, bindings);
