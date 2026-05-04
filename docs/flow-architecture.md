@@ -348,13 +348,14 @@ flowchart TD
 - `setParamsType("...")` 已接入最小 params type id；compiled pass 和 executor context 会携带该
   type id，真实 typed params payload 后续再加。
 - `RenderGraphSchemaRegistry` / `RenderGraphPassSchema` 已接入最小 schema 验证：按 pass type 校验
-  params type、允许的 slot 和必需 slot。
+  params type、允许的 slot、必需 slot 和允许的 command kind。
 - `pass.type` 是当前 typed executor key，并会继续演进为执行模型 / pass opcode。它不等同于
   RenderQueue 或 shader tag；脚本/工具未来应通过同一套 C++ builder 语义生成 pass 声明、资源访问、
   typed params 和受控 command context。
 - 受控 command context skeleton 已接入：`RenderGraphCommandList` 可记录后端无关的 command summary，
   当前覆盖 clear、shader/pass 名称、texture slot binding、标量/向量参数和 fullscreen triangle draw。
-  command summary 会进入 compiled pass、executor context 和 debug table；当前不执行 Vulkan 命令。
+  command summary 会进入 compiled pass、executor context 和 debug table；fullscreen texture smoke 已验证
+  `setTexture`、`setVec4` 和 `drawFullscreenTriangle` 的最小 Vulkan 执行路径。
 
 ## RenderGraph 到 Vulkan 的翻译流程
 

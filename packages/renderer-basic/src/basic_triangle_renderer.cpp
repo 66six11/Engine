@@ -517,6 +517,51 @@ namespace vke {
             return *fragmentSignature;
         }
 
+        [[nodiscard]] RenderGraphSchemaRegistry basicFullscreenSchemaRegistry() {
+            RenderGraphSchemaRegistry schemas;
+            schemas.registerSchema(RenderGraphPassSchema{
+                .type = "builtin.transfer-clear",
+                .paramsType = "builtin.transfer-clear.params",
+                .resourceSlots =
+                    {
+                        RenderGraphResourceSlotSchema{
+                            .name = "target",
+                            .access = RenderGraphSlotAccess::TransferWrite,
+                            .shaderStage = RenderGraphShaderStage::None,
+                            .optional = false,
+                        },
+                    },
+                .allowedCommands = {RenderGraphCommandKind::ClearColor},
+            });
+            schemas.registerSchema(RenderGraphPassSchema{
+                .type = "builtin.raster-fullscreen",
+                .paramsType = "builtin.raster-fullscreen.params",
+                .resourceSlots =
+                    {
+                        RenderGraphResourceSlotSchema{
+                            .name = "source",
+                            .access = RenderGraphSlotAccess::ShaderRead,
+                            .shaderStage = RenderGraphShaderStage::Fragment,
+                            .optional = false,
+                        },
+                        RenderGraphResourceSlotSchema{
+                            .name = "target",
+                            .access = RenderGraphSlotAccess::ColorWrite,
+                            .shaderStage = RenderGraphShaderStage::None,
+                            .optional = false,
+                        },
+                    },
+                .allowedCommands =
+                    {
+                        RenderGraphCommandKind::SetShader,
+                        RenderGraphCommandKind::SetTexture,
+                        RenderGraphCommandKind::SetVec4,
+                        RenderGraphCommandKind::DrawFullscreenTriangle,
+                    },
+            });
+            return schemas;
+        }
+
         void recordTransferClear(const VulkanFrameRecordContext& frame) {
             VkImageSubresourceRange clearRange{};
             clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1139,7 +1184,11 @@ namespace vke {
         bindings.push_back(basicBackbufferBinding(backbuffer, frame));
 
         graph.addPass("ClearFullscreenSource", "builtin.transfer-clear")
+            .setParamsType("builtin.transfer-clear.params")
             .writeTransfer("target", source)
+            .recordCommands([](RenderGraphCommandList& commands) {
+                commands.clearColor("target", std::array{0.18F, 0.36F, 0.95F, 1.0F});
+            })
             .execute([&frame, &bindings, source](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
@@ -1166,8 +1215,15 @@ namespace vke {
             });
 
         graph.addPass("FullscreenTexture", "builtin.raster-fullscreen")
+            .setParamsType("builtin.raster-fullscreen.params")
             .readTexture("source", source, RenderGraphShaderStage::Fragment)
             .writeColor("target", backbuffer)
+            .recordCommands([](RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/DescriptorLayout", "Fullscreen")
+                    .setTexture("SourceTex", "source")
+                    .setVec4("Tint", std::array{1.0F, 1.0F, 1.0F, 1.0F})
+                    .drawFullscreenTriangle();
+            })
             .execute([&frame, &bindings, source, this](
                          RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
@@ -1190,7 +1246,8 @@ namespace vke {
                 return {};
             });
 
-        auto compiled = graph.compile();
+        const RenderGraphSchemaRegistry schemas = basicFullscreenSchemaRegistry();
+        auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
         }

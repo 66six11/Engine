@@ -105,12 +105,6 @@ namespace vke {
         bool optional{};
     };
 
-    struct RenderGraphPassSchema {
-        std::string type;
-        std::string paramsType;
-        std::vector<RenderGraphResourceSlotSchema> resourceSlots;
-    };
-
     enum class RenderGraphCommandKind {
         SetShader,
         SetTexture,
@@ -119,6 +113,13 @@ namespace vke {
         SetVec4,
         DrawFullscreenTriangle,
         ClearColor,
+    };
+
+    struct RenderGraphPassSchema {
+        std::string type;
+        std::string paramsType;
+        std::vector<RenderGraphResourceSlotSchema> resourceSlots;
+        std::vector<RenderGraphCommandKind> allowedCommands;
     };
 
     struct RenderGraphCommand {
@@ -1011,7 +1012,40 @@ namespace vke {
                 }
             }
 
+            auto commands = validateCommandsAgainstSchema(pass, *schema);
+            if (!commands) {
+                return std::unexpected{std::move(commands.error())};
+            }
+
             return {};
+        }
+
+        [[nodiscard]] Result<void> validateCommandsAgainstSchema(
+            const Pass& pass, const RenderGraphPassSchema& schema) const {
+            for (const RenderGraphCommand& command : pass.commands) {
+                if (!commandAllowedBySchema(command.kind, schema)) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' command '" +
+                            std::string{commandKindName(command.kind)} +
+                            "' is not allowed by schema '" + schema.type + "'.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] static bool commandAllowedBySchema(RenderGraphCommandKind commandKind,
+                                                         const RenderGraphPassSchema& schema) {
+            for (const RenderGraphCommandKind allowed : schema.allowedCommands) {
+                if (allowed == commandKind) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         [[nodiscard]] Result<void>

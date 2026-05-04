@@ -94,13 +94,13 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | --- | --- | --- | --- |
 | 1 | Slang reflection 基线 | 已在 `packages/shader-slang` 增加 reflection 工具，输出 `*.reflection.json` | triangle shader 生成 entry、stage、vertex inputs、descriptor set/binding、push constant 信息；现有 smoke 不退化 |
 | 2 | Descriptor/Layout 契约 | 已开始用 reflection JSON 校验 triangle shader 契约，并打通 pipeline layout/resource signature 接口 | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
-| 3 | RenderGraph 声明模型 v2 | named write slots、params type id 和最小 pass schema 已接入；下一步继续补真实 typed params payload 和更细的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot、params type 和 schema 能进入 compiled pass 和 executor context；旧 callback 路径不退化 |
+| 3 | RenderGraph 声明模型 v2 | named write slots、params type id 和最小 pass schema 已接入；schema 现在校验 slot、params type 和 allowed command kind；下一步继续补真实 typed params payload 和更细的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot、params type、allowed command kind 和 schema 能进入 compiled pass 和 executor context；旧 callback 路径不退化 |
 | 4 | RenderGraph access/state 扩展 | `ShaderRead(fragment/compute)`、`DepthAttachmentRead/Write`、`DepthSampledRead(fragment/compute)` 已接入，并同步 Vulkan layout/stage/access 翻译 | `--smoke-rendergraph` 已验证 shader-read、depth-write、depth-sampled-read transition、shader stage/domain、depth aspect barrier 和 Vulkan adapter 字段；尚不引入实际 shader sampling |
 | 5 | RenderGraph transient image | `createTransientImage()`、transient lifetime plan、debug table 和 `--smoke-transient` 已接入 | `--smoke-transient` 已验证非 backbuffer image transition、first/last pass、final shader stage 和 Vulkan adapter mapping |
 | 6 | PrepareBackend transient allocation | 已增加 Vulkan image/image view RAII、VMA-backed transient image 创建、usage/aspect 推导和 binding 表接入 | `--smoke-transient` 已升级为真实 transient VkImage 录制路径，validation 无 error/warning |
 | 7 | Depth attachment MVP | 已增加 dynamic rendering depth attachment、`D32Sfloat` transient depth image、depth aspect binding 和 depth-enabled pipeline | `--smoke-depth-triangle` 已接入，validation 无 error/warning |
 | 8 | 受控 command context skeleton | 已增加 `RenderGraphCommandList`、`RenderGraphCommand`、compiled pass command summary、executor context command span 和 debug table 输出；`--smoke-rendergraph` 已覆盖 clear、set shader、set texture、float/vec4 参数和 fullscreen draw summary | command summary 可审查；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
-| 9 | Descriptor binding / fullscreen pass | 已增加最小 descriptor pool、descriptor set allocation、uniform-buffer write、sampled-image write、sampler write、descriptor bind 和 fullscreen dynamic-rendering draw；下一步把该 smoke 路径收紧为可复用的 pass schema / params / pipeline key | `--smoke-descriptor-layout` 已验证 descriptor set 分配和 buffer/image/sampler write；`--smoke-fullscreen-texture` 已验证 shader 真实采样 transient source image |
+| 9 | Descriptor binding / fullscreen pass | 已增加最小 descriptor pool、descriptor set allocation、uniform-buffer write、sampled-image write、sampler write、descriptor bind 和 fullscreen dynamic-rendering draw；fullscreen 路径已开始使用可复用 pass schema 和 allowed command kind；下一步继续收紧 typed params / pipeline key | `--smoke-descriptor-layout` 已验证 descriptor set 分配和 buffer/image/sampler write；`--smoke-fullscreen-texture` 已验证 shader 真实采样 transient source image |
 | 10 | Mesh asset / draw list 路线 | 从固定顶点数据扩展到最小 mesh 数据、index buffer、staging upload；必要时引入简化 draw list，而不是先暴露逐 object 脚本 draw loop | 新增 `--smoke-mesh`，渲染 indexed triangle 或 quad |
 
 ## RenderGraph 脚本前置原则
@@ -115,9 +115,9 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 - `pass.type` 命名优先使用执行模型，例如 `builtin.transfer-clear`、`builtin.raster-fullscreen`、
   `builtin.raster-draw-list`、`builtin.compute-dispatch`；业务语义放在 `pass.name`、params 或后续 feature
   层，避免退化成大量不可优化的业务字符串 executor。
-- command context skeleton 第一版仍主要作为 debug IR/summary；`--smoke-fullscreen-texture` 已验证
-  `setTexture` / fullscreen draw 的最小 Vulkan 路径，后续需要把 descriptor binding、pipeline key 和
-  typed params 从 smoke 形态收敛为稳定执行模型。
+- command context skeleton 第一版仍主要作为 debug IR/summary；schema 已能限制 pass 允许的 command kind，
+  `--smoke-fullscreen-texture` 已验证 `setTexture` / fullscreen draw 的最小 Vulkan 路径，后续需要把
+  descriptor binding、pipeline key 和 typed params 从 smoke 形态收敛为稳定执行模型。
 
 近期 API 形态应先在 C++ 中验证，例如：
 

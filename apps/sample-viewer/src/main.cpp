@@ -1167,6 +1167,7 @@ namespace {
                         .optional = false,
                     },
                 },
+            .allowedCommands = {vke::RenderGraphCommandKind::ClearColor},
         });
         schemas.registerSchema(vke::RenderGraphPassSchema{
             .type = "basic.sample-fragment",
@@ -1179,6 +1180,13 @@ namespace {
                         .shaderStage = vke::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
+                },
+            .allowedCommands =
+                {
+                    vke::RenderGraphCommandKind::SetShader,
+                    vke::RenderGraphCommandKind::SetTexture,
+                    vke::RenderGraphCommandKind::SetFloat,
+                    vke::RenderGraphCommandKind::DrawFullscreenTriangle,
                 },
         });
         schemas.registerSchema(vke::RenderGraphPassSchema{
@@ -1193,6 +1201,7 @@ namespace {
                         .optional = false,
                     },
                 },
+            .allowedCommands = {},
         });
         schemas.registerSchema(vke::RenderGraphPassSchema{
             .type = "basic.depth-sample-fragment",
@@ -1206,6 +1215,7 @@ namespace {
                         .optional = false,
                     },
                 },
+            .allowedCommands = {},
         });
         schemas.registerSchema(vke::RenderGraphPassSchema{
             .type = "basic.transient-color",
@@ -1219,6 +1229,7 @@ namespace {
                         .optional = false,
                     },
                 },
+            .allowedCommands = {},
         });
         schemas.registerSchema(vke::RenderGraphPassSchema{
             .type = "basic.transient-sample-fragment",
@@ -1231,6 +1242,13 @@ namespace {
                         .shaderStage = vke::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
+                },
+            .allowedCommands =
+                {
+                    vke::RenderGraphCommandKind::SetShader,
+                    vke::RenderGraphCommandKind::SetTexture,
+                    vke::RenderGraphCommandKind::SetVec4,
+                    vke::RenderGraphCommandKind::DrawFullscreenTriangle,
                 },
         });
 
@@ -1264,6 +1282,26 @@ namespace {
         }
 
         if (!validateSmokeRenderGraphVulkanMappings(*compiled)) {
+            return EXIT_FAILURE;
+        }
+
+        vke::RenderGraph invalidCommandGraph;
+        const auto invalidBackbuffer = invalidCommandGraph.importImage(vke::RenderGraphImageDesc{
+            .name = "InvalidBackbuffer",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = vke::RenderGraphImageState::Undefined,
+            .finalState = vke::RenderGraphImageState::Present,
+        });
+        invalidCommandGraph.addPass("InvalidClearCommand", "basic.clear-transfer")
+            .setParamsType("basic.clear-transfer.params")
+            .writeTransfer("target", invalidBackbuffer)
+            .recordCommands([](vke::RenderGraphCommandList& commands) {
+                commands.drawFullscreenTriangle();
+            });
+        auto invalidCompiled = invalidCommandGraph.compile(schemas);
+        if (invalidCompiled) {
+            vke::logError("Render graph schema accepted an invalid command kind.");
             return EXIT_FAILURE;
         }
 
