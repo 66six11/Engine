@@ -53,6 +53,54 @@ flowchart TD
 - `renderer-basic-vulkan` 组合 RenderGraph、Vulkan frame callback 和 Vulkan adapter，承载当前 clear frame orchestration。
 - `sample-viewer` 负责窗口、context 和 smoke 命令入口；`--smoke-frame` 不再持有 clear pass 录制细节。
 
+## 当前架构总览
+
+这张图按“谁拥有抽象、谁拥有 Vulkan、谁负责组装运行”来读。横向是包边界，纵向是每帧数据从应用入口落到
+GPU submit 的方向。
+
+```mermaid
+flowchart TB
+    subgraph AppLayer["Application / host"]
+        SampleViewer["sample-viewer<br/>CLI smoke / window / context wiring"]
+        FrameCallback["VulkanFrameRecordCallback<br/>per-frame recording hook"]
+    end
+
+    subgraph AbstractLayer["Backend-agnostic model"]
+        RenderGraph["rendergraph<br/>resources / passes / slots / params type<br/>command summary / schema validation"]
+        RendererBasic["renderer_basic<br/>backend-neutral renderer contract"]
+        ShaderSlang["shader-slang<br/>Slang metadata + reflection JSON"]
+    end
+
+    subgraph VulkanRendererLayer["Vulkan renderer package"]
+        RendererBasicVk["renderer_basic_vulkan<br/>BasicTriangleRenderer / fullscreen renderer<br/>graph construction + Vulkan pass callbacks"]
+    end
+
+    subgraph VulkanBackendLayer["Vulkan backend"]
+        RhiVkRG["rhi_vulkan_rendergraph<br/>abstract state -> layout/stage/access/barrier"]
+        RhiVk["rhi_vulkan<br/>context / frame loop / swapchain / VMA resources<br/>pipelines / descriptors / command buffers"]
+    end
+
+    SampleViewer --> FrameCallback
+    SampleViewer --> RendererBasicVk
+    RendererBasic --> RenderGraph
+    RendererBasic --> ShaderSlang
+    RendererBasicVk --> RendererBasic
+    RendererBasicVk --> RenderGraph
+    RendererBasicVk --> RhiVkRG
+    RendererBasicVk --> RhiVk
+    FrameCallback --> RendererBasicVk
+    RhiVkRG --> RenderGraph
+    RhiVkRG --> RhiVk
+```
+
+当前最重要的切分：
+
+- RenderGraph 只知道抽象 image state、slot、params type 和 command kind，不知道 `VkImageLayout`、pipeline
+  stage 或 access mask。
+- Vulkan layout/stage/access 翻译只在 `rhi_vulkan_rendergraph`，真实 command buffer、descriptor、pipeline、
+  swapchain 和 VMA 生命周期只在 Vulkan 包或 `renderer_basic_vulkan`。
+- `sample-viewer` 是 host 和 smoke harness；它可以选择 smoke 路径，但不应该内联具体 renderer 的 Vulkan 录制细节。
+
 ## 启动与 Context 流程
 
 ```mermaid
@@ -140,6 +188,51 @@ flowchart TD
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
   image view 和 binding 表，并录制非 backbuffer image transition / clear。
 
+## 当前运行调用链
+
+交互式 viewer 和各个 Vulkan smoke 共享同一条 frame-loop 骨架：host 创建 window/context/frame loop，
+renderer 只通过 callback 在“command buffer 已经 begin”之后录制本帧内容，最后由 frame loop 统一 submit/present。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Main as sample-viewer main/runSmoke*
+    participant Window as GlfwWindow
+    participant Context as VulkanContext
+    participant FrameLoop as VulkanFrameLoop
+    participant Renderer as renderer_basic_vulkan
+    participant RG as RenderGraph
+    participant Adapter as rhi_vulkan_rendergraph
+    participant Vulkan as Vulkan API
+
+    Main->>Window: create window / poll events / framebuffer extent
+    Main->>Context: VulkanContext::create(instance extensions)
+    Context->>Vulkan: create instance / device / queue / VMA allocator
+    Main->>FrameLoop: VulkanFrameLoop::create(context, window)
+    FrameLoop->>Vulkan: create swapchain / image views / command buffer / sync objects
+    Main->>FrameLoop: renderFrame(record callback)
+    FrameLoop->>Vulkan: vkAcquireNextImageKHR
+    FrameLoop->>Vulkan: vkBeginCommandBuffer
+    FrameLoop->>Renderer: recordFrame(recordContext)
+    Renderer->>RG: import/create resources, add passes, record command summary
+    Renderer->>RG: compile(schema registry)
+    RG-->>Renderer: compiled passes, transitions, transient plan, final transitions
+    Renderer->>Adapter: recordRenderGraphTransitions(compiled transitions, bindings)
+    Adapter->>Vulkan: vkCmdPipelineBarrier2
+    Renderer->>Vulkan: vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw
+    Renderer-->>FrameLoop: VulkanFrameRecordResult(waitStageMask)
+    FrameLoop->>Vulkan: vkEndCommandBuffer
+    FrameLoop->>Vulkan: vkQueueSubmit2(waitStageMask)
+    FrameLoop->>Vulkan: vkQueuePresentKHR
+```
+
+调用链里的责任归属：
+
+- `VulkanFrameLoop` 拥有 acquire、command buffer begin/end、queue submit、present 和 swapchain recreate。
+- `renderer_basic_vulkan` 在 callback 内构建 graph、编译 graph、准备 transient/descriptor/pipeline 相关资源并录制 draw。
+- `RenderGraph` 产出后端无关计划；它不直接调用 Vulkan。
+- `rhi_vulkan_rendergraph` 把 compiled transition 翻译为 Vulkan barrier，再由调用方用真实 image binding 录制。
+
 ## 当前 Frame Loop 流程
 
 ```mermaid
@@ -224,6 +317,40 @@ flowchart TD
     RendererObject --> DepthObjects
     Begin --> BuildGraph --> Compile --> ToTransfer --> Clear --> ToColor --> BeginRendering --> Draw --> EndRendering --> ToPresent --> End
 ```
+
+`--smoke-fullscreen-texture` 当前真实录制流程：
+
+```mermaid
+flowchart TD
+    Renderer["BasicFullscreenTextureRenderer::recordFrame"]
+    ImportBackbuffer["importImage(Backbuffer)<br/>initial Undefined, final Present"]
+    CreateSource["createTransientImage(FullscreenSource)<br/>same format/extent as backbuffer"]
+    BindingBackbuffer["binding table add backbuffer<br/>RenderGraphImageHandle -> swapchain VkImage/View"]
+    ClearPass["pass ClearFullscreenSource<br/>type builtin.transfer-clear<br/>params builtin.transfer-clear.params<br/>writeTransfer(target, source)<br/>ClearColor command"]
+    DrawPass["pass FullscreenTexture<br/>type builtin.raster-fullscreen<br/>params builtin.raster-fullscreen.params<br/>readTexture(source, fragment)<br/>writeColor(target, backbuffer)<br/>SetShader / SetTexture / SetVec4 / DrawFullscreenTriangle"]
+    Schema["basicFullscreenSchemaRegistry<br/>slot schema + allowed command kind"]
+    Compile["RenderGraph::compile(schema)<br/>validate params / slots / commands<br/>compute transitions + transient lifetime"]
+    Prepare["prepareTransientResources<br/>VMA image + image view<br/>append source binding"]
+    Execute["graph.execute(compiled)<br/>pass callbacks in compiled order"]
+    ClearTransition["record transitions<br/>Undefined -> TransferDst"]
+    ClearCmd["vkCmdClearColorImage(source)"]
+    DrawTransition["record transitions<br/>TransferDst -> ShaderRead(fragment)<br/>Undefined -> ColorAttachment"]
+    Descriptor["updateSourceDescriptor<br/>sampled image view + sampler + uniform buffer"]
+    DrawCmd["recordFullscreenTextureDraw<br/>vkCmdBeginRendering<br/>bind pipeline / descriptor set<br/>vkCmdDraw(3)<br/>vkCmdEndRendering"]
+    FinalTransition["record final transition<br/>ColorAttachment -> Present"]
+    Result["return waitStageMask<br/>COLOR_ATTACHMENT_OUTPUT"]
+
+    Renderer --> ImportBackbuffer --> CreateSource --> BindingBackbuffer
+    BindingBackbuffer --> ClearPass --> DrawPass --> Schema --> Compile --> Prepare --> Execute
+    Execute --> ClearTransition --> ClearCmd --> DrawTransition --> Descriptor --> DrawCmd --> FinalTransition --> Result
+```
+
+这条路径目前有两层“可分析”信息：
+
+- builder 显式声明 resource access：source 先 `TransferWrite`，后 `ShaderRead(fragment)`；backbuffer 作为
+  `ColorWrite` 后最终回到 `Present`。
+- command summary 显式声明执行意图：clear pass 只允许 `ClearColor`，fullscreen pass 只允许
+  `SetShader`、`SetTexture`、`SetVec4` 和 `DrawFullscreenTriangle`；compile 阶段会拒绝 schema 外命令。
 
 状态：
 
@@ -332,6 +459,9 @@ flowchart TD
 - `Undefined`
 - `ColorAttachment`
 - `ShaderRead(fragment/compute)`
+- `DepthAttachmentRead`
+- `DepthAttachmentWrite`
+- `DepthSampledRead(fragment/compute)`
 - `TransferDst`
 - `Present`
 
@@ -342,7 +472,10 @@ flowchart TD
 - `writeTransfer("target", image)` / `writeTransfer(image)` 会要求 image 进入 `TransferDst`；旧的
   无 slot API 暂时等价于 `"target"`。
 - `readTexture("source", image, shaderStage)` 会要求 image 进入 `ShaderRead(shaderStage)`；当前 smoke
-  已验证 fragment shader-read，不执行真实 descriptor sampling。
+  已验证 fragment shader-read，fullscreen texture 路径已执行真实 descriptor sampling。
+- `writeDepth("depth", image)` 会要求 image 进入 `DepthAttachmentWrite`。
+- `readDepth("depth", image)` 会要求 image 进入 `DepthAttachmentRead`。
+- `sampleDepth("depth", image, shaderStage)` 会要求 image 进入 `DepthSampledRead(shaderStage)`。
 - compiled pass 和 executor context 已携带 `colorWriteSlots` / `shaderReadSlots` / `transferWriteSlots`，
   `--smoke-rendergraph` 会验证 slot name、shader stage 并在调试表输出 slot。
 - `setParamsType("...")` 已接入最小 params type id；compiled pass 和 executor context 会携带该
