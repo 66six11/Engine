@@ -1729,6 +1729,40 @@ namespace {
             return false;
         }
 
+        vke::RenderGraph ambiguousProducerGraph;
+        const auto ambiguousProducerImage =
+            ambiguousProducerGraph.createTransientImage(vke::RenderGraphImageDesc{
+                .name = "AmbiguousProducerImage",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            });
+        ambiguousProducerGraph.addPass("ReadBeforeTwoWriters", "basic.transient-sample-fragment")
+            .setParamsType("basic.transient-sample-fragment.params")
+            .readTexture("source", ambiguousProducerImage, vke::RenderGraphShaderStage::Fragment);
+        ambiguousProducerGraph.addPass("FutureWriterA", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", ambiguousProducerImage);
+        ambiguousProducerGraph.addPass("FutureWriterB", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", ambiguousProducerImage);
+        auto ambiguousProducerCompiled = ambiguousProducerGraph.compile(schemas);
+        if (!expectRenderGraphCompileFailure(ambiguousProducerCompiled,
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "Candidate writers",
+                                                 .context = "ambiguous producer diagnostics",
+                                             })) {
+            return false;
+        }
+        const std::string& ambiguousProducerError = ambiguousProducerCompiled.error().message;
+        if (ambiguousProducerError.find("ReadBeforeTwoWriters") == std::string::npos ||
+            ambiguousProducerError.find("AmbiguousProducerImage") == std::string::npos ||
+            ambiguousProducerError.find("FutureWriterA") == std::string::npos ||
+            ambiguousProducerError.find("FutureWriterB") == std::string::npos) {
+            vke::logError("Render graph ambiguous producer diagnostic omitted context: " +
+                          ambiguousProducerError);
+            return false;
+        }
+
         vke::RenderGraph missingFinalStateGraph;
         const auto missingFinalImage = missingFinalStateGraph.importImage(vke::RenderGraphImageDesc{
             .name = "ImportedTextureWithoutFinalState",

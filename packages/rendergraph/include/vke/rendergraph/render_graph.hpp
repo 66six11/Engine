@@ -1196,8 +1196,7 @@ namespace vke {
                         return std::unexpected{Error{
                             ErrorDomain::RenderGraph,
                             0,
-                            "Render graph pass '" + passes_[reader].name + "' reads image '" +
-                                imageDesc.name + "' before any pass writes it.",
+                            missingProducerMessage(reader, image),
                         }};
                     }
                     continue;
@@ -1227,9 +1226,7 @@ namespace vke {
                         return std::unexpected{Error{
                             ErrorDomain::RenderGraph,
                             0,
-                            "Render graph pass '" + passes_[reader].name + "' reads image '" +
-                                imageDesc.name +
-                                "' before a unique producing writer can be inferred.",
+                            ambiguousProducerMessage(reader, image, writers),
                         }};
                     }
                     sourceWriter = writers.front();
@@ -1452,6 +1449,29 @@ namespace vke {
             }
 
             return nullptr;
+        }
+
+        [[nodiscard]] std::string missingProducerMessage(std::size_t reader,
+                                                         RenderGraphImageHandle image) const {
+            std::string message = "Render graph pass '";
+            message += passDeclarationLabel(reader);
+            message += "' reads image '";
+            message += imageHandleLabel(image);
+            message += "' before any pass writes it. Candidate writers: -.";
+            return message;
+        }
+
+        [[nodiscard]] std::string
+        ambiguousProducerMessage(std::size_t reader, RenderGraphImageHandle image,
+                                 std::span<const std::size_t> writers) const {
+            std::string message = "Render graph pass '";
+            message += passDeclarationLabel(reader);
+            message += "' reads image '";
+            message += imageHandleLabel(image);
+            message += "' before a unique producing writer can be inferred. Candidate writers: ";
+            message += passDeclarationList(writers);
+            message += ".";
+            return message;
         }
 
         [[nodiscard]] static bool
@@ -2155,6 +2175,22 @@ namespace vke {
                 label += passes_[passIndex].name;
             }
             return label;
+        }
+
+        [[nodiscard]] std::string
+        passDeclarationList(std::span<const std::size_t> passIndices) const {
+            if (passIndices.empty()) {
+                return "-";
+            }
+
+            std::string labels;
+            for (std::size_t index = 0; index < passIndices.size(); ++index) {
+                if (index > 0) {
+                    labels += ", ";
+                }
+                labels += passDeclarationLabel(passIndices[index]);
+            }
+            return labels;
         }
 
         [[nodiscard]] std::string

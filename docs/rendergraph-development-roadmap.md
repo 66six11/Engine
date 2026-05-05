@@ -295,6 +295,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 - dependency cycle 现在会输出一条实际参与环的 edge，包含 `from -> to` pass、image 和 dependency reason。
 - `--smoke-rendergraph` 已覆盖两 pass / 两 image 互相读写形成的 cycle，并校验错误字符串包含 pass、image 和 edge 上下文。
+- transient read-before-write 诊断现在区分“没有 writer”和“多个未来 writer 导致 producer ambiguous”，并输出候选 writer 列表。
+- `--smoke-rendergraph` 已覆盖 reader 位于两个 future writers 之前的 ambiguous producer 负向路径。
 
 验收：
 
