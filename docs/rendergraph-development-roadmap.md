@@ -16,6 +16,8 @@
 | VMA usage patterns: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html | image/buffer allocation 应集中到 allocator facade，由用途决定 memory type。 | transient resource pool 使用 VMA，key 包含 format/extent/usage/aspect/sample count。 |
 | Unity URP Render Graph introduction: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | graph 每帧 record、compile、execute；pass 显式声明资源，graph 自动处理生命周期、同步和 pass culling。 | 保持 RecordGraph、CompileGraph、PrepareBackend、RecordCommands 四段式。 |
 | Unity URP custom render pass: https://docs.unity3d.com/Manual/urp/render-graph-write-render-pass.html | pass data 和 render function 分离，builder 显式声明资源读写。 | `PassSchema`、typed params、named slots 和 command summary 继续作为脚本/工具前端的共同语义。 |
+| Unity URP read/write texture note: https://docs.unity.cn/Manual/urp/render-graph-read-write-texture.html | 普通 render pass 不能对同一 texture 同时读写；需要临时纹理、兼容/unsafe 路径或更明确的访问模型。 | 当前继续拒绝模糊的 `readTexture + writeColor` 同图声明；后续只通过明确 combined-access state 放开。 |
+| Unity URP Render Graph Viewer reference: https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-viewer-reference.html | Viewer 中绿色+红色表示 pass 对资源有 read-write access 摘要，不等价于任意 texture sampled read + attachment write 都合法。 | Debug table 后续也应区分“访问摘要”和具体 Vulkan layout/access 语义。 |
 | Unity unsafe pass: https://docs.unity3d.com/Manual/urp/render-graph-unsafe-pass.html | unsafe pass 能兼容旧命令路径，但会降低 graph 优化能力。 | 后续如加 native/unsafe pass，必须显式标记并禁止 aggressive reorder/alias/merge。 |
 | Unreal RDG: https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine | RDG 采用延迟执行、资源生命周期管理、barrier 规划、validation 和 transient resource 模型。 | 借鉴 validation、debug table、资源池和 transient/persistent 区分；暂缓 async compute 和复杂 alias。 |
 | Blender Vulkan render graph: https://developer.blender.org/docs/features/gpu/vulkan/render_graph/ | Vulkan backend 可以把 command、资源状态和同步收集成图，再统一生成 barriers。 | `rhi_vulkan_rendergraph` 增加 backend transition debug 视图，但不改变 `rendergraph` 后端无关边界。 |
@@ -39,7 +41,7 @@
 
 - 同一 pass 内同一 image 可以同时声明在多个 access group，compiler 会按固定顺序生成 transition，但 Vulkan 语义上这些使用更接近同 pass 同时访问。
 - `RenderGraphImageDesc` 对 imported image 默认 `finalState = Present`，这只适合 swapchain image。
-- 真实 `renderer-basic` 路径已收敛到共享 typed schema；fullscreen、transient、depth、mesh 和 draw-list 的 Vulkan callback 已通过 pass context named slots 查询 binding，后续继续补每个 builtin pass 的负向 schema smoke。
+- 真实 `renderer-basic` 路径已收敛到共享 typed schema；fullscreen、transient、depth、mesh 和 draw-list 的 Vulkan callback 已通过 pass context named slots 查询 binding，`--smoke-rendergraph` 已覆盖每个 builtin pass 的负向 schema 编译路径。
 
 ## 设计原则
 
@@ -155,6 +157,17 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - 允许同一 image 在同一种 read access 下出现多次吗：第一版也拒绝，直到确实需要 alias slot。
 - 未来如需要 read/write storage image、input attachment、color feedback loop，再引入明确状态和 feature query。
 
+同 pass read/write 分类：
+
+- **当前禁止**：`readTexture("source", image)` + `writeColor("target", image)`、`writeTransfer` + `writeColor`、`writeDepth` + `readDepthTexture` 这类跨 access group 的同图混用。它们没有说明真实意图，compiler 不能安全推导 layout、access、barrier 和命令内 hazard。
+- **Attachment read/write**：depth/stencil test 会读旧 depth/stencil 并条件写入新值；color blend / loadOp=LOAD 也可能读旧 color 再写回。这应建模为明确的 attachment read/write 或 blend/load 语义，而不是普通 texture read。
+- **Storage read/write**：compute 或 fragment shader 的 storage image / buffer 可读改写，但需要 `StorageReadWrite`、usage flags、stage/access、atomic/race 规则和 pass 间 barrier。
+- **Framebuffer fetch / input attachment**：可读当前 render target/subpass 内容再写出，通常依赖特定 feature、layout 和 tile/subpass 语义，需要单独状态。
+- **Grab/copy-to-temp**：后处理想“读当前 color 又写回当前 color”时，第一版应显式 copy/grab 到临时图，再读临时图、写目标图；未来可由 graph 自动插入。
+- **Unsafe/native pass**：若后续提供逃生口，必须显式标记为不可分析或弱优化，不能绕过普通 pass 的同步和 alias 假设。
+
+结论：Unity Render Graph Viewer 里的 read-write 颜色是资源访问摘要，不代表可以把所有同图读写折叠成一个 `readTexture + writeColor` pass。VkEngine 只在语义、feature 和 backend 映射都明确后放开具体 read/write 类型。
+
 涉及文件：
 
 - `packages/rendergraph/include/vke/rendergraph/render_graph.hpp`
@@ -247,7 +260,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - `recordBasicClearFrame`、`recordBasicDynamicClearFrame`、`BasicTransientFrameRecorder`、`BasicTriangleRenderer::recordFrame`、`recordFrameWithDepth`、`BasicMesh3DRenderer`、`BasicDrawListRenderer` 和 `BasicFullscreenTextureRenderer` 现在都通过共享 schema compile。
 - `basic_triangle_renderer.cpp` 中 fullscreen / draw-list 的局部 schema registry 已移除，避免同一 pass schema 在多个位置漂移。
 - fullscreen、transient、depth、mesh 和 draw-list 的 Vulkan callbacks 已通过 `RenderGraphPassContext` named slots 查询 binding，不再直接捕获 `source` / `depth` / `transientColor` image handle。
-- 仍待推进：每个 builtin pass 的 invalid slot / missing slot / wrong params type 负向 smoke 还需要扩展。
+- `--smoke-rendergraph` 已对每个 builtin pass 覆盖 invalid slot、missing slot 和 wrong params type 负向编译路径。
 
 验收：
 

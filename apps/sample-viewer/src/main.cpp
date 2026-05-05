@@ -1,6 +1,7 @@
 ﻿#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -12,6 +13,7 @@
 
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
+#include "vke/renderer_basic/render_graph_schemas.hpp"
 #include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
 #include "vke/renderer_basic_vulkan/clear_frame.hpp"
 #include "vke/rendergraph/render_graph.hpp"
@@ -1321,9 +1323,8 @@ namespace {
         std::string_view context;
     };
 
-    bool expectRenderGraphCompileFailure(
-        const vke::Result<vke::RenderGraphCompileResult>& compiled,
-        ExpectedRenderGraphCompileFailure expected) {
+    bool expectRenderGraphCompileFailure(const vke::Result<vke::RenderGraphCompileResult>& compiled,
+                                         ExpectedRenderGraphCompileFailure expected) {
         if (compiled) {
             vke::logError("Render graph accepted invalid graph: " + std::string{expected.context});
             return false;
@@ -1335,6 +1336,248 @@ namespace {
         }
 
         return true;
+    }
+
+    enum class BuiltinSchemaSmokePass : std::uint8_t {
+        TransferClear,
+        DynamicClear,
+        TransientPresent,
+        RasterTriangle,
+        RasterDepthTriangle,
+        RasterMesh3D,
+        RasterFullscreen,
+        RasterDrawList,
+    };
+
+    struct BuiltinSchemaSmokeCase {
+        BuiltinSchemaSmokePass pass;
+        std::string_view type;
+        std::string_view paramsType;
+        std::string_view missingSlot;
+        std::string_view context;
+    };
+
+    struct BuiltinSchemaSmokeImages {
+        vke::RenderGraphImageHandle colorTarget{};
+        vke::RenderGraphImageHandle colorSource{};
+        vke::RenderGraphImageHandle depthTarget{};
+        vke::RenderGraphImageHandle unexpectedTarget{};
+    };
+
+    struct BuiltinSchemaSmokeCompileOptions {
+        std::string_view paramsType;
+        std::string_view omittedSlot;
+        bool addUnexpectedSlot{};
+    };
+
+    BuiltinSchemaSmokeImages createBuiltinSchemaSmokeImages(vke::RenderGraph& graph) {
+        return BuiltinSchemaSmokeImages{
+            .colorTarget = graph.importImage(vke::RenderGraphImageDesc{
+                .name = "BuiltinSchemaColorTarget",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = vke::RenderGraphImageState::Undefined,
+                .finalState = vke::RenderGraphImageState::Present,
+            }),
+            .colorSource = graph.importImage(vke::RenderGraphImageDesc{
+                .name = "BuiltinSchemaColorSource",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = vke::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+                .finalState = vke::RenderGraphImageState::ShaderRead,
+                .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+            }),
+            .depthTarget = graph.importImage(vke::RenderGraphImageDesc{
+                .name = "BuiltinSchemaDepthTarget",
+                .format = vke::RenderGraphImageFormat::D32Sfloat,
+                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = vke::RenderGraphImageState::Undefined,
+                .finalState = vke::RenderGraphImageState::DepthAttachmentWrite,
+            }),
+            .unexpectedTarget = graph.importImage(vke::RenderGraphImageDesc{
+                .name = "BuiltinSchemaUnexpectedTarget",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = vke::RenderGraphImageState::Undefined,
+                .finalState = vke::RenderGraphImageState::Present,
+            }),
+        };
+    }
+
+    void addBuiltinSchemaSmokeSlots(BuiltinSchemaSmokePass passKind,
+                                    vke::RenderGraph::PassBuilder& pass,
+                                    BuiltinSchemaSmokeImages images,
+                                    std::string_view omittedSlot = {}) {
+        switch (passKind) {
+        case BuiltinSchemaSmokePass::TransferClear:
+            if (omittedSlot != "target") {
+                pass.writeTransfer("target", images.colorTarget);
+            }
+            break;
+        case BuiltinSchemaSmokePass::DynamicClear:
+        case BuiltinSchemaSmokePass::RasterTriangle:
+            if (omittedSlot != "target") {
+                pass.writeColor("target", images.colorTarget);
+            }
+            break;
+        case BuiltinSchemaSmokePass::TransientPresent:
+            if (omittedSlot != "source") {
+                pass.readTexture("source", images.colorSource,
+                                 vke::RenderGraphShaderStage::Fragment);
+            }
+            if (omittedSlot != "target") {
+                pass.writeTransfer("target", images.colorTarget);
+            }
+            break;
+        case BuiltinSchemaSmokePass::RasterDepthTriangle:
+        case BuiltinSchemaSmokePass::RasterMesh3D:
+        case BuiltinSchemaSmokePass::RasterDrawList:
+            if (omittedSlot != "target") {
+                pass.writeColor("target", images.colorTarget);
+            }
+            if (omittedSlot != "depth") {
+                pass.writeDepth("depth", images.depthTarget);
+            }
+            break;
+        case BuiltinSchemaSmokePass::RasterFullscreen:
+            if (omittedSlot != "source") {
+                pass.readTexture("source", images.colorSource,
+                                 vke::RenderGraphShaderStage::Fragment);
+            }
+            if (omittedSlot != "target") {
+                pass.writeColor("target", images.colorTarget);
+            }
+            break;
+        }
+    }
+
+    vke::Result<vke::RenderGraphCompileResult>
+    compileBuiltinSchemaSmokePass(const BuiltinSchemaSmokeCase& testCase,
+                                  const vke::RenderGraphSchemaRegistry& schemas,
+                                  BuiltinSchemaSmokeCompileOptions options) {
+        vke::RenderGraph graph;
+        const BuiltinSchemaSmokeImages images = createBuiltinSchemaSmokeImages(graph);
+        auto pass = graph.addPass(std::string{testCase.context}, std::string{testCase.type});
+        pass.setParamsType(std::string{options.paramsType});
+        addBuiltinSchemaSmokeSlots(testCase.pass, pass, images, options.omittedSlot);
+        if (options.addUnexpectedSlot) {
+            pass.writeTransfer("unexpected", images.unexpectedTarget);
+        }
+
+        return graph.compile(schemas);
+    }
+
+    bool validateBuiltinSchemaSmokeCase(const vke::RenderGraphSchemaRegistry& builtinSchemas,
+                                        const BuiltinSchemaSmokeCase& testCase) {
+        if (!expectRenderGraphCompileFailure(
+                compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
+                                              BuiltinSchemaSmokeCompileOptions{
+                                                  .paramsType = testCase.paramsType,
+                                                  .omittedSlot = testCase.missingSlot,
+                                                  .addUnexpectedSlot = false,
+                                              }),
+                ExpectedRenderGraphCompileFailure{
+                    .message = "is missing required slot",
+                    .context = testCase.context,
+                })) {
+            return false;
+        }
+        if (!expectRenderGraphCompileFailure(
+                compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
+                                              BuiltinSchemaSmokeCompileOptions{
+                                                  .paramsType = testCase.paramsType,
+                                                  .omittedSlot = {},
+                                                  .addUnexpectedSlot = true,
+                                              }),
+                ExpectedRenderGraphCompileFailure{
+                    .message = "that is not allowed by schema",
+                    .context = testCase.context,
+                })) {
+            return false;
+        }
+        if (!expectRenderGraphCompileFailure(
+                compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
+                                              BuiltinSchemaSmokeCompileOptions{
+                                                  .paramsType = "builtin.invalid-params",
+                                                  .omittedSlot = {},
+                                                  .addUnexpectedSlot = false,
+                                              }),
+                ExpectedRenderGraphCompileFailure{
+                    .message = "expected params type",
+                    .context = testCase.context,
+                })) {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool validateSmokeRenderGraphBuiltinSchemaFailures() {
+        const vke::RenderGraphSchemaRegistry builtinSchemas = vke::basicRenderGraphSchemaRegistry();
+        const std::array builtinCases{
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::TransferClear,
+                .type = vke::kBasicTransferClearPassType,
+                .paramsType = vke::kBasicTransferClearParamsType,
+                .missingSlot = "target",
+                .context = "builtin transfer clear",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::DynamicClear,
+                .type = vke::kBasicDynamicClearPassType,
+                .paramsType = vke::kBasicDynamicClearParamsType,
+                .missingSlot = "target",
+                .context = "builtin dynamic clear",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::TransientPresent,
+                .type = vke::kBasicTransientPresentPassType,
+                .paramsType = vke::kBasicTransientPresentParamsType,
+                .missingSlot = "source",
+                .context = "builtin transient present",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RasterTriangle,
+                .type = vke::kBasicRasterTrianglePassType,
+                .paramsType = vke::kBasicRasterTriangleParamsType,
+                .missingSlot = "target",
+                .context = "builtin raster triangle",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RasterDepthTriangle,
+                .type = vke::kBasicRasterDepthTrianglePassType,
+                .paramsType = vke::kBasicRasterDepthTriangleParamsType,
+                .missingSlot = "depth",
+                .context = "builtin raster depth triangle",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RasterMesh3D,
+                .type = vke::kBasicRasterMesh3DPassType,
+                .paramsType = vke::kBasicRasterMesh3DParamsType,
+                .missingSlot = "depth",
+                .context = "builtin raster mesh3D",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RasterFullscreen,
+                .type = vke::kBasicRasterFullscreenPassType,
+                .paramsType = vke::kBasicRasterFullscreenParamsType,
+                .missingSlot = "source",
+                .context = "builtin raster fullscreen",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RasterDrawList,
+                .type = vke::kBasicRasterDrawListPassType,
+                .paramsType = vke::kBasicRasterDrawListParamsType,
+                .missingSlot = "depth",
+                .context = "builtin raster draw list",
+            },
+        };
+
+        return std::ranges::all_of(
+            builtinCases, [&builtinSchemas](const BuiltinSchemaSmokeCase& testCase) {
+                return validateBuiltinSchemaSmokeCase(builtinSchemas, testCase);
+            });
     }
 
     bool validateSmokeRenderGraphNegativeCompiles(const vke::RenderGraphSchemaRegistry& schemas) {
@@ -1411,15 +1654,14 @@ namespace {
         }
 
         vke::RenderGraph mixedReadWriteGraph;
-        const auto mixedReadWriteImage =
-            mixedReadWriteGraph.importImage(vke::RenderGraphImageDesc{
-                .name = "MixedReadWriteImage",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-                .initialState = vke::RenderGraphImageState::ShaderRead,
-                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-                .finalState = vke::RenderGraphImageState::Present,
-            });
+        const auto mixedReadWriteImage = mixedReadWriteGraph.importImage(vke::RenderGraphImageDesc{
+            .name = "MixedReadWriteImage",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = vke::RenderGraphImageState::ShaderRead,
+            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .finalState = vke::RenderGraphImageState::Present,
+        });
         int mixedReadWriteCallbackCount = 0;
         mixedReadWriteGraph.addPass("MixedReadWritePass", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
@@ -1456,12 +1698,11 @@ namespace {
             .setParamsType("basic.clear-transfer.params")
             .writeTransfer("clearTarget", mixedColorTransferImage)
             .writeColor("colorTarget", mixedColorTransferImage);
-        if (!expectRenderGraphCompileFailure(
-                mixedColorTransferGraph.compile(schemas),
-                ExpectedRenderGraphCompileFailure{
-                    .message = "more than once",
-                    .context = "same-image transfer and color write",
-                })) {
+        if (!expectRenderGraphCompileFailure(mixedColorTransferGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "more than once",
+                                                 .context = "same-image transfer and color write",
+                                             })) {
             return false;
         }
 
@@ -1489,23 +1730,21 @@ namespace {
         }
 
         vke::RenderGraph missingFinalStateGraph;
-        const auto missingFinalImage =
-            missingFinalStateGraph.importImage(vke::RenderGraphImageDesc{
-                .name = "ImportedTextureWithoutFinalState",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-                .initialState = vke::RenderGraphImageState::ShaderRead,
-                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-            });
+        const auto missingFinalImage = missingFinalStateGraph.importImage(vke::RenderGraphImageDesc{
+            .name = "ImportedTextureWithoutFinalState",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = vke::RenderGraphImageState::ShaderRead,
+            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+        });
         missingFinalStateGraph.addPass("SampleImportedWithoutFinal", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
             .readTexture("source", missingFinalImage, vke::RenderGraphShaderStage::Fragment);
-        if (!expectRenderGraphCompileFailure(
-                missingFinalStateGraph.compile(schemas),
-                ExpectedRenderGraphCompileFailure{
-                    .message = "must declare an explicit final state",
-                    .context = "imported image without final state",
-                })) {
+        if (!expectRenderGraphCompileFailure(missingFinalStateGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "must declare an explicit final state",
+                                                 .context = "imported image without final state",
+                                             })) {
             return false;
         }
 
@@ -1837,6 +2076,10 @@ namespace {
         }
 
         if (!validateSmokeRenderGraphNegativeCompiles(schemas)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphBuiltinSchemaFailures()) {
             return EXIT_FAILURE;
         }
 

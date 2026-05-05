@@ -213,7 +213,7 @@ flowchart TD
 - `--smoke-fullscreen-texture` 已接入真实 draw-time descriptor bind：transient source image 先 clear，
   再 transition 到 `ShaderRead(fragment)`，作为 sampled image + sampler + uniform buffer 绑定后由
   fullscreen dynamic-rendering pass 采样并写入 backbuffer。
-- `--smoke-rendergraph` 是 RenderGraph CPU 编译和 Vulkan adapter 字段验证入口。
+- `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译和 Vulkan adapter 字段验证入口。
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
   image view 和 binding 表，并录制非 backbuffer image transition / clear。
 
@@ -516,6 +516,9 @@ flowchart TD
 - `writeDepth("depth", image)` 会要求 image 进入 `DepthAttachmentWrite`。
 - `readDepth("depth", image)` 会要求 image 进入 `DepthAttachmentRead`。
 - `sampleDepth("depth", image, shaderStage)` 会要求 image 进入 `DepthSampledRead(shaderStage)`。
+- 同一 pass 内同一 image 现在不能跨 access group 重复声明。Unity/RDG 工具里的 read-write 展示是访问摘要；
+  VkEngine 后续若支持 attachment read/write、blend/load、storage read/write、framebuffer fetch 或
+  grab/copy-to-temp，必须先新增明确 state/API 和 Vulkan feature/layout/access 映射。
 - compiled pass 和 executor context 已携带 `colorWriteSlots` / `shaderReadSlots` / `transferWriteSlots`，
   `--smoke-rendergraph` 会验证 slot name、shader stage 并在调试表输出 slot。
 - `setParamsType("...")` / `setParams(type, params)` 已接入最小 params type id 和 POD payload；
@@ -525,6 +528,8 @@ flowchart TD
 - `renderer_basic/render_graph_schemas.hpp` 已集中维护内建 clear、dynamic clear、transient present、
   triangle、depth triangle、mesh3D、draw-list 和 fullscreen pass 的 type、params type、POD params
   与 schema registry helper；真实 renderer-basic Vulkan 路径现在通过这套共享 schema compile。
+- `--smoke-rendergraph` 已覆盖每个 renderer-basic builtin pass 的 missing slot、invalid slot 和
+  wrong params type 负向编译路径。
 - `renderer_basic_vulkan` 的 fullscreen、transient、depth、mesh 和 draw-list callbacks 已按
   `source` / `target` / `depth` named slot 查询 Vulkan binding，避免 callback 隐式捕获资源 handle。
 - `PassBuilder::allowCulling()` 和 `PassBuilder::hasSideEffects()` 已接入；schema 也可声明
@@ -567,8 +572,9 @@ flowchart TD
 - `--smoke-rendergraph` 已输出 resources、passes、dependencies、slots、commands、transitions、
   transients 的 Markdown 调试表格，并验证 pass type、params type、slot schema、command summary、
   transient lifetime plan 和最小 dependency sort；当前 smoke 故意把 transient reader 声明在 writer 前，
-  编译结果会按 dependency 把 writer 排到 reader 前执行；同时覆盖无 producer transient read 和缺失
-  schema 的负向编译路径，确认错误不会进入 pass callback；也覆盖可剔除 unused transient writer
+  编译结果会按 dependency 把 writer 排到 reader 前执行；同时覆盖无 producer transient read、缺失
+  schema，以及 renderer-basic builtin pass missing slot / invalid slot / wrong params type 的负向编译路径，
+  确认错误不会进入 pass callback；也覆盖可剔除 unused transient writer
   被移出 compiled passes、side-effect pass 被保留且 culled pass callback 不执行。
 - `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition、
   Vulkan adapter mapping，以及真实 image/image view/VMA allocation 和 binding。
@@ -577,7 +583,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
     Step1["下一步:<br/>RenderGraph validation depth<br/>culling diagnostics"]
     Step2["之后:<br/>deferred destruction / resource caches"]
     Step3["之后:<br/>multi-view / material expansion"]
@@ -602,6 +608,8 @@ flowchart TD
     Now --> BuiltinSchemaUpdate
     SlotBindingUpdate["2026-05-05:<br/>renderer_basic_vulkan callbacks<br/>slot-name Vulkan binding lookup"]
     Now --> SlotBindingUpdate
+    BuiltinNegativeUpdate["2026-05-05:<br/>builtin pass schema negatives<br/>missing / invalid / wrong params"]
+    Now --> BuiltinNegativeUpdate
 ```
 
 建议推进顺序：
@@ -611,11 +619,11 @@ flowchart TD
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
 4. Slang reflection JSON、固定 descriptor set layout RAII、reflection-derived pipeline layout 和非空 descriptor signature smoke 已接入；descriptor bind 和 fullscreen texture pass 已有 `--smoke-fullscreen-texture` 真实 Vulkan 路径，fullscreen clear/tint 已开始走 typed params payload；`--smoke-mesh` 已验证最小 indexed mesh；`--smoke-mesh-3d` 已验证最小 3D cube、depth 和 MVP push constants；`--smoke-draw-list` 已验证多 item indexed cube draw 和 `builtin.raster-draw-list` typed pass。
 5. `pass.type` 只负责执行模型 / typed pass 分发；RenderQueue、shader pass tag 和 RendererList 等到 mesh/material 阶段再引入。
-6. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。
+6. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 grab/copy 语义进入，不放开模糊的 `readTexture + writeColor`。
 7. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
 8. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
 9. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续再补资源上传、material/pipeline key 和 asset database，不提前暴露逐 object 脚本 draw loop。
 10. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
-    锁住无 producer transient read 与缺失 schema 的编译期失败路径；显式 culling 已能移除 unused
+    锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的
     culling 策略。

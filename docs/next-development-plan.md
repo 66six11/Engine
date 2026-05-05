@@ -42,7 +42,7 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 
 2026-05-05 全量诊断结论见 `full-diagnosis-2026-05-05.md`。当前主线已通过 MSVC/ClangCL
 Debug 构建和完整 smoke 清单；draw list MVP、RenderGraph 最小 dependency sort、负向编译
-smoke、显式 culling/side-effect 标记、renderer-basic 共享 builtin schema 和 callback slot-name binding lookup 已落地，下一步优先级调整为：补 RenderGraph 更细诊断、deferred destruction、
+smoke、显式 culling/side-effect 标记、renderer-basic 共享 builtin schema、builtin schema 负向 smoke 和 callback slot-name binding lookup 已落地，下一步优先级调整为：补 RenderGraph 更细诊断、deferred destruction、
 descriptor/transient/pipeline cache 和 multi-view 边界。
 不要在下一阶段提前接入脚本 VM、完整 asset database、bindless 或 async compute。
 
@@ -79,6 +79,9 @@ descriptor/transient/pipeline cache 和 multi-view 边界。
   `UseColorBuffer`、`UseDepthBuffer`、`Read/WriteComputeBuffer`、`UseRendererList` 和 transient
   texture/buffer；VkEngine 的 named slots 应覆盖同一类语义，而不是只提供位置参数。
   资料：https://docs.unity.cn/Packages/com.unity.render-pipelines.core%4011.0/api/UnityEngine.Experimental.Rendering.RenderGraphModule.RenderGraphBuilder.html
+- Unity Render Graph Viewer 中的 read-write 展示是 pass 对资源的访问摘要；普通 render pass 对同一 texture 同时读写仍需要临时纹理、兼容/unsafe 路径或更明确的访问模型。
+  资料：https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-viewer-reference.html
+  资料：https://docs.unity.cn/Manual/urp/render-graph-read-write-texture.html
 - Unity 的 `AddUnsafePass` 允许兼容式命令，但会降低优化能力，例如无法安全合并后续写同一 buffer 的 pass。
   VkEngine 后续如提供 unsafe/native pass，应只作为迁移和调试逃生口。
   资料：https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-unsafe-pass.html
@@ -104,7 +107,7 @@ descriptor/transient/pipeline cache 和 multi-view 边界。
 | --- | --- | --- | --- |
 | 1 | Slang reflection 基线 | 已在 `packages/shader-slang` 增加 reflection 工具，输出 `*.reflection.json` | triangle shader 生成 entry、stage、vertex inputs、descriptor set/binding、push constant 信息；现有 smoke 不退化 |
 | 2 | Descriptor/Layout 契约 | 已开始用 reflection JSON 校验 triangle shader 契约，并打通 pipeline layout/resource signature 接口 | layout mismatch 能在构建或启动时报清楚错误；triangle smoke 继续通过 |
-| 3 | RenderGraph 声明模型 v2 | named write slots、params type id、typed POD params payload 和最小 pass schema 已接入；schema 现在校验 slot、params type 和 allowed command kind；下一步继续补更细的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot、params type、allowed command kind 和 schema 能进入 compiled pass 和 executor context；旧 callback 路径不退化 |
+| 3 | RenderGraph 声明模型 v2 | named write slots、params type id、typed POD params payload 和最小 pass schema 已接入；schema 现在校验 slot、params type 和 allowed command kind；下一步继续补更细的 compile/execute 错误；`pass.type` 先作为执行模型 / typed pass key | `--smoke-rendergraph` 已验证 type、slot、params type、allowed command kind 和 schema 能进入 compiled pass 和 executor context，并覆盖每个 renderer-basic builtin pass 的 missing slot、invalid slot 和 wrong params type 负向编译；旧 callback 路径不退化 |
 | 4 | RenderGraph access/state 扩展 | `ShaderRead(fragment/compute)`、`DepthAttachmentRead/Write`、`DepthSampledRead(fragment/compute)` 已接入，并同步 Vulkan layout/stage/access 翻译 | `--smoke-rendergraph` 已验证 shader-read、depth-write、depth-sampled-read transition、shader stage/domain、depth aspect barrier 和 Vulkan adapter 字段；尚不引入实际 shader sampling |
 | 5 | RenderGraph transient image | `createTransientImage()`、transient lifetime plan、debug table 和 `--smoke-transient` 已接入 | `--smoke-transient` 已验证非 backbuffer image transition、first/last pass、final shader stage 和 Vulkan adapter mapping |
 | 6 | PrepareBackend transient allocation | 已增加 Vulkan image/image view RAII、VMA-backed transient image 创建、usage/aspect 推导和 binding 表接入 | `--smoke-transient` 已升级为真实 transient VkImage 录制路径，validation 无 error/warning |
@@ -234,6 +237,9 @@ slot schema 至少需要描述：
   `DepthAttachmentRead`、`DepthAttachmentWrite`、`DepthSampledRead`、`TransferDst`、
   `StorageReadWrite`。depth 作为 attachment 读写与 depth texture 采样必须分开建模，避免混用
   layout/stage/access。
+- 同图 read/write 必须用明确 access 表达：depth/stencil attachment read-write、color blend/load、
+  storage image/buffer read-write、framebuffer fetch/input attachment、grab/copy-to-temp 或 unsafe/native
+  pass。普通 `readTexture + writeColor` 不能作为通用 read-write 表达。
 - 是否允许 transient、imported、persistent resource。
 - 是否允许多个绑定，例如 MRT color slots。
 
@@ -388,6 +394,7 @@ Descriptor/Layout 契约已开始消费 reflection JSON。当前实现会在
   继续沿用这套声明模型，避免依赖位置参数或 ad hoc callback capture。
 - `ShaderRead`、depth attachment read/write 和 sampled depth state 已扩展到抽象 state 与 Vulkan
   access/layout 翻译；后续新增采样或 depth 路径时继续校验 image usage flags 与目标 layout/access 匹配。
+- Unity/RDG 风格的 read-write 展示不能直接映射为模糊同图 read/write；VkEngine 需要先定义具体 combined-access state，再为它补 schema、usage、layout/access、feature query 和 smoke。
 - 在 material/resource binding 路线稳定前，继续暂缓 bindless 和自动 C++ codegen。
 
 ## 暂缓事项
