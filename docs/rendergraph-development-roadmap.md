@@ -39,7 +39,7 @@
 
 - 同一 pass 内同一 image 可以同时声明在多个 access group，compiler 会按固定顺序生成 transition，但 Vulkan 语义上这些使用更接近同 pass 同时访问。
 - `RenderGraphImageDesc` 对 imported image 默认 `finalState = Present`，这只适合 swapchain image。
-- 若干真实 renderer 路径仍绕过 typed schema，只用 raw callback，导致 compile 阶段无法统一校验 pass 类型、slot、params 和 command summary。
+- 真实 `renderer-basic` 路径已开始收敛到共享 typed schema；后续还要继续减少 callback 内直接捕获资源 handle 的假设，并补每个 builtin pass 的负向 schema smoke。
 
 ## 设计原则
 
@@ -227,6 +227,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 | --- | --- | --- | --- |
 | `builtin.transfer-clear` | `target: TransferWrite` | clear color | `ClearColor` |
 | `builtin.dynamic-clear` | `target: ColorWrite` | clear color | 可选 `ClearColor` |
+| `builtin.transient-present` | `source: ShaderRead(fragment)`, `target: TransferWrite` | clear color | `ClearColor` |
 | `builtin.raster-triangle` | `target: ColorWrite` | draw item | draw summary 后续补 |
 | `builtin.raster-depth-triangle` | `target: ColorWrite`, `depth: DepthAttachmentWrite` | draw item | draw summary 后续补 |
 | `builtin.raster-mesh3d` | `target: ColorWrite`, `depth: DepthAttachmentWrite` | MVP/draw params | draw summary 后续补 |
@@ -239,6 +240,13 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - 第一阶段仍可使用 C++ callback 执行，但 compile 必须走 schema registry。
 - callback 中用 `RenderGraphPassContext` 的 typed slots 查找 binding，不直接捕获“我知道是哪张图”的假设。
 - pass params 继续要求 trivially copyable，后续再升级为 typed id + alignment/version。
+
+当前状态：
+
+- 已新增 `vke/renderer_basic/render_graph_schemas.hpp`，集中定义 builtin pass type、params type、POD params 和 schema registry helper。
+- `recordBasicClearFrame`、`recordBasicDynamicClearFrame`、`BasicTransientFrameRecorder`、`BasicTriangleRenderer::recordFrame`、`recordFrameWithDepth`、`BasicMesh3DRenderer`、`BasicDrawListRenderer` 和 `BasicFullscreenTextureRenderer` 现在都通过共享 schema compile。
+- `basic_triangle_renderer.cpp` 中 fullscreen / draw-list 的局部 schema registry 已移除，避免同一 pass schema 在多个位置漂移。
+- 仍待推进：callback 内的 Vulkan binding 查询还没有完全按 slot name 泛化；每个 builtin pass 的 invalid slot / missing slot / wrong params type 负向 smoke 还需要扩展。
 
 验收：
 

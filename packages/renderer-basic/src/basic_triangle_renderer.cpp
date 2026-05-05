@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "vke/core/error.hpp"
+#include "vke/renderer_basic/render_graph_schemas.hpp"
 #include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/shader_slang/reflection.hpp"
@@ -57,18 +58,6 @@ namespace vke {
             std::string shaderPass;
             std::string textureBinding;
             std::string textureSlot;
-        };
-
-        struct BasicTransferClearParams {
-            std::array<float, 4> color{};
-        };
-
-        struct BasicFullscreenParams {
-            std::array<float, 4> tint{};
-        };
-
-        struct BasicDrawListParams {
-            std::uint32_t drawCount{};
         };
 
         struct BasicMesh3DPushConstants {
@@ -122,6 +111,15 @@ namespace vke {
                         clearColor.float32[3],
                     },
             };
+        }
+
+        [[nodiscard]] VkClearColorValue basicClearColorValue(BasicTransferClearParams params) {
+            return VkClearColorValue{{
+                params.color[0],
+                params.color[1],
+                params.color[2],
+                params.color[3],
+            }};
         }
 
         [[nodiscard]] Result<BasicFullscreenPipelineKey>
@@ -723,90 +721,6 @@ namespace vke {
             return *fragmentSignature;
         }
 
-        [[nodiscard]] RenderGraphSchemaRegistry basicFullscreenSchemaRegistry() {
-            RenderGraphSchemaRegistry schemas;
-            schemas.registerSchema(RenderGraphPassSchema{
-                .type = "builtin.transfer-clear",
-                .paramsType = "builtin.transfer-clear.params",
-                .resourceSlots =
-                    {
-                        RenderGraphResourceSlotSchema{
-                            .name = "target",
-                            .access = RenderGraphSlotAccess::TransferWrite,
-                            .shaderStage = RenderGraphShaderStage::None,
-                            .optional = false,
-                        },
-                    },
-                .allowedCommands = {RenderGraphCommandKind::ClearColor},
-            });
-            schemas.registerSchema(RenderGraphPassSchema{
-                .type = "builtin.raster-fullscreen",
-                .paramsType = "builtin.raster-fullscreen.params",
-                .resourceSlots =
-                    {
-                        RenderGraphResourceSlotSchema{
-                            .name = "source",
-                            .access = RenderGraphSlotAccess::ShaderRead,
-                            .shaderStage = RenderGraphShaderStage::Fragment,
-                            .optional = false,
-                        },
-                        RenderGraphResourceSlotSchema{
-                            .name = "target",
-                            .access = RenderGraphSlotAccess::ColorWrite,
-                            .shaderStage = RenderGraphShaderStage::None,
-                            .optional = false,
-                        },
-                    },
-                .allowedCommands =
-                    {
-                        RenderGraphCommandKind::SetShader,
-                        RenderGraphCommandKind::SetTexture,
-                        RenderGraphCommandKind::SetVec4,
-                        RenderGraphCommandKind::DrawFullscreenTriangle,
-                    },
-            });
-            return schemas;
-        }
-
-        [[nodiscard]] RenderGraphSchemaRegistry basicDrawListSchemaRegistry() {
-            RenderGraphSchemaRegistry schemas;
-            schemas.registerSchema(RenderGraphPassSchema{
-                .type = "builtin.transfer-clear",
-                .paramsType = "builtin.transfer-clear.params",
-                .resourceSlots =
-                    {
-                        RenderGraphResourceSlotSchema{
-                            .name = "target",
-                            .access = RenderGraphSlotAccess::TransferWrite,
-                            .shaderStage = RenderGraphShaderStage::None,
-                            .optional = false,
-                        },
-                    },
-                .allowedCommands = {RenderGraphCommandKind::ClearColor},
-            });
-            schemas.registerSchema(RenderGraphPassSchema{
-                .type = "builtin.raster-draw-list",
-                .paramsType = "builtin.raster-draw-list.params",
-                .resourceSlots =
-                    {
-                        RenderGraphResourceSlotSchema{
-                            .name = "target",
-                            .access = RenderGraphSlotAccess::ColorWrite,
-                            .shaderStage = RenderGraphShaderStage::None,
-                            .optional = false,
-                        },
-                        RenderGraphResourceSlotSchema{
-                            .name = "depth",
-                            .access = RenderGraphSlotAccess::DepthAttachmentWrite,
-                            .shaderStage = RenderGraphShaderStage::None,
-                            .optional = false,
-                        },
-                    },
-                .allowedCommands = {},
-            });
-            return schemas;
-        }
-
         void recordTransferClear(const VulkanFrameRecordContext& frame,
                                  VkClearColorValue clearColor) {
             VkImageSubresourceRange clearRange{};
@@ -816,12 +730,7 @@ namespace vke {
             clearRange.baseArrayLayer = 0;
             clearRange.layerCount = 1;
             vkCmdClearColorImage(frame.commandBuffer, frame.image,
-                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColor, 1,
-                                 &clearRange);
-        }
-
-        void recordTransferClear(const VulkanFrameRecordContext& frame) {
-            recordTransferClear(frame, frame.clearColor);
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColor, 1, &clearRange);
         }
 
         [[nodiscard]] std::array<VkVertexInputBindingDescription, 1> basicVertexInputBindings() {
@@ -1044,7 +953,7 @@ namespace vke {
 
         void recordMesh3DDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
                               VkPipelineLayout pipelineLayout, BasicDrawBuffers buffers,
-                              VkImageView depthImageView) {
+                              VkImageView depthImageView, BasicDrawItem drawItem) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = frame.imageView;
@@ -1101,10 +1010,8 @@ namespace vke {
             vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, 0, VK_INDEX_TYPE_UINT16);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
-            vkCmdDrawIndexed(
-                frame.commandBuffer, basicIndexedCubeDrawItem().indexCount,
-                basicIndexedCubeDrawItem().instanceCount, basicIndexedCubeDrawItem().firstIndex,
-                basicIndexedCubeDrawItem().vertexOffset, basicIndexedCubeDrawItem().firstInstance);
+            vkCmdDrawIndexed(frame.commandBuffer, drawItem.indexCount, drawItem.instanceCount,
+                             drawItem.firstIndex, drawItem.vertexOffset, drawItem.firstInstance);
             vkCmdEndRendering(frame.commandBuffer);
         }
 
@@ -1327,9 +1234,9 @@ namespace vke {
             for (const BasicDrawListItem& item : drawItems) {
                 if ((item.drawItem.vertexCount == 0 && item.drawItem.indexCount == 0) ||
                     item.drawItem.instanceCount == 0) {
-                    return std::unexpected{Error{
-                        ErrorDomain::Vulkan, 0,
-                        "Draw list renderer item must draw at least one vertex or index"}};
+                    return std::unexpected{
+                        Error{ErrorDomain::Vulkan, 0,
+                              "Draw list renderer item must draw at least one vertex or index"}};
                 }
 
                 if (item.drawItem.indexCount > 0) {
@@ -1349,15 +1256,14 @@ namespace vke {
                     std::uint32_t maxIndex{};
                     for (const auto indexValue :
                          std::span{indices}.subspan(firstIndex, indexCount)) {
-                        maxIndex =
-                            std::max(maxIndex, static_cast<std::uint32_t>(indexValue));
+                        maxIndex = std::max(maxIndex, static_cast<std::uint32_t>(indexValue));
                     }
                     const std::size_t maxVertex =
                         static_cast<std::size_t>(item.drawItem.vertexOffset) + maxIndex;
                     if (maxVertex >= vertices.size()) {
-                        return std::unexpected{
-                            Error{ErrorDomain::Vulkan, 0,
-                                  "Draw list renderer item vertex range exceeds cube vertex buffer"}};
+                        return std::unexpected{Error{
+                            ErrorDomain::Vulkan, 0,
+                            "Draw list renderer item vertex range exceeds cube vertex buffer"}};
                     }
                     continue;
                 }
@@ -1772,8 +1678,8 @@ namespace vke {
             .tint = {1.0F, 1.0F, 1.0F, 1.0F},
         };
 
-        graph.addPass("ClearFullscreenSource", "builtin.transfer-clear")
-            .setParams("builtin.transfer-clear.params", kClearParams)
+        graph.addPass("ClearFullscreenSource", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, kClearParams)
             .writeTransfer("target", source)
             .recordCommands([kClearParams](RenderGraphCommandList& commands) {
                 commands.clearColor("target", kClearParams.color);
@@ -1786,7 +1692,7 @@ namespace vke {
                 }
 
                 auto clearParams = readPassParams<BasicTransferClearParams>(
-                    pass, "builtin.transfer-clear.params", "Fullscreen source clear pass");
+                    pass, kBasicTransferClearParamsType, "Fullscreen source clear pass");
                 if (!clearParams) {
                     return std::unexpected{std::move(clearParams.error())};
                 }
@@ -1796,12 +1702,7 @@ namespace vke {
                     return std::unexpected{std::move(sourceBinding.error())};
                 }
 
-                const VkClearColorValue sourceColor{{
-                    clearParams->color[0],
-                    clearParams->color[1],
-                    clearParams->color[2],
-                    clearParams->color[3],
-                }};
+                const VkClearColorValue sourceColor = basicClearColorValue(*clearParams);
                 VkImageSubresourceRange clearRange{};
                 clearRange.aspectMask = sourceBinding->aspectMask;
                 clearRange.baseMipLevel = 0;
@@ -1814,8 +1715,8 @@ namespace vke {
                 return {};
             });
 
-        graph.addPass("FullscreenTexture", "builtin.raster-fullscreen")
-            .setParams("builtin.raster-fullscreen.params", kFullscreenParams)
+        graph.addPass("FullscreenTexture", kBasicRasterFullscreenPassType)
+            .setParams(kBasicRasterFullscreenParamsType, kFullscreenParams)
             .readTexture("source", source, RenderGraphShaderStage::Fragment)
             .writeColor("target", backbuffer)
             .recordCommands([kFullscreenParams](RenderGraphCommandList& commands) {
@@ -1833,7 +1734,7 @@ namespace vke {
                 }
 
                 auto fullscreenParams = readPassParams<BasicFullscreenParams>(
-                    pass, "builtin.raster-fullscreen.params", "Fullscreen texture pass");
+                    pass, kBasicRasterFullscreenParamsType, "Fullscreen texture pass");
                 if (!fullscreenParams) {
                     return std::unexpected{std::move(fullscreenParams.error())};
                 }
@@ -1866,7 +1767,7 @@ namespace vke {
                 return {};
             });
 
-        const RenderGraphSchemaRegistry schemas = basicFullscreenSchemaRegistry();
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
         auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
@@ -2069,20 +1970,31 @@ namespace vke {
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
         const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
+        const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
 
-        graph.addPass("ClearColor")
+        graph.addPass("ClearColor", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
             .writeTransfer("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
                 }
-                recordTransferClear(frame);
+                auto clearParams = readPassParams<BasicTransferClearParams>(
+                    pass, kBasicTransferClearParamsType, "Triangle clear pass");
+                if (!clearParams) {
+                    return std::unexpected{std::move(clearParams.error())};
+                }
+                recordTransferClear(frame, basicClearColorValue(*clearParams));
                 return {};
             });
 
-        graph.addPass("Triangle")
+        graph.addPass("Triangle", kBasicRasterTrianglePassType)
+            .setParams(kBasicRasterTriangleParamsType, drawItem_)
             .writeColor("target", backbuffer)
             .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
@@ -2090,16 +2002,22 @@ namespace vke {
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
                 }
+                auto drawItem = readPassParams<BasicDrawItem>(pass, kBasicRasterTriangleParamsType,
+                                                              "Triangle raster pass");
+                if (!drawItem) {
+                    return std::unexpected{std::move(drawItem.error())};
+                }
                 recordTriangleDraw(frame, pipeline_.handle(),
                                    BasicDrawBuffers{
                                        .vertex = vertexBuffer_.handle(),
                                        .index = indexBuffer_.handle(),
                                    },
-                                   drawItem_);
+                                   *drawItem);
                 return {};
             });
 
-        auto compiled = graph.compile();
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
         }
@@ -2139,20 +2057,31 @@ namespace vke {
         std::vector<VulkanRenderGraphImageBinding> bindings;
         bindings.reserve(2);
         bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+        const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
 
-        graph.addPass("ClearColor")
+        graph.addPass("ClearColor", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
             .writeTransfer("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
                 }
-                recordTransferClear(frame);
+                auto clearParams = readPassParams<BasicTransferClearParams>(
+                    pass, kBasicTransferClearParamsType, "Depth triangle clear pass");
+                if (!clearParams) {
+                    return std::unexpected{std::move(clearParams.error())};
+                }
+                recordTransferClear(frame, basicClearColorValue(*clearParams));
                 return {};
             });
 
-        graph.addPass("DepthTriangle")
+        graph.addPass("DepthTriangle", kBasicRasterDepthTrianglePassType)
+            .setParams(kBasicRasterDepthTriangleParamsType, drawItem_)
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
             .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
@@ -2166,17 +2095,23 @@ namespace vke {
                 if (!depthBinding) {
                     return std::unexpected{std::move(depthBinding.error())};
                 }
+                auto drawItem = readPassParams<BasicDrawItem>(
+                    pass, kBasicRasterDepthTriangleParamsType, "Depth triangle raster pass");
+                if (!drawItem) {
+                    return std::unexpected{std::move(drawItem.error())};
+                }
 
                 recordTriangleDraw(frame, pipeline_.handle(),
                                    BasicDrawBuffers{
                                        .vertex = vertexBuffer_.handle(),
                                        .index = indexBuffer_.handle(),
                                    },
-                                   drawItem_, depthBinding->vulkanImageView);
+                                   *drawItem, depthBinding->vulkanImageView);
                 return {};
             });
 
-        auto compiled = graph.compile();
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
         }
@@ -2376,20 +2311,32 @@ namespace vke {
         std::vector<VulkanRenderGraphImageBinding> bindings;
         bindings.reserve(2);
         bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+        const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
+        constexpr BasicDrawItem kMeshDrawItem = basicIndexedCubeDrawItem();
 
-        graph.addPass("ClearColor")
+        graph.addPass("ClearColor", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
             .writeTransfer("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
                 }
-                recordTransferClear(frame);
+                auto clearParams = readPassParams<BasicTransferClearParams>(
+                    pass, kBasicTransferClearParamsType, "Mesh3D clear pass");
+                if (!clearParams) {
+                    return std::unexpected{std::move(clearParams.error())};
+                }
+                recordTransferClear(frame, basicClearColorValue(*clearParams));
                 return {};
             });
 
-        graph.addPass("Mesh3D")
+        graph.addPass("Mesh3D", kBasicRasterMesh3DPassType)
+            .setParams(kBasicRasterMesh3DParamsType, kMeshDrawItem)
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
             .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
@@ -2403,17 +2350,23 @@ namespace vke {
                 if (!depthBinding) {
                     return std::unexpected{std::move(depthBinding.error())};
                 }
+                auto drawItem = readPassParams<BasicDrawItem>(pass, kBasicRasterMesh3DParamsType,
+                                                              "Mesh3D raster pass");
+                if (!drawItem) {
+                    return std::unexpected{std::move(drawItem.error())};
+                }
 
                 recordMesh3DDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
                                  BasicDrawBuffers{
                                      .vertex = vertexBuffer_.handle(),
                                      .index = indexBuffer_.handle(),
                                  },
-                                 depthBinding->vulkanImageView);
+                                 depthBinding->vulkanImageView, *drawItem);
                 return {};
             });
 
-        auto compiled = graph.compile();
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
         }
@@ -2466,23 +2419,22 @@ namespace vke {
         return *this;
     }
 
-    Result<BasicDrawListRenderer> BasicDrawListRenderer::create(
-        const BasicDrawListRendererDesc& desc) {
+    Result<BasicDrawListRenderer>
+    BasicDrawListRenderer::create(const BasicDrawListRendererDesc& desc) {
         if (desc.device == VK_NULL_HANDLE) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0, "Cannot create draw list renderer without a device"}};
         }
         if (desc.allocator == nullptr) {
-            return std::unexpected{Error{
-                ErrorDomain::Vulkan, 0, "Cannot create draw list renderer without an allocator"}};
+            return std::unexpected{Error{ErrorDomain::Vulkan, 0,
+                                         "Cannot create draw list renderer without an allocator"}};
         }
 
         constexpr auto defaultDrawItems = basicDrawListSmokeItems();
         const std::span<const BasicDrawListItem> drawItems =
-            desc.drawItems.empty()
-                ? std::span<const BasicDrawListItem>{defaultDrawItems.data(),
-                                                     defaultDrawItems.size()}
-                : desc.drawItems;
+            desc.drawItems.empty() ? std::span<const BasicDrawListItem>{defaultDrawItems.data(),
+                                                                        defaultDrawItems.size()}
+                                   : desc.drawItems;
         auto drawListValidated = validateBasicDrawListItems(drawItems);
         if (!drawListValidated) {
             return std::unexpected{std::move(drawListValidated.error())};
@@ -2577,8 +2529,7 @@ namespace vke {
         return renderer;
     }
 
-    Result<void> BasicDrawListRenderer::ensurePipeline(VkFormat colorFormat,
-                                                       VkFormat depthFormat) {
+    Result<void> BasicDrawListRenderer::ensurePipeline(VkFormat colorFormat, VkFormat depthFormat) {
         if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat &&
             pipelineDepthFormat_ == depthFormat) {
             return {};
@@ -2627,15 +2578,14 @@ namespace vke {
         const BasicDrawListParams drawListParams{
             .drawCount = static_cast<std::uint32_t>(drawItems_.size()),
         };
-        const BasicTransferClearParams clearParams =
-            basicTransferClearParams(frame.clearColor);
+        const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
 
         std::vector<VulkanRenderGraphImageBinding> bindings;
         bindings.reserve(2);
         bindings.push_back(basicBackbufferBinding(backbuffer, frame));
 
-        graph.addPass("ClearColor", "builtin.transfer-clear")
-            .setParams("builtin.transfer-clear.params", clearParams)
+        graph.addPass("ClearColor", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
             .writeTransfer("target", backbuffer)
             .recordCommands([clearParams](RenderGraphCommandList& commands) {
                 commands.clearColor("target", clearParams.color);
@@ -2648,22 +2598,17 @@ namespace vke {
                 }
 
                 auto clearParams = readPassParams<BasicTransferClearParams>(
-                    pass, "builtin.transfer-clear.params", "Draw list clear pass");
+                    pass, kBasicTransferClearParamsType, "Draw list clear pass");
                 if (!clearParams) {
                     return std::unexpected{std::move(clearParams.error())};
                 }
-                const VkClearColorValue clearColor{{
-                    clearParams->color[0],
-                    clearParams->color[1],
-                    clearParams->color[2],
-                    clearParams->color[3],
-                }};
+                const VkClearColorValue clearColor = basicClearColorValue(*clearParams);
                 recordTransferClear(frame, clearColor);
                 return {};
             });
 
-        graph.addPass("DrawList", "builtin.raster-draw-list")
-            .setParams("builtin.raster-draw-list.params", drawListParams)
+        graph.addPass("DrawList", kBasicRasterDrawListPassType)
+            .setParams(kBasicRasterDrawListParamsType, drawListParams)
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
             .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
@@ -2674,7 +2619,7 @@ namespace vke {
                 }
 
                 auto drawListParams = readPassParams<BasicDrawListParams>(
-                    pass, "builtin.raster-draw-list.params", "Draw list pass");
+                    pass, kBasicRasterDrawListParamsType, "Draw list pass");
                 if (!drawListParams) {
                     return std::unexpected{std::move(drawListParams.error())};
                 }
@@ -2697,7 +2642,7 @@ namespace vke {
                 return {};
             });
 
-        const RenderGraphSchemaRegistry schemas = basicDrawListSchemaRegistry();
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
         auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};

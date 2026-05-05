@@ -521,6 +521,9 @@ flowchart TD
   compiled pass 和 executor context 会携带 type id 与 payload bytes。
 - `RenderGraphSchemaRegistry` / `RenderGraphPassSchema` 已接入最小 schema 验证：按 pass type 校验
   params type、允许的 slot、必需 slot 和允许的 command kind。
+- `renderer_basic/render_graph_schemas.hpp` 已集中维护内建 clear、dynamic clear、transient present、
+  triangle、depth triangle、mesh3D、draw-list 和 fullscreen pass 的 type、params type、POD params
+  与 schema registry helper；真实 renderer-basic Vulkan 路径现在通过这套共享 schema compile。
 - `PassBuilder::allowCulling()` 和 `PassBuilder::hasSideEffects()` 已接入；schema 也可声明
   `allowCulling` / `hasSideEffects`。默认 pass 不参与 culling，写 imported image 的 pass 会作为外部输出保留。
 - `pass.type` 是当前 typed executor key，并会继续演进为执行模型 / pass opcode。它不等同于
@@ -571,7 +574,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
     Step1["下一步:<br/>RenderGraph validation depth<br/>culling diagnostics"]
     Step2["之后:<br/>deferred destruction / resource caches"]
     Step3["之后:<br/>multi-view / material expansion"]
@@ -592,6 +595,8 @@ flowchart TD
     Now --> DependencySortUpdate
     CullingUpdate["2026-05-05:<br/>allowCulling / hasSideEffects<br/>culled pass table<br/>unused transient culling smoke"]
     Now --> CullingUpdate
+    BuiltinSchemaUpdate["2026-05-05:<br/>shared renderer_basic builtin schemas<br/>clear / triangle / mesh / fullscreen schema compile"]
+    Now --> BuiltinSchemaUpdate
 ```
 
 建议推进顺序：

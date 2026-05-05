@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "vke/core/result.hpp"
+#include "vke/renderer_basic/render_graph_schemas.hpp"
 #include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "vke/rendergraph/render_graph.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
@@ -19,9 +20,22 @@ namespace vke {
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
         const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
+        const BasicTransferClearParams clearParams{
+            .color =
+                {
+                    frame.clearColor.float32[0],
+                    frame.clearColor.float32[1],
+                    frame.clearColor.float32[2],
+                    frame.clearColor.float32[3],
+                },
+        };
 
-        graph.addPass("ClearColor")
+        graph.addPass("ClearColor", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
             .writeTransfer("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
@@ -41,7 +55,8 @@ namespace vke {
                 return {};
             });
 
-        auto compiled = graph.compile();
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
         }
@@ -67,9 +82,22 @@ namespace vke {
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
         const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
+        const BasicTransferClearParams clearParams{
+            .color =
+                {
+                    frame.clearColor.float32[0],
+                    frame.clearColor.float32[1],
+                    frame.clearColor.float32[2],
+                    frame.clearColor.float32[3],
+                },
+        };
 
-        graph.addPass("DynamicClearColor")
+        graph.addPass("DynamicClearColor", kBasicDynamicClearPassType)
+            .setParams(kBasicDynamicClearParamsType, clearParams)
             .writeColor("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
@@ -102,7 +130,8 @@ namespace vke {
                 return {};
             });
 
-        auto compiled = graph.compile();
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
         if (!compiled) {
             return std::unexpected{std::move(compiled.error())};
         }
@@ -143,10 +172,26 @@ namespace vke {
             std::vector<VulkanRenderGraphImageBinding> bindings;
             bindings.reserve(2);
             bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+            const BasicTransferClearParams transientClearParams{
+                .color = {0.12F, 0.20F, 0.16F, 1.0F},
+            };
+            const BasicTransferClearParams presentClearParams{
+                .color =
+                    {
+                        frame.clearColor.float32[0],
+                        frame.clearColor.float32[1],
+                        frame.clearColor.float32[2],
+                        frame.clearColor.float32[3],
+                    },
+            };
 
-            graph.addPass("ClearTransient")
+            graph.addPass("ClearTransient", kBasicTransferClearPassType)
+                .setParams(kBasicTransferClearParamsType, transientClearParams)
                 .writeTransfer("target", transientColor)
-                .execute([&frame, &bindings,
+                .recordCommands([transientClearParams](RenderGraphCommandList& commands) {
+                    commands.clearColor("target", transientClearParams.color);
+                })
+                .execute([&frame, &bindings, transientClearParams,
                           transientColor](RenderGraphPassContext pass) -> Result<void> {
                     auto transitions =
                         recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
@@ -159,7 +204,12 @@ namespace vke {
                         return std::unexpected{std::move(image.error())};
                     }
 
-                    const VkClearColorValue transientClear{{0.12F, 0.20F, 0.16F, 1.0F}};
+                    const VkClearColorValue transientClear{{
+                        transientClearParams.color[0],
+                        transientClearParams.color[1],
+                        transientClearParams.color[2],
+                        transientClearParams.color[3],
+                    }};
                     VkImageSubresourceRange clearRange{};
                     clearRange.aspectMask = image->aspectMask;
                     clearRange.baseMipLevel = 0;
@@ -172,9 +222,13 @@ namespace vke {
                     return {};
                 });
 
-            graph.addPass("PresentBackbufferAfterTransient")
+            graph.addPass("PresentBackbufferAfterTransient", kBasicTransientPresentPassType)
+                .setParams(kBasicTransientPresentParamsType, presentClearParams)
                 .readTexture("source", transientColor, RenderGraphShaderStage::Fragment)
                 .writeTransfer("target", backbuffer)
+                .recordCommands([presentClearParams](RenderGraphCommandList& commands) {
+                    commands.clearColor("target", presentClearParams.color);
+                })
                 .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                     auto transitions =
                         recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
@@ -194,7 +248,8 @@ namespace vke {
                     return {};
                 });
 
-            auto compiled = graph.compile();
+            const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+            auto compiled = graph.compile(schemas);
             if (!compiled) {
                 return std::unexpected{std::move(compiled.error())};
             }
@@ -226,8 +281,9 @@ namespace vke {
             transientImages_.clear();
         }
 
-        [[nodiscard]] static VkImageUsageFlags transientUsageFlags(
-            const RenderGraphCompileResult& compiled, RenderGraphImageHandle image) {
+        [[nodiscard]] static VkImageUsageFlags
+        transientUsageFlags(const RenderGraphCompileResult& compiled,
+                            RenderGraphImageHandle image) {
             VkImageUsageFlags usage{};
             for (const RenderGraphCompiledPass& pass : compiled.passes) {
                 if (usesImage(pass.transferWrites, image)) {
@@ -257,16 +313,14 @@ namespace vke {
             return false;
         }
 
-        [[nodiscard]] Result<void> prepareTransientResources(
-            const RenderGraphCompileResult& compiled,
-            std::vector<VulkanRenderGraphImageBinding>& bindings) {
-            for (const RenderGraphTransientImageAllocation& allocation :
-                 compiled.transientImages) {
+        [[nodiscard]] Result<void>
+        prepareTransientResources(const RenderGraphCompileResult& compiled,
+                                  std::vector<VulkanRenderGraphImageBinding>& bindings) {
+            for (const RenderGraphTransientImageAllocation& allocation : compiled.transientImages) {
                 const VkFormat format = vulkanFormat(allocation.format);
                 const VkImageAspectFlags aspectMask =
                     basicRenderGraphImageAspect(allocation.format);
-                const VkImageUsageFlags usage =
-                    transientUsageFlags(compiled, allocation.image);
+                const VkImageUsageFlags usage = transientUsageFlags(compiled, allocation.image);
 
                 auto image = VulkanImage::create(VulkanImageDesc{
                     .device = device_,
