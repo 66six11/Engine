@@ -1326,7 +1326,7 @@ namespace vke {
                     return std::unexpected{Error{
                         ErrorDomain::RenderGraph,
                         0,
-                        "Render graph contains a pass dependency cycle.",
+                        dependencyCycleMessage(dependencies, activePasses, emitted, adjacency),
                     }};
                 }
 
@@ -1350,6 +1350,108 @@ namespace vke {
 
             adjacency[fromPassIndex].push_back(toPassIndex);
             return true;
+        }
+
+        [[nodiscard]] std::string
+        dependencyCycleMessage(std::span<const RenderGraphPassDependency> dependencies,
+                               const std::vector<bool>& activePasses,
+                               const std::vector<bool>& emitted,
+                               const std::vector<std::vector<std::size_t>>& adjacency) const {
+            std::string message = "Render graph contains a pass dependency cycle.";
+
+            std::size_t cycleFrom = passes_.size();
+            std::size_t cycleTo = passes_.size();
+            if (findDependencyCycleEdge(adjacency, activePasses, emitted, cycleFrom, cycleTo)) {
+                message += " Cycle edge ";
+                message += passDeclarationLabel(cycleFrom);
+                message += " -> ";
+                message += passDeclarationLabel(cycleTo);
+
+                const RenderGraphPassDependency* dependency =
+                    findDependencyForEdge(dependencies, cycleFrom, cycleTo);
+                if (dependency != nullptr) {
+                    message += " through image '";
+                    message += imageHandleLabel(dependency->image);
+                    message += "'";
+                    if (!dependency->reason.empty()) {
+                        message += " (";
+                        message += dependency->reason;
+                        message += ")";
+                    }
+                }
+
+                message += ".";
+            }
+
+            message += " Remaining passes: ";
+            bool firstRemaining = true;
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                if (!activePasses[passIndex] || emitted[passIndex]) {
+                    continue;
+                }
+                if (!firstRemaining) {
+                    message += ", ";
+                }
+                firstRemaining = false;
+                message += passDeclarationLabel(passIndex);
+            }
+            if (firstRemaining) {
+                message += "-";
+            }
+            message += ".";
+
+            return message;
+        }
+
+        [[nodiscard]] bool
+        findDependencyCycleEdge(const std::vector<std::vector<std::size_t>>& adjacency,
+                                const std::vector<bool>& activePasses,
+                                const std::vector<bool>& emitted, std::size_t& cycleFrom,
+                                std::size_t& cycleTo) const {
+            std::vector<std::uint8_t> visitStates(passes_.size());
+            std::function<bool(std::size_t)> visit = [&](std::size_t passIndex) {
+                visitStates[passIndex] = 1;
+                for (const std::size_t dependent : adjacency[passIndex]) {
+                    if (!activePasses[dependent] || emitted[dependent]) {
+                        continue;
+                    }
+                    if (visitStates[dependent] == 1) {
+                        cycleFrom = passIndex;
+                        cycleTo = dependent;
+                        return true;
+                    }
+                    if (visitStates[dependent] == 0 && visit(dependent)) {
+                        return true;
+                    }
+                }
+
+                visitStates[passIndex] = 2;
+                return false;
+            };
+
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                if (!activePasses[passIndex] || emitted[passIndex] || visitStates[passIndex] != 0) {
+                    continue;
+                }
+                if (visit(passIndex)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        [[nodiscard]] static const RenderGraphPassDependency*
+        findDependencyForEdge(std::span<const RenderGraphPassDependency> dependencies,
+                              std::size_t fromPassIndex, std::size_t toPassIndex) {
+            for (const RenderGraphPassDependency& dependency : dependencies) {
+                if (dependency.fromDeclarationIndex == fromPassIndex &&
+                    dependency.toDeclarationIndex == toPassIndex) {
+                    return &dependency;
+                }
+            }
+
+            return nullptr;
         }
 
         [[nodiscard]] static bool
@@ -1477,8 +1579,8 @@ namespace vke {
         }
 
         [[nodiscard]] Result<void> validateUniqueImageAccesses(
-            const Pass& pass, std::span<const std::span<const RenderGraphImageSlot>> slotGroups)
-            const {
+            const Pass& pass,
+            std::span<const std::span<const RenderGraphImageSlot>> slotGroups) const {
             const std::array<RenderGraphImageSlotGroup, 6> namedGroups{
                 RenderGraphImageSlotGroup{
                     .access = "ColorWrite",
@@ -1512,8 +1614,7 @@ namespace vke {
                     const RenderGraphImageSlot& slot = group.slots[slotIndex];
                     for (std::size_t otherGroupIndex = groupIndex;
                          otherGroupIndex < namedGroups.size(); ++otherGroupIndex) {
-                        const RenderGraphImageSlotGroup& otherGroup =
-                            namedGroups[otherGroupIndex];
+                        const RenderGraphImageSlotGroup& otherGroup = namedGroups[otherGroupIndex];
                         const std::size_t otherSlotBegin =
                             otherGroupIndex == groupIndex ? slotIndex + 1 : 0;
                         for (std::size_t otherSlotIndex = otherSlotBegin;
@@ -1524,8 +1625,8 @@ namespace vke {
                                 return std::unexpected{Error{
                                     ErrorDomain::RenderGraph,
                                     0,
-                                    imageAccessConflictMessage(pass, slot, group.access,
-                                                               otherSlot, otherGroup.access),
+                                    imageAccessConflictMessage(pass, slot, group.access, otherSlot,
+                                                               otherGroup.access),
                                 }};
                             }
                         }
@@ -2014,9 +2115,11 @@ namespace vke {
             return message;
         }
 
-        [[nodiscard]] std::string imageAccessConflictMessage(
-            const Pass& pass, const RenderGraphImageSlot& slot, std::string_view access,
-            const RenderGraphImageSlot& otherSlot, std::string_view otherAccess) const {
+        [[nodiscard]] std::string imageAccessConflictMessage(const Pass& pass,
+                                                             const RenderGraphImageSlot& slot,
+                                                             std::string_view access,
+                                                             const RenderGraphImageSlot& otherSlot,
+                                                             std::string_view otherAccess) const {
             std::string message = "Render graph pass '";
             message += pass.name;
             message += "' declares image '";

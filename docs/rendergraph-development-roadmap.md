@@ -291,6 +291,11 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - backend transition 诊断：
   - 在 `rhi_vulkan_rendergraph` 层格式化 `oldLayout/newLayout/stage/access/aspect`。
 
+当前状态：
+
+- dependency cycle 现在会输出一条实际参与环的 edge，包含 `from -> to` pass、image 和 dependency reason。
+- `--smoke-rendergraph` 已覆盖两 pass / 两 image 互相读写形成的 cycle，并校验错误字符串包含 pass、image 和 edge 上下文。
+
 验收：
 
 - `--smoke-rendergraph` 包含 duplicate writer、cycle、ambiguous producer、invalid final state、culled producer 链路。

@@ -1774,6 +1774,43 @@ namespace {
             return false;
         }
 
+        vke::RenderGraph cycleGraph;
+        const auto cycleImageA = cycleGraph.createTransientImage(vke::RenderGraphImageDesc{
+            .name = "CycleImageA",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+        });
+        const auto cycleImageB = cycleGraph.createTransientImage(vke::RenderGraphImageDesc{
+            .name = "CycleImageB",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+        });
+        cycleGraph.addPass("CycleFirst", "basic.cycle-read-write")
+            .setParamsType("basic.cycle-read-write.params")
+            .readTexture("source", cycleImageA, vke::RenderGraphShaderStage::Fragment)
+            .writeColor("target", cycleImageB);
+        cycleGraph.addPass("CycleSecond", "basic.cycle-read-write")
+            .setParamsType("basic.cycle-read-write.params")
+            .readTexture("source", cycleImageB, vke::RenderGraphShaderStage::Fragment)
+            .writeColor("target", cycleImageA);
+        auto cycleCompiled = cycleGraph.compile(schemas);
+        if (!expectRenderGraphCompileFailure(cycleCompiled,
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "dependency cycle",
+                                                 .context = "cyclic dependency diagnostics",
+                                             })) {
+            return false;
+        }
+        const std::string& cycleError = cycleCompiled.error().message;
+        if (cycleError.find("CycleFirst") == std::string::npos ||
+            cycleError.find("CycleSecond") == std::string::npos ||
+            cycleError.find("CycleImageA") == std::string::npos ||
+            cycleError.find("Cycle edge") == std::string::npos) {
+            vke::logError("Render graph cycle diagnostic omitted pass, image, or edge context: " +
+                          cycleError);
+            return false;
+        }
+
         return true;
     }
 
@@ -2016,6 +2053,26 @@ namespace {
                     vke::RenderGraphCommandKind::SetVec4,
                     vke::RenderGraphCommandKind::DrawFullscreenTriangle,
                 },
+        });
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.cycle-read-write",
+            .paramsType = "basic.cycle-read-write.params",
+            .resourceSlots =
+                {
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = vke::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .optional = false,
+                    },
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = vke::RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
         });
         schemas.registerSchema(vke::RenderGraphPassSchema{
             .type = "basic.side-effect",
