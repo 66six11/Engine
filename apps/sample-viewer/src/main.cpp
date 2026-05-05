@@ -37,7 +37,7 @@ namespace {
                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
-                     "[--smoke-mesh-3d] "
+                     "[--smoke-mesh-3d] [--smoke-draw-list] "
                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture]\n";
     }
 
@@ -650,6 +650,104 @@ namespace {
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             vke::logError("Failed to wait for Vulkan queue before mesh 3D teardown: " +
+                          vke::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeDrawList() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window =
+            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Draw List Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Draw List Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = vke::VulkanFrameLoop::create(
+            *context, vke::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.010F, 0.012F, 0.018F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            vke::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        constexpr auto drawItems = vke::basicDrawListSmokeItems();
+        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto renderer = vke::BasicDrawListRenderer::create(vke::BasicDrawListRendererDesc{
+            .device = context->device(),
+            .allocator = context->allocator(),
+            .shaderDirectory = shaderDir,
+            .drawItems = drawItems,
+        });
+        if (!renderer) {
+            vke::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(
+                [&renderer](const vke::VulkanFrameRecordContext& recordContext) {
+                    return renderer->recordFrame(recordContext);
+                });
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during draw list smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered draw list frames: " << extent.width << 'x' << extent.height
+                  << '\n';
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            vke::logError("Failed to wait for Vulkan queue before draw list teardown: " +
                           vke::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
@@ -1506,6 +1604,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-mesh-3d")) {
             return runSmokeMesh3D();
+        }
+
+        if (hasArg(args, "--smoke-draw-list")) {
+            return runSmokeDrawList();
         }
 
         if (hasArg(args, "--smoke-descriptor-layout")) {

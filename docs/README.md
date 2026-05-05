@@ -11,8 +11,9 @@
 3. `architecture.md` - 模块边界、所有权、生命周期和 RenderGraph 设计。
 4. `flow-architecture.md` - 当前包依赖、启动流程、frame loop、RenderGraph/RHI 数据流。
 5. `next-development-plan.md` - 下一阶段 shader reflection、descriptor、transient/depth 和 mesh 路线。
-6. `review-workflow.md` - 每次审查、修复和提交前必须执行的门禁。
-7. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
+6. `full-diagnosis-2026-05-05.md` - 最近一次全量诊断、风险清单和未来开发计划。
+7. `review-workflow.md` - 每次审查、修复和提交前必须执行的门禁。
+8. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
 
 ## 知识分类
 
@@ -23,14 +24,14 @@
 | 架构设计 | `architecture.md`、`flow-architecture.md`、`package-architecture.md` | 记录 package-first 组织、对象生命周期、流程图和依赖方向。 |
 | RenderGraph | `rendergraph-mvp.md`、`rendergraph-rhi-boundary.md` | 记录 MVP 闭环、API 草图、后端无关边界和 Vulkan 翻译归属。 |
 | 工程规范 | `coding-standard.md`、`encoding-policy.md`、`review-workflow.md` | 记录编码规范、文本编码策略、审查和提交门禁。 |
-| 项目节奏 | `project-management.md`、`next-development-plan.md` | 记录仓库布局、里程碑、Definition of Done、风险表和下一阶段开发顺序。 |
+| 项目节奏 | `project-management.md`、`next-development-plan.md`、`full-diagnosis-2026-05-05.md` | 记录仓库布局、里程碑、Definition of Done、风险表、诊断结论和下一阶段开发顺序。 |
 
 ## 当前门禁状态
 
 - Scope：Windows 桌面端，Vulkan 1.4，C++23，GLFW，VMA，CMake，Conan，MSVC/ClangCL。
 - Research：已有官方资料索引；涉及最新 SDK、扩展、工具行为时仍需重新核对一手资料。
 - Design：已形成 package-first、RenderGraph/RHI 边界、frame loop 和 shader pipeline 初版设计。
-- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、dynamic rendering clear、resize/recreate smoke、triangle smoke 和无参数交互式 triangle viewer。
+- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、transient image、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、draw list、descriptor layout、fullscreen texture 和无参数交互式 triangle viewer。
 - Validation：提交前按 `review-workflow.md` 运行编码检查、构建、smoke 和 Vulkan/C++ 审查脚本。
 
 ## 文档维护规则
@@ -43,7 +44,7 @@
 
 ## 近期重点
 
-- 优先实现 Slang reflection 基线，生成可审查的 `*.reflection.json`。
-- 在 reflection 基线上建立 descriptor/layout 契约。
-- 接入 RenderGraph transient image 和 depth attachment smoke。
+- draw list MVP 已接入，继续保持 RenderGraph 声明模型和 Vulkan backend 执行模型分离。
+- 优先把 RenderGraph 从声明顺序执行推进到依赖排序、pass culling 和更强 validation。
+- 建立 deferred destruction、descriptor allocator、transient resource pool 和 pipeline cache。
 - 维护 `conan.lock`，依赖改动时重新生成并审查 recipe revision 变化。

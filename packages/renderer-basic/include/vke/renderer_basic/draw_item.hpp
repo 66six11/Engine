@@ -25,6 +25,13 @@ namespace vke {
         std::uint32_t firstInstance{};
     };
 
+    using BasicTransformMatrix3D = std::array<float, 16>;
+
+    struct BasicDrawListItem {
+        BasicDrawItem drawItem{};
+        BasicTransformMatrix3D modelMatrix{};
+    };
+
     enum class BasicMeshKind {
         Triangle,
         IndexedQuad,
@@ -63,6 +70,38 @@ namespace vke {
             .firstIndex = 0,
             .vertexOffset = 0,
             .firstInstance = 0,
+        };
+    }
+
+    [[nodiscard]] constexpr BasicTransformMatrix3D basicIdentityTransform3D() {
+        return BasicTransformMatrix3D{
+            1.0F, 0.0F, 0.0F, 0.0F,
+            0.0F, 1.0F, 0.0F, 0.0F,
+            0.0F, 0.0F, 1.0F, 0.0F,
+            0.0F, 0.0F, 0.0F, 1.0F,
+        };
+    }
+
+    [[nodiscard]] constexpr BasicTransformMatrix3D
+    basicTranslationTransform3D(float x, float y, float z) {
+        return BasicTransformMatrix3D{
+            1.0F, 0.0F, 0.0F, x,
+            0.0F, 1.0F, 0.0F, y,
+            0.0F, 0.0F, 1.0F, z,
+            0.0F, 0.0F, 0.0F, 1.0F,
+        };
+    }
+
+    [[nodiscard]] constexpr std::array<BasicDrawListItem, 2> basicDrawListSmokeItems() {
+        return std::array{
+            BasicDrawListItem{
+                .drawItem = basicIndexedCubeDrawItem(),
+                .modelMatrix = basicTranslationTransform3D(-0.72F, 0.0F, 3.0F),
+            },
+            BasicDrawListItem{
+                .drawItem = basicIndexedCubeDrawItem(),
+                .modelMatrix = basicTranslationTransform3D(0.72F, 0.0F, 3.0F),
+            },
         };
     }
 

@@ -40,20 +40,32 @@ python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan
 涉及 frame loop、swapchain、RenderGraph、renderer 或 Vulkan adapter 时，必须跑：
 
 ```powershell
-build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
-build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
-build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
-build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
-build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
-build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-depth-triangle
-build\cmake\clangcl-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descriptor-layout
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-depth-triangle
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descriptor-layout
+$smokes = @(
+    "--smoke-window",
+    "--smoke-vulkan",
+    "--smoke-frame",
+    "--smoke-rendergraph",
+    "--smoke-transient",
+    "--smoke-dynamic-rendering",
+    "--smoke-resize",
+    "--smoke-triangle",
+    "--smoke-depth-triangle",
+    "--smoke-mesh",
+    "--smoke-mesh-3d",
+    "--smoke-draw-list",
+    "--smoke-descriptor-layout",
+    "--smoke-fullscreen-texture"
+)
+
+foreach ($preset in @("clangcl-debug", "msvc-debug")) {
+    $exe = "build\cmake\$preset\apps\sample-viewer\vke-sample-viewer.exe"
+    foreach ($smoke in $smokes) {
+        & $exe $smoke
+        if ($LASTEXITCODE -ne 0) {
+            throw "$preset $smoke failed with exit code $LASTEXITCODE"
+        }
+    }
+}
 ```
 
 如果某个 smoke 命令尚不存在，审查回复必须说明原因，不能默默跳过。
@@ -65,7 +77,7 @@ build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descript
 1. Khronos Vulkan spec、refpage、Vulkan Guide。
 2. VMA、Slang、SPIR-V、shader toolchain 官方文档。
 3. 成熟案例：Frostbite FrameGraph、Granite、Diligent Engine、RenderDoc/Nsight 的资源视图思路。
-4. 本仓库文档：`docs/flow-architecture.md`、`docs/rendergraph-rhi-boundary.md`、`docs/package-architecture.md`。
+4. 本仓库文档：`docs/flow-architecture.md`、`docs/rendergraph-rhi-boundary.md`、`docs/package-architecture.md`、`docs/full-diagnosis-2026-05-05.md`。
 
 设计审查必须覆盖：
 
@@ -117,6 +129,7 @@ build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descript
 优先更新：
 
 - `docs/flow-architecture.md`
+- `docs/full-diagnosis-2026-05-05.md`
 - `docs/rendergraph-mvp.md`
 - `docs/rendergraph-rhi-boundary.md`
 - `docs/package-architecture.md`

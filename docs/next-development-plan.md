@@ -2,7 +2,7 @@
 
 研究日期：2026-04-29
 
-更新日期：2026-05-04
+更新日期：2026-05-05
 
 ## 当前基线
 
@@ -10,8 +10,8 @@
 
 - 无参数 sample viewer 可以持续渲染 triangle。
 - `--smoke-frame`、`--smoke-rendergraph`、`--smoke-dynamic-rendering`、`--smoke-resize`、
-  `--smoke-triangle`、`--smoke-depth-triangle`、`--smoke-descriptor-layout`、
-  `--smoke-fullscreen-texture` 已作为回归入口。
+  `--smoke-triangle`、`--smoke-depth-triangle`、`--smoke-mesh`、`--smoke-mesh-3d`、
+  `--smoke-draw-list`、`--smoke-descriptor-layout`、`--smoke-fullscreen-texture` 已作为回归入口。
 - Slang shader 构建会输出 SPIR-V、执行 `spirv-val`，并生成记录工具路径和版本的 metadata。
 - `packages/shader-slang/tools/slang_reflect.cpp` 已接入 Slang API reflection，triangle shader
   会生成 `basic_triangle.vert.reflection.json` 和 `basic_triangle.frag.reflection.json`。
@@ -24,6 +24,8 @@
   layout + pool + set + descriptor write 验证。
 - `--smoke-fullscreen-texture` 已把 descriptor set bind、sampled image descriptor update 和 fullscreen
   dynamic-rendering draw 接入真实 Vulkan 录制路径。
+- `--smoke-draw-list` 已把后端无关 `BasicDrawListItem`、`builtin.raster-draw-list` schema、
+  typed params payload、transient depth attachment 和多 item indexed draw 接入真实 Vulkan 录制路径。
 - RenderGraph pass 已具备可选 `type` 字段和 `RenderGraphExecutorRegistry` 执行入口。当前它是
   C++ 快速路径和 typed pass 分发点，后续会演进为脚本/工具前端可生成的 pass 声明、参数和受控
   command context 的共同入口。
@@ -35,6 +37,11 @@
 下一阶段目标不是立刻接入脚本或扩成完整 SRP，而是先把 RenderGraph 声明模型、shader
 layout、资源绑定、transient 资源生命周期和同步边界做稳。未来脚本系统只应复用同一套
 C++ builder / command context / compiled graph 语义，而不是引入另一套渲染路径。
+
+2026-05-05 全量诊断结论见 `full-diagnosis-2026-05-05.md`。当前主线已通过 MSVC/ClangCL
+Debug 构建和完整 smoke 清单；draw list MVP 已落地，下一步优先级调整为：补 RenderGraph
+compiler v2、deferred destruction、descriptor/transient/pipeline cache 和 multi-view 边界。
+不要在下一阶段提前接入脚本 VM、完整 asset database、bindless 或 async compute。
 
 ## 一手资料结论
 
@@ -100,8 +107,8 @@ C++ builder / command context / compiled graph 语义，而不是引入另一套
 | 6 | PrepareBackend transient allocation | 已增加 Vulkan image/image view RAII、VMA-backed transient image 创建、usage/aspect 推导和 binding 表接入 | `--smoke-transient` 已升级为真实 transient VkImage 录制路径，validation 无 error/warning |
 | 7 | Depth attachment MVP | 已增加 dynamic rendering depth attachment、`D32Sfloat` transient depth image、depth aspect binding 和 depth-enabled pipeline | `--smoke-depth-triangle` 已接入，validation 无 error/warning |
 | 8 | 受控 command context skeleton | 已增加 `RenderGraphCommandList`、`RenderGraphCommand`、compiled pass command summary、executor context command span 和 debug table 输出；`--smoke-rendergraph` 已覆盖 clear、set shader、set texture、float/vec4 参数和 fullscreen draw summary | command summary 可审查；不暴露 Vulkan API；不接入脚本 VM；resource access 仍必须在 builder 上显式声明 |
-| 9 | Descriptor binding / fullscreen pass | 已增加最小 descriptor pool、descriptor set allocation、uniform-buffer write、sampled-image write、sampler write、descriptor bind 和 fullscreen dynamic-rendering draw；fullscreen 路径已开始使用可复用 pass schema、allowed command kind、typed params payload 和 command-derived pipeline key；下一步进入 mesh / draw list | `--smoke-descriptor-layout` 已验证 descriptor set 分配和 buffer/image/sampler write；`--smoke-fullscreen-texture` 已验证 shader 真实采样 transient source image |
-| 10 | Mesh asset / draw list 路线 | 已从固定顶点数据扩展到最小 indexed quad mesh、host-upload index buffer、indexed draw，以及独立 3D cube smoke；当前使用固定 MVP push constants，不引入全局相机系统；下一步引入简化 draw list / resource upload，不提前暴露逐 object 脚本 draw loop | `--smoke-mesh` 已渲染 indexed quad；`--smoke-mesh-3d` 已验证 3D vertex layout、depth 和 MVP push constants；后续新增 draw list smoke |
+| 9 | Descriptor binding / fullscreen pass | 已增加最小 descriptor pool、descriptor set allocation、uniform-buffer write、sampled-image write、sampler write、descriptor bind 和 fullscreen dynamic-rendering draw；fullscreen 路径已开始使用可复用 pass schema、allowed command kind、typed params payload 和 command-derived pipeline key；mesh / draw list 路线已开始接上同一套声明模型 | `--smoke-descriptor-layout` 已验证 descriptor set 分配和 buffer/image/sampler write；`--smoke-fullscreen-texture` 已验证 shader 真实采样 transient source image |
+| 10 | Mesh asset / draw list 路线 | 已从固定顶点数据扩展到最小 indexed quad mesh、host-upload index buffer、indexed draw、独立 3D cube smoke，以及最小 draw list；当前使用固定 MVP push constants，不引入全局相机系统；后续再补 resource upload、material/pipeline key 和 asset database | `--smoke-mesh` 已渲染 indexed quad；`--smoke-mesh-3d` 已验证 3D vertex layout、depth 和 MVP push constants；`--smoke-draw-list` 已验证 typed pass + 多 item indexed cube draw |
 
 ## RenderGraph 脚本前置原则
 
@@ -370,14 +377,12 @@ Descriptor/Layout 契约已开始消费 reflection JSON。当前实现会在
 后续范围：
 
 - descriptor pool / descriptor set allocation / uniform-buffer / sampled-image / sampler write 已有
-  最小 RHI wrapper；descriptor bind 和 fullscreen texture smoke 已接入，下一步先收紧 fullscreen pass
-  schema/params/pipeline key，再进入 material/resource binding。
-- 在进入 descriptor binding 前，先让 RenderGraph pass 拥有 named resource slots 和 typed params，
-  避免后续 fullscreen/postprocess pass 只能依赖位置参数或 ad hoc callback capture。
-- 在进入 fullscreen/postprocess 前，先扩展 `ShaderRead` 等抽象 state 和 Vulkan access/layout 翻译；
-  `ShaderRead` 需要携带 shader stage/domain，depth 需要区分 attachment read/write 与 sampled read，
-  并校验 image usage flags 与目标 layout/access 匹配；否则 `setTexture` 只能停留在 debug summary，
-  无法安全采样 graph resource。
+  最小 RHI wrapper；descriptor bind、fullscreen texture 和 draw list smoke 已接入。进入 material/resource
+  binding 前，下一步先补 pipeline/layout/descriptor cache 与 deferred destruction。
+- RenderGraph pass 已拥有 named resource slots 和 typed params；后续 fullscreen/postprocess/draw-list
+  继续沿用这套声明模型，避免依赖位置参数或 ad hoc callback capture。
+- `ShaderRead`、depth attachment read/write 和 sampled depth state 已扩展到抽象 state 与 Vulkan
+  access/layout 翻译；后续新增采样或 depth 路径时继续校验 image usage flags 与目标 layout/access 匹配。
 - 在 material/resource binding 路线稳定前，继续暂缓 bindless 和自动 C++ codegen。
 
 ## 暂缓事项
