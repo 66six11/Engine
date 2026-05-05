@@ -743,8 +743,7 @@ namespace {
         }
 
         const VkExtent2D extent = frameLoop->extent();
-        std::cout << "Rendered draw list frames: " << extent.width << 'x' << extent.height
-                  << '\n';
+        std::cout << "Rendered draw list frames: " << extent.width << 'x' << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             vke::logError("Failed to wait for Vulkan queue before draw list teardown: " +
@@ -1317,6 +1316,82 @@ namespace {
             });
     }
 
+    bool validateSmokeRenderGraphNegativeCompiles(const vke::RenderGraphSchemaRegistry& schemas) {
+        vke::RenderGraph missingProducerGraph;
+        const auto orphanColor =
+            missingProducerGraph.createTransientImage(vke::RenderGraphImageDesc{
+                .name = "OrphanTransientColor",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            });
+        int missingProducerCallbackCount = 0;
+        missingProducerGraph.addPass("SampleOrphanTransient", "basic.transient-sample-fragment")
+            .setParamsType("basic.transient-sample-fragment.params")
+            .readTexture("source", orphanColor, vke::RenderGraphShaderStage::Fragment)
+            .execute([&missingProducerCallbackCount](vke::RenderGraphPassContext) {
+                ++missingProducerCallbackCount;
+                return vke::Result<void>{};
+            });
+
+        auto missingProducerCompiled = missingProducerGraph.compile(schemas);
+        if (missingProducerCompiled) {
+            vke::logError("Render graph accepted a transient read without a producer.");
+            return false;
+        }
+        if (missingProducerCompiled.error().message.find("before any pass writes it") ==
+            std::string::npos) {
+            vke::logError("Render graph produced an unexpected missing-producer error: " +
+                          missingProducerCompiled.error().message);
+            return false;
+        }
+
+        auto missingProducerExecuted = missingProducerGraph.execute();
+        if (missingProducerExecuted) {
+            vke::logError("Render graph executed a transient read without a producer.");
+            return false;
+        }
+        if (missingProducerCallbackCount != 0) {
+            vke::logError(
+                "Render graph invoked a callback after missing-producer compile failure.");
+            return false;
+        }
+
+        vke::RenderGraph missingSchemaGraph;
+        const auto schemaBackbuffer = missingSchemaGraph.importImage(vke::RenderGraphImageDesc{
+            .name = "UnknownSchemaBackbuffer",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = vke::RenderGraphImageState::Undefined,
+            .finalState = vke::RenderGraphImageState::Present,
+        });
+        int missingSchemaCallbackCount = 0;
+        missingSchemaGraph.addPass("UnknownTypedPass", "basic.unknown-pass")
+            .setParamsType("basic.unknown-pass.params")
+            .writeTransfer("target", schemaBackbuffer)
+            .execute([&missingSchemaCallbackCount](vke::RenderGraphPassContext) {
+                ++missingSchemaCallbackCount;
+                return vke::Result<void>{};
+            });
+
+        auto missingSchemaCompiled = missingSchemaGraph.compile(schemas);
+        if (missingSchemaCompiled) {
+            vke::logError("Render graph accepted a pass type without a registered schema.");
+            return false;
+        }
+        if (missingSchemaCompiled.error().message.find("has no registered schema") ==
+            std::string::npos) {
+            vke::logError("Render graph produced an unexpected missing-schema error: " +
+                          missingSchemaCompiled.error().message);
+            return false;
+        }
+        if (missingSchemaCallbackCount != 0) {
+            vke::logError("Render graph invoked a callback during missing-schema compile.");
+            return false;
+        }
+
+        return true;
+    }
+
     int runSmokeRenderGraph() {
         vke::RenderGraph graph;
         const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
@@ -1362,9 +1437,6 @@ namespace {
         graph.addPass("SampleDepth", "basic.depth-sample-fragment")
             .setParamsType("basic.depth-sample-fragment.params")
             .readDepthTexture("depth", depthBuffer, vke::RenderGraphShaderStage::Fragment);
-        graph.addPass("WriteTransientColor", "basic.transient-color")
-            .setParamsType("basic.transient-color.params")
-            .writeColor("target", transientColor);
         graph.addPass("SampleTransientColor", "basic.transient-sample-fragment")
             .setParamsType("basic.transient-sample-fragment.params")
             .readTexture("source", transientColor, vke::RenderGraphShaderStage::Fragment)
@@ -1374,6 +1446,9 @@ namespace {
                     .setVec4("Tint", std::array{1.0F, 0.85F, 0.65F, 1.0F})
                     .drawFullscreenTriangle();
             });
+        graph.addPass("WriteTransientColor", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", transientColor);
 
         vke::RenderGraphSchemaRegistry schemas;
         schemas.registerSchema(vke::RenderGraphPassSchema{
@@ -1491,6 +1566,18 @@ namespace {
             vke::logError("Render graph did not produce the expected shader-read pass transition.");
             return EXIT_FAILURE;
         }
+        if (compiled->passes[4].name != "WriteTransientColor" ||
+            compiled->passes[4].declarationIndex != 5 ||
+            compiled->passes[5].name != "SampleTransientColor" ||
+            compiled->passes[5].declarationIndex != 4) {
+            vke::logError(
+                "Render graph compiler did not reorder transient producer before reader.");
+            return EXIT_FAILURE;
+        }
+        if (compiled->dependencies.size() != 3) {
+            vke::logError("Render graph compiler produced an unexpected dependency count.");
+            return EXIT_FAILURE;
+        }
 
         std::cout << graph.formatDebugTables(*compiled) << '\n';
 
@@ -1503,6 +1590,10 @@ namespace {
         }
 
         if (!validateSmokeRenderGraphVulkanMappings(*compiled)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphNegativeCompiles(schemas)) {
             return EXIT_FAILURE;
         }
 
@@ -1536,9 +1627,11 @@ namespace {
 
         std::cout << "Render graph passes: " << compiled->passes.size()
                   << ", final transitions: " << compiled->finalTransitions.size()
+                  << ", dependencies: " << compiled->dependencies.size()
                   << ", callbacks: " << callbackCount << '\n';
         return compiled->passes.size() == 6 && compiled->transientImages.size() == 1 &&
-                       compiled->finalTransitions.size() == 1 && callbackCount == 6
+                       compiled->finalTransitions.size() == 1 &&
+                       compiled->dependencies.size() == 3 && callbackCount == 6
                    ? EXIT_SUCCESS
                    : EXIT_FAILURE;
     }

@@ -228,6 +228,7 @@ namespace vke {
         std::string name;
         std::string type;
         std::string paramsType;
+        std::size_t declarationIndex{};
         std::vector<std::byte> paramsData;
         std::vector<RenderGraphCommand> commands;
         std::vector<RenderGraphImageTransition> transitionsBefore;
@@ -245,6 +246,14 @@ namespace vke {
         std::vector<RenderGraphImageSlot> transferWriteSlots;
     };
 
+    struct RenderGraphPassDependency {
+        std::size_t fromDeclarationIndex{};
+        std::size_t toDeclarationIndex{};
+        RenderGraphImageHandle image{};
+        std::string imageName;
+        std::string reason;
+    };
+
     struct RenderGraphTransientImageAllocation {
         RenderGraphImageHandle image{};
         std::string imageName;
@@ -258,6 +267,7 @@ namespace vke {
 
     struct RenderGraphCompileResult {
         std::vector<RenderGraphCompiledPass> passes;
+        std::vector<RenderGraphPassDependency> dependencies;
         std::vector<RenderGraphTransientImageAllocation> transientImages;
         std::vector<RenderGraphImageTransition> finalTransitions;
     };
@@ -556,6 +566,23 @@ namespace vke {
     private:
         [[nodiscard]] Result<RenderGraphCompileResult>
         compile(const RenderGraphSchemaRegistry* schemaRegistry) const {
+            for (const Pass& pass : passes_) {
+                auto passValidated = validatePass(pass, schemaRegistry);
+                if (!passValidated) {
+                    return std::unexpected{std::move(passValidated.error())};
+                }
+            }
+
+            auto dependencies = buildDependencies();
+            if (!dependencies) {
+                return std::unexpected{std::move(dependencies.error())};
+            }
+
+            auto passOrder = sortPassesByDependencies(*dependencies);
+            if (!passOrder) {
+                return std::unexpected{std::move(passOrder.error())};
+            }
+
             std::vector<RenderGraphImageAccess> currentAccesses;
             currentAccesses.reserve(images_.size());
             for (const RenderGraphImageDesc& image : images_) {
@@ -567,24 +594,16 @@ namespace vke {
 
             RenderGraphCompileResult result;
             result.passes.reserve(passes_.size());
+            result.dependencies = *dependencies;
 
-            for (const Pass& pass : passes_) {
-                auto slotsValidated = validateWriteSlots(pass);
-                if (!slotsValidated) {
-                    return std::unexpected{std::move(slotsValidated.error())};
-                }
-
-                if (schemaRegistry != nullptr) {
-                    auto schemaValidated = validateSchema(pass, *schemaRegistry);
-                    if (!schemaValidated) {
-                        return std::unexpected{std::move(schemaValidated.error())};
-                    }
-                }
+            for (const std::size_t passIndex : *passOrder) {
+                const Pass& pass = passes_[passIndex];
 
                 RenderGraphCompiledPass compiledPass{
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
+                    .declarationIndex = passIndex,
                     .paramsData = pass.paramsData,
                     .commands = pass.commands,
                     .transitionsBefore = {},
@@ -746,7 +765,18 @@ namespace vke {
 
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
-                const RenderGraphPassCallback* callback = &passes_[index].callback;
+                if (pass.declarationIndex >= passes_.size() ||
+                    passes_[pass.declarationIndex].name != pass.name) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Compiled render graph pass '" + pass.name +
+                            "' does not match the graph declaration.",
+                    }};
+                }
+
+                const RenderGraphPassCallback* callback =
+                    &passes_[pass.declarationIndex].callback;
                 if (!*callback && executorRegistry != nullptr) {
                     callback = executorRegistry->find(pass.type);
                 }
@@ -815,14 +845,16 @@ namespace vke {
             }
 
             output += "\n### RenderGraph Passes\n\n";
-            output += "| # | Name | Type | Params | Before Transitions | Color Writes | "
+            output += "| # | Decl # | Name | Type | Params | Before Transitions | Color Writes | "
                       "Shader Reads | Depth Reads | Depth Writes | Depth Sampled Reads | "
                       "Transfer Writes |\n";
-            output += "|---:|---|---|---|---:|---|---|---|---|---|\n";
+            output += "|---:|---:|---|---|---|---:|---|---|---|---|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
                 output += std::to_string(index);
+                output += " | ";
+                output += std::to_string(pass.declarationIndex);
                 output += " | ";
                 output += pass.name;
                 output += " | ";
@@ -843,6 +875,21 @@ namespace vke {
                 output += imageSlotList(pass.depthSampledReadSlots);
                 output += " | ";
                 output += imageSlotList(pass.transferWriteSlots);
+                output += " |\n";
+            }
+
+            output += "\n### RenderGraph Dependencies\n\n";
+            output += "| From | To | Image | Reason |\n";
+            output += "|---|---|---|---|\n";
+            for (const RenderGraphPassDependency& dependency : compiled.dependencies) {
+                output += "| ";
+                output += passDeclarationLabel(dependency.fromDeclarationIndex);
+                output += " | ";
+                output += passDeclarationLabel(dependency.toDeclarationIndex);
+                output += " | ";
+                output += imageHandleLabel(dependency.image);
+                output += " | ";
+                output += dependency.reason;
                 output += " |\n";
             }
 
@@ -902,6 +949,234 @@ namespace vke {
         }
 
     private:
+        [[nodiscard]] Result<void>
+        validatePass(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry) const {
+            auto slotsValidated = validateWriteSlots(pass);
+            if (!slotsValidated) {
+                return std::unexpected{std::move(slotsValidated.error())};
+            }
+
+            if (schemaRegistry != nullptr) {
+                auto schemaValidated = validateSchema(pass, *schemaRegistry);
+                if (!schemaValidated) {
+                    return std::unexpected{std::move(schemaValidated.error())};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<std::vector<RenderGraphPassDependency>>
+        buildDependencies() const {
+            std::vector<RenderGraphPassDependency> dependencies;
+
+            for (std::size_t imageIndex = 0; imageIndex < images_.size(); ++imageIndex) {
+                const RenderGraphImageHandle imageHandle{
+                    .index = static_cast<std::uint32_t>(imageIndex),
+                };
+                std::vector<std::size_t> writers;
+                std::vector<std::size_t> readers;
+
+                for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                    const Pass& pass = passes_[passIndex];
+                    if (passWritesImage(pass, imageHandle)) {
+                        writers.push_back(passIndex);
+                    }
+                    if (passReadsImage(pass, imageHandle)) {
+                        readers.push_back(passIndex);
+                    }
+                }
+
+                for (std::size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex) {
+                    addDependency(dependencies, writers[writerIndex - 1], writers[writerIndex],
+                                  imageHandle, "write order");
+                }
+
+                auto readDependencies =
+                    addReadDependencies(dependencies, imageHandle, writers, readers);
+                if (!readDependencies) {
+                    return std::unexpected{std::move(readDependencies.error())};
+                }
+            }
+
+            return dependencies;
+        }
+
+        [[nodiscard]] Result<void>
+        addReadDependencies(std::vector<RenderGraphPassDependency>& dependencies,
+                            RenderGraphImageHandle image,
+                            std::span<const std::size_t> writers,
+                            std::span<const std::size_t> readers) const {
+            const RenderGraphImageDesc& imageDesc = images_[image.index];
+
+            for (const std::size_t reader : readers) {
+                if (writers.empty()) {
+                    if (!imageCanBeReadFromInitialState(imageDesc)) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            "Render graph pass '" + passes_[reader].name + "' reads image '" +
+                                imageDesc.name + "' before any pass writes it.",
+                        }};
+                    }
+                    continue;
+                }
+
+                std::size_t sourceWriter{};
+                bool hasSourceWriter = false;
+                for (const std::size_t writer : writers) {
+                    if (writer < reader) {
+                        sourceWriter = writer;
+                        hasSourceWriter = true;
+                    }
+                }
+
+                if (!hasSourceWriter && imageCanBeReadFromInitialState(imageDesc)) {
+                    for (const std::size_t writer : writers) {
+                        if (writer > reader) {
+                            addDependency(dependencies, reader, writer, image,
+                                          "initial read before overwrite");
+                        }
+                    }
+                    continue;
+                }
+
+                if (!hasSourceWriter) {
+                    if (writers.size() != 1) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            "Render graph pass '" + passes_[reader].name + "' reads image '" +
+                                imageDesc.name +
+                                "' before a unique producing writer can be inferred.",
+                        }};
+                    }
+                    sourceWriter = writers.front();
+                    hasSourceWriter = true;
+                }
+
+                addDependency(dependencies, sourceWriter, reader, image, "producer read");
+
+                for (const std::size_t writer : writers) {
+                    if (writer > reader && writer != sourceWriter) {
+                        addDependency(dependencies, reader, writer, image,
+                                      "read before overwrite");
+                    }
+                }
+            }
+
+            return {};
+        }
+
+        void addDependency(std::vector<RenderGraphPassDependency>& dependencies,
+                           std::size_t fromPassIndex, std::size_t toPassIndex,
+                           RenderGraphImageHandle image, std::string reason) const {
+            if (fromPassIndex == toPassIndex) {
+                return;
+            }
+
+            for (const RenderGraphPassDependency& dependency : dependencies) {
+                if (dependency.fromDeclarationIndex == fromPassIndex &&
+                    dependency.toDeclarationIndex == toPassIndex && dependency.image == image &&
+                    dependency.reason == reason) {
+                    return;
+                }
+            }
+
+            dependencies.push_back(RenderGraphPassDependency{
+                .fromDeclarationIndex = fromPassIndex,
+                .toDeclarationIndex = toPassIndex,
+                .image = image,
+                .imageName = images_[image.index].name,
+                .reason = std::move(reason),
+            });
+        }
+
+        [[nodiscard]] Result<std::vector<std::size_t>>
+        sortPassesByDependencies(std::span<const RenderGraphPassDependency> dependencies) const {
+            std::vector<std::vector<std::size_t>> adjacency(passes_.size());
+            std::vector<std::size_t> indegrees(passes_.size());
+
+            for (const RenderGraphPassDependency& dependency : dependencies) {
+                if (dependency.fromDeclarationIndex >= passes_.size() ||
+                    dependency.toDeclarationIndex >= passes_.size()) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph dependency references a pass outside the graph.",
+                    }};
+                }
+
+                if (addTopoEdge(adjacency, dependency.fromDeclarationIndex,
+                                dependency.toDeclarationIndex)) {
+                    ++indegrees[dependency.toDeclarationIndex];
+                }
+            }
+
+            std::vector<std::size_t> order;
+            order.reserve(passes_.size());
+            std::vector<bool> emitted(passes_.size());
+
+            while (order.size() < passes_.size()) {
+                std::size_t nextPass = passes_.size();
+                for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                    if (!emitted[passIndex] && indegrees[passIndex] == 0) {
+                        nextPass = passIndex;
+                        break;
+                    }
+                }
+
+                if (nextPass == passes_.size()) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph contains a pass dependency cycle.",
+                    }};
+                }
+
+                emitted[nextPass] = true;
+                order.push_back(nextPass);
+                for (const std::size_t dependent : adjacency[nextPass]) {
+                    --indegrees[dependent];
+                }
+            }
+
+            return order;
+        }
+
+        [[nodiscard]] static bool addTopoEdge(std::vector<std::vector<std::size_t>>& adjacency,
+                                              std::size_t fromPassIndex,
+                                              std::size_t toPassIndex) {
+            for (const std::size_t existing : adjacency[fromPassIndex]) {
+                if (existing == toPassIndex) {
+                    return false;
+                }
+            }
+
+            adjacency[fromPassIndex].push_back(toPassIndex);
+            return true;
+        }
+
+        [[nodiscard]] static bool
+        imageCanBeReadFromInitialState(const RenderGraphImageDesc& image) {
+            return image.lifetime == RenderGraphImageLifetime::Imported &&
+                   image.initialState != RenderGraphImageState::Undefined;
+        }
+
+        [[nodiscard]] static bool passReadsImage(const Pass& pass,
+                                                 RenderGraphImageHandle image) {
+            return slotsUseImage(pass.shaderReadSlots, image) ||
+                   slotsUseImage(pass.depthReadSlots, image) ||
+                   slotsUseImage(pass.depthSampledReadSlots, image);
+        }
+
+        [[nodiscard]] static bool passWritesImage(const Pass& pass,
+                                                  RenderGraphImageHandle image) {
+            return slotsUseImage(pass.colorWriteSlots, image) ||
+                   slotsUseImage(pass.depthWriteSlots, image) ||
+                   slotsUseImage(pass.transferWriteSlots, image);
+        }
+
         [[nodiscard]] Result<void> validateImageHandle(RenderGraphImageHandle image) const {
             if (image.index >= images_.size()) {
                 return std::unexpected{Error{
@@ -1419,6 +1694,16 @@ namespace vke {
             if (image.index < images_.size() && !images_[image.index].name.empty()) {
                 label += " ";
                 label += images_[image.index].name;
+            }
+            return label;
+        }
+
+        [[nodiscard]] std::string passDeclarationLabel(std::size_t passIndex) const {
+            std::string label = "#";
+            label += std::to_string(passIndex);
+            if (passIndex < passes_.size() && !passes_[passIndex].name.empty()) {
+                label += " ";
+                label += passes_[passIndex].name;
             }
             return label;
         }

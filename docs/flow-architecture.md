@@ -447,8 +447,9 @@ flowchart TD
     Commands["command summary<br/>ClearColor / SetShader / SetTexture / DrawFullscreenTriangle"]
     Registry["RenderGraphExecutorRegistry<br/>按 pass type 查找 executor"]
     Compile["compile()"]
-    Track["按 image 当前 state 追踪转换"]
-    PassPlan["生成 RenderGraphCompiledPass<br/>name / type / resource writes"]
+    Dependencies["构建 read/write dependency<br/>稳定拓扑排序"]
+    Track["按编译后 pass 顺序追踪 image 当前 state"]
+    PassPlan["生成 RenderGraphCompiledPass<br/>declaration index / type / resource slots"]
     Final["生成 finalTransitions"]
     DebugTables["formatDebugTables(compiled)"]
     Execute["execute(compiled)<br/>或 execute(compiled, registry)"]
@@ -458,7 +459,7 @@ flowchart TD
     Writes --> Callback
     Writes --> Registry
     Commands --> Compile
-    Callback --> Compile --> Track --> PassPlan --> Final
+    Callback --> Compile --> Dependencies --> Track --> PassPlan --> Final
     Final --> DebugTables
     Compile --> Execute
     Registry --> Execute --> Callbacks
@@ -480,14 +481,14 @@ flowchart TD
 
 - `RecordGraph` 可以每帧运行，并允许普通 C++ 控制流决定哪些动态 feature 进入当前帧 graph。未来脚本
   VM 也只应运行在这一段。
-- `compile()` 负责校验 pass/resource 声明、计算依赖、resource lifetime、final transitions、
-  barrier/layout plan、transient allocation plan 和调试表信息。
+- `compile()` 负责校验 pass/resource 声明、构建 read/write dependency、稳定拓扑排序、resource
+  lifetime、final transitions、barrier/layout plan、transient allocation plan 和调试表信息。
 - `compile()` 不负责 shader 编译、reflection 解析、descriptor set layout 创建、pipeline layout 创建、
   graphics/compute pipeline 创建或长期 GPU resource 创建。
 - `PrepareBackend` 负责用 compiled graph 消费 shader cache、pipeline layout cache、pipeline cache、
   descriptor allocator 和 transient resource pool。动态参数在这里或 RecordGraph 前进入 per-frame param
   block、push constants 或 descriptor 更新。
-- `RecordCommands` 按 compiled graph 录制 Vulkan 命令，不再改变 graph topology，也不回调脚本 VM。
+- `RecordCommands` 按 compiled graph 顺序录制 Vulkan 命令，不再改变 graph topology，也不回调脚本 VM。
 - 动态 feature 应在 record/build 阶段决定是否把 pass 放进 graph；轻量常驻 feature 用参数控制，昂贵或
   需要额外 RT/buffer 的 feature 用 active predicate 控制是否 record。
 
@@ -554,8 +555,11 @@ flowchart TD
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
-- `--smoke-rendergraph` 已输出 resources、passes、slots、commands、transitions、transients 的 Markdown
-  调试表格，并验证 pass type、params type、slot schema、command summary 和 transient lifetime plan。
+- `--smoke-rendergraph` 已输出 resources、passes、dependencies、slots、commands、transitions、
+  transients 的 Markdown 调试表格，并验证 pass type、params type、slot schema、command summary、
+  transient lifetime plan 和最小 dependency sort；当前 smoke 故意把 transient reader 声明在 writer 前，
+  编译结果会按 dependency 把 writer 排到 reader 前执行；同时覆盖无 producer transient read 和缺失
+  schema 的负向编译路径，确认错误不会进入 pass callback。
 - `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition、
   Vulkan adapter mapping，以及真实 image/image view/VMA allocation 和 binding。
 
@@ -563,8 +567,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
-    Step1["下一步:<br/>RenderGraph compiler v2"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
+    Step1["下一步:<br/>RenderGraph validation + culling"]
     Step2["之后:<br/>deferred destruction / resource caches"]
     Step3["之后:<br/>multi-view / material expansion"]
 
@@ -580,6 +584,8 @@ flowchart TD
     Now --> DepthTriangleUpdate
     DrawListUpdate["2026-05-05:<br/>--smoke-draw-list<br/>BasicDrawListItem<br/>builtin.raster-draw-list schema/params"]
     Now --> DrawListUpdate
+    DependencySortUpdate["2026-05-05:<br/>dependency table<br/>stable topological sort<br/>out-of-order transient smoke"]
+    Now --> DependencySortUpdate
 ```
 
 建议推进顺序：
@@ -593,3 +599,6 @@ flowchart TD
 7. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
 8. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
 9. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续再补资源上传、material/pipeline key 和 asset database，不提前暴露逐 object 脚本 draw loop。
+10. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
+    锁住无 producer transient read 与缺失 schema 的编译期失败路径；下一步补 side-effect/pass
+    culling、循环诊断细节和更多非法依赖错误报告。

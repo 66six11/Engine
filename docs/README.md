@@ -45,6 +45,6 @@
 ## 近期重点
 
 - draw list MVP 已接入，继续保持 RenderGraph 声明模型和 Vulkan backend 执行模型分离。
-- 优先把 RenderGraph 从声明顺序执行推进到依赖排序、pass culling 和更强 validation。
+- RenderGraph 已接入最小依赖排序和 dependency debug table；下一步补 pass culling、更强非法依赖诊断和 side-effect 标记。
 - 建立 deferred destruction、descriptor allocator、transient resource pool 和 pipeline cache。
 - 维护 `conan.lock`，依赖改动时重新生成并审查 recipe revision 变化。
