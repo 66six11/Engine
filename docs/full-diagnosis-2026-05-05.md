@@ -62,7 +62,7 @@ python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan
 
 | 优先级 | 风险 | 影响 | 建议 |
 | --- | --- | --- | --- |
-| P2 | RenderGraph 依赖排序已起步，但 culling / side-effect / 更强非法依赖诊断还未完成 | 后续 postprocess、draw list、multi-view 一旦出现复杂依赖，仍需要更清晰的错误报告和 pass 剔除策略 | 继续推进 DAG compiler v2：read-before-write 校验增强、side-effect 标记、pass culling 和错误诊断 |
+| P2 | RenderGraph 依赖排序和显式 culling 已起步，但更强非法依赖诊断还未完成 | 后续 postprocess、draw list、multi-view 一旦出现复杂依赖，仍需要更清晰的错误报告和更细 pass 剔除策略 | 继续推进 DAG compiler v2：read-before-write 校验增强、循环/多 writer 诊断和 culling 策略扩展 |
 | P2 | `sample-viewer`、`basic_triangle_renderer.cpp`、`render_graph.hpp` 开始变大 | smoke、后端执行、验证逻辑继续堆叠会降低审查效率 | 拆分 smoke helper、renderer backend executor、RenderGraph validation/debug formatting |
 | P2 | 后端资源生命周期仍是 MVP 模型 | 每帧 transient allocation、单 command buffer/fence、swapchain recreate `vkQueueWaitIdle` 会限制中期扩展 | 引入 deferred destruction、per-frame arena、descriptor allocator、transient resource pool |
 | P2 | pipeline/descriptor cache 还未成型 | draw list 和 material 阶段可能把 pipeline/layout/descriptor 创建推入热路径 | 建立 `ShaderCache`、`PipelineLayoutCache`、`PipelineCache`、`DescriptorAllocator` |
@@ -127,19 +127,20 @@ Slang reflection JSON 是后续 material、descriptor 和 pipeline layout 契约
 - draw list 已通过 RenderGraph slot/schema/params 进入 compiled pass。
 - Vulkan backend 消费 compiled pass transitions、backend binding 表和 renderer 持有的 draw list。
 
-### 阶段 2：RenderGraph Compiler v2（最小 dependency sort 已落地）
+### 阶段 2：RenderGraph Compiler v2（dependency sort 与显式 culling 已落地）
 
 - 已新增 pass/resource dependency sort，compiled pass 保留 declaration index，debug table 输出 dependency。
 - `--smoke-rendergraph` 已覆盖 transient reader 声明在 writer 前的乱序声明，并验证 writer 会被排到 reader 前。
 - `--smoke-rendergraph` 已新增无 producer transient read 与缺失 schema 的负向编译覆盖，确认这些错误不会进入 pass callback。
+- 已新增 `allowCulling` / `hasSideEffects`，compiled pass/context 保留标记，debug table 输出 culled passes。
+- `--smoke-rendergraph` 已覆盖 unused transient writer 被剔除、side-effect pass 被保留、culled pass callback 不执行。
 - 后续继续补 duplicate writer、missing final state、invalid transient usage 和更细的循环/多 writer 诊断。
-- side-effect flag 与 pass culling。
 - buffer resource、storage read/write、MRT slot 初版。
-- debug table 已增加 dependency；后续继续补 culling、lifetime 和 backend transition 视图。
+- debug table 已增加 dependency 和 culled pass；后续继续补 lifetime 和 backend transition 视图。
 
 验收：
 
-- `--smoke-rendergraph` 已覆盖乱序声明、dependency table、无 producer 读取和缺失 schema；后续继续覆盖无用 pass 剔除、非法 slot 和更多非法依赖。
+- `--smoke-rendergraph` 已覆盖乱序声明、dependency table、无 producer 读取、缺失 schema 和显式 pass culling；后续继续覆盖非法 slot 和更多非法依赖。
 - 当前 RenderGraph CPU smoke 不依赖手写 addPass 顺序才能正确运行；Vulkan smoke 仍保持原有顺序，后续可逐步加入乱序声明覆盖。
 
 ### 阶段 3：后端生命周期与缓存

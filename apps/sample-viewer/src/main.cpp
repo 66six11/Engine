@@ -1316,6 +1316,27 @@ namespace {
             });
     }
 
+    struct ExpectedRenderGraphCompileFailure {
+        std::string_view message;
+        std::string_view context;
+    };
+
+    bool expectRenderGraphCompileFailure(
+        const vke::Result<vke::RenderGraphCompileResult>& compiled,
+        ExpectedRenderGraphCompileFailure expected) {
+        if (compiled) {
+            vke::logError("Render graph accepted invalid graph: " + std::string{expected.context});
+            return false;
+        }
+        if (compiled.error().message.find(expected.message) == std::string::npos) {
+            vke::logError("Render graph produced an unexpected error for " +
+                          std::string{expected.context} + ": " + compiled.error().message);
+            return false;
+        }
+
+        return true;
+    }
+
     bool validateSmokeRenderGraphNegativeCompiles(const vke::RenderGraphSchemaRegistry& schemas) {
         vke::RenderGraph missingProducerGraph;
         const auto orphanColor =
@@ -1386,6 +1407,216 @@ namespace {
         }
         if (missingSchemaCallbackCount != 0) {
             vke::logError("Render graph invoked a callback during missing-schema compile.");
+            return false;
+        }
+
+        vke::RenderGraph mixedReadWriteGraph;
+        const auto mixedReadWriteImage =
+            mixedReadWriteGraph.importImage(vke::RenderGraphImageDesc{
+                .name = "MixedReadWriteImage",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = vke::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+                .finalState = vke::RenderGraphImageState::Present,
+            });
+        int mixedReadWriteCallbackCount = 0;
+        mixedReadWriteGraph.addPass("MixedReadWritePass", "basic.sample-fragment")
+            .setParamsType("basic.sample-fragment.params")
+            .readTexture("source", mixedReadWriteImage, vke::RenderGraphShaderStage::Fragment)
+            .writeColor("target", mixedReadWriteImage)
+            .execute([&mixedReadWriteCallbackCount](vke::RenderGraphPassContext) {
+                ++mixedReadWriteCallbackCount;
+                return vke::Result<void>{};
+            });
+        if (!expectRenderGraphCompileFailure(
+                mixedReadWriteGraph.compile(schemas),
+                ExpectedRenderGraphCompileFailure{
+                    .message = "more than once",
+                    .context = "same-image shader read and color write",
+                })) {
+            return false;
+        }
+        auto mixedReadWriteExecuted = mixedReadWriteGraph.execute();
+        if (mixedReadWriteExecuted || mixedReadWriteCallbackCount != 0) {
+            vke::logError("Render graph executed a same-image shader read and color write pass.");
+            return false;
+        }
+
+        vke::RenderGraph mixedColorTransferGraph;
+        const auto mixedColorTransferImage =
+            mixedColorTransferGraph.importImage(vke::RenderGraphImageDesc{
+                .name = "MixedColorTransferImage",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = vke::RenderGraphImageState::Undefined,
+                .finalState = vke::RenderGraphImageState::Present,
+            });
+        mixedColorTransferGraph.addPass("MixedColorTransferPass", "basic.clear-transfer")
+            .setParamsType("basic.clear-transfer.params")
+            .writeTransfer("clearTarget", mixedColorTransferImage)
+            .writeColor("colorTarget", mixedColorTransferImage);
+        if (!expectRenderGraphCompileFailure(
+                mixedColorTransferGraph.compile(schemas),
+                ExpectedRenderGraphCompileFailure{
+                    .message = "more than once",
+                    .context = "same-image transfer and color write",
+                })) {
+            return false;
+        }
+
+        vke::RenderGraph mixedDepthGraph;
+        const auto mixedDepthImage = mixedDepthGraph.importImage(vke::RenderGraphImageDesc{
+            .name = "MixedDepthImage",
+            .format = vke::RenderGraphImageFormat::D32Sfloat,
+            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = vke::RenderGraphImageState::Undefined,
+            .finalState = vke::RenderGraphImageState::DepthSampledRead,
+            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+        });
+        mixedDepthGraph.addPass("MixedDepthPass", "basic.depth-write")
+            .setParamsType("basic.depth-write.params")
+            .writeDepth("depthWrite", mixedDepthImage)
+            .readDepthTexture("depthSample", mixedDepthImage,
+                              vke::RenderGraphShaderStage::Fragment);
+        if (!expectRenderGraphCompileFailure(
+                mixedDepthGraph.compile(schemas),
+                ExpectedRenderGraphCompileFailure{
+                    .message = "more than once",
+                    .context = "same-image depth write and sampled read",
+                })) {
+            return false;
+        }
+
+        vke::RenderGraph missingFinalStateGraph;
+        const auto missingFinalImage =
+            missingFinalStateGraph.importImage(vke::RenderGraphImageDesc{
+                .name = "ImportedTextureWithoutFinalState",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = vke::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+            });
+        missingFinalStateGraph.addPass("SampleImportedWithoutFinal", "basic.sample-fragment")
+            .setParamsType("basic.sample-fragment.params")
+            .readTexture("source", missingFinalImage, vke::RenderGraphShaderStage::Fragment);
+        if (!expectRenderGraphCompileFailure(
+                missingFinalStateGraph.compile(schemas),
+                ExpectedRenderGraphCompileFailure{
+                    .message = "must declare an explicit final state",
+                    .context = "imported image without final state",
+                })) {
+            return false;
+        }
+
+        vke::RenderGraph explicitFinalStateGraph;
+        const auto explicitFinalImage =
+            explicitFinalStateGraph.importImage(vke::RenderGraphImageDesc{
+                .name = "ExplicitFinalImportedTexture",
+                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = vke::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+                .finalState = vke::RenderGraphImageState::ShaderRead,
+                .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+            });
+        explicitFinalStateGraph.addPass("SampleExplicitFinalImported", "basic.sample-fragment")
+            .setParamsType("basic.sample-fragment.params")
+            .readTexture("source", explicitFinalImage, vke::RenderGraphShaderStage::Fragment);
+        auto explicitFinalCompiled = explicitFinalStateGraph.compile(schemas);
+        if (!explicitFinalCompiled) {
+            vke::logError("Render graph rejected an imported image with explicit final state: " +
+                          explicitFinalCompiled.error().message);
+            return false;
+        }
+        if (!explicitFinalCompiled->finalTransitions.empty()) {
+            vke::logError(
+                "Render graph produced a final transition for an already shader-readable import.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool validateSmokeRenderGraphCulling(const vke::RenderGraphSchemaRegistry& schemas) {
+        vke::RenderGraph cullingGraph;
+        const auto cullingBackbuffer = cullingGraph.importImage(vke::RenderGraphImageDesc{
+            .name = "CullingBackbuffer",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 64, .height = 64},
+            .initialState = vke::RenderGraphImageState::Undefined,
+            .finalState = vke::RenderGraphImageState::Present,
+        });
+        const auto unusedTransient = cullingGraph.createTransientImage(vke::RenderGraphImageDesc{
+            .name = "UnusedTransient",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+        });
+
+        int visibleCallbackCount = 0;
+        int culledCallbackCount = 0;
+        int sideEffectCallbackCount = 0;
+        cullingGraph.addPass("VisibleClear", "basic.clear-transfer")
+            .setParamsType("basic.clear-transfer.params")
+            .writeTransfer("target", cullingBackbuffer)
+            .recordCommands([](vke::RenderGraphCommandList& commands) {
+                commands.clearColor("target", std::array{0.0F, 0.0F, 0.0F, 1.0F});
+            })
+            .execute([&visibleCallbackCount](vke::RenderGraphPassContext) {
+                ++visibleCallbackCount;
+                return vke::Result<void>{};
+            });
+        cullingGraph.addPass("WriteUnusedTransient", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", unusedTransient)
+            .allowCulling()
+            .execute([&culledCallbackCount](vke::RenderGraphPassContext) {
+                ++culledCallbackCount;
+                return vke::Result<void>{};
+            });
+        cullingGraph.addPass("SideEffectMarker", "basic.side-effect")
+            .setParamsType("basic.side-effect.params")
+            .execute([&sideEffectCallbackCount](
+                         vke::RenderGraphPassContext context) -> vke::Result<void> {
+                if (!context.allowCulling || !context.hasSideEffects) {
+                    return std::unexpected{vke::Error{
+                        vke::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph side-effect context did not preserve culling flags.",
+                    }};
+                }
+                ++sideEffectCallbackCount;
+                return vke::Result<void>{};
+            });
+
+        auto compiled = cullingGraph.compile(schemas);
+        if (!compiled) {
+            vke::logError(compiled.error().message);
+            return false;
+        }
+        if (compiled->passes.size() != 2 || compiled->culledPasses.size() != 1 ||
+            !compiled->transientImages.empty()) {
+            vke::logError("Render graph culling smoke produced an unexpected compile plan.");
+            return false;
+        }
+        if (compiled->culledPasses.front().name != "WriteUnusedTransient" ||
+            compiled->culledPasses.front().declarationIndex != 1) {
+            vke::logError("Render graph culling smoke culled the wrong pass.");
+            return false;
+        }
+        if (compiled->passes[0].name != "VisibleClear" ||
+            compiled->passes[1].name != "SideEffectMarker" || !compiled->passes[1].hasSideEffects) {
+            vke::logError("Render graph culling smoke kept the wrong active passes.");
+            return false;
+        }
+
+        auto executed = cullingGraph.execute(*compiled);
+        if (!executed) {
+            vke::logError(executed.error().message);
+            return false;
+        }
+        if (visibleCallbackCount != 1 || sideEffectCallbackCount != 1 || culledCallbackCount != 0) {
+            vke::logError("Render graph culling smoke invoked unexpected callbacks.");
             return false;
         }
 
@@ -1547,6 +1778,14 @@ namespace {
                     vke::RenderGraphCommandKind::DrawFullscreenTriangle,
                 },
         });
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.side-effect",
+            .paramsType = "basic.side-effect.params",
+            .resourceSlots = {},
+            .allowedCommands = {},
+            .allowCulling = true,
+            .hasSideEffects = true,
+        });
 
         auto compiled = graph.compile(schemas);
         if (!compiled) {
@@ -1578,6 +1817,10 @@ namespace {
             vke::logError("Render graph compiler produced an unexpected dependency count.");
             return EXIT_FAILURE;
         }
+        if (!compiled->culledPasses.empty()) {
+            vke::logError("Render graph compiler culled an unexpected smoke pass.");
+            return EXIT_FAILURE;
+        }
 
         std::cout << graph.formatDebugTables(*compiled) << '\n';
 
@@ -1594,6 +1837,10 @@ namespace {
         }
 
         if (!validateSmokeRenderGraphNegativeCompiles(schemas)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphCulling(schemas)) {
             return EXIT_FAILURE;
         }
 
@@ -1628,10 +1875,12 @@ namespace {
         std::cout << "Render graph passes: " << compiled->passes.size()
                   << ", final transitions: " << compiled->finalTransitions.size()
                   << ", dependencies: " << compiled->dependencies.size()
+                  << ", culled: " << compiled->culledPasses.size()
                   << ", callbacks: " << callbackCount << '\n';
         return compiled->passes.size() == 6 && compiled->transientImages.size() == 1 &&
                        compiled->finalTransitions.size() == 1 &&
-                       compiled->dependencies.size() == 3 && callbackCount == 6
+                       compiled->dependencies.size() == 3 && compiled->culledPasses.empty() &&
+                       callbackCount == 6
                    ? EXIT_SUCCESS
                    : EXIT_FAILURE;
     }

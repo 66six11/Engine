@@ -71,7 +71,7 @@ namespace vke {
         RenderGraphExtent2D extent{};
         RenderGraphImageState initialState{RenderGraphImageState::Undefined};
         RenderGraphShaderStage initialShaderStage{RenderGraphShaderStage::None};
-        RenderGraphImageState finalState{RenderGraphImageState::Present};
+        RenderGraphImageState finalState{RenderGraphImageState::Undefined};
         RenderGraphShaderStage finalShaderStage{RenderGraphShaderStage::None};
         RenderGraphImageLifetime lifetime{RenderGraphImageLifetime::Imported};
     };
@@ -122,6 +122,8 @@ namespace vke {
         std::string paramsType;
         std::vector<RenderGraphResourceSlotSchema> resourceSlots;
         std::vector<RenderGraphCommandKind> allowedCommands;
+        bool allowCulling{};
+        bool hasSideEffects{};
     };
 
     struct RenderGraphCommand {
@@ -178,8 +180,7 @@ namespace vke {
             return *this;
         }
 
-        RenderGraphCommandList& setVec4(std::string bindingName,
-                                        std::array<float, 4> value) {
+        RenderGraphCommandList& setVec4(std::string bindingName, std::array<float, 4> value) {
             commands_.push_back(RenderGraphCommand{
                 .kind = RenderGraphCommandKind::SetVec4,
                 .name = std::move(bindingName),
@@ -229,6 +230,8 @@ namespace vke {
         std::string type;
         std::string paramsType;
         std::size_t declarationIndex{};
+        bool allowCulling{};
+        bool hasSideEffects{};
         std::vector<std::byte> paramsData;
         std::vector<RenderGraphCommand> commands;
         std::vector<RenderGraphImageTransition> transitionsBefore;
@@ -254,6 +257,13 @@ namespace vke {
         std::string reason;
     };
 
+    struct RenderGraphCulledPass {
+        std::size_t declarationIndex{};
+        std::string name;
+        std::string type;
+        std::string reason;
+    };
+
     struct RenderGraphTransientImageAllocation {
         RenderGraphImageHandle image{};
         std::string imageName;
@@ -266,8 +276,10 @@ namespace vke {
     };
 
     struct RenderGraphCompileResult {
+        std::size_t declaredPassCount{};
         std::vector<RenderGraphCompiledPass> passes;
         std::vector<RenderGraphPassDependency> dependencies;
+        std::vector<RenderGraphCulledPass> culledPasses;
         std::vector<RenderGraphTransientImageAllocation> transientImages;
         std::vector<RenderGraphImageTransition> finalTransitions;
     };
@@ -276,6 +288,8 @@ namespace vke {
         std::string_view name;
         std::string_view type;
         std::string_view paramsType;
+        bool allowCulling{};
+        bool hasSideEffects{};
         std::span<const std::byte> paramsData;
         std::span<const RenderGraphCommand> commands;
         std::span<const RenderGraphImageTransition> transitionsBefore;
@@ -374,6 +388,8 @@ namespace vke {
             std::vector<RenderGraphImageSlot> depthSampledReadSlots;
             std::vector<RenderGraphImageSlot> transferWriteSlots;
             std::vector<RenderGraphCommand> commands;
+            bool allowCulling{};
+            bool hasSideEffects{};
             RenderGraphPassCallback callback;
         };
 
@@ -448,6 +464,16 @@ namespace vke {
                 return graph_->passes_[passIndex_].type;
             }
 
+            PassBuilder& allowCulling(bool allow = true) {
+                graph_->passes_[passIndex_].allowCulling = allow;
+                return *this;
+            }
+
+            PassBuilder& hasSideEffects(bool hasSideEffects = true) {
+                graph_->passes_[passIndex_].hasSideEffects = hasSideEffects;
+                return *this;
+            }
+
             PassBuilder& setParamsType(std::string paramsType) {
                 graph_->passes_[passIndex_].paramsType = std::move(paramsType);
                 return *this;
@@ -479,8 +505,7 @@ namespace vke {
                 return *this;
             }
 
-            template <typename Recorder>
-            PassBuilder& recordCommands(Recorder&& recorder) {
+            template <typename Recorder> PassBuilder& recordCommands(Recorder&& recorder) {
                 RenderGraphCommandList commands;
                 std::forward<Recorder>(recorder)(commands);
                 return setCommands(std::move(commands));
@@ -529,6 +554,8 @@ namespace vke {
                 .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
                 .commands = {},
+                .allowCulling = {},
+                .hasSideEffects = {},
                 .callback = {},
             };
             passes_.push_back(std::move(pass));
@@ -548,6 +575,8 @@ namespace vke {
                 .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
                 .commands = {},
+                .allowCulling = {},
+                .hasSideEffects = {},
                 .callback = {},
             };
             passes_.push_back(std::move(pass));
@@ -566,6 +595,11 @@ namespace vke {
     private:
         [[nodiscard]] Result<RenderGraphCompileResult>
         compile(const RenderGraphSchemaRegistry* schemaRegistry) const {
+            auto imagesValidated = validateImages();
+            if (!imagesValidated) {
+                return std::unexpected{std::move(imagesValidated.error())};
+            }
+
             for (const Pass& pass : passes_) {
                 auto passValidated = validatePass(pass, schemaRegistry);
                 if (!passValidated) {
@@ -578,7 +612,11 @@ namespace vke {
                 return std::unexpected{std::move(dependencies.error())};
             }
 
-            auto passOrder = sortPassesByDependencies(*dependencies);
+            auto activePasses = findActivePasses(*dependencies, schemaRegistry);
+            const std::vector<RenderGraphPassDependency> activeDependencies =
+                filterActiveDependencies(*dependencies, activePasses);
+
+            auto passOrder = sortPassesByDependencies(activeDependencies, activePasses);
             if (!passOrder) {
                 return std::unexpected{std::move(passOrder.error())};
             }
@@ -593,17 +631,23 @@ namespace vke {
             }
 
             RenderGraphCompileResult result;
-            result.passes.reserve(passes_.size());
-            result.dependencies = *dependencies;
+            result.declaredPassCount = passes_.size();
+            result.passes.reserve(activePassCount(activePasses));
+            result.dependencies = activeDependencies;
+            result.culledPasses = makeCulledPasses(activePasses);
 
             for (const std::size_t passIndex : *passOrder) {
                 const Pass& pass = passes_[passIndex];
+                const bool allowPassCulling = passAllowsCulling(pass, schemaRegistry);
+                const bool passHasSideEffectsValue = passHasSideEffects(pass, schemaRegistry);
 
                 RenderGraphCompiledPass compiledPass{
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
                     .declarationIndex = passIndex,
+                    .allowCulling = allowPassCulling,
+                    .hasSideEffects = passHasSideEffectsValue,
                     .paramsData = pass.paramsData,
                     .commands = pass.commands,
                     .transitionsBefore = {},
@@ -693,6 +737,15 @@ namespace vke {
             for (std::size_t index = 0; index < images_.size(); ++index) {
                 const RenderGraphImageDesc& image = images_[index];
                 if (image.lifetime == RenderGraphImageLifetime::Transient) {
+                    const RenderGraphImageHandle imageHandle{
+                        .index = static_cast<std::uint32_t>(index),
+                    };
+                    if (!imageUsedByCompiledPasses(result.passes, imageHandle)) {
+                        if (imageUsedByDeclaredPasses(imageHandle)) {
+                            continue;
+                        }
+                    }
+
                     auto allocation =
                         makeTransientAllocation(index, result.passes, currentAccesses[index]);
                     if (!allocation) {
@@ -755,14 +808,15 @@ namespace vke {
         [[nodiscard]] Result<void>
         execute(const RenderGraphCompileResult& compiled,
                 const RenderGraphExecutorRegistry* executorRegistry) const {
-            if (compiled.passes.size() != passes_.size()) {
+            if (compiled.declaredPassCount != passes_.size()) {
                 return std::unexpected{Error{
                     ErrorDomain::RenderGraph,
                     0,
-                    "Compiled render graph pass count does not match the graph.",
+                    "Compiled render graph declaration count does not match the graph.",
                 }};
             }
 
+            std::vector<bool> executedDeclarations(passes_.size());
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 if (pass.declarationIndex >= passes_.size() ||
@@ -774,9 +828,16 @@ namespace vke {
                             "' does not match the graph declaration.",
                     }};
                 }
+                if (executedDeclarations[pass.declarationIndex]) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Compiled render graph pass '" + pass.name + "' appears more than once.",
+                    }};
+                }
+                executedDeclarations[pass.declarationIndex] = true;
 
-                const RenderGraphPassCallback* callback =
-                    &passes_[pass.declarationIndex].callback;
+                const RenderGraphPassCallback* callback = &passes_[pass.declarationIndex].callback;
                 if (!*callback && executorRegistry != nullptr) {
                     callback = executorRegistry->find(pass.type);
                 }
@@ -792,6 +853,8 @@ namespace vke {
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
+                    .allowCulling = pass.allowCulling,
+                    .hasSideEffects = pass.hasSideEffects,
                     .paramsData = pass.paramsData,
                     .commands = pass.commands,
                     .transitionsBefore = pass.transitionsBefore,
@@ -845,10 +908,11 @@ namespace vke {
             }
 
             output += "\n### RenderGraph Passes\n\n";
-            output += "| # | Decl # | Name | Type | Params | Before Transitions | Color Writes | "
-                      "Shader Reads | Depth Reads | Depth Writes | Depth Sampled Reads | "
+            output += "| # | Decl # | Name | Type | Params | Cullable | Side Effects | "
+                      "Before Transitions | Color Writes | Shader Reads | Depth Reads | "
+                      "Depth Writes | Depth Sampled Reads | "
                       "Transfer Writes |\n";
-            output += "|---:|---:|---|---|---|---:|---|---|---|---|---|\n";
+            output += "|---:|---:|---|---|---|---|---|---:|---|---|---|---|---|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
@@ -861,6 +925,10 @@ namespace vke {
                 output += pass.type.empty() ? "-" : pass.type;
                 output += " | ";
                 output += pass.paramsType.empty() ? "-" : pass.paramsType;
+                output += " | ";
+                output += pass.allowCulling ? "yes" : "no";
+                output += " | ";
+                output += pass.hasSideEffects ? "yes" : "no";
                 output += " | ";
                 output += std::to_string(pass.transitionsBefore.size());
                 output += " | ";
@@ -890,6 +958,21 @@ namespace vke {
                 output += imageHandleLabel(dependency.image);
                 output += " | ";
                 output += dependency.reason;
+                output += " |\n";
+            }
+
+            output += "\n### RenderGraph Culled Passes\n\n";
+            output += "| Decl # | Name | Type | Reason |\n";
+            output += "|---:|---|---|---|\n";
+            for (const RenderGraphCulledPass& pass : compiled.culledPasses) {
+                output += "| ";
+                output += std::to_string(pass.declarationIndex);
+                output += " | ";
+                output += pass.name;
+                output += " | ";
+                output += pass.type.empty() ? "-" : pass.type;
+                output += " | ";
+                output += pass.reason;
                 output += " |\n";
             }
 
@@ -949,6 +1032,27 @@ namespace vke {
         }
 
     private:
+        struct RenderGraphImageSlotGroup {
+            std::string_view access;
+            std::span<const RenderGraphImageSlot> slots;
+        };
+
+        [[nodiscard]] Result<void> validateImages() const {
+            for (const RenderGraphImageDesc& image : images_) {
+                if (image.lifetime == RenderGraphImageLifetime::Imported &&
+                    image.finalState == RenderGraphImageState::Undefined) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Imported render graph image '" + image.name +
+                            "' must declare an explicit final state.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
         [[nodiscard]] Result<void>
         validatePass(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry) const {
             auto slotsValidated = validateWriteSlots(pass);
@@ -966,8 +1070,86 @@ namespace vke {
             return {};
         }
 
-        [[nodiscard]] Result<std::vector<RenderGraphPassDependency>>
-        buildDependencies() const {
+        [[nodiscard]] std::vector<bool>
+        findActivePasses(std::span<const RenderGraphPassDependency> dependencies,
+                         const RenderGraphSchemaRegistry* schemaRegistry) const {
+            std::vector<bool> activePasses(passes_.size());
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                if (!passCanBeCulled(passes_[passIndex], schemaRegistry)) {
+                    activePasses[passIndex] = true;
+                }
+            }
+
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                for (const RenderGraphPassDependency& dependency : dependencies) {
+                    if (dependency.toDeclarationIndex >= activePasses.size() ||
+                        dependency.fromDeclarationIndex >= activePasses.size()) {
+                        continue;
+                    }
+                    if (activePasses[dependency.toDeclarationIndex] &&
+                        !activePasses[dependency.fromDeclarationIndex]) {
+                        activePasses[dependency.fromDeclarationIndex] = true;
+                        changed = true;
+                    }
+                }
+            }
+
+            return activePasses;
+        }
+
+        [[nodiscard]] std::vector<RenderGraphPassDependency>
+        filterActiveDependencies(std::span<const RenderGraphPassDependency> dependencies,
+                                 const std::vector<bool>& activePasses) const {
+            std::vector<RenderGraphPassDependency> activeDependencies;
+            activeDependencies.reserve(dependencies.size());
+            for (const RenderGraphPassDependency& dependency : dependencies) {
+                if (dependency.fromDeclarationIndex >= activePasses.size() ||
+                    dependency.toDeclarationIndex >= activePasses.size()) {
+                    continue;
+                }
+                if (activePasses[dependency.fromDeclarationIndex] &&
+                    activePasses[dependency.toDeclarationIndex]) {
+                    activeDependencies.push_back(dependency);
+                }
+            }
+
+            return activeDependencies;
+        }
+
+        [[nodiscard]] std::vector<RenderGraphCulledPass>
+        makeCulledPasses(const std::vector<bool>& activePasses) const {
+            std::vector<RenderGraphCulledPass> culledPasses;
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                if (passIndex < activePasses.size() && activePasses[passIndex]) {
+                    continue;
+                }
+
+                const Pass& pass = passes_[passIndex];
+                culledPasses.push_back(RenderGraphCulledPass{
+                    .declarationIndex = passIndex,
+                    .name = pass.name,
+                    .type = pass.type,
+                    .reason = "cullable pass has no active consumers or side effects",
+                });
+            }
+
+            return culledPasses;
+        }
+
+        [[nodiscard]] static std::size_t activePassCount(const std::vector<bool>& activePasses) {
+            std::size_t count = 0;
+            for (const bool active : activePasses) {
+                if (active) {
+                    ++count;
+                }
+            }
+
+            return count;
+        }
+
+        [[nodiscard]] Result<std::vector<RenderGraphPassDependency>> buildDependencies() const {
             std::vector<RenderGraphPassDependency> dependencies;
 
             for (std::size_t imageIndex = 0; imageIndex < images_.size(); ++imageIndex) {
@@ -1004,8 +1186,7 @@ namespace vke {
 
         [[nodiscard]] Result<void>
         addReadDependencies(std::vector<RenderGraphPassDependency>& dependencies,
-                            RenderGraphImageHandle image,
-                            std::span<const std::size_t> writers,
+                            RenderGraphImageHandle image, std::span<const std::size_t> writers,
                             std::span<const std::size_t> readers) const {
             const RenderGraphImageDesc& imageDesc = images_[image.index];
 
@@ -1059,8 +1240,7 @@ namespace vke {
 
                 for (const std::size_t writer : writers) {
                     if (writer > reader && writer != sourceWriter) {
-                        addDependency(dependencies, reader, writer, image,
-                                      "read before overwrite");
+                        addDependency(dependencies, reader, writer, image, "read before overwrite");
                     }
                 }
             }
@@ -1093,7 +1273,16 @@ namespace vke {
         }
 
         [[nodiscard]] Result<std::vector<std::size_t>>
-        sortPassesByDependencies(std::span<const RenderGraphPassDependency> dependencies) const {
+        sortPassesByDependencies(std::span<const RenderGraphPassDependency> dependencies,
+                                 const std::vector<bool>& activePasses) const {
+            if (activePasses.size() != passes_.size()) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph active pass set does not match the graph.",
+                }};
+            }
+
             std::vector<std::vector<std::size_t>> adjacency(passes_.size());
             std::vector<std::size_t> indegrees(passes_.size());
 
@@ -1107,6 +1296,11 @@ namespace vke {
                     }};
                 }
 
+                if (!activePasses[dependency.fromDeclarationIndex] ||
+                    !activePasses[dependency.toDeclarationIndex]) {
+                    continue;
+                }
+
                 if (addTopoEdge(adjacency, dependency.fromDeclarationIndex,
                                 dependency.toDeclarationIndex)) {
                     ++indegrees[dependency.toDeclarationIndex];
@@ -1114,13 +1308,15 @@ namespace vke {
             }
 
             std::vector<std::size_t> order;
-            order.reserve(passes_.size());
+            const std::size_t targetPassCount = activePassCount(activePasses);
+            order.reserve(targetPassCount);
             std::vector<bool> emitted(passes_.size());
 
-            while (order.size() < passes_.size()) {
+            while (order.size() < targetPassCount) {
                 std::size_t nextPass = passes_.size();
                 for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
-                    if (!emitted[passIndex] && indegrees[passIndex] == 0) {
+                    if (activePasses[passIndex] && !emitted[passIndex] &&
+                        indegrees[passIndex] == 0) {
                         nextPass = passIndex;
                         break;
                     }
@@ -1145,8 +1341,7 @@ namespace vke {
         }
 
         [[nodiscard]] static bool addTopoEdge(std::vector<std::vector<std::size_t>>& adjacency,
-                                              std::size_t fromPassIndex,
-                                              std::size_t toPassIndex) {
+                                              std::size_t fromPassIndex, std::size_t toPassIndex) {
             for (const std::size_t existing : adjacency[fromPassIndex]) {
                 if (existing == toPassIndex) {
                     return false;
@@ -1163,15 +1358,59 @@ namespace vke {
                    image.initialState != RenderGraphImageState::Undefined;
         }
 
-        [[nodiscard]] static bool passReadsImage(const Pass& pass,
-                                                 RenderGraphImageHandle image) {
+        [[nodiscard]] bool passCanBeCulled(const Pass& pass,
+                                           const RenderGraphSchemaRegistry* schemaRegistry) const {
+            return passAllowsCulling(pass, schemaRegistry) &&
+                   !passHasSideEffects(pass, schemaRegistry) && !passWritesImportedImage(pass);
+        }
+
+        [[nodiscard]] bool
+        passAllowsCulling(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry) const {
+            const RenderGraphPassSchema* schema = passSchema(pass, schemaRegistry);
+            return pass.allowCulling || (schema != nullptr && schema->allowCulling);
+        }
+
+        [[nodiscard]] bool
+        passHasSideEffects(const Pass& pass,
+                           const RenderGraphSchemaRegistry* schemaRegistry) const {
+            const RenderGraphPassSchema* schema = passSchema(pass, schemaRegistry);
+            return pass.hasSideEffects || (schema != nullptr && schema->hasSideEffects);
+        }
+
+        [[nodiscard]] const RenderGraphPassSchema*
+        passSchema(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry) const {
+            if (schemaRegistry == nullptr || pass.type.empty()) {
+                return nullptr;
+            }
+
+            return schemaRegistry->find(pass.type);
+        }
+
+        [[nodiscard]] bool passWritesImportedImage(const Pass& pass) const {
+            const std::array<std::span<const RenderGraphImageSlot>, 3> writeSlotGroups{
+                pass.colorWriteSlots,
+                pass.depthWriteSlots,
+                pass.transferWriteSlots,
+            };
+            for (std::span<const RenderGraphImageSlot> slots : writeSlotGroups) {
+                for (const RenderGraphImageSlot& slot : slots) {
+                    if (slot.image.index < images_.size() &&
+                        images_[slot.image.index].lifetime == RenderGraphImageLifetime::Imported) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        [[nodiscard]] static bool passReadsImage(const Pass& pass, RenderGraphImageHandle image) {
             return slotsUseImage(pass.shaderReadSlots, image) ||
                    slotsUseImage(pass.depthReadSlots, image) ||
                    slotsUseImage(pass.depthSampledReadSlots, image);
         }
 
-        [[nodiscard]] static bool passWritesImage(const Pass& pass,
-                                                  RenderGraphImageHandle image) {
+        [[nodiscard]] static bool passWritesImage(const Pass& pass, RenderGraphImageHandle image) {
             return slotsUseImage(pass.colorWriteSlots, image) ||
                    slotsUseImage(pass.depthWriteSlots, image) ||
                    slotsUseImage(pass.transferWriteSlots, image);
@@ -1227,6 +1466,71 @@ namespace vke {
             auto duplicateSlots = validateUniqueSlotNames(pass, slotGroups);
             if (!duplicateSlots) {
                 return std::unexpected{std::move(duplicateSlots.error())};
+            }
+
+            auto imageAccesses = validateUniqueImageAccesses(pass, slotGroups);
+            if (!imageAccesses) {
+                return std::unexpected{std::move(imageAccesses.error())};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> validateUniqueImageAccesses(
+            const Pass& pass, std::span<const std::span<const RenderGraphImageSlot>> slotGroups)
+            const {
+            const std::array<RenderGraphImageSlotGroup, 6> namedGroups{
+                RenderGraphImageSlotGroup{
+                    .access = "ColorWrite",
+                    .slots = slotGroups[0],
+                },
+                RenderGraphImageSlotGroup{
+                    .access = "ShaderRead",
+                    .slots = slotGroups[1],
+                },
+                RenderGraphImageSlotGroup{
+                    .access = "DepthAttachmentRead",
+                    .slots = slotGroups[2],
+                },
+                RenderGraphImageSlotGroup{
+                    .access = "DepthAttachmentWrite",
+                    .slots = slotGroups[3],
+                },
+                RenderGraphImageSlotGroup{
+                    .access = "DepthSampledRead",
+                    .slots = slotGroups[4],
+                },
+                RenderGraphImageSlotGroup{
+                    .access = "TransferWrite",
+                    .slots = slotGroups[5],
+                },
+            };
+
+            for (std::size_t groupIndex = 0; groupIndex < namedGroups.size(); ++groupIndex) {
+                const RenderGraphImageSlotGroup& group = namedGroups[groupIndex];
+                for (std::size_t slotIndex = 0; slotIndex < group.slots.size(); ++slotIndex) {
+                    const RenderGraphImageSlot& slot = group.slots[slotIndex];
+                    for (std::size_t otherGroupIndex = groupIndex;
+                         otherGroupIndex < namedGroups.size(); ++otherGroupIndex) {
+                        const RenderGraphImageSlotGroup& otherGroup =
+                            namedGroups[otherGroupIndex];
+                        const std::size_t otherSlotBegin =
+                            otherGroupIndex == groupIndex ? slotIndex + 1 : 0;
+                        for (std::size_t otherSlotIndex = otherSlotBegin;
+                             otherSlotIndex < otherGroup.slots.size(); ++otherSlotIndex) {
+                            const RenderGraphImageSlot& otherSlot =
+                                otherGroup.slots[otherSlotIndex];
+                            if (slot.image == otherSlot.image) {
+                                return std::unexpected{Error{
+                                    ErrorDomain::RenderGraph,
+                                    0,
+                                    imageAccessConflictMessage(pass, slot, group.access,
+                                                               otherSlot, otherGroup.access),
+                                }};
+                            }
+                        }
+                    }
+                }
             }
 
             return {};
@@ -1320,8 +1624,8 @@ namespace vke {
             return {};
         }
 
-        [[nodiscard]] Result<void> validateCommandsAgainstSchema(
-            const Pass& pass, const RenderGraphPassSchema& schema) const {
+        [[nodiscard]] Result<void>
+        validateCommandsAgainstSchema(const Pass& pass, const RenderGraphPassSchema& schema) const {
             for (const RenderGraphCommand& command : pass.commands) {
                 if (!commandAllowedBySchema(command.kind, schema)) {
                     return std::unexpected{Error{
@@ -1567,6 +1871,28 @@ namespace vke {
                    slotsUseImage(pass.transferWriteSlots, image);
         }
 
+        [[nodiscard]] static bool
+        imageUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
+                                  RenderGraphImageHandle image) {
+            for (const RenderGraphCompiledPass& pass : passes) {
+                if (passUsesImage(pass, image)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        [[nodiscard]] bool imageUsedByDeclaredPasses(RenderGraphImageHandle image) const {
+            for (const Pass& pass : passes_) {
+                if (passReadsImage(pass, image) || passWritesImage(pass, image)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         [[nodiscard]] static bool slotsUseImage(std::span<const RenderGraphImageSlot> slots,
                                                 RenderGraphImageHandle image) {
             for (const RenderGraphImageSlot& slot : slots) {
@@ -1685,6 +2011,26 @@ namespace vke {
             message += "' declares duplicate resource slot '";
             message += slotName;
             message += "'.";
+            return message;
+        }
+
+        [[nodiscard]] std::string imageAccessConflictMessage(
+            const Pass& pass, const RenderGraphImageSlot& slot, std::string_view access,
+            const RenderGraphImageSlot& otherSlot, std::string_view otherAccess) const {
+            std::string message = "Render graph pass '";
+            message += pass.name;
+            message += "' declares image '";
+            message += imageHandleLabel(slot.image);
+            message += "' more than once in slots '";
+            message += slot.name;
+            message += "' (";
+            message += access;
+            message += ") and '";
+            message += otherSlot.name;
+            message += "' (";
+            message += otherAccess;
+            message += "). Split the operation into separate passes or add an explicit combined "
+                       "access state.";
             return message;
         }
 
@@ -1841,8 +2187,7 @@ namespace vke {
             }
         }
 
-        void appendCommandRows(std::string& output,
-                               const RenderGraphCompiledPass& pass) const {
+        void appendCommandRows(std::string& output, const RenderGraphCompiledPass& pass) const {
             for (std::size_t index = 0; index < pass.commands.size(); ++index) {
                 const RenderGraphCommand& command = pass.commands[index];
                 output += "| ";

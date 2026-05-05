@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-04-29
+最近核对日期：2026-05-05
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -87,6 +87,8 @@
 
 - Vulkan dynamic rendering proposal：https://github.khronos.org/Vulkan-Site/features/latest/features/proposals/VK_KHR_dynamic_rendering.html
 - Vulkan synchronization spec：https://github.khronos.org/Vulkan-Site/spec/latest/chapters/synchronization.html
+- Vulkan synchronization examples：https://docs.vulkan.org/guide/latest/synchronization_examples.html
+- Khronos unified image layouts blog：https://www.khronos.org/blog/so-long-image-layouts-simplifying-vulkan-synchronisation
 - Vulkan descriptor indexing sample：https://docs.vulkan.org/samples/latest/samples/extensions/descriptor_indexing/README.html
 - Blender Vulkan render graph：https://developer.blender.org/docs/features/gpu/vulkan/render_graph/
 
@@ -94,6 +96,7 @@
 
 - dynamic rendering 继续作为主路径，新增 color/depth attachment 时不回退到传统 render pass。
 - 每新增一个 RenderGraph resource state，都必须同步定义 Vulkan layout、stage、access 和 barrier 验证。
+- unified image layout 属于后续优化观察项；当前仍保持显式 layout/stage/access 映射，避免提前依赖新能力。
 - descriptor indexing/bindless 暂缓；先完成固定 descriptor set/binding 和 pipeline layout 契约。
 - Blender 的 Vulkan render graph 文档强调让后端重排 transfer/compute/draw 并生成同步 barrier；当前项目可先借鉴调试节点和 barrier 可视化，不急于引入多线程 context。
 
@@ -103,14 +106,19 @@
 
 - Frostbite FrameGraph GDC Vault：https://www.gdcvault.com/play/1024612/FrameGraph-Extensible-RenderingArc
 - Frostbite FrameGraph slides：https://www.slideshare.net/slideshow/framegraph-extensible-rendering-architecture-in-frostbite/72795495
+- Unity URP Render Graph introduction：https://docs.unity3d.com/Manual/urp/render-graph-introduction.html
+- Unity URP custom render pass：https://docs.unity3d.com/Manual/urp/render-graph-write-render-pass.html
+- Unity URP unsafe pass：https://docs.unity3d.com/Manual/urp/render-graph-unsafe-pass.html
 - Unreal Rendering Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/rendering-dependency-graph?application_version=4.27
+- Unreal Render Dependency Graph in Unreal Engine：https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine
 - Granite renderer：https://github.com/Themaister/Granite
+- Granite render graph deep dive：https://themaister.net/blog/2017/08/15/render-graphs-and-vulkan-a-deep-dive/
 - vuk render graph：https://vuk.readthedocs.io/en/latest/topics/rendergraph.html
 - Diligent Render State Packager：https://diligentgraphics.github.io/docs/d6/d8b/DiligentSamples_Tutorials_Tutorial25_StatePackager_readme.html
 
 结论：
 
-- Frostbite 和 Unreal RDG 都强调整帧图、延迟执行、资源生命周期和 barrier 由 graph 编译阶段统一管理。
+- Frostbite、Unreal RDG 和 Unity Render Graph 都强调整帧图、延迟执行、资源生命周期、pass culling 和 barrier 由 graph 编译阶段统一管理。
 - Granite 和 vuk 对 Vulkan 工程更贴近：transient/imported resource、access annotation、deferred destruction、upload allocator 都适合作为 VkEngine 中期参考。
 - Diligent 的 Render State Notation/Packager 说明 shader、pipeline 和 resource signature 可以逐步转成离线可审查产物；这支持 VkEngine 先做 reflection JSON，再做 pipeline layout 契约。
 - 这些案例都不意味着下一步要直接引入大型 renderer、async compute、bindless 或多线程 context；当前阶段仍以小 smoke 闭环验证每个抽象。
