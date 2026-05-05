@@ -1684,7 +1684,7 @@ namespace vke {
             .recordCommands([kClearParams](RenderGraphCommandList& commands) {
                 commands.clearColor("target", kClearParams.color);
             })
-            .execute([&frame, &bindings, source](RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
@@ -1697,7 +1697,7 @@ namespace vke {
                     return std::unexpected{std::move(clearParams.error())};
                 }
 
-                auto sourceBinding = findVulkanRenderGraphImage(source, bindings);
+                auto sourceBinding = findVulkanRenderGraphTransferWrite(pass, "target", bindings);
                 if (!sourceBinding) {
                     return std::unexpected{std::move(sourceBinding.error())};
                 }
@@ -1725,8 +1725,7 @@ namespace vke {
                     .setVec4("Tint", kFullscreenParams.tint)
                     .drawFullscreenTriangle();
             })
-            .execute([&frame, &bindings, source,
-                      this](RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
@@ -1753,7 +1752,7 @@ namespace vke {
                                          "slot")};
                 }
 
-                auto sourceBinding = findVulkanRenderGraphImage(source, bindings);
+                auto sourceBinding = findVulkanRenderGraphShaderRead(pass, "source", bindings);
                 if (!sourceBinding) {
                     return std::unexpected{std::move(sourceBinding.error())};
                 }
@@ -2084,14 +2083,14 @@ namespace vke {
             .setParams(kBasicRasterDepthTriangleParamsType, drawItem_)
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
-            .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
                 }
 
-                auto depthBinding = findVulkanRenderGraphImage(depth, bindings);
+                auto depthBinding = findVulkanRenderGraphDepthWrite(pass, "depth", bindings);
                 if (!depthBinding) {
                     return std::unexpected{std::move(depthBinding.error())};
                 }
@@ -2339,14 +2338,14 @@ namespace vke {
             .setParams(kBasicRasterMesh3DParamsType, kMeshDrawItem)
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
-            .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
                     return std::unexpected{std::move(transitions.error())};
                 }
 
-                auto depthBinding = findVulkanRenderGraphImage(depth, bindings);
+                auto depthBinding = findVulkanRenderGraphDepthWrite(pass, "depth", bindings);
                 if (!depthBinding) {
                     return std::unexpected{std::move(depthBinding.error())};
                 }
@@ -2611,7 +2610,7 @@ namespace vke {
             .setParams(kBasicRasterDrawListParamsType, drawListParams)
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
-            .execute([&frame, &bindings, depth, this](RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
@@ -2628,7 +2627,7 @@ namespace vke {
                         "Draw list pass params draw count does not match renderer draw list")};
                 }
 
-                auto depthBinding = findVulkanRenderGraphImage(depth, bindings);
+                auto depthBinding = findVulkanRenderGraphDepthWrite(pass, "depth", bindings);
                 if (!depthBinding) {
                     return std::unexpected{std::move(depthBinding.error())};
                 }

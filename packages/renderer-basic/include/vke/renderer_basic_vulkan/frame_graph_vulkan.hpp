@@ -4,6 +4,8 @@
 
 #include <expected>
 #include <span>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "vke/core/error.hpp"
@@ -53,8 +55,8 @@ namespace vke {
         };
     }
 
-    [[nodiscard]] inline VkImageAspectFlags basicRenderGraphImageAspect(
-        RenderGraphImageFormat format) {
+    [[nodiscard]] inline VkImageAspectFlags
+    basicRenderGraphImageAspect(RenderGraphImageFormat format) {
         switch (format) {
         case RenderGraphImageFormat::D32Sfloat:
             return VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -79,6 +81,53 @@ namespace vke {
             0,
             "RenderGraph image is not bound to a Vulkan image.",
         }};
+    }
+
+    [[nodiscard]] inline Result<RenderGraphImageHandle>
+    findRenderGraphImageSlot(std::span<const RenderGraphImageSlot> slots, std::string_view slotName,
+                             std::string_view passName) {
+        for (const RenderGraphImageSlot& slot : slots) {
+            if (std::string_view{slot.name} == slotName) {
+                return slot.image;
+            }
+        }
+
+        return std::unexpected{Error{
+            ErrorDomain::RenderGraph,
+            0,
+            "RenderGraph pass '" + std::string{passName} + "' does not declare image slot '" +
+                std::string{slotName} + "'.",
+        }};
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphImageSlot(std::span<const RenderGraphImageSlot> slots,
+                                   std::string_view slotName, RenderGraphPassContext pass,
+                                   std::span<const VulkanRenderGraphImageBinding> bindings) {
+        auto image = findRenderGraphImageSlot(slots, slotName, pass.name);
+        if (!image) {
+            return std::unexpected{std::move(image.error())};
+        }
+
+        return findVulkanRenderGraphImage(*image, bindings);
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphShaderRead(RenderGraphPassContext pass, std::string_view slotName,
+                                    std::span<const VulkanRenderGraphImageBinding> bindings) {
+        return findVulkanRenderGraphImageSlot(pass.shaderReadSlots, slotName, pass, bindings);
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphDepthWrite(RenderGraphPassContext pass, std::string_view slotName,
+                                    std::span<const VulkanRenderGraphImageBinding> bindings) {
+        return findVulkanRenderGraphImageSlot(pass.depthWriteSlots, slotName, pass, bindings);
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphTransferWrite(RenderGraphPassContext pass, std::string_view slotName,
+                                       std::span<const VulkanRenderGraphImageBinding> bindings) {
+        return findVulkanRenderGraphImageSlot(pass.transferWriteSlots, slotName, pass, bindings);
     }
 
     [[nodiscard]] inline Result<void>

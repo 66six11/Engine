@@ -191,15 +191,15 @@ namespace vke {
                 .recordCommands([transientClearParams](RenderGraphCommandList& commands) {
                     commands.clearColor("target", transientClearParams.color);
                 })
-                .execute([&frame, &bindings, transientClearParams,
-                          transientColor](RenderGraphPassContext pass) -> Result<void> {
+                .execute([&frame, &bindings,
+                          transientClearParams](RenderGraphPassContext pass) -> Result<void> {
                     auto transitions =
                         recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                     if (!transitions) {
                         return std::unexpected{std::move(transitions.error())};
                     }
 
-                    auto image = findVulkanRenderGraphImage(transientColor, bindings);
+                    auto image = findVulkanRenderGraphTransferWrite(pass, "target", bindings);
                     if (!image) {
                         return std::unexpected{std::move(image.error())};
                     }

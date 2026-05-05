@@ -39,7 +39,7 @@
 
 - 同一 pass 内同一 image 可以同时声明在多个 access group，compiler 会按固定顺序生成 transition，但 Vulkan 语义上这些使用更接近同 pass 同时访问。
 - `RenderGraphImageDesc` 对 imported image 默认 `finalState = Present`，这只适合 swapchain image。
-- 真实 `renderer-basic` 路径已开始收敛到共享 typed schema；后续还要继续减少 callback 内直接捕获资源 handle 的假设，并补每个 builtin pass 的负向 schema smoke。
+- 真实 `renderer-basic` 路径已收敛到共享 typed schema；fullscreen、transient、depth、mesh 和 draw-list 的 Vulkan callback 已通过 pass context named slots 查询 binding，后续继续补每个 builtin pass 的负向 schema smoke。
 
 ## 设计原则
 
@@ -246,7 +246,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - 已新增 `vke/renderer_basic/render_graph_schemas.hpp`，集中定义 builtin pass type、params type、POD params 和 schema registry helper。
 - `recordBasicClearFrame`、`recordBasicDynamicClearFrame`、`BasicTransientFrameRecorder`、`BasicTriangleRenderer::recordFrame`、`recordFrameWithDepth`、`BasicMesh3DRenderer`、`BasicDrawListRenderer` 和 `BasicFullscreenTextureRenderer` 现在都通过共享 schema compile。
 - `basic_triangle_renderer.cpp` 中 fullscreen / draw-list 的局部 schema registry 已移除，避免同一 pass schema 在多个位置漂移。
-- 仍待推进：callback 内的 Vulkan binding 查询还没有完全按 slot name 泛化；每个 builtin pass 的 invalid slot / missing slot / wrong params type 负向 smoke 还需要扩展。
+- fullscreen、transient、depth、mesh 和 draw-list 的 Vulkan callbacks 已通过 `RenderGraphPassContext` named slots 查询 binding，不再直接捕获 `source` / `depth` / `transientColor` image handle。
+- 仍待推进：每个 builtin pass 的 invalid slot / missing slot / wrong params type 负向 smoke 还需要扩展。
 
 验收：
 

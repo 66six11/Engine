@@ -405,7 +405,8 @@ flowchart TD
   transient source texture 采样。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
-  Vulkan resource；Backbuffer、`--smoke-transient` 的 transient color image 和
+  Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、
+  `target` 或 `depth` 对应 binding，Backbuffer、`--smoke-transient` 的 transient color image 和
   `--smoke-depth-triangle` 的 transient depth image 都已显式加入 binding 表。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
@@ -524,6 +525,8 @@ flowchart TD
 - `renderer_basic/render_graph_schemas.hpp` 已集中维护内建 clear、dynamic clear、transient present、
   triangle、depth triangle、mesh3D、draw-list 和 fullscreen pass 的 type、params type、POD params
   与 schema registry helper；真实 renderer-basic Vulkan 路径现在通过这套共享 schema compile。
+- `renderer_basic_vulkan` 的 fullscreen、transient、depth、mesh 和 draw-list callbacks 已按
+  `source` / `target` / `depth` named slot 查询 Vulkan binding，避免 callback 隐式捕获资源 handle。
 - `PassBuilder::allowCulling()` 和 `PassBuilder::hasSideEffects()` 已接入；schema 也可声明
   `allowCulling` / `hasSideEffects`。默认 pass 不参与 culling，写 imported image 的 pass 会作为外部输出保留。
 - `pass.type` 是当前 typed executor key，并会继续演进为执行模型 / pass opcode。它不等同于
@@ -597,6 +600,8 @@ flowchart TD
     Now --> CullingUpdate
     BuiltinSchemaUpdate["2026-05-05:<br/>shared renderer_basic builtin schemas<br/>clear / triangle / mesh / fullscreen schema compile"]
     Now --> BuiltinSchemaUpdate
+    SlotBindingUpdate["2026-05-05:<br/>renderer_basic_vulkan callbacks<br/>slot-name Vulkan binding lookup"]
+    Now --> SlotBindingUpdate
 ```
 
 建议推进顺序：
