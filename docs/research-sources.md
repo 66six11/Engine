@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-05-05
+最近核对日期：2026-05-06
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -80,6 +80,28 @@
 - 引擎应该通过一个 allocator facade 集中管理 buffer/image allocation，避免在各模块散落
   `vkAllocateMemory`。
 - RenderGraph transient image 可优先使用 VMA 的自动 memory usage 策略，再按实际用途细化。
+
+## 性能诊断与外部工具
+
+一手资料：
+
+- Unity Profiler window：https://docs.unity3d.com/Manual/ProfilerWindow.html
+- Unity profiling applications：https://docs.unity3d.com/Manual/profiler-profiling-applications.html
+- Vulkan `vkCmdWriteTimestamp2`：https://registry.khronos.org/vulkan/specs/latest/man/html/vkCmdWriteTimestamp2.html
+- Vulkan timestamp queries：https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#queries-timestamps
+- Khronos `VK_EXT_debug_utils` guide：https://docs.vulkan.org/guide/latest/extensions/VK_EXT_debug_utils.html
+- RenderDoc documentation：https://renderdoc.org/docs/
+- NVIDIA Nsight Graphics documentation：https://docs.nvidia.com/nsight-graphics/
+- Windows Performance Recorder：https://learn.microsoft.com/windows-hardware/test/wpt/windows-performance-recorder
+- Windows Performance Analyzer：https://learn.microsoft.com/windows-hardware/test/wpt/windows-performance-analyzer
+
+结论：
+
+- 性能面板应消费 profiler 数据快照，而不是直接读取 renderer 或 Vulkan 后端内部对象。
+- 游戏性能和编辑器自身性能应分开建模；未来 Game View 面板默认只分析 Game/Play target。
+- Vulkan GPU timestamp 必须使用 query pool 和延迟 readback，不能为了当前帧数据阻塞 GPU。
+- `VK_EXT_debug_utils` labels 主要服务 RenderDoc/Nsight capture 可读性，不替代引擎内置 benchmark 数据。
+- Windows Performance Recorder / Analyzer 适合定位 CPU 调度、线程等待、驱动调用和系统层开销；它是外部诊断工具，不应成为 runtime 依赖。
 
 ## 下一阶段 Vulkan 资源与同步
 

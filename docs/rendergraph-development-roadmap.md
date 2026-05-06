@@ -49,6 +49,24 @@
 
 下一阶段不优先做脚本 VM、bindless、async compute、复杂 alias 或完整 asset database。先把 RG 声明语义、Vulkan adapter 映射、后端资源生命周期和调试诊断做稳。
 
+### 优秀案例只作为约束来源
+
+Unity RenderGraph、Unreal RDG、Frostbite FrameGraph、Granite 和 Blender Vulkan backend 都是成熟系统。VkEngine 当前只借鉴它们已经被反复验证的边界：
+
+- setup/record 阶段显式声明 pass、resource 和参数。
+- compile 阶段只分析声明数据，产出依赖、lifetime、barrier 和 culling 计划。
+- execute 阶段只消费编译结果，不回调脚本或重新解释 graph topology。
+- 后端缓存、transient resource 和 debug/profiling 数据必须能用 smoke 或 benchmark 验证。
+
+不把成熟案例里的高级能力直接搬进当前阶段：
+
+- 不因为 Unreal RDG 支持 async compute，就提前设计多队列调度。
+- 不因为 Frostbite/Granite 能做 transient memory alias，就提前实现 alias allocator。
+- 不因为 Unity 有 Render Graph Viewer 或 Profiler，就提前做 editor UI。
+- 不因为 Diligent 有成熟 resource state/cache 系统，就提前抽象通用 asset/pipeline database。
+
+每个新能力进入路线图前必须满足两个条件：当前 smoke/benchmark 能暴露它要解决的问题，并且实现后有可量化的验收标准。
+
 ### 四段式帧流程
 
 ```mermaid
@@ -109,13 +127,14 @@ flowchart TD
     P1["P1 RG 语义修正"]
     P2["P2 Typed builtin passes"]
     P3["P3 Compiler diagnostics v2"]
+    P35["P3.5 Performance profiling substrate"]
     P4["P4 Backend lifetime and caches"]
     P5["P5 Buffer / storage / MRT"]
     P6["P6 Asset and material baseline"]
-    P7["P7 Multi-view and editor prep"]
+    P7["P7 Multi-view prep"]
     P8["P8 Advanced graph optimization"]
 
-    P0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8
+    P0 --> P1 --> P2 --> P3 --> P35 --> P4 --> P5 --> P6 --> P7 --> P8
 ```
 
 ## P0：文档与门禁收敛
@@ -304,9 +323,57 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - 错误字符串包含 pass name 和 image name。
 - debug table 可直接放进 issue/PR 说明。
 
+## P3.5：Performance profiling substrate
+
+目标：在进入后端生命周期和缓存优化前，先建立低侵入性能观测底座。完整技术细节见 `performance-profiling-plan.md`。
+
+任务：
+
+- 新增 lightweight profiling 数据模型：
+  - frame profile info
+  - CPU scope sample
+  - GPU scope sample placeholder
+  - counter sample
+  - fixed-capacity frame ring buffer
+- 新增 `--bench-rendergraph`：
+  - 支持 warmup frame count。
+  - 支持 measured frame count。
+  - 输出 JSONL 或 CSV 到 `build/perf/`。
+  - 不改变任何 `--smoke-*` 语义。
+- RenderGraph compile counters：
+  - pass count
+  - image/resource count
+  - dependency edge count
+  - transition count
+  - culled pass count
+  - transient image count
+  - compile milliseconds
+- 为后续 Vulkan timestamp 和 debug labels 预留接口，但第一版不强行接 GPU query。
+
+第一版明确不做：
+
+- editor performance panel。
+- Tracy/Remotery/ImGui 等完整 profiler UI。
+- GPU timestamp query pool。
+- capture 自动化工作流。
+- 跨线程 profiling aggregation。
+
+验收：
+
+- Release preset 下可跑 `--bench-rendergraph` 并得到 p50/p95/max。
+- `rendergraph` 不依赖 Vulkan、window 或外部 profiler。
+- benchmark 输出足以判断 P4 cache/lifetime 优化是否有效。
+
 ## P4：Backend lifetime and caches
 
 目标：从“每帧现建 MVP 对象”过渡到可持续的后端资源生命周期。
+
+执行原则：
+
+- 每次只落一个 cache/pool/deferred lifetime 子系统。
+- 每个子系统必须同时输出 hit/miss/create/reuse 或 pending/retired counter。
+- 没有 counter 的 cache 不进入主线，因为无法判断它是否真的减少了每帧 churn。
+- 第一版只做对象复用和延迟销毁，不做跨 resource alias、跨 queue ownership、跨线程录制或 shader hot reload。
 
 任务：
 
@@ -387,9 +454,9 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - 新增 material descriptor mismatch 负向 smoke。
 - fullscreen texture 和 draw list 不再依赖硬编码 descriptor binding 假设。
 
-## P7：Multi-view and editor prep
+## P7：Multi-view prep
 
-目标：为 Game View、Scene View、Preview View 共存做架构边界，不直接做完整 editor。
+目标：为 Game、Scene、Preview 等多 view graph 共存做架构边界，不直接做完整 editor。编辑器性能面板和 EditorHost 性能分析暂不进入主计划，只记录在 `performance-profiling-plan.md` 的技术细节中。
 
 任务：
 
@@ -410,18 +477,18 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
   - pipeline cache
   - descriptor layout cache
   - persistent mesh/material/texture resources
-- Scene View editor-only pass：
+- 未来 Scene/debug view 专用 pass：
   - grid
   - gizmo
   - selection outline
   - wire/debug overlay
-- 保持 Game View graph 不被 Scene View pass 污染。
+- 保持 Game View graph 不被 Scene/debug view pass 污染。
 
 验收：
 
 - 同一帧可 record 两个 view graph。
 - Debug table 按 view 输出。
-- Game View smoke 与 Scene View smoke 可独立运行。
+- Game view smoke 与 Scene/debug view smoke 可独立运行；若 editor 产品阶段尚未开始，先用 headless multi-view smoke 验证边界。
 
 ## P8：Advanced graph optimization
 
@@ -456,9 +523,11 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 | 3 | `feat(rendergraph): require explicit imported final states` | imported final state 默认和校验调整 | `--smoke-rendergraph`, frame smoke |
 | 4 | `test(rendergraph): expand negative compile coverage` | duplicate/missing/cycle/final-state 负向用例 | `--smoke-rendergraph` |
 | 5 | `feat(renderer-basic): use typed graph schemas` | 真实 renderer 路径迁移到 schema compile | frame, dynamic, triangle, depth, draw-list, fullscreen smoke |
-| 6 | `feat(rhi-vulkan): add deferred deletion queue` | fence/epoch 延迟销毁 | resize/fullscreen/depth smoke |
-| 7 | `feat(rhi-vulkan): add descriptor and pipeline caches` | descriptor allocator、layout/pipeline cache | descriptor/fullscreen/draw-list smoke |
-| 8 | `feat(renderer): introduce transient resource pool` | transient image reuse，不做 alias memory | transient/depth/fullscreen smoke |
+| 6 | `feat(profiling): add render graph benchmark substrate` | CPU scope、benchmark CLI、RenderGraph compile counters | `--bench-rendergraph`, `--smoke-rendergraph` |
+| 7 | `feat(rhi-vulkan): add deferred deletion queue` | fence/epoch 延迟销毁，并输出 delayed destruction counters | resize/fullscreen/depth smoke |
+| 8 | `feat(rhi-vulkan): add descriptor and pipeline caches` | descriptor allocator、layout/pipeline cache，并输出 cache hit/miss counters | descriptor/fullscreen/draw-list smoke |
+| 9 | `feat(renderer): introduce transient resource pool` | transient image reuse，不做 alias memory，并输出 reuse/create counters | transient/depth/fullscreen smoke |
+| 10 | `feat(rhi-vulkan): add gpu profiling labels` | Vulkan timestamp query delayed readback 和 debug utils labels | fullscreen/depth/draw-list smoke, capture sanity check |
 
 ## 每阶段 Definition of Done
 
@@ -507,5 +576,8 @@ build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-fullscre
 - 多线程 command recording。
 - shader hot reload。
 - RenderDoc/timestamp profiler 全套 UI。
+- 编辑器 performance panel。
+- 通用 graph visualizer。
+- GraphTemplateCache。
 
-它们不是否定项，只是要等 P1 到 P4 稳定后再进入设计。
+它们不是否定项，只是要等前置问题真实出现后再进入设计。触发条件应是：已有 benchmark 或 smoke 证明当前实现成为瓶颈，或者已有功能需求无法用现有小闭环表达。

@@ -12,16 +12,17 @@
 4. `flow-architecture.md` - 当前包依赖、启动流程、frame loop、RenderGraph/RHI 数据流。
 5. `next-development-plan.md` - 下一阶段 shader reflection、descriptor、transient/depth 和 mesh 路线。
 6. `rendergraph-development-roadmap.md` - 结合外部资料整理的 RenderGraph 后续完整开发路线图。
-7. `full-diagnosis-2026-05-05.md` - 最近一次全量诊断、风险清单和未来开发计划。
-8. `review-workflow.md` - 每次审查、修复和提交前必须执行的门禁。
-9. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
+7. `performance-profiling-plan.md` - 性能诊断底座、benchmark、GPU timestamp 和未来编辑器面板技术约束。
+8. `full-diagnosis-2026-05-05.md` - 最近一次全量诊断、风险清单和未来开发计划。
+9. `review-workflow.md` - 每次审查、修复和提交前必须执行的门禁。
+10. `coding-standard.md` - C++23、Vulkan、shader、同步和工程风格规范。
 
 ## 知识分类
 
 | 分类 | 文档 | 用途 |
 | --- | --- | --- |
 | 上手与构建 | `build-workflow.md` | 解释 Conan 生成物、CMake Presets、Visual Studio/Ninja 构建入口。 |
-| 技术依据 | `research-sources.md`、`technical-stack.md` | 记录一手资料、版本依据、依赖和工具链决策。 |
+| 技术依据 | `research-sources.md`、`technical-stack.md`、`performance-profiling-plan.md` | 记录一手资料、版本依据、依赖、工具链决策和性能诊断技术约束。 |
 | 架构设计 | `architecture.md`、`flow-architecture.md`、`package-architecture.md` | 记录 package-first 组织、对象生命周期、流程图和依赖方向。 |
 | RenderGraph | `rendergraph-mvp.md`、`rendergraph-rhi-boundary.md`、`rendergraph-development-roadmap.md` | 记录 MVP 闭环、API 草图、后端无关边界、Vulkan 翻译归属和后续开发路线图。 |
 | 工程规范 | `coding-standard.md`、`encoding-policy.md`、`review-workflow.md` | 记录编码规范、文本编码策略、审查和提交门禁。 |
@@ -48,5 +49,6 @@
 - draw list MVP 已接入，继续保持 RenderGraph 声明模型和 Vulkan backend 执行模型分离。
 - RenderGraph 已接入最小依赖排序、dependency debug table、显式 pass culling 和 side-effect 标记；下一步补更强非法依赖诊断和更细 culling 策略。
 - RenderGraph 后续专项推进以 `rendergraph-development-roadmap.md` 为准。
+- 性能诊断先作为 P3.5 观测底座推进，编辑器性能面板暂只保留技术细节，不进入当前里程碑。
 - 建立 deferred destruction、descriptor allocator、transient resource pool 和 pipeline cache。
 - 维护 `conan.lock`，依赖改动时重新生成并审查 recipe revision 变化。
