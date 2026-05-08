@@ -14,6 +14,7 @@
 | Vulkan synchronization spec: https://docs.vulkan.org/spec/latest/chapters/synchronization.html | 同步分 execution dependency、memory dependency 和 image layout transition，不能只看 layout 名字。 | RG compiler 输出抽象 transition，Vulkan adapter 负责 stage/access/layout 细节，不能把 Vulkan 类型泄漏到 `rendergraph`。 |
 | Khronos unified image layouts: https://www.khronos.org/blog/so-long-image-layouts-simplifying-vulkan-synchronisation | 新式 unified image layout 能减少 layout 数量，但需要明确 feature/extension 和设备支持。 | 作为后续优化观察项；当前先保持显式精确 layout，避免过早依赖新能力。 |
 | Vulkan object destruction refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImage.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImageView.html | `VkImage` / `VkImageView` 销毁前，所有引用它们的已提交命令必须完成。 | transient wrapper 不在下一帧准备阶段直接析构旧 Vulkan 对象，而是挂到 `VulkanFrameLoop` 的 fence/epoch deferred deletion。 |
+| Vulkan image barrier refpage: https://docs.vulkan.org/refpages/latest/refpages/source/VkImageMemoryBarrier2.html | `oldLayout = VK_IMAGE_LAYOUT_UNDEFINED` 表示不保留旧内容，适合 discard 型 transient 复用。 | pooled transient image 每次被重新 acquire 后仍从 RG 的 `Undefined` 初始状态开始 transition，不依赖上一帧内容。 |
 | VMA usage patterns: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html | image/buffer allocation 应集中到 allocator facade，由用途决定 memory type。 | transient resource pool 使用 VMA，key 包含 format/extent/usage/aspect/sample count。 |
 | Unity URP Render Graph introduction: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | graph 每帧 record、compile、execute；pass 显式声明资源，graph 自动处理生命周期、同步和 pass culling。 | 保持 RecordGraph、CompileGraph、PrepareBackend、RecordCommands 四段式。 |
 | Unity URP custom render pass: https://docs.unity3d.com/Manual/urp/render-graph-write-render-pass.html | pass data 和 render function 分离，builder 显式声明资源读写。 | `PassSchema`、typed params、named slots 和 command summary 继续作为脚本/工具前端的共同语义。 |
@@ -399,7 +400,9 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - `TransientResourcePool`
   - image key：format、extent、usage、aspect、sample count、mip/layer、memory domain。
   - buffer key：size、usage、memory domain、alignment。
-  - 第一版不做 alias memory，只做 object reuse。
+  - 当前已接入 `VulkanTransientImagePool`：按 format/extent/usage/aspect 复用 `VkImage` + `VkImageView`，
+    通过 frame-loop deferred deletion 在 GPU 完成后回池，并输出 create/reuse/release/retire counter。
+  - 第一版不做 alias memory，只做 object reuse；buffer/upload pool 仍是后续任务。
 - `PipelineLayoutCache`
   - key 来自 descriptor set layouts、descriptor type/count/stage visibility、push constant ranges。
 - `PipelineCache`
@@ -539,7 +542,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 | 6 | `feat(profiling): add render graph benchmark substrate` | CPU scope、benchmark CLI、RenderGraph compile counters | `--bench-rendergraph`, `--smoke-rendergraph` |
 | 7 | `feat(rhi-vulkan): add deferred deletion queue` | fence/epoch 延迟销毁，并输出 delayed destruction counters | resize/fullscreen/depth smoke |
 | 8 | `feat(rhi-vulkan): add descriptor and pipeline caches` | descriptor allocator、layout/pipeline cache，并输出 cache hit/miss counters | descriptor/fullscreen/draw-list smoke |
-| 9 | `feat(renderer): introduce transient resource pool` | transient image reuse，不做 alias memory，并输出 reuse/create counters | transient/depth/fullscreen smoke |
+| 9 | `feat(rhi-vulkan): add transient image pool` | transient image reuse，不做 alias memory，并输出 reuse/create counters | transient/depth/fullscreen smoke |
 | 10 | `feat(rhi-vulkan): add gpu profiling labels` | Vulkan timestamp query delayed readback 和 debug utils labels | fullscreen/depth/draw-list smoke, capture sanity check |
 
 ## 每阶段 Definition of Done

@@ -616,15 +616,15 @@ flowchart TD
   确认错误不会进入 pass callback；也覆盖可剔除 unused transient writer
   被移出 compiled passes、side-effect pass 被保留且 culled pass callback 不执行。
 - `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition、
-  Vulkan adapter mapping、真实 image/image view/VMA allocation 和 binding，以及旧 transient wrapper
-  的 deferred destruction enqueue/retire counter。
+  Vulkan adapter mapping、真实 image/image view/VMA allocation 和 binding，以及 transient image pool 的
+  create/release/retire/reuse counter。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image deferred destruction<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark"]
-    Step1["下一步:<br/>descriptor and pipeline caches<br/>transient resource pool counters"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark"]
+    Step1["下一步:<br/>descriptor and pipeline caches<br/>buffer/upload lifetime counters"]
     Step2["之后:<br/>GPU timestamp labels after frame resource lifetime stabilizes"]
     Step3["之后:<br/>multi-view / material expansion"]
 
@@ -652,6 +652,8 @@ flowchart TD
     Now --> BuiltinNegativeUpdate
     DeferredTransientUpdate["2026-05-08:<br/>VulkanFrameRecordContext::deferDeletion<br/>transient image/view wrapper teardown<br/>--smoke-transient counters"]
     Now --> DeferredTransientUpdate
+    TransientPoolUpdate["2026-05-08:<br/>VulkanTransientImagePool<br/>retire then reuse image/view<br/>create/reuse counters"]
+    Now --> TransientPoolUpdate
 ```
 
 建议推进顺序：

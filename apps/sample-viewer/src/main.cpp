@@ -655,6 +655,13 @@ namespace {
             vke::logError("Transient smoke did not retire deferred Vulkan resource destruction.");
             return EXIT_FAILURE;
         }
+        const vke::VulkanTransientImagePoolStats transientPoolStats =
+            recorder.transientPoolStats();
+        if (transientPoolStats.created == 0 || transientPoolStats.reused == 0 ||
+            transientPoolStats.retired == 0) {
+            vke::logError("Transient smoke did not reuse a retired transient Vulkan image.");
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered transient frames: " << extent.width << 'x' << extent.height << '\n';

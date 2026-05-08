@@ -81,8 +81,8 @@ namespace vke {
         VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
         VulkanBuffer uniformBuffer_;
         VulkanSampler sampler_;
-        std::vector<VulkanImage> transientImages_;
-        std::vector<VulkanImageView> transientImageViews_;
+        VulkanTransientImagePool transientImagePool_;
+        std::vector<VulkanTransientImageResource> transientImages_;
     };
 
     class BasicTriangleRenderer {
@@ -116,8 +116,8 @@ namespace vke {
         VulkanBuffer indexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
-        std::vector<VulkanImage> transientImages_;
-        std::vector<VulkanImageView> transientImageViews_;
+        VulkanTransientImagePool transientImagePool_;
+        std::vector<VulkanTransientImageResource> transientImages_;
         BasicDrawItem drawItem_{basicTriangleDrawItem()};
     };
 
@@ -149,8 +149,8 @@ namespace vke {
         VulkanBuffer indexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
-        std::vector<VulkanImage> transientImages_;
-        std::vector<VulkanImageView> transientImageViews_;
+        VulkanTransientImagePool transientImagePool_;
+        std::vector<VulkanTransientImageResource> transientImages_;
     };
 
     class BasicDrawListRenderer {
@@ -181,8 +181,8 @@ namespace vke {
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
         std::vector<BasicDrawListItem> drawItems_;
-        std::vector<VulkanImage> transientImages_;
-        std::vector<VulkanImageView> transientImageViews_;
+        VulkanTransientImagePool transientImagePool_;
+        std::vector<VulkanTransientImageResource> transientImages_;
     };
 
 } // namespace vke

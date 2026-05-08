@@ -1168,29 +1168,16 @@ namespace vke {
         }
 
         [[nodiscard]] Result<void>
-        deferTransientResources(const VulkanFrameRecordContext& frame,
-                                std::vector<VulkanImage>& transientImages,
-                                std::vector<VulkanImageView>& transientImageViews) {
-            for (VulkanImageView& imageView : transientImageViews) {
-                if (!imageView.deferDestroy(frame)) {
-                    return std::unexpected{Error{
-                        ErrorDomain::Vulkan,
-                        0,
-                        "Failed to enqueue deferred destruction for a transient Vulkan image view.",
-                    }};
-                }
-            }
-            for (VulkanImage& image : transientImages) {
-                if (!image.deferDestroy(frame)) {
-                    return std::unexpected{Error{
-                        ErrorDomain::Vulkan,
-                        0,
-                        "Failed to enqueue deferred destruction for a transient Vulkan image.",
-                    }};
+        releaseTransientResources(const VulkanFrameRecordContext& frame,
+                                  VulkanTransientImagePool& transientImagePool,
+                                  std::vector<VulkanTransientImageResource>& transientImages) {
+            for (VulkanTransientImageResource& resource : transientImages) {
+                auto released = transientImagePool.release(frame, resource);
+                if (!released) {
+                    return std::unexpected{std::move(released.error())};
                 }
             }
 
-            transientImageViews.clear();
             transientImages.clear();
             return {};
         }
@@ -1200,11 +1187,12 @@ namespace vke {
                                   VmaAllocator allocator,
                                   const RenderGraphCompileResult& compiled,
                                   std::vector<VulkanRenderGraphImageBinding>& bindings,
-                                  std::vector<VulkanImage>& transientImages,
-                                  std::vector<VulkanImageView>& transientImageViews) {
-            auto deferred = deferTransientResources(frame, transientImages, transientImageViews);
-            if (!deferred) {
-                return std::unexpected{std::move(deferred.error())};
+                                  VulkanTransientImagePool& transientImagePool,
+                                  std::vector<VulkanTransientImageResource>& transientImages) {
+            auto released =
+                releaseTransientResources(frame, transientImagePool, transientImages);
+            if (!released) {
+                return std::unexpected{std::move(released.error())};
             }
 
             for (const RenderGraphTransientImageAllocation& allocation : compiled.transientImages) {
@@ -1213,7 +1201,7 @@ namespace vke {
                     basicRenderGraphImageAspect(allocation.format);
                 const VkImageUsageFlags usage = transientUsageFlags(compiled, allocation.image);
 
-                auto image = VulkanImage::create(VulkanImageDesc{
+                auto resource = transientImagePool.acquire(VulkanImageDesc{
                     .device = device,
                     .allocator = allocator,
                     .format = format,
@@ -1225,28 +1213,17 @@ namespace vke {
                     .usage = usage,
                     .aspectMask = aspectMask,
                 });
-                if (!image) {
-                    return std::unexpected{std::move(image.error())};
-                }
-
-                auto imageView = VulkanImageView::create(VulkanImageViewDesc{
-                    .device = device,
-                    .image = image->handle(),
-                    .format = image->format(),
-                    .aspectMask = image->aspectMask(),
-                });
-                if (!imageView) {
-                    return std::unexpected{std::move(imageView.error())};
+                if (!resource) {
+                    return std::unexpected{std::move(resource.error())};
                 }
 
                 bindings.push_back(VulkanRenderGraphImageBinding{
                     .image = allocation.image,
-                    .vulkanImage = image->handle(),
-                    .vulkanImageView = imageView->handle(),
-                    .aspectMask = image->aspectMask(),
+                    .vulkanImage = resource->image.handle(),
+                    .vulkanImageView = resource->imageView.handle(),
+                    .aspectMask = resource->image.aspectMask(),
                 });
-                transientImages.push_back(std::move(*image));
-                transientImageViews.push_back(std::move(*imageView));
+                transientImages.push_back(std::move(*resource));
             }
 
             return {};
@@ -1479,8 +1456,8 @@ namespace vke {
         descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
         uniformBuffer_ = std::move(other.uniformBuffer_);
         sampler_ = std::move(other.sampler_);
+        transientImagePool_ = std::move(other.transientImagePool_);
         transientImages_ = std::move(other.transientImages_);
-        transientImageViews_ = std::move(other.transientImageViews_);
         return *this;
     }
 
@@ -1801,7 +1778,7 @@ namespace vke {
         }
 
         auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
-                                                  transientImages_, transientImageViews_);
+                                                  transientImagePool_, transientImages_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
         }
@@ -1840,8 +1817,8 @@ namespace vke {
         pipeline_ = std::move(other.pipeline_);
         vertexBuffer_ = std::move(other.vertexBuffer_);
         indexBuffer_ = std::move(other.indexBuffer_);
+        transientImagePool_ = std::move(other.transientImagePool_);
         transientImages_ = std::move(other.transientImages_);
-        transientImageViews_ = std::move(other.transientImageViews_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
         allocator_ = std::exchange(other.allocator_, nullptr);
@@ -2144,7 +2121,7 @@ namespace vke {
         }
 
         auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
-                                                  transientImages_, transientImageViews_);
+                                                  transientImagePool_, transientImages_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
         }
@@ -2182,8 +2159,8 @@ namespace vke {
         pipeline_ = std::move(other.pipeline_);
         vertexBuffer_ = std::move(other.vertexBuffer_);
         indexBuffer_ = std::move(other.indexBuffer_);
+        transientImagePool_ = std::move(other.transientImagePool_);
         transientImages_ = std::move(other.transientImages_);
-        transientImageViews_ = std::move(other.transientImageViews_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
         allocator_ = std::exchange(other.allocator_, nullptr);
@@ -2399,7 +2376,7 @@ namespace vke {
         }
 
         auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
-                                                  transientImages_, transientImageViews_);
+                                                  transientImagePool_, transientImages_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
         }
@@ -2440,8 +2417,8 @@ namespace vke {
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
         drawItems_ = std::move(other.drawItems_);
+        transientImagePool_ = std::move(other.transientImagePool_);
         transientImages_ = std::move(other.transientImages_);
-        transientImageViews_ = std::move(other.transientImageViews_);
         allocator_ = std::exchange(other.allocator_, nullptr);
         return *this;
     }
@@ -2676,7 +2653,7 @@ namespace vke {
         }
 
         auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
-                                                  transientImages_, transientImageViews_);
+                                                  transientImagePool_, transientImages_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
         }

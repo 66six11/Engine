@@ -2,6 +2,9 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
+#include <memory>
+
 #include "vke/core/result.hpp"
 #include "vke/rhi_vulkan/vma_fwd.hpp"
 
@@ -73,6 +76,48 @@ namespace vke {
 
         VkDevice device_{VK_NULL_HANDLE};
         VkImageView imageView_{VK_NULL_HANDLE};
+    };
+
+    struct VulkanTransientImageKey {
+        VkFormat format{VK_FORMAT_UNDEFINED};
+        VkExtent2D extent{};
+        VkImageUsageFlags usage{};
+        VkImageAspectFlags aspectMask{VK_IMAGE_ASPECT_COLOR_BIT};
+    };
+
+    struct VulkanTransientImageResource {
+        VulkanImage image;
+        VulkanImageView imageView;
+        VulkanTransientImageKey key;
+    };
+
+    struct VulkanTransientImagePoolStats {
+        std::uint64_t created{};
+        std::uint64_t reused{};
+        std::uint64_t released{};
+        std::uint64_t retired{};
+        std::uint64_t pending{};
+        std::uint64_t available{};
+    };
+
+    class VulkanTransientImagePool {
+    public:
+        VulkanTransientImagePool();
+        VulkanTransientImagePool(const VulkanTransientImagePool&) = delete;
+        VulkanTransientImagePool& operator=(const VulkanTransientImagePool&) = delete;
+        VulkanTransientImagePool(VulkanTransientImagePool&& other) noexcept;
+        VulkanTransientImagePool& operator=(VulkanTransientImagePool&& other) noexcept;
+        ~VulkanTransientImagePool();
+
+        [[nodiscard]] Result<VulkanTransientImageResource> acquire(const VulkanImageDesc& desc);
+        [[nodiscard]] Result<void> release(const VulkanFrameRecordContext& frame,
+                                           VulkanTransientImageResource& resource);
+        [[nodiscard]] VulkanTransientImagePoolStats stats() const;
+
+    private:
+        struct State;
+
+        std::shared_ptr<State> state_;
     };
 
     struct VulkanSamplerDesc {

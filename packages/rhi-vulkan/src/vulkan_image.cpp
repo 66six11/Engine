@@ -1,6 +1,9 @@
 ﻿#include "vke/rhi_vulkan/vulkan_image.hpp"
 
+#include <algorithm>
+#include <memory>
 #include <utility>
+#include <vector>
 
 #include <vk_mem_alloc.h>
 
@@ -8,6 +11,30 @@
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 
 namespace vke {
+    namespace {
+
+        [[nodiscard]] bool sameTransientImageKey(const VulkanTransientImageKey& left,
+                                                 const VulkanTransientImageKey& right) {
+            return left.format == right.format && left.extent.width == right.extent.width &&
+                   left.extent.height == right.extent.height && left.usage == right.usage &&
+                   left.aspectMask == right.aspectMask;
+        }
+
+        [[nodiscard]] VulkanTransientImageKey transientImageKey(const VulkanImageDesc& desc) {
+            return VulkanTransientImageKey{
+                .format = desc.format,
+                .extent = desc.extent,
+                .usage = desc.usage,
+                .aspectMask = desc.aspectMask,
+            };
+        }
+
+        [[nodiscard]] bool hasTransientResource(const VulkanTransientImageResource& resource) {
+            return resource.image.handle() != VK_NULL_HANDLE ||
+                   resource.imageView.handle() != VK_NULL_HANDLE;
+        }
+
+    } // namespace
 
     VulkanImage::VulkanImage(VulkanImage&& other) noexcept {
         *this = std::move(other);
@@ -212,6 +239,105 @@ namespace vke {
         device_ = VK_NULL_HANDLE;
         imageView_ = VK_NULL_HANDLE;
         return true;
+    }
+
+    struct VulkanTransientImagePool::State {
+        std::vector<VulkanTransientImageResource> available;
+        VulkanTransientImagePoolStats stats;
+    };
+
+    VulkanTransientImagePool::VulkanTransientImagePool()
+        : state_{std::make_shared<State>()} {}
+
+    VulkanTransientImagePool::VulkanTransientImagePool(
+        VulkanTransientImagePool&& other) noexcept = default;
+
+    VulkanTransientImagePool&
+    VulkanTransientImagePool::operator=(VulkanTransientImagePool&& other) noexcept = default;
+
+    VulkanTransientImagePool::~VulkanTransientImagePool() = default;
+
+    Result<VulkanTransientImageResource>
+    VulkanTransientImagePool::acquire(const VulkanImageDesc& desc) {
+        if (state_ == nullptr) {
+            return std::unexpected{
+                vulkanError("Cannot acquire a transient Vulkan image from a moved pool")};
+        }
+
+        const VulkanTransientImageKey key = transientImageKey(desc);
+        auto resource = std::ranges::find_if(
+            state_->available, [&key](const VulkanTransientImageResource& candidate) {
+                return sameTransientImageKey(candidate.key, key);
+            });
+        if (resource != state_->available.end()) {
+            VulkanTransientImageResource reused = std::move(*resource);
+            state_->available.erase(resource);
+            state_->stats.available = static_cast<std::uint64_t>(state_->available.size());
+            ++state_->stats.reused;
+            return reused;
+        }
+
+        auto image = VulkanImage::create(desc);
+        if (!image) {
+            return std::unexpected{std::move(image.error())};
+        }
+
+        auto imageView = VulkanImageView::create(VulkanImageViewDesc{
+            .device = desc.device,
+            .image = image->handle(),
+            .format = image->format(),
+            .aspectMask = image->aspectMask(),
+        });
+        if (!imageView) {
+            return std::unexpected{std::move(imageView.error())};
+        }
+
+        ++state_->stats.created;
+        return VulkanTransientImageResource{
+            .image = std::move(*image),
+            .imageView = std::move(*imageView),
+            .key = key,
+        };
+    }
+
+    Result<void>
+    VulkanTransientImagePool::release(const VulkanFrameRecordContext& frame,
+                                      VulkanTransientImageResource& resource) {
+        if (state_ == nullptr) {
+            return std::unexpected{
+                vulkanError("Cannot release a transient Vulkan image to a moved pool")};
+        }
+        if (!hasTransientResource(resource)) {
+            return {};
+        }
+
+        auto state = state_;
+        auto retiredResource =
+            std::make_shared<VulkanTransientImageResource>(std::move(resource));
+        if (!frame.deferDeletion([state, retiredResource]() mutable {
+                state->available.push_back(std::move(*retiredResource));
+                ++state->stats.retired;
+                --state->stats.pending;
+                state->stats.available = static_cast<std::uint64_t>(state->available.size());
+            })) {
+            resource = std::move(*retiredResource);
+            return std::unexpected{
+                vulkanError("Failed to enqueue transient Vulkan image pool release")};
+        }
+
+        ++state_->stats.released;
+        ++state_->stats.pending;
+        return {};
+    }
+
+    VulkanTransientImagePoolStats VulkanTransientImagePool::stats() const {
+        if (state_ == nullptr) {
+            return {};
+        }
+
+        VulkanTransientImagePoolStats stats = state_->stats;
+        stats.available = static_cast<std::uint64_t>(state_->available.size());
+        return stats;
     }
 
     VulkanSampler::VulkanSampler(VulkanSampler&& other) noexcept {

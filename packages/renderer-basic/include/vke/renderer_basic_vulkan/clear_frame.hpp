@@ -158,9 +158,13 @@ namespace vke {
         BasicTransientFrameRecorder(VkDevice device, VmaAllocator allocator)
             : device_{device}, allocator_{allocator} {}
 
+        [[nodiscard]] VulkanTransientImagePoolStats transientPoolStats() const {
+            return transientImagePool_.stats();
+        }
+
         [[nodiscard]] Result<VulkanFrameRecordResult>
         record(const VulkanFrameRecordContext& frame) {
-            auto reset = deferTransientResources(frame);
+            auto reset = releaseTransientResources(frame);
             if (!reset) {
                 return std::unexpected{std::move(reset.error())};
             }
@@ -280,27 +284,14 @@ namespace vke {
         }
 
     private:
-        [[nodiscard]] Result<void> deferTransientResources(const VulkanFrameRecordContext& frame) {
-            for (VulkanImageView& imageView : transientImageViews_) {
-                if (!imageView.deferDestroy(frame)) {
-                    return std::unexpected{Error{
-                        ErrorDomain::Vulkan,
-                        0,
-                        "Failed to enqueue deferred destruction for a transient Vulkan image view.",
-                    }};
-                }
-            }
-            for (VulkanImage& image : transientImages_) {
-                if (!image.deferDestroy(frame)) {
-                    return std::unexpected{Error{
-                        ErrorDomain::Vulkan,
-                        0,
-                        "Failed to enqueue deferred destruction for a transient Vulkan image.",
-                    }};
+        [[nodiscard]] Result<void> releaseTransientResources(const VulkanFrameRecordContext& frame) {
+            for (VulkanTransientImageResource& resource : transientImages_) {
+                auto released = transientImagePool_.release(frame, resource);
+                if (!released) {
+                    return std::unexpected{std::move(released.error())};
                 }
             }
 
-            transientImageViews_.clear();
             transientImages_.clear();
             return {};
         }
@@ -346,7 +337,7 @@ namespace vke {
                     basicRenderGraphImageAspect(allocation.format);
                 const VkImageUsageFlags usage = transientUsageFlags(compiled, allocation.image);
 
-                auto image = VulkanImage::create(VulkanImageDesc{
+                auto resource = transientImagePool_.acquire(VulkanImageDesc{
                     .device = device_,
                     .allocator = allocator_,
                     .format = format,
@@ -358,28 +349,17 @@ namespace vke {
                     .usage = usage,
                     .aspectMask = aspectMask,
                 });
-                if (!image) {
-                    return std::unexpected{std::move(image.error())};
-                }
-
-                auto imageView = VulkanImageView::create(VulkanImageViewDesc{
-                    .device = device_,
-                    .image = image->handle(),
-                    .format = image->format(),
-                    .aspectMask = image->aspectMask(),
-                });
-                if (!imageView) {
-                    return std::unexpected{std::move(imageView.error())};
+                if (!resource) {
+                    return std::unexpected{std::move(resource.error())};
                 }
 
                 bindings.push_back(VulkanRenderGraphImageBinding{
                     .image = allocation.image,
-                    .vulkanImage = image->handle(),
-                    .vulkanImageView = imageView->handle(),
-                    .aspectMask = image->aspectMask(),
+                    .vulkanImage = resource->image.handle(),
+                    .vulkanImageView = resource->imageView.handle(),
+                    .aspectMask = resource->image.aspectMask(),
                 });
-                transientImages_.push_back(std::move(*image));
-                transientImageViews_.push_back(std::move(*imageView));
+                transientImages_.push_back(std::move(*resource));
             }
 
             return {};
@@ -387,8 +367,8 @@ namespace vke {
 
         VkDevice device_{VK_NULL_HANDLE};
         VmaAllocator allocator_{};
-        std::vector<VulkanImage> transientImages_;
-        std::vector<VulkanImageView> transientImageViews_;
+        VulkanTransientImagePool transientImagePool_;
+        std::vector<VulkanTransientImageResource> transientImages_;
     };
 
 } // namespace vke
