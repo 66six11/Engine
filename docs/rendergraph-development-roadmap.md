@@ -17,6 +17,7 @@
 | Vulkan image barrier refpage: https://docs.vulkan.org/refpages/latest/refpages/source/VkImageMemoryBarrier2.html | `oldLayout = VK_IMAGE_LAYOUT_UNDEFINED` 表示不保留旧内容，适合 discard 型 transient 复用。 | pooled transient image 每次被重新 acquire 后仍从 RG 的 `Undefined` 初始状态开始 transition，不依赖上一帧内容。 |
 | Vulkan pipeline cache refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreatePipelineCache.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateGraphicsPipelines.html | `VkPipelineCache` 可传给 graphics pipeline creation，让实现复用 pipeline 创建数据。 | RHI 提供 `VulkanPipelineCache` RAII wrapper；renderer 仍保留引擎侧 key/counter，smoke 验证每帧复用而不重建 pipeline。 |
 | Vulkan descriptor pool/allocation refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateDescriptorPool.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkAllocateDescriptorSets.html | descriptor set 从 descriptor pool 分配，pool 的 `maxSets` 与 `pPoolSizes` 定义容量边界，分配失败通过 `VkResult` 返回。 | RHI 先提供单 pool `VulkanDescriptorAllocator` facade 和 counters；后续再演进到 per-frame/per-flight arena。 |
+| Vulkan buffer creation refpage: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateBuffer.html | buffer 是显式创建的 Vulkan object，创建失败必须通过 `VkResult` 传播；usage/size 是后续绑定和命令合法性的基础。 | `VulkanBuffer` 继续作为 buffer + VMA allocation facade，并记录 create/upload byte counters 供 smoke 验证。 |
 | VMA usage patterns: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html | image/buffer allocation 应集中到 allocator facade，由用途决定 memory type。 | transient resource pool 使用 VMA，key 包含 format/extent/usage/aspect/sample count。 |
 | Unity URP Render Graph introduction: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | graph 每帧 record、compile、execute；pass 显式声明资源，graph 自动处理生命周期、同步和 pass culling。 | 保持 RecordGraph、CompileGraph、PrepareBackend、RecordCommands 四段式。 |
 | Unity URP custom render pass: https://docs.unity3d.com/Manual/urp/render-graph-write-render-pass.html | pass data 和 render function 分离，builder 显式声明资源读写。 | `PassSchema`、typed params、named slots 和 command summary 继续作为脚本/工具前端的共同语义。 |
@@ -403,6 +404,12 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
     错误路径，并输出 pool create / allocation call / allocated set counters。
   - `--smoke-descriptor-layout` 与 `--smoke-fullscreen-texture` 会验证 descriptor allocation 经过 allocator；
     第一版不做自动扩容或 frame reset，避免在线程/flight ownership 未固定前提前复杂化。
+- `BufferUploadCounters`
+  - 当前已在 RHI `VulkanBuffer` 记录 create、HostUpload/DeviceLocal、allocated bytes、upload calls
+    和 uploaded bytes。
+  - renderer-basic-vulkan 聚合 uniform/vertex/index buffer stats；triangle、mesh、mesh3D、draw-list、
+    descriptor layout 和 fullscreen smoke 会验证 buffer upload counters。
+  - 第一版只做可观测性；真正的 staging buffer suballocation、device-local copy 和 fence 后回收留到 asset/material 阶段。
 - `TransientResourcePool`
   - image key：format、extent、usage、aspect、sample count、mip/layer、memory domain。
   - buffer key：size、usage、memory domain、alignment。
@@ -422,6 +429,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 - 多帧运行 fullscreen/depth/draw-list 时不重复创建长期 pipeline/layout。
 - descriptor layout/fullscreen texture smoke 能验证 descriptor allocator counter。
+- triangle/mesh/fullscreen smoke 能验证 buffer upload counter。
 - resize 后资源销毁路径无 validation warning。
 - `--smoke-resize`、`--smoke-fullscreen-texture`、`--smoke-depth-triangle`、`--smoke-draw-list` 通过。
 
@@ -554,7 +562,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 | 8 | `feat(rhi-vulkan): add pipeline cache counters` | `VkPipelineCache` wrapper、renderer pipeline reuse counters | triangle/depth/mesh/draw-list/fullscreen smoke |
 | 9 | `feat(rhi-vulkan): add transient image pool` | transient image reuse，不做 alias memory，并输出 reuse/create counters | transient/depth/fullscreen smoke |
 | 10 | `feat(rhi-vulkan): add descriptor allocator counters` | 单 pool descriptor allocator facade、分配计数和 smoke 验证 | descriptor-layout/fullscreen smoke |
-| 11 | `feat(rhi-vulkan): add gpu profiling labels` | Vulkan timestamp query delayed readback 和 debug utils labels | fullscreen/depth/draw-list smoke, capture sanity check |
+| 11 | `feat(rhi-vulkan): add buffer upload counters` | `VulkanBuffer` create/upload byte counters 和 renderer 聚合验证 | triangle/mesh/draw-list/fullscreen smoke |
+| 12 | `feat(rhi-vulkan): add gpu profiling labels` | Vulkan timestamp query delayed readback 和 debug utils labels | fullscreen/depth/draw-list smoke, capture sanity check |
 
 ## 每阶段 Definition of Done
 

@@ -200,12 +200,13 @@ P4 接入 caches 时，同步增加 counters，避免优化无法量化：
 | --- | --- |
 | Deferred deletion | pending objects、retired objects、oldest fence epoch |
 | Descriptor allocator | sets allocated、pool count、pool reset count |
+| Buffer/upload lifetime | buffers created、host-upload/device-local count、allocated bytes、upload calls、uploaded bytes |
 | Pipeline layout cache | lookup count、hit count、miss count、create count |
 | Pipeline cache | lookup count、hit count、miss count、create milliseconds |
 | Transient resource pool | image request count、reuse count、create count、live bytes estimate |
 | RenderGraph compiler | pass/resource/dependency/transition/culled counts、compile milliseconds |
 
-这些 counter 先进入 benchmark 输出，未来再进入 editor 面板。
+这些 counter 先进入 smoke 或 benchmark 输出，未来再进入 editor 面板。
 
 ## 编辑器性能面板技术细节
 

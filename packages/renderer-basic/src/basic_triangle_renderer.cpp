@@ -122,6 +122,16 @@ namespace vke {
             }};
         }
 
+        void accumulateBufferStats(VulkanBufferStats& total, const VulkanBuffer& buffer) {
+            const VulkanBufferStats stats = buffer.stats();
+            total.created += stats.created;
+            total.hostUploadCreated += stats.hostUploadCreated;
+            total.deviceLocalCreated += stats.deviceLocalCreated;
+            total.allocatedBytes += stats.allocatedBytes;
+            total.uploadCalls += stats.uploadCalls;
+            total.uploadedBytes += stats.uploadedBytes;
+        }
+
         [[nodiscard]] Result<BasicFullscreenPipelineKey>
         basicFullscreenPipelineKey(RenderGraphPassContext pass) {
             if (pass.commands.size() != 4) {
@@ -1444,6 +1454,13 @@ namespace vke {
                       "Descriptor layout smoke did not route allocation through the descriptor "
                       "allocator counters"}};
         }
+        const VulkanBufferStats bufferStats = uniformBuffer->stats();
+        if (bufferStats.created != 1 || bufferStats.hostUploadCreated != 1 ||
+            bufferStats.uploadCalls != 1 || bufferStats.uploadedBytes != sizeof(uniformData)) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Descriptor layout smoke did not record expected buffer upload counters"}};
+        }
 
         return {};
     }
@@ -1666,6 +1683,12 @@ namespace vke {
     VulkanDescriptorAllocatorStats
     BasicFullscreenTextureRenderer::descriptorAllocatorStats() const {
         return descriptorAllocator_.stats();
+    }
+
+    VulkanBufferStats BasicFullscreenTextureRenderer::bufferStats() const {
+        VulkanBufferStats stats;
+        accumulateBufferStats(stats, uniformBuffer_);
+        return stats;
     }
 
     Result<void>
@@ -2010,6 +2033,13 @@ namespace vke {
 
     BasicPipelineCacheStats BasicTriangleRenderer::pipelineCacheStats() const {
         return pipelineCacheStats_;
+    }
+
+    VulkanBufferStats BasicTriangleRenderer::bufferStats() const {
+        VulkanBufferStats stats;
+        accumulateBufferStats(stats, vertexBuffer_);
+        accumulateBufferStats(stats, indexBuffer_);
+        return stats;
     }
 
     Result<VulkanFrameRecordResult>
@@ -2358,6 +2388,13 @@ namespace vke {
         return pipelineCacheStats_;
     }
 
+    VulkanBufferStats BasicMesh3DRenderer::bufferStats() const {
+        VulkanBufferStats stats;
+        accumulateBufferStats(stats, vertexBuffer_);
+        accumulateBufferStats(stats, indexBuffer_);
+        return stats;
+    }
+
     Result<VulkanFrameRecordResult>
     BasicMesh3DRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
         constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
@@ -2638,6 +2675,13 @@ namespace vke {
 
     BasicPipelineCacheStats BasicDrawListRenderer::pipelineCacheStats() const {
         return pipelineCacheStats_;
+    }
+
+    VulkanBufferStats BasicDrawListRenderer::bufferStats() const {
+        VulkanBufferStats stats;
+        accumulateBufferStats(stats, vertexBuffer_);
+        accumulateBufferStats(stats, indexBuffer_);
+        return stats;
     }
 
     Result<VulkanFrameRecordResult>

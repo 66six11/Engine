@@ -72,6 +72,7 @@ namespace vke {
         recordFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
         [[nodiscard]] VulkanDescriptorAllocatorStats descriptorAllocatorStats() const;
+        [[nodiscard]] VulkanBufferStats bufferStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
@@ -111,6 +112,7 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrameWithDepth(const VulkanFrameRecordContext& frame);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
+        [[nodiscard]] VulkanBufferStats bufferStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat,
@@ -148,6 +150,7 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
+        [[nodiscard]] VulkanBufferStats bufferStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat, VkFormat depthFormat);
@@ -183,6 +186,7 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
+        [[nodiscard]] VulkanBufferStats bufferStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat, VkFormat depthFormat);

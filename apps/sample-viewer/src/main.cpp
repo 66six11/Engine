@@ -120,6 +120,18 @@ namespace {
         return true;
     }
 
+    bool validateBufferUploadStats(vke::VulkanBufferStats stats, std::uint64_t expectedBuffers,
+                                   std::string_view context) {
+        if (stats.created != expectedBuffers || stats.hostUploadCreated != expectedBuffers ||
+            stats.uploadCalls != expectedBuffers || stats.allocatedBytes == 0 ||
+            stats.uploadedBytes == 0 || stats.uploadedBytes > stats.allocatedBytes) {
+            vke::logError(std::string{context} +
+                          " did not record the expected buffer upload counters.");
+            return false;
+        }
+        return true;
+    }
+
     struct RenderGraphBenchOptions {
         std::size_t warmupFrames{60};
         std::size_t measuredFrames{600};
@@ -886,6 +898,11 @@ namespace {
         if (!validatePipelineCacheStats(triangleRenderer->pipelineCacheStats(), title)) {
             return EXIT_FAILURE;
         }
+        const std::uint64_t expectedBuffers =
+            meshKind == vke::BasicMeshKind::IndexedQuad ? 2ULL : 1ULL;
+        if (!validateBufferUploadStats(triangleRenderer->bufferStats(), expectedBuffers, title)) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << triangleSmokeRenderedPrefix(useDepth, meshKind) << extent.width << 'x'
@@ -1038,6 +1055,9 @@ namespace {
         if (!validatePipelineCacheStats(meshRenderer->pipelineCacheStats(), "Mesh 3D smoke")) {
             return EXIT_FAILURE;
         }
+        if (!validateBufferUploadStats(meshRenderer->bufferStats(), 2, "Mesh 3D smoke")) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered mesh 3D frames: " << extent.width << 'x' << extent.height << '\n';
@@ -1137,6 +1157,9 @@ namespace {
         }
 
         if (!validatePipelineCacheStats(renderer->pipelineCacheStats(), "Draw list smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateBufferUploadStats(renderer->bufferStats(), 2, "Draw list smoke")) {
             return EXIT_FAILURE;
         }
 
@@ -1241,6 +1264,9 @@ namespace {
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
                                              "Fullscreen texture smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
 

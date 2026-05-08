@@ -50,6 +50,7 @@ namespace vke {
         allocation_ = std::exchange(other.allocation_, nullptr);
         buffer_ = std::exchange(other.buffer_, VK_NULL_HANDLE);
         size_ = std::exchange(other.size_, VkDeviceSize{});
+        stats_ = std::exchange(other.stats_, VulkanBufferStats{});
         return *this;
     }
 
@@ -67,6 +68,7 @@ namespace vke {
         allocation_ = nullptr;
         buffer_ = VK_NULL_HANDLE;
         size_ = {};
+        stats_ = {};
     }
 
     Result<VulkanBuffer> VulkanBuffer::create(const VulkanBufferDesc& desc) {
@@ -90,6 +92,17 @@ namespace vke {
         buffer.device_ = desc.device;
         buffer.allocator_ = desc.allocator;
         buffer.size_ = desc.size;
+        buffer.stats_.created = 1;
+        buffer.stats_.allocatedBytes = desc.size;
+        switch (desc.memoryUsage) {
+        case VulkanBufferMemoryUsage::HostUpload:
+            buffer.stats_.hostUploadCreated = 1;
+            break;
+        case VulkanBufferMemoryUsage::DeviceLocal:
+        default:
+            buffer.stats_.deviceLocalCreated = 1;
+            break;
+        }
 
         const VkResult result = vmaCreateBuffer(desc.allocator, &bufferInfo, &allocationInfo,
                                                 &buffer.buffer_, &buffer.allocation_, nullptr);
@@ -122,6 +135,8 @@ namespace vke {
             return std::unexpected{vulkanError("Failed to flush Vulkan buffer memory", flushResult)};
         }
 
+        ++stats_.uploadCalls;
+        stats_.uploadedBytes += bytes.size_bytes();
         return {};
     }
 
@@ -131,6 +146,10 @@ namespace vke {
 
     VkDeviceSize VulkanBuffer::size() const {
         return size_;
+    }
+
+    VulkanBufferStats VulkanBuffer::stats() const {
+        return stats_;
     }
 
 } // namespace vke
