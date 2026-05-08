@@ -364,6 +364,13 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - `rendergraph` 不依赖 Vulkan、window 或外部 profiler。
 - benchmark 输出足以判断 P4 cache/lifetime 优化是否有效。
 
+当前状态：
+
+- `packages/profiling` 已提供 CPU scope、frame profile、counter 和 JSONL frame 输出。
+- `--bench-rendergraph` 已接入 CPU-only benchmark，支持 warmup、measured frames 和 output path。
+- RenderGraph compile result 已暴露 declared image count，benchmark 输出 pass/image/dependency/transition/culled/transient counters。
+- GPU timestamp query pool、editor panel、capture orchestration 和 profiler UI 仍保持暂缓。
+
 ## P4：Backend lifetime and caches
 
 目标：从“每帧现建 MVP 对象”过渡到可持续的后端资源生命周期。

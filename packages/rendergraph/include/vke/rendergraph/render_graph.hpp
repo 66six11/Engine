@@ -277,6 +277,7 @@ namespace vke {
 
     struct RenderGraphCompileResult {
         std::size_t declaredPassCount{};
+        std::size_t declaredImageCount{};
         std::vector<RenderGraphCompiledPass> passes;
         std::vector<RenderGraphPassDependency> dependencies;
         std::vector<RenderGraphCulledPass> culledPasses;
@@ -632,6 +633,7 @@ namespace vke {
 
             RenderGraphCompileResult result;
             result.declaredPassCount = passes_.size();
+            result.declaredImageCount = images_.size();
             result.passes.reserve(activePassCount(activePasses));
             result.dependencies = activeDependencies;
             result.culledPasses = makeCulledPasses(activePasses);

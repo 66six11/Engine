@@ -16,6 +16,7 @@ flowchart TD
     Core["engine/core"]
     Platform["engine/platform"]
     Window["packages/window-glfw"]
+    Profiling["packages/profiling"]
     RG["packages/rendergraph"]
     RhiVk["packages/rhi-vulkan<br/>vke::rhi_vulkan"]
     RhiVkRG["packages/rhi-vulkan<br/>vke::rhi_vulkan_rendergraph"]
@@ -37,6 +38,7 @@ flowchart TD
     RendererVk --> RhiVk
     RendererVk --> RhiVkRG
     App --> Core
+    App --> Profiling
     App --> Window
     App --> RG
     App --> RhiVk
@@ -51,6 +53,7 @@ flowchart TD
 - `vke::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
 - `renderer-basic-vulkan` 组合 RenderGraph、Vulkan frame callback 和 Vulkan adapter，承载当前 clear frame orchestration。
+- `profiling` 提供后端无关 CPU scope、frame profile 和 JSONL 输出；当前只由 sample-viewer benchmark 使用。
 - `sample-viewer` 负责窗口、context 和 smoke 命令入口；`--smoke-frame` 不再持有 clear pass 录制细节。
 
 ## 当前架构总览
@@ -67,6 +70,7 @@ flowchart TB
 
     subgraph AbstractLayer["Backend-agnostic model"]
         RenderGraph["rendergraph<br/>resources / passes / slots / params type<br/>command summary / schema validation"]
+        Profiling["profiling<br/>CPU scopes / frame samples / counters / JSONL"]
         RendererBasic["renderer_basic<br/>backend-neutral renderer contract"]
         ShaderSlang["shader-slang<br/>Slang metadata + reflection JSON"]
     end
@@ -81,6 +85,7 @@ flowchart TB
     end
 
     SampleViewer --> FrameCallback
+    SampleViewer --> Profiling
     SampleViewer --> RendererBasicVk
     RendererBasic --> RenderGraph
     RendererBasic --> ShaderSlang
@@ -111,6 +116,7 @@ flowchart TD
     VulkanSmoke["--smoke-vulkan"]
     FrameSmoke["--smoke-frame"]
     RGSmoke["--smoke-rendergraph"]
+    RGBench["--bench-rendergraph"]
     TransientSmoke["--smoke-transient"]
     DynamicSmoke["--smoke-dynamic-rendering"]
     TriangleSmoke["--smoke-triangle"]
@@ -134,6 +140,7 @@ flowchart TD
     Args --> VulkanSmoke
     Args --> FrameSmoke
     Args --> RGSmoke
+    Args --> RGBench
     Args --> TransientSmoke
     Args --> DynamicSmoke
     Args --> TriangleSmoke
@@ -216,6 +223,8 @@ flowchart TD
   再 transition 到 `ShaderRead(fragment)`，作为 sampled image + sampler + uniform buffer 绑定后由
   fullscreen dynamic-rendering pass 采样并写入 backbuffer。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译和 Vulkan adapter 字段验证入口。
+- `--bench-rendergraph` 是 CPU-only RenderGraph benchmark 入口；它使用 `packages/profiling`
+  记录 RecordGraph/CompileGraph scope 和 graph counters，输出 JSONL，不改变 smoke 语义。
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
   image view 和 binding 表，并录制非 backbuffer image transition / clear。
 - `--smoke-deferred-deletion` 已接入 P4 后端生命周期起点：验证 deferred deletion queue 的 epoch
@@ -596,9 +605,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR"]
-    Step1["下一步:<br/>RenderGraph validation depth<br/>culling diagnostics"]
-    Step2["之后:<br/>deferred destruction / resource caches"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark"]
+    Step1["下一步:<br/>deferred destruction / resource caches<br/>with counters"]
+    Step2["之后:<br/>GPU timestamp labels after frame resource lifetime stabilizes"]
     Step3["之后:<br/>multi-view / material expansion"]
 
     Now --> Step1 --> Step2 --> Step3

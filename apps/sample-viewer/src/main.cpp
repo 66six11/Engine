@@ -1,19 +1,25 @@
 ﻿#include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <numeric>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <vector>
 
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
+#include "vke/profiling/frame_profiler.hpp"
 #include "vke/renderer_basic/render_graph_schemas.hpp"
 #include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
 #include "vke/renderer_basic_vulkan/clear_frame.hpp"
@@ -31,6 +37,15 @@ namespace {
             args, [expected](const char* arg) { return arg != nullptr && arg == expected; });
     }
 
+    std::optional<std::string_view> argValue(std::span<char*> args, std::string_view option) {
+        for (std::size_t index = 1; index + 1 < args.size(); ++index) {
+            if (args[index] != nullptr && args[index] == option && args[index + 1] != nullptr) {
+                return std::string_view{args[index + 1]};
+            }
+        }
+        return std::nullopt;
+    }
+
     void printVersion() {
         std::cout << vke::kEngineName << ' ' << vke::kEngineVersion.major << '.'
                   << vke::kEngineVersion.minor << '.' << vke::kEngineVersion.patch << '\n';
@@ -38,11 +53,13 @@ namespace {
 
     void printUsage() {
         std::cout << "Usage: vke-sample-viewer [--help] [--version] [--smoke-window] "
-                     "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
-                     "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
-                     "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
-                     "[--smoke-mesh-3d] [--smoke-draw-list] "
-                     "[--smoke-descriptor-layout] [--smoke-fullscreen-texture]\n";
+                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
+                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
+                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
+                      "[--smoke-mesh-3d] [--smoke-draw-list] "
+                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                      "[--smoke-deferred-deletion] "
+                      "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
     bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
@@ -81,6 +98,274 @@ namespace {
             return "Rendered depth triangle frames: ";
         }
         return "Rendered triangle frames: ";
+    }
+
+    struct RenderGraphBenchOptions {
+        std::size_t warmupFrames{60};
+        std::size_t measuredFrames{600};
+        std::filesystem::path outputPath{"build/perf/rendergraph.jsonl"};
+    };
+
+    struct RenderGraphBenchStats {
+        double averageMilliseconds{};
+        double p50Milliseconds{};
+        double p95Milliseconds{};
+        double maxMilliseconds{};
+    };
+
+    bool parseSizeOption(std::span<char*> args, std::string_view option, std::size_t& value) {
+        const std::optional<std::string_view> text = argValue(args, option);
+        if (!text) {
+            return true;
+        }
+
+        std::size_t parsed{};
+        const char* begin = text->data();
+        const char* end = text->data() + text->size();
+        const auto parsedResult = std::from_chars(begin, end, parsed);
+        if (parsedResult.ec != std::errc{} || parsedResult.ptr != end || parsed == 0U) {
+            vke::logError("Invalid positive integer for " + std::string{option} + ".");
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    std::optional<RenderGraphBenchOptions> parseRenderGraphBenchOptions(std::span<char*> args) {
+        RenderGraphBenchOptions options;
+        if (!parseSizeOption(args, "--warmup", options.warmupFrames) ||
+            !parseSizeOption(args, "--frames", options.measuredFrames)) {
+            return std::nullopt;
+        }
+
+        if (const std::optional<std::string_view> output = argValue(args, "--output")) {
+            options.outputPath = std::filesystem::path{std::string{*output}};
+        }
+
+        return options;
+    }
+
+    vke::RenderGraph createBenchRenderGraph() {
+        vke::RenderGraph graph;
+        const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
+            .name = "BenchBackbuffer",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
+            .initialState = vke::RenderGraphImageState::Undefined,
+            .finalState = vke::RenderGraphImageState::Present,
+        });
+        const auto sceneColor = graph.createTransientImage(vke::RenderGraphImageDesc{
+            .name = "BenchSceneColor",
+            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
+        });
+        const auto depth = graph.createTransientImage(vke::RenderGraphImageDesc{
+            .name = "BenchDepth",
+            .format = vke::RenderGraphImageFormat::D32Sfloat,
+            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
+        });
+
+        graph.addPass("BenchClearScene", vke::kBasicDynamicClearPassType)
+            .setParams(vke::kBasicDynamicClearParamsType,
+                       vke::BasicTransferClearParams{.color = {0.02F, 0.08F, 0.10F, 1.0F}})
+            .writeColor("target", sceneColor)
+            .recordCommands([](vke::RenderGraphCommandList& commands) {
+                commands.clearColor("target", std::array{0.02F, 0.08F, 0.10F, 1.0F});
+            });
+        graph.addPass("BenchDepthDraw", vke::kBasicRasterDepthTrianglePassType)
+            .setParamsType(vke::kBasicRasterDepthTriangleParamsType)
+            .writeColor("target", sceneColor)
+            .writeDepth("depth", depth);
+        graph.addPass("BenchComposite", vke::kBasicRasterFullscreenPassType)
+            .setParams(vke::kBasicRasterFullscreenParamsType,
+                       vke::BasicFullscreenParams{.tint = {1.0F, 1.0F, 1.0F, 1.0F}})
+            .readTexture("source", sceneColor, vke::RenderGraphShaderStage::Fragment)
+            .writeColor("target", backbuffer)
+            .recordCommands([](vke::RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/BenchComposite", "Fragment")
+                    .setTexture("SourceTex", "source")
+                    .setVec4("Tint", std::array{1.0F, 1.0F, 1.0F, 1.0F})
+                    .drawFullscreenTriangle();
+            });
+
+        return graph;
+    }
+
+    [[nodiscard]] std::uint64_t renderGraphTransitionCount(
+        const vke::RenderGraphCompileResult& compiled) {
+        auto count = static_cast<std::uint64_t>(compiled.finalTransitions.size());
+        for (const vke::RenderGraphCompiledPass& pass : compiled.passes) {
+            count += static_cast<std::uint64_t>(pass.transitionsBefore.size());
+        }
+        return count;
+    }
+
+    void addRenderGraphBenchCounters(vke::FrameProfiler& profiler,
+                                     const vke::RenderGraphCompileResult& compiled) {
+        profiler.addCounter("declaredPassCount",
+                            static_cast<std::uint64_t>(compiled.declaredPassCount));
+        profiler.addCounter("declaredImageCount",
+                            static_cast<std::uint64_t>(compiled.declaredImageCount));
+        profiler.addCounter("compiledPassCount", static_cast<std::uint64_t>(compiled.passes.size()));
+        profiler.addCounter("dependencyEdgeCount",
+                            static_cast<std::uint64_t>(compiled.dependencies.size()));
+        profiler.addCounter("transitionCount", renderGraphTransitionCount(compiled));
+        profiler.addCounter("culledPassCount",
+                            static_cast<std::uint64_t>(compiled.culledPasses.size()));
+        profiler.addCounter("transientImageCount",
+                            static_cast<std::uint64_t>(compiled.transientImages.size()));
+    }
+
+    [[nodiscard]] std::optional<double> cpuScopeMilliseconds(const vke::FrameProfile& frame,
+                                                            std::string_view scopeName) {
+        for (const vke::CpuScopeSample& scope : frame.cpuScopes) {
+            if (scope.name == scopeName && scope.endNanoseconds >= scope.beginNanoseconds) {
+                const std::uint64_t elapsed = scope.endNanoseconds - scope.beginNanoseconds;
+                return static_cast<double>(elapsed) / 1'000'000.0;
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] RenderGraphBenchStats makeBenchStats(std::vector<double> values) {
+        if (values.empty()) {
+            return {};
+        }
+
+        const double average =
+            std::accumulate(values.begin(), values.end(), 0.0) / static_cast<double>(values.size());
+        std::ranges::sort(values);
+        const auto percentile = [&values](double value) {
+            const auto index =
+                static_cast<std::size_t>((static_cast<double>(values.size() - 1U) * value));
+            return values[index];
+        };
+
+        return RenderGraphBenchStats{
+            .averageMilliseconds = average,
+            .p50Milliseconds = percentile(0.50),
+            .p95Milliseconds = percentile(0.95),
+            .maxMilliseconds = values.back(),
+        };
+    }
+
+    void writeBenchSummary(std::ostream& output, const RenderGraphBenchOptions& options,
+                           const RenderGraphBenchStats& recordStats,
+                           const RenderGraphBenchStats& compileStats,
+                           const RenderGraphBenchStats& totalStats,
+                           const vke::FrameProfile& lastFrame) {
+        output << R"({"type":"summary","warmupFrames":)" << options.warmupFrames
+               << R"(,"measuredFrames":)" << options.measuredFrames << R"(,"outputPath":)";
+        vke::writeJsonString(output, options.outputPath.generic_string());
+        output << R"(,"recordGraph":{"averageMilliseconds":)"
+               << recordStats.averageMilliseconds
+               << R"(,"p50Milliseconds":)" << recordStats.p50Milliseconds
+               << R"(,"p95Milliseconds":)" << recordStats.p95Milliseconds
+               << R"(,"maxMilliseconds":)" << recordStats.maxMilliseconds << '}';
+        output << R"(,"compileGraph":{"averageMilliseconds":)"
+               << compileStats.averageMilliseconds
+               << R"(,"p50Milliseconds":)" << compileStats.p50Milliseconds
+               << R"(,"p95Milliseconds":)" << compileStats.p95Milliseconds
+               << R"(,"maxMilliseconds":)" << compileStats.maxMilliseconds << '}';
+        output << R"(,"total":{"averageMilliseconds":)" << totalStats.averageMilliseconds
+               << R"(,"p50Milliseconds":)" << totalStats.p50Milliseconds
+               << R"(,"p95Milliseconds":)" << totalStats.p95Milliseconds
+               << R"(,"maxMilliseconds":)" << totalStats.maxMilliseconds << '}';
+        output << R"(,"lastCounters":{)";
+        for (std::size_t index = 0; index < lastFrame.counters.size(); ++index) {
+            const vke::CounterSample& counter = lastFrame.counters[index];
+            if (index > 0) {
+                output << ',';
+            }
+            vke::writeJsonString(output, counter.name);
+            output << ':' << counter.value;
+        }
+        output << "}}\n";
+    }
+
+    int runBenchRenderGraph(std::span<char*> args) {
+        const std::optional<RenderGraphBenchOptions> parsedOptions =
+            parseRenderGraphBenchOptions(args);
+        if (!parsedOptions) {
+            return EXIT_FAILURE;
+        }
+
+        const RenderGraphBenchOptions& options = *parsedOptions;
+        const vke::RenderGraphSchemaRegistry schemas = vke::basicRenderGraphSchemaRegistry();
+        for (std::size_t frame = 0; frame < options.warmupFrames; ++frame) {
+            vke::RenderGraph graph = createBenchRenderGraph();
+            auto compiled = graph.compile(schemas);
+            if (!compiled) {
+                vke::logError(compiled.error().message);
+                return EXIT_FAILURE;
+            }
+        }
+
+        vke::FrameProfiler profiler{options.measuredFrames};
+        std::vector<double> recordMilliseconds;
+        std::vector<double> compileMilliseconds;
+        std::vector<double> totalMilliseconds;
+        recordMilliseconds.reserve(options.measuredFrames);
+        compileMilliseconds.reserve(options.measuredFrames);
+        totalMilliseconds.reserve(options.measuredFrames);
+
+        for (std::size_t frame = 0; frame < options.measuredFrames; ++frame) {
+            profiler.beginFrame(vke::FrameProfileInfo{
+                .frameIndex = static_cast<std::uint64_t>(frame),
+                .target = vke::ProfileTarget::Bench,
+                .viewName = "RenderGraphBench",
+            });
+
+            vke::RenderGraph graph;
+            const vke::CpuScopeHandle recordScope = profiler.beginCpuScope("RecordGraph");
+            graph = createBenchRenderGraph();
+            profiler.endCpuScope(recordScope);
+
+            const vke::CpuScopeHandle compileScope = profiler.beginCpuScope("CompileGraph");
+            auto compiled = graph.compile(schemas);
+            profiler.endCpuScope(compileScope);
+            if (!compiled) {
+                vke::logError(compiled.error().message);
+                return EXIT_FAILURE;
+            }
+
+            addRenderGraphBenchCounters(profiler, *compiled);
+            profiler.endFrame();
+
+            const vke::FrameProfile& profile = profiler.lastFrame();
+            const double recordMs = cpuScopeMilliseconds(profile, "RecordGraph").value_or(0.0);
+            const double compileMs = cpuScopeMilliseconds(profile, "CompileGraph").value_or(0.0);
+            recordMilliseconds.push_back(recordMs);
+            compileMilliseconds.push_back(compileMs);
+            totalMilliseconds.push_back(recordMs + compileMs);
+        }
+
+        const std::filesystem::path parentPath = options.outputPath.parent_path();
+        if (!parentPath.empty()) {
+            std::filesystem::create_directories(parentPath);
+        }
+
+        std::ofstream output{options.outputPath};
+        if (!output) {
+            vke::logError("Failed to open render graph benchmark output file.");
+            return EXIT_FAILURE;
+        }
+
+        const RenderGraphBenchStats recordStats = makeBenchStats(recordMilliseconds);
+        const RenderGraphBenchStats compileStats = makeBenchStats(compileMilliseconds);
+        const RenderGraphBenchStats totalStats = makeBenchStats(totalMilliseconds);
+        writeBenchSummary(output, options, recordStats, compileStats, totalStats,
+                          profiler.lastFrame());
+        vke::writeFrameProfileJsonl(output, profiler.frames());
+
+        std::cout << "RenderGraph bench frames: " << options.measuredFrames
+                  << ", record avg ms: " << recordStats.averageMilliseconds
+                  << ", compile avg ms: " << compileStats.averageMilliseconds
+                  << ", total p95 ms: " << totalStats.p95Milliseconds
+                  << ", output: " << options.outputPath.generic_string() << '\n';
+
+        return EXIT_SUCCESS;
     }
 
     int runSmokeDeferredDeletion() {
@@ -2318,6 +2603,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-rendergraph")) {
             return runSmokeRenderGraph();
+        }
+
+        if (hasArg(args, "--bench-rendergraph")) {
+            return runBenchRenderGraph(args);
         }
 
         if (hasArg(args, "--smoke-transient")) {

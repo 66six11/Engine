@@ -14,6 +14,7 @@ runtime app、editor 和后续工具按需引入能力。
 - `engine/core`：日志、错误类型、文件系统辅助、断言、构建配置。
 - `engine/platform`：平台抽象接口和最小 OS 集成。
 - `packages/window-glfw`：GLFW window、输入轮询、Vulkan surface 创建。
+- `packages/profiling`：后端无关 CPU scope、frame profile、counter 和 benchmark 输出。
 - `packages/rhi-vulkan`：Vulkan instance、physical device 选择、logical device、queue、swapchain、
   allocator、command pool、descriptor、pipeline、同步原语。
 - `packages/rendergraph`：graph builder、resource registry、pass declaration、graph compiler、

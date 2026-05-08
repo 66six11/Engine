@@ -272,6 +272,13 @@ P3.5 完成标准：
 - 文档记录 CPU/GPU/editor 面板分层边界。
 - 没有新增 editor UI、GPU query pool 或外部 capture runtime 依赖。
 
+当前状态：
+
+- `packages/profiling` 已接入为 header-only backend-agnostic 包。
+- `--bench-rendergraph` 已接入 sample-viewer，默认输出 `build/perf/rendergraph.jsonl`。
+- 当前只记录 CPU RecordGraph/CompileGraph scope、frame samples 和 RenderGraph compile counters。
+- GPU timestamp、debug labels、editor panel 和 capture 自动化仍不属于第一版。
+
 P4 profiling 扩展完成标准：
 
 - deferred deletion、descriptor allocator、pipeline cache、transient pool 均输出基础 counters。

@@ -9,6 +9,7 @@ add_dependencies(vke-sample-viewer vke-renderer-basic-shaders)
 target_link_libraries(vke-sample-viewer
     PRIVATE
         vke::core
+        vke::profiling
         vke::rendergraph
         vke::rhi_vulkan
         vke::rhi_vulkan_rendergraph
