@@ -18,6 +18,7 @@
 | Vulkan pipeline cache refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreatePipelineCache.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateGraphicsPipelines.html | `VkPipelineCache` 可传给 graphics pipeline creation，让实现复用 pipeline 创建数据。 | RHI 提供 `VulkanPipelineCache` RAII wrapper；renderer 仍保留引擎侧 key/counter，smoke 验证每帧复用而不重建 pipeline。 |
 | Vulkan descriptor pool/allocation refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateDescriptorPool.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkAllocateDescriptorSets.html | descriptor set 从 descriptor pool 分配，pool 的 `maxSets` 与 `pPoolSizes` 定义容量边界，分配失败通过 `VkResult` 返回。 | RHI 先提供单 pool `VulkanDescriptorAllocator` facade 和 counters；后续再演进到 per-frame/per-flight arena。 |
 | Vulkan buffer creation refpage: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateBuffer.html | buffer 是显式创建的 Vulkan object，创建失败必须通过 `VkResult` 传播；usage/size 是后续绑定和命令合法性的基础。 | `VulkanBuffer` 继续作为 buffer + VMA allocation facade，并记录 create/upload byte counters 供 smoke 验证。 |
+| Vulkan debug utils refpages: https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_debug_utils.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBeginDebugUtilsLabelEXT.html | `VK_EXT_debug_utils` 是 instance extension，可给 command buffer 区间打 label，外部 capture/profiler 能按 label 组织命令。 | context 加载 command label 函数，frame loop 提供 RAII label scope；renderer-basic-vulkan 以 RenderGraph pass name 标记 GPU command 区间。 |
 | VMA usage patterns: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html | image/buffer allocation 应集中到 allocator facade，由用途决定 memory type。 | transient resource pool 使用 VMA，key 包含 format/extent/usage/aspect/sample count。 |
 | Unity URP Render Graph introduction: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | graph 每帧 record、compile、execute；pass 显式声明资源，graph 自动处理生命周期、同步和 pass culling。 | 保持 RecordGraph、CompileGraph、PrepareBackend、RecordCommands 四段式。 |
 | Unity URP custom render pass: https://docs.unity3d.com/Manual/urp/render-graph-write-render-pass.html | pass data 和 render function 分离，builder 显式声明资源读写。 | `PassSchema`、typed params、named slots 和 command summary 继续作为脚本/工具前端的共同语义。 |
@@ -424,12 +425,18 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
   - renderer-basic-vulkan 现在输出 pipeline create/reuse counter；triangle/depth/mesh/mesh3D/draw-list/fullscreen
     smoke 会验证同一 renderer 三帧内只创建一次 pipeline，后续复用。
   - `VkPipelineCache` 不替代引擎 key；跨 renderer/global pipeline cache 和磁盘持久化仍是后续任务。
+- `DebugLabels`
+  - 当前已接入 `VK_EXT_debug_utils` command label 函数加载、`VulkanDebugLabelScope` 和 frame-loop label counters。
+  - renderer-basic-vulkan 的 RenderGraph pass callback 现在用 pass name 标记 command buffer 区间；
+    frame/dynamic/transient/triangle/mesh/draw-list/fullscreen smoke 会验证 label begin/end 配对。
+  - timestamp query pool、延迟读回和 per-pass GPU duration 仍是下一步，不和 debug label helper 混在同一提交里。
 
 验收：
 
 - 多帧运行 fullscreen/depth/draw-list 时不重复创建长期 pipeline/layout。
 - descriptor layout/fullscreen texture smoke 能验证 descriptor allocator counter。
 - triangle/mesh/fullscreen smoke 能验证 buffer upload counter。
+- frame/renderer smoke 能验证 debug label begin/end counter 配对。
 - resize 后资源销毁路径无 validation warning。
 - `--smoke-resize`、`--smoke-fullscreen-texture`、`--smoke-depth-triangle`、`--smoke-draw-list` 通过。
 
@@ -563,7 +570,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 | 9 | `feat(rhi-vulkan): add transient image pool` | transient image reuse，不做 alias memory，并输出 reuse/create counters | transient/depth/fullscreen smoke |
 | 10 | `feat(rhi-vulkan): add descriptor allocator counters` | 单 pool descriptor allocator facade、分配计数和 smoke 验证 | descriptor-layout/fullscreen smoke |
 | 11 | `feat(rhi-vulkan): add buffer upload counters` | `VulkanBuffer` create/upload byte counters 和 renderer 聚合验证 | triangle/mesh/draw-list/fullscreen smoke |
-| 12 | `feat(rhi-vulkan): add gpu profiling labels` | Vulkan timestamp query delayed readback 和 debug utils labels | fullscreen/depth/draw-list smoke, capture sanity check |
+| 12 | `feat(rhi-vulkan): add gpu debug labels` | debug utils command label helper、RenderGraph pass labels 和 label counters | frame/transient/triangle/draw-list/fullscreen smoke |
+| 13 | `feat(rhi-vulkan): add gpu timestamp queries` | Vulkan timestamp query delayed readback 和 per-pass duration counters | fullscreen/depth/draw-list smoke, capture sanity check |
 
 ## 每阶段 Definition of Done
 

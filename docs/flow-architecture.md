@@ -208,6 +208,7 @@ flowchart TD
 - `--smoke-vulkan` 已接入 Vulkan context/device 创建。
 - `--smoke-frame` 已接入 swapchain acquire、RenderGraph-driven clear、present。
 - `--smoke-dynamic-rendering` 已接入 swapchain acquire、RenderGraph color write、dynamic rendering clear、present。
+  frame/dynamic/transient/renderer smoke 会验证 Vulkan debug label begin/end counters 配对。
 - `--smoke-triangle` 已接入 `BasicTriangleRenderer`、dynamic-rendering graphics pipeline、RenderGraph color write、draw、present。
 - `--smoke-depth-triangle` 已接入 `BasicTriangleRenderer::recordFrameWithDepth()`、transient depth image、
   dynamic-rendering depth attachment、depth-enabled pipeline 和 present。
@@ -269,7 +270,7 @@ sequenceDiagram
     FrameLoop->>FrameLoop: retire completed deferred deletions
     FrameLoop->>Vulkan: vkAcquireNextImageKHR
     FrameLoop->>Vulkan: vkBeginCommandBuffer
-    FrameLoop->>RecordHook: invoke with record context
+    FrameLoop->>RecordHook: begin debug label "VulkanFrame" and invoke record context
     RecordHook->>RendererVk: recordFrame
     RendererVk->>RG: import/create resources, add passes, record command summary
     RendererVk->>RG: compile(schema registry)
@@ -278,7 +279,7 @@ sequenceDiagram
     RecordCtx->>FrameLoop: enqueue deferred callbacks
     RendererVk->>Adapter: recordRenderGraphTransitions(compiled transitions, bindings)
     Adapter->>Vulkan: vkCmdPipelineBarrier2
-    RendererVk->>Vulkan: vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw
+    RendererVk->>Vulkan: debug-label pass regions + vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw
     RendererVk-->>RecordHook: VulkanFrameRecordResult(waitStageMask)
     RecordHook-->>FrameLoop: VulkanFrameRecordResult(waitStageMask)
     FrameLoop->>Vulkan: vkEndCommandBuffer
@@ -625,7 +626,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark"]
-    Step1["下一步:<br/>GPU timestamp labels after frame resource lifetime stabilizes"]
+    Step1["下一步:<br/>GPU timestamp query delayed readback"]
     Step2["之后:<br/>multi-view / material expansion"]
 
     Now --> Step1 --> Step2

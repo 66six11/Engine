@@ -114,6 +114,46 @@ namespace vke {
             });
         }
 
+        bool wantsDebugLabels(VulkanDebugLabelMode mode) {
+            return mode != VulkanDebugLabelMode::Disabled;
+        }
+
+        Result<void>
+        validateRequiredInstanceExtensions(std::span<const VkExtensionProperties> available,
+                                           std::span<const std::string> required) {
+            for (const std::string& extension : required) {
+                if (!hasExtension(available, extension)) {
+                    return std::unexpected{
+                        vulkanError("Required Vulkan instance extension is not available: " +
+                                    extension)};
+                }
+            }
+
+            return {};
+        }
+
+        Result<bool> shouldEnableDebugUtils(const VulkanContextDesc& desc,
+                                            bool validationAvailable,
+                                            bool debugUtilsAvailable) {
+            if (desc.enableValidation && !validationAvailable) {
+                return std::unexpected{
+                    vulkanError("Requested Vulkan validation layer is not available")};
+            }
+
+            if (desc.enableValidation && !debugUtilsAvailable) {
+                return std::unexpected{
+                    vulkanError("Requested VK_EXT_debug_utils is not available")};
+            }
+
+            if (desc.debugLabels == VulkanDebugLabelMode::Required && !debugUtilsAvailable) {
+                return std::unexpected{
+                    vulkanError("Required Vulkan debug labels need VK_EXT_debug_utils")};
+            }
+
+            return (desc.enableValidation || wantsDebugLabels(desc.debugLabels)) &&
+                   debugUtilsAvailable;
+        }
+
         VKAPI_ATTR VkBool32 VKAPI_CALL
         debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                       [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -177,6 +217,48 @@ namespace vke {
             if (function != nullptr) {
                 function(instance, messenger, nullptr);
             }
+        }
+
+        Result<VulkanDebugLabelFunctions> loadDebugLabelFunctions(VkInstance instance) {
+            // Vulkan extension entry points are discovered as generic function pointers by design.
+            const auto beginCommandLabel =
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
+                    vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT"));
+            const auto endCommandLabel =
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
+                    vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT"));
+
+            if (beginCommandLabel == nullptr || endCommandLabel == nullptr) {
+                return std::unexpected{
+                    vulkanError("Failed to load Vulkan debug utils command label functions")};
+            }
+
+            return VulkanDebugLabelFunctions{
+                .beginCommandLabel = beginCommandLabel,
+                .endCommandLabel = endCommandLabel,
+            };
+        }
+
+        Result<std::optional<VulkanDebugLabelFunctions>>
+        loadRequestedDebugLabelFunctions(VkInstance instance, VulkanDebugLabelMode mode,
+                                         bool debugUtilsAvailable) {
+            if (!wantsDebugLabels(mode) || !debugUtilsAvailable) {
+                return std::optional<VulkanDebugLabelFunctions>{};
+            }
+
+            auto debugLabels = loadDebugLabelFunctions(instance);
+            if (debugLabels) {
+                return std::optional<VulkanDebugLabelFunctions>{*debugLabels};
+            }
+
+            if (mode == VulkanDebugLabelMode::Required) {
+                return std::unexpected{std::move(debugLabels.error())};
+            }
+
+            logWarning(debugLabels.error().message);
+            return std::optional<VulkanDebugLabelFunctions>{};
         }
 
         struct QueueSelection {
@@ -320,7 +402,7 @@ namespace vke {
 
         Result<InstanceCreateResult> createInstance(const VulkanContextDesc& desc,
                                                     bool validationAvailable,
-                                                    bool debugUtilsAvailable) {
+                                                    bool enableDebugUtils) {
             std::uint32_t loaderVersion = VK_API_VERSION_1_0;
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             const auto enumerateInstanceVersion = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
@@ -345,7 +427,7 @@ namespace vke {
                 desc.requiredInstanceExtensions.end(),
             };
 
-            if (desc.enableValidation && debugUtilsAvailable) {
+            if (enableDebugUtils) {
                 extensions.emplace_back(kDebugUtilsExtension);
             }
 
@@ -523,6 +605,7 @@ namespace vke {
         graphicsQueueFamily_ = std::exchange(other.graphicsQueueFamily_, 0);
         allocator_ = std::exchange(other.allocator_, nullptr);
         deviceInfo_ = std::move(other.deviceInfo_);
+        debugLabelFunctions_ = std::exchange(other.debugLabelFunctions_, {});
         return *this;
     }
 
@@ -560,6 +643,7 @@ namespace vke {
         graphicsQueue_ = VK_NULL_HANDLE;
         graphicsQueueFamily_ = 0;
         allocator_ = nullptr;
+        debugLabelFunctions_ = {};
     }
 
     Result<VulkanContext> VulkanContext::create(const VulkanContextDesc& desc) {
@@ -574,23 +658,20 @@ namespace vke {
         }
 
         const bool validationAvailable = hasLayer(*layers, kValidationLayer);
-        if (desc.enableValidation && !validationAvailable) {
-            return std::unexpected{vulkanError("Requested Vulkan validation layer is not available")};
-        }
-
         const bool debugUtilsAvailable = hasExtension(*extensions, kDebugUtilsExtension);
-        if (desc.enableValidation && !debugUtilsAvailable) {
-            return std::unexpected{vulkanError("Requested VK_EXT_debug_utils is not available")};
+        auto debugUtilsEnabled =
+            shouldEnableDebugUtils(desc, validationAvailable, debugUtilsAvailable);
+        if (!debugUtilsEnabled) {
+            return std::unexpected{std::move(debugUtilsEnabled.error())};
         }
 
-        for (const std::string& extension : desc.requiredInstanceExtensions) {
-            if (!hasExtension(*extensions, extension)) {
-                return std::unexpected{
-                    vulkanError("Required Vulkan instance extension is not available: " + extension)};
-            }
+        auto requiredExtensions =
+            validateRequiredInstanceExtensions(*extensions, desc.requiredInstanceExtensions);
+        if (!requiredExtensions) {
+            return std::unexpected{std::move(requiredExtensions.error())};
         }
 
-        auto instance = createInstance(desc, validationAvailable, debugUtilsAvailable);
+        auto instance = createInstance(desc, validationAvailable, *debugUtilsEnabled);
         if (!instance) {
             return std::unexpected{std::move(instance.error())};
         }
@@ -606,6 +687,15 @@ namespace vke {
             if (result != VK_SUCCESS) {
                 return std::unexpected{vulkanError("Failed to create Vulkan debug messenger", result)};
             }
+        }
+
+        auto debugLabels = loadRequestedDebugLabelFunctions(context.instance_, desc.debugLabels,
+                                                           debugUtilsAvailable);
+        if (!debugLabels) {
+            return std::unexpected{std::move(debugLabels.error())};
+        }
+        if (*debugLabels) {
+            context.debugLabelFunctions_ = **debugLabels;
         }
 
         if (desc.createSurface) {
@@ -735,6 +825,10 @@ namespace vke {
 
     const VulkanDeviceInfo& VulkanContext::deviceInfo() const {
         return deviceInfo_;
+    }
+
+    VulkanDebugLabelFunctions VulkanContext::debugLabelFunctions() const {
+        return debugLabelFunctions_;
     }
 
 } // namespace vke

@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "vke/rhi_vulkan/vulkan_error.hpp"
@@ -501,6 +502,8 @@ namespace vke {
         renderFinished_ = std::exchange(other.renderFinished_, {});
         inFlight_ = std::exchange(other.inFlight_, VK_NULL_HANDLE);
         deferredDeletionQueue_ = std::move(other.deferredDeletionQueue_);
+        debugLabelFunctions_ = std::exchange(other.debugLabelFunctions_, {});
+        debugLabelStats_ = std::exchange(other.debugLabelStats_, {});
         submittedFrameEpoch_ = std::exchange(other.submittedFrameEpoch_, 0);
         completedFrameEpoch_ = std::exchange(other.completedFrameEpoch_, 0);
         clearColor_ = other.clearColor_;
@@ -517,6 +520,55 @@ namespace vke {
         }
 
         return frameLoop->deferDeletion(std::move(callback));
+    }
+
+    bool VulkanFrameRecordContext::beginDebugLabel(std::string_view name) const {
+        if (frameLoop == nullptr) {
+            return false;
+        }
+
+        return frameLoop->beginDebugLabel(commandBuffer, name);
+    }
+
+    void VulkanFrameRecordContext::endDebugLabel() const {
+        if (frameLoop != nullptr) {
+            frameLoop->endDebugLabel(commandBuffer);
+        }
+    }
+
+    VulkanDebugLabelScope::VulkanDebugLabelScope(VulkanDebugLabelScope&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanDebugLabelScope&
+    VulkanDebugLabelScope::operator=(VulkanDebugLabelScope&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        if (active_ && frameLoop_ != nullptr) {
+            frameLoop_->endDebugLabel(commandBuffer_);
+        }
+
+        frameLoop_ = std::exchange(other.frameLoop_, nullptr);
+        commandBuffer_ = std::exchange(other.commandBuffer_, VK_NULL_HANDLE);
+        active_ = std::exchange(other.active_, false);
+        return *this;
+    }
+
+    VulkanDebugLabelScope::~VulkanDebugLabelScope() {
+        if (active_ && frameLoop_ != nullptr) {
+            frameLoop_->endDebugLabel(commandBuffer_);
+        }
+    }
+
+    VulkanDebugLabelScope
+    VulkanDebugLabelScope::begin(const VulkanFrameRecordContext& context, std::string_view name) {
+        VulkanDebugLabelScope scope;
+        scope.frameLoop_ = context.frameLoop;
+        scope.commandBuffer_ = context.commandBuffer;
+        scope.active_ = context.beginDebugLabel(name);
+        return scope;
     }
 
     void VulkanFrameLoop::destroy() {
@@ -561,6 +613,8 @@ namespace vke {
         renderFinished_.clear();
         inFlight_ = VK_NULL_HANDLE;
         deferredDeletionQueue_ = {};
+        debugLabelFunctions_ = {};
+        debugLabelStats_ = {};
         submittedFrameEpoch_ = 0;
         completedFrameEpoch_ = 0;
     }
@@ -578,6 +632,10 @@ namespace vke {
         frameLoop.surface_ = context.surface();
         frameLoop.graphicsQueue_ = context.graphicsQueue();
         frameLoop.graphicsQueueFamily_ = context.graphicsQueueFamily();
+        frameLoop.debugLabelFunctions_ = context.debugLabelFunctions();
+        frameLoop.debugLabelStats_.available =
+            frameLoop.debugLabelFunctions_.beginCommandLabel != nullptr &&
+            frameLoop.debugLabelFunctions_.endCommandLabel != nullptr;
         frameLoop.clearColor_ = desc.clearColor;
         frameLoop.targetExtent_ = VkExtent2D{
             .width = desc.width,
@@ -648,6 +706,39 @@ namespace vke {
         const std::uint64_t retireEpoch =
             std::max(submittedFrameEpoch_, completedFrameEpoch_ + 1);
         return deferredDeletionQueue_.enqueue(retireEpoch, std::move(callback));
+    }
+
+    bool VulkanFrameLoop::beginDebugLabel(VkCommandBuffer commandBuffer, std::string_view name) {
+        if (commandBuffer == VK_NULL_HANDLE ||
+            debugLabelFunctions_.beginCommandLabel == nullptr ||
+            debugLabelFunctions_.endCommandLabel == nullptr) {
+            return false;
+        }
+
+        const std::string labelName{name};
+        VkDebugUtilsLabelEXT label{};
+        label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+        label.pLabelName = labelName.c_str();
+        label.color[0] = 0.20F;
+        label.color[1] = 0.45F;
+        label.color[2] = 0.95F;
+        label.color[3] = 1.00F;
+
+        debugLabelFunctions_.beginCommandLabel(commandBuffer, &label);
+        ++debugLabelStats_.regionsBegun;
+        debugLabelStats_.available = true;
+        return true;
+    }
+
+    void VulkanFrameLoop::endDebugLabel(VkCommandBuffer commandBuffer) {
+        if (commandBuffer == VK_NULL_HANDLE ||
+            debugLabelFunctions_.endCommandLabel == nullptr) {
+            return;
+        }
+
+        debugLabelFunctions_.endCommandLabel(commandBuffer);
+        ++debugLabelStats_.regionsEnded;
+        debugLabelStats_.available = true;
     }
 
     std::uint64_t VulkanFrameLoop::retireCompletedFrameWork() {
@@ -943,7 +1034,7 @@ namespace vke {
             return std::unexpected{vulkanError("Failed to begin Vulkan command buffer", result)};
         }
 
-        auto recorded = record(VulkanFrameRecordContext{
+        const VulkanFrameRecordContext context{
             .commandBuffer = commandBuffer_,
             .image = images_[imageIndex],
             .imageView = imageViews_[imageIndex],
@@ -952,7 +1043,13 @@ namespace vke {
             .extent = extent_,
             .clearColor = clearColor_,
             .frameLoop = this,
-        });
+        };
+
+        auto recorded = [&]() -> Result<VulkanFrameRecordResult> {
+            [[maybe_unused]] const auto debugLabel =
+                VulkanDebugLabelScope::begin(context, "VulkanFrame");
+            return record(context);
+        }();
         if (!recorded) {
             [[maybe_unused]] const VkResult resetAfterRecordFailure =
                 vkResetCommandBuffer(commandBuffer_, 0);
@@ -1020,6 +1117,13 @@ namespace vke {
 
     VulkanDeferredDeletionStats VulkanFrameLoop::deferredDeletionStats() const {
         return deferredDeletionQueue_.stats();
+    }
+
+    VulkanDebugLabelStats VulkanFrameLoop::debugLabelStats() const {
+        VulkanDebugLabelStats stats = debugLabelStats_;
+        stats.available = debugLabelFunctions_.beginCommandLabel != nullptr &&
+                          debugLabelFunctions_.endCommandLabel != nullptr;
+        return stats;
     }
 
     std::uint64_t VulkanFrameLoop::submittedFrameEpoch() const {

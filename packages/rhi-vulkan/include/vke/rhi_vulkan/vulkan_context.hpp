@@ -17,11 +17,18 @@ namespace vke {
 
     using VulkanSurfaceFactory = std::function<Result<VkSurfaceKHR>(VkInstance)>;
 
+    enum class VulkanDebugLabelMode {
+        Disabled,
+        Optional,
+        Required,
+    };
+
     struct VulkanContextDesc {
         std::string applicationName{"VkEngine"};
         std::span<const std::string> requiredInstanceExtensions{};
         VulkanSurfaceFactory createSurface{};
         bool enableValidation{true};
+        VulkanDebugLabelMode debugLabels{VulkanDebugLabelMode::Optional};
         bool requireVulkan14{true};
     };
 
@@ -31,6 +38,11 @@ namespace vke {
         std::uint32_t deviceId{};
         std::uint32_t apiVersion{};
         std::uint32_t graphicsQueueFamily{};
+    };
+
+    struct VulkanDebugLabelFunctions {
+        PFN_vkCmdBeginDebugUtilsLabelEXT beginCommandLabel{};
+        PFN_vkCmdEndDebugUtilsLabelEXT endCommandLabel{};
     };
 
     class VulkanContext {
@@ -53,6 +65,7 @@ namespace vke {
         [[nodiscard]] std::uint32_t graphicsQueueFamily() const;
         [[nodiscard]] VmaAllocator allocator() const;
         [[nodiscard]] const VulkanDeviceInfo& deviceInfo() const;
+        [[nodiscard]] VulkanDebugLabelFunctions debugLabelFunctions() const;
 
     private:
         void destroy();
@@ -67,6 +80,7 @@ namespace vke {
         std::uint32_t graphicsQueueFamily_{0};
         VmaAllocator allocator_{nullptr};
         VulkanDeviceInfo deviceInfo_{};
+        VulkanDebugLabelFunctions debugLabelFunctions_{};
     };
 
 } // namespace vke

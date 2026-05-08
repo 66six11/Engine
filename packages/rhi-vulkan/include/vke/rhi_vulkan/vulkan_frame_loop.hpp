@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string_view>
 #include <vector>
 
 #include "vke/core/result.hpp"
@@ -38,6 +39,32 @@ namespace vke {
         VulkanFrameLoop* frameLoop{};
 
         [[nodiscard]] bool deferDeletion(VulkanDeferredDeletionCallback callback) const;
+        [[nodiscard]] bool beginDebugLabel(std::string_view name) const;
+        void endDebugLabel() const;
+    };
+
+    struct VulkanDebugLabelStats {
+        std::uint64_t regionsBegun{};
+        std::uint64_t regionsEnded{};
+        bool available{};
+    };
+
+    class VulkanDebugLabelScope {
+    public:
+        VulkanDebugLabelScope() = default;
+        VulkanDebugLabelScope(const VulkanDebugLabelScope&) = delete;
+        VulkanDebugLabelScope& operator=(const VulkanDebugLabelScope&) = delete;
+        VulkanDebugLabelScope(VulkanDebugLabelScope&& other) noexcept;
+        VulkanDebugLabelScope& operator=(VulkanDebugLabelScope&& other) noexcept;
+        ~VulkanDebugLabelScope();
+
+        [[nodiscard]] static VulkanDebugLabelScope begin(const VulkanFrameRecordContext& context,
+                                                         std::string_view name);
+
+    private:
+        VulkanFrameLoop* frameLoop_{};
+        VkCommandBuffer commandBuffer_{VK_NULL_HANDLE};
+        bool active_{};
     };
 
     struct VulkanFrameRecordResult {
@@ -69,10 +96,14 @@ namespace vke {
         [[nodiscard]] VkFormat format() const;
         [[nodiscard]] VkExtent2D extent() const;
         [[nodiscard]] VulkanDeferredDeletionStats deferredDeletionStats() const;
+        [[nodiscard]] VulkanDebugLabelStats debugLabelStats() const;
         [[nodiscard]] std::uint64_t submittedFrameEpoch() const;
         [[nodiscard]] std::uint64_t completedFrameEpoch() const;
 
     private:
+        friend struct VulkanFrameRecordContext;
+        friend class VulkanDebugLabelScope;
+
         struct AcquiredImage {
             std::uint32_t imageIndex{0};
             bool suboptimal{false};
@@ -96,6 +127,8 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrameCommands(std::uint32_t imageIndex, const VulkanFrameRecordCallback& record);
         [[nodiscard]] std::uint64_t retireCompletedFrameWork();
+        [[nodiscard]] bool beginDebugLabel(VkCommandBuffer commandBuffer, std::string_view name);
+        void endDebugLabel(VkCommandBuffer commandBuffer);
 
         VkDevice device_{VK_NULL_HANDLE};
         VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
@@ -116,6 +149,8 @@ namespace vke {
         std::vector<VkSemaphore> renderFinished_;
         VkFence inFlight_{VK_NULL_HANDLE};
         VulkanDeferredDeletionQueue deferredDeletionQueue_;
+        VulkanDebugLabelFunctions debugLabelFunctions_{};
+        VulkanDebugLabelStats debugLabelStats_{};
         std::uint64_t submittedFrameEpoch_{};
         std::uint64_t completedFrameEpoch_{};
         VkClearColorValue clearColor_{{0.02F, 0.04F, 0.08F, 1.0F}};

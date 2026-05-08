@@ -203,6 +203,7 @@ P4 接入 caches 时，同步增加 counters，避免优化无法量化：
 | Buffer/upload lifetime | buffers created、host-upload/device-local count、allocated bytes、upload calls、uploaded bytes |
 | Pipeline layout cache | lookup count、hit count、miss count、create count |
 | Pipeline cache | lookup count、hit count、miss count、create milliseconds |
+| GPU debug labels | label regions begun、label regions ended、debug utils availability |
 | Transient resource pool | image request count、reuse count、create count、live bytes estimate |
 | RenderGraph compiler | pass/resource/dependency/transition/culled counts、compile milliseconds |
 

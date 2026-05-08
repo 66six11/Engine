@@ -32,6 +32,9 @@
 
 namespace {
 
+    constexpr vke::VulkanDebugLabelMode kSmokeDebugLabels =
+        vke::VulkanDebugLabelMode::Required;
+
     bool hasArg(std::span<char*> args, std::string_view expected) {
         return std::ranges::any_of(
             args, [expected](const char* arg) { return arg != nullptr && arg == expected; });
@@ -127,6 +130,16 @@ namespace {
             stats.uploadedBytes == 0 || stats.uploadedBytes > stats.allocatedBytes) {
             vke::logError(std::string{context} +
                           " did not record the expected buffer upload counters.");
+            return false;
+        }
+        return true;
+    }
+
+    bool validateDebugLabelStats(vke::VulkanDebugLabelStats stats, std::string_view context) {
+        if (!stats.available || stats.regionsBegun == 0 ||
+            stats.regionsBegun != stats.regionsEnded) {
+            vke::logError(std::string{context} +
+                          " did not record balanced Vulkan debug labels.");
             return false;
         }
         return true;
@@ -510,6 +523,8 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .enableValidation = false,
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(desc);
@@ -551,6 +566,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -589,6 +605,10 @@ namespace {
 
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(16ms);
+        }
+
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), title)) {
+            return EXIT_FAILURE;
         }
 
         const VkExtent2D extent = frameLoop->extent();
@@ -634,6 +654,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -694,6 +715,9 @@ namespace {
             vke::logError("Transient smoke did not reuse a retired transient Vulkan image.");
             return EXIT_FAILURE;
         }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Transient smoke")) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered transient frames: " << extent.width << 'x' << extent.height << '\n';
@@ -728,6 +752,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -836,6 +861,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -903,6 +929,9 @@ namespace {
         if (!validateBufferUploadStats(triangleRenderer->bufferStats(), expectedBuffers, title)) {
             return EXIT_FAILURE;
         }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), title)) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << triangleSmokeRenderedPrefix(useDepth, meshKind) << extent.width << 'x'
@@ -945,6 +974,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -997,6 +1027,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -1058,6 +1089,9 @@ namespace {
         if (!validateBufferUploadStats(meshRenderer->bufferStats(), 2, "Mesh 3D smoke")) {
             return EXIT_FAILURE;
         }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Mesh 3D smoke")) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered mesh 3D frames: " << extent.width << 'x' << extent.height << '\n';
@@ -1099,6 +1133,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -1162,6 +1197,9 @@ namespace {
         if (!validateBufferUploadStats(renderer->bufferStats(), 2, "Draw list smoke")) {
             return EXIT_FAILURE;
         }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Draw list smoke")) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered draw list frames: " << extent.width << 'x' << extent.height << '\n';
@@ -1203,6 +1241,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return vke::glfwCreateVulkanSurface(*window, instance);
                 },
+            .debugLabels = kSmokeDebugLabels,
         };
 
         auto context = vke::VulkanContext::create(contextDesc);
@@ -1267,6 +1306,10 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Fullscreen texture smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(),
+                                     "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
 
