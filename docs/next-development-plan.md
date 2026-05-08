@@ -6,6 +6,7 @@
 
 RenderGraph 后续专项路线图见 `rendergraph-development-roadmap.md`。本文保留全项目阶段计划和当前基线，RenderGraph 语义修正、typed pass 收敛、compiler diagnostics、后端生命周期和缓存的执行顺序以专项路线图为准。
 性能诊断底座和未来编辑器性能面板的技术细节见 `performance-profiling-plan.md`；编辑器产品功能尚未纳入当前开发计划，当前只保留 Game/Scene/Preview target、PlaySession 和面板数据边界等技术约束。
+引擎级系统边界和线程路线见 `engine-systems-architecture.md`、`frame-loop-threading.md`。其中反射、资产、scene/world、editor、script、input 和 build/cook/package 目前是架构前置约束，不进入当前 MVP 实现；它们用于约束后续设计不要反向污染 RenderGraph、RHI 和 package 边界。
 
 ## 当前基线
 

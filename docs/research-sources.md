@@ -1,10 +1,56 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-05-06
+最近核对日期：2026-05-08
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
+
+## 引擎系统架构与线程设计
+
+一手资料：
+
+- Godot architecture overview：https://docs.godotengine.org/en/stable/engine_details/architecture/godot_architecture_diagram.html
+- Godot internal rendering architecture：https://docs.godotengine.org/en/stable/engine_details/architecture/internal_rendering_architecture.html
+- Godot thread-safe APIs：https://docs.godotengine.org/en/stable/tutorials/performance/thread_safe_apis.html
+- Godot Object class：https://docs.godotengine.org/en/stable/engine_details/architecture/object_class.html
+- Godot import process：https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html
+- Godot GDExtension overview：https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/what_is_gdextension.html
+- Godot editor plugins：https://docs.godotengine.org/en/stable/tutorials/plugins/editor/making_plugins.html
+- Unreal parallel rendering overview：https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine
+- Unreal Render Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine
+- Unreal Object Handling：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine
+- Unreal asynchronous asset loading：https://dev.epicgames.com/documentation/en-us/unreal-engine/asynchronous-asset-loading-in-unreal-engine
+- Unreal modules：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules
+- Unreal plugins：https://dev.epicgames.com/documentation/en-us/unreal-engine/working-with-plugins-in-unreal-engine
+- Unity SRP fundamentals：https://docs.unity3d.com/Manual/ScriptableRenderPipeline.html
+- Unity Job System overview：https://docs.unity3d.com/Manual/JobSystemOverview.html
+- Unity script serialization：https://docs.unity3d.com/Manual/script-serialization.html
+- Unity AssetDatabase API：https://docs.unity3d.com/ScriptReference/AssetDatabase.html
+- Unity Input System actions：https://docs.unity.cn/Packages/com.unity.inputsystem%401.10/manual/Actions.html
+- O3DE Atom RPI overview：https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/rpi/
+- O3DE Pass System：https://www.docs.o3de.org/docs/atom-guide/dev-guide/passes/pass-system/
+- O3DE memory allocators：https://docs.o3de.org/docs/user-guide/programming/memory/allocators/
+- O3DE Behavior Context：https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/behavior-context/
+- O3DE Asset Processor：https://docs.o3de.org/docs/user-guide/assets/asset-processor/
+- O3DE Gems：https://www.docs.o3de.org/docs/user-guide/gems/
+- Bevy ECS quick start：https://bevy.org/learn/quick-start/getting-started/ecs/
+- Bevy plugins quick start：https://bevy.org/learn/quick-start/getting-started/plugins/
+- Bevy RenderGraph API：https://docs.rs/bevy/latest/bevy/render/render_graph/struct.RenderGraph.html
+- Vulkan Guide threading：https://docs.vulkan.org/guide/latest/threading.html
+- Khronos command buffer usage sample：https://docs.vulkan.org/samples/latest/samples/performance/command_buffer_usage/README.html
+
+结论：
+
+- Godot、Unity、O3DE 和 Bevy 都把高层对象/脚本/编辑器体验与底层 renderer/backend 分开；VkEngine
+  继续保持 package-first 和 `rhi_vulkan` / `rendergraph` / renderer package 边界是合理方向。
+- Unreal RDG、Unity RenderGraph、O3DE Pass System 和 Bevy RenderGraph 都强调显式 pass/resource
+  依赖；脚本或工具前端不应绕过 RenderGraph 的显式 resource access。
+- Godot 和 Unity 的线程资料都支持“高层对象主线程、安全数据并行”的设计；Unreal 说明
+  RenderThread/RHIThread 应通过 proxy/snapshot/command queue 与 gameplay 分离；Vulkan 资料要求
+  command pool 和 descriptor pool 这类对象按外部同步规则隔离。
+- 资产管线、反射序列化、scene/world、resource lifetime、input、event/command、editor transaction、
+  material/pipeline 和 diagnostics 是完整引擎不可缺少的架构前置项，但不应全部进入当前 MVP 实现。
 
 ## Vulkan 1.4
 
@@ -46,9 +92,9 @@
 
 - Slang 文档：https://shader-slang.org/docs/
 - Slang 用户指南：https://shader-slang.org/slang/user-guide/
-- Slang 命令行文档：https://shader-slang.org/slang/user-guide/command-line-slangc-reference/
+- Slang 命令行文档：https://docs.shader-slang.org/en/stable/external/slang/docs/command-line-slangc-reference.html
 - Slang reflection API：https://docs.shader-slang.org/en/stable/external/slang/docs/user-guide/09-reflection.html
-- Khronos Vulkan Samples Slang shader language sample：https://docs.vulkan.org/samples/latest/samples/extensions/shader_object/slang_shaders/README.html
+- Khronos Vulkan Samples shader languages：https://docs.vulkan.org/samples/latest/shaders/README.html
 
 结论：
 
