@@ -38,6 +38,8 @@ namespace vke {
                 commands.clearColor("target", clearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -102,6 +104,8 @@ namespace vke {
                 commands.clearColor("target", clearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -205,6 +209,8 @@ namespace vke {
                 })
                 .execute([&frame, &bindings,
                           transientClearParams](RenderGraphPassContext pass) -> Result<void> {
+                    [[maybe_unused]] const auto timestamp =
+                        VulkanTimestampScope::begin(frame, pass.name);
                     [[maybe_unused]] const auto debugLabel =
                         VulkanDebugLabelScope::begin(frame, pass.name);
                     auto transitions =
@@ -244,6 +250,8 @@ namespace vke {
                     commands.clearColor("target", presentClearParams.color);
                 })
                 .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                    [[maybe_unused]] const auto timestamp =
+                        VulkanTimestampScope::begin(frame, pass.name);
                     [[maybe_unused]] const auto debugLabel =
                         VulkanDebugLabelScope::begin(frame, pass.name);
                     auto transitions =

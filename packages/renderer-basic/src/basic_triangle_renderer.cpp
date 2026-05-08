@@ -1747,6 +1747,8 @@ namespace vke {
                 commands.clearColor("target", kClearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -1790,6 +1792,8 @@ namespace vke {
                     .drawFullscreenTriangle();
             })
             .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2065,6 +2069,8 @@ namespace vke {
                 commands.clearColor("target", clearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2085,6 +2091,8 @@ namespace vke {
             .setParams(kBasicRasterTriangleParamsType, drawItem_)
             .writeColor("target", backbuffer)
             .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2156,6 +2164,8 @@ namespace vke {
                 commands.clearColor("target", clearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2177,6 +2187,8 @@ namespace vke {
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
             .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2436,6 +2448,8 @@ namespace vke {
                 commands.clearColor("target", clearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2457,6 +2471,8 @@ namespace vke {
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
             .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2731,6 +2747,8 @@ namespace vke {
                 commands.clearColor("target", clearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =
@@ -2754,6 +2772,8 @@ namespace vke {
             .writeColor("target", backbuffer)
             .writeDepth("depth", depth)
             .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
                     VulkanDebugLabelScope::begin(frame, pass.name);
                 auto transitions =

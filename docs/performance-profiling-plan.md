@@ -38,13 +38,12 @@
 - editor performance panel。
 - timeline UI。
 - graph viewer UI。
-- GPU timestamp query pool。
 - RenderDoc/Nsight capture orchestration。
 - 跨进程 profiler server。
 - 跨线程采集聚合。
 - 自动性能回归数据库。
 
-这些能力可以保留接口余量，但不能创建必须维护的 runtime 路径。只有当 benchmark 数据证明 CPU-only profile 不足以定位问题，或者 P4/P5 的真实 GPU pass 成为瓶颈后，才进入 GPU timestamp 实现。
+这些能力可以保留接口余量，但不能创建必须维护的 runtime 路径。GPU timestamp query pool 已在 P4 生命周期稳定后以 frame-loop delayed readback 形式接入；外部 capture orchestration 和 UI 仍留在后续阶段。
 
 ## 目标
 
@@ -204,6 +203,7 @@ P4 接入 caches 时，同步增加 counters，避免优化无法量化：
 | Pipeline layout cache | lookup count、hit count、miss count、create count |
 | Pipeline cache | lookup count、hit count、miss count、create milliseconds |
 | GPU debug labels | label regions begun、label regions ended、debug utils availability |
+| GPU timestamp queries | frame/region begun、frame/region resolved、readback count、last frame milliseconds |
 | Transient resource pool | image request count、reuse count、create count、live bytes estimate |
 | RenderGraph compiler | pass/resource/dependency/transition/culled counts、compile milliseconds |
 
@@ -278,8 +278,8 @@ P3.5 完成标准：
 
 - `packages/profiling` 已接入为 header-only backend-agnostic 包。
 - `--bench-rendergraph` 已接入 sample-viewer，默认输出 `build/perf/rendergraph.jsonl`。
-- 当前只记录 CPU RecordGraph/CompileGraph scope、frame samples 和 RenderGraph compile counters。
-- GPU timestamp、debug labels、editor panel 和 capture 自动化仍不属于第一版。
+- 当前记录 CPU RecordGraph/CompileGraph scope、frame samples、RenderGraph compile counters、Vulkan debug label counters 和 delayed GPU timestamp query readback。
+- editor panel 和 capture 自动化仍不属于第一版。
 
 P4 profiling 扩展完成标准：
 

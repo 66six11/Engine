@@ -314,6 +314,22 @@ namespace vke {
             return commandBuffer;
         }
 
+        Result<VkQueryPool> createTimestampQueryPool(VkDevice device, std::uint32_t queryCount) {
+            VkQueryPoolCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            createInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            createInfo.queryCount = queryCount;
+
+            VkQueryPool queryPool = VK_NULL_HANDLE;
+            const VkResult result = vkCreateQueryPool(device, &createInfo, nullptr, &queryPool);
+            if (result != VK_SUCCESS) {
+                return std::unexpected{
+                    vulkanError("Failed to create Vulkan timestamp query pool", result)};
+            }
+
+            return queryPool;
+        }
+
         Result<VkSemaphore> createSemaphore(VkDevice device) {
             VkSemaphoreCreateInfo createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -504,6 +520,20 @@ namespace vke {
         deferredDeletionQueue_ = std::move(other.deferredDeletionQueue_);
         debugLabelFunctions_ = std::exchange(other.debugLabelFunctions_, {});
         debugLabelStats_ = std::exchange(other.debugLabelStats_, {});
+        timestampQueryPool_ = std::exchange(other.timestampQueryPool_, VK_NULL_HANDLE);
+        timestampQueryCapacity_ = std::exchange(other.timestampQueryCapacity_, 0);
+        nextTimestampQuery_ = std::exchange(other.nextTimestampQuery_, 0);
+        recordedTimestampQueryCount_ = std::exchange(other.recordedTimestampQueryCount_, 0);
+        submittedTimestampQueryCount_ = std::exchange(other.submittedTimestampQueryCount_, 0);
+        timestampValidBits_ = std::exchange(other.timestampValidBits_, 0);
+        timestampPeriodNanoseconds_ = std::exchange(other.timestampPeriodNanoseconds_, 0.0F);
+        submittedTimestampQueriesPending_ =
+            std::exchange(other.submittedTimestampQueriesPending_, false);
+        timestampStats_ = std::exchange(other.timestampStats_, {});
+        pendingTimestampRegions_ = std::move(other.pendingTimestampRegions_);
+        recordedTimestampRegions_ = std::move(other.recordedTimestampRegions_);
+        submittedTimestampRegions_ = std::move(other.submittedTimestampRegions_);
+        latestTimestampTimings_ = std::move(other.latestTimestampTimings_);
         submittedFrameEpoch_ = std::exchange(other.submittedFrameEpoch_, 0);
         completedFrameEpoch_ = std::exchange(other.completedFrameEpoch_, 0);
         clearColor_ = other.clearColor_;
@@ -571,6 +601,47 @@ namespace vke {
         return scope;
     }
 
+    VulkanTimestampScope::VulkanTimestampScope(VulkanTimestampScope&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanTimestampScope&
+    VulkanTimestampScope::operator=(VulkanTimestampScope&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        if (active_ && frameLoop_ != nullptr) {
+            frameLoop_->endTimestampRegion(commandBuffer_, endQuery_);
+        }
+
+        frameLoop_ = std::exchange(other.frameLoop_, nullptr);
+        commandBuffer_ = std::exchange(other.commandBuffer_, VK_NULL_HANDLE);
+        endQuery_ = std::exchange(other.endQuery_, 0);
+        active_ = std::exchange(other.active_, false);
+        return *this;
+    }
+
+    VulkanTimestampScope::~VulkanTimestampScope() {
+        if (active_ && frameLoop_ != nullptr) {
+            frameLoop_->endTimestampRegion(commandBuffer_, endQuery_);
+        }
+    }
+
+    VulkanTimestampScope
+    VulkanTimestampScope::begin(const VulkanFrameRecordContext& context, std::string_view name) {
+        VulkanTimestampScope scope;
+        if (context.frameLoop == nullptr) {
+            return scope;
+        }
+
+        scope.frameLoop_ = context.frameLoop;
+        scope.commandBuffer_ = context.commandBuffer;
+        scope.active_ =
+            context.frameLoop->beginTimestampRegion(context.commandBuffer, name, scope.endQuery_);
+        return scope;
+    }
+
     void VulkanFrameLoop::destroy() {
         if (graphicsQueue_ != VK_NULL_HANDLE) {
             [[maybe_unused]] const VkResult idleResult = vkQueueWaitIdle(graphicsQueue_);
@@ -590,6 +661,9 @@ namespace vke {
         }
         if (commandPool_ != VK_NULL_HANDLE) {
             vkDestroyCommandPool(device_, commandPool_, nullptr);
+        }
+        if (timestampQueryPool_ != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(device_, timestampQueryPool_, nullptr);
         }
         destroyImageViews(device_, imageViews_);
         if (swapchain_ != VK_NULL_HANDLE) {
@@ -615,6 +689,19 @@ namespace vke {
         deferredDeletionQueue_ = {};
         debugLabelFunctions_ = {};
         debugLabelStats_ = {};
+        timestampQueryPool_ = VK_NULL_HANDLE;
+        timestampQueryCapacity_ = 0;
+        nextTimestampQuery_ = 0;
+        recordedTimestampQueryCount_ = 0;
+        submittedTimestampQueryCount_ = 0;
+        timestampValidBits_ = 0;
+        timestampPeriodNanoseconds_ = 0.0F;
+        submittedTimestampQueriesPending_ = false;
+        timestampStats_ = {};
+        pendingTimestampRegions_.clear();
+        recordedTimestampRegions_.clear();
+        submittedTimestampRegions_.clear();
+        latestTimestampTimings_.clear();
         submittedFrameEpoch_ = 0;
         completedFrameEpoch_ = 0;
     }
@@ -636,6 +723,8 @@ namespace vke {
         frameLoop.debugLabelStats_.available =
             frameLoop.debugLabelFunctions_.beginCommandLabel != nullptr &&
             frameLoop.debugLabelFunctions_.endCommandLabel != nullptr;
+        frameLoop.timestampValidBits_ = context.deviceInfo().graphicsQueueTimestampValidBits;
+        frameLoop.timestampPeriodNanoseconds_ = context.deviceInfo().timestampPeriodNanoseconds;
         frameLoop.clearColor_ = desc.clearColor;
         frameLoop.targetExtent_ = VkExtent2D{
             .width = desc.width,
@@ -673,6 +762,22 @@ namespace vke {
             return std::unexpected{std::move(commandBuffer.error())};
         }
         frameLoop.commandBuffer_ = *commandBuffer;
+
+        constexpr std::uint32_t kTimestampQueryCapacity = 128;
+        if (frameLoop.timestampValidBits_ > 0 && frameLoop.timestampPeriodNanoseconds_ > 0.0F) {
+            auto timestampQueryPool =
+                createTimestampQueryPool(frameLoop.device_, kTimestampQueryCapacity);
+            if (!timestampQueryPool) {
+                return std::unexpected{std::move(timestampQueryPool.error())};
+            }
+            frameLoop.timestampQueryPool_ = *timestampQueryPool;
+            frameLoop.timestampQueryCapacity_ = kTimestampQueryCapacity;
+            frameLoop.timestampStats_.available = true;
+            frameLoop.pendingTimestampRegions_.reserve(kTimestampQueryCapacity / 2);
+            frameLoop.recordedTimestampRegions_.reserve(kTimestampQueryCapacity / 2);
+            frameLoop.submittedTimestampRegions_.reserve(kTimestampQueryCapacity / 2);
+            frameLoop.latestTimestampTimings_.reserve(kTimestampQueryCapacity / 2);
+        }
 
         auto imageAvailable = createSemaphore(frameLoop.device_);
         if (!imageAvailable) {
@@ -741,9 +846,128 @@ namespace vke {
         debugLabelStats_.available = true;
     }
 
+    bool VulkanFrameLoop::beginTimestampRegion(VkCommandBuffer commandBuffer,
+                                               std::string_view name,
+                                               std::uint32_t& endQuery) {
+        if (commandBuffer == VK_NULL_HANDLE || timestampQueryPool_ == VK_NULL_HANDLE ||
+            nextTimestampQuery_ + 1 >= timestampQueryCapacity_) {
+            return false;
+        }
+
+        const std::uint32_t beginQuery = nextTimestampQuery_;
+        endQuery = beginQuery + 1;
+        nextTimestampQuery_ += 2;
+        pendingTimestampRegions_.push_back(PendingTimestampRegion{
+            .name = std::string{name},
+            .beginQuery = beginQuery,
+            .endQuery = endQuery,
+        });
+
+        vkCmdWriteTimestamp2(commandBuffer, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                             timestampQueryPool_, beginQuery);
+        if (name == "VulkanFrame") {
+            ++timestampStats_.framesBegun;
+        }
+        ++timestampStats_.regionsBegun;
+        timestampStats_.available = true;
+        return true;
+    }
+
+    void VulkanFrameLoop::endTimestampRegion(VkCommandBuffer commandBuffer,
+                                             std::uint32_t endQuery) {
+        if (commandBuffer == VK_NULL_HANDLE || timestampQueryPool_ == VK_NULL_HANDLE ||
+            endQuery >= timestampQueryCapacity_) {
+            return;
+        }
+
+        vkCmdWriteTimestamp2(commandBuffer, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+                             timestampQueryPool_, endQuery);
+        ++timestampStats_.regionsEnded;
+        timestampStats_.available = true;
+    }
+
     std::uint64_t VulkanFrameLoop::retireCompletedFrameWork() {
         completedFrameEpoch_ = submittedFrameEpoch_;
         return deferredDeletionQueue_.retireCompleted(completedFrameEpoch_);
+    }
+
+    std::uint64_t VulkanFrameLoop::timestampDelta(std::uint64_t begin, std::uint64_t end) const {
+        if (timestampValidBits_ == 0 || timestampValidBits_ >= 64) {
+            return end - begin;
+        }
+
+        const std::uint64_t mask = (std::uint64_t{1} << timestampValidBits_) - 1U;
+        return (end - begin) & mask;
+    }
+
+    Result<void> VulkanFrameLoop::collectCompletedTimestampQueries() {
+        if (!submittedTimestampQueriesPending_ ||
+            timestampQueryPool_ == VK_NULL_HANDLE ||
+            submittedTimestampQueryCount_ == 0) {
+            return {};
+        }
+
+        std::vector<std::uint64_t> timestamps(submittedTimestampQueryCount_);
+        const VkResult result = vkGetQueryPoolResults(
+            device_, timestampQueryPool_, 0, submittedTimestampQueryCount_,
+            timestamps.size() * sizeof(std::uint64_t), timestamps.data(), sizeof(std::uint64_t),
+            VK_QUERY_RESULT_64_BIT);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vulkanError("Failed to read back Vulkan timestamp queries", result)};
+        }
+
+        latestTimestampTimings_.clear();
+        latestTimestampTimings_.reserve(submittedTimestampRegions_.size());
+        for (const PendingTimestampRegion& region : submittedTimestampRegions_) {
+            if (region.beginQuery >= timestamps.size() || region.endQuery >= timestamps.size()) {
+                continue;
+            }
+
+            const std::uint64_t delta =
+                timestampDelta(timestamps[region.beginQuery], timestamps[region.endQuery]);
+            const double milliseconds =
+                static_cast<double>(delta) *
+                static_cast<double>(timestampPeriodNanoseconds_) / 1'000'000.0;
+            latestTimestampTimings_.push_back(VulkanTimestampRegionTiming{
+                .name = region.name,
+                .milliseconds = milliseconds,
+            });
+            if (region.name == "VulkanFrame") {
+                timestampStats_.lastFrameMilliseconds = milliseconds;
+            }
+        }
+
+        ++timestampStats_.framesResolved;
+        ++timestampStats_.queryReadbacks;
+        timestampStats_.regionsResolved += latestTimestampTimings_.size();
+        timestampStats_.available = true;
+        submittedTimestampQueriesPending_ = false;
+        submittedTimestampQueryCount_ = 0;
+        submittedTimestampRegions_.clear();
+        return {};
+    }
+
+    void VulkanFrameLoop::resetTimestampQueriesForRecording(VkCommandBuffer commandBuffer) {
+        pendingTimestampRegions_.clear();
+        recordedTimestampRegions_.clear();
+        nextTimestampQuery_ = 0;
+        recordedTimestampQueryCount_ = 0;
+
+        if (commandBuffer == VK_NULL_HANDLE || timestampQueryPool_ == VK_NULL_HANDLE ||
+            timestampQueryCapacity_ == 0) {
+            return;
+        }
+
+        vkCmdResetQueryPool(commandBuffer, timestampQueryPool_, 0, timestampQueryCapacity_);
+        timestampStats_.available = true;
+    }
+
+    void VulkanFrameLoop::discardRecordedTimestampQueries() {
+        pendingTimestampRegions_.clear();
+        recordedTimestampRegions_.clear();
+        nextTimestampQuery_ = 0;
+        recordedTimestampQueryCount_ = 0;
     }
 
     Result<VulkanFrameStatus> VulkanFrameLoop::recreate() {
@@ -876,6 +1100,10 @@ namespace vke {
             return std::unexpected{vulkanError("Failed to wait for Vulkan frame fence", result)};
         }
         static_cast<void>(retireCompletedFrameWork());
+        auto timestamps = collectCompletedTimestampQueries();
+        if (!timestamps) {
+            return std::unexpected{std::move(timestamps.error())};
+        }
 
         std::uint32_t imageIndex = 0;
         result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailable_,
@@ -958,10 +1186,16 @@ namespace vke {
 
         result = vkQueueSubmit2(graphicsQueue_, 1, &submitInfo, inFlight_);
         if (result == VK_SUCCESS) {
+            submittedTimestampRegions_ = std::move(recordedTimestampRegions_);
+            submittedTimestampQueryCount_ = recordedTimestampQueryCount_;
+            submittedTimestampQueriesPending_ =
+                timestampQueryPool_ != VK_NULL_HANDLE && submittedTimestampQueryCount_ > 0;
+            recordedTimestampQueryCount_ = 0;
             ++submittedFrameEpoch_;
             return {};
         }
 
+        discardRecordedTimestampQueries();
         auto drained = recoverAcquiredImageSemaphore();
         auto replacementFence = createFence(device_);
         if (!replacementFence) {
@@ -1033,6 +1267,7 @@ namespace vke {
         if (result != VK_SUCCESS) {
             return std::unexpected{vulkanError("Failed to begin Vulkan command buffer", result)};
         }
+        resetTimestampQueriesForRecording(commandBuffer_);
 
         const VulkanFrameRecordContext context{
             .commandBuffer = commandBuffer_,
@@ -1046,6 +1281,8 @@ namespace vke {
         };
 
         auto recorded = [&]() -> Result<VulkanFrameRecordResult> {
+            [[maybe_unused]] const auto timestamp =
+                VulkanTimestampScope::begin(context, "VulkanFrame");
             [[maybe_unused]] const auto debugLabel =
                 VulkanDebugLabelScope::begin(context, "VulkanFrame");
             return record(context);
@@ -1053,6 +1290,7 @@ namespace vke {
         if (!recorded) {
             [[maybe_unused]] const VkResult resetAfterRecordFailure =
                 vkResetCommandBuffer(commandBuffer_, 0);
+            discardRecordedTimestampQueries();
             return std::unexpected{std::move(recorded.error())};
         }
 
@@ -1060,9 +1298,14 @@ namespace vke {
         if (result != VK_SUCCESS) {
             [[maybe_unused]] const VkResult resetAfterEndFailure =
                 vkResetCommandBuffer(commandBuffer_, 0);
+            discardRecordedTimestampQueries();
             return std::unexpected{vulkanError("Failed to end Vulkan command buffer", result)};
         }
 
+        recordedTimestampRegions_ = std::move(pendingTimestampRegions_);
+        recordedTimestampQueryCount_ = nextTimestampQuery_;
+        pendingTimestampRegions_.clear();
+        nextTimestampQuery_ = 0;
         return *recorded;
     }
 
@@ -1124,6 +1367,16 @@ namespace vke {
         stats.available = debugLabelFunctions_.beginCommandLabel != nullptr &&
                           debugLabelFunctions_.endCommandLabel != nullptr;
         return stats;
+    }
+
+    VulkanTimestampQueryStats VulkanFrameLoop::timestampStats() const {
+        VulkanTimestampQueryStats stats = timestampStats_;
+        stats.available = timestampQueryPool_ != VK_NULL_HANDLE;
+        return stats;
+    }
+
+    std::span<const VulkanTimestampRegionTiming> VulkanFrameLoop::latestTimestampTimings() const {
+        return latestTimestampTimings_;
     }
 
     std::uint64_t VulkanFrameLoop::submittedFrameEpoch() const {

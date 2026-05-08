@@ -263,6 +263,7 @@ namespace vke {
 
         struct QueueSelection {
             std::uint32_t graphicsFamily{};
+            std::uint32_t timestampValidBits{};
         };
 
         Result<bool> queueSupportsPresentation(VkPhysicalDevice physicalDevice,
@@ -299,7 +300,10 @@ namespace vke {
                 }
 
                 if ((queues[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0 && *supportsPresent) {
-                    return QueueSelection{index};
+                    return QueueSelection{
+                        .graphicsFamily = index,
+                        .timestampValidBits = queues[index].timestampValidBits,
+                    };
                 }
             }
 
@@ -783,6 +787,8 @@ namespace vke {
             .deviceId = selected.properties.deviceID,
             .apiVersion = selected.properties.apiVersion,
             .graphicsQueueFamily = context.graphicsQueueFamily_,
+            .graphicsQueueTimestampValidBits = selected.queues.timestampValidBits,
+            .timestampPeriodNanoseconds = selected.properties.limits.timestampPeriod,
         };
 
         logInfo("Selected Vulkan device: " + context.deviceInfo_.name + " (" +

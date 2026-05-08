@@ -38,6 +38,8 @@ namespace vke {
         std::uint32_t deviceId{};
         std::uint32_t apiVersion{};
         std::uint32_t graphicsQueueFamily{};
+        std::uint32_t graphicsQueueTimestampValidBits{};
+        float timestampPeriodNanoseconds{};
     };
 
     struct VulkanDebugLabelFunctions {

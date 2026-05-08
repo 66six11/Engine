@@ -145,6 +145,30 @@ namespace {
         return true;
     }
 
+    bool validateTimestampStats(vke::VulkanTimestampQueryStats stats,
+                                std::span<const vke::VulkanTimestampRegionTiming> timings,
+                                std::string_view context) {
+        if (!stats.available || stats.framesBegun == 0 || stats.framesResolved == 0 ||
+            stats.regionsBegun == 0 || stats.regionsBegun != stats.regionsEnded ||
+            stats.regionsResolved == 0 || stats.queryReadbacks == 0 || timings.empty()) {
+            vke::logError(std::string{context} +
+                          " did not record delayed Vulkan timestamp query results.");
+            return false;
+        }
+
+        const bool hasFrameTiming = std::ranges::any_of(
+            timings, [](const vke::VulkanTimestampRegionTiming& timing) {
+                return timing.name == "VulkanFrame" && timing.milliseconds >= 0.0;
+            });
+        if (!hasFrameTiming) {
+            vke::logError(std::string{context} +
+                          " did not read back a VulkanFrame timestamp duration.");
+            return false;
+        }
+
+        return true;
+    }
+
     struct RenderGraphBenchOptions {
         std::size_t warmupFrames{60};
         std::size_t measuredFrames{600};
@@ -610,6 +634,10 @@ namespace {
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), title)) {
             return EXIT_FAILURE;
         }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(), title)) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered frames: " << extent.width << 'x' << extent.height << '\n';
@@ -716,6 +744,11 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Transient smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(),
+                                    "Transient smoke")) {
             return EXIT_FAILURE;
         }
 
@@ -932,6 +965,10 @@ namespace {
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), title)) {
             return EXIT_FAILURE;
         }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(), title)) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << triangleSmokeRenderedPrefix(useDepth, meshKind) << extent.width << 'x'
@@ -1092,6 +1129,10 @@ namespace {
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Mesh 3D smoke")) {
             return EXIT_FAILURE;
         }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(), "Mesh 3D smoke")) {
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered mesh 3D frames: " << extent.width << 'x' << extent.height << '\n';
@@ -1198,6 +1239,10 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Draw list smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(), "Draw list smoke")) {
             return EXIT_FAILURE;
         }
 
@@ -1310,6 +1355,11 @@ namespace {
         }
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(),
                                      "Fullscreen texture smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(),
+                                    "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
 
