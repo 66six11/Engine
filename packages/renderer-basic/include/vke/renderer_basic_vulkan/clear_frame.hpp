@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "vke/core/error.hpp"
 #include "vke/core/result.hpp"
 #include "vke/renderer_basic/render_graph_schemas.hpp"
 #include "vke/renderer_basic_vulkan/frame_graph_vulkan.hpp"
@@ -159,7 +160,10 @@ namespace vke {
 
         [[nodiscard]] Result<VulkanFrameRecordResult>
         record(const VulkanFrameRecordContext& frame) {
-            resetTransientResources();
+            auto reset = deferTransientResources(frame);
+            if (!reset) {
+                return std::unexpected{std::move(reset.error())};
+            }
 
             RenderGraph graph;
             const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
@@ -276,9 +280,29 @@ namespace vke {
         }
 
     private:
-        void resetTransientResources() {
+        [[nodiscard]] Result<void> deferTransientResources(const VulkanFrameRecordContext& frame) {
+            for (VulkanImageView& imageView : transientImageViews_) {
+                if (!imageView.deferDestroy(frame)) {
+                    return std::unexpected{Error{
+                        ErrorDomain::Vulkan,
+                        0,
+                        "Failed to enqueue deferred destruction for a transient Vulkan image view.",
+                    }};
+                }
+            }
+            for (VulkanImage& image : transientImages_) {
+                if (!image.deferDestroy(frame)) {
+                    return std::unexpected{Error{
+                        ErrorDomain::Vulkan,
+                        0,
+                        "Failed to enqueue deferred destruction for a transient Vulkan image.",
+                    }};
+                }
+            }
+
             transientImageViews_.clear();
             transientImages_.clear();
+            return {};
         }
 
         [[nodiscard]] static VkImageUsageFlags

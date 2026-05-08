@@ -7,6 +7,8 @@
 
 namespace vke {
 
+    struct VulkanFrameRecordContext;
+
     struct VulkanImageDesc {
         VkDevice device{VK_NULL_HANDLE};
         VmaAllocator allocator{};
@@ -31,6 +33,7 @@ namespace vke {
         [[nodiscard]] VkFormat format() const;
         [[nodiscard]] VkExtent2D extent() const;
         [[nodiscard]] VkImageAspectFlags aspectMask() const;
+        [[nodiscard]] bool deferDestroy(const VulkanFrameRecordContext& frame);
 
     private:
         void destroy();
@@ -63,6 +66,7 @@ namespace vke {
         [[nodiscard]] static Result<VulkanImageView> create(const VulkanImageViewDesc& desc);
 
         [[nodiscard]] VkImageView handle() const;
+        [[nodiscard]] bool deferDestroy(const VulkanFrameRecordContext& frame);
 
     private:
         void destroy();

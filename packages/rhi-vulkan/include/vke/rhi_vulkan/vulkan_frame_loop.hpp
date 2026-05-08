@@ -12,6 +12,8 @@
 
 namespace vke {
 
+    class VulkanFrameLoop;
+
     struct VulkanFrameLoopDesc {
         std::uint32_t width{1280};
         std::uint32_t height{720};
@@ -33,6 +35,9 @@ namespace vke {
         VkFormat format{VK_FORMAT_UNDEFINED};
         VkExtent2D extent{};
         VkClearColorValue clearColor{};
+        VulkanFrameLoop* frameLoop{};
+
+        [[nodiscard]] bool deferDeletion(VulkanDeferredDeletionCallback callback) const;
     };
 
     struct VulkanFrameRecordResult {

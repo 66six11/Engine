@@ -1168,13 +1168,44 @@ namespace vke {
         }
 
         [[nodiscard]] Result<void>
-        prepareTransientResources(VkDevice device, VmaAllocator allocator,
+        deferTransientResources(const VulkanFrameRecordContext& frame,
+                                std::vector<VulkanImage>& transientImages,
+                                std::vector<VulkanImageView>& transientImageViews) {
+            for (VulkanImageView& imageView : transientImageViews) {
+                if (!imageView.deferDestroy(frame)) {
+                    return std::unexpected{Error{
+                        ErrorDomain::Vulkan,
+                        0,
+                        "Failed to enqueue deferred destruction for a transient Vulkan image view.",
+                    }};
+                }
+            }
+            for (VulkanImage& image : transientImages) {
+                if (!image.deferDestroy(frame)) {
+                    return std::unexpected{Error{
+                        ErrorDomain::Vulkan,
+                        0,
+                        "Failed to enqueue deferred destruction for a transient Vulkan image.",
+                    }};
+                }
+            }
+
+            transientImageViews.clear();
+            transientImages.clear();
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        prepareTransientResources(const VulkanFrameRecordContext& frame, VkDevice device,
+                                  VmaAllocator allocator,
                                   const RenderGraphCompileResult& compiled,
                                   std::vector<VulkanRenderGraphImageBinding>& bindings,
                                   std::vector<VulkanImage>& transientImages,
                                   std::vector<VulkanImageView>& transientImageViews) {
-            transientImageViews.clear();
-            transientImages.clear();
+            auto deferred = deferTransientResources(frame, transientImages, transientImageViews);
+            if (!deferred) {
+                return std::unexpected{std::move(deferred.error())};
+            }
 
             for (const RenderGraphTransientImageAllocation& allocation : compiled.transientImages) {
                 const VkFormat format = vulkanFormat(allocation.format);
@@ -1656,9 +1687,6 @@ namespace vke {
             return std::unexpected{std::move(pipeline.error())};
         }
 
-        transientImageViews_.clear();
-        transientImages_.clear();
-
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
         const auto source = graph.createTransientImage(RenderGraphImageDesc{
@@ -1772,7 +1800,7 @@ namespace vke {
             return std::unexpected{std::move(compiled.error())};
         }
 
-        auto prepared = prepareTransientResources(device_, allocator_, *compiled, bindings,
+        auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
                                                   transientImages_, transientImageViews_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
@@ -2115,7 +2143,7 @@ namespace vke {
             return std::unexpected{std::move(compiled.error())};
         }
 
-        auto prepared = prepareTransientResources(device_, allocator_, *compiled, bindings,
+        auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
                                                   transientImages_, transientImageViews_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
@@ -2370,7 +2398,7 @@ namespace vke {
             return std::unexpected{std::move(compiled.error())};
         }
 
-        auto prepared = prepareTransientResources(device_, allocator_, *compiled, bindings,
+        auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
                                                   transientImages_, transientImageViews_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
@@ -2647,7 +2675,7 @@ namespace vke {
             return std::unexpected{std::move(compiled.error())};
         }
 
-        auto prepared = prepareTransientResources(device_, allocator_, *compiled, bindings,
+        auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
                                                   transientImages_, transientImageViews_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};

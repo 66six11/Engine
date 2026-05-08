@@ -13,6 +13,7 @@
 | Khronos Vulkan synchronization guide: https://docs.vulkan.org/guide/latest/synchronization_examples.html | layout transition、stage mask、access mask 必须匹配真实 producer/consumer。`vkCmdPipelineBarrier2` 是当前项目正确的主路径。 | 每新增一个 `RenderGraphImageState`，必须同步补 `rhi_vulkan_rendergraph` 映射和 smoke 校验。 |
 | Vulkan synchronization spec: https://docs.vulkan.org/spec/latest/chapters/synchronization.html | 同步分 execution dependency、memory dependency 和 image layout transition，不能只看 layout 名字。 | RG compiler 输出抽象 transition，Vulkan adapter 负责 stage/access/layout 细节，不能把 Vulkan 类型泄漏到 `rendergraph`。 |
 | Khronos unified image layouts: https://www.khronos.org/blog/so-long-image-layouts-simplifying-vulkan-synchronisation | 新式 unified image layout 能减少 layout 数量，但需要明确 feature/extension 和设备支持。 | 作为后续优化观察项；当前先保持显式精确 layout，避免过早依赖新能力。 |
+| Vulkan object destruction refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImage.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImageView.html | `VkImage` / `VkImageView` 销毁前，所有引用它们的已提交命令必须完成。 | transient wrapper 不在下一帧准备阶段直接析构旧 Vulkan 对象，而是挂到 `VulkanFrameLoop` 的 fence/epoch deferred deletion。 |
 | VMA usage patterns: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html | image/buffer allocation 应集中到 allocator facade，由用途决定 memory type。 | transient resource pool 使用 VMA，key 包含 format/extent/usage/aspect/sample count。 |
 | Unity URP Render Graph introduction: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | graph 每帧 record、compile、execute；pass 显式声明资源，graph 自动处理生命周期、同步和 pass culling。 | 保持 RecordGraph、CompileGraph、PrepareBackend、RecordCommands 四段式。 |
 | Unity URP custom render pass: https://docs.unity3d.com/Manual/urp/render-graph-write-render-pass.html | pass data 和 render function 分离，builder 显式声明资源读写。 | `PassSchema`、typed params、named slots 和 command summary 继续作为脚本/工具前端的共同语义。 |
@@ -389,7 +390,9 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
   - resize/recreate 时不依赖扩大范围的 queue idle，除必要 MVP fallback。
   - 当前已接入最小 RHI 队列和 `--smoke-deferred-deletion`，验证 epoch retirement、flush 和 counter。
   - `VulkanFrameLoop` 已持有队列，并把 submitted/completed epoch 接到单 in-flight fence、
-    swapchain recreate 和 shutdown 路径；下一步再迁移真实 Vulkan wrapper 到 `deferDeletion()`。
+    swapchain recreate 和 shutdown 路径。
+  - transient `VulkanImage` / `VulkanImageView` 现在通过 `VulkanFrameRecordContext::deferDeletion()`
+    进入 frame-loop retirement；`--smoke-transient` 会验证 deferred deletion enqueued/retired counter。
 - `DescriptorAllocator`
   - per-frame 或 per-flight frame arena。
   - 按 descriptor set layout 分配，GPU 完成后重置。

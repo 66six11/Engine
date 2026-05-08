@@ -229,7 +229,8 @@ flowchart TD
 - `--bench-rendergraph` 是 CPU-only RenderGraph benchmark 入口；它使用 `packages/profiling`
   记录 RecordGraph/CompileGraph scope 和 graph counters，输出 JSONL，不改变 smoke 语义。
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
-  image view 和 binding 表，并录制非 backbuffer image transition / clear。
+  image view 和 binding 表，并录制非 backbuffer image transition / clear；现在还验证 transient
+  Vulkan image / image view teardown 会进入 frame-loop deferred deletion，并至少完成一次 retirement。
 - `--smoke-deferred-deletion` 已接入 P4 后端生命周期起点：验证 deferred deletion queue 的 epoch
   retirement 顺序、empty callback 拒绝路径和 pending/enqueued/retired/flushed counters。
 - `VulkanFrameLoop` 现在持有 deferred deletion queue，并在 frame fence / swapchain recreate / shutdown
@@ -249,6 +250,7 @@ sequenceDiagram
     participant Window as GlfwWindow
     participant Context as VulkanContext
     participant FrameLoop as VulkanFrameLoop
+    participant RecordCtx as VulkanFrameRecordContext
     participant RecordHook as VulkanFrameRecordCallback
     participant RendererVk as renderer_basic_vulkan
     participant RG as RenderGraph
@@ -266,11 +268,13 @@ sequenceDiagram
     FrameLoop->>FrameLoop: retire completed deferred deletions
     FrameLoop->>Vulkan: vkAcquireNextImageKHR
     FrameLoop->>Vulkan: vkBeginCommandBuffer
-    FrameLoop->>RecordHook: invoke(recordContext)
-    RecordHook->>RendererVk: recordFrame(recordContext)
+    FrameLoop->>RecordHook: invoke with record context
+    RecordHook->>RendererVk: recordFrame
     RendererVk->>RG: import/create resources, add passes, record command summary
     RendererVk->>RG: compile(schema registry)
     RG-->>RendererVk: compiled passes, transitions, transient plan, final transitions
+    RendererVk->>RecordCtx: deferDeletion transient images and views
+    RecordCtx->>FrameLoop: enqueue deferred callbacks
     RendererVk->>Adapter: recordRenderGraphTransitions(compiled transitions, bindings)
     Adapter->>Vulkan: vkCmdPipelineBarrier2
     RendererVk->>Vulkan: vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw
@@ -289,6 +293,8 @@ sequenceDiagram
 - `VulkanFrameLoop` 只知道 `VulkanFrameRecordCallback`，不应该包含或链接 `renderer_basic_vulkan`、
   `RenderGraph` 或具体 sample renderer。
 - `renderer_basic_vulkan` 在 callback 内构建 graph、编译 graph、准备 transient/descriptor/pipeline 相关资源并录制 draw。
+  transient Vulkan image / image view 的旧对象通过 `VulkanFrameRecordContext::deferDeletion()` 挂回
+  frame loop 的 fence/epoch retirement；renderer 不持有 frame loop，也不直接 submit/present。
 - `RenderGraph` 产出后端无关计划；它不直接调用 Vulkan。
 - `rhi_vulkan_rendergraph` 把 compiled transition 翻译为 Vulkan barrier，再由调用方用真实 image binding 录制。
 
@@ -610,14 +616,15 @@ flowchart TD
   确认错误不会进入 pass callback；也覆盖可剔除 unused transient writer
   被移出 compiled passes、side-effect pass 被保留且 culled pass callback 不执行。
 - `--smoke-transient` 已验证 transient image 的 first/last pass、final access、非 backbuffer transition、
-  Vulkan adapter mapping，以及真实 image/image view/VMA allocation 和 binding。
+  Vulkan adapter mapping、真实 image/image view/VMA allocation 和 binding，以及旧 transient wrapper
+  的 deferred destruction enqueue/retire counter。
 
 ## 下一步接入计划
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark"]
-    Step1["下一步:<br/>deferred destruction / resource caches<br/>with counters"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image deferred destruction<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark"]
+    Step1["下一步:<br/>descriptor and pipeline caches<br/>transient resource pool counters"]
     Step2["之后:<br/>GPU timestamp labels after frame resource lifetime stabilizes"]
     Step3["之后:<br/>multi-view / material expansion"]
 
@@ -643,6 +650,8 @@ flowchart TD
     Now --> SlotBindingUpdate
     BuiltinNegativeUpdate["2026-05-05:<br/>builtin pass schema negatives<br/>missing / invalid / wrong params"]
     Now --> BuiltinNegativeUpdate
+    DeferredTransientUpdate["2026-05-08:<br/>VulkanFrameRecordContext::deferDeletion<br/>transient image/view wrapper teardown<br/>--smoke-transient counters"]
+    Now --> DeferredTransientUpdate
 ```
 
 建议推进顺序：

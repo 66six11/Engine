@@ -5,6 +5,7 @@
 #include <vk_mem_alloc.h>
 
 #include "vke/rhi_vulkan/vulkan_error.hpp"
+#include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 
 namespace vke {
 
@@ -106,6 +107,30 @@ namespace vke {
         return aspectMask_;
     }
 
+    bool VulkanImage::deferDestroy(const VulkanFrameRecordContext& frame) {
+        if (image_ == VK_NULL_HANDLE) {
+            return true;
+        }
+
+        const VmaAllocator allocator = allocator_;
+        const VmaAllocation allocation = allocation_;
+        const VkImage image = image_;
+        if (!frame.deferDeletion([allocator, allocation, image]() {
+                vmaDestroyImage(allocator, image, allocation);
+            })) {
+            return false;
+        }
+
+        device_ = VK_NULL_HANDLE;
+        allocator_ = nullptr;
+        allocation_ = nullptr;
+        image_ = VK_NULL_HANDLE;
+        format_ = VK_FORMAT_UNDEFINED;
+        extent_ = {};
+        aspectMask_ = VK_IMAGE_ASPECT_COLOR_BIT;
+        return true;
+    }
+
     VulkanImageView::VulkanImageView(VulkanImageView&& other) noexcept {
         *this = std::move(other);
     }
@@ -169,6 +194,24 @@ namespace vke {
 
     VkImageView VulkanImageView::handle() const {
         return imageView_;
+    }
+
+    bool VulkanImageView::deferDestroy(const VulkanFrameRecordContext& frame) {
+        if (imageView_ == VK_NULL_HANDLE) {
+            return true;
+        }
+
+        const VkDevice device = device_;
+        const VkImageView imageView = imageView_;
+        if (!frame.deferDeletion([device, imageView]() {
+                vkDestroyImageView(device, imageView, nullptr);
+            })) {
+            return false;
+        }
+
+        device_ = VK_NULL_HANDLE;
+        imageView_ = VK_NULL_HANDLE;
+        return true;
     }
 
     VulkanSampler::VulkanSampler(VulkanSampler&& other) noexcept {

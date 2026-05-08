@@ -650,6 +650,12 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
+        const vke::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
+        if (deletionStats.enqueued == 0 || deletionStats.retired == 0) {
+            vke::logError("Transient smoke did not retire deferred Vulkan resource destruction.");
+            return EXIT_FAILURE;
+        }
+
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered transient frames: " << extent.width << 'x' << extent.height << '\n';
         window->requestClose();

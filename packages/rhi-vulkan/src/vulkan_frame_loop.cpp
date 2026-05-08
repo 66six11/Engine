@@ -511,6 +511,14 @@ namespace vke {
         destroy();
     }
 
+    bool VulkanFrameRecordContext::deferDeletion(VulkanDeferredDeletionCallback callback) const {
+        if (frameLoop == nullptr) {
+            return false;
+        }
+
+        return frameLoop->deferDeletion(std::move(callback));
+    }
+
     void VulkanFrameLoop::destroy() {
         if (graphicsQueue_ != VK_NULL_HANDLE) {
             [[maybe_unused]] const VkResult idleResult = vkQueueWaitIdle(graphicsQueue_);
@@ -943,6 +951,7 @@ namespace vke {
             .format = format_,
             .extent = extent_,
             .clearColor = clearColor_,
+            .frameLoop = this,
         });
         if (!recorded) {
             [[maybe_unused]] const VkResult resetAfterRecordFailure =
