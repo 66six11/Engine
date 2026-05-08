@@ -71,6 +71,7 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
+        [[nodiscard]] VulkanDescriptorAllocatorStats descriptorAllocatorStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
@@ -86,7 +87,7 @@ namespace vke {
         VulkanGraphicsPipeline pipeline_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         BasicPipelineCacheStats pipelineCacheStats_;
-        VulkanDescriptorPool descriptorPool_;
+        VulkanDescriptorAllocator descriptorAllocator_;
         VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
         VulkanBuffer uniformBuffer_;
         VulkanSampler sampler_;

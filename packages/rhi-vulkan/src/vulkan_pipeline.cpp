@@ -225,6 +225,55 @@ namespace vke {
         return descriptorPool_;
     }
 
+    VulkanDescriptorAllocator::VulkanDescriptorAllocator(
+        VulkanDescriptorAllocator&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanDescriptorAllocator&
+    VulkanDescriptorAllocator::operator=(VulkanDescriptorAllocator&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        descriptorPool_ = std::move(other.descriptorPool_);
+        stats_ = std::exchange(other.stats_, VulkanDescriptorAllocatorStats{});
+        return *this;
+    }
+
+    Result<VulkanDescriptorAllocator>
+    VulkanDescriptorAllocator::create(const VulkanDescriptorPoolDesc& desc) {
+        auto descriptorPool = VulkanDescriptorPool::create(desc);
+        if (!descriptorPool) {
+            return std::unexpected{std::move(descriptorPool.error())};
+        }
+
+        VulkanDescriptorAllocator allocator;
+        allocator.descriptorPool_ = std::move(*descriptorPool);
+        allocator.stats_.poolsCreated = 1;
+        return allocator;
+    }
+
+    Result<std::vector<VkDescriptorSet>>
+    VulkanDescriptorAllocator::allocate(const VulkanDescriptorSetAllocationDesc& desc) {
+        auto descriptorSets = descriptorPool_.allocate(desc);
+        if (!descriptorSets) {
+            return std::unexpected{std::move(descriptorSets.error())};
+        }
+
+        ++stats_.allocationCalls;
+        stats_.setsAllocated += descriptorSets->size();
+        return descriptorSets;
+    }
+
+    VulkanDescriptorAllocatorStats VulkanDescriptorAllocator::stats() const {
+        return stats_;
+    }
+
+    VkDescriptorPool VulkanDescriptorAllocator::handle() const {
+        return descriptorPool_.handle();
+    }
+
     void updateVulkanDescriptorBuffers(
         VkDevice device, std::span<const VulkanDescriptorBufferWrite> writes) {
         std::vector<VkDescriptorBufferInfo> bufferInfos;

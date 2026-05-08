@@ -110,6 +110,16 @@ namespace {
         return true;
     }
 
+    bool validateDescriptorAllocatorStats(vke::VulkanDescriptorAllocatorStats stats,
+                                          std::string_view context) {
+        if (stats.poolsCreated != 1 || stats.allocationCalls != 1 || stats.setsAllocated != 1) {
+            vke::logError(std::string{context} +
+                          " did not allocate descriptors through the descriptor allocator.");
+            return false;
+        }
+        return true;
+    }
+
     struct RenderGraphBenchOptions {
         std::size_t warmupFrames{60};
         std::size_t measuredFrames{600};
@@ -1227,6 +1237,10 @@ namespace {
 
         if (!validatePipelineCacheStats(renderer->pipelineCacheStats(),
                                         "Fullscreen texture smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
+                                             "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
 

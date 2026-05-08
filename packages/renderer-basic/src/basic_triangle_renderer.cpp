@@ -1376,13 +1376,13 @@ namespace vke {
                 .count = 1,
             },
         };
-        auto descriptorPool = VulkanDescriptorPool::create(VulkanDescriptorPoolDesc{
+        auto descriptorAllocator = VulkanDescriptorAllocator::create(VulkanDescriptorPoolDesc{
             .device = desc.device,
             .maxSets = 1,
             .poolSizes = poolSizes,
         });
-        if (!descriptorPool) {
-            return std::unexpected{std::move(descriptorPool.error())};
+        if (!descriptorAllocator) {
+            return std::unexpected{std::move(descriptorAllocator.error())};
         }
 
         if (resources->descriptorSetLayouts.empty()) {
@@ -1390,7 +1390,7 @@ namespace vke {
                 Error{ErrorDomain::Vulkan, 0, "Descriptor layout smoke produced no set layouts"}};
         }
         const std::array setLayouts{resources->descriptorSetLayouts.front().handle()};
-        auto descriptorSets = descriptorPool->allocate(VulkanDescriptorSetAllocationDesc{
+        auto descriptorSets = descriptorAllocator->allocate(VulkanDescriptorSetAllocationDesc{
             .setLayouts = setLayouts,
         });
         if (!descriptorSets) {
@@ -1437,6 +1437,14 @@ namespace vke {
         };
         updateVulkanDescriptorImages(desc.device, imageDescriptorWrites);
 
+        const VulkanDescriptorAllocatorStats stats = descriptorAllocator->stats();
+        if (stats.poolsCreated != 1 || stats.allocationCalls != 1 || stats.setsAllocated != 1) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Descriptor layout smoke did not route allocation through the descriptor "
+                      "allocator counters"}};
+        }
+
         return {};
     }
 
@@ -1461,7 +1469,7 @@ namespace vke {
         pipeline_ = std::move(other.pipeline_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
-        descriptorPool_ = std::move(other.descriptorPool_);
+        descriptorAllocator_ = std::move(other.descriptorAllocator_);
         descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
         uniformBuffer_ = std::move(other.uniformBuffer_);
         sampler_ = std::move(other.sampler_);
@@ -1560,17 +1568,17 @@ namespace vke {
                 .count = 1,
             },
         };
-        auto descriptorPool = VulkanDescriptorPool::create(VulkanDescriptorPoolDesc{
+        auto descriptorAllocator = VulkanDescriptorAllocator::create(VulkanDescriptorPoolDesc{
             .device = desc.device,
             .maxSets = 1,
             .poolSizes = poolSizes,
         });
-        if (!descriptorPool) {
-            return std::unexpected{std::move(descriptorPool.error())};
+        if (!descriptorAllocator) {
+            return std::unexpected{std::move(descriptorAllocator.error())};
         }
 
         const std::array setLayouts{resources->descriptorSetLayouts.front().handle()};
-        auto descriptorSets = descriptorPool->allocate(VulkanDescriptorSetAllocationDesc{
+        auto descriptorSets = descriptorAllocator->allocate(VulkanDescriptorSetAllocationDesc{
             .setLayouts = setLayouts,
         });
         if (!descriptorSets) {
@@ -1616,7 +1624,7 @@ namespace vke {
         renderer.descriptorSetLayouts_ = std::move(resources->descriptorSetLayouts);
         renderer.pipelineLayout_ = std::move(resources->pipelineLayout);
         renderer.pipelineCache_ = std::move(*pipelineCache);
-        renderer.descriptorPool_ = std::move(*descriptorPool);
+        renderer.descriptorAllocator_ = std::move(*descriptorAllocator);
         renderer.descriptorSet_ = descriptorSets->front();
         renderer.uniformBuffer_ = std::move(*uniformBuffer);
         renderer.sampler_ = std::move(*sampler);
@@ -1653,6 +1661,11 @@ namespace vke {
 
     BasicPipelineCacheStats BasicFullscreenTextureRenderer::pipelineCacheStats() const {
         return pipelineCacheStats_;
+    }
+
+    VulkanDescriptorAllocatorStats
+    BasicFullscreenTextureRenderer::descriptorAllocatorStats() const {
+        return descriptorAllocator_.stats();
     }
 
     Result<void>

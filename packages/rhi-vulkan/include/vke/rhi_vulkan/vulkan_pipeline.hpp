@@ -120,6 +120,33 @@ namespace vke {
         VkDescriptorPool descriptorPool_{VK_NULL_HANDLE};
     };
 
+    struct VulkanDescriptorAllocatorStats {
+        std::uint64_t poolsCreated{};
+        std::uint64_t allocationCalls{};
+        std::uint64_t setsAllocated{};
+    };
+
+    class VulkanDescriptorAllocator {
+    public:
+        VulkanDescriptorAllocator() = default;
+        VulkanDescriptorAllocator(const VulkanDescriptorAllocator&) = delete;
+        VulkanDescriptorAllocator& operator=(const VulkanDescriptorAllocator&) = delete;
+        VulkanDescriptorAllocator(VulkanDescriptorAllocator&& other) noexcept;
+        VulkanDescriptorAllocator& operator=(VulkanDescriptorAllocator&& other) noexcept;
+        ~VulkanDescriptorAllocator() = default;
+
+        [[nodiscard]] static Result<VulkanDescriptorAllocator>
+        create(const VulkanDescriptorPoolDesc& desc);
+        [[nodiscard]] Result<std::vector<VkDescriptorSet>>
+        allocate(const VulkanDescriptorSetAllocationDesc& desc);
+        [[nodiscard]] VulkanDescriptorAllocatorStats stats() const;
+        [[nodiscard]] VkDescriptorPool handle() const;
+
+    private:
+        VulkanDescriptorPool descriptorPool_;
+        VulkanDescriptorAllocatorStats stats_;
+    };
+
     void updateVulkanDescriptorBuffers(VkDevice device,
                                        std::span<const VulkanDescriptorBufferWrite> writes);
     void updateVulkanDescriptorImages(VkDevice device,
