@@ -440,6 +440,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
     RenderGraph image 写入后再以 sampled texture 合成到 backbuffer。
   - viewport target extent 已可独立于 swapchain extent；尺寸变化时旧 image view 和 image 会按当前
     frame epoch 挂入 deferred deletion，而不是在录制路径中立即销毁。
+  - renderer 现在会暴露 sampled viewport target 的 image/view/format/extent/layout，作为未来 editor
+    UI backend 注册 texture 的最小契约。
   - 该路径用于验证编辑器 viewport 的核心离屏渲染前提；完整 editor UI backend、dock 和多 view host 仍留到 P7。
 
 验收：
@@ -449,8 +451,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - triangle/mesh/fullscreen smoke 能验证 buffer upload counter。
 - frame/renderer smoke 能验证 debug label begin/end counter 配对。
 - frame/renderer smoke 能验证 timestamp query delayed readback 和 `VulkanFrame` duration。
-- offscreen viewport smoke 能验证持久 viewport color target 独立尺寸、resize deferred deletion、多帧复用和
-  sampled composite。
+- offscreen viewport smoke 能验证持久 viewport color target 独立尺寸、resize deferred deletion、多帧复用、
+  sampled target 输出和 sampled composite。
 - resize 后资源销毁路径无 validation warning。
 - `--smoke-resize`、`--smoke-fullscreen-texture`、`--smoke-depth-triangle`、`--smoke-draw-list` 通过。
 

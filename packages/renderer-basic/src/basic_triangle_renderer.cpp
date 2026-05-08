@@ -1716,6 +1716,16 @@ namespace vke {
         return offscreenViewportStats_;
     }
 
+    BasicOffscreenViewportTarget BasicFullscreenTextureRenderer::offscreenViewportTarget() const {
+        return BasicOffscreenViewportTarget{
+            .image = offscreenViewportImage_.handle(),
+            .imageView = offscreenViewportImageView_.handle(),
+            .format = offscreenViewportFormat_,
+            .extent = offscreenViewportExtent_,
+            .sampledLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+    }
+
     VulkanDescriptorAllocatorStats
     BasicFullscreenTextureRenderer::descriptorAllocatorStats() const {
         return descriptorAllocator_.stats();

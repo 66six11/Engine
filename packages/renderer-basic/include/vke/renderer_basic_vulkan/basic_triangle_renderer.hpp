@@ -60,6 +60,14 @@ namespace vke {
         std::uint64_t renderTargetsDeferredForDeletion{};
     };
 
+    struct BasicOffscreenViewportTarget {
+        VkImage image{VK_NULL_HANDLE};
+        VkImageView imageView{VK_NULL_HANDLE};
+        VkFormat format{VK_FORMAT_UNDEFINED};
+        VkExtent2D extent{};
+        VkImageLayout sampledLayout{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    };
+
     [[nodiscard]] Result<void>
     validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc);
 
@@ -83,6 +91,7 @@ namespace vke {
                                      VkExtent2D viewportExtent);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
         [[nodiscard]] BasicOffscreenViewportStats offscreenViewportStats() const;
+        [[nodiscard]] BasicOffscreenViewportTarget offscreenViewportTarget() const;
         [[nodiscard]] VulkanDescriptorAllocatorStats descriptorAllocatorStats() const;
         [[nodiscard]] VulkanBufferStats bufferStats() const;
 

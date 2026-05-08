@@ -124,6 +124,22 @@ namespace {
         return true;
     }
 
+    bool validateOffscreenViewportTarget(vke::BasicOffscreenViewportTarget target,
+                                         VkFormat expectedFormat,
+                                         VkExtent2D expectedExtent,
+                                         std::string_view context) {
+        if (target.image == VK_NULL_HANDLE || target.imageView == VK_NULL_HANDLE ||
+            target.format != expectedFormat ||
+            target.extent.width != expectedExtent.width ||
+            target.extent.height != expectedExtent.height ||
+            target.sampledLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+            vke::logError(std::string{context} +
+                          " did not expose a sampled offscreen viewport target.");
+            return false;
+        }
+        return true;
+    }
+
     bool validateDescriptorAllocatorStats(vke::VulkanDescriptorAllocatorStats stats,
                                           std::string_view context) {
         if (stats.poolsCreated != 1 || stats.allocationCalls != 1 || stats.setsAllocated != 1) {
@@ -1487,6 +1503,11 @@ namespace {
         }
         if (!validateOffscreenViewportStats(renderer->offscreenViewportStats(),
                                             "Offscreen viewport smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateOffscreenViewportTarget(renderer->offscreenViewportTarget(),
+                                             frameLoop->format(), lastViewportExtent,
+                                             "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
         }
         const vke::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();

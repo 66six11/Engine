@@ -231,8 +231,8 @@ flowchart TD
 - `--smoke-offscreen-viewport` 已接入持久 offscreen color target：先把 viewport color image 作为
   imported RenderGraph image 写入 `ColorAttachment`，再 transition 到 `ShaderRead(fragment)` 并由
   fullscreen composite pass 采样写回 backbuffer；smoke 验证 viewport extent 可独立于 swapchain extent、
-  resize 后旧 target 进入 deferred deletion、render target 多帧复用、descriptor bind、debug label 和
-  timestamp readback。
+  resize 后旧 target 进入 deferred deletion、renderer 对外暴露 sampled target handle/layout、
+  render target 多帧复用、descriptor bind、debug label 和 timestamp readback。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译和 Vulkan adapter 字段验证入口。
 - `--bench-rendergraph` 是 CPU-only RenderGraph benchmark 入口；它使用 `packages/profiling`
   记录 RecordGraph/CompileGraph scope 和 graph counters，输出 JSONL，不改变 smoke 语义。
@@ -452,7 +452,7 @@ flowchart TD
   transient source texture 采样。
 - `--smoke-offscreen-viewport` 已验证 editor viewport 的核心离屏路径：持久 color attachment image
   独立尺寸、resize 后 deferred deletion、多帧复用、RenderGraph imported image 写入、sampled image
-  descriptor 更新，以及 fullscreen composite 写回 swapchain。
+  descriptor 更新、renderer 输出可供 UI backend 注册的 sampled target，以及 fullscreen composite 写回 swapchain。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
   Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、
