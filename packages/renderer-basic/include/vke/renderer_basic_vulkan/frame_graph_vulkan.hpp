@@ -119,6 +119,12 @@ namespace vke {
     }
 
     [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphColorWrite(RenderGraphPassContext pass, std::string_view slotName,
+                                    std::span<const VulkanRenderGraphImageBinding> bindings) {
+        return findVulkanRenderGraphImageSlot(pass.colorWriteSlots, slotName, pass, bindings);
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
     findVulkanRenderGraphDepthWrite(RenderGraphPassContext pass, std::string_view slotName,
                                     std::span<const VulkanRenderGraphImageBinding> bindings) {
         return findVulkanRenderGraphImageSlot(pass.depthWriteSlots, slotName, pass, bindings);

@@ -54,6 +54,11 @@ namespace vke {
         std::uint64_t reused{};
     };
 
+    struct BasicOffscreenViewportStats {
+        std::uint64_t renderTargetsCreated{};
+        std::uint64_t renderTargetsReused{};
+    };
+
     [[nodiscard]] Result<void>
     validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc);
 
@@ -70,12 +75,17 @@ namespace vke {
         create(const BasicFullscreenTextureRendererDesc& desc);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
+        [[nodiscard]] BasicOffscreenViewportStats offscreenViewportStats() const;
         [[nodiscard]] VulkanDescriptorAllocatorStats descriptorAllocatorStats() const;
         [[nodiscard]] VulkanBufferStats bufferStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
+        [[nodiscard]] Result<void> ensureOffscreenViewportTarget(VkFormat format,
+                                                                 VkExtent2D extent);
         [[nodiscard]] Result<void> updateSourceDescriptor(VkImageView sourceImageView);
 
         VkDevice device_{VK_NULL_HANDLE};
@@ -88,6 +98,11 @@ namespace vke {
         VulkanGraphicsPipeline pipeline_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         BasicPipelineCacheStats pipelineCacheStats_;
+        BasicOffscreenViewportStats offscreenViewportStats_;
+        VulkanImage offscreenViewportImage_;
+        VulkanImageView offscreenViewportImageView_;
+        VkFormat offscreenViewportFormat_{VK_FORMAT_UNDEFINED};
+        VkExtent2D offscreenViewportExtent_{};
         VulkanDescriptorAllocator descriptorAllocator_;
         VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
         VulkanBuffer uniformBuffer_;

@@ -435,6 +435,10 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
   - `VulkanTimestampScope` 复用 frame/pass 名称记录 begin/end timestamp，并公开 frame/region/readback counters
     与最近一帧 region duration。
   - 当前仍是 single graphics queue / single in-flight MVP；后续 per-frame/per-flight arena 可在多帧并行时再扩展。
+- `OffscreenViewportTarget`
+  - `BasicFullscreenTextureRenderer` 现在可维护一个持久 offscreen color target，把它作为 imported
+    RenderGraph image 写入后再以 sampled texture 合成到 backbuffer。
+  - 该路径用于验证编辑器 viewport 的核心离屏渲染前提；完整 editor UI backend、dock 和多 view host 仍留到 P7。
 
 验收：
 
@@ -443,6 +447,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - triangle/mesh/fullscreen smoke 能验证 buffer upload counter。
 - frame/renderer smoke 能验证 debug label begin/end counter 配对。
 - frame/renderer smoke 能验证 timestamp query delayed readback 和 `VulkanFrame` duration。
+- offscreen viewport smoke 能验证持久 viewport color target 多帧复用和 sampled composite。
 - resize 后资源销毁路径无 validation warning。
 - `--smoke-resize`、`--smoke-fullscreen-texture`、`--smoke-depth-triangle`、`--smoke-draw-list` 通过。
 

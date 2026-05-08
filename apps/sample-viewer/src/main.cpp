@@ -61,7 +61,7 @@ namespace {
                       "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
                       "[--smoke-mesh-3d] [--smoke-draw-list] "
                       "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
-                      "[--smoke-deferred-deletion] "
+                      "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
                       "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
@@ -108,6 +108,16 @@ namespace {
         if (stats.created != 1 || stats.reused < 2) {
             vke::logError(std::string{context} +
                           " did not reuse its renderer pipeline after the first frame.");
+            return false;
+        }
+        return true;
+    }
+
+    bool validateOffscreenViewportStats(vke::BasicOffscreenViewportStats stats,
+                                        std::string_view context) {
+        if (stats.renderTargetsCreated != 1 || stats.renderTargetsReused < 2) {
+            vke::logError(std::string{context} +
+                          " did not reuse its offscreen viewport render target.");
             return false;
         }
         return true;
@@ -1369,6 +1379,128 @@ namespace {
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             vke::logError("Failed to wait for Vulkan queue before fullscreen texture teardown: " +
+                          vke::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeOffscreenViewport() {
+        auto glfw = vke::GlfwInstance::create();
+        if (!glfw) {
+            vke::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            vke::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = vke::GlfwWindow::create(
+            *glfw, vke::WindowDesc{.title = "VkEngine Offscreen Viewport Smoke"});
+        if (!window) {
+            vke::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const vke::VulkanContextDesc contextDesc{
+            .applicationName = "VkEngine Offscreen Viewport Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return vke::glfwCreateVulkanSurface(*window, instance);
+                },
+            .debugLabels = kSmokeDebugLabels,
+        };
+
+        auto context = vke::VulkanContext::create(contextDesc);
+        if (!context) {
+            vke::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = vke::VulkanFrameLoop::create(
+            *context, vke::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.0F, 0.0F, 0.0F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            vke::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto renderer =
+            vke::BasicFullscreenTextureRenderer::create(vke::BasicFullscreenTextureRendererDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+            });
+        if (!renderer) {
+            vke::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        for (int frame = 0; frame < 3; ++frame) {
+            vke::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(
+                [&renderer](const vke::VulkanFrameRecordContext& recordContext) {
+                    return renderer->recordOffscreenViewportFrame(recordContext);
+                });
+            if (!status) {
+                vke::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+            if (*status == vke::VulkanFrameStatus::OutOfDate) {
+                vke::logError("Swapchain remained out of date during offscreen viewport smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        if (!validatePipelineCacheStats(renderer->pipelineCacheStats(),
+                                        "Offscreen viewport smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateOffscreenViewportStats(renderer->offscreenViewportStats(),
+                                            "Offscreen viewport smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
+                                             "Offscreen viewport smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Offscreen viewport smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(),
+                                     "Offscreen viewport smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(),
+                                    "Offscreen viewport smoke")) {
+            return EXIT_FAILURE;
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered offscreen viewport frames: " << extent.width << 'x'
+                  << extent.height << '\n';
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            vke::logError("Failed to wait for Vulkan queue before offscreen viewport teardown: " +
                           vke::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
@@ -2820,6 +2952,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-fullscreen-texture")) {
             return runSmokeFullscreenTexture();
+        }
+
+        if (hasArg(args, "--smoke-offscreen-viewport")) {
+            return runSmokeOffscreenViewport();
         }
 
         if (hasArg(args, "--smoke-deferred-deletion")) {

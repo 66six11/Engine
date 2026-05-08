@@ -1149,6 +1149,32 @@ namespace vke {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
+        void recordColorAttachmentClear(const VulkanFrameRecordContext& frame, VkImageView imageView,
+                                        VkExtent2D extent, VkClearColorValue color) {
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = imageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            colorAttachment.clearValue = VkClearValue{
+                .color = color,
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = extent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachments = &colorAttachment;
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
         [[nodiscard]] bool usesImage(std::span<const RenderGraphImageHandle> images,
                                      RenderGraphImageHandle image) {
             return std::ranges::any_of(
@@ -1486,6 +1512,12 @@ namespace vke {
         pipeline_ = std::move(other.pipeline_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
+        offscreenViewportStats_ = std::exchange(other.offscreenViewportStats_, {});
+        offscreenViewportImage_ = std::move(other.offscreenViewportImage_);
+        offscreenViewportImageView_ = std::move(other.offscreenViewportImageView_);
+        offscreenViewportFormat_ =
+            std::exchange(other.offscreenViewportFormat_, VK_FORMAT_UNDEFINED);
+        offscreenViewportExtent_ = std::exchange(other.offscreenViewportExtent_, VkExtent2D{});
         descriptorAllocator_ = std::move(other.descriptorAllocator_);
         descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
         uniformBuffer_ = std::move(other.uniformBuffer_);
@@ -1680,6 +1712,10 @@ namespace vke {
         return pipelineCacheStats_;
     }
 
+    BasicOffscreenViewportStats BasicFullscreenTextureRenderer::offscreenViewportStats() const {
+        return offscreenViewportStats_;
+    }
+
     VulkanDescriptorAllocatorStats
     BasicFullscreenTextureRenderer::descriptorAllocatorStats() const {
         return descriptorAllocator_.stats();
@@ -1689,6 +1725,54 @@ namespace vke {
         VulkanBufferStats stats;
         accumulateBufferStats(stats, uniformBuffer_);
         return stats;
+    }
+
+    Result<void>
+    BasicFullscreenTextureRenderer::ensureOffscreenViewportTarget(VkFormat format,
+                                                                  VkExtent2D extent) {
+        if (format == VK_FORMAT_UNDEFINED || extent.width == 0 || extent.height == 0) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot create offscreen viewport target from incomplete inputs"}};
+        }
+
+        if (offscreenViewportImage_.handle() != VK_NULL_HANDLE &&
+            offscreenViewportImageView_.handle() != VK_NULL_HANDLE &&
+            offscreenViewportFormat_ == format &&
+            offscreenViewportExtent_.width == extent.width &&
+            offscreenViewportExtent_.height == extent.height) {
+            ++offscreenViewportStats_.renderTargetsReused;
+            return {};
+        }
+
+        auto image = VulkanImage::create(VulkanImageDesc{
+            .device = device_,
+            .allocator = allocator_,
+            .format = format,
+            .extent = extent,
+            .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        });
+        if (!image) {
+            return std::unexpected{std::move(image.error())};
+        }
+
+        auto imageView = VulkanImageView::create(VulkanImageViewDesc{
+            .device = device_,
+            .image = image->handle(),
+            .format = image->format(),
+            .aspectMask = image->aspectMask(),
+        });
+        if (!imageView) {
+            return std::unexpected{std::move(imageView.error())};
+        }
+
+        offscreenViewportImage_ = std::move(*image);
+        offscreenViewportImageView_ = std::move(*imageView);
+        offscreenViewportFormat_ = format;
+        offscreenViewportExtent_ = extent;
+        ++offscreenViewportStats_.renderTargetsCreated;
+        return {};
     }
 
     Result<void>
@@ -1846,6 +1930,158 @@ namespace vke {
                                                   transientImagePool_, transientImages_);
         if (!prepared) {
             return std::unexpected{std::move(prepared.error())};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+
+        return VulkanFrameRecordResult{
+            .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        };
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(
+        const VulkanFrameRecordContext& frame) {
+        auto pipeline = ensurePipeline(frame.format);
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+        auto offscreenTarget = ensureOffscreenViewportTarget(frame.format, frame.extent);
+        if (!offscreenTarget) {
+            return std::unexpected{std::move(offscreenTarget.error())};
+        }
+
+        RenderGraph graph;
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const auto viewport = graph.importImage(RenderGraphImageDesc{
+            .name = "EditorViewportColor",
+            .format = basicRenderGraphImageFormat(frame.format),
+            .extent = basicRenderGraphExtent(frame.extent),
+            .initialState = RenderGraphImageState::Undefined,
+            .finalState = RenderGraphImageState::ShaderRead,
+            .finalShaderStage = RenderGraphShaderStage::Fragment,
+        });
+
+        std::vector<VulkanRenderGraphImageBinding> bindings;
+        bindings.reserve(2);
+        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+        bindings.push_back(VulkanRenderGraphImageBinding{
+            .image = viewport,
+            .vulkanImage = offscreenViewportImage_.handle(),
+            .vulkanImageView = offscreenViewportImageView_.handle(),
+            .aspectMask = offscreenViewportImage_.aspectMask(),
+        });
+
+        constexpr BasicTransferClearParams kViewportClearParams{
+            .color = {0.08F, 0.14F, 0.30F, 1.0F},
+        };
+        constexpr BasicFullscreenParams kCompositeParams{
+            .tint = {1.0F, 1.0F, 1.0F, 1.0F},
+        };
+
+        graph.addPass("ClearEditorViewport", kBasicDynamicClearPassType)
+            .setParams(kBasicDynamicClearParamsType, kViewportClearParams)
+            .writeColor("target", viewport)
+            .recordCommands([kViewportClearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", kViewportClearParams.color);
+            })
+            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
+                [[maybe_unused]] const auto debugLabel =
+                    VulkanDebugLabelScope::begin(frame, pass.name);
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto clearParams = readPassParams<BasicTransferClearParams>(
+                    pass, kBasicDynamicClearParamsType, "Offscreen viewport clear pass");
+                if (!clearParams) {
+                    return std::unexpected{std::move(clearParams.error())};
+                }
+
+                auto viewportBinding =
+                    findVulkanRenderGraphColorWrite(pass, "target", bindings);
+                if (!viewportBinding) {
+                    return std::unexpected{std::move(viewportBinding.error())};
+                }
+
+                recordColorAttachmentClear(frame, viewportBinding->vulkanImageView,
+                                           offscreenViewportExtent_,
+                                           basicClearColorValue(*clearParams));
+                return {};
+            });
+
+        graph.addPass("CompositeEditorViewport", kBasicRasterFullscreenPassType)
+            .setParams(kBasicRasterFullscreenParamsType, kCompositeParams)
+            .readTexture("source", viewport, RenderGraphShaderStage::Fragment)
+            .writeColor("target", backbuffer)
+            .recordCommands([kCompositeParams](RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/DescriptorLayout", "Fullscreen")
+                    .setTexture("SourceTex", "source")
+                    .setVec4("Tint", kCompositeParams.tint)
+                    .drawFullscreenTriangle();
+            })
+            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
+                [[maybe_unused]] const auto debugLabel =
+                    VulkanDebugLabelScope::begin(frame, pass.name);
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto fullscreenParams = readPassParams<BasicFullscreenParams>(
+                    pass, kBasicRasterFullscreenParamsType, "Offscreen viewport composite pass");
+                if (!fullscreenParams) {
+                    return std::unexpected{std::move(fullscreenParams.error())};
+                }
+
+                auto pipelineKey = basicFullscreenPipelineKey(pass);
+                if (!pipelineKey) {
+                    return std::unexpected{std::move(pipelineKey.error())};
+                }
+                auto tintCommand = validateFullscreenTintCommand(pass, *fullscreenParams);
+                if (!tintCommand) {
+                    return std::unexpected{std::move(tintCommand.error())};
+                }
+                if (pipelineKey->textureSlot != "source") {
+                    return std::unexpected{
+                        renderGraphError("Offscreen viewport pipeline key references an unknown "
+                                         "texture slot")};
+                }
+
+                auto sourceBinding = findVulkanRenderGraphShaderRead(pass, "source", bindings);
+                if (!sourceBinding) {
+                    return std::unexpected{std::move(sourceBinding.error())};
+                }
+                auto descriptor = updateSourceDescriptor(sourceBinding->vulkanImageView);
+                if (!descriptor) {
+                    return std::unexpected{std::move(descriptor.error())};
+                }
+
+                recordFullscreenTextureDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
+                                            descriptorSet_);
+                return {};
+            });
+
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
         }
 
         auto executed = graph.execute(*compiled);
