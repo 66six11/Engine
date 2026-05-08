@@ -54,7 +54,8 @@ $smokes = @(
     "--smoke-mesh-3d",
     "--smoke-draw-list",
     "--smoke-descriptor-layout",
-    "--smoke-fullscreen-texture"
+    "--smoke-fullscreen-texture",
+    "--smoke-deferred-deletion"
 )
 
 foreach ($preset in @("clangcl-debug", "msvc-debug")) {

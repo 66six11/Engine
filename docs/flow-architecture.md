@@ -120,6 +120,7 @@ flowchart TD
     DrawListSmoke["--smoke-draw-list"]
     DescriptorSmoke["--smoke-descriptor-layout"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
+    DeferredDeletionSmoke["--smoke-deferred-deletion"]
     GLFW["GlfwInstance / GlfwWindow"]
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
@@ -142,6 +143,7 @@ flowchart TD
     Args --> DrawListSmoke
     Args --> DescriptorSmoke
     Args --> FullscreenTextureSmoke
+    Args --> DeferredDeletionSmoke
     WindowSmoke --> GLFW
     VulkanSmoke --> GLFW
     VulkanSmoke --> Ext
@@ -216,6 +218,8 @@ flowchart TD
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译和 Vulkan adapter 字段验证入口。
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
   image view 和 binding 表，并录制非 backbuffer image transition / clear。
+- `--smoke-deferred-deletion` 已接入 P4 后端生命周期起点：验证 deferred deletion queue 的 epoch
+  retirement 顺序、empty callback 拒绝路径和 pending/enqueued/retired/flushed counters。
 
 ## 当前运行调用链
 

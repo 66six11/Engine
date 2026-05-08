@@ -8,6 +8,7 @@ add_library(vke-rhi-vulkan STATIC
     src/vulkan_pipeline.cpp
     src/vulkan_buffer.cpp
     src/vulkan_image.cpp
+    src/deferred_deletion_queue.cpp
 )
 
 add_library(vke::rhi_vulkan ALIAS vke-rhi-vulkan)

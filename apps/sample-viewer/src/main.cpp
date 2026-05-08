@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
@@ -17,6 +18,7 @@
 #include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
 #include "vke/renderer_basic_vulkan/clear_frame.hpp"
 #include "vke/rendergraph/render_graph.hpp"
+#include "vke/rhi_vulkan/deferred_deletion_queue.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "vke/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
@@ -79,6 +81,70 @@ namespace {
             return "Rendered depth triangle frames: ";
         }
         return "Rendered triangle frames: ";
+    }
+
+    int runSmokeDeferredDeletion() {
+        vke::VulkanDeferredDeletionQueue queue;
+        std::vector<int> retired;
+
+        if (queue.enqueue(0, {})) {
+            vke::logError("Deferred deletion queue accepted an empty callback.");
+            return EXIT_FAILURE;
+        }
+
+        const bool enqueued =
+            queue.enqueue(2, [&retired]() { retired.push_back(2); }) &&
+            queue.enqueue(1, [&retired]() { retired.push_back(1); }) &&
+            queue.enqueue(3, [&retired]() { retired.push_back(3); });
+        if (!enqueued) {
+            vke::logError("Deferred deletion queue rejected a valid callback.");
+            return EXIT_FAILURE;
+        }
+
+        vke::VulkanDeferredDeletionStats stats = queue.stats();
+        if (stats.pending != 3 || stats.enqueued != 3 || stats.retired != 0 ||
+            stats.flushed != 0 || queue.pendingCount() != 3 || queue.empty()) {
+            vke::logError("Deferred deletion queue reported unexpected initial counters.");
+            return EXIT_FAILURE;
+        }
+
+        if (queue.retireCompleted(1) != 1 || retired != std::vector<int>{1}) {
+            vke::logError("Deferred deletion queue retired the wrong epoch 1 callbacks.");
+            return EXIT_FAILURE;
+        }
+
+        if (!queue.enqueue(2, [&retired]() { retired.push_back(22); })) {
+            vke::logError("Deferred deletion queue rejected a valid late callback.");
+            return EXIT_FAILURE;
+        }
+
+        if (queue.retireCompleted(2) != 2 || retired != std::vector<int>{1, 2, 22}) {
+            vke::logError("Deferred deletion queue retired the wrong epoch 2 callbacks.");
+            return EXIT_FAILURE;
+        }
+
+        stats = queue.stats();
+        if (stats.pending != 1 || stats.enqueued != 4 || stats.retired != 3 ||
+            stats.flushed != 0) {
+            vke::logError("Deferred deletion queue reported unexpected post-retire counters.");
+            return EXIT_FAILURE;
+        }
+
+        if (queue.flush() != 1 || retired != std::vector<int>{1, 2, 22, 3}) {
+            vke::logError("Deferred deletion queue flush retired the wrong callbacks.");
+            return EXIT_FAILURE;
+        }
+
+        stats = queue.stats();
+        if (stats.pending != 0 || stats.enqueued != 4 || stats.retired != 4 ||
+            stats.flushed != 1 || !queue.empty()) {
+            vke::logError("Deferred deletion queue reported unexpected final counters.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Deferred deletion queue enqueued: " << stats.enqueued
+                  << ", retired: " << stats.retired << ", flushed: " << stats.flushed << '\n';
+        return EXIT_SUCCESS;
     }
 
     int runSmokeWindow() {
@@ -2292,6 +2358,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-fullscreen-texture")) {
             return runSmokeFullscreenTexture();
+        }
+
+        if (hasArg(args, "--smoke-deferred-deletion")) {
+            return runSmokeDeferredDeletion();
         }
 
         printVersion();
