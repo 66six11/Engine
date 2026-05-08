@@ -12,7 +12,7 @@
 4. `flow-architecture.md` - 当前包依赖、启动流程、frame loop、RenderGraph/RHI 数据流。
 5. `engine-systems-architecture.md` - 对照 Godot、Unreal、Unity、O3DE、Bevy 和 Vulkan 资料整理的引擎必备系统地图。
 6. `frame-loop-threading.md` - 当前单线程 frame loop、后续 worker pool、RenderThread 和多线程 Vulkan 录制边界。
-7. `next-development-plan.md` - 下一阶段 shader reflection、descriptor、transient/depth 和 mesh 路线。
+7. `next-development-plan.md` - 下一阶段 RenderTarget、RenderView、editor viewport、RenderGraph resource、asset/material 和 scene 路线。
 8. `rendergraph-development-roadmap.md` - 结合外部资料整理的 RenderGraph 后续完整开发路线图。
 9. `performance-profiling-plan.md` - 性能诊断底座、benchmark、GPU timestamp 和未来编辑器面板技术约束。
 10. `full-diagnosis-2026-05-05.md` - 最近一次全量诊断、风险清单和未来开发计划。
@@ -52,6 +52,7 @@
 - RenderGraph 已接入最小依赖排序、dependency debug table、显式 pass culling 和 side-effect 标记；下一步补更强非法依赖诊断和更细 culling 策略。
 - RenderGraph 后续专项推进以 `rendergraph-development-roadmap.md` 为准。
 - 引擎级系统边界和线程路线以 `engine-systems-architecture.md`、`frame-loop-threading.md` 为准；其中 asset、scene、editor、script 等内容是后续设计门禁，不代表当前 MVP 立即实现。
-- 性能诊断先作为 P3.5 观测底座推进，编辑器性能面板暂只保留技术细节，不进入当前里程碑。
-- 建立 deferred destruction、descriptor allocator、transient resource pool 和 pipeline cache。
+- 性能诊断先作为 P3.5 观测底座推进；编辑器性能面板后置到 editor viewport、scene/object 和 asset/material 小闭环之后。
+- 建立通用 RenderTarget / RenderView / sampled texture bridge，让 editor viewport 作为渲染层真实消费方尽早接入。
+- 继续补 RenderGraph buffer/storage/MRT/compute、asset-core/resource upload、material/pipeline key 和最小 scene/object/selection 边界。
 - 维护 `conan.lock`，依赖改动时重新生成并审查 recipe revision 变化。
