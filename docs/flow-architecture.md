@@ -12,7 +12,7 @@
 
 ```mermaid
 flowchart TD
-    App["apps/sample-viewer"]
+    App["apps/sample-viewer<br/>MVP host + smoke harness"]
     Core["engine/core"]
     Platform["engine/platform"]
     Window["packages/window-glfw"]
@@ -41,10 +41,10 @@ flowchart TD
     App --> Profiling
     App --> Window
     App --> RG
-    App --> RhiVk
-    App --> RhiVkRG
-    App --> Renderer
-    App --> RendererVk
+    App -->|current MVP/smoke wiring| RhiVk
+    App -->|smoke validation only| RhiVkRG
+    App -->|CPU-only benchmark schemas| Renderer
+    App -->|selected sample renderer| RendererVk
 ```
 
 当前约束：
@@ -54,7 +54,10 @@ flowchart TD
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
 - `renderer-basic-vulkan` 组合 RenderGraph、Vulkan frame callback 和 Vulkan adapter，承载当前 clear frame orchestration。
 - `profiling` 提供后端无关 CPU scope、frame profile 和 JSONL 输出；当前只由 sample-viewer benchmark 使用。
-- `sample-viewer` 负责窗口、context 和 smoke 命令入口；`--smoke-frame` 不再持有 clear pass 录制细节。
+- `sample-viewer` 当前同时承担 app host 和 smoke harness，所以会直接创建 `VulkanContext` /
+  `VulkanFrameLoop`。这是当前 MVP 事实，不是目标产品边界；后续应收敛到 runtime/engine host。
+- `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把
+  Vulkan barrier/layout 细节扩散到 app 层。
 
 ## 当前架构总览
 
@@ -236,6 +239,8 @@ flowchart TD
 
 交互式 viewer 和各个 Vulkan smoke 共享同一条 frame-loop 骨架：host 创建 window/context/frame loop，
 renderer 只通过 callback 在“command buffer 已经 begin”之后录制本帧内容，最后由 frame loop 统一 submit/present。
+当前 `sample-viewer` 直接创建 `VulkanContext` / `VulkanFrameLoop` 是 MVP host 和 smoke harness 的接线事实；
+目标 runtime 应把这层隐藏在 engine host 后面。
 
 ```mermaid
 sequenceDiagram
@@ -244,7 +249,8 @@ sequenceDiagram
     participant Window as GlfwWindow
     participant Context as VulkanContext
     participant FrameLoop as VulkanFrameLoop
-    participant Renderer as renderer_basic_vulkan
+    participant RecordHook as VulkanFrameRecordCallback
+    participant RendererVk as renderer_basic_vulkan
     participant RG as RenderGraph
     participant Adapter as rhi_vulkan_rendergraph
     participant Vulkan as Vulkan API
@@ -252,6 +258,7 @@ sequenceDiagram
     Main->>Window: create window / poll events / framebuffer extent
     Main->>Context: VulkanContext::create(instance extensions)
     Context->>Vulkan: create instance / device / queue / VMA allocator
+    Main->>RendererVk: create selected sample renderer
     Main->>FrameLoop: VulkanFrameLoop::create(context, window)
     FrameLoop->>Vulkan: create swapchain / image views / command buffer / sync objects
     Main->>FrameLoop: renderFrame(record callback)
@@ -259,14 +266,16 @@ sequenceDiagram
     FrameLoop->>FrameLoop: retire completed deferred deletions
     FrameLoop->>Vulkan: vkAcquireNextImageKHR
     FrameLoop->>Vulkan: vkBeginCommandBuffer
-    FrameLoop->>Renderer: recordFrame(recordContext)
-    Renderer->>RG: import/create resources, add passes, record command summary
-    Renderer->>RG: compile(schema registry)
-    RG-->>Renderer: compiled passes, transitions, transient plan, final transitions
-    Renderer->>Adapter: recordRenderGraphTransitions(compiled transitions, bindings)
+    FrameLoop->>RecordHook: invoke(recordContext)
+    RecordHook->>RendererVk: recordFrame(recordContext)
+    RendererVk->>RG: import/create resources, add passes, record command summary
+    RendererVk->>RG: compile(schema registry)
+    RG-->>RendererVk: compiled passes, transitions, transient plan, final transitions
+    RendererVk->>Adapter: recordRenderGraphTransitions(compiled transitions, bindings)
     Adapter->>Vulkan: vkCmdPipelineBarrier2
-    Renderer->>Vulkan: vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw
-    Renderer-->>FrameLoop: VulkanFrameRecordResult(waitStageMask)
+    RendererVk->>Vulkan: vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw
+    RendererVk-->>RecordHook: VulkanFrameRecordResult(waitStageMask)
+    RecordHook-->>FrameLoop: VulkanFrameRecordResult(waitStageMask)
     FrameLoop->>Vulkan: vkEndCommandBuffer
     FrameLoop->>Vulkan: vkQueueSubmit2(waitStageMask)
     FrameLoop->>FrameLoop: advance submitted frame epoch
@@ -277,6 +286,8 @@ sequenceDiagram
 
 - `VulkanFrameLoop` 拥有 acquire、command buffer begin/end、queue submit、present、swapchain recreate
   和 fence/epoch 驱动的 deferred deletion retirement。
+- `VulkanFrameLoop` 只知道 `VulkanFrameRecordCallback`，不应该包含或链接 `renderer_basic_vulkan`、
+  `RenderGraph` 或具体 sample renderer。
 - `renderer_basic_vulkan` 在 callback 内构建 graph、编译 graph、准备 transient/descriptor/pipeline 相关资源并录制 draw。
 - `RenderGraph` 产出后端无关计划；它不直接调用 Vulkan。
 - `rhi_vulkan_rendergraph` 把 compiled transition 翻译为 Vulkan barrier，再由调用方用真实 image binding 录制。
