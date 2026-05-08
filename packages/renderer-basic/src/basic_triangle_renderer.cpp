@@ -1727,9 +1727,8 @@ namespace vke {
         return stats;
     }
 
-    Result<void>
-    BasicFullscreenTextureRenderer::ensureOffscreenViewportTarget(VkFormat format,
-                                                                  VkExtent2D extent) {
+    Result<void> BasicFullscreenTextureRenderer::ensureOffscreenViewportTarget(
+        const VulkanFrameRecordContext& frame, VkFormat format, VkExtent2D extent) {
         if (format == VK_FORMAT_UNDEFINED || extent.width == 0 || extent.height == 0) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0,
@@ -1765,6 +1764,26 @@ namespace vke {
         });
         if (!imageView) {
             return std::unexpected{std::move(imageView.error())};
+        }
+
+        if (offscreenViewportImage_.handle() != VK_NULL_HANDLE ||
+            offscreenViewportImageView_.handle() != VK_NULL_HANDLE) {
+            if (frame.frameLoop == nullptr) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "Cannot replace offscreen viewport target without deferred deletion"}};
+            }
+            if (!offscreenViewportImageView_.deferDestroy(frame)) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "Failed to defer destruction of offscreen viewport image view"}};
+            }
+            if (!offscreenViewportImage_.deferDestroy(frame)) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "Failed to defer destruction of offscreen viewport image"}};
+            }
+            ++offscreenViewportStats_.renderTargetsDeferredForDeletion;
         }
 
         offscreenViewportImage_ = std::move(*image);
@@ -1951,11 +1970,18 @@ namespace vke {
     Result<VulkanFrameRecordResult>
     BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(
         const VulkanFrameRecordContext& frame) {
+        return recordOffscreenViewportFrame(frame, frame.extent);
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(
+        const VulkanFrameRecordContext& frame, VkExtent2D viewportExtent) {
         auto pipeline = ensurePipeline(frame.format);
         if (!pipeline) {
             return std::unexpected{std::move(pipeline.error())};
         }
-        auto offscreenTarget = ensureOffscreenViewportTarget(frame.format, frame.extent);
+        auto offscreenTarget =
+            ensureOffscreenViewportTarget(frame, frame.format, viewportExtent);
         if (!offscreenTarget) {
             return std::unexpected{std::move(offscreenTarget.error())};
         }
@@ -1965,7 +1991,7 @@ namespace vke {
         const auto viewport = graph.importImage(RenderGraphImageDesc{
             .name = "EditorViewportColor",
             .format = basicRenderGraphImageFormat(frame.format),
-            .extent = basicRenderGraphExtent(frame.extent),
+            .extent = basicRenderGraphExtent(viewportExtent),
             .initialState = RenderGraphImageState::Undefined,
             .finalState = RenderGraphImageState::ShaderRead,
             .finalShaderStage = RenderGraphShaderStage::Fragment,

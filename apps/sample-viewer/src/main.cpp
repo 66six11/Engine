@@ -115,9 +115,10 @@ namespace {
 
     bool validateOffscreenViewportStats(vke::BasicOffscreenViewportStats stats,
                                         std::string_view context) {
-        if (stats.renderTargetsCreated != 1 || stats.renderTargetsReused < 2) {
+        if (stats.renderTargetsCreated != 2 || stats.renderTargetsReused < 2 ||
+            stats.renderTargetsDeferredForDeletion != 1) {
             vke::logError(std::string{context} +
-                          " did not reuse its offscreen viewport render target.");
+                          " did not resize and reuse its offscreen viewport render target.");
             return false;
         }
         return true;
@@ -1448,14 +1449,24 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        for (int frame = 0; frame < 3; ++frame) {
+        VkExtent2D lastViewportExtent{};
+        for (int frame = 0; frame < 4; ++frame) {
             vke::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+            VkExtent2D viewportExtent{
+                .width = currentFramebuffer.width,
+                .height = currentFramebuffer.height,
+            };
+            if (frame >= 2) {
+                viewportExtent.width = std::max(1U, currentFramebuffer.width / 2U);
+                viewportExtent.height = std::max(1U, currentFramebuffer.height / 2U);
+            }
+            lastViewportExtent = viewportExtent;
 
             auto status = frameLoop->renderFrame(
-                [&renderer](const vke::VulkanFrameRecordContext& recordContext) {
-                    return renderer->recordOffscreenViewportFrame(recordContext);
+                [&renderer, viewportExtent](const vke::VulkanFrameRecordContext& recordContext) {
+                    return renderer->recordOffscreenViewportFrame(recordContext, viewportExtent);
                 });
             if (!status) {
                 vke::logError(status.error().message);
@@ -1478,6 +1489,11 @@ namespace {
                                             "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
         }
+        const vke::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
+        if (deletionStats.enqueued < 2 || deletionStats.retired < 2) {
+            vke::logError("Offscreen viewport smoke did not retire resized viewport resources.");
+            return EXIT_FAILURE;
+        }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
                                              "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
@@ -1495,9 +1511,10 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        const VkExtent2D extent = frameLoop->extent();
-        std::cout << "Rendered offscreen viewport frames: " << extent.width << 'x'
-                  << extent.height << '\n';
+        const VkExtent2D swapchainExtent = frameLoop->extent();
+        std::cout << "Rendered offscreen viewport frames: " << lastViewportExtent.width << 'x'
+                  << lastViewportExtent.height << " inside swapchain "
+                  << swapchainExtent.width << 'x' << swapchainExtent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             vke::logError("Failed to wait for Vulkan queue before offscreen viewport teardown: " +

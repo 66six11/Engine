@@ -57,6 +57,7 @@ namespace vke {
     struct BasicOffscreenViewportStats {
         std::uint64_t renderTargetsCreated{};
         std::uint64_t renderTargetsReused{};
+        std::uint64_t renderTargetsDeferredForDeletion{};
     };
 
     [[nodiscard]] Result<void>
@@ -77,6 +78,9 @@ namespace vke {
         recordFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame,
+                                     VkExtent2D viewportExtent);
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
         [[nodiscard]] BasicOffscreenViewportStats offscreenViewportStats() const;
         [[nodiscard]] VulkanDescriptorAllocatorStats descriptorAllocatorStats() const;
@@ -84,7 +88,8 @@ namespace vke {
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
-        [[nodiscard]] Result<void> ensureOffscreenViewportTarget(VkFormat format,
+        [[nodiscard]] Result<void> ensureOffscreenViewportTarget(const VulkanFrameRecordContext& frame,
+                                                                 VkFormat format,
                                                                  VkExtent2D extent);
         [[nodiscard]] Result<void> updateSourceDescriptor(VkImageView sourceImageView);
 
