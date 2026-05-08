@@ -100,6 +100,16 @@ namespace {
         return "Rendered triangle frames: ";
     }
 
+    bool validatePipelineCacheStats(vke::BasicPipelineCacheStats stats,
+                                    std::string_view context) {
+        if (stats.created != 1 || stats.reused < 2) {
+            vke::logError(std::string{context} +
+                          " did not reuse its renderer pipeline after the first frame.");
+            return false;
+        }
+        return true;
+    }
+
     struct RenderGraphBenchOptions {
         std::size_t warmupFrames{60};
         std::size_t measuredFrames{600};
@@ -863,6 +873,10 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
+        if (!validatePipelineCacheStats(triangleRenderer->pipelineCacheStats(), title)) {
+            return EXIT_FAILURE;
+        }
+
         const VkExtent2D extent = frameLoop->extent();
         std::cout << triangleSmokeRenderedPrefix(useDepth, meshKind) << extent.width << 'x'
                   << extent.height << '\n';
@@ -1011,6 +1025,10 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
+        if (!validatePipelineCacheStats(meshRenderer->pipelineCacheStats(), "Mesh 3D smoke")) {
+            return EXIT_FAILURE;
+        }
+
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered mesh 3D frames: " << extent.width << 'x' << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
@@ -1108,6 +1126,10 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
+        if (!validatePipelineCacheStats(renderer->pipelineCacheStats(), "Draw list smoke")) {
+            return EXIT_FAILURE;
+        }
+
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered draw list frames: " << extent.width << 'x' << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
@@ -1201,6 +1223,11 @@ namespace {
 
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(16ms);
+        }
+
+        if (!validatePipelineCacheStats(renderer->pipelineCacheStats(),
+                                        "Fullscreen texture smoke")) {
+            return EXIT_FAILURE;
         }
 
         const VkExtent2D extent = frameLoop->extent();

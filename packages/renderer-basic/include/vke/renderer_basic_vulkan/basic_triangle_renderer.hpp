@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <vector>
@@ -48,6 +49,11 @@ namespace vke {
         std::span<const BasicDrawListItem> drawItems{};
     };
 
+    struct BasicPipelineCacheStats {
+        std::uint64_t created{};
+        std::uint64_t reused{};
+    };
+
     [[nodiscard]] Result<void>
     validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc);
 
@@ -64,6 +70,7 @@ namespace vke {
         create(const BasicFullscreenTextureRendererDesc& desc);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
@@ -75,8 +82,10 @@ namespace vke {
         VulkanShaderModule fragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
+        VulkanPipelineCache pipelineCache_;
         VulkanGraphicsPipeline pipeline_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
+        BasicPipelineCacheStats pipelineCacheStats_;
         VulkanDescriptorPool descriptorPool_;
         VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
         VulkanBuffer uniformBuffer_;
@@ -100,6 +109,7 @@ namespace vke {
         recordFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrameWithDepth(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat,
@@ -111,11 +121,13 @@ namespace vke {
         VulkanShaderModule fragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
+        VulkanPipelineCache pipelineCache_;
         VulkanGraphicsPipeline pipeline_;
         VulkanBuffer vertexBuffer_;
         VulkanBuffer indexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
+        BasicPipelineCacheStats pipelineCacheStats_;
         VulkanTransientImagePool transientImagePool_;
         std::vector<VulkanTransientImageResource> transientImages_;
         BasicDrawItem drawItem_{basicTriangleDrawItem()};
@@ -134,6 +146,7 @@ namespace vke {
         create(const BasicMesh3DRendererDesc& desc);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat, VkFormat depthFormat);
@@ -144,11 +157,13 @@ namespace vke {
         VulkanShaderModule fragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
+        VulkanPipelineCache pipelineCache_;
         VulkanGraphicsPipeline pipeline_;
         VulkanBuffer vertexBuffer_;
         VulkanBuffer indexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
+        BasicPipelineCacheStats pipelineCacheStats_;
         VulkanTransientImagePool transientImagePool_;
         std::vector<VulkanTransientImageResource> transientImages_;
     };
@@ -166,6 +181,7 @@ namespace vke {
         create(const BasicDrawListRendererDesc& desc);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat, VkFormat depthFormat);
@@ -175,11 +191,13 @@ namespace vke {
         VulkanShaderModule vertexShader_;
         VulkanShaderModule fragmentShader_;
         VulkanPipelineLayout pipelineLayout_;
+        VulkanPipelineCache pipelineCache_;
         VulkanGraphicsPipeline pipeline_;
         VulkanBuffer vertexBuffer_;
         VulkanBuffer indexBuffer_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat pipelineDepthFormat_{VK_FORMAT_UNDEFINED};
+        BasicPipelineCacheStats pipelineCacheStats_;
         std::vector<BasicDrawListItem> drawItems_;
         VulkanTransientImagePool transientImagePool_;
         std::vector<VulkanTransientImageResource> transientImages_;

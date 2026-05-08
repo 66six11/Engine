@@ -1288,6 +1288,13 @@ namespace vke {
             return {};
         }
 
+        [[nodiscard]] Result<VulkanPipelineCache> createBasicPipelineCache(VkDevice device) {
+            return VulkanPipelineCache::create(VulkanPipelineCacheDesc{
+                .device = device,
+                .initialData = {},
+            });
+        }
+
     } // namespace
 
     Result<void> validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc) {
@@ -1450,8 +1457,10 @@ namespace vke {
         fragmentShader_ = std::move(other.fragmentShader_);
         descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
         pipelineLayout_ = std::move(other.pipelineLayout_);
+        pipelineCache_ = std::move(other.pipelineCache_);
         pipeline_ = std::move(other.pipeline_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
+        pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
         descriptorPool_ = std::move(other.descriptorPool_);
         descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
         uniformBuffer_ = std::move(other.uniformBuffer_);
@@ -1532,6 +1541,10 @@ namespace vke {
         if (!sampler) {
             return std::unexpected{std::move(sampler.error())};
         }
+        auto pipelineCache = createBasicPipelineCache(desc.device);
+        if (!pipelineCache) {
+            return std::unexpected{std::move(pipelineCache.error())};
+        }
 
         constexpr std::array poolSizes{
             VulkanDescriptorPoolSize{
@@ -1602,6 +1615,7 @@ namespace vke {
         renderer.fragmentShader_ = std::move(*fragmentShader);
         renderer.descriptorSetLayouts_ = std::move(resources->descriptorSetLayouts);
         renderer.pipelineLayout_ = std::move(resources->pipelineLayout);
+        renderer.pipelineCache_ = std::move(*pipelineCache);
         renderer.descriptorPool_ = std::move(*descriptorPool);
         renderer.descriptorSet_ = descriptorSets->front();
         renderer.uniformBuffer_ = std::move(*uniformBuffer);
@@ -1611,11 +1625,13 @@ namespace vke {
 
     Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat) {
         if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat) {
+            ++pipelineCacheStats_.reused;
             return {};
         }
 
         auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
             .device = device_,
+            .pipelineCache = pipelineCache_.handle(),
             .layout = pipelineLayout_.handle(),
             .vertexShader = vertexShader_.handle(),
             .fragmentShader = fragmentShader_.handle(),
@@ -1631,7 +1647,12 @@ namespace vke {
 
         pipeline_ = std::move(*pipeline);
         pipelineFormat_ = colorFormat;
+        ++pipelineCacheStats_.created;
         return {};
+    }
+
+    BasicPipelineCacheStats BasicFullscreenTextureRenderer::pipelineCacheStats() const {
+        return pipelineCacheStats_;
     }
 
     Result<void>
@@ -1814,6 +1835,7 @@ namespace vke {
         fragmentShader_ = std::move(other.fragmentShader_);
         descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
         pipelineLayout_ = std::move(other.pipelineLayout_);
+        pipelineCache_ = std::move(other.pipelineCache_);
         pipeline_ = std::move(other.pipeline_);
         vertexBuffer_ = std::move(other.vertexBuffer_);
         indexBuffer_ = std::move(other.indexBuffer_);
@@ -1821,6 +1843,7 @@ namespace vke {
         transientImages_ = std::move(other.transientImages_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
+        pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
         allocator_ = std::exchange(other.allocator_, nullptr);
         drawItem_ = std::exchange(other.drawItem_, basicTriangleDrawItem());
         return *this;
@@ -1878,6 +1901,10 @@ namespace vke {
         if (!layoutResources) {
             return std::unexpected{std::move(layoutResources.error())};
         }
+        auto pipelineCache = createBasicPipelineCache(desc.device);
+        if (!pipelineCache) {
+            return std::unexpected{std::move(pipelineCache.error())};
+        }
 
         constexpr auto triangleVertices = basicTriangleVertices();
         constexpr auto quadVertices = basicQuadVertices();
@@ -1927,6 +1954,7 @@ namespace vke {
         renderer.fragmentShader_ = std::move(*fragmentShader);
         renderer.descriptorSetLayouts_ = std::move(layoutResources->descriptorSetLayouts);
         renderer.pipelineLayout_ = std::move(layoutResources->pipelineLayout);
+        renderer.pipelineCache_ = std::move(*pipelineCache);
         renderer.vertexBuffer_ = std::move(*vertexBuffer);
         renderer.indexBuffer_ = std::move(indexBuffer);
         renderer.drawItem_ = drawItem;
@@ -1936,6 +1964,7 @@ namespace vke {
     Result<void> BasicTriangleRenderer::ensurePipeline(VkFormat colorFormat, VkFormat depthFormat) {
         if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat &&
             pipelineDepthFormat_ == depthFormat) {
+            ++pipelineCacheStats_.reused;
             return {};
         }
 
@@ -1944,6 +1973,7 @@ namespace vke {
 
         auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
             .device = device_,
+            .pipelineCache = pipelineCache_.handle(),
             .layout = pipelineLayout_.handle(),
             .vertexShader = vertexShader_.handle(),
             .fragmentShader = fragmentShader_.handle(),
@@ -1961,7 +1991,12 @@ namespace vke {
         pipeline_ = std::move(*pipeline);
         pipelineFormat_ = colorFormat;
         pipelineDepthFormat_ = depthFormat;
+        ++pipelineCacheStats_.created;
         return {};
+    }
+
+    BasicPipelineCacheStats BasicTriangleRenderer::pipelineCacheStats() const {
+        return pipelineCacheStats_;
     }
 
     Result<VulkanFrameRecordResult>
@@ -2156,6 +2191,7 @@ namespace vke {
         fragmentShader_ = std::move(other.fragmentShader_);
         descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
         pipelineLayout_ = std::move(other.pipelineLayout_);
+        pipelineCache_ = std::move(other.pipelineCache_);
         pipeline_ = std::move(other.pipeline_);
         vertexBuffer_ = std::move(other.vertexBuffer_);
         indexBuffer_ = std::move(other.indexBuffer_);
@@ -2163,6 +2199,7 @@ namespace vke {
         transientImages_ = std::move(other.transientImages_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
+        pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
         allocator_ = std::exchange(other.allocator_, nullptr);
         return *this;
     }
@@ -2221,6 +2258,10 @@ namespace vke {
         if (!pipelineLayout) {
             return std::unexpected{std::move(pipelineLayout.error())};
         }
+        auto pipelineCache = createBasicPipelineCache(desc.device);
+        if (!pipelineCache) {
+            return std::unexpected{std::move(pipelineCache.error())};
+        }
 
         constexpr auto vertices = basicCubeVertices();
         auto vertexBuffer = VulkanBuffer::create(VulkanBufferDesc{
@@ -2260,6 +2301,7 @@ namespace vke {
         renderer.vertexShader_ = std::move(*vertexShader);
         renderer.fragmentShader_ = std::move(*fragmentShader);
         renderer.pipelineLayout_ = std::move(*pipelineLayout);
+        renderer.pipelineCache_ = std::move(*pipelineCache);
         renderer.vertexBuffer_ = std::move(*vertexBuffer);
         renderer.indexBuffer_ = std::move(*indexBuffer);
         return renderer;
@@ -2268,6 +2310,7 @@ namespace vke {
     Result<void> BasicMesh3DRenderer::ensurePipeline(VkFormat colorFormat, VkFormat depthFormat) {
         if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat &&
             pipelineDepthFormat_ == depthFormat) {
+            ++pipelineCacheStats_.reused;
             return {};
         }
 
@@ -2276,6 +2319,7 @@ namespace vke {
 
         auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
             .device = device_,
+            .pipelineCache = pipelineCache_.handle(),
             .layout = pipelineLayout_.handle(),
             .vertexShader = vertexShader_.handle(),
             .fragmentShader = fragmentShader_.handle(),
@@ -2293,7 +2337,12 @@ namespace vke {
         pipeline_ = std::move(*pipeline);
         pipelineFormat_ = colorFormat;
         pipelineDepthFormat_ = depthFormat;
+        ++pipelineCacheStats_.created;
         return {};
+    }
+
+    BasicPipelineCacheStats BasicMesh3DRenderer::pipelineCacheStats() const {
+        return pipelineCacheStats_;
     }
 
     Result<VulkanFrameRecordResult>
@@ -2411,11 +2460,13 @@ namespace vke {
         vertexShader_ = std::move(other.vertexShader_);
         fragmentShader_ = std::move(other.fragmentShader_);
         pipelineLayout_ = std::move(other.pipelineLayout_);
+        pipelineCache_ = std::move(other.pipelineCache_);
         pipeline_ = std::move(other.pipeline_);
         vertexBuffer_ = std::move(other.vertexBuffer_);
         indexBuffer_ = std::move(other.indexBuffer_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
+        pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
         drawItems_ = std::move(other.drawItems_);
         transientImagePool_ = std::move(other.transientImagePool_);
         transientImages_ = std::move(other.transientImages_);
@@ -2488,6 +2539,10 @@ namespace vke {
         if (!pipelineLayout) {
             return std::unexpected{std::move(pipelineLayout.error())};
         }
+        auto pipelineCache = createBasicPipelineCache(desc.device);
+        if (!pipelineCache) {
+            return std::unexpected{std::move(pipelineCache.error())};
+        }
 
         constexpr auto vertices = basicCubeVertices();
         auto vertexBuffer = VulkanBuffer::create(VulkanBufferDesc{
@@ -2527,6 +2582,7 @@ namespace vke {
         renderer.vertexShader_ = std::move(*vertexShader);
         renderer.fragmentShader_ = std::move(*fragmentShader);
         renderer.pipelineLayout_ = std::move(*pipelineLayout);
+        renderer.pipelineCache_ = std::move(*pipelineCache);
         renderer.vertexBuffer_ = std::move(*vertexBuffer);
         renderer.indexBuffer_ = std::move(*indexBuffer);
         renderer.drawItems_.assign(drawItems.begin(), drawItems.end());
@@ -2536,6 +2592,7 @@ namespace vke {
     Result<void> BasicDrawListRenderer::ensurePipeline(VkFormat colorFormat, VkFormat depthFormat) {
         if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat &&
             pipelineDepthFormat_ == depthFormat) {
+            ++pipelineCacheStats_.reused;
             return {};
         }
 
@@ -2544,6 +2601,7 @@ namespace vke {
 
         auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
             .device = device_,
+            .pipelineCache = pipelineCache_.handle(),
             .layout = pipelineLayout_.handle(),
             .vertexShader = vertexShader_.handle(),
             .fragmentShader = fragmentShader_.handle(),
@@ -2561,7 +2619,12 @@ namespace vke {
         pipeline_ = std::move(*pipeline);
         pipelineFormat_ = colorFormat;
         pipelineDepthFormat_ = depthFormat;
+        ++pipelineCacheStats_.created;
         return {};
+    }
+
+    BasicPipelineCacheStats BasicDrawListRenderer::pipelineCacheStats() const {
+        return pipelineCacheStats_;
     }
 
     Result<VulkanFrameRecordResult>

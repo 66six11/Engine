@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -124,6 +125,31 @@ namespace vke {
     void updateVulkanDescriptorImages(VkDevice device,
                                       std::span<const VulkanDescriptorImageWrite> writes);
 
+    struct VulkanPipelineCacheDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        VkPipelineCacheCreateFlags flags{};
+        std::span<const std::byte> initialData;
+    };
+
+    class VulkanPipelineCache {
+    public:
+        VulkanPipelineCache() = default;
+        VulkanPipelineCache(const VulkanPipelineCache&) = delete;
+        VulkanPipelineCache& operator=(const VulkanPipelineCache&) = delete;
+        VulkanPipelineCache(VulkanPipelineCache&& other) noexcept;
+        VulkanPipelineCache& operator=(VulkanPipelineCache&& other) noexcept;
+        ~VulkanPipelineCache();
+
+        [[nodiscard]] static Result<VulkanPipelineCache> create(const VulkanPipelineCacheDesc& desc);
+        [[nodiscard]] VkPipelineCache handle() const;
+
+    private:
+        void destroy();
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VkPipelineCache pipelineCache_{VK_NULL_HANDLE};
+    };
+
     struct VulkanPipelineLayoutDesc {
         VkDevice device{VK_NULL_HANDLE};
         std::span<const VkDescriptorSetLayout> setLayouts;
@@ -152,6 +178,7 @@ namespace vke {
 
     struct VulkanGraphicsPipelineDesc {
         VkDevice device{VK_NULL_HANDLE};
+        VkPipelineCache pipelineCache{VK_NULL_HANDLE};
         VkPipelineLayout layout{VK_NULL_HANDLE};
         VkShaderModule vertexShader{VK_NULL_HANDLE};
         VkShaderModule fragmentShader{VK_NULL_HANDLE};

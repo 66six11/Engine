@@ -289,6 +289,62 @@ namespace vke {
                                descriptorWrites.data(), 0, nullptr);
     }
 
+    VulkanPipelineCache::VulkanPipelineCache(VulkanPipelineCache&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanPipelineCache&
+    VulkanPipelineCache::operator=(VulkanPipelineCache&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        destroy();
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        pipelineCache_ = std::exchange(other.pipelineCache_, VK_NULL_HANDLE);
+        return *this;
+    }
+
+    VulkanPipelineCache::~VulkanPipelineCache() {
+        destroy();
+    }
+
+    void VulkanPipelineCache::destroy() {
+        if (pipelineCache_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineCache(device_, pipelineCache_, nullptr);
+        }
+
+        device_ = VK_NULL_HANDLE;
+        pipelineCache_ = VK_NULL_HANDLE;
+    }
+
+    Result<VulkanPipelineCache> VulkanPipelineCache::create(const VulkanPipelineCacheDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                vulkanError("Cannot create a Vulkan pipeline cache without a device")};
+        }
+
+        VkPipelineCacheCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        createInfo.flags = desc.flags;
+        createInfo.initialDataSize = desc.initialData.size_bytes();
+        createInfo.pInitialData = desc.initialData.empty() ? nullptr : desc.initialData.data();
+
+        VulkanPipelineCache pipelineCache;
+        pipelineCache.device_ = desc.device;
+        const VkResult result = vkCreatePipelineCache(desc.device, &createInfo, nullptr,
+                                                      &pipelineCache.pipelineCache_);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{vulkanError("Failed to create Vulkan pipeline cache", result)};
+        }
+
+        return pipelineCache;
+    }
+
+    VkPipelineCache VulkanPipelineCache::handle() const {
+        return pipelineCache_;
+    }
+
     VulkanPipelineLayout::VulkanPipelineLayout(VulkanPipelineLayout&& other) noexcept {
         *this = std::move(other);
     }
@@ -478,7 +534,7 @@ namespace vke {
         VulkanGraphicsPipeline pipeline;
         pipeline.device_ = desc.device;
         const VkResult result = vkCreateGraphicsPipelines(
-            desc.device, VK_NULL_HANDLE, 1, &createInfo, nullptr, &pipeline.pipeline_);
+            desc.device, desc.pipelineCache, 1, &createInfo, nullptr, &pipeline.pipeline_);
         if (result != VK_SUCCESS) {
             return std::unexpected{
                 vulkanError("Failed to create Vulkan graphics pipeline", result)};
