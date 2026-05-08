@@ -381,6 +381,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
   - 以 frame index 或 fence epoch 延迟销毁 Vulkan 对象。
   - resize/recreate 时不依赖扩大范围的 queue idle，除必要 MVP fallback。
   - 当前已接入最小 RHI 队列和 `--smoke-deferred-deletion`，验证 epoch retirement、flush 和 counter。
+  - `VulkanFrameLoop` 已持有队列，并把 submitted/completed epoch 接到单 in-flight fence、
+    swapchain recreate 和 shutdown 路径；下一步再迁移真实 Vulkan wrapper 到 `deferDeletion()`。
 - `DescriptorAllocator`
   - per-frame 或 per-flight frame arena。
   - 按 descriptor set layout 分配，GPU 完成后重置。

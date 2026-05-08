@@ -500,6 +500,9 @@ namespace vke {
         imageAvailable_ = std::exchange(other.imageAvailable_, VK_NULL_HANDLE);
         renderFinished_ = std::exchange(other.renderFinished_, {});
         inFlight_ = std::exchange(other.inFlight_, VK_NULL_HANDLE);
+        deferredDeletionQueue_ = std::move(other.deferredDeletionQueue_);
+        submittedFrameEpoch_ = std::exchange(other.submittedFrameEpoch_, 0);
+        completedFrameEpoch_ = std::exchange(other.completedFrameEpoch_, 0);
         clearColor_ = other.clearColor_;
         return *this;
     }
@@ -512,6 +515,9 @@ namespace vke {
         if (graphicsQueue_ != VK_NULL_HANDLE) {
             [[maybe_unused]] const VkResult idleResult = vkQueueWaitIdle(graphicsQueue_);
         }
+        completedFrameEpoch_ = submittedFrameEpoch_;
+        static_cast<void>(deferredDeletionQueue_.retireCompleted(completedFrameEpoch_));
+        static_cast<void>(deferredDeletionQueue_.flush());
 
         if (inFlight_ != VK_NULL_HANDLE) {
             vkDestroyFence(device_, inFlight_, nullptr);
@@ -546,6 +552,9 @@ namespace vke {
         imageAvailable_ = VK_NULL_HANDLE;
         renderFinished_.clear();
         inFlight_ = VK_NULL_HANDLE;
+        deferredDeletionQueue_ = {};
+        submittedFrameEpoch_ = 0;
+        completedFrameEpoch_ = 0;
     }
 
     Result<VulkanFrameLoop> VulkanFrameLoop::create(const VulkanContext& context,
@@ -627,6 +636,17 @@ namespace vke {
         };
     }
 
+    bool VulkanFrameLoop::deferDeletion(VulkanDeferredDeletionCallback callback) {
+        const std::uint64_t retireEpoch =
+            std::max(submittedFrameEpoch_, completedFrameEpoch_ + 1);
+        return deferredDeletionQueue_.enqueue(retireEpoch, std::move(callback));
+    }
+
+    std::uint64_t VulkanFrameLoop::retireCompletedFrameWork() {
+        completedFrameEpoch_ = submittedFrameEpoch_;
+        return deferredDeletionQueue_.retireCompleted(completedFrameEpoch_);
+    }
+
     Result<VulkanFrameStatus> VulkanFrameLoop::recreate() {
         return recreateSwapchain();
     }
@@ -647,6 +667,7 @@ namespace vke {
             return std::unexpected{
                 vulkanError("Failed to wait for Vulkan queue before swapchain recreation", result)};
         }
+        static_cast<void>(retireCompletedFrameWork());
 
         const VkSwapchainKHR oldSwapchain = swapchain_;
         VulkanFrameLoopDesc desc{
@@ -755,6 +776,7 @@ namespace vke {
         if (result != VK_SUCCESS) {
             return std::unexpected{vulkanError("Failed to wait for Vulkan frame fence", result)};
         }
+        static_cast<void>(retireCompletedFrameWork());
 
         std::uint32_t imageIndex = 0;
         result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailable_,
@@ -837,6 +859,7 @@ namespace vke {
 
         result = vkQueueSubmit2(graphicsQueue_, 1, &submitInfo, inFlight_);
         if (result == VK_SUCCESS) {
+            ++submittedFrameEpoch_;
             return {};
         }
 
@@ -984,6 +1007,18 @@ namespace vke {
 
     VkExtent2D VulkanFrameLoop::extent() const {
         return extent_;
+    }
+
+    VulkanDeferredDeletionStats VulkanFrameLoop::deferredDeletionStats() const {
+        return deferredDeletionQueue_.stats();
+    }
+
+    std::uint64_t VulkanFrameLoop::submittedFrameEpoch() const {
+        return submittedFrameEpoch_;
+    }
+
+    std::uint64_t VulkanFrameLoop::completedFrameEpoch() const {
+        return completedFrameEpoch_;
     }
 
 } // namespace vke

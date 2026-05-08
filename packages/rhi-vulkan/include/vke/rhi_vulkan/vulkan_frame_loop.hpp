@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "vke/core/result.hpp"
+#include "vke/rhi_vulkan/deferred_deletion_queue.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 
 namespace vke {
@@ -58,9 +59,13 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameStatus> renderFrame();
         [[nodiscard]] Result<VulkanFrameStatus>
         renderFrame(const VulkanFrameRecordCallback& record);
+        [[nodiscard]] bool deferDeletion(VulkanDeferredDeletionCallback callback);
 
         [[nodiscard]] VkFormat format() const;
         [[nodiscard]] VkExtent2D extent() const;
+        [[nodiscard]] VulkanDeferredDeletionStats deferredDeletionStats() const;
+        [[nodiscard]] std::uint64_t submittedFrameEpoch() const;
+        [[nodiscard]] std::uint64_t completedFrameEpoch() const;
 
     private:
         struct AcquiredImage {
@@ -85,6 +90,7 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameRecordResult> recordClearCommands(std::uint32_t imageIndex);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrameCommands(std::uint32_t imageIndex, const VulkanFrameRecordCallback& record);
+        [[nodiscard]] std::uint64_t retireCompletedFrameWork();
 
         VkDevice device_{VK_NULL_HANDLE};
         VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
@@ -104,6 +110,9 @@ namespace vke {
         VkSemaphore imageAvailable_{VK_NULL_HANDLE};
         std::vector<VkSemaphore> renderFinished_;
         VkFence inFlight_{VK_NULL_HANDLE};
+        VulkanDeferredDeletionQueue deferredDeletionQueue_;
+        std::uint64_t submittedFrameEpoch_{};
+        std::uint64_t completedFrameEpoch_{};
         VkClearColorValue clearColor_{{0.02F, 0.04F, 0.08F, 1.0F}};
     };
 

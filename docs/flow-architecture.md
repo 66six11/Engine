@@ -220,6 +220,8 @@ flowchart TD
   image view 和 binding 表，并录制非 backbuffer image transition / clear。
 - `--smoke-deferred-deletion` 已接入 P4 后端生命周期起点：验证 deferred deletion queue 的 epoch
   retirement 顺序、empty callback 拒绝路径和 pending/enqueued/retired/flushed counters。
+- `VulkanFrameLoop` 现在持有 deferred deletion queue，并在 frame fence / swapchain recreate / shutdown
+  已确认 GPU 完成的位置推进 completed epoch。
 
 ## 当前运行调用链
 
@@ -244,6 +246,8 @@ sequenceDiagram
     Main->>FrameLoop: VulkanFrameLoop::create(context, window)
     FrameLoop->>Vulkan: create swapchain / image views / command buffer / sync objects
     Main->>FrameLoop: renderFrame(record callback)
+    FrameLoop->>Vulkan: vkWaitForFences(in-flight)
+    FrameLoop->>FrameLoop: retire completed deferred deletions
     FrameLoop->>Vulkan: vkAcquireNextImageKHR
     FrameLoop->>Vulkan: vkBeginCommandBuffer
     FrameLoop->>Renderer: recordFrame(recordContext)
@@ -256,12 +260,14 @@ sequenceDiagram
     Renderer-->>FrameLoop: VulkanFrameRecordResult(waitStageMask)
     FrameLoop->>Vulkan: vkEndCommandBuffer
     FrameLoop->>Vulkan: vkQueueSubmit2(waitStageMask)
+    FrameLoop->>FrameLoop: advance submitted frame epoch
     FrameLoop->>Vulkan: vkQueuePresentKHR
 ```
 
 调用链里的责任归属：
 
-- `VulkanFrameLoop` 拥有 acquire、command buffer begin/end、queue submit、present 和 swapchain recreate。
+- `VulkanFrameLoop` 拥有 acquire、command buffer begin/end、queue submit、present、swapchain recreate
+  和 fence/epoch 驱动的 deferred deletion retirement。
 - `renderer_basic_vulkan` 在 callback 内构建 graph、编译 graph、准备 transient/descriptor/pipeline 相关资源并录制 draw。
 - `RenderGraph` 产出后端无关计划；它不直接调用 Vulkan。
 - `rhi_vulkan_rendergraph` 把 compiled transition 翻译为 Vulkan barrier，再由调用方用真实 image binding 录制。
@@ -278,20 +284,23 @@ flowchart TD
     Sync["create semaphore / fence"]
     Render["renderFrame"]
     Wait["wait in-flight fence"]
+    Retire["retire deferred deletions<br/>completed epoch"]
     Acquire["vkAcquireNextImageKHR"]
     Record["renderFrame(callback)"]
     GraphClear["renderer-basic-vulkan<br/>recordBasicClearFrame"]
     Triangle["renderer-basic-vulkan<br/>BasicTriangleRenderer::recordFrame"]
     WaitStage["record result<br/>acquire wait stage"]
     Submit["vkQueueSubmit2"]
+    AdvanceEpoch["advance submitted<br/>frame epoch"]
     Present["vkQueuePresentKHR"]
     Recreate["recreateSwapchain"]
+    RecreateRetire["wait fence / queue idle<br/>retire completed deletions"]
 
     Create --> Swapchain --> Images --> Views --> Cmd --> Sync
-    Render --> Wait --> Acquire
-    Acquire -->|success/suboptimal| Record --> GraphClear --> WaitStage --> Submit --> Present
+    Render --> Wait --> Retire --> Acquire
+    Acquire -->|success/suboptimal| Record --> GraphClear --> WaitStage --> Submit --> AdvanceEpoch --> Present
     Record --> Triangle --> WaitStage
-    Acquire -->|out of date| Recreate
+    Acquire -->|out of date| Recreate --> RecreateRetire
     Present -->|out of date/suboptimal| Recreate
 ```
 
