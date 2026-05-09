@@ -133,6 +133,8 @@ packages/rendergraph/
 - editor 读取 asset database。
 - editor 通过 renderer package 提供的 public API 预览场景。
 - editor 的 UI、inspector、importer、scene authoring 都放在 editor packages。
+- ImGui context、ImGui Vulkan backend 和 editor texture registration 属于 editor host/integration
+  层；`editor-core` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - runtime app 可以完全不链接 editor packages。
 
 ## MVP 取舍

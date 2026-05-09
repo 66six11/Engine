@@ -53,6 +53,6 @@
 - RenderGraph 后续专项推进以 `rendergraph-development-roadmap.md` 为准。
 - 引擎级系统边界和线程路线以 `engine-systems-architecture.md`、`frame-loop-threading.md` 为准；其中 asset、scene、editor、script 等内容是后续设计门禁，不代表当前 MVP 立即实现。
 - 性能诊断先作为 P3.5 观测底座推进；编辑器性能面板后置到 editor viewport、scene/object 和 asset/material 小闭环之后。
-- 建立通用 RenderTarget / RenderView / sampled texture bridge，让 editor viewport 作为渲染层真实消费方尽早接入。
+- 建立通用 RenderTarget / RenderView / ImGui texture registration 契约，让 editor viewport 作为渲染层真实消费方尽早接入。
 - 继续补 RenderGraph buffer/storage/MRT/compute、asset-core/resource upload、material/pipeline key 和最小 scene/object/selection 边界。
 - 维护 `conan.lock`，依赖改动时重新生成并审查 recipe revision 变化。

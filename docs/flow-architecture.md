@@ -454,8 +454,8 @@ flowchart TD
   descriptor set，避免同一 command buffer 内更新已绑定 set。
 - `--smoke-offscreen-viewport` 已验证 editor viewport 的核心离屏路径：通用 `VulkanRenderTarget`
   持有的 color attachment image 独立尺寸、resize 后 deferred deletion、多帧复用、`recordViewFrame()`
-  写入 sampled target、sampled image descriptor 更新、renderer 输出可供 UI backend 注册的 sampled
-  target，以及第二个 fullscreen composite graph 写回 swapchain。
+  写入 sampled target、sampled image descriptor 更新、renderer 输出可供未来 editor ImGui backend
+  注册的 sampled target，以及第二个 fullscreen composite graph 写回 swapchain。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
   Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、
