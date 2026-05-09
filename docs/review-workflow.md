@@ -142,3 +142,14 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 - 不提交用户已有的无关本地改动。
 - 提交前再跑一次 `git status --short`。
 - 提交回复必须包含 commit hash 和已通过门禁。
+
+## 阶段完成 tag
+
+当某个 `docs/next-development-plan.md` 中定义的阶段已经完成实现、文档同步和对应验收门禁后，可以给完成该阶段的提交打 tag。
+
+- tag 只打在“完成阶段验收”的实现提交上；如果后续只是补文档或流程，不移动已有阶段 tag。
+- 命名使用 `stage-<number>-<short-slug>`，例如 `stage-14-render-view-target-recording`。
+- 优先使用 annotated tag，消息格式为 `Stage <number>: <stage title>`。
+- 打 tag 前必须确认该阶段的验收标准已在当前机器跑过，并在提交回复中列出关键门禁。
+- 如果阶段仍有 P1/P2 finding、未解释的 validation error、失败 smoke 或未同步文档，不打 tag。
+- 打 tag 后再跑一次 `git tag --list "stage-*"` 或 `git show <tag>` 核实 tag 指向正确提交。
