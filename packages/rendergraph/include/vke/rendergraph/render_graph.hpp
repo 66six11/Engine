@@ -24,6 +24,13 @@ namespace vke {
                                              RenderGraphImageHandle) = default;
     };
 
+    struct RenderGraphBufferHandle {
+        std::uint32_t index{};
+
+        [[nodiscard]] friend bool operator==(RenderGraphBufferHandle,
+                                             RenderGraphBufferHandle) = default;
+    };
+
     struct RenderGraphExtent2D {
         std::uint32_t width{};
         std::uint32_t height{};
@@ -46,6 +53,12 @@ namespace vke {
         Present,
     };
 
+    enum class RenderGraphBufferState {
+        Undefined,
+        TransferWrite,
+        ShaderRead,
+    };
+
     enum class RenderGraphShaderStage {
         None,
         Fragment,
@@ -57,12 +70,25 @@ namespace vke {
         Transient,
     };
 
+    enum class RenderGraphBufferLifetime {
+        Imported,
+        Transient,
+    };
+
     struct RenderGraphImageAccess {
         RenderGraphImageState state{RenderGraphImageState::Undefined};
         RenderGraphShaderStage shaderStage{RenderGraphShaderStage::None};
 
         [[nodiscard]] friend bool operator==(RenderGraphImageAccess,
                                              RenderGraphImageAccess) = default;
+    };
+
+    struct RenderGraphBufferAccess {
+        RenderGraphBufferState state{RenderGraphBufferState::Undefined};
+        RenderGraphShaderStage shaderStage{RenderGraphShaderStage::None};
+
+        [[nodiscard]] friend bool operator==(RenderGraphBufferAccess,
+                                             RenderGraphBufferAccess) = default;
     };
 
     struct RenderGraphImageDesc {
@@ -76,6 +102,16 @@ namespace vke {
         RenderGraphImageLifetime lifetime{RenderGraphImageLifetime::Imported};
     };
 
+    struct RenderGraphBufferDesc {
+        std::string name;
+        std::uint64_t byteSize{};
+        RenderGraphBufferState initialState{RenderGraphBufferState::Undefined};
+        RenderGraphShaderStage initialShaderStage{RenderGraphShaderStage::None};
+        RenderGraphBufferState finalState{RenderGraphBufferState::Undefined};
+        RenderGraphShaderStage finalShaderStage{RenderGraphShaderStage::None};
+        RenderGraphBufferLifetime lifetime{RenderGraphBufferLifetime::Imported};
+    };
+
     struct RenderGraphImageTransition {
         RenderGraphImageHandle image{};
         std::string imageName;
@@ -85,9 +121,24 @@ namespace vke {
         RenderGraphShaderStage newShaderStage{RenderGraphShaderStage::None};
     };
 
+    struct RenderGraphBufferTransition {
+        RenderGraphBufferHandle buffer{};
+        std::string bufferName;
+        RenderGraphBufferState oldState{RenderGraphBufferState::Undefined};
+        RenderGraphShaderStage oldShaderStage{RenderGraphShaderStage::None};
+        RenderGraphBufferState newState{RenderGraphBufferState::Undefined};
+        RenderGraphShaderStage newShaderStage{RenderGraphShaderStage::None};
+    };
+
     struct RenderGraphImageSlot {
         std::string name;
         RenderGraphImageHandle image{};
+        RenderGraphShaderStage shaderStage{RenderGraphShaderStage::None};
+    };
+
+    struct RenderGraphBufferSlot {
+        std::string name;
+        RenderGraphBufferHandle buffer{};
         RenderGraphShaderStage shaderStage{RenderGraphShaderStage::None};
     };
 
@@ -98,6 +149,8 @@ namespace vke {
         DepthAttachmentWrite,
         DepthSampledRead,
         TransferWrite,
+        BufferShaderRead,
+        BufferTransferWrite,
     };
 
     struct RenderGraphResourceSlotSchema {
@@ -241,19 +294,32 @@ namespace vke {
         std::vector<RenderGraphImageHandle> depthWrites;
         std::vector<RenderGraphImageHandle> depthSampledReads;
         std::vector<RenderGraphImageHandle> transferWrites;
+        std::vector<RenderGraphBufferHandle> bufferReads;
+        std::vector<RenderGraphBufferHandle> bufferWrites;
         std::vector<RenderGraphImageSlot> colorWriteSlots;
         std::vector<RenderGraphImageSlot> shaderReadSlots;
         std::vector<RenderGraphImageSlot> depthReadSlots;
         std::vector<RenderGraphImageSlot> depthWriteSlots;
         std::vector<RenderGraphImageSlot> depthSampledReadSlots;
         std::vector<RenderGraphImageSlot> transferWriteSlots;
+        std::vector<RenderGraphBufferSlot> bufferReadSlots;
+        std::vector<RenderGraphBufferSlot> bufferWriteSlots;
+        std::vector<RenderGraphBufferTransition> bufferTransitionsBefore;
+    };
+
+    enum class RenderGraphResourceKind {
+        Image,
+        Buffer,
     };
 
     struct RenderGraphPassDependency {
         std::size_t fromDeclarationIndex{};
         std::size_t toDeclarationIndex{};
+        RenderGraphResourceKind resourceKind{RenderGraphResourceKind::Image};
         RenderGraphImageHandle image{};
+        RenderGraphBufferHandle buffer{};
         std::string imageName;
+        std::string bufferName;
         std::string reason;
     };
 
@@ -275,14 +341,27 @@ namespace vke {
         RenderGraphShaderStage finalShaderStage{RenderGraphShaderStage::None};
     };
 
+    struct RenderGraphTransientBufferAllocation {
+        RenderGraphBufferHandle buffer{};
+        std::string bufferName;
+        std::uint64_t byteSize{};
+        std::size_t firstPassIndex{};
+        std::size_t lastPassIndex{};
+        RenderGraphBufferState finalState{RenderGraphBufferState::Undefined};
+        RenderGraphShaderStage finalShaderStage{RenderGraphShaderStage::None};
+    };
+
     struct RenderGraphCompileResult {
         std::size_t declaredPassCount{};
         std::size_t declaredImageCount{};
+        std::size_t declaredBufferCount{};
         std::vector<RenderGraphCompiledPass> passes;
         std::vector<RenderGraphPassDependency> dependencies;
         std::vector<RenderGraphCulledPass> culledPasses;
         std::vector<RenderGraphTransientImageAllocation> transientImages;
+        std::vector<RenderGraphTransientBufferAllocation> transientBuffers;
         std::vector<RenderGraphImageTransition> finalTransitions;
+        std::vector<RenderGraphBufferTransition> finalBufferTransitions;
     };
 
     struct RenderGraphPassContext {
@@ -300,12 +379,17 @@ namespace vke {
         std::span<const RenderGraphImageHandle> depthWrites;
         std::span<const RenderGraphImageHandle> depthSampledReads;
         std::span<const RenderGraphImageHandle> transferWrites;
+        std::span<const RenderGraphBufferHandle> bufferReads;
+        std::span<const RenderGraphBufferHandle> bufferWrites;
         std::span<const RenderGraphImageSlot> colorWriteSlots;
         std::span<const RenderGraphImageSlot> shaderReadSlots;
         std::span<const RenderGraphImageSlot> depthReadSlots;
         std::span<const RenderGraphImageSlot> depthWriteSlots;
         std::span<const RenderGraphImageSlot> depthSampledReadSlots;
         std::span<const RenderGraphImageSlot> transferWriteSlots;
+        std::span<const RenderGraphBufferSlot> bufferReadSlots;
+        std::span<const RenderGraphBufferSlot> bufferWriteSlots;
+        std::span<const RenderGraphBufferTransition> bufferTransitionsBefore;
     };
 
     using RenderGraphPassCallback = std::function<Result<void>(RenderGraphPassContext)>;
@@ -388,6 +472,8 @@ namespace vke {
             std::vector<RenderGraphImageSlot> depthWriteSlots;
             std::vector<RenderGraphImageSlot> depthSampledReadSlots;
             std::vector<RenderGraphImageSlot> transferWriteSlots;
+            std::vector<RenderGraphBufferSlot> bufferReadSlots;
+            std::vector<RenderGraphBufferSlot> bufferWriteSlots;
             std::vector<RenderGraphCommand> commands;
             bool allowCulling{};
             bool hasSideEffects{};
@@ -453,6 +539,28 @@ namespace vke {
                 graph_->passes_[passIndex_].transferWriteSlots.push_back(RenderGraphImageSlot{
                     .name = std::move(slotName),
                     .image = image,
+                });
+                return *this;
+            }
+
+            PassBuilder& readBuffer(std::string slotName, RenderGraphBufferHandle buffer,
+                                    RenderGraphShaderStage shaderStage) {
+                graph_->passes_[passIndex_].bufferReadSlots.push_back(RenderGraphBufferSlot{
+                    .name = std::move(slotName),
+                    .buffer = buffer,
+                    .shaderStage = shaderStage,
+                });
+                return *this;
+            }
+
+            PassBuilder& writeBuffer(RenderGraphBufferHandle buffer) {
+                return writeBuffer("target", buffer);
+            }
+
+            PassBuilder& writeBuffer(std::string slotName, RenderGraphBufferHandle buffer) {
+                graph_->passes_[passIndex_].bufferWriteSlots.push_back(RenderGraphBufferSlot{
+                    .name = std::move(slotName),
+                    .buffer = buffer,
                 });
                 return *this;
             }
@@ -542,6 +650,26 @@ namespace vke {
             };
         }
 
+        [[nodiscard]] RenderGraphBufferHandle importBuffer(RenderGraphBufferDesc desc) {
+            desc.lifetime = RenderGraphBufferLifetime::Imported;
+            buffers_.push_back(std::move(desc));
+            return RenderGraphBufferHandle{
+                .index = static_cast<std::uint32_t>(buffers_.size() - 1),
+            };
+        }
+
+        [[nodiscard]] RenderGraphBufferHandle createTransientBuffer(RenderGraphBufferDesc desc) {
+            desc.lifetime = RenderGraphBufferLifetime::Transient;
+            desc.initialState = RenderGraphBufferState::Undefined;
+            desc.initialShaderStage = RenderGraphShaderStage::None;
+            desc.finalState = RenderGraphBufferState::Undefined;
+            desc.finalShaderStage = RenderGraphShaderStage::None;
+            buffers_.push_back(std::move(desc));
+            return RenderGraphBufferHandle{
+                .index = static_cast<std::uint32_t>(buffers_.size() - 1),
+            };
+        }
+
         PassBuilder addPass(std::string name) {
             Pass pass{
                 .name = std::move(name),
@@ -554,6 +682,8 @@ namespace vke {
                 .depthWriteSlots = {},
                 .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
+                .bufferReadSlots = {},
+                .bufferWriteSlots = {},
                 .commands = {},
                 .allowCulling = {},
                 .hasSideEffects = {},
@@ -575,6 +705,8 @@ namespace vke {
                 .depthWriteSlots = {},
                 .depthSampledReadSlots = {},
                 .transferWriteSlots = {},
+                .bufferReadSlots = {},
+                .bufferWriteSlots = {},
                 .commands = {},
                 .allowCulling = {},
                 .hasSideEffects = {},
@@ -599,6 +731,11 @@ namespace vke {
             auto imagesValidated = validateImages();
             if (!imagesValidated) {
                 return std::unexpected{std::move(imagesValidated.error())};
+            }
+
+            auto buffersValidated = validateBuffers();
+            if (!buffersValidated) {
+                return std::unexpected{std::move(buffersValidated.error())};
             }
 
             for (const Pass& pass : passes_) {
@@ -631,9 +768,19 @@ namespace vke {
                 });
             }
 
+            std::vector<RenderGraphBufferAccess> currentBufferAccesses;
+            currentBufferAccesses.reserve(buffers_.size());
+            for (const RenderGraphBufferDesc& buffer : buffers_) {
+                currentBufferAccesses.push_back(RenderGraphBufferAccess{
+                    .state = buffer.initialState,
+                    .shaderStage = buffer.initialShaderStage,
+                });
+            }
+
             RenderGraphCompileResult result;
             result.declaredPassCount = passes_.size();
             result.declaredImageCount = images_.size();
+            result.declaredBufferCount = buffers_.size();
             result.passes.reserve(activePassCount(activePasses));
             result.dependencies = activeDependencies;
             result.culledPasses = makeCulledPasses(activePasses);
@@ -659,12 +806,17 @@ namespace vke {
                     .depthWrites = imageHandles(pass.depthWriteSlots),
                     .depthSampledReads = imageHandles(pass.depthSampledReadSlots),
                     .transferWrites = imageHandles(pass.transferWriteSlots),
+                    .bufferReads = bufferHandles(pass.bufferReadSlots),
+                    .bufferWrites = bufferHandles(pass.bufferWriteSlots),
                     .colorWriteSlots = pass.colorWriteSlots,
                     .shaderReadSlots = pass.shaderReadSlots,
                     .depthReadSlots = pass.depthReadSlots,
                     .depthWriteSlots = pass.depthWriteSlots,
                     .depthSampledReadSlots = pass.depthSampledReadSlots,
                     .transferWriteSlots = pass.transferWriteSlots,
+                    .bufferReadSlots = pass.bufferReadSlots,
+                    .bufferWriteSlots = pass.bufferWriteSlots,
+                    .bufferTransitionsBefore = {},
                 };
 
                 auto colorTransitions =
@@ -733,6 +885,28 @@ namespace vke {
                     return std::unexpected{std::move(transferTransitions.error())};
                 }
 
+                auto bufferWriteTransitions =
+                    transitionBuffers(compiledPass.bufferWriteSlots,
+                                      RenderGraphBufferAccess{
+                                          .state = RenderGraphBufferState::TransferWrite,
+                                          .shaderStage = RenderGraphShaderStage::None,
+                                      },
+                                      currentBufferAccesses, compiledPass);
+                if (!bufferWriteTransitions) {
+                    return std::unexpected{std::move(bufferWriteTransitions.error())};
+                }
+
+                auto bufferReadTransitions =
+                    transitionBuffers(compiledPass.bufferReadSlots,
+                                      RenderGraphBufferAccess{
+                                          .state = RenderGraphBufferState::ShaderRead,
+                                          .shaderStage = RenderGraphShaderStage::None,
+                                      },
+                                      currentBufferAccesses, compiledPass);
+                if (!bufferReadTransitions) {
+                    return std::unexpected{std::move(bufferReadTransitions.error())};
+                }
+
                 result.passes.push_back(std::move(compiledPass));
             }
 
@@ -771,6 +945,43 @@ namespace vke {
                 };
                 result.finalTransitions.push_back(
                     makeTransition(imageHandle, image, currentAccesses[index], finalAccess));
+            }
+
+            for (std::size_t index = 0; index < buffers_.size(); ++index) {
+                const RenderGraphBufferDesc& buffer = buffers_[index];
+                if (buffer.lifetime == RenderGraphBufferLifetime::Transient) {
+                    const RenderGraphBufferHandle bufferHandle{
+                        .index = static_cast<std::uint32_t>(index),
+                    };
+                    if (!bufferUsedByCompiledPasses(result.passes, bufferHandle)) {
+                        if (bufferUsedByDeclaredPasses(bufferHandle)) {
+                            continue;
+                        }
+                    }
+
+                    auto allocation = makeTransientBufferAllocation(index, result.passes,
+                                                                    currentBufferAccesses[index]);
+                    if (!allocation) {
+                        return std::unexpected{std::move(allocation.error())};
+                    }
+
+                    result.transientBuffers.push_back(std::move(*allocation));
+                    continue;
+                }
+
+                const RenderGraphBufferAccess finalAccess{
+                    .state = buffer.finalState,
+                    .shaderStage = buffer.finalShaderStage,
+                };
+                if (currentBufferAccesses[index] == finalAccess) {
+                    continue;
+                }
+
+                const RenderGraphBufferHandle bufferHandle{
+                    .index = static_cast<std::uint32_t>(index),
+                };
+                result.finalBufferTransitions.push_back(makeTransition(
+                    bufferHandle, buffer, currentBufferAccesses[index], finalAccess));
             }
 
             return result;
@@ -866,12 +1077,17 @@ namespace vke {
                     .depthWrites = pass.depthWrites,
                     .depthSampledReads = pass.depthSampledReads,
                     .transferWrites = pass.transferWrites,
+                    .bufferReads = pass.bufferReads,
+                    .bufferWrites = pass.bufferWrites,
                     .colorWriteSlots = pass.colorWriteSlots,
                     .shaderReadSlots = pass.shaderReadSlots,
                     .depthReadSlots = pass.depthReadSlots,
                     .depthWriteSlots = pass.depthWriteSlots,
                     .depthSampledReadSlots = pass.depthSampledReadSlots,
                     .transferWriteSlots = pass.transferWriteSlots,
+                    .bufferReadSlots = pass.bufferReadSlots,
+                    .bufferWriteSlots = pass.bufferWriteSlots,
+                    .bufferTransitionsBefore = pass.bufferTransitionsBefore,
                 });
                 if (!executed) {
                     return std::unexpected{std::move(executed.error())};
@@ -909,12 +1125,32 @@ namespace vke {
                 output += " |\n";
             }
 
+            output += "\n### RenderGraph Buffers\n\n";
+            output += "| # | Name | Lifetime | Bytes | Initial | Final |\n";
+            output += "|---:|---|---|---:|---|---|\n";
+            for (std::size_t index = 0; index < buffers_.size(); ++index) {
+                const RenderGraphBufferDesc& buffer = buffers_[index];
+                output += "| ";
+                output += std::to_string(index);
+                output += " | ";
+                output += buffer.name;
+                output += " | ";
+                output += bufferLifetimeName(buffer.lifetime);
+                output += " | ";
+                output += std::to_string(buffer.byteSize);
+                output += " | ";
+                output += bufferAccessName(buffer.initialState, buffer.initialShaderStage);
+                output += " | ";
+                output += bufferAccessName(buffer.finalState, buffer.finalShaderStage);
+                output += " |\n";
+            }
+
             output += "\n### RenderGraph Passes\n\n";
             output += "| # | Decl # | Name | Type | Params | Cullable | Side Effects | "
-                      "Before Transitions | Color Writes | Shader Reads | Depth Reads | "
-                      "Depth Writes | Depth Sampled Reads | "
-                      "Transfer Writes |\n";
-            output += "|---:|---:|---|---|---|---|---|---:|---|---|---|---|---|---|\n";
+                      "Before Transitions | Buffer Transitions | Color Writes | Shader Reads | "
+                      "Depth Reads | Depth Writes | Depth Sampled Reads | Transfer Writes | "
+                      "Buffer Reads | Buffer Writes |\n";
+            output += "|---:|---:|---|---|---|---|---|---:|---:|---|---|---|---|---|---|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
@@ -934,6 +1170,8 @@ namespace vke {
                 output += " | ";
                 output += std::to_string(pass.transitionsBefore.size());
                 output += " | ";
+                output += std::to_string(pass.bufferTransitionsBefore.size());
+                output += " | ";
                 output += imageSlotList(pass.colorWriteSlots);
                 output += " | ";
                 output += imageSlotList(pass.shaderReadSlots);
@@ -945,11 +1183,15 @@ namespace vke {
                 output += imageSlotList(pass.depthSampledReadSlots);
                 output += " | ";
                 output += imageSlotList(pass.transferWriteSlots);
+                output += " | ";
+                output += bufferSlotList(pass.bufferReadSlots);
+                output += " | ";
+                output += bufferSlotList(pass.bufferWriteSlots);
                 output += " |\n";
             }
 
             output += "\n### RenderGraph Dependencies\n\n";
-            output += "| From | To | Image | Reason |\n";
+            output += "| From | To | Resource | Reason |\n";
             output += "|---|---|---|---|\n";
             for (const RenderGraphPassDependency& dependency : compiled.dependencies) {
                 output += "| ";
@@ -957,7 +1199,7 @@ namespace vke {
                 output += " | ";
                 output += passDeclarationLabel(dependency.toDeclarationIndex);
                 output += " | ";
-                output += imageHandleLabel(dependency.image);
+                output += dependencyResourceLabel(dependency);
                 output += " | ";
                 output += dependency.reason;
                 output += " |\n";
@@ -979,7 +1221,7 @@ namespace vke {
             }
 
             output += "\n### RenderGraph Slots\n\n";
-            output += "| Pass | Access | Slot | Image |\n";
+            output += "| Pass | Access | Slot | Resource |\n";
             output += "|---|---|---|---|\n";
             for (const RenderGraphCompiledPass& pass : compiled.passes) {
                 appendSlotRows(output, pass.name, "ColorWrite", pass.colorWriteSlots);
@@ -988,6 +1230,9 @@ namespace vke {
                 appendSlotRows(output, pass.name, "DepthAttachmentWrite", pass.depthWriteSlots);
                 appendSlotRows(output, pass.name, "DepthSampledRead", pass.depthSampledReadSlots);
                 appendSlotRows(output, pass.name, "TransferWrite", pass.transferWriteSlots);
+                appendBufferSlotRows(output, pass.name, "BufferShaderRead", pass.bufferReadSlots);
+                appendBufferSlotRows(output, pass.name, "BufferTransferWrite",
+                                     pass.bufferWriteSlots);
             }
 
             output += "\n### RenderGraph Commands\n\n";
@@ -998,14 +1243,20 @@ namespace vke {
             }
 
             output += "\n### RenderGraph Transitions\n\n";
-            output += "| Phase | Pass | Image | Old State | New State |\n";
+            output += "| Phase | Pass | Resource | Old State | New State |\n";
             output += "|---|---|---|---|---|\n";
             for (const RenderGraphCompiledPass& pass : compiled.passes) {
                 for (const RenderGraphImageTransition& transition : pass.transitionsBefore) {
                     appendTransitionRow(output, "Before", pass.name, transition);
                 }
+                for (const RenderGraphBufferTransition& transition : pass.bufferTransitionsBefore) {
+                    appendTransitionRow(output, "Before", pass.name, transition);
+                }
             }
             for (const RenderGraphImageTransition& transition : compiled.finalTransitions) {
+                appendTransitionRow(output, "Final", "-", transition);
+            }
+            for (const RenderGraphBufferTransition& transition : compiled.finalBufferTransitions) {
                 appendTransitionRow(output, "Final", "-", transition);
             }
 
@@ -1030,6 +1281,24 @@ namespace vke {
                 output += " |\n";
             }
 
+            output += "\n### RenderGraph Transient Buffers\n\n";
+            output += "| Buffer | Bytes | First Pass | Last Pass | Final Access |\n";
+            output += "|---|---:|---:|---:|---|\n";
+            for (const RenderGraphTransientBufferAllocation& transient :
+                 compiled.transientBuffers) {
+                output += "| ";
+                output += bufferHandleLabel(transient.buffer);
+                output += " | ";
+                output += std::to_string(transient.byteSize);
+                output += " | ";
+                output += std::to_string(transient.firstPassIndex);
+                output += " | ";
+                output += std::to_string(transient.lastPassIndex);
+                output += " | ";
+                output += bufferAccessName(transient.finalState, transient.finalShaderStage);
+                output += " |\n";
+            }
+
             return output;
         }
 
@@ -1037,6 +1306,11 @@ namespace vke {
         struct RenderGraphImageSlotGroup {
             std::string_view access;
             std::span<const RenderGraphImageSlot> slots;
+        };
+
+        struct RenderGraphBufferSlotGroup {
+            std::string_view access;
+            std::span<const RenderGraphBufferSlot> slots;
         };
 
         [[nodiscard]] Result<void> validateImages() const {
@@ -1047,6 +1321,30 @@ namespace vke {
                         ErrorDomain::RenderGraph,
                         0,
                         "Imported render graph image '" + image.name +
+                            "' must declare an explicit final state.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> validateBuffers() const {
+            for (const RenderGraphBufferDesc& buffer : buffers_) {
+                if (buffer.byteSize == 0) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph buffer '" + buffer.name +
+                            "' must declare a non-zero byte size.",
+                    }};
+                }
+                if (buffer.lifetime == RenderGraphBufferLifetime::Imported &&
+                    buffer.finalState == RenderGraphBufferState::Undefined) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Imported render graph buffer '" + buffer.name +
                             "' must declare an explicit final state.",
                     }};
                 }
@@ -1183,6 +1481,35 @@ namespace vke {
                 }
             }
 
+            for (std::size_t bufferIndex = 0; bufferIndex < buffers_.size(); ++bufferIndex) {
+                const RenderGraphBufferHandle bufferHandle{
+                    .index = static_cast<std::uint32_t>(bufferIndex),
+                };
+                std::vector<std::size_t> writers;
+                std::vector<std::size_t> readers;
+
+                for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                    const Pass& pass = passes_[passIndex];
+                    if (passWritesBuffer(pass, bufferHandle)) {
+                        writers.push_back(passIndex);
+                    }
+                    if (passReadsBuffer(pass, bufferHandle)) {
+                        readers.push_back(passIndex);
+                    }
+                }
+
+                for (std::size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex) {
+                    addBufferDependency(dependencies, writers[writerIndex - 1],
+                                        writers[writerIndex], bufferHandle, "write order");
+                }
+
+                auto readDependencies =
+                    addBufferReadDependencies(dependencies, bufferHandle, writers, readers);
+                if (!readDependencies) {
+                    return std::unexpected{std::move(readDependencies.error())};
+                }
+            }
+
             return dependencies;
         }
 
@@ -1247,6 +1574,67 @@ namespace vke {
             return {};
         }
 
+        [[nodiscard]] Result<void> addBufferReadDependencies(
+            std::vector<RenderGraphPassDependency>& dependencies, RenderGraphBufferHandle buffer,
+            std::span<const std::size_t> writers, std::span<const std::size_t> readers) const {
+            const RenderGraphBufferDesc& bufferDesc = buffers_[buffer.index];
+
+            for (const std::size_t reader : readers) {
+                if (writers.empty()) {
+                    if (!bufferCanBeReadFromInitialState(bufferDesc)) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            missingBufferProducerMessage(reader, buffer),
+                        }};
+                    }
+                    continue;
+                }
+
+                std::size_t sourceWriter{};
+                bool hasSourceWriter = false;
+                for (const std::size_t writer : writers) {
+                    if (writer < reader) {
+                        sourceWriter = writer;
+                        hasSourceWriter = true;
+                    }
+                }
+
+                if (!hasSourceWriter && bufferCanBeReadFromInitialState(bufferDesc)) {
+                    for (const std::size_t writer : writers) {
+                        if (writer > reader) {
+                            addBufferDependency(dependencies, reader, writer, buffer,
+                                                "initial read before overwrite");
+                        }
+                    }
+                    continue;
+                }
+
+                if (!hasSourceWriter) {
+                    if (writers.size() != 1) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            ambiguousBufferProducerMessage(reader, buffer, writers),
+                        }};
+                    }
+                    sourceWriter = writers.front();
+                    hasSourceWriter = true;
+                }
+
+                addBufferDependency(dependencies, sourceWriter, reader, buffer, "producer read");
+
+                for (const std::size_t writer : writers) {
+                    if (writer > reader && writer != sourceWriter) {
+                        addBufferDependency(dependencies, reader, writer, buffer,
+                                            "read before overwrite");
+                    }
+                }
+            }
+
+            return {};
+        }
+
         void addDependency(std::vector<RenderGraphPassDependency>& dependencies,
                            std::size_t fromPassIndex, std::size_t toPassIndex,
                            RenderGraphImageHandle image, std::string reason) const {
@@ -1256,8 +1644,9 @@ namespace vke {
 
             for (const RenderGraphPassDependency& dependency : dependencies) {
                 if (dependency.fromDeclarationIndex == fromPassIndex &&
-                    dependency.toDeclarationIndex == toPassIndex && dependency.image == image &&
-                    dependency.reason == reason) {
+                    dependency.toDeclarationIndex == toPassIndex &&
+                    dependency.resourceKind == RenderGraphResourceKind::Image &&
+                    dependency.image == image && dependency.reason == reason) {
                     return;
                 }
             }
@@ -1265,8 +1654,37 @@ namespace vke {
             dependencies.push_back(RenderGraphPassDependency{
                 .fromDeclarationIndex = fromPassIndex,
                 .toDeclarationIndex = toPassIndex,
+                .resourceKind = RenderGraphResourceKind::Image,
                 .image = image,
                 .imageName = images_[image.index].name,
+                .bufferName = {},
+                .reason = std::move(reason),
+            });
+        }
+
+        void addBufferDependency(std::vector<RenderGraphPassDependency>& dependencies,
+                                 std::size_t fromPassIndex, std::size_t toPassIndex,
+                                 RenderGraphBufferHandle buffer, std::string reason) const {
+            if (fromPassIndex == toPassIndex) {
+                return;
+            }
+
+            for (const RenderGraphPassDependency& dependency : dependencies) {
+                if (dependency.fromDeclarationIndex == fromPassIndex &&
+                    dependency.toDeclarationIndex == toPassIndex &&
+                    dependency.resourceKind == RenderGraphResourceKind::Buffer &&
+                    dependency.buffer == buffer && dependency.reason == reason) {
+                    return;
+                }
+            }
+
+            dependencies.push_back(RenderGraphPassDependency{
+                .fromDeclarationIndex = fromPassIndex,
+                .toDeclarationIndex = toPassIndex,
+                .resourceKind = RenderGraphResourceKind::Buffer,
+                .buffer = buffer,
+                .imageName = {},
+                .bufferName = buffers_[buffer.index].name,
                 .reason = std::move(reason),
             });
         }
@@ -1369,8 +1787,8 @@ namespace vke {
                 const RenderGraphPassDependency* dependency =
                     findDependencyForEdge(dependencies, cycleFrom, cycleTo);
                 if (dependency != nullptr) {
-                    message += " through image '";
-                    message += imageHandleLabel(dependency->image);
+                    message += " through resource '";
+                    message += dependencyResourceLabel(*dependency);
                     message += "'";
                     if (!dependency->reason.empty()) {
                         message += " (";
@@ -1476,16 +1894,45 @@ namespace vke {
             return message;
         }
 
+        [[nodiscard]] std::string
+        missingBufferProducerMessage(std::size_t reader, RenderGraphBufferHandle buffer) const {
+            std::string message = "Render graph pass '";
+            message += passDeclarationLabel(reader);
+            message += "' reads buffer '";
+            message += bufferHandleLabel(buffer);
+            message += "' before any pass writes it. Candidate writers: -.";
+            return message;
+        }
+
+        [[nodiscard]] std::string
+        ambiguousBufferProducerMessage(std::size_t reader, RenderGraphBufferHandle buffer,
+                                       std::span<const std::size_t> writers) const {
+            std::string message = "Render graph pass '";
+            message += passDeclarationLabel(reader);
+            message += "' reads buffer '";
+            message += bufferHandleLabel(buffer);
+            message += "' before a unique producing writer can be inferred. Candidate writers: ";
+            message += passDeclarationList(writers);
+            message += ".";
+            return message;
+        }
+
         [[nodiscard]] static bool
         imageCanBeReadFromInitialState(const RenderGraphImageDesc& image) {
             return image.lifetime == RenderGraphImageLifetime::Imported &&
                    image.initialState != RenderGraphImageState::Undefined;
         }
 
+        [[nodiscard]] static bool
+        bufferCanBeReadFromInitialState(const RenderGraphBufferDesc& buffer) {
+            return buffer.lifetime == RenderGraphBufferLifetime::Imported &&
+                   buffer.initialState != RenderGraphBufferState::Undefined;
+        }
+
         [[nodiscard]] bool passCanBeCulled(const Pass& pass,
                                            const RenderGraphSchemaRegistry* schemaRegistry) const {
             return passAllowsCulling(pass, schemaRegistry) &&
-                   !passHasSideEffects(pass, schemaRegistry) && !passWritesImportedImage(pass);
+                   !passHasSideEffects(pass, schemaRegistry) && !passWritesImportedResource(pass);
         }
 
         [[nodiscard]] bool
@@ -1510,7 +1957,7 @@ namespace vke {
             return schemaRegistry->find(pass.type);
         }
 
-        [[nodiscard]] bool passWritesImportedImage(const Pass& pass) const {
+        [[nodiscard]] bool passWritesImportedResource(const Pass& pass) const {
             const std::array<std::span<const RenderGraphImageSlot>, 3> writeSlotGroups{
                 pass.colorWriteSlots,
                 pass.depthWriteSlots,
@@ -1522,6 +1969,13 @@ namespace vke {
                         images_[slot.image.index].lifetime == RenderGraphImageLifetime::Imported) {
                         return true;
                     }
+                }
+            }
+
+            for (const RenderGraphBufferSlot& slot : pass.bufferWriteSlots) {
+                if (slot.buffer.index < buffers_.size() &&
+                    buffers_[slot.buffer.index].lifetime == RenderGraphBufferLifetime::Imported) {
+                    return true;
                 }
             }
 
@@ -1540,12 +1994,34 @@ namespace vke {
                    slotsUseImage(pass.transferWriteSlots, image);
         }
 
+        [[nodiscard]] static bool passReadsBuffer(const Pass& pass,
+                                                  RenderGraphBufferHandle buffer) {
+            return slotsUseBuffer(pass.bufferReadSlots, buffer);
+        }
+
+        [[nodiscard]] static bool passWritesBuffer(const Pass& pass,
+                                                   RenderGraphBufferHandle buffer) {
+            return slotsUseBuffer(pass.bufferWriteSlots, buffer);
+        }
+
         [[nodiscard]] Result<void> validateImageHandle(RenderGraphImageHandle image) const {
             if (image.index >= images_.size()) {
                 return std::unexpected{Error{
                     ErrorDomain::RenderGraph,
                     0,
                     "Render graph image handle is out of range.",
+                }};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> validateBufferHandle(RenderGraphBufferHandle buffer) const {
+            if (buffer.index >= buffers_.size()) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph buffer handle is out of range.",
                 }};
             }
 
@@ -1583,11 +2059,21 @@ namespace vke {
                 return std::unexpected{std::move(transferSlots.error())};
             }
 
+            auto bufferReadSlots = validateBufferReadSlots(pass);
+            if (!bufferReadSlots) {
+                return std::unexpected{std::move(bufferReadSlots.error())};
+            }
+
+            auto bufferWriteSlots = validateSlots(pass, pass.bufferWriteSlots);
+            if (!bufferWriteSlots) {
+                return std::unexpected{std::move(bufferWriteSlots.error())};
+            }
+
             const std::array<std::span<const RenderGraphImageSlot>, 6> slotGroups{
                 pass.colorWriteSlots, pass.shaderReadSlots,       pass.depthReadSlots,
                 pass.depthWriteSlots, pass.depthSampledReadSlots, pass.transferWriteSlots,
             };
-            auto duplicateSlots = validateUniqueSlotNames(pass, slotGroups);
+            auto duplicateSlots = validateUniqueResourceSlotNames(pass);
             if (!duplicateSlots) {
                 return std::unexpected{std::move(duplicateSlots.error())};
             }
@@ -1595,6 +2081,11 @@ namespace vke {
             auto imageAccesses = validateUniqueImageAccesses(pass, slotGroups);
             if (!imageAccesses) {
                 return std::unexpected{std::move(imageAccesses.error())};
+            }
+
+            auto bufferAccesses = validateUniqueBufferAccesses(pass);
+            if (!bufferAccesses) {
+                return std::unexpected{std::move(bufferAccesses.error())};
             }
 
             return {};
@@ -1649,6 +2140,47 @@ namespace vke {
                                     0,
                                     imageAccessConflictMessage(pass, slot, group.access, otherSlot,
                                                                otherGroup.access),
+                                }};
+                            }
+                        }
+                    }
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> validateUniqueBufferAccesses(const Pass& pass) const {
+            const std::array<RenderGraphBufferSlotGroup, 2> namedGroups{
+                RenderGraphBufferSlotGroup{
+                    .access = "BufferShaderRead",
+                    .slots = pass.bufferReadSlots,
+                },
+                RenderGraphBufferSlotGroup{
+                    .access = "BufferTransferWrite",
+                    .slots = pass.bufferWriteSlots,
+                },
+            };
+
+            for (std::size_t groupIndex = 0; groupIndex < namedGroups.size(); ++groupIndex) {
+                const RenderGraphBufferSlotGroup& group = namedGroups[groupIndex];
+                for (std::size_t slotIndex = 0; slotIndex < group.slots.size(); ++slotIndex) {
+                    const RenderGraphBufferSlot& slot = group.slots[slotIndex];
+                    for (std::size_t otherGroupIndex = groupIndex;
+                         otherGroupIndex < namedGroups.size(); ++otherGroupIndex) {
+                        const RenderGraphBufferSlotGroup& otherGroup = namedGroups[otherGroupIndex];
+                        const std::size_t otherSlotBegin =
+                            otherGroupIndex == groupIndex ? slotIndex + 1 : 0;
+                        for (std::size_t otherSlotIndex = otherSlotBegin;
+                             otherSlotIndex < otherGroup.slots.size(); ++otherSlotIndex) {
+                            const RenderGraphBufferSlot& otherSlot =
+                                otherGroup.slots[otherSlotIndex];
+                            if (slot.buffer == otherSlot.buffer) {
+                                return std::unexpected{Error{
+                                    ErrorDomain::RenderGraph,
+                                    0,
+                                    bufferAccessConflictMessage(pass, slot, group.access, otherSlot,
+                                                                otherGroup.access),
                                 }};
                             }
                         }
@@ -1725,6 +2257,18 @@ namespace vke {
                 return std::unexpected{std::move(transferSlots.error())};
             }
 
+            auto bufferReadSlots = validateSlotsAgainstSchema(
+                pass, pass.bufferReadSlots, RenderGraphSlotAccess::BufferShaderRead, *schema);
+            if (!bufferReadSlots) {
+                return std::unexpected{std::move(bufferReadSlots.error())};
+            }
+
+            auto bufferWriteSlots = validateSlotsAgainstSchema(
+                pass, pass.bufferWriteSlots, RenderGraphSlotAccess::BufferTransferWrite, *schema);
+            if (!bufferWriteSlots) {
+                return std::unexpected{std::move(bufferWriteSlots.error())};
+            }
+
             for (const RenderGraphResourceSlotSchema& slotSchema : schema->resourceSlots) {
                 if (slotSchema.optional) {
                     continue;
@@ -1793,11 +2337,37 @@ namespace vke {
             return {};
         }
 
+        [[nodiscard]] Result<void>
+        validateSlotsAgainstSchema(const Pass& pass, std::span<const RenderGraphBufferSlot> slots,
+                                   RenderGraphSlotAccess access,
+                                   const RenderGraphPassSchema& schema) const {
+            for (const RenderGraphBufferSlot& slot : slots) {
+                if (findSlotSchema(schema, slot.name, access, slot.shaderStage) == nullptr) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' declares slot '" + slot.name +
+                            "' that is not allowed by schema '" + schema.type + "'.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
         [[nodiscard]] bool hasSlot(const Pass& pass,
                                    const RenderGraphResourceSlotSchema& slotSchema) const {
             const std::span<const RenderGraphImageSlot> slots =
                 slotsForAccess(pass, slotSchema.access);
             for (const RenderGraphImageSlot& slot : slots) {
+                if (slot.name == slotSchema.name && slot.shaderStage == slotSchema.shaderStage) {
+                    return true;
+                }
+            }
+
+            const std::span<const RenderGraphBufferSlot> bufferSlots =
+                bufferSlotsForAccess(pass, slotSchema.access);
+            for (const RenderGraphBufferSlot& slot : bufferSlots) {
                 if (slot.name == slotSchema.name && slot.shaderStage == slotSchema.shaderStage) {
                     return true;
                 }
@@ -1834,6 +2404,27 @@ namespace vke {
                 return pass.depthSampledReadSlots;
             case RenderGraphSlotAccess::TransferWrite:
                 return pass.transferWriteSlots;
+            case RenderGraphSlotAccess::BufferShaderRead:
+            case RenderGraphSlotAccess::BufferTransferWrite:
+                return {};
+            }
+            return {};
+        }
+
+        [[nodiscard]] std::span<const RenderGraphBufferSlot>
+        bufferSlotsForAccess(const Pass& pass, RenderGraphSlotAccess access) const {
+            switch (access) {
+            case RenderGraphSlotAccess::BufferShaderRead:
+                return pass.bufferReadSlots;
+            case RenderGraphSlotAccess::BufferTransferWrite:
+                return pass.bufferWriteSlots;
+            case RenderGraphSlotAccess::ColorWrite:
+            case RenderGraphSlotAccess::ShaderRead:
+            case RenderGraphSlotAccess::DepthAttachmentRead:
+            case RenderGraphSlotAccess::DepthAttachmentWrite:
+            case RenderGraphSlotAccess::DepthSampledRead:
+            case RenderGraphSlotAccess::TransferWrite:
+                return {};
             }
             return {};
         }
@@ -1851,6 +2442,37 @@ namespace vke {
                 }
 
                 auto validated = validateImageHandle(slot.image);
+                if (!validated) {
+                    return std::unexpected{std::move(validated.error())};
+                }
+
+                for (std::size_t otherIndex = index + 1; otherIndex < slots.size(); ++otherIndex) {
+                    if (slot.name == slots[otherIndex].name) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            duplicateSlotMessage(pass, slot.name),
+                        }};
+                    }
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateSlots(const Pass& pass, std::span<const RenderGraphBufferSlot> slots) const {
+            for (std::size_t index = 0; index < slots.size(); ++index) {
+                const RenderGraphBufferSlot& slot = slots[index];
+                if (slot.name.empty()) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' has an unnamed resource slot.",
+                    }};
+                }
+
+                auto validated = validateBufferHandle(slot.buffer);
                 if (!validated) {
                     return std::unexpected{std::move(validated.error())};
                 }
@@ -1909,23 +2531,88 @@ namespace vke {
             return {};
         }
 
-        [[nodiscard]] Result<void> validateUniqueSlotNames(
-            const Pass& pass,
-            std::span<const std::span<const RenderGraphImageSlot>> slotGroups) const {
-            for (std::size_t groupIndex = 0; groupIndex < slotGroups.size(); ++groupIndex) {
-                for (const RenderGraphImageSlot& slot : slotGroups[groupIndex]) {
-                    for (std::size_t otherGroupIndex = groupIndex + 1;
-                         otherGroupIndex < slotGroups.size(); ++otherGroupIndex) {
-                        for (const RenderGraphImageSlot& otherSlot : slotGroups[otherGroupIndex]) {
-                            if (slot.name == otherSlot.name) {
-                                return std::unexpected{Error{
-                                    ErrorDomain::RenderGraph,
-                                    0,
-                                    duplicateSlotMessage(pass, slot.name),
-                                }};
-                            }
-                        }
+        [[nodiscard]] Result<void> validateBufferReadSlots(const Pass& pass) const {
+            auto slots = validateSlots(pass, pass.bufferReadSlots);
+            if (!slots) {
+                return std::unexpected{std::move(slots.error())};
+            }
+
+            for (const RenderGraphBufferSlot& slot : pass.bufferReadSlots) {
+                if (slot.shaderStage == RenderGraphShaderStage::None) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name + "' declares buffer shader read slot '" +
+                            slot.name + "' without a shader stage.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> validateUniqueResourceSlotNames(const Pass& pass) const {
+            std::vector<std::string_view> names;
+            const auto addName = [&](std::string_view name) -> Result<void> {
+                for (const std::string_view existing : names) {
+                    if (existing == name) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            duplicateSlotMessage(pass, name),
+                        }};
                     }
+                }
+                names.push_back(name);
+                return {};
+            };
+
+            for (const RenderGraphImageSlot& slot : pass.colorWriteSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphImageSlot& slot : pass.shaderReadSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphImageSlot& slot : pass.depthReadSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphImageSlot& slot : pass.depthWriteSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphImageSlot& slot : pass.depthSampledReadSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphImageSlot& slot : pass.transferWriteSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphBufferSlot& slot : pass.bufferReadSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphBufferSlot& slot : pass.bufferWriteSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
                 }
             }
 
@@ -1938,6 +2625,16 @@ namespace vke {
             handles.reserve(slots.size());
             for (const RenderGraphImageSlot& slot : slots) {
                 handles.push_back(slot.image);
+            }
+            return handles;
+        }
+
+        [[nodiscard]] static std::vector<RenderGraphBufferHandle>
+        bufferHandles(std::span<const RenderGraphBufferSlot> slots) {
+            std::vector<RenderGraphBufferHandle> handles;
+            handles.reserve(slots.size());
+            for (const RenderGraphBufferSlot& slot : slots) {
+                handles.push_back(slot.buffer);
             }
             return handles;
         }
@@ -1984,6 +2681,47 @@ namespace vke {
             };
         }
 
+        [[nodiscard]] Result<RenderGraphTransientBufferAllocation>
+        makeTransientBufferAllocation(std::size_t bufferIndex,
+                                      std::span<const RenderGraphCompiledPass> passes,
+                                      RenderGraphBufferAccess finalAccess) const {
+            std::size_t firstPass = passes.size();
+            std::size_t lastPass{};
+            const RenderGraphBufferHandle bufferHandle{
+                .index = static_cast<std::uint32_t>(bufferIndex),
+            };
+
+            for (std::size_t passIndex = 0; passIndex < passes.size(); ++passIndex) {
+                if (!passUsesBuffer(passes[passIndex], bufferHandle)) {
+                    continue;
+                }
+
+                if (firstPass == passes.size()) {
+                    firstPass = passIndex;
+                }
+                lastPass = passIndex;
+            }
+
+            const RenderGraphBufferDesc& buffer = buffers_[bufferIndex];
+            if (firstPass == passes.size()) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Transient render graph buffer '" + buffer.name + "' is never used.",
+                }};
+            }
+
+            return RenderGraphTransientBufferAllocation{
+                .buffer = bufferHandle,
+                .bufferName = buffer.name,
+                .byteSize = buffer.byteSize,
+                .firstPassIndex = firstPass,
+                .lastPassIndex = lastPass,
+                .finalState = finalAccess.state,
+                .finalShaderStage = finalAccess.shaderStage,
+            };
+        }
+
         [[nodiscard]] static bool passUsesImage(const RenderGraphCompiledPass& pass,
                                                 RenderGraphImageHandle image) {
             return slotsUseImage(pass.colorWriteSlots, image) ||
@@ -2006,6 +2744,34 @@ namespace vke {
             return false;
         }
 
+        [[nodiscard]] static bool passUsesBuffer(const RenderGraphCompiledPass& pass,
+                                                 RenderGraphBufferHandle buffer) {
+            return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
+                   slotsUseBuffer(pass.bufferWriteSlots, buffer);
+        }
+
+        [[nodiscard]] static bool
+        bufferUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
+                                   RenderGraphBufferHandle buffer) {
+            for (const RenderGraphCompiledPass& pass : passes) {
+                if (passUsesBuffer(pass, buffer)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        [[nodiscard]] bool bufferUsedByDeclaredPasses(RenderGraphBufferHandle buffer) const {
+            for (const Pass& pass : passes_) {
+                if (passReadsBuffer(pass, buffer) || passWritesBuffer(pass, buffer)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         [[nodiscard]] bool imageUsedByDeclaredPasses(RenderGraphImageHandle image) const {
             for (const Pass& pass : passes_) {
                 if (passReadsImage(pass, image) || passWritesImage(pass, image)) {
@@ -2020,6 +2786,17 @@ namespace vke {
                                                 RenderGraphImageHandle image) {
             for (const RenderGraphImageSlot& slot : slots) {
                 if (slot.image == image) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        [[nodiscard]] static bool slotsUseBuffer(std::span<const RenderGraphBufferSlot> slots,
+                                                 RenderGraphBufferHandle buffer) {
+            for (const RenderGraphBufferSlot& slot : slots) {
+                if (slot.buffer == buffer) {
                     return true;
                 }
             }
@@ -2056,12 +2833,53 @@ namespace vke {
             return {};
         }
 
+        [[nodiscard]] Result<void>
+        transitionBuffers(std::span<const RenderGraphBufferSlot> bufferSlots,
+                          RenderGraphBufferAccess requiredAccess,
+                          std::vector<RenderGraphBufferAccess>& currentAccesses,
+                          RenderGraphCompiledPass& compiledPass) const {
+            for (const RenderGraphBufferSlot& slot : bufferSlots) {
+                RenderGraphBufferHandle bufferHandle = slot.buffer;
+                auto validated = validateBufferHandle(bufferHandle);
+                if (!validated) {
+                    return std::unexpected{std::move(validated.error())};
+                }
+
+                RenderGraphBufferAccess slotAccess = requiredAccess;
+                if (slotAccess.state == RenderGraphBufferState::ShaderRead) {
+                    slotAccess.shaderStage = slot.shaderStage;
+                }
+
+                const RenderGraphBufferDesc& buffer = buffers_[bufferHandle.index];
+                if (currentAccesses[bufferHandle.index] != slotAccess) {
+                    compiledPass.bufferTransitionsBefore.push_back(makeTransition(
+                        bufferHandle, buffer, currentAccesses[bufferHandle.index], slotAccess));
+                    currentAccesses[bufferHandle.index] = slotAccess;
+                }
+            }
+
+            return {};
+        }
+
         [[nodiscard]] static RenderGraphImageTransition
         makeTransition(RenderGraphImageHandle imageHandle, const RenderGraphImageDesc& image,
                        RenderGraphImageAccess oldAccess, RenderGraphImageAccess newAccess) {
             return RenderGraphImageTransition{
                 .image = imageHandle,
                 .imageName = image.name,
+                .oldState = oldAccess.state,
+                .oldShaderStage = oldAccess.shaderStage,
+                .newState = newAccess.state,
+                .newShaderStage = newAccess.shaderStage,
+            };
+        }
+
+        [[nodiscard]] static RenderGraphBufferTransition
+        makeTransition(RenderGraphBufferHandle bufferHandle, const RenderGraphBufferDesc& buffer,
+                       RenderGraphBufferAccess oldAccess, RenderGraphBufferAccess newAccess) {
+            return RenderGraphBufferTransition{
+                .buffer = bufferHandle,
+                .bufferName = buffer.name,
                 .oldState = oldAccess.state,
                 .oldShaderStage = oldAccess.shaderStage,
                 .newState = newAccess.state,
@@ -2103,11 +2921,34 @@ namespace vke {
             }
         }
 
+        [[nodiscard]] static std::string_view bufferStateName(RenderGraphBufferState state) {
+            switch (state) {
+            case RenderGraphBufferState::TransferWrite:
+                return "TransferWrite";
+            case RenderGraphBufferState::ShaderRead:
+                return "ShaderRead";
+            case RenderGraphBufferState::Undefined:
+            default:
+                return "Undefined";
+            }
+        }
+
         [[nodiscard]] static std::string_view imageLifetimeName(RenderGraphImageLifetime lifetime) {
             switch (lifetime) {
             case RenderGraphImageLifetime::Transient:
                 return "Transient";
             case RenderGraphImageLifetime::Imported:
+            default:
+                return "Imported";
+            }
+        }
+
+        [[nodiscard]] static std::string_view
+        bufferLifetimeName(RenderGraphBufferLifetime lifetime) {
+            switch (lifetime) {
+            case RenderGraphBufferLifetime::Transient:
+                return "Transient";
+            case RenderGraphBufferLifetime::Imported:
             default:
                 return "Imported";
             }
@@ -2159,6 +3000,27 @@ namespace vke {
             return message;
         }
 
+        [[nodiscard]] std::string
+        bufferAccessConflictMessage(const Pass& pass, const RenderGraphBufferSlot& slot,
+                                    std::string_view access, const RenderGraphBufferSlot& otherSlot,
+                                    std::string_view otherAccess) const {
+            std::string message = "Render graph pass '";
+            message += pass.name;
+            message += "' declares buffer '";
+            message += bufferHandleLabel(slot.buffer);
+            message += "' more than once in slots '";
+            message += slot.name;
+            message += "' (";
+            message += access;
+            message += ") and '";
+            message += otherSlot.name;
+            message += "' (";
+            message += otherAccess;
+            message += "). Split the operation into separate passes or add an explicit combined "
+                       "access state.";
+            return message;
+        }
+
         [[nodiscard]] std::string imageHandleLabel(RenderGraphImageHandle image) const {
             std::string label = "#";
             label += std::to_string(image.index);
@@ -2167,6 +3029,24 @@ namespace vke {
                 label += images_[image.index].name;
             }
             return label;
+        }
+
+        [[nodiscard]] std::string bufferHandleLabel(RenderGraphBufferHandle buffer) const {
+            std::string label = "#";
+            label += std::to_string(buffer.index);
+            if (buffer.index < buffers_.size() && !buffers_[buffer.index].name.empty()) {
+                label += " ";
+                label += buffers_[buffer.index].name;
+            }
+            return label;
+        }
+
+        [[nodiscard]] std::string
+        dependencyResourceLabel(const RenderGraphPassDependency& dependency) const {
+            if (dependency.resourceKind == RenderGraphResourceKind::Buffer) {
+                return bufferHandleLabel(dependency.buffer);
+            }
+            return imageHandleLabel(dependency.image);
         }
 
         [[nodiscard]] std::string passDeclarationLabel(std::size_t passIndex) const {
@@ -2277,6 +3157,18 @@ namespace vke {
             return name;
         }
 
+        [[nodiscard]] std::string bufferAccessName(RenderGraphBufferState state,
+                                                   RenderGraphShaderStage shaderStage) const {
+            std::string name{bufferStateName(state)};
+            if (state == RenderGraphBufferState::ShaderRead &&
+                shaderStage != RenderGraphShaderStage::None) {
+                name += "(";
+                name += shaderStageName(shaderStage);
+                name += ")";
+            }
+            return name;
+        }
+
         [[nodiscard]] std::string slotImageLabel(const RenderGraphImageSlot& slot) const {
             std::string label = slot.name;
             if (slot.shaderStage != RenderGraphShaderStage::None) {
@@ -2286,6 +3178,18 @@ namespace vke {
             }
             label += "=";
             label += imageHandleLabel(slot.image);
+            return label;
+        }
+
+        [[nodiscard]] std::string slotBufferLabel(const RenderGraphBufferSlot& slot) const {
+            std::string label = slot.name;
+            if (slot.shaderStage != RenderGraphShaderStage::None) {
+                label += "(";
+                label += shaderStageName(slot.shaderStage);
+                label += ")";
+            }
+            label += "=";
+            label += bufferHandleLabel(slot.buffer);
             return label;
         }
 
@@ -2300,6 +3204,22 @@ namespace vke {
                     labels += ", ";
                 }
                 labels += slotImageLabel(slots[index]);
+            }
+            return labels;
+        }
+
+        [[nodiscard]] std::string
+        bufferSlotList(std::span<const RenderGraphBufferSlot> slots) const {
+            if (slots.empty()) {
+                return "-";
+            }
+
+            std::string labels;
+            for (std::size_t index = 0; index < slots.size(); ++index) {
+                if (index > 0) {
+                    labels += ", ";
+                }
+                labels += slotBufferLabel(slots[index]);
             }
             return labels;
         }
@@ -2324,6 +3244,31 @@ namespace vke {
                 }
                 output += " | ";
                 output += imageHandleLabel(slot.image);
+                output += " |\n";
+            }
+        }
+
+        void appendBufferSlotRows(std::string& output, std::string_view passName,
+                                  std::string_view access,
+                                  std::span<const RenderGraphBufferSlot> slots) const {
+            if (slots.empty()) {
+                return;
+            }
+
+            for (const RenderGraphBufferSlot& slot : slots) {
+                output += "| ";
+                output += passName;
+                output += " | ";
+                output += access;
+                output += " | ";
+                output += slot.name;
+                if (slot.shaderStage != RenderGraphShaderStage::None) {
+                    output += "(";
+                    output += shaderStageName(slot.shaderStage);
+                    output += ")";
+                }
+                output += " | ";
+                output += bufferHandleLabel(slot.buffer);
                 output += " |\n";
             }
         }
@@ -2359,7 +3304,24 @@ namespace vke {
             output += " |\n";
         }
 
+        void appendTransitionRow(std::string& output, std::string_view phase,
+                                 std::string_view passName,
+                                 const RenderGraphBufferTransition& transition) const {
+            output += "| ";
+            output += phase;
+            output += " | ";
+            output += passName;
+            output += " | ";
+            output += bufferHandleLabel(transition.buffer);
+            output += " | ";
+            output += bufferAccessName(transition.oldState, transition.oldShaderStage);
+            output += " | ";
+            output += bufferAccessName(transition.newState, transition.newShaderStage);
+            output += " |\n";
+        }
+
         std::vector<RenderGraphImageDesc> images_;
+        std::vector<RenderGraphBufferDesc> buffers_;
         std::vector<Pass> passes_;
     };
 

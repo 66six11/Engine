@@ -32,8 +32,7 @@
 
 namespace {
 
-    constexpr vke::VulkanDebugLabelMode kSmokeDebugLabels =
-        vke::VulkanDebugLabelMode::Required;
+    constexpr vke::VulkanDebugLabelMode kSmokeDebugLabels = vke::VulkanDebugLabelMode::Required;
 
     bool hasArg(std::span<char*> args, std::string_view expected) {
         return std::ranges::any_of(
@@ -56,13 +55,13 @@ namespace {
 
     void printUsage() {
         std::cout << "Usage: vke-sample-viewer [--help] [--version] [--smoke-window] "
-                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
-                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
-                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
-                      "[--smoke-mesh-3d] [--smoke-draw-list] "
-                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
-                      "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
-                      "[--bench-rendergraph --warmup N --frames N --output path]\n";
+                     "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
+                     "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
+                     "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
+                     "[--smoke-mesh-3d] [--smoke-draw-list] "
+                     "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                     "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
+                     "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
     bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
@@ -103,8 +102,7 @@ namespace {
         return "Rendered triangle frames: ";
     }
 
-    bool validatePipelineCacheStats(vke::BasicPipelineCacheStats stats,
-                                    std::string_view context) {
+    bool validatePipelineCacheStats(vke::BasicPipelineCacheStats stats, std::string_view context) {
         if (stats.created != 1 || stats.reused < 2) {
             vke::logError(std::string{context} +
                           " did not reuse its renderer pipeline after the first frame.");
@@ -125,12 +123,10 @@ namespace {
     }
 
     bool validateOffscreenViewportTarget(vke::BasicOffscreenViewportTarget target,
-                                         VkFormat expectedFormat,
-                                         VkExtent2D expectedExtent,
+                                         VkFormat expectedFormat, VkExtent2D expectedExtent,
                                          std::string_view context) {
         if (target.image == VK_NULL_HANDLE || target.imageView == VK_NULL_HANDLE ||
-            target.format != expectedFormat ||
-            target.extent.width != expectedExtent.width ||
+            target.format != expectedFormat || target.extent.width != expectedExtent.width ||
             target.extent.height != expectedExtent.height ||
             target.sampledLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
             vke::logError(std::string{context} +
@@ -167,8 +163,7 @@ namespace {
     bool validateDebugLabelStats(vke::VulkanDebugLabelStats stats, std::string_view context) {
         if (!stats.available || stats.regionsBegun == 0 ||
             stats.regionsBegun != stats.regionsEnded) {
-            vke::logError(std::string{context} +
-                          " did not record balanced Vulkan debug labels.");
+            vke::logError(std::string{context} + " did not record balanced Vulkan debug labels.");
             return false;
         }
         return true;
@@ -185,8 +180,8 @@ namespace {
             return false;
         }
 
-        const bool hasFrameTiming = std::ranges::any_of(
-            timings, [](const vke::VulkanTimestampRegionTiming& timing) {
+        const bool hasFrameTiming =
+            std::ranges::any_of(timings, [](const vke::VulkanTimestampRegionTiming& timing) {
                 return timing.name == "VulkanFrame" && timing.milliseconds >= 0.0;
             });
         if (!hasFrameTiming) {
@@ -290,11 +285,13 @@ namespace {
         return graph;
     }
 
-    [[nodiscard]] std::uint64_t renderGraphTransitionCount(
-        const vke::RenderGraphCompileResult& compiled) {
+    [[nodiscard]] std::uint64_t
+    renderGraphTransitionCount(const vke::RenderGraphCompileResult& compiled) {
         auto count = static_cast<std::uint64_t>(compiled.finalTransitions.size());
+        count += static_cast<std::uint64_t>(compiled.finalBufferTransitions.size());
         for (const vke::RenderGraphCompiledPass& pass : compiled.passes) {
             count += static_cast<std::uint64_t>(pass.transitionsBefore.size());
+            count += static_cast<std::uint64_t>(pass.bufferTransitionsBefore.size());
         }
         return count;
     }
@@ -305,7 +302,10 @@ namespace {
                             static_cast<std::uint64_t>(compiled.declaredPassCount));
         profiler.addCounter("declaredImageCount",
                             static_cast<std::uint64_t>(compiled.declaredImageCount));
-        profiler.addCounter("compiledPassCount", static_cast<std::uint64_t>(compiled.passes.size()));
+        profiler.addCounter("declaredBufferCount",
+                            static_cast<std::uint64_t>(compiled.declaredBufferCount));
+        profiler.addCounter("compiledPassCount",
+                            static_cast<std::uint64_t>(compiled.passes.size()));
         profiler.addCounter("dependencyEdgeCount",
                             static_cast<std::uint64_t>(compiled.dependencies.size()));
         profiler.addCounter("transitionCount", renderGraphTransitionCount(compiled));
@@ -313,10 +313,12 @@ namespace {
                             static_cast<std::uint64_t>(compiled.culledPasses.size()));
         profiler.addCounter("transientImageCount",
                             static_cast<std::uint64_t>(compiled.transientImages.size()));
+        profiler.addCounter("transientBufferCount",
+                            static_cast<std::uint64_t>(compiled.transientBuffers.size()));
     }
 
     [[nodiscard]] std::optional<double> cpuScopeMilliseconds(const vke::FrameProfile& frame,
-                                                            std::string_view scopeName) {
+                                                             std::string_view scopeName) {
         for (const vke::CpuScopeSample& scope : frame.cpuScopes) {
             if (scope.name == scopeName && scope.endNanoseconds >= scope.beginNanoseconds) {
                 const std::uint64_t elapsed = scope.endNanoseconds - scope.beginNanoseconds;
@@ -356,20 +358,18 @@ namespace {
         output << R"({"type":"summary","warmupFrames":)" << options.warmupFrames
                << R"(,"measuredFrames":)" << options.measuredFrames << R"(,"outputPath":)";
         vke::writeJsonString(output, options.outputPath.generic_string());
-        output << R"(,"recordGraph":{"averageMilliseconds":)"
-               << recordStats.averageMilliseconds
+        output << R"(,"recordGraph":{"averageMilliseconds":)" << recordStats.averageMilliseconds
                << R"(,"p50Milliseconds":)" << recordStats.p50Milliseconds
                << R"(,"p95Milliseconds":)" << recordStats.p95Milliseconds
                << R"(,"maxMilliseconds":)" << recordStats.maxMilliseconds << '}';
-        output << R"(,"compileGraph":{"averageMilliseconds":)"
-               << compileStats.averageMilliseconds
+        output << R"(,"compileGraph":{"averageMilliseconds":)" << compileStats.averageMilliseconds
                << R"(,"p50Milliseconds":)" << compileStats.p50Milliseconds
                << R"(,"p95Milliseconds":)" << compileStats.p95Milliseconds
                << R"(,"maxMilliseconds":)" << compileStats.maxMilliseconds << '}';
         output << R"(,"total":{"averageMilliseconds":)" << totalStats.averageMilliseconds
-               << R"(,"p50Milliseconds":)" << totalStats.p50Milliseconds
-               << R"(,"p95Milliseconds":)" << totalStats.p95Milliseconds
-               << R"(,"maxMilliseconds":)" << totalStats.maxMilliseconds << '}';
+               << R"(,"p50Milliseconds":)" << totalStats.p50Milliseconds << R"(,"p95Milliseconds":)"
+               << totalStats.p95Milliseconds << R"(,"maxMilliseconds":)"
+               << totalStats.maxMilliseconds << '}';
         output << R"(,"lastCounters":{)";
         for (std::size_t index = 0; index < lastFrame.counters.size(); ++index) {
             const vke::CounterSample& counter = lastFrame.counters[index];
@@ -475,18 +475,17 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        const bool enqueued =
-            queue.enqueue(2, [&retired]() { retired.push_back(2); }) &&
-            queue.enqueue(1, [&retired]() { retired.push_back(1); }) &&
-            queue.enqueue(3, [&retired]() { retired.push_back(3); });
+        const bool enqueued = queue.enqueue(2, [&retired]() { retired.push_back(2); }) &&
+                              queue.enqueue(1, [&retired]() { retired.push_back(1); }) &&
+                              queue.enqueue(3, [&retired]() { retired.push_back(3); });
         if (!enqueued) {
             vke::logError("Deferred deletion queue rejected a valid callback.");
             return EXIT_FAILURE;
         }
 
         vke::VulkanDeferredDeletionStats stats = queue.stats();
-        if (stats.pending != 3 || stats.enqueued != 3 || stats.retired != 0 ||
-            stats.flushed != 0 || queue.pendingCount() != 3 || queue.empty()) {
+        if (stats.pending != 3 || stats.enqueued != 3 || stats.retired != 0 || stats.flushed != 0 ||
+            queue.pendingCount() != 3 || queue.empty()) {
             vke::logError("Deferred deletion queue reported unexpected initial counters.");
             return EXIT_FAILURE;
         }
@@ -507,8 +506,7 @@ namespace {
         }
 
         stats = queue.stats();
-        if (stats.pending != 1 || stats.enqueued != 4 || stats.retired != 3 ||
-            stats.flushed != 0) {
+        if (stats.pending != 1 || stats.enqueued != 4 || stats.retired != 3 || stats.flushed != 0) {
             vke::logError("Deferred deletion queue reported unexpected post-retire counters.");
             return EXIT_FAILURE;
         }
@@ -519,8 +517,8 @@ namespace {
         }
 
         stats = queue.stats();
-        if (stats.pending != 0 || stats.enqueued != 4 || stats.retired != 4 ||
-            stats.flushed != 1 || !queue.empty()) {
+        if (stats.pending != 0 || stats.enqueued != 4 || stats.retired != 4 || stats.flushed != 1 ||
+            !queue.empty()) {
             vke::logError("Deferred deletion queue reported unexpected final counters.");
             return EXIT_FAILURE;
         }
@@ -765,8 +763,7 @@ namespace {
             vke::logError("Transient smoke did not retire deferred Vulkan resource destruction.");
             return EXIT_FAILURE;
         }
-        const vke::VulkanTransientImagePoolStats transientPoolStats =
-            recorder.transientPoolStats();
+        const vke::VulkanTransientImagePoolStats transientPoolStats = recorder.transientPoolStats();
         if (transientPoolStats.created == 0 || transientPoolStats.reused == 0 ||
             transientPoolStats.retired == 0) {
             vke::logError("Transient smoke did not reuse a retired transient Vulkan image.");
@@ -776,8 +773,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateTimestampStats(frameLoop->timestampStats(),
-                                    frameLoop->latestTimestampTimings(),
-                                    "Transient smoke")) {
+                                    frameLoop->latestTimestampTimings(), "Transient smoke")) {
             return EXIT_FAILURE;
         }
 
@@ -1376,14 +1372,13 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                             "Fullscreen texture smoke", 2)) {
+                                              "Fullscreen texture smoke", 2)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
-        if (!validateDebugLabelStats(frameLoop->debugLabelStats(),
-                                     "Fullscreen texture smoke")) {
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
         if (!validateTimestampStats(frameLoop->timestampStats(),
@@ -1518,14 +1513,13 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                             "Offscreen viewport smoke", 2)) {
+                                              "Offscreen viewport smoke", 2)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
         }
-        if (!validateDebugLabelStats(frameLoop->debugLabelStats(),
-                                     "Offscreen viewport smoke")) {
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
         }
         if (!validateTimestampStats(frameLoop->timestampStats(),
@@ -1536,8 +1530,8 @@ namespace {
 
         const VkExtent2D swapchainExtent = frameLoop->extent();
         std::cout << "Rendered offscreen viewport frames: " << lastViewportExtent.width << 'x'
-                  << lastViewportExtent.height << " inside swapchain "
-                  << swapchainExtent.width << 'x' << swapchainExtent.height << '\n';
+                  << lastViewportExtent.height << " inside swapchain " << swapchainExtent.width
+                  << 'x' << swapchainExtent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             vke::logError("Failed to wait for Vulkan queue before offscreen viewport teardown: " +
@@ -2629,6 +2623,191 @@ namespace {
         return true;
     }
 
+    bool validateSmokeRenderGraphBuffers(const vke::RenderGraphSchemaRegistry& schemas) {
+        vke::RenderGraph bufferGraph;
+        const auto transientBuffer = bufferGraph.createTransientBuffer(vke::RenderGraphBufferDesc{
+            .name = "TransientUploadBuffer",
+            .byteSize = 1024,
+        });
+
+        int writeCallbackCount = 0;
+        int readCallbackCount = 0;
+        bufferGraph.addPass("ReadTransientBuffer", "basic.buffer-read-fragment")
+            .setParamsType("basic.buffer-read-fragment.params")
+            .readBuffer("source", transientBuffer, vke::RenderGraphShaderStage::Fragment)
+            .execute(
+                [&readCallbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                    if (context.name != "ReadTransientBuffer" ||
+                        context.type != "basic.buffer-read-fragment" ||
+                        context.paramsType != "basic.buffer-read-fragment.params" ||
+                        !context.bufferWrites.empty() || context.bufferReads.size() != 1 ||
+                        context.bufferReadSlots.size() != 1 || !context.bufferWriteSlots.empty() ||
+                        context.bufferReadSlots.front().name != "source" ||
+                        context.bufferReadSlots.front().shaderStage !=
+                            vke::RenderGraphShaderStage::Fragment ||
+                        context.bufferTransitionsBefore.size() != 1 ||
+                        context.bufferTransitionsBefore.front().oldState !=
+                            vke::RenderGraphBufferState::TransferWrite ||
+                        context.bufferTransitionsBefore.front().newState !=
+                            vke::RenderGraphBufferState::ShaderRead ||
+                        context.bufferTransitionsBefore.front().newShaderStage !=
+                            vke::RenderGraphShaderStage::Fragment) {
+                        return std::unexpected{vke::Error{
+                            vke::ErrorDomain::RenderGraph,
+                            0,
+                            "Render graph buffer read executor received unexpected pass context.",
+                        }};
+                    }
+                    ++readCallbackCount;
+                    return {};
+                });
+        bufferGraph.addPass("WriteTransientBuffer", "basic.buffer-transfer-write")
+            .setParamsType("basic.buffer-transfer-write.params")
+            .writeBuffer("target", transientBuffer)
+            .execute(
+                [&writeCallbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                    if (context.name != "WriteTransientBuffer" ||
+                        context.type != "basic.buffer-transfer-write" ||
+                        context.paramsType != "basic.buffer-transfer-write.params" ||
+                        !context.bufferReads.empty() || context.bufferWrites.size() != 1 ||
+                        !context.bufferReadSlots.empty() || context.bufferWriteSlots.size() != 1 ||
+                        context.bufferWriteSlots.front().name != "target" ||
+                        context.bufferTransitionsBefore.size() != 1 ||
+                        context.bufferTransitionsBefore.front().oldState !=
+                            vke::RenderGraphBufferState::Undefined ||
+                        context.bufferTransitionsBefore.front().newState !=
+                            vke::RenderGraphBufferState::TransferWrite) {
+                        return std::unexpected{vke::Error{
+                            vke::ErrorDomain::RenderGraph,
+                            0,
+                            "Render graph buffer write executor received unexpected pass context.",
+                        }};
+                    }
+                    ++writeCallbackCount;
+                    return {};
+                });
+
+        auto compiled = bufferGraph.compile(schemas);
+        if (!compiled) {
+            vke::logError(compiled.error().message);
+            return false;
+        }
+        if (compiled->declaredBufferCount != 1 || compiled->passes.size() != 2 ||
+            compiled->passes[0].name != "WriteTransientBuffer" ||
+            compiled->passes[1].name != "ReadTransientBuffer" ||
+            compiled->dependencies.size() != 1 || compiled->transientBuffers.size() != 1 ||
+            !compiled->finalBufferTransitions.empty()) {
+            vke::logError("Render graph buffer smoke produced an unexpected compile plan.");
+            return false;
+        }
+
+        auto executed = bufferGraph.execute(*compiled);
+        if (!executed) {
+            vke::logError(executed.error().message);
+            return false;
+        }
+        if (writeCallbackCount != 1 || readCallbackCount != 1) {
+            vke::logError("Render graph buffer smoke invoked unexpected callbacks.");
+            return false;
+        }
+
+        vke::RenderGraph importedReadGraph;
+        const auto importedBuffer = importedReadGraph.importBuffer(vke::RenderGraphBufferDesc{
+            .name = "ImportedReadBuffer",
+            .byteSize = 256,
+            .initialState = vke::RenderGraphBufferState::ShaderRead,
+            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .finalState = vke::RenderGraphBufferState::ShaderRead,
+            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+        });
+        importedReadGraph.addPass("ReadImportedBuffer", "basic.buffer-read-fragment")
+            .setParamsType("basic.buffer-read-fragment.params")
+            .readBuffer("source", importedBuffer, vke::RenderGraphShaderStage::Fragment);
+        auto importedReadCompiled = importedReadGraph.compile(schemas);
+        if (!importedReadCompiled) {
+            vke::logError("Render graph rejected a shader-readable imported buffer: " +
+                          importedReadCompiled.error().message);
+            return false;
+        }
+        if (!importedReadCompiled->finalBufferTransitions.empty() ||
+            !importedReadCompiled->transientBuffers.empty() ||
+            !importedReadCompiled->passes.front().bufferTransitionsBefore.empty()) {
+            vke::logError("Render graph produced unexpected transitions for imported buffer read.");
+            return false;
+        }
+
+        vke::RenderGraph missingFinalStateGraph;
+        const auto missingFinalBuffer =
+            missingFinalStateGraph.importBuffer(vke::RenderGraphBufferDesc{
+                .name = "ImportedBufferWithoutFinalState",
+                .byteSize = 64,
+                .initialState = vke::RenderGraphBufferState::ShaderRead,
+                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+            });
+        missingFinalStateGraph.addPass("ReadImportedWithoutFinal", "basic.buffer-read-fragment")
+            .setParamsType("basic.buffer-read-fragment.params")
+            .readBuffer("source", missingFinalBuffer, vke::RenderGraphShaderStage::Fragment);
+        if (!expectRenderGraphCompileFailure(missingFinalStateGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "must declare an explicit final state",
+                                                 .context = "imported buffer without final state",
+                                             })) {
+            return false;
+        }
+
+        vke::RenderGraph missingProducerGraph;
+        const auto orphanBuffer = missingProducerGraph.createTransientBuffer(
+            vke::RenderGraphBufferDesc{.name = "OrphanTransientBuffer", .byteSize = 64});
+        missingProducerGraph.addPass("ReadOrphanBuffer", "basic.buffer-read-fragment")
+            .setParamsType("basic.buffer-read-fragment.params")
+            .readBuffer("source", orphanBuffer, vke::RenderGraphShaderStage::Fragment);
+        if (!expectRenderGraphCompileFailure(missingProducerGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "reads buffer",
+                                                 .context = "transient buffer without producer",
+                                             })) {
+            return false;
+        }
+
+        vke::RenderGraph missingStageGraph;
+        const auto stageBuffer = missingStageGraph.importBuffer(vke::RenderGraphBufferDesc{
+            .name = "BufferMissingShaderStage",
+            .byteSize = 64,
+            .initialState = vke::RenderGraphBufferState::ShaderRead,
+            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .finalState = vke::RenderGraphBufferState::ShaderRead,
+            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+        });
+        missingStageGraph.addPass("ReadBufferWithoutStage", "basic.buffer-read-fragment")
+            .setParamsType("basic.buffer-read-fragment.params")
+            .readBuffer("source", stageBuffer, vke::RenderGraphShaderStage::None);
+        if (!expectRenderGraphCompileFailure(missingStageGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "without a shader stage",
+                                                 .context = "buffer read without shader stage",
+                                             })) {
+            return false;
+        }
+
+        vke::RenderGraph zeroSizeGraph;
+        const auto zeroSizeBuffer = zeroSizeGraph.importBuffer(vke::RenderGraphBufferDesc{
+            .name = "ZeroSizeBuffer",
+            .byteSize = 0,
+            .initialState = vke::RenderGraphBufferState::ShaderRead,
+            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .finalState = vke::RenderGraphBufferState::ShaderRead,
+            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+        });
+        zeroSizeGraph.addPass("ReadZeroSizeBuffer", "basic.buffer-read-fragment")
+            .setParamsType("basic.buffer-read-fragment.params")
+            .readBuffer("source", zeroSizeBuffer, vke::RenderGraphShaderStage::Fragment);
+        return expectRenderGraphCompileFailure(zeroSizeGraph.compile(schemas),
+                                               ExpectedRenderGraphCompileFailure{
+                                                   .message = "non-zero byte size",
+                                                   .context = "zero-size render graph buffer",
+                                               });
+    }
+
     int runSmokeRenderGraph() {
         vke::RenderGraph graph;
         const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
@@ -2812,6 +2991,34 @@ namespace {
             .allowCulling = true,
             .hasSideEffects = true,
         });
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.buffer-transfer-write",
+            .paramsType = "basic.buffer-transfer-write.params",
+            .resourceSlots =
+                {
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = vke::RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+        });
+        schemas.registerSchema(vke::RenderGraphPassSchema{
+            .type = "basic.buffer-read-fragment",
+            .paramsType = "basic.buffer-read-fragment.params",
+            .resourceSlots =
+                {
+                    vke::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = vke::RenderGraphSlotAccess::BufferShaderRead,
+                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+        });
 
         auto compiled = graph.compile(schemas);
         if (!compiled) {
@@ -2871,6 +3078,10 @@ namespace {
         }
 
         if (!validateSmokeRenderGraphCulling(schemas)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphBuffers(schemas)) {
             return EXIT_FAILURE;
         }
 
