@@ -67,6 +67,11 @@ namespace vke {
             std::array<float, 4> mvpRow3{};
         };
 
+        struct BasicFullscreenTexturePassMessages {
+            std::string_view paramsContext;
+            std::string_view unknownTextureSlotMessage;
+        };
+
         template <typename Params>
         [[nodiscard]] Result<Params> readPassParams(RenderGraphPassContext pass,
                                                     std::string_view expectedParamsType,
@@ -1103,12 +1108,14 @@ namespace vke {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
-        void recordFullscreenTextureDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
+        void recordFullscreenTextureDraw(const VulkanFrameRecordContext& frame,
+                                         VkImageView targetImageView, VkExtent2D targetExtent,
+                                         VkPipeline pipeline,
                                          VkPipelineLayout pipelineLayout,
                                          VkDescriptorSet descriptorSet) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            colorAttachment.imageView = frame.imageView;
+            colorAttachment.imageView = targetImageView;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1120,7 +1127,7 @@ namespace vke {
             renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
             renderingInfo.renderArea = VkRect2D{
                 .offset = VkOffset2D{.x = 0, .y = 0},
-                .extent = frame.extent,
+                .extent = targetExtent,
             };
             renderingInfo.layerCount = 1;
             renderingInfo.colorAttachmentCount = 1;
@@ -1129,14 +1136,14 @@ namespace vke {
             const VkViewport viewport{
                 .x = 0.0F,
                 .y = 0.0F,
-                .width = static_cast<float>(frame.extent.width),
-                .height = static_cast<float>(frame.extent.height),
+                .width = static_cast<float>(targetExtent.width),
+                .height = static_cast<float>(targetExtent.height),
                 .minDepth = 0.0F,
                 .maxDepth = 1.0F,
             };
             const VkRect2D scissor{
                 .offset = VkOffset2D{.x = 0, .y = 0},
-                .extent = frame.extent,
+                .extent = targetExtent,
             };
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
@@ -1149,30 +1156,116 @@ namespace vke {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
-        void recordColorAttachmentClear(const VulkanFrameRecordContext& frame, VkImageView imageView,
-                                        VkExtent2D extent, VkClearColorValue color) {
-            VkRenderingAttachmentInfo colorAttachment{};
-            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            colorAttachment.imageView = imageView;
-            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-            colorAttachment.clearValue = VkClearValue{
-                .color = color,
-            };
+        [[nodiscard]] Result<void>
+        updateBasicFullscreenSourceDescriptor(VkDevice device, VkDescriptorSet descriptorSet,
+                                              VkImageView sourceImageView) {
+            if (descriptorSet == VK_NULL_HANDLE || sourceImageView == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "Cannot update fullscreen source descriptor from incomplete inputs"}};
+            }
 
-            VkRenderingInfo renderingInfo{};
-            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-            renderingInfo.renderArea = VkRect2D{
-                .offset = VkOffset2D{.x = 0, .y = 0},
-                .extent = extent,
+            const std::array imageWrites{
+                VulkanDescriptorImageWrite{
+                    .descriptorSet = descriptorSet,
+                    .binding = 1,
+                    .arrayElement = 0,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                    .imageView = sourceImageView,
+                    .sampler = VK_NULL_HANDLE,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                },
             };
-            renderingInfo.layerCount = 1;
-            renderingInfo.colorAttachmentCount = 1;
-            renderingInfo.pColorAttachments = &colorAttachment;
+            updateVulkanDescriptorImages(device, imageWrites);
+            return {};
+        }
 
-            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
-            vkCmdEndRendering(frame.commandBuffer);
+        [[nodiscard]] Result<void>
+        executeBasicFullscreenSourceClear(const VulkanFrameRecordContext& frame,
+                                          RenderGraphPassContext pass,
+                                          std::span<const VulkanRenderGraphImageBinding> bindings) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(frame, pass.name);
+            auto transitions = recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+
+            auto clearParams = readPassParams<BasicTransferClearParams>(
+                pass, kBasicTransferClearParamsType, "Fullscreen source clear pass");
+            if (!clearParams) {
+                return std::unexpected{std::move(clearParams.error())};
+            }
+
+            auto sourceBinding = findVulkanRenderGraphTransferWrite(pass, "target", bindings);
+            if (!sourceBinding) {
+                return std::unexpected{std::move(sourceBinding.error())};
+            }
+
+            const VkClearColorValue sourceColor = basicClearColorValue(*clearParams);
+            VkImageSubresourceRange clearRange{};
+            clearRange.aspectMask = sourceBinding->aspectMask;
+            clearRange.baseMipLevel = 0;
+            clearRange.levelCount = 1;
+            clearRange.baseArrayLayer = 0;
+            clearRange.layerCount = 1;
+            vkCmdClearColorImage(frame.commandBuffer, sourceBinding->vulkanImage,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &sourceColor, 1,
+                                 &clearRange);
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        executeBasicFullscreenTexturePass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> bindings, VkDevice device,
+            VkPipeline pipeline, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
+            VkExtent2D targetExtent, BasicFullscreenTexturePassMessages messages) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(frame, pass.name);
+            auto transitions = recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+
+            auto fullscreenParams =
+                readPassParams<BasicFullscreenParams>(pass, kBasicRasterFullscreenParamsType,
+                                                      messages.paramsContext);
+            if (!fullscreenParams) {
+                return std::unexpected{std::move(fullscreenParams.error())};
+            }
+
+            auto pipelineKey = basicFullscreenPipelineKey(pass);
+            if (!pipelineKey) {
+                return std::unexpected{std::move(pipelineKey.error())};
+            }
+            auto tintCommand = validateFullscreenTintCommand(pass, *fullscreenParams);
+            if (!tintCommand) {
+                return std::unexpected{std::move(tintCommand.error())};
+            }
+            if (pipelineKey->textureSlot != "source") {
+                return std::unexpected{
+                    renderGraphError(std::string{messages.unknownTextureSlotMessage})};
+            }
+
+            auto sourceBinding = findVulkanRenderGraphShaderRead(pass, "source", bindings);
+            if (!sourceBinding) {
+                return std::unexpected{std::move(sourceBinding.error())};
+            }
+            auto descriptor = updateBasicFullscreenSourceDescriptor(
+                device, descriptorSet, sourceBinding->vulkanImageView);
+            if (!descriptor) {
+                return std::unexpected{std::move(descriptor.error())};
+            }
+
+            auto targetBinding = findVulkanRenderGraphColorWrite(pass, "target", bindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
+
+            recordFullscreenTextureDraw(frame, targetBinding->vulkanImageView, targetExtent,
+                                        pipeline, pipelineLayout, descriptorSet);
+            return {};
         }
 
         [[nodiscard]] bool usesImage(std::span<const RenderGraphImageHandle> images,
@@ -1263,6 +1356,94 @@ namespace vke {
             }
 
             return {};
+        }
+
+        [[nodiscard]] BasicRenderViewTarget
+        basicSwapchainRenderViewTarget(const VulkanFrameRecordContext& frame) {
+            return BasicRenderViewTarget{
+                .image = frame.image,
+                .imageView = frame.imageView,
+                .format = frame.format,
+                .extent = frame.extent,
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .finalUsage = BasicRenderViewTargetFinalUsage::Present,
+            };
+        }
+
+        [[nodiscard]] BasicRenderViewTarget
+        basicSampledRenderViewTarget(VulkanSampledTextureView target) {
+            return BasicRenderViewTarget{
+                .image = target.image,
+                .imageView = target.imageView,
+                .format = target.format,
+                .extent = target.extent,
+                .aspectMask = target.aspectMask,
+                .finalUsage = BasicRenderViewTargetFinalUsage::SampledTexture,
+            };
+        }
+
+        [[nodiscard]] Result<void>
+        validateBasicRenderViewTarget(const BasicRenderViewTarget& target,
+                                      std::string_view context) {
+            if (target.image == VK_NULL_HANDLE || target.imageView == VK_NULL_HANDLE ||
+                target.format == VK_FORMAT_UNDEFINED || target.extent.width == 0 ||
+                target.extent.height == 0 || target.aspectMask == 0) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          std::string{context} + " requires a complete render view target"}};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] RenderGraphImageState
+        basicRenderViewFinalState(BasicRenderViewTargetFinalUsage usage) {
+            switch (usage) {
+            case BasicRenderViewTargetFinalUsage::SampledTexture:
+                return RenderGraphImageState::ShaderRead;
+            case BasicRenderViewTargetFinalUsage::Present:
+            default:
+                return RenderGraphImageState::Present;
+            }
+        }
+
+        [[nodiscard]] RenderGraphShaderStage
+        basicRenderViewFinalShaderStage(BasicRenderViewTargetFinalUsage usage) {
+            switch (usage) {
+            case BasicRenderViewTargetFinalUsage::SampledTexture:
+                return RenderGraphShaderStage::Fragment;
+            case BasicRenderViewTargetFinalUsage::Present:
+            default:
+                return RenderGraphShaderStage::None;
+            }
+        }
+
+        [[nodiscard]] RenderGraphImageDesc
+        basicRenderViewTargetDesc(const BasicRenderViewTarget& target,
+                                  RenderGraphImageState initialState,
+                                  std::string_view name,
+                                  RenderGraphShaderStage initialShaderStage =
+                                      RenderGraphShaderStage::None) {
+            return RenderGraphImageDesc{
+                .name = std::string{name},
+                .format = basicRenderGraphImageFormat(target.format),
+                .extent = basicRenderGraphExtent(target.extent),
+                .initialState = initialState,
+                .initialShaderStage = initialShaderStage,
+                .finalState = basicRenderViewFinalState(target.finalUsage),
+                .finalShaderStage = basicRenderViewFinalShaderStage(target.finalUsage),
+            };
+        }
+
+        [[nodiscard]] VulkanRenderGraphImageBinding
+        basicRenderViewTargetBinding(RenderGraphImageHandle image,
+                                     const BasicRenderViewTarget& target) {
+            return VulkanRenderGraphImageBinding{
+                .image = image,
+                .vulkanImage = target.image,
+                .vulkanImageView = target.imageView,
+                .aspectMask = target.aspectMask,
+            };
         }
 
         [[nodiscard]] Result<void>
@@ -1515,6 +1696,7 @@ namespace vke {
         offscreenViewportTarget_ = std::move(other.offscreenViewportTarget_);
         descriptorAllocator_ = std::move(other.descriptorAllocator_);
         descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
+        compositeDescriptorSet_ = std::exchange(other.compositeDescriptorSet_, VK_NULL_HANDLE);
         uniformBuffer_ = std::move(other.uniformBuffer_);
         sampler_ = std::move(other.sampler_);
         transientImagePool_ = std::move(other.transientImagePool_);
@@ -1601,42 +1783,53 @@ namespace vke {
         constexpr std::array poolSizes{
             VulkanDescriptorPoolSize{
                 .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .count = 1,
+                .count = 2,
             },
             VulkanDescriptorPoolSize{
                 .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                .count = 1,
+                .count = 2,
             },
             VulkanDescriptorPoolSize{
                 .type = VK_DESCRIPTOR_TYPE_SAMPLER,
-                .count = 1,
+                .count = 2,
             },
         };
         auto descriptorAllocator = VulkanDescriptorAllocator::create(VulkanDescriptorPoolDesc{
             .device = desc.device,
-            .maxSets = 1,
+            .maxSets = 2,
             .poolSizes = poolSizes,
         });
         if (!descriptorAllocator) {
             return std::unexpected{std::move(descriptorAllocator.error())};
         }
 
-        const std::array setLayouts{resources->descriptorSetLayouts.front().handle()};
+        const std::array setLayouts{resources->descriptorSetLayouts.front().handle(),
+                                    resources->descriptorSetLayouts.front().handle()};
         auto descriptorSets = descriptorAllocator->allocate(VulkanDescriptorSetAllocationDesc{
             .setLayouts = setLayouts,
         });
         if (!descriptorSets) {
             return std::unexpected{std::move(descriptorSets.error())};
         }
-        if (descriptorSets->size() != 1 || descriptorSets->front() == VK_NULL_HANDLE) {
+        if (descriptorSets->size() != 2 || descriptorSets->front() == VK_NULL_HANDLE ||
+            (*descriptorSets)[1] == VK_NULL_HANDLE) {
             return std::unexpected{
                 Error{ErrorDomain::Vulkan, 0,
-                      "Fullscreen texture renderer failed to allocate one descriptor set"}};
+                      "Fullscreen texture renderer failed to allocate two descriptor sets"}};
         }
 
         const std::array bufferWrites{
             VulkanDescriptorBufferWrite{
                 .descriptorSet = descriptorSets->front(),
+                .binding = 0,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .buffer = uniformBuffer->handle(),
+                .offset = 0,
+                .range = uniformBuffer->size(),
+            },
+            VulkanDescriptorBufferWrite{
+                .descriptorSet = (*descriptorSets)[1],
                 .binding = 0,
                 .arrayElement = 0,
                 .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -1657,6 +1850,15 @@ namespace vke {
                 .sampler = sampler->handle(),
                 .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             },
+            VulkanDescriptorImageWrite{
+                .descriptorSet = (*descriptorSets)[1],
+                .binding = 2,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+                .imageView = VK_NULL_HANDLE,
+                .sampler = sampler->handle(),
+                .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            },
         };
         updateVulkanDescriptorImages(desc.device, samplerWrites);
 
@@ -1670,6 +1872,7 @@ namespace vke {
         renderer.pipelineCache_ = std::move(*pipelineCache);
         renderer.descriptorAllocator_ = std::move(*descriptorAllocator);
         renderer.descriptorSet_ = descriptorSets->front();
+        renderer.compositeDescriptorSet_ = (*descriptorSets)[1];
         renderer.uniformBuffer_ = std::move(*uniformBuffer);
         renderer.sampler_ = std::move(*sampler);
         return renderer;
@@ -1750,47 +1953,39 @@ namespace vke {
         });
     }
 
-    Result<void>
-    BasicFullscreenTextureRenderer::updateSourceDescriptor(VkImageView sourceImageView) {
-        if (descriptorSet_ == VK_NULL_HANDLE || sourceImageView == VK_NULL_HANDLE) {
-            return std::unexpected{
-                Error{ErrorDomain::Vulkan, 0,
-                      "Cannot update fullscreen source descriptor from incomplete inputs"}};
-        }
-
-        const std::array imageWrites{
-            VulkanDescriptorImageWrite{
-                .descriptorSet = descriptorSet_,
-                .binding = 1,
-                .arrayElement = 0,
-                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                .imageView = sourceImageView,
-                .sampler = VK_NULL_HANDLE,
-                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            },
-        };
-        updateVulkanDescriptorImages(device_, imageWrites);
-        return {};
+    Result<VulkanFrameRecordResult>
+    BasicFullscreenTextureRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
+        return recordViewFrame(frame, BasicRenderViewDesc{
+                                          .target = basicSwapchainRenderViewTarget(frame),
+                                      });
     }
 
     Result<VulkanFrameRecordResult>
-    BasicFullscreenTextureRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
-        auto pipeline = ensurePipeline(frame.format);
+    BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& frame,
+                                                    BasicRenderViewDesc view) {
+        auto target = validateBasicRenderViewTarget(view.target, "Fullscreen render view");
+        if (!target) {
+            return std::unexpected{std::move(target.error())};
+        }
+
+        auto pipeline = ensurePipeline(view.target.format);
         if (!pipeline) {
             return std::unexpected{std::move(pipeline.error())};
         }
+        const BasicRenderViewTarget viewTarget = view.target;
 
         RenderGraph graph;
-        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const auto renderTarget = graph.importImage(basicRenderViewTargetDesc(
+            viewTarget, RenderGraphImageState::Undefined, "RenderViewTarget"));
         const auto source = graph.createTransientImage(RenderGraphImageDesc{
             .name = "FullscreenSource",
-            .format = basicRenderGraphImageFormat(frame.format),
-            .extent = basicRenderGraphExtent(frame.extent),
+            .format = basicRenderGraphImageFormat(viewTarget.format),
+            .extent = basicRenderGraphExtent(viewTarget.extent),
         });
 
         std::vector<VulkanRenderGraphImageBinding> bindings;
         bindings.reserve(2);
-        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+        bindings.push_back(basicRenderViewTargetBinding(renderTarget, viewTarget));
 
         constexpr BasicTransferClearParams kClearParams{
             .color = {0.18F, 0.36F, 0.95F, 1.0F},
@@ -1806,93 +2001,29 @@ namespace vke {
                 commands.clearColor("target", kClearParams.color);
             })
             .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
-                [[maybe_unused]] const auto timestamp =
-                    VulkanTimestampScope::begin(frame, pass.name);
-                [[maybe_unused]] const auto debugLabel =
-                    VulkanDebugLabelScope::begin(frame, pass.name);
-                auto transitions =
-                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
-                if (!transitions) {
-                    return std::unexpected{std::move(transitions.error())};
-                }
-
-                auto clearParams = readPassParams<BasicTransferClearParams>(
-                    pass, kBasicTransferClearParamsType, "Fullscreen source clear pass");
-                if (!clearParams) {
-                    return std::unexpected{std::move(clearParams.error())};
-                }
-
-                auto sourceBinding = findVulkanRenderGraphTransferWrite(pass, "target", bindings);
-                if (!sourceBinding) {
-                    return std::unexpected{std::move(sourceBinding.error())};
-                }
-
-                const VkClearColorValue sourceColor = basicClearColorValue(*clearParams);
-                VkImageSubresourceRange clearRange{};
-                clearRange.aspectMask = sourceBinding->aspectMask;
-                clearRange.baseMipLevel = 0;
-                clearRange.levelCount = 1;
-                clearRange.baseArrayLayer = 0;
-                clearRange.layerCount = 1;
-                vkCmdClearColorImage(frame.commandBuffer, sourceBinding->vulkanImage,
-                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &sourceColor, 1,
-                                     &clearRange);
-                return {};
+                return executeBasicFullscreenSourceClear(frame, pass, bindings);
             });
 
         graph.addPass("FullscreenTexture", kBasicRasterFullscreenPassType)
             .setParams(kBasicRasterFullscreenParamsType, kFullscreenParams)
             .readTexture("source", source, RenderGraphShaderStage::Fragment)
-            .writeColor("target", backbuffer)
+            .writeColor("target", renderTarget)
             .recordCommands([kFullscreenParams](RenderGraphCommandList& commands) {
                 commands.setShader("Hidden/DescriptorLayout", "Fullscreen")
                     .setTexture("SourceTex", "source")
                     .setVec4("Tint", kFullscreenParams.tint)
                     .drawFullscreenTriangle();
             })
-            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
-                [[maybe_unused]] const auto timestamp =
-                    VulkanTimestampScope::begin(frame, pass.name);
-                [[maybe_unused]] const auto debugLabel =
-                    VulkanDebugLabelScope::begin(frame, pass.name);
-                auto transitions =
-                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
-                if (!transitions) {
-                    return std::unexpected{std::move(transitions.error())};
-                }
-
-                auto fullscreenParams = readPassParams<BasicFullscreenParams>(
-                    pass, kBasicRasterFullscreenParamsType, "Fullscreen texture pass");
-                if (!fullscreenParams) {
-                    return std::unexpected{std::move(fullscreenParams.error())};
-                }
-
-                auto pipelineKey = basicFullscreenPipelineKey(pass);
-                if (!pipelineKey) {
-                    return std::unexpected{std::move(pipelineKey.error())};
-                }
-                auto tintCommand = validateFullscreenTintCommand(pass, *fullscreenParams);
-                if (!tintCommand) {
-                    return std::unexpected{std::move(tintCommand.error())};
-                }
-                if (pipelineKey->textureSlot != "source") {
-                    return std::unexpected{
-                        renderGraphError("Fullscreen pipeline key references an unknown texture "
-                                         "slot")};
-                }
-
-                auto sourceBinding = findVulkanRenderGraphShaderRead(pass, "source", bindings);
-                if (!sourceBinding) {
-                    return std::unexpected{std::move(sourceBinding.error())};
-                }
-                auto descriptor = updateSourceDescriptor(sourceBinding->vulkanImageView);
-                if (!descriptor) {
-                    return std::unexpected{std::move(descriptor.error())};
-                }
-
-                recordFullscreenTextureDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
-                                            descriptorSet_);
-                return {};
+            .execute([&frame, &bindings, viewTarget, this](RenderGraphPassContext pass)
+                         -> Result<void> {
+                return executeBasicFullscreenTexturePass(
+                    frame, pass, bindings, device_, pipeline_.handle(), pipelineLayout_.handle(),
+                    descriptorSet_, viewTarget.extent,
+                    BasicFullscreenTexturePassMessages{
+                        .paramsContext = "Fullscreen texture pass",
+                        .unknownTextureSlotMessage =
+                            "Fullscreen pipeline key references an unknown texture slot",
+                    });
             });
 
         const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
@@ -1932,81 +2063,45 @@ namespace vke {
     Result<VulkanFrameRecordResult>
     BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(
         const VulkanFrameRecordContext& frame, VkExtent2D viewportExtent) {
-        auto pipeline = ensurePipeline(frame.format);
-        if (!pipeline) {
-            return std::unexpected{std::move(pipeline.error())};
-        }
         auto offscreenTarget =
             ensureOffscreenViewportTarget(frame, frame.format, viewportExtent);
         if (!offscreenTarget) {
             return std::unexpected{std::move(offscreenTarget.error())};
         }
-        const VulkanSampledTextureView viewportTarget =
+        const VulkanSampledTextureView sampledViewportTarget =
             offscreenViewportTarget_.sampledTextureView();
 
+        auto view = recordViewFrame(frame, BasicRenderViewDesc{
+                                               .target = basicSampledRenderViewTarget(
+                                                   sampledViewportTarget),
+                                           });
+        if (!view) {
+            return std::unexpected{std::move(view.error())};
+        }
+
+        auto pipeline = ensurePipeline(frame.format);
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+        const BasicRenderViewTarget backbufferTarget = basicSwapchainRenderViewTarget(frame);
+        const BasicRenderViewTarget viewportTarget =
+            basicSampledRenderViewTarget(sampledViewportTarget);
+
         RenderGraph graph;
-        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
-        const auto viewport = graph.importImage(RenderGraphImageDesc{
-            .name = "OffscreenViewportColor",
-            .format = basicRenderGraphImageFormat(frame.format),
-            .extent = basicRenderGraphExtent(viewportExtent),
-            .initialState = RenderGraphImageState::Undefined,
-            .finalState = RenderGraphImageState::ShaderRead,
-            .finalShaderStage = RenderGraphShaderStage::Fragment,
-        });
+        const auto backbuffer = graph.importImage(basicRenderViewTargetDesc(
+            backbufferTarget, RenderGraphImageState::Undefined, "Backbuffer"));
+        const auto viewport = graph.importImage(basicRenderViewTargetDesc(
+            viewportTarget, RenderGraphImageState::ShaderRead, "OffscreenViewportColor",
+            RenderGraphShaderStage::Fragment));
 
         std::vector<VulkanRenderGraphImageBinding> bindings;
         bindings.reserve(2);
-        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
-        bindings.push_back(VulkanRenderGraphImageBinding{
-            .image = viewport,
-            .vulkanImage = viewportTarget.image,
-            .vulkanImageView = viewportTarget.imageView,
-            .aspectMask = viewportTarget.aspectMask,
-        });
+        bindings.push_back(basicRenderViewTargetBinding(backbuffer, backbufferTarget));
+        bindings.push_back(basicRenderViewTargetBinding(viewport, viewportTarget));
 
-        constexpr BasicTransferClearParams kViewportClearParams{
-            .color = {0.08F, 0.14F, 0.30F, 1.0F},
-        };
         constexpr BasicFullscreenParams kCompositeParams{
             .tint = {1.0F, 1.0F, 1.0F, 1.0F},
         };
-
-        graph.addPass("ClearOffscreenViewport", kBasicDynamicClearPassType)
-            .setParams(kBasicDynamicClearParamsType, kViewportClearParams)
-            .writeColor("target", viewport)
-            .recordCommands([kViewportClearParams](RenderGraphCommandList& commands) {
-                commands.clearColor("target", kViewportClearParams.color);
-            })
-            .execute([&frame, &bindings, viewportTarget](RenderGraphPassContext pass)
-                         -> Result<void> {
-                [[maybe_unused]] const auto timestamp =
-                    VulkanTimestampScope::begin(frame, pass.name);
-                [[maybe_unused]] const auto debugLabel =
-                    VulkanDebugLabelScope::begin(frame, pass.name);
-                auto transitions =
-                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
-                if (!transitions) {
-                    return std::unexpected{std::move(transitions.error())};
-                }
-
-                auto clearParams = readPassParams<BasicTransferClearParams>(
-                    pass, kBasicDynamicClearParamsType, "Offscreen viewport clear pass");
-                if (!clearParams) {
-                    return std::unexpected{std::move(clearParams.error())};
-                }
-
-                auto viewportBinding =
-                    findVulkanRenderGraphColorWrite(pass, "target", bindings);
-                if (!viewportBinding) {
-                    return std::unexpected{std::move(viewportBinding.error())};
-                }
-
-                recordColorAttachmentClear(frame, viewportBinding->vulkanImageView,
-                                           viewportTarget.extent,
-                                           basicClearColorValue(*clearParams));
-                return {};
-            });
 
         graph.addPass("CompositeOffscreenViewport", kBasicRasterFullscreenPassType)
             .setParams(kBasicRasterFullscreenParamsType, kCompositeParams)
@@ -2018,49 +2113,16 @@ namespace vke {
                     .setVec4("Tint", kCompositeParams.tint)
                     .drawFullscreenTriangle();
             })
-            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
-                [[maybe_unused]] const auto timestamp =
-                    VulkanTimestampScope::begin(frame, pass.name);
-                [[maybe_unused]] const auto debugLabel =
-                    VulkanDebugLabelScope::begin(frame, pass.name);
-                auto transitions =
-                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
-                if (!transitions) {
-                    return std::unexpected{std::move(transitions.error())};
-                }
-
-                auto fullscreenParams = readPassParams<BasicFullscreenParams>(
-                    pass, kBasicRasterFullscreenParamsType, "Offscreen viewport composite pass");
-                if (!fullscreenParams) {
-                    return std::unexpected{std::move(fullscreenParams.error())};
-                }
-
-                auto pipelineKey = basicFullscreenPipelineKey(pass);
-                if (!pipelineKey) {
-                    return std::unexpected{std::move(pipelineKey.error())};
-                }
-                auto tintCommand = validateFullscreenTintCommand(pass, *fullscreenParams);
-                if (!tintCommand) {
-                    return std::unexpected{std::move(tintCommand.error())};
-                }
-                if (pipelineKey->textureSlot != "source") {
-                    return std::unexpected{
-                        renderGraphError("Offscreen viewport pipeline key references an unknown "
-                                         "texture slot")};
-                }
-
-                auto sourceBinding = findVulkanRenderGraphShaderRead(pass, "source", bindings);
-                if (!sourceBinding) {
-                    return std::unexpected{std::move(sourceBinding.error())};
-                }
-                auto descriptor = updateSourceDescriptor(sourceBinding->vulkanImageView);
-                if (!descriptor) {
-                    return std::unexpected{std::move(descriptor.error())};
-                }
-
-                recordFullscreenTextureDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
-                                            descriptorSet_);
-                return {};
+            .execute([&frame, &bindings, backbufferTarget, this](RenderGraphPassContext pass)
+                         -> Result<void> {
+                return executeBasicFullscreenTexturePass(
+                    frame, pass, bindings, device_, pipeline_.handle(), pipelineLayout_.handle(),
+                    compositeDescriptorSet_, backbufferTarget.extent,
+                    BasicFullscreenTexturePassMessages{
+                        .paramsContext = "Offscreen viewport composite pass",
+                        .unknownTextureSlotMessage =
+                            "Offscreen viewport pipeline key references an unknown texture slot",
+                    });
             });
 
         const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();

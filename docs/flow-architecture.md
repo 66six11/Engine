@@ -399,10 +399,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Renderer["BasicFullscreenTextureRenderer::recordFrame"]
-    ImportBackbuffer["importImage(Backbuffer)<br/>initial Undefined, final Present"]
-    CreateSource["createTransientImage(FullscreenSource)<br/>same format/extent as backbuffer"]
-    BindingBackbuffer["binding table add backbuffer<br/>RenderGraphImageHandle -> swapchain VkImage/View"]
+    Renderer["BasicFullscreenTextureRenderer::recordViewFrame<br/>recordFrame wraps swapchain target"]
+    ImportBackbuffer["importImage(RenderViewTarget)<br/>initial Undefined<br/>final Present or ShaderRead(fragment)"]
+    CreateSource["createTransientImage(FullscreenSource)<br/>same format/extent as target"]
+    BindingBackbuffer["binding table add render target<br/>RenderGraphImageHandle -> target VkImage/View"]
     ClearPass["pass ClearFullscreenSource<br/>type builtin.transfer-clear<br/>params builtin.transfer-clear.params<br/>writeTransfer(target, source)<br/>ClearColor command"]
     DrawPass["pass FullscreenTexture<br/>type builtin.raster-fullscreen<br/>params builtin.raster-fullscreen.params<br/>readTexture(source, fragment)<br/>writeColor(target, backbuffer)<br/>SetShader / SetTexture / SetVec4 / DrawFullscreenTriangle"]
     Schema["basicFullscreenSchemaRegistry<br/>slot schema + allowed command kind"]
@@ -424,8 +424,8 @@ flowchart TD
 
 这条路径目前有两层“可分析”信息：
 
-- builder 显式声明 resource access：source 先 `TransferWrite`，后 `ShaderRead(fragment)`；backbuffer 作为
-  `ColorWrite` 后最终回到 `Present`。
+- builder 显式声明 resource access：source 先 `TransferWrite`，后 `ShaderRead(fragment)`；render view target
+  作为 `ColorWrite` 后最终回到 `Present` 或 `ShaderRead(fragment)`。
 - command summary 显式声明执行意图：clear pass 只允许 `ClearColor`，fullscreen pass 只允许
   `SetShader`、`SetTexture`、`SetVec4` 和 `DrawFullscreenTriangle`；compile 阶段会拒绝 schema 外命令。
 
@@ -449,11 +449,13 @@ flowchart TD
   descriptor set layout 和 pipeline layout，并能分配 descriptor set、写入 set 0 / binding 0 的 uniform
   buffer、binding 1 的 sampled image 和 binding 2 的 sampler descriptor。
 - `--smoke-fullscreen-texture` 已验证 draw call 中的 descriptor set 绑定、fullscreen pipeline 绑定和
-  transient source texture 采样。
+  transient source texture 采样；`BasicFullscreenTextureRenderer::recordFrame()` 现在是
+  `recordViewFrame()` 的 swapchain target 便捷包装；renderer 为 view write 和 composite 各持有一个
+  descriptor set，避免同一 command buffer 内更新已绑定 set。
 - `--smoke-offscreen-viewport` 已验证 editor viewport 的核心离屏路径：通用 `VulkanRenderTarget`
-  持有的 color attachment image 独立尺寸、resize 后 deferred deletion、多帧复用、RenderGraph
-  imported image 写入、sampled image descriptor 更新、renderer 输出可供 UI backend 注册的 sampled
-  target，以及 fullscreen composite 写回 swapchain。
+  持有的 color attachment image 独立尺寸、resize 后 deferred deletion、多帧复用、`recordViewFrame()`
+  写入 sampled target、sampled image descriptor 更新、renderer 输出可供 UI backend 注册的 sampled
+  target，以及第二个 fullscreen composite graph 写回 swapchain。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
   Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、

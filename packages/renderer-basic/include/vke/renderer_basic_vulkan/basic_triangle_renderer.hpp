@@ -68,6 +68,24 @@ namespace vke {
         VkImageLayout sampledLayout{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     };
 
+    enum class BasicRenderViewTargetFinalUsage {
+        Present,
+        SampledTexture,
+    };
+
+    struct BasicRenderViewTarget {
+        VkImage image{VK_NULL_HANDLE};
+        VkImageView imageView{VK_NULL_HANDLE};
+        VkFormat format{VK_FORMAT_UNDEFINED};
+        VkExtent2D extent{};
+        VkImageAspectFlags aspectMask{VK_IMAGE_ASPECT_COLOR_BIT};
+        BasicRenderViewTargetFinalUsage finalUsage{BasicRenderViewTargetFinalUsage::Present};
+    };
+
+    struct BasicRenderViewDesc {
+        BasicRenderViewTarget target{};
+    };
+
     [[nodiscard]] Result<void>
     validateBasicDescriptorLayoutSmoke(const BasicDescriptorLayoutSmokeDesc& desc);
 
@@ -85,6 +103,8 @@ namespace vke {
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordViewFrame(const VulkanFrameRecordContext& frame, BasicRenderViewDesc view);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
         recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame,
@@ -100,8 +120,6 @@ namespace vke {
         [[nodiscard]] Result<void> ensureOffscreenViewportTarget(const VulkanFrameRecordContext& frame,
                                                                  VkFormat format,
                                                                  VkExtent2D extent);
-        [[nodiscard]] Result<void> updateSourceDescriptor(VkImageView sourceImageView);
-
         VkDevice device_{VK_NULL_HANDLE};
         VmaAllocator allocator_{};
         VulkanShaderModule vertexShader_;
@@ -115,6 +133,7 @@ namespace vke {
         VulkanRenderTarget offscreenViewportTarget_;
         VulkanDescriptorAllocator descriptorAllocator_;
         VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
+        VkDescriptorSet compositeDescriptorSet_{VK_NULL_HANDLE};
         VulkanBuffer uniformBuffer_;
         VulkanSampler sampler_;
         VulkanTransientImagePool transientImagePool_;

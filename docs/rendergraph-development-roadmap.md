@@ -445,6 +445,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
     color target 的 image/view、format、extent、usage、sampled layout 和 create/reuse/deferred deletion counters。
   - `BasicFullscreenTextureRenderer` 现在通过该 wrapper 维护一个持久 offscreen color target，把它作为
     imported RenderGraph image 写入后再以 sampled texture 合成到 backbuffer。
+  - fullscreen renderer 已增加 `BasicRenderViewDesc` / `BasicRenderViewTarget` 和 `recordViewFrame()`；
+    `recordFrame()` 只是 swapchain target 包装，offscreen viewport 复用同一录制路径写入 sampled target。
   - viewport target extent 已可独立于 swapchain extent；尺寸变化时旧 image view 和 image 会按当前
     frame epoch 挂入 deferred deletion，而不是在录制路径中立即销毁。
   - renderer 现在会暴露 sampled viewport target 的 image/view/format/extent/layout，作为未来 editor

@@ -141,8 +141,10 @@ namespace {
     }
 
     bool validateDescriptorAllocatorStats(vke::VulkanDescriptorAllocatorStats stats,
-                                          std::string_view context) {
-        if (stats.poolsCreated != 1 || stats.allocationCalls != 1 || stats.setsAllocated != 1) {
+                                          std::string_view context,
+                                          std::uint64_t expectedSets = 1) {
+        if (stats.poolsCreated != 1 || stats.allocationCalls != 1 ||
+            stats.setsAllocated != expectedSets) {
             vke::logError(std::string{context} +
                           " did not allocate descriptors through the descriptor allocator.");
             return false;
@@ -1374,7 +1376,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                             "Fullscreen texture smoke")) {
+                                             "Fullscreen texture smoke", 2)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Fullscreen texture smoke")) {
@@ -1516,7 +1518,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                             "Offscreen viewport smoke")) {
+                                             "Offscreen viewport smoke", 2)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Offscreen viewport smoke")) {
