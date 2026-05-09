@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 #include <iostream>
 #include <span>
 #include <string>
@@ -13,22 +17,19 @@
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_vulkan.h>
-
 #include "vke/core/log.hpp"
 #include "vke/core/result.hpp"
 #include "vke/core/version.hpp"
+#include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_error.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "vke/rhi_vulkan/vulkan_image.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
 
 namespace {
 
-    constexpr vke::VulkanDebugLabelMode kEditorDebugLabels =
-        vke::VulkanDebugLabelMode::Required;
+    constexpr vke::VulkanDebugLabelMode kEditorDebugLabels = vke::VulkanDebugLabelMode::Required;
     constexpr int kSmokeFrameCount = 3;
     constexpr int kSmokeAttemptLimit = 120;
 
@@ -43,7 +44,8 @@ namespace {
     }
 
     void printUsage() {
-        std::cout << "Usage: vke-editor [--help] [--version] [--smoke-editor-shell]\n";
+        std::cout << "Usage: vke-editor [--help] [--version] [--smoke-editor-shell] "
+                     "[--smoke-editor-viewport]\n";
     }
 
     bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
@@ -52,6 +54,32 @@ namespace {
 
     bool extentMatches(VkExtent2D lhs, vke::WindowFramebufferExtent rhs) {
         return lhs.width == rhs.width && lhs.height == rhs.height;
+    }
+
+    bool sameExtent(VkExtent2D lhs, VkExtent2D rhs) {
+        return lhs.width == rhs.width && lhs.height == rhs.height;
+    }
+
+    bool closeExtent(VkExtent2D lhs, VkExtent2D rhs) {
+        constexpr std::uint32_t kExtentTolerance = 4;
+        const std::uint32_t widthDelta =
+            lhs.width > rhs.width ? lhs.width - rhs.width : rhs.width - lhs.width;
+        const std::uint32_t heightDelta =
+            lhs.height > rhs.height ? lhs.height - rhs.height : rhs.height - lhs.height;
+        return widthDelta <= kExtentTolerance && heightDelta <= kExtentTolerance;
+    }
+
+    VkExtent2D viewportExtentFromAvailableSize(ImVec2 available) {
+        return VkExtent2D{
+            .width = std::max(1U, static_cast<std::uint32_t>(std::max(available.x, 1.0F))),
+            .height = std::max(1U, static_cast<std::uint32_t>(std::max(available.y, 1.0F))),
+        };
+    }
+
+    ImTextureID imguiTextureId(VkDescriptorSet descriptorSet) {
+        return static_cast<ImTextureID>(
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<std::uintptr_t>(descriptorSet));
     }
 
     struct ImageBarrierDesc {
@@ -192,7 +220,213 @@ namespace {
         bool vulkanInitialized_{false};
     };
 
-    void buildEditorShell(int frameIndex, VkExtent2D extent, bool smokeMode) {
+    class EditorViewportHost {
+    public:
+        EditorViewportHost() = default;
+        EditorViewportHost(const EditorViewportHost&) = delete;
+        EditorViewportHost& operator=(const EditorViewportHost&) = delete;
+        EditorViewportHost(EditorViewportHost&&) = delete;
+        EditorViewportHost& operator=(EditorViewportHost&&) = delete;
+
+        ~EditorViewportHost() {
+            shutdown();
+        }
+
+        [[nodiscard]] vke::VoidResult create(const vke::VulkanContext& context) {
+            device_ = context.device();
+            allocator_ = context.allocator();
+            queue_ = context.graphicsQueue();
+
+            auto sampler = vke::VulkanSampler::create(vke::VulkanSamplerDesc{
+                .device = device_,
+            });
+            if (!sampler) {
+                return std::unexpected{std::move(sampler.error())};
+            }
+            sampler_ = std::move(*sampler);
+            return {};
+        }
+
+        void beginImguiFrame() {
+            textureSubmittedThisFrame_ = false;
+        }
+
+        void requestViewport(VkExtent2D extent, VkFormat format) {
+            requestedExtent_ = extent;
+            requestedFormat_ = format;
+        }
+
+        [[nodiscard]] bool canDrawRequestedTexture() const {
+            return descriptorSet_ != VK_NULL_HANDLE &&
+                   closeExtent(descriptorExtent_, requestedExtent_) &&
+                   descriptorFormat_ == requestedFormat_;
+        }
+
+        void drawRequestedTexture() {
+            if (!canDrawRequestedTexture()) {
+                return;
+            }
+
+            textureSubmittedThisFrame_ = true;
+            ImGui::Image(imguiTextureId(descriptorSet_),
+                         ImVec2{static_cast<float>(descriptorExtent_.width),
+                                static_cast<float>(descriptorExtent_.height)});
+            ++textureFramesSubmitted_;
+        }
+
+        [[nodiscard]] vke::Result<vke::VulkanFrameRecordResult>
+        recordViewport(const vke::VulkanFrameRecordContext& frame,
+                       vke::BasicFullscreenTextureRenderer& renderer) {
+            if (requestedExtent_.width == 0 || requestedExtent_.height == 0 ||
+                requestedFormat_ == VK_FORMAT_UNDEFINED) {
+                return vke::VulkanFrameRecordResult{
+                    .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                };
+            }
+
+            VkExtent2D renderExtent = requestedExtent_;
+            VkFormat renderFormat = requestedFormat_;
+            if (textureSubmittedThisFrame_ && descriptorSet_ != VK_NULL_HANDLE) {
+                renderExtent = descriptorExtent_;
+                renderFormat = descriptorFormat_;
+            }
+
+            auto ensured =
+                renderTarget_.ensure(frame, vke::VulkanRenderTargetDesc{
+                                                .device = device_,
+                                                .allocator = allocator_,
+                                                .format = renderFormat,
+                                                .extent = renderExtent,
+                                                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                         VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                            });
+            if (!ensured) {
+                return std::unexpected{std::move(ensured.error())};
+            }
+
+            const vke::VulkanSampledTextureView texture = renderTarget_.sampledTextureView();
+            auto descriptorReady = ensureDescriptor(texture);
+            if (!descriptorReady) {
+                return std::unexpected{std::move(descriptorReady.error())};
+            }
+
+            auto recorded = renderer.recordViewFrame(
+                frame,
+                vke::BasicRenderViewDesc{
+                    .target =
+                        vke::BasicRenderViewTarget{
+                            .image = texture.image,
+                            .imageView = texture.imageView,
+                            .format = texture.format,
+                            .extent = texture.extent,
+                            .aspectMask = texture.aspectMask,
+                            .finalUsage = vke::BasicRenderViewTargetFinalUsage::SampledTexture,
+                        },
+                });
+            if (!recorded) {
+                return std::unexpected{std::move(recorded.error())};
+            }
+
+            ++viewportFramesRendered_;
+            return *recorded;
+        }
+
+        void shutdown() {
+            if (descriptorSet_ == VK_NULL_HANDLE) {
+                return;
+            }
+
+            if (queue_ != VK_NULL_HANDLE) {
+                const VkResult idleResult = vkQueueWaitIdle(queue_);
+                if (idleResult != VK_SUCCESS) {
+                    vke::logError("Failed to wait for Vulkan queue before editor viewport "
+                                  "texture shutdown: " +
+                                  vke::vkResultName(idleResult));
+                }
+            }
+            ImGui_ImplVulkan_RemoveTexture(descriptorSet_);
+            descriptorSet_ = VK_NULL_HANDLE;
+            descriptorImageView_ = VK_NULL_HANDLE;
+            descriptorLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+            descriptorFormat_ = VK_FORMAT_UNDEFINED;
+            descriptorExtent_ = {};
+        }
+
+        [[nodiscard]] bool hasPresentedViewportTexture() const {
+            return viewportFramesRendered_ > 0 && textureFramesSubmitted_ > 0;
+        }
+
+        [[nodiscard]] VkExtent2D descriptorExtent() const {
+            return descriptorExtent_;
+        }
+
+        [[nodiscard]] std::uint64_t viewportFramesRendered() const {
+            return viewportFramesRendered_;
+        }
+
+    private:
+        [[nodiscard]] vke::VoidResult ensureDescriptor(vke::VulkanSampledTextureView texture) {
+            if (texture.imageView == VK_NULL_HANDLE ||
+                texture.sampledLayout == VK_IMAGE_LAYOUT_UNDEFINED ||
+                texture.format == VK_FORMAT_UNDEFINED || texture.extent.width == 0 ||
+                texture.extent.height == 0) {
+                return std::unexpected{
+                    vke::vulkanError("Cannot register an incomplete editor viewport texture")};
+            }
+
+            if (descriptorSet_ != VK_NULL_HANDLE && descriptorImageView_ == texture.imageView &&
+                descriptorLayout_ == texture.sampledLayout && descriptorFormat_ == texture.format &&
+                sameExtent(descriptorExtent_, texture.extent)) {
+                return {};
+            }
+
+            if (textureSubmittedThisFrame_) {
+                return std::unexpected{vke::vulkanError(
+                    "Cannot replace an editor viewport texture after submitting it to ImGui")};
+            }
+
+            if (descriptorSet_ != VK_NULL_HANDLE) {
+                ImGui_ImplVulkan_RemoveTexture(descriptorSet_);
+            }
+
+            descriptorSet_ = ImGui_ImplVulkan_AddTexture(sampler_.handle(), texture.imageView,
+                                                         texture.sampledLayout);
+            if (descriptorSet_ == VK_NULL_HANDLE) {
+                descriptorImageView_ = VK_NULL_HANDLE;
+                descriptorLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+                descriptorFormat_ = VK_FORMAT_UNDEFINED;
+                descriptorExtent_ = {};
+                return std::unexpected{
+                    vke::vulkanError("Failed to register editor viewport texture with ImGui")};
+            }
+
+            descriptorImageView_ = texture.imageView;
+            descriptorLayout_ = texture.sampledLayout;
+            descriptorFormat_ = texture.format;
+            descriptorExtent_ = texture.extent;
+            return {};
+        }
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VmaAllocator allocator_{};
+        VkQueue queue_{VK_NULL_HANDLE};
+        vke::VulkanSampler sampler_;
+        vke::VulkanRenderTarget renderTarget_;
+        VkExtent2D requestedExtent_{};
+        VkFormat requestedFormat_{VK_FORMAT_UNDEFINED};
+        VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
+        VkImageView descriptorImageView_{VK_NULL_HANDLE};
+        VkImageLayout descriptorLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
+        VkFormat descriptorFormat_{VK_FORMAT_UNDEFINED};
+        VkExtent2D descriptorExtent_{};
+        bool textureSubmittedThisFrame_{false};
+        std::uint64_t viewportFramesRendered_{0};
+        std::uint64_t textureFramesSubmitted_{0};
+    };
+
+    void buildEditorShell(int frameIndex, VkExtent2D extent, VkFormat format, bool smokeMode,
+                          EditorViewportHost& viewportHost) {
         ImGui::DockSpaceOverViewport();
 
         if (ImGui::BeginMainMenuBar()) {
@@ -211,18 +445,41 @@ namespace {
             ImGui::EndMainMenuBar();
         }
 
+        const ImGuiCond sceneWindowCond = smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+        if (const ImGuiViewport* mainViewport = ImGui::GetMainViewport(); mainViewport != nullptr) {
+            ImGui::SetNextWindowPos(
+                ImVec2{mainViewport->WorkPos.x + 8.0F, mainViewport->WorkPos.y + 8.0F},
+                sceneWindowCond);
+        }
+        ImGui::SetNextWindowSize(
+            ImVec2{std::max(320.0F, static_cast<float>(extent.width) * 0.66F),
+                   std::max(240.0F, static_cast<float>(extent.height) * 0.72F)},
+            sceneWindowCond);
         ImGui::Begin("Scene View");
-        const std::string swapchainText = "Swapchain: " + std::to_string(extent.width) + "x" +
-                                          std::to_string(extent.height);
+        ImVec2 viewportSize = ImGui::GetContentRegionAvail();
+        viewportSize.y =
+            std::max(1.0F, viewportSize.y - (ImGui::GetTextLineHeightWithSpacing() * 3.0F));
+        const VkExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
+        viewportHost.requestViewport(viewportExtent, format);
+        if (viewportHost.canDrawRequestedTexture()) {
+            viewportHost.drawRequestedTexture();
+        } else {
+            ImGui::Dummy(ImVec2{static_cast<float>(viewportExtent.width),
+                                static_cast<float>(viewportExtent.height)});
+        }
+
+        const std::string swapchainText =
+            "Swapchain: " + std::to_string(extent.width) + "x" + std::to_string(extent.height);
+        const std::string viewportText = "Viewport: " + std::to_string(viewportExtent.width) + "x" +
+                                         std::to_string(viewportExtent.height);
         const std::string frameText = "Frame: " + std::to_string(frameIndex);
-        ImGui::TextUnformatted("RenderView placeholder");
         ImGui::TextUnformatted(swapchainText.c_str());
+        ImGui::TextUnformatted(viewportText.c_str());
         ImGui::TextUnformatted(frameText.c_str());
         ImGui::End();
 
         ImGui::Begin("Log");
-        const std::string modeText =
-            std::string{"Mode: "} + (smokeMode ? "smoke" : "interactive");
+        const std::string modeText = std::string{"Mode: "} + (smokeMode ? "smoke" : "interactive");
         ImGui::TextUnformatted("Editor shell initialized with GLFW + Vulkan + Dear ImGui.");
         ImGui::TextUnformatted(modeText.c_str());
         ImGui::End();
@@ -276,8 +533,7 @@ namespace {
         };
     }
 
-    [[nodiscard]] vke::VoidResult waitForRenderableWindow(vke::GlfwWindow& window,
-                                                          bool smokeMode) {
+    [[nodiscard]] vke::VoidResult waitForRenderableWindow(vke::GlfwWindow& window, bool smokeMode) {
         int attempts = 0;
         auto framebuffer = window.framebufferExtent();
         while (!window.shouldClose() && !isRenderableExtent(framebuffer)) {
@@ -321,8 +577,8 @@ namespace {
                      });
     }
 
-    [[nodiscard]] vke::Result<bool>
-    prepareFrameLoopExtent(vke::GlfwWindow& window, vke::VulkanFrameLoop& frameLoop) {
+    [[nodiscard]] vke::Result<bool> prepareFrameLoopExtent(vke::GlfwWindow& window,
+                                                           vke::VulkanFrameLoop& frameLoop) {
         const auto currentFramebuffer = window.framebufferExtent();
         frameLoop.setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
         if (!isRenderableExtent(currentFramebuffer)) {
@@ -346,8 +602,19 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] vke::Result<bool> renderEditorFrame(vke::VulkanFrameLoop& frameLoop) {
-        auto status = frameLoop.renderFrame(recordEditorImguiFrame);
+    [[nodiscard]] vke::Result<bool> renderEditorFrame(vke::VulkanFrameLoop& frameLoop,
+                                                      vke::BasicFullscreenTextureRenderer& renderer,
+                                                      EditorViewportHost& viewportHost) {
+        auto status = frameLoop.renderFrame(
+            [&renderer, &viewportHost](const vke::VulkanFrameRecordContext& context)
+                -> vke::Result<vke::VulkanFrameRecordResult> {
+                auto viewport = viewportHost.recordViewport(context, renderer);
+                if (!viewport) {
+                    return std::unexpected{std::move(viewport.error())};
+                }
+
+                return recordEditorImguiFrame(context);
+            });
         if (!status) {
             return std::unexpected{std::move(status.error())};
         }
@@ -357,13 +624,14 @@ namespace {
 
     [[nodiscard]] vke::Result<int> runEditorLoop(vke::GlfwWindow& window,
                                                  vke::VulkanFrameLoop& frameLoop,
-                                                 bool smokeMode) {
+                                                 vke::BasicFullscreenTextureRenderer& renderer,
+                                                 EditorViewportHost& viewportHost, bool smokeMode) {
         int renderedFrames = 0;
         int attempts = 0;
         while (!window.shouldClose()) {
             if (smokeMode && attempts++ >= kSmokeAttemptLimit) {
-                return std::unexpected{
-                    vke::vulkanError("Editor shell smoke timed out before rendering enough frames")};
+                return std::unexpected{vke::vulkanError(
+                    "Editor shell smoke timed out before rendering enough frames")};
             }
 
             vke::GlfwWindow::pollEvents();
@@ -378,10 +646,12 @@ namespace {
             ImGui_ImplVulkan_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
-            buildEditorShell(renderedFrames, frameLoop.extent(), smokeMode);
+            viewportHost.beginImguiFrame();
+            buildEditorShell(renderedFrames, frameLoop.extent(), frameLoop.format(), smokeMode,
+                             viewportHost);
             ImGui::Render();
 
-            auto rendered = renderEditorFrame(frameLoop);
+            auto rendered = renderEditorFrame(frameLoop, renderer, viewportHost);
             if (!rendered) {
                 return std::unexpected{std::move(rendered.error())};
             }
@@ -413,8 +683,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(
-            *glfw, vke::WindowDesc{.title = "VkEngine Editor"});
+        auto window = vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Editor"});
         if (!window) {
             vke::logError(window.error().message);
             return EXIT_FAILURE;
@@ -447,16 +716,43 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto renderedFrames = runEditorLoop(*window, *frameLoop, smokeMode);
+        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto renderer =
+            vke::BasicFullscreenTextureRenderer::create(vke::BasicFullscreenTextureRendererDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+            });
+        if (!renderer) {
+            vke::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        EditorViewportHost viewportHost;
+        if (auto created = viewportHost.create(*context); !created) {
+            vke::logError(created.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto renderedFrames =
+            runEditorLoop(*window, *frameLoop, *renderer, viewportHost, smokeMode);
         if (!renderedFrames) {
             vke::logError(renderedFrames.error().message);
             return EXIT_FAILURE;
         }
+        if (smokeMode && !viewportHost.hasPresentedViewportTexture()) {
+            vke::logError("Editor viewport smoke did not present a sampled viewport texture.");
+            return EXIT_FAILURE;
+        }
 
+        const VkExtent2D viewportExtent = viewportHost.descriptorExtent();
+        viewportHost.shutdown();
         imgui.shutdown();
         window->requestClose();
 
-        std::cout << "Editor shell frames: " << *renderedFrames << '\n';
+        std::cout << "Editor shell frames: " << *renderedFrames
+                  << ", viewport frames: " << viewportHost.viewportFramesRendered()
+                  << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         return EXIT_SUCCESS;
     }
 
@@ -475,7 +771,7 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
 
-        if (hasArg(args, "--smoke-editor-shell")) {
+        if (hasArg(args, "--smoke-editor-shell") || hasArg(args, "--smoke-editor-viewport")) {
             return runEditor(true);
         }
 

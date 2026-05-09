@@ -5,6 +5,7 @@
   "description": "Dear ImGui host application for editor shell and viewport integration.",
   "dependencies": [
     "com.vke.core",
+    "com.vke.renderer-basic",
     "com.vke.window-glfw",
     "com.vke.rhi-vulkan"
   ],

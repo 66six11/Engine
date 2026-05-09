@@ -35,6 +35,7 @@ target_include_directories(vke-editor
 target_link_libraries(vke-editor
     PRIVATE
         vke::core
+        vke::renderer_basic_vulkan
         vke::rhi_vulkan
         vke::window_glfw
         imgui::imgui
