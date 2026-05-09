@@ -241,6 +241,114 @@ namespace vke {
         return true;
     }
 
+    VulkanRenderTarget::VulkanRenderTarget(VulkanRenderTarget&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanRenderTarget&
+    VulkanRenderTarget::operator=(VulkanRenderTarget&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        imageView_ = std::move(other.imageView_);
+        image_ = std::move(other.image_);
+        format_ = std::exchange(other.format_, VK_FORMAT_UNDEFINED);
+        extent_ = std::exchange(other.extent_, VkExtent2D{});
+        usage_ = std::exchange(other.usage_, VkImageUsageFlags{});
+        aspectMask_ = std::exchange(other.aspectMask_, VK_IMAGE_ASPECT_COLOR_BIT);
+        stats_ = std::exchange(other.stats_, {});
+        return *this;
+    }
+
+    bool VulkanRenderTarget::matches(const VulkanRenderTargetDesc& desc) const {
+        return image_.handle() != VK_NULL_HANDLE && imageView_.handle() != VK_NULL_HANDLE &&
+               format_ == desc.format && extent_.width == desc.extent.width &&
+               extent_.height == desc.extent.height && usage_ == desc.usage &&
+               aspectMask_ == desc.aspectMask;
+    }
+
+    bool VulkanRenderTarget::hasResource() const {
+        return image_.handle() != VK_NULL_HANDLE || imageView_.handle() != VK_NULL_HANDLE;
+    }
+
+    Result<void> VulkanRenderTarget::ensure(const VulkanFrameRecordContext& frame,
+                                            const VulkanRenderTargetDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE || desc.allocator == nullptr ||
+            desc.format == VK_FORMAT_UNDEFINED || desc.extent.width == 0 ||
+            desc.extent.height == 0 || desc.usage == 0 || desc.aspectMask == 0) {
+            return std::unexpected{
+                vulkanError("Cannot create a Vulkan render target from incomplete inputs")};
+        }
+
+        if (matches(desc)) {
+            ++stats_.reused;
+            return {};
+        }
+
+        auto image = VulkanImage::create(VulkanImageDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .format = desc.format,
+            .extent = desc.extent,
+            .usage = desc.usage,
+            .aspectMask = desc.aspectMask,
+        });
+        if (!image) {
+            return std::unexpected{std::move(image.error())};
+        }
+
+        auto imageView = VulkanImageView::create(VulkanImageViewDesc{
+            .device = desc.device,
+            .image = image->handle(),
+            .format = image->format(),
+            .aspectMask = image->aspectMask(),
+        });
+        if (!imageView) {
+            return std::unexpected{std::move(imageView.error())};
+        }
+
+        if (hasResource()) {
+            if (frame.frameLoop == nullptr) {
+                return std::unexpected{
+                    vulkanError("Cannot replace a Vulkan render target without deferred deletion")};
+            }
+            if (!imageView_.deferDestroy(frame)) {
+                return std::unexpected{
+                    vulkanError("Failed to defer destruction of Vulkan render target image view")};
+            }
+            if (!image_.deferDestroy(frame)) {
+                return std::unexpected{
+                    vulkanError("Failed to defer destruction of Vulkan render target image")};
+            }
+            ++stats_.deferredForDeletion;
+        }
+
+        image_ = std::move(*image);
+        imageView_ = std::move(*imageView);
+        format_ = desc.format;
+        extent_ = desc.extent;
+        usage_ = desc.usage;
+        aspectMask_ = desc.aspectMask;
+        ++stats_.created;
+        return {};
+    }
+
+    VulkanSampledTextureView VulkanRenderTarget::sampledTextureView() const {
+        return VulkanSampledTextureView{
+            .image = image_.handle(),
+            .imageView = imageView_.handle(),
+            .format = format_,
+            .extent = extent_,
+            .aspectMask = aspectMask_,
+            .sampledLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+    }
+
+    VulkanRenderTargetStats VulkanRenderTarget::stats() const {
+        return stats_;
+    }
+
     struct VulkanTransientImagePool::State {
         std::vector<VulkanTransientImageResource> available;
         VulkanTransientImagePoolStats stats;

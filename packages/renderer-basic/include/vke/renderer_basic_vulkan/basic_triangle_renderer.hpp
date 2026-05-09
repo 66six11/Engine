@@ -112,11 +112,7 @@ namespace vke {
         VulkanGraphicsPipeline pipeline_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         BasicPipelineCacheStats pipelineCacheStats_;
-        BasicOffscreenViewportStats offscreenViewportStats_;
-        VulkanImage offscreenViewportImage_;
-        VulkanImageView offscreenViewportImageView_;
-        VkFormat offscreenViewportFormat_{VK_FORMAT_UNDEFINED};
-        VkExtent2D offscreenViewportExtent_{};
+        VulkanRenderTarget offscreenViewportTarget_;
         VulkanDescriptorAllocator descriptorAllocator_;
         VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
         VulkanBuffer uniformBuffer_;

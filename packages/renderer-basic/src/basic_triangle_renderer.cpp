@@ -1512,12 +1512,7 @@ namespace vke {
         pipeline_ = std::move(other.pipeline_);
         pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
         pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
-        offscreenViewportStats_ = std::exchange(other.offscreenViewportStats_, {});
-        offscreenViewportImage_ = std::move(other.offscreenViewportImage_);
-        offscreenViewportImageView_ = std::move(other.offscreenViewportImageView_);
-        offscreenViewportFormat_ =
-            std::exchange(other.offscreenViewportFormat_, VK_FORMAT_UNDEFINED);
-        offscreenViewportExtent_ = std::exchange(other.offscreenViewportExtent_, VkExtent2D{});
+        offscreenViewportTarget_ = std::move(other.offscreenViewportTarget_);
         descriptorAllocator_ = std::move(other.descriptorAllocator_);
         descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
         uniformBuffer_ = std::move(other.uniformBuffer_);
@@ -1713,16 +1708,22 @@ namespace vke {
     }
 
     BasicOffscreenViewportStats BasicFullscreenTextureRenderer::offscreenViewportStats() const {
-        return offscreenViewportStats_;
+        const VulkanRenderTargetStats stats = offscreenViewportTarget_.stats();
+        return BasicOffscreenViewportStats{
+            .renderTargetsCreated = stats.created,
+            .renderTargetsReused = stats.reused,
+            .renderTargetsDeferredForDeletion = stats.deferredForDeletion,
+        };
     }
 
     BasicOffscreenViewportTarget BasicFullscreenTextureRenderer::offscreenViewportTarget() const {
+        const VulkanSampledTextureView target = offscreenViewportTarget_.sampledTextureView();
         return BasicOffscreenViewportTarget{
-            .image = offscreenViewportImage_.handle(),
-            .imageView = offscreenViewportImageView_.handle(),
-            .format = offscreenViewportFormat_,
-            .extent = offscreenViewportExtent_,
-            .sampledLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .image = target.image,
+            .imageView = target.imageView,
+            .format = target.format,
+            .extent = target.extent,
+            .sampledLayout = target.sampledLayout,
         };
     }
 
@@ -1739,22 +1740,7 @@ namespace vke {
 
     Result<void> BasicFullscreenTextureRenderer::ensureOffscreenViewportTarget(
         const VulkanFrameRecordContext& frame, VkFormat format, VkExtent2D extent) {
-        if (format == VK_FORMAT_UNDEFINED || extent.width == 0 || extent.height == 0) {
-            return std::unexpected{
-                Error{ErrorDomain::Vulkan, 0,
-                      "Cannot create offscreen viewport target from incomplete inputs"}};
-        }
-
-        if (offscreenViewportImage_.handle() != VK_NULL_HANDLE &&
-            offscreenViewportImageView_.handle() != VK_NULL_HANDLE &&
-            offscreenViewportFormat_ == format &&
-            offscreenViewportExtent_.width == extent.width &&
-            offscreenViewportExtent_.height == extent.height) {
-            ++offscreenViewportStats_.renderTargetsReused;
-            return {};
-        }
-
-        auto image = VulkanImage::create(VulkanImageDesc{
+        return offscreenViewportTarget_.ensure(frame, VulkanRenderTargetDesc{
             .device = device_,
             .allocator = allocator_,
             .format = format,
@@ -1762,46 +1748,6 @@ namespace vke {
             .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         });
-        if (!image) {
-            return std::unexpected{std::move(image.error())};
-        }
-
-        auto imageView = VulkanImageView::create(VulkanImageViewDesc{
-            .device = device_,
-            .image = image->handle(),
-            .format = image->format(),
-            .aspectMask = image->aspectMask(),
-        });
-        if (!imageView) {
-            return std::unexpected{std::move(imageView.error())};
-        }
-
-        if (offscreenViewportImage_.handle() != VK_NULL_HANDLE ||
-            offscreenViewportImageView_.handle() != VK_NULL_HANDLE) {
-            if (frame.frameLoop == nullptr) {
-                return std::unexpected{
-                    Error{ErrorDomain::Vulkan, 0,
-                          "Cannot replace offscreen viewport target without deferred deletion"}};
-            }
-            if (!offscreenViewportImageView_.deferDestroy(frame)) {
-                return std::unexpected{
-                    Error{ErrorDomain::Vulkan, 0,
-                          "Failed to defer destruction of offscreen viewport image view"}};
-            }
-            if (!offscreenViewportImage_.deferDestroy(frame)) {
-                return std::unexpected{
-                    Error{ErrorDomain::Vulkan, 0,
-                          "Failed to defer destruction of offscreen viewport image"}};
-            }
-            ++offscreenViewportStats_.renderTargetsDeferredForDeletion;
-        }
-
-        offscreenViewportImage_ = std::move(*image);
-        offscreenViewportImageView_ = std::move(*imageView);
-        offscreenViewportFormat_ = format;
-        offscreenViewportExtent_ = extent;
-        ++offscreenViewportStats_.renderTargetsCreated;
-        return {};
     }
 
     Result<void>
@@ -1995,11 +1941,13 @@ namespace vke {
         if (!offscreenTarget) {
             return std::unexpected{std::move(offscreenTarget.error())};
         }
+        const VulkanSampledTextureView viewportTarget =
+            offscreenViewportTarget_.sampledTextureView();
 
         RenderGraph graph;
         const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
         const auto viewport = graph.importImage(RenderGraphImageDesc{
-            .name = "EditorViewportColor",
+            .name = "OffscreenViewportColor",
             .format = basicRenderGraphImageFormat(frame.format),
             .extent = basicRenderGraphExtent(viewportExtent),
             .initialState = RenderGraphImageState::Undefined,
@@ -2012,9 +1960,9 @@ namespace vke {
         bindings.push_back(basicBackbufferBinding(backbuffer, frame));
         bindings.push_back(VulkanRenderGraphImageBinding{
             .image = viewport,
-            .vulkanImage = offscreenViewportImage_.handle(),
-            .vulkanImageView = offscreenViewportImageView_.handle(),
-            .aspectMask = offscreenViewportImage_.aspectMask(),
+            .vulkanImage = viewportTarget.image,
+            .vulkanImageView = viewportTarget.imageView,
+            .aspectMask = viewportTarget.aspectMask,
         });
 
         constexpr BasicTransferClearParams kViewportClearParams{
@@ -2024,13 +1972,14 @@ namespace vke {
             .tint = {1.0F, 1.0F, 1.0F, 1.0F},
         };
 
-        graph.addPass("ClearEditorViewport", kBasicDynamicClearPassType)
+        graph.addPass("ClearOffscreenViewport", kBasicDynamicClearPassType)
             .setParams(kBasicDynamicClearParamsType, kViewportClearParams)
             .writeColor("target", viewport)
             .recordCommands([kViewportClearParams](RenderGraphCommandList& commands) {
                 commands.clearColor("target", kViewportClearParams.color);
             })
-            .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
+            .execute([&frame, &bindings, viewportTarget](RenderGraphPassContext pass)
+                         -> Result<void> {
                 [[maybe_unused]] const auto timestamp =
                     VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
@@ -2054,12 +2003,12 @@ namespace vke {
                 }
 
                 recordColorAttachmentClear(frame, viewportBinding->vulkanImageView,
-                                           offscreenViewportExtent_,
+                                           viewportTarget.extent,
                                            basicClearColorValue(*clearParams));
                 return {};
             });
 
-        graph.addPass("CompositeEditorViewport", kBasicRasterFullscreenPassType)
+        graph.addPass("CompositeOffscreenViewport", kBasicRasterFullscreenPassType)
             .setParams(kBasicRasterFullscreenParamsType, kCompositeParams)
             .readTexture("source", viewport, RenderGraphShaderStage::Fragment)
             .writeColor("target", backbuffer)

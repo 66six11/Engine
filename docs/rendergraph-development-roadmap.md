@@ -440,9 +440,11 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
   - `VulkanTimestampScope` 复用 frame/pass 名称记录 begin/end timestamp，并公开 frame/region/readback counters
     与最近一帧 region duration。
   - 当前仍是 single graphics queue / single in-flight MVP；后续 per-frame/per-flight arena 可在多帧并行时再扩展。
-- `OffscreenViewportTarget`
-  - `BasicFullscreenTextureRenderer` 现在可维护一个持久 offscreen color target，把它作为 imported
-    RenderGraph image 写入后再以 sampled texture 合成到 backbuffer。
+- `VulkanRenderTarget` / `OffscreenViewportTarget`
+  - `rhi-vulkan` 现在提供通用 `VulkanRenderTarget` 和 `VulkanSampledTextureView`，负责持久
+    color target 的 image/view、format、extent、usage、sampled layout 和 create/reuse/deferred deletion counters。
+  - `BasicFullscreenTextureRenderer` 现在通过该 wrapper 维护一个持久 offscreen color target，把它作为
+    imported RenderGraph image 写入后再以 sampled texture 合成到 backbuffer。
   - viewport target extent 已可独立于 swapchain extent；尺寸变化时旧 image view 和 image 会按当前
     frame epoch 挂入 deferred deletion，而不是在录制路径中立即销毁。
   - renderer 现在会暴露 sampled viewport target 的 image/view/format/extent/layout，作为未来 editor
