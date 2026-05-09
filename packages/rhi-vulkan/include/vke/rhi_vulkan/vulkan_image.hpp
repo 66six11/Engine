@@ -113,6 +113,7 @@ namespace vke {
 
         [[nodiscard]] Result<void> ensure(const VulkanFrameRecordContext& frame,
                                           const VulkanRenderTargetDesc& desc);
+        [[nodiscard]] bool deferDestroy(const VulkanFrameRecordContext& frame);
         [[nodiscard]] VulkanSampledTextureView sampledTextureView() const;
         [[nodiscard]] VulkanRenderTargetStats stats() const;
 

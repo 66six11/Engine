@@ -60,15 +60,6 @@ namespace {
         return lhs.width == rhs.width && lhs.height == rhs.height;
     }
 
-    bool closeExtent(VkExtent2D lhs, VkExtent2D rhs) {
-        constexpr std::uint32_t kExtentTolerance = 4;
-        const std::uint32_t widthDelta =
-            lhs.width > rhs.width ? lhs.width - rhs.width : rhs.width - lhs.width;
-        const std::uint32_t heightDelta =
-            lhs.height > rhs.height ? lhs.height - rhs.height : rhs.height - lhs.height;
-        return widthDelta <= kExtentTolerance && heightDelta <= kExtentTolerance;
-    }
-
     VkExtent2D viewportExtentFromAvailableSize(ImVec2 available) {
         return VkExtent2D{
             .width = std::max(1U, static_cast<std::uint32_t>(std::max(available.x, 1.0F))),
@@ -221,6 +212,40 @@ namespace {
     };
 
     class EditorViewportHost {
+        struct ViewportTexture {
+            ViewportTexture() = default;
+            ViewportTexture(const ViewportTexture&) = delete;
+            ViewportTexture& operator=(const ViewportTexture&) = delete;
+            ViewportTexture(ViewportTexture&&) noexcept = default;
+            ViewportTexture& operator=(ViewportTexture&&) noexcept = default;
+            ~ViewportTexture() = default;
+
+            [[nodiscard]] bool hasDescriptor() const {
+                return descriptorSet != VK_NULL_HANDLE;
+            }
+
+            [[nodiscard]] bool ready() const {
+                return hasDescriptor() && rendered;
+            }
+
+            void clearDescriptorMetadata() {
+                descriptorSet = VK_NULL_HANDLE;
+                imageView = VK_NULL_HANDLE;
+                layout = VK_IMAGE_LAYOUT_UNDEFINED;
+                format = VK_FORMAT_UNDEFINED;
+                extent = {};
+                rendered = false;
+            }
+
+            vke::VulkanRenderTarget target;
+            VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+            VkImageView imageView{VK_NULL_HANDLE};
+            VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
+            VkFormat format{VK_FORMAT_UNDEFINED};
+            VkExtent2D extent{};
+            bool rendered{false};
+        };
+
     public:
         EditorViewportHost() = default;
         EditorViewportHost(const EditorViewportHost&) = delete;
@@ -249,6 +274,7 @@ namespace {
 
         void beginImguiFrame() {
             textureSubmittedThisFrame_ = false;
+            promotePendingTexture();
         }
 
         void requestViewport(VkExtent2D extent, VkFormat format) {
@@ -257,9 +283,7 @@ namespace {
         }
 
         [[nodiscard]] bool canDrawRequestedTexture() const {
-            return descriptorSet_ != VK_NULL_HANDLE &&
-                   closeExtent(descriptorExtent_, requestedExtent_) &&
-                   descriptorFormat_ == requestedFormat_;
+            return presentedTexture_.ready();
         }
 
         void drawRequestedTexture() {
@@ -267,16 +291,25 @@ namespace {
                 return;
             }
 
+            const VkExtent2D displayExtent =
+                requestedExtent_.width == 0 || requestedExtent_.height == 0
+                    ? presentedTexture_.extent
+                    : requestedExtent_;
             textureSubmittedThisFrame_ = true;
-            ImGui::Image(imguiTextureId(descriptorSet_),
-                         ImVec2{static_cast<float>(descriptorExtent_.width),
-                                static_cast<float>(descriptorExtent_.height)});
+            ImGui::Image(imguiTextureId(presentedTexture_.descriptorSet),
+                         ImVec2{static_cast<float>(displayExtent.width),
+                                static_cast<float>(displayExtent.height)});
             ++textureFramesSubmitted_;
         }
 
         [[nodiscard]] vke::Result<vke::VulkanFrameRecordResult>
         recordViewport(const vke::VulkanFrameRecordContext& frame,
                        vke::BasicFullscreenTextureRenderer& renderer) {
+            auto retired = processRetiredTextures(frame);
+            if (!retired) {
+                return std::unexpected{std::move(retired.error())};
+            }
+
             if (requestedExtent_.width == 0 || requestedExtent_.height == 0 ||
                 requestedFormat_ == VK_FORMAT_UNDEFINED) {
                 return vke::VulkanFrameRecordResult{
@@ -284,29 +317,29 @@ namespace {
                 };
             }
 
-            VkExtent2D renderExtent = requestedExtent_;
-            VkFormat renderFormat = requestedFormat_;
-            if (textureSubmittedThisFrame_ && descriptorSet_ != VK_NULL_HANDLE) {
-                renderExtent = descriptorExtent_;
-                renderFormat = descriptorFormat_;
-            }
+            const bool renderPresentedTexture =
+                presentedTexture_.ready() &&
+                sameExtent(presentedTexture_.extent, requestedExtent_) &&
+                presentedTexture_.format == requestedFormat_;
+            ViewportTexture& renderTexture =
+                renderPresentedTexture ? presentedTexture_ : pendingTexture_;
 
-            auto ensured =
-                renderTarget_.ensure(frame, vke::VulkanRenderTargetDesc{
-                                                .device = device_,
-                                                .allocator = allocator_,
-                                                .format = renderFormat,
-                                                .extent = renderExtent,
-                                                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                         VK_IMAGE_USAGE_SAMPLED_BIT,
-                                                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                            });
+            auto ensured = renderTexture.target.ensure(
+                frame,
+                vke::VulkanRenderTargetDesc{
+                    .device = device_,
+                    .allocator = allocator_,
+                    .format = requestedFormat_,
+                    .extent = requestedExtent_,
+                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                });
             if (!ensured) {
                 return std::unexpected{std::move(ensured.error())};
             }
 
-            const vke::VulkanSampledTextureView texture = renderTarget_.sampledTextureView();
-            auto descriptorReady = ensureDescriptor(texture);
+            const vke::VulkanSampledTextureView texture = renderTexture.target.sampledTextureView();
+            auto descriptorReady = ensureDescriptor(renderTexture, texture);
             if (!descriptorReady) {
                 return std::unexpected{std::move(descriptorReady.error())};
             }
@@ -328,12 +361,13 @@ namespace {
                 return std::unexpected{std::move(recorded.error())};
             }
 
+            renderTexture.rendered = true;
             ++viewportFramesRendered_;
             return *recorded;
         }
 
         void shutdown() {
-            if (descriptorSet_ == VK_NULL_HANDLE) {
+            if (!hasTextureToRelease()) {
                 return;
             }
 
@@ -345,12 +379,14 @@ namespace {
                                   vke::vkResultName(idleResult));
                 }
             }
-            ImGui_ImplVulkan_RemoveTexture(descriptorSet_);
-            descriptorSet_ = VK_NULL_HANDLE;
-            descriptorImageView_ = VK_NULL_HANDLE;
-            descriptorLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
-            descriptorFormat_ = VK_FORMAT_UNDEFINED;
-            descriptorExtent_ = {};
+            removeDescriptor(presentedTexture_);
+            removeDescriptor(pendingTexture_);
+            for (ViewportTexture& texture : retiredTextures_) {
+                removeDescriptor(texture);
+            }
+            presentedTexture_ = {};
+            pendingTexture_ = {};
+            retiredTextures_.clear();
         }
 
         [[nodiscard]] bool hasPresentedViewportTexture() const {
@@ -358,15 +394,61 @@ namespace {
         }
 
         [[nodiscard]] VkExtent2D descriptorExtent() const {
-            return descriptorExtent_;
+            if (presentedTexture_.ready()) {
+                return presentedTexture_.extent;
+            }
+            return pendingTexture_.extent;
         }
 
         [[nodiscard]] std::uint64_t viewportFramesRendered() const {
             return viewportFramesRendered_;
         }
 
+        [[nodiscard]] std::uint64_t textureFramesSubmitted() const {
+            return textureFramesSubmitted_;
+        }
+
     private:
-        [[nodiscard]] vke::VoidResult ensureDescriptor(vke::VulkanSampledTextureView texture) {
+        void promotePendingTexture() {
+            if (!pendingTexture_.ready()) {
+                return;
+            }
+            if (presentedTexture_.hasDescriptor()) {
+                retiredTextures_.push_back(std::move(presentedTexture_));
+            }
+            presentedTexture_ = std::move(pendingTexture_);
+            pendingTexture_ = {};
+        }
+
+        [[nodiscard]] bool hasTextureToRelease() const {
+            return presentedTexture_.hasDescriptor() || pendingTexture_.hasDescriptor() ||
+                   std::ranges::any_of(retiredTextures_, [](const ViewportTexture& texture) {
+                       return texture.hasDescriptor();
+                   });
+        }
+
+        static void removeDescriptor(ViewportTexture& texture) {
+            if (texture.descriptorSet != VK_NULL_HANDLE) {
+                ImGui_ImplVulkan_RemoveTexture(texture.descriptorSet);
+            }
+            texture.clearDescriptorMetadata();
+        }
+
+        [[nodiscard]] vke::VoidResult
+        processRetiredTextures(const vke::VulkanFrameRecordContext& frame) {
+            for (ViewportTexture& texture : retiredTextures_) {
+                removeDescriptor(texture);
+                if (!texture.target.deferDestroy(frame)) {
+                    return std::unexpected{
+                        vke::vulkanError("Failed to defer retired editor viewport texture")};
+                }
+            }
+            retiredTextures_.clear();
+            return {};
+        }
+
+        [[nodiscard]] vke::VoidResult ensureDescriptor(ViewportTexture& viewportTexture,
+                                                       vke::VulkanSampledTextureView texture) {
             if (texture.imageView == VK_NULL_HANDLE ||
                 texture.sampledLayout == VK_IMAGE_LAYOUT_UNDEFINED ||
                 texture.format == VK_FORMAT_UNDEFINED || texture.extent.width == 0 ||
@@ -375,36 +457,36 @@ namespace {
                     vke::vulkanError("Cannot register an incomplete editor viewport texture")};
             }
 
-            if (descriptorSet_ != VK_NULL_HANDLE && descriptorImageView_ == texture.imageView &&
-                descriptorLayout_ == texture.sampledLayout && descriptorFormat_ == texture.format &&
-                sameExtent(descriptorExtent_, texture.extent)) {
+            if (viewportTexture.descriptorSet != VK_NULL_HANDLE &&
+                viewportTexture.imageView == texture.imageView &&
+                viewportTexture.layout == texture.sampledLayout &&
+                viewportTexture.format == texture.format &&
+                sameExtent(viewportTexture.extent, texture.extent)) {
                 return {};
             }
 
-            if (textureSubmittedThisFrame_) {
+            if (&viewportTexture == &presentedTexture_ && textureSubmittedThisFrame_) {
                 return std::unexpected{vke::vulkanError(
                     "Cannot replace an editor viewport texture after submitting it to ImGui")};
             }
 
-            if (descriptorSet_ != VK_NULL_HANDLE) {
-                ImGui_ImplVulkan_RemoveTexture(descriptorSet_);
+            if (viewportTexture.descriptorSet != VK_NULL_HANDLE) {
+                ImGui_ImplVulkan_RemoveTexture(viewportTexture.descriptorSet);
             }
 
-            descriptorSet_ = ImGui_ImplVulkan_AddTexture(sampler_.handle(), texture.imageView,
-                                                         texture.sampledLayout);
-            if (descriptorSet_ == VK_NULL_HANDLE) {
-                descriptorImageView_ = VK_NULL_HANDLE;
-                descriptorLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
-                descriptorFormat_ = VK_FORMAT_UNDEFINED;
-                descriptorExtent_ = {};
+            viewportTexture.descriptorSet = ImGui_ImplVulkan_AddTexture(
+                sampler_.handle(), texture.imageView, texture.sampledLayout);
+            if (viewportTexture.descriptorSet == VK_NULL_HANDLE) {
+                viewportTexture.clearDescriptorMetadata();
                 return std::unexpected{
                     vke::vulkanError("Failed to register editor viewport texture with ImGui")};
             }
 
-            descriptorImageView_ = texture.imageView;
-            descriptorLayout_ = texture.sampledLayout;
-            descriptorFormat_ = texture.format;
-            descriptorExtent_ = texture.extent;
+            viewportTexture.imageView = texture.imageView;
+            viewportTexture.layout = texture.sampledLayout;
+            viewportTexture.format = texture.format;
+            viewportTexture.extent = texture.extent;
+            viewportTexture.rendered = false;
             return {};
         }
 
@@ -412,14 +494,11 @@ namespace {
         VmaAllocator allocator_{};
         VkQueue queue_{VK_NULL_HANDLE};
         vke::VulkanSampler sampler_;
-        vke::VulkanRenderTarget renderTarget_;
+        ViewportTexture presentedTexture_;
+        ViewportTexture pendingTexture_;
+        std::vector<ViewportTexture> retiredTextures_;
         VkExtent2D requestedExtent_{};
         VkFormat requestedFormat_{VK_FORMAT_UNDEFINED};
-        VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
-        VkImageView descriptorImageView_{VK_NULL_HANDLE};
-        VkImageLayout descriptorLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
-        VkFormat descriptorFormat_{VK_FORMAT_UNDEFINED};
-        VkExtent2D descriptorExtent_{};
         bool textureSubmittedThisFrame_{false};
         std::uint64_t viewportFramesRendered_{0};
         std::uint64_t textureFramesSubmitted_{0};
@@ -451,9 +530,11 @@ namespace {
                 ImVec2{mainViewport->WorkPos.x + 8.0F, mainViewport->WorkPos.y + 8.0F},
                 sceneWindowCond);
         }
+        const float smokeResizeStep =
+            smokeMode ? static_cast<float>(frameIndex % 3) * 0.035F : 0.0F;
         ImGui::SetNextWindowSize(
-            ImVec2{std::max(320.0F, static_cast<float>(extent.width) * 0.66F),
-                   std::max(240.0F, static_cast<float>(extent.height) * 0.72F)},
+            ImVec2{std::max(320.0F, static_cast<float>(extent.width) * (0.60F + smokeResizeStep)),
+                   std::max(240.0F, static_cast<float>(extent.height) * (0.62F + smokeResizeStep))},
             sceneWindowCond);
         ImGui::Begin("Scene View");
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();
@@ -744,6 +825,12 @@ namespace {
             vke::logError("Editor viewport smoke did not present a sampled viewport texture.");
             return EXIT_FAILURE;
         }
+        if (smokeMode && viewportHost.textureFramesSubmitted() + 1U <
+                             static_cast<std::uint64_t>(*renderedFrames)) {
+            vke::logError("Editor viewport smoke dropped sampled texture presentation during "
+                          "resize.");
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D viewportExtent = viewportHost.descriptorExtent();
         viewportHost.shutdown();
@@ -752,6 +839,7 @@ namespace {
 
         std::cout << "Editor shell frames: " << *renderedFrames
                   << ", viewport frames: " << viewportHost.viewportFramesRendered()
+                  << ", texture frames: " << viewportHost.textureFramesSubmitted()
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         return EXIT_SUCCESS;
     }

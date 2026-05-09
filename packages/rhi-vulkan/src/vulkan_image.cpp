@@ -4,7 +4,6 @@
 #include <memory>
 #include <utility>
 #include <vector>
-
 #include <vk_mem_alloc.h>
 
 #include "vke/rhi_vulkan/vulkan_error.hpp"
@@ -210,8 +209,8 @@ namespace vke {
 
         VulkanImageView imageView;
         imageView.device_ = desc.device;
-        const VkResult result = vkCreateImageView(desc.device, &createInfo, nullptr,
-                                                  &imageView.imageView_);
+        VkImageView* const imageViewOut = &imageView.imageView_;
+        const VkResult result = vkCreateImageView(desc.device, &createInfo, nullptr, imageViewOut);
         if (result != VK_SUCCESS) {
             return std::unexpected{vulkanError("Failed to create Vulkan image view", result)};
         }
@@ -230,9 +229,8 @@ namespace vke {
 
         const VkDevice device = device_;
         const VkImageView imageView = imageView_;
-        if (!frame.deferDeletion([device, imageView]() {
-                vkDestroyImageView(device, imageView, nullptr);
-            })) {
+        if (!frame.deferDeletion(
+                [device, imageView]() { vkDestroyImageView(device, imageView, nullptr); })) {
             return false;
         }
 
@@ -245,8 +243,7 @@ namespace vke {
         *this = std::move(other);
     }
 
-    VulkanRenderTarget&
-    VulkanRenderTarget::operator=(VulkanRenderTarget&& other) noexcept {
+    VulkanRenderTarget& VulkanRenderTarget::operator=(VulkanRenderTarget&& other) noexcept {
         if (this == &other) {
             return *this;
         }
@@ -334,6 +331,25 @@ namespace vke {
         return {};
     }
 
+    bool VulkanRenderTarget::deferDestroy(const VulkanFrameRecordContext& frame) {
+        if (!hasResource()) {
+            return true;
+        }
+        if (!imageView_.deferDestroy(frame)) {
+            return false;
+        }
+        if (!image_.deferDestroy(frame)) {
+            return false;
+        }
+
+        format_ = VK_FORMAT_UNDEFINED;
+        extent_ = {};
+        usage_ = {};
+        aspectMask_ = VK_IMAGE_ASPECT_COLOR_BIT;
+        ++stats_.deferredForDeletion;
+        return true;
+    }
+
     VulkanSampledTextureView VulkanRenderTarget::sampledTextureView() const {
         return VulkanSampledTextureView{
             .image = image_.handle(),
@@ -354,11 +370,10 @@ namespace vke {
         VulkanTransientImagePoolStats stats;
     };
 
-    VulkanTransientImagePool::VulkanTransientImagePool()
-        : state_{std::make_shared<State>()} {}
+    VulkanTransientImagePool::VulkanTransientImagePool() : state_{std::make_shared<State>()} {}
 
-    VulkanTransientImagePool::VulkanTransientImagePool(
-        VulkanTransientImagePool&& other) noexcept = default;
+    VulkanTransientImagePool::VulkanTransientImagePool(VulkanTransientImagePool&& other) noexcept =
+        default;
 
     VulkanTransientImagePool&
     VulkanTransientImagePool::operator=(VulkanTransientImagePool&& other) noexcept = default;
@@ -373,10 +388,10 @@ namespace vke {
         }
 
         const VulkanTransientImageKey key = transientImageKey(desc);
-        auto resource = std::ranges::find_if(
-            state_->available, [&key](const VulkanTransientImageResource& candidate) {
-                return sameTransientImageKey(candidate.key, key);
-            });
+        auto resource = std::ranges::find_if(state_->available,
+                                             [&key](const VulkanTransientImageResource& candidate) {
+                                                 return sameTransientImageKey(candidate.key, key);
+                                             });
         if (resource != state_->available.end()) {
             VulkanTransientImageResource reused = std::move(*resource);
             state_->available.erase(resource);
@@ -408,9 +423,8 @@ namespace vke {
         };
     }
 
-    Result<void>
-    VulkanTransientImagePool::release(const VulkanFrameRecordContext& frame,
-                                      VulkanTransientImageResource& resource) {
+    Result<void> VulkanTransientImagePool::release(const VulkanFrameRecordContext& frame,
+                                                   VulkanTransientImageResource& resource) {
         if (state_ == nullptr) {
             return std::unexpected{
                 vulkanError("Cannot release a transient Vulkan image to a moved pool")};
@@ -420,8 +434,7 @@ namespace vke {
         }
 
         auto state = state_;
-        auto retiredResource =
-            std::make_shared<VulkanTransientImageResource>(std::move(resource));
+        auto retiredResource = std::make_shared<VulkanTransientImageResource>(std::move(resource));
         if (!frame.deferDeletion([state, retiredResource]() mutable {
                 state->available.push_back(std::move(*retiredResource));
                 ++state->stats.retired;
@@ -501,8 +514,8 @@ namespace vke {
 
         VulkanSampler sampler;
         sampler.device_ = desc.device;
-        const VkResult result = vkCreateSampler(desc.device, &createInfo, nullptr,
-                                                &sampler.sampler_);
+        VkSampler* const samplerOut = &sampler.sampler_;
+        const VkResult result = vkCreateSampler(desc.device, &createInfo, nullptr, samplerOut);
         if (result != VK_SUCCESS) {
             return std::unexpected{vulkanError("Failed to create Vulkan sampler", result)};
         }
