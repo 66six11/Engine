@@ -4,7 +4,9 @@
 
 适用范围：Windows 桌面端、Vulkan 1.4、C++23、single graphics queue、dynamic rendering、synchronization2、VMA、RenderGraph 每帧 record/compile 模型。
 
-本文只定义性能诊断底座和未来编辑器性能面板的技术约束。编辑器产品功能尚未纳入当前开发计划，因此本文件不把 Editor UI、面板交互、asset database 或完整 Play Mode 工作流列为近期里程碑。
+本文只定义性能诊断底座和未来编辑器性能面板的技术约束。完整开发顺序以
+`next-development-plan.md` 为唯一来源；本文不维护 editor、asset、material、scene 或 Play Session
+的阶段排序，只说明这些阶段接入后 profiling 数据应如何分层。
 
 ## 与现有计划的顺序关系
 
@@ -16,9 +18,9 @@
 2. 插入 P3.5 performance profiling substrate：CPU scope、frame profile 数据结构、benchmark CLI、RenderGraph compile counters。
 3. 进入 P4 backend lifetime and caches：deferred deletion、descriptor allocator、transient resource pool、pipeline/layout cache，同时把 cache hit/miss、allocation/reuse 和 delayed destruction counter 接入 profiling。
 4. 在 P4 生命周期稳定后接 Vulkan GPU timestamp 和 debug labels，避免 query readback、fence epoch 和 resize/recreate 生命周期与 MVP 资源路径互相打架。
-5. P5/P6 继续扩展 buffer/storage/MRT、asset/material 时，只补对应 counters 和 pass labels，不改变 profiling 数据模型。
-6. P7 multi-view prep 出现 `RenderView` 后，再把 profile target 拆分为 Game、Scene、Preview 和 Bench。
-7. 编辑器性能面板只在未来 editor/PlaySession 被正式纳入计划后接入；当前只保留技术接口和数据分层约束。
+5. 当总计划进入 buffer/storage/MRT、compute、asset/material、lighting 等阶段时，只补对应 counters 和 pass labels，不改变 profiling 数据模型。
+6. 当总计划进入 RenderView / editor viewport / multi-view 阶段后，再把 profile target 拆分为 Game、Scene、Preview 和 Bench。
+7. 完整编辑器性能面板晚于 editor viewport、scene/object、asset/material 和 Play Session 小闭环；当前只保留技术接口和数据分层约束。
 
 ## 防过度设计边界
 

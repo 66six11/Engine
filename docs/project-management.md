@@ -69,7 +69,7 @@ VkEngine/
 - resource lifetime 和 synchronization 决策在代码和日志中可见。
 - shader 语言决策已确认，或已改为可工作的编译链路。
 
-## 下一阶段任务拆分
+## 已完成阶段任务拆分
 
 1. 增加 Slang reflection 基线，输出可审查的 `*.reflection.json`。[x]
 2. 基于 reflection 建立 descriptor set/binding 和 pipeline layout 契约。[x]
@@ -77,6 +77,10 @@ VkEngine/
 4. 增加 depth attachment 抽象状态、Vulkan 翻译和 `--smoke-depth-triangle`。[x]
 5. 从固定顶点数据扩展到最小 mesh asset/index buffer 路线和 `--smoke-mesh`。[x]
 6. 增加最小 3D mesh、depth 和 MVP push constants 路线，不提前引入全局相机系统。[x]
+
+后续完整开发计划只维护在 `next-development-plan.md`，避免项目管理文档、RenderGraph 专项路线图和
+性能文档各自维护一套阶段顺序。新增里程碑时先更新 `next-development-plan.md`，本文件只记录已经完成
+或需要项目管理视角补充的门禁事项。
 
 ## 风险表
 

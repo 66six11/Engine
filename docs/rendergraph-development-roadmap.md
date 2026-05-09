@@ -4,7 +4,11 @@
 
 适用范围：Windows 桌面端、Vulkan 1.4、C++23、single graphics queue、dynamic rendering、synchronization2、VMA、Slang。
 
-本文是 `next-development-plan.md` 的 RenderGraph 专项路线图。它把外部资料、当前仓库状态、审查发现、阶段任务和验收门禁整理到同一份文档中。日常执行仍以 `flow-architecture.md` 记录真实流程，以 `review-workflow.md` 记录提交门禁。
+本文是 `next-development-plan.md` 的 RenderGraph 专项约束和技术映射，不再维护另一套完整开发顺序。
+完整阶段计划、editor 接入顺序、asset/material/scene 路线和高级能力暂缓池只以
+`next-development-plan.md` 为准。本文只记录 RenderGraph 相关的一手资料、已完成状态、专项设计原则、
+后续能力映射和验证门禁。日常执行仍以 `flow-architecture.md` 记录真实流程，以
+`review-workflow.md` 记录提交门禁。
 
 ## 资料结论
 
@@ -69,7 +73,8 @@ Unity RenderGraph、Unreal RDG、Frostbite FrameGraph、Granite 和 Blender Vulk
 
 - 不因为 Unreal RDG 支持 async compute，就提前设计多队列调度。
 - 不因为 Frostbite/Granite 能做 transient memory alias，就提前实现 alias allocator。
-- 不因为 Unity 有 Render Graph Viewer 或 Profiler，就提前做 editor UI。
+- 不在 RenderGraph 专项里直接做 editor UI；editor shell / viewport 的产品顺序以
+  `next-development-plan.md` 为准。
 - 不因为 Diligent 有成熟 resource state/cache 系统，就提前抽象通用 asset/pipeline database。
 
 每个新能力进入路线图前必须满足两个条件：当前 smoke/benchmark 能暴露它要解决的问题，并且实现后有可量化的验收标准。
@@ -126,23 +131,23 @@ flowchart LR
 - debug table 必须标出 unsafe reason。
 - 默认项目 pass 不走 unsafe。
 
-## 总体路线
+## 计划归属
 
-```mermaid
-flowchart TD
-    P0["P0 文档与门禁收敛"]
-    P1["P1 RG 语义修正"]
-    P2["P2 Typed builtin passes"]
-    P3["P3 Compiler diagnostics v2"]
-    P35["P3.5 Performance profiling substrate"]
-    P4["P4 Backend lifetime and caches"]
-    P5["P5 Buffer / storage / MRT"]
-    P6["P6 Asset and material baseline"]
-    P7["P7 Multi-view prep"]
-    P8["P8 Advanced graph optimization"]
+完整开发顺序只维护在 `next-development-plan.md`。本文件中的 P0 到 P4 是已经落地或正在收尾的
+RenderGraph 专项历史阶段；后续 RenderTarget、RenderView、editor viewport、buffer/storage/MRT、
+compute、asset/material、lighting、scene 和 Play Session 的相对顺序不在本文重复维护。
 
-    P0 --> P1 --> P2 --> P3 --> P35 --> P4 --> P5 --> P6 --> P7 --> P8
-```
+后续与 RenderGraph 直接相关的能力按下面方式映射到总计划：
+
+| 总计划阶段 | RenderGraph 关注点 | 本文职责 |
+| --- | --- | --- |
+| 13-15 通用 RenderTarget / RenderView / sampled texture bridge | imported target final state、view-local graph、sampled output layout、debug table 按 view 标注 | 约束 `rendergraph` 不暴露 Vulkan handle；必要时补 target/view debug 字段 |
+| 18 RenderGraph buffer / storage / MRT | buffer handle、buffer access、storage read/write、MRT slots、buffer/image state diagnostics | 定义抽象 resource/access/state 和 `rhi_vulkan_rendergraph` 映射要求 |
+| 19 Compute dispatch baseline | compute pass schema、storage descriptor、dispatch command summary、compute stage/access | 约束 compute 仍走显式 resource access，不把任意 compute callback 当默认路径 |
+| 22-24 Asset/material | material resource signature、descriptor contract、pipeline key 所需 command/slot 数据 | 保证 pass type 仍表示执行模型，不退化成业务 shader tag |
+| 25 Lighting baseline | G-buffer/MRT、depth、lighting pass、HDR scene color 的 graph 语义 | 要求 lighting smoke 能解释 dependency、transition、transient lifetime |
+| 27 Postprocess / temporal | history texture、ping-pong target、frame params、resize invalidation | 要求 history/imported resource final state 显式，不能默认 Present |
+| 高级能力池 | async compute、bindless、transient alias、ray tracing | 仅记录进入条件；不在前置小闭环稳定前设计成默认路径 |
 
 ## P0：文档与门禁收敛
 
@@ -442,7 +447,8 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
     frame epoch 挂入 deferred deletion，而不是在录制路径中立即销毁。
   - renderer 现在会暴露 sampled viewport target 的 image/view/format/extent/layout，作为未来 editor
     UI backend 注册 texture 的最小契约。
-  - 该路径用于验证编辑器 viewport 的核心离屏渲染前提；完整 editor UI backend、dock 和多 view host 仍留到 P7。
+  - 该路径用于验证编辑器 viewport 的核心离屏渲染前提；editor skeleton、UI shell、viewport 和多 view
+    host 的产品顺序以 `next-development-plan.md` 为准。
 
 验收：
 
@@ -456,138 +462,63 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - resize 后资源销毁路径无 validation warning。
 - `--smoke-resize`、`--smoke-fullscreen-texture`、`--smoke-depth-triangle`、`--smoke-draw-list` 通过。
 
-## P5：Buffer、storage 和 MRT
+## 后续专项能力要求
 
-目标：把 RG resource model 从 image-only 扩到中期 renderer 所需资源。
+本节只记录 RenderGraph 侧的设计要求；完整排序和提交切分见 `next-development-plan.md`。
 
-任务：
+### RenderTarget / RenderView
 
-- 新增 `RenderGraphBufferHandle`、buffer desc、buffer states。
-- 支持 uniform/storage/vertex/index/indirect/upload read/write 的抽象 access。
-- Vulkan adapter 映射 buffer barrier。
-- 支持 storage image read/write 和 compute pass skeleton。
-- 支持 MRT：
-  - `writeColor("albedo", image0)`
-  - `writeColor("normal", image1)`
-  - `writeColor("material", image2)`
-  - depth attachment 同 pass 显式声明。
-- 初版保持 single graphics queue，compute 只做声明和负向验证，等 backend cache 稳定后再接真实 compute。
+- `RenderGraphImageDesc::finalState` 对 imported target 必须显式；swapchain backbuffer helper 才设置
+  `Present`。
+- RenderGraph handle 只在单个 view graph 内有效；跨 view 共享资源由 resource manager 拥有后再 import。
+- Debug table 后续应能显示 view name、target name、imported/transient lifetime、final state 和 sampled output
+  layout。
+- Editor viewport 只能消费 RenderView 输出，不把 `VkImage` / `VkImageView` 暴露到 editor-core。
 
-验收：
+### Buffer / storage / MRT
 
-- `--smoke-rendergraph` 覆盖 buffer dependency 和 MRT slot。
-- `--smoke-dynamic-rendering` 或新增 smoke 覆盖多 color attachment。
-- storage read/write 需要 validation 通过后才进入真实 Vulkan smoke。
+- 新增 `RenderGraphBufferHandle`、buffer desc、buffer lifetime 和 buffer access 前，必须先定义后端无关
+  state 名称和 Vulkan buffer barrier 映射。
+- Storage image/buffer read-write 必须是明确 access；不能复用模糊的 texture read + color write 组合。
+- MRT 通过 named color slots 表达，例如 `albedo`、`normal`、`material`、`velocity`，并在 schema 中声明
+  可选/必需关系。
+- 所有新增 state 都要有 `--smoke-rendergraph` 负向用例和 `rhi_vulkan_rendergraph` 映射验证。
 
-## P6：Asset and material baseline
+### Compute dispatch
 
-目标：让 draw list 从固定 cube 走向最小资源系统，但仍保持小闭环。
+- Compute pass 第一版仍使用 typed schema、params 和 command summary；`Dispatch` 命令只允许出现在
+  `builtin.compute-dispatch` 一类执行模型中。
+- 真实 Vulkan smoke 前必须查询并记录 compute queue capability；single graphics queue 可继续作为 MVP，
+  但设备选择不能假设 graphics queue 一定支持 compute。
+- Compute 阶段涉及 storage buffer/image、descriptor writes、pipeline bind point 和 dispatch barriers，
+  需要独立 smoke，而不是挂在 lighting 或 material smoke 里顺手验证。
 
-任务：
+### Asset / material / lighting
 
-- `MeshResourceManager`
-  - 先管理内置 mesh handle。
-  - 再接 staging upload。
-  - 最后接 glTF 或自定义 asset import。
-- `LinearUploadAllocator`
-  - host staging buffer suballocation。
-  - GPU fence 后回收。
-- `MaterialResourceSignature`
-  - 从 Slang reflection 和 manifest 生成 descriptor contract。
-  - descriptor mismatch 在加载或创建 renderer 时失败。
-- texture upload：
-  - 先 2D RGBA。
-  - sampler policy 固化到 material/texture metadata。
-- material/pipeline key：
-  - shader asset/pass
-  - resource signature
-  - vertex layout
-  - render target formats
-  - depth/blend/topology states
+- Material 阶段只把 shader/resource signature、descriptor contract、pipeline key 所需信息接入 graph
+  command/slot/params；asset database、importer、editor UI 由总计划对应阶段负责。
+- `pass.type` 继续表示执行模型，例如 raster draw-list、raster fullscreen、compute dispatch；RenderQueue、
+  shader pass tag 和 material feature 放在 material/renderer 层，不塞进 RenderGraph 的基础调度语义。
+- Lighting baseline 若采用 MRT/G-buffer，必须让 graph debug table 能解释 G-buffer writer、lighting reader、
+  depth usage、HDR scene color final state 和 transient lifetime。
 
-验收：
+### Advanced graph optimization
 
-- 新增最小 mesh asset smoke。
-- 新增 material descriptor mismatch 负向 smoke。
-- fullscreen texture 和 draw list 不再依赖硬编码 descriptor binding 假设。
+这些能力只在 `next-development-plan.md` 的高级能力池进入条件满足后推进：
 
-## P7：Multi-view prep
+- transient memory alias：需要 precise lifetime、usage compatibility、barrier correctness 和 debug visualization。
+- graph template cache：只有 topology 稳定且 benchmark 证明 compile 成本成为瓶颈时再做。
+- async compute / multi queue：需要 queue domain、queue ownership transfer、timeline semaphore 或更强 frame scheduler。
+- bindless/descriptor indexing：需要 material/texture resource model 和 feature query。
+- ray tracing：需要 acceleration structure、SBT、RT pipeline、ray query/trace rays shader model 和 AS lifetime；
+  当前不作为 RenderGraph 默认路径。
+- unsafe/native pass：只作迁移逃生口，不作为普通 pass 的默认执行模型。
 
-目标：为 Game、Scene、Preview 等多 view graph 共存做架构边界，不直接做完整 editor。编辑器性能面板和 EditorHost 性能分析暂不进入主计划，只记录在 `performance-profiling-plan.md` 的技术细节中。
+## 提交顺序来源
 
-任务：
-
-- 引入 `RenderView` 描述：
-  - target extent/format
-  - camera params
-  - view type
-  - debug flags
-  - output imported resource
-- 每个 view 独立：
-  - graph
-  - compiled graph
-  - view-local params
-  - view-local descriptor sets
-  - transient lifetime plan
-- 跨 view 共享：
-  - shader cache
-  - pipeline cache
-  - descriptor layout cache
-  - persistent mesh/material/texture resources
-- 未来 Scene/debug view 专用 pass：
-  - grid
-  - gizmo
-  - selection outline
-  - wire/debug overlay
-- 保持 Game View graph 不被 Scene/debug view pass 污染。
-
-验收：
-
-- 同一帧可 record 两个 view graph。
-- Debug table 按 view 输出。
-- Game view smoke 与 Scene/debug view smoke 可独立运行；若 editor 产品阶段尚未开始，先用 headless multi-view smoke 验证边界。
-
-## P8：Advanced graph optimization
-
-只在 P1 到 P7 稳定后推进。
-
-候选能力：
-
-- transient memory alias：
-  - 需要 precise lifetime、usage compatibility、barrier correctness、debug visualization。
-- graph template cache：
-  - topology 稳定后复用 schema validation、topological order 和部分 lifetime plan。
-- async compute：
-  - 需要 queue domain、queue ownership transfer、timeline semaphore 或更强 frame scheduler。
-- bindless/descriptor indexing：
-  - 需要 material/texture resource model 和 feature query。
-- unsafe/native pass：
-  - 只作迁移逃生口，不作为默认执行模型。
-
-进入条件：
-
-- 完整 smoke 清单稳定。
-- sync validation 无 warning。
-- debug table 能解释 alias/reorder/queue transfer。
-- `docs/flow-architecture.md` 同步记录真实执行路径。
-
-## 推荐提交顺序
-
-| 顺序 | Commit | 内容 | 最低验证 |
-| --- | --- | --- | --- |
-| 1 | `docs: add render graph development roadmap` | 本路线图、资料索引、README 入口 | encoding check, `git diff --check` |
-| 2 | `feat(rendergraph): reject mixed image access` | 同 pass 同 image access conflict validation | `--smoke-rendergraph` |
-| 3 | `feat(rendergraph): require explicit imported final states` | imported final state 默认和校验调整 | `--smoke-rendergraph`, frame smoke |
-| 4 | `test(rendergraph): expand negative compile coverage` | duplicate/missing/cycle/final-state 负向用例 | `--smoke-rendergraph` |
-| 5 | `feat(renderer-basic): use typed graph schemas` | 真实 renderer 路径迁移到 schema compile | frame, dynamic, triangle, depth, draw-list, fullscreen smoke |
-| 6 | `feat(profiling): add render graph benchmark substrate` | CPU scope、benchmark CLI、RenderGraph compile counters | `--bench-rendergraph`, `--smoke-rendergraph` |
-| 7 | `feat(rhi-vulkan): add deferred deletion queue` | fence/epoch 延迟销毁，并输出 delayed destruction counters | resize/fullscreen/depth smoke |
-| 8 | `feat(rhi-vulkan): add pipeline cache counters` | `VkPipelineCache` wrapper、renderer pipeline reuse counters | triangle/depth/mesh/draw-list/fullscreen smoke |
-| 9 | `feat(rhi-vulkan): add transient image pool` | transient image reuse，不做 alias memory，并输出 reuse/create counters | transient/depth/fullscreen smoke |
-| 10 | `feat(rhi-vulkan): add descriptor allocator counters` | 单 pool descriptor allocator facade、分配计数和 smoke 验证 | descriptor-layout/fullscreen smoke |
-| 11 | `feat(rhi-vulkan): add buffer upload counters` | `VulkanBuffer` create/upload byte counters 和 renderer 聚合验证 | triangle/mesh/draw-list/fullscreen smoke |
-| 12 | `feat(rhi-vulkan): add gpu debug labels` | debug utils command label helper、RenderGraph pass labels 和 label counters | frame/transient/triangle/draw-list/fullscreen smoke |
-| 13 | `feat(rhi-vulkan): add gpu timestamp queries` | Vulkan timestamp query delayed readback 和 per-pass duration counters | fullscreen/depth/draw-list smoke |
+提交顺序不在本文重复维护。新增 RenderGraph 相关任务时，先更新 `next-development-plan.md` 的阶段和验收，
+再在本文补专项约束；如果只改 RenderGraph 内部诊断或状态映射，本文可记录技术细节，但仍不创建第二套
+全局 roadmap。
 
 ## 每阶段 Definition of Done
 
