@@ -1,0 +1,12 @@
+{
+  "name": "com.vke.apps.editor",
+  "version": "0.1.0",
+  "displayName": "VkEngine Editor",
+  "description": "Dear ImGui host application for editor shell and viewport integration.",
+  "dependencies": [
+    "com.vke.core",
+    "com.vke.window-glfw",
+    "com.vke.rhi-vulkan"
+  ],
+  "targets": ["vke-editor"]
+}

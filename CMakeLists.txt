@@ -30,6 +30,7 @@ add_subdirectory(packages/shader-slang)
 add_subdirectory(packages/renderer-basic)
 
 if(VKE_BUILD_APPS)
+    add_subdirectory(apps/editor)
     add_subdirectory(apps/sample-viewer)
 endif()
 

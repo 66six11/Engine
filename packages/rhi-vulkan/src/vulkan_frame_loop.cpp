@@ -1358,6 +1358,10 @@ namespace vke {
         return extent_;
     }
 
+    std::uint32_t VulkanFrameLoop::swapchainImageCount() const {
+        return static_cast<std::uint32_t>(images_.size());
+    }
+
     VulkanDeferredDeletionStats VulkanFrameLoop::deferredDeletionStats() const {
         return deferredDeletionQueue_.stats();
     }

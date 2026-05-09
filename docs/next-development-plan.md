@@ -102,16 +102,17 @@ lighting / scene”的顺序推进。
 - Descriptor indexing/bindless 能力很强，但会引入 non-uniform indexing、update-after-bind 等新约束；
   当前阶段先做固定 descriptor set/binding 契约，bindless 放到 material/texture 扩展后。
   资料：https://docs.vulkan.org/samples/latest/samples/extensions/descriptor_indexing/README.html
-- Dear ImGui Vulkan backend 已提供 editor texture 注册点；当前上游 API 是
-  `ImGui_ImplVulkan_AddTexture(VkImageView, VkImageLayout)`，旧的 sampler 参数版本已标记为
-  obsolete 且 sampler 会被忽略。因此 VkEngine 不应自建通用 `UiTextureHandle` 或 `packages/ui`
-  来替代 ImGui backend 的 texture id 机制；renderer 只需要输出 sampled target 的
-  image view、sampled layout、format 和 extent，editor ImGui integration 负责注册/注销。
+- Dear ImGui Vulkan backend 已提供 editor texture 注册点；当前 pinned Conan 依赖使用
+  `imgui/1.92.7-docking`，其 Vulkan backend 的 texture registration API 是
+  `ImGui_ImplVulkan_AddTexture(VkSampler, VkImageView, VkImageLayout)`。因此 VkEngine 不应自建通用
+  `UiTextureHandle` 或 `packages/ui` 来替代 ImGui backend 的 texture id 机制；renderer 只需要输出
+  sampled target 的 image view、sampled layout、format 和 extent，editor ImGui integration 负责
+  sampler 选择、注册/注销。
   资料：https://github.com/ocornut/imgui/blob/master/backends/imgui_impl_vulkan.h
   资料：https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples
-- Vulkan descriptor image info 仍是 image view、layout 和 sampler 这类采样资源边界；即使 ImGui
-  backend 管理 sampler，resize 后的 image view descriptor 生命周期也必须由 editor integration
-  显式更新或注销，不能继续引用 deferred deletion 的旧 view。
+- Vulkan descriptor image info 仍是 image view、layout 和 sampler 这类采样资源边界；resize 后的
+  image view descriptor 生命周期必须由 editor integration 显式更新或注销，不能继续引用 deferred
+  deletion 的旧 view。
   资料：https://docs.vulkan.org/refpages/latest/refpages/source/VkDescriptorImageInfo.html
 - Conan lockfile 用于依赖快照和可复现依赖解析；当前已完成，后续依赖变更时审查 lockfile diff。
   资料：https://docs.conan.io/2/tutorial/versioning/lockfiles.html
@@ -183,7 +184,7 @@ lighting / scene”的顺序推进。
 | 13 | 通用 RenderTarget / TextureView | 已在 `rhi-vulkan` 增加 `VulkanRenderTarget`、`VulkanSampledTextureView` 和 RT create/reuse/deferred deletion counters；`BasicFullscreenTextureRenderer` 的 offscreen viewport 已改为消费该通用 wrapper。后续再把 renderer-facing 命名从 offscreen viewport 收敛到 RenderView target | offscreen viewport smoke 验证 RT 独立尺寸、多帧复用、resize deferred deletion、sampled target 输出；后续 depth/MSAA/MRT 不需要推翻 API |
 | 14 | RenderView target recording | 已在 fullscreen renderer 引入 `BasicRenderViewDesc` / `BasicRenderViewTarget` 和 `recordViewFrame()`；旧 `recordFrame()` 保留为 swapchain target 便捷包装，offscreen viewport 先复用同一路径写入 sampled target 再 composite 回 backbuffer | 同一 renderer 路径可分别写 swapchain 和 offscreen target；graph pass/schema 复用，不复制 editor 专用渲染路径 |
 | 15 | ImGui sampled texture contract | 不新增通用 `packages/ui` / `UiTextureHandle`；记录 ImGui Vulkan backend 的 texture registration 边界：renderer 输出 sampled target 的 image view、sampled layout、format 和 extent，editor ImGui integration 负责 `ImGui_ImplVulkan_AddTexture()` / `RemoveTexture()` 和 resize 后的 descriptor 更新 | 文档和审查确认 renderer、RenderGraph、RHI 均不依赖 ImGui；sample-viewer 继续只验证 offscreen sampled target 输出；阶段 16/17 再接真实 editor ImGui host |
-| 16 | Editor app skeleton / ImGui shell | 新增 `apps/editor` 和 `packages/editor-core`；editor-core 只放 selection、transaction、panel registry 等非 RHI/ImGui 逻辑；ImGui context、Vulkan backend 初始化和 dock/menu/log/viewport placeholder 放在 editor host/integration 层 | editor app 能启动空 ImGui shell；sample-viewer 不链接 editor 或 ImGui integration；runtime packages 不依赖 editor |
+| 16 | Editor app skeleton / ImGui shell | 先新增 `apps/editor`，接入 `imgui/1.92.7-docking`、GLFW backend 和 Vulkan dynamic-rendering backend；`packages/editor-core` 等 selection、transaction、panel registry 逻辑等到真实 editor 状态模型出现再新增；ImGui context、Vulkan backend 初始化和 dock/menu/log/viewport placeholder 放在 editor host/integration 层 | editor app 能启动空 ImGui shell；sample-viewer 不链接 editor 或 ImGui integration；runtime packages 不依赖 editor |
 | 17 | Editor viewport host | editor 只作为 RenderView 和 ImGui texture 的消费者：panel size 驱动 target resize，渲染层输出 sampled target，editor integration 把 image view + layout 注册为 `ImTextureID` 后显示；dock chrome 不走 scene RenderGraph | editor viewport 能显示通用 RT 输出；resize/teardown 会 frame-safe remove/register ImGui texture，不留下指向旧 image view 的 descriptor；sample-viewer offscreen smoke 与 editor viewport 复用同一套 renderer API |
 | 18 | RenderGraph buffer / storage / MRT | 新增 buffer handle、buffer desc、buffer access、storage read/write、MRT color slots 和 buffer barrier 映射；dynamic rendering pipeline desc 支持多个 color attachment format | `--smoke-rendergraph` 覆盖 buffer dependency/storage/MRT；新增 `--smoke-mrt` |
 | 19 | Compute dispatch baseline | 在设备选择中记录 compute capability；新增 compute pass schema、compute pipeline wrapper、descriptor/storage buffer 绑定和 `vkCmdDispatch` 真实 smoke | 新增 `--smoke-compute-dispatch`；sync validation 无 error/warning |

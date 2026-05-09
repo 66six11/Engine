@@ -132,6 +132,7 @@ namespace vke {
 
         [[nodiscard]] VkFormat format() const;
         [[nodiscard]] VkExtent2D extent() const;
+        [[nodiscard]] std::uint32_t swapchainImageCount() const;
         [[nodiscard]] VulkanDeferredDeletionStats deferredDeletionStats() const;
         [[nodiscard]] VulkanDebugLabelStats debugLabelStats() const;
         [[nodiscard]] VulkanTimestampQueryStats timestampStats() const;
