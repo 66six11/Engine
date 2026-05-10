@@ -2623,6 +2623,53 @@ namespace {
         return true;
     }
 
+    bool validateSmokeRenderGraphBufferVulkanMappings(
+        const vke::RenderGraphCompileResult& compiled) {
+        const auto vulkanBufferWriteTransition =
+            vke::vulkanBufferTransition(compiled.passes[0].bufferTransitionsBefore.front());
+        if (vulkanBufferWriteTransition.srcStageMask != VK_PIPELINE_STAGE_2_NONE ||
+            vulkanBufferWriteTransition.srcAccessMask != 0 ||
+            vulkanBufferWriteTransition.dstStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            vulkanBufferWriteTransition.dstAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT) {
+            vke::logError("Render graph Vulkan buffer transfer-write mapping was unexpected.");
+            return false;
+        }
+
+        constexpr VkAccessFlags2 kExpectedShaderBufferReadAccess =
+            VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+        const auto vulkanBufferReadTransition =
+            vke::vulkanBufferTransition(compiled.passes[1].bufferTransitionsBefore.front());
+        if (vulkanBufferReadTransition.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            vulkanBufferReadTransition.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT ||
+            vulkanBufferReadTransition.dstStageMask != VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
+            vulkanBufferReadTransition.dstAccessMask != kExpectedShaderBufferReadAccess) {
+            vke::logError("Render graph Vulkan buffer shader-read mapping was unexpected.");
+            return false;
+        }
+
+        const VkBufferMemoryBarrier2 bufferBarrier =
+            vke::vulkanBufferBarrier(vulkanBufferReadTransition, VK_NULL_HANDLE, 16, 64);
+        if (bufferBarrier.srcQueueFamilyIndex != VK_QUEUE_FAMILY_IGNORED ||
+            bufferBarrier.dstQueueFamilyIndex != VK_QUEUE_FAMILY_IGNORED ||
+            bufferBarrier.offset != 16 || bufferBarrier.size != 64 ||
+            bufferBarrier.buffer != VK_NULL_HANDLE) {
+            vke::logError("Render graph Vulkan buffer barrier fields were unexpected.");
+            return false;
+        }
+
+        const vke::VulkanRenderGraphBufferUsage computeReadUsage =
+            vke::vulkanBufferUsage(vke::RenderGraphBufferState::ShaderRead,
+                                   vke::RenderGraphShaderStage::Compute);
+        if (computeReadUsage.stageMask != VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT ||
+            computeReadUsage.accessMask != kExpectedShaderBufferReadAccess) {
+            vke::logError("Render graph Vulkan compute buffer read mapping was unexpected.");
+            return false;
+        }
+
+        return true;
+    }
+
     bool validateSmokeRenderGraphBuffers(const vke::RenderGraphSchemaRegistry& schemas) {
         vke::RenderGraph bufferGraph;
         const auto transientBuffer = bufferGraph.createTransientBuffer(vke::RenderGraphBufferDesc{
@@ -2698,6 +2745,9 @@ namespace {
             compiled->dependencies.size() != 1 || compiled->transientBuffers.size() != 1 ||
             !compiled->finalBufferTransitions.empty()) {
             vke::logError("Render graph buffer smoke produced an unexpected compile plan.");
+            return false;
+        }
+        if (!validateSmokeRenderGraphBufferVulkanMappings(*compiled)) {
             return false;
         }
 

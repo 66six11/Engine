@@ -19,6 +19,7 @@
 | Khronos unified image layouts: https://www.khronos.org/blog/so-long-image-layouts-simplifying-vulkan-synchronisation | 新式 unified image layout 能减少 layout 数量，但需要明确 feature/extension 和设备支持。 | 作为后续优化观察项；当前先保持显式精确 layout，避免过早依赖新能力。 |
 | Vulkan object destruction refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImage.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImageView.html | `VkImage` / `VkImageView` 销毁前，所有引用它们的已提交命令必须完成。 | transient wrapper 不在下一帧准备阶段直接析构旧 Vulkan 对象，而是挂到 `VulkanFrameLoop` 的 fence/epoch deferred deletion。 |
 | Vulkan image barrier refpage: https://docs.vulkan.org/refpages/latest/refpages/source/VkImageMemoryBarrier2.html | `oldLayout = VK_IMAGE_LAYOUT_UNDEFINED` 表示不保留旧内容，适合 discard 型 transient 复用。 | pooled transient image 每次被重新 acquire 后仍从 RG 的 `Undefined` 初始状态开始 transition，不依赖上一帧内容。 |
+| Vulkan buffer barrier refpage: https://docs.vulkan.org/refpages/latest/refpages/source/VkBufferMemoryBarrier2.html | buffer barrier 表达 buffer range 的内存依赖，stage/access 仍需匹配真实 producer / consumer。 | `rhi_vulkan_rendergraph` 先把 RG buffer `TransferWrite` 与 `ShaderRead(fragment/compute)` 映射为 `VkBufferMemoryBarrier2` 字段；offset/size 由录制侧按实际绑定范围提供。 |
 | Vulkan pipeline cache refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreatePipelineCache.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateGraphicsPipelines.html | `VkPipelineCache` 可传给 graphics pipeline creation，让实现复用 pipeline 创建数据。 | RHI 提供 `VulkanPipelineCache` RAII wrapper；renderer 仍保留引擎侧 key/counter，smoke 验证每帧复用而不重建 pipeline。 |
 | Vulkan descriptor pool/allocation refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateDescriptorPool.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkAllocateDescriptorSets.html | descriptor set 从 descriptor pool 分配，pool 的 `maxSets` 与 `pPoolSizes` 定义容量边界，分配失败通过 `VkResult` 返回。 | RHI 先提供单 pool `VulkanDescriptorAllocator` facade 和 counters；后续再演进到 per-frame/per-flight arena。 |
 | Vulkan buffer creation refpage: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateBuffer.html | buffer 是显式创建的 Vulkan object，创建失败必须通过 `VkResult` 传播；usage/size 是后续绑定和命令合法性的基础。 | `VulkanBuffer` 继续作为 buffer + VMA allocation facade，并记录 create/upload byte counters 供 smoke 验证。 |
@@ -483,8 +484,9 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 ### Buffer / storage / MRT
 
 - 18.1 已新增 `RenderGraphBufferHandle`、buffer desc、buffer lifetime、buffer access、import/transient buffer
-  和 named read/write slots；Vulkan buffer barrier 映射留到后续子阶段，进入前必须定义 usage、stage 和 access。
-- Storage image/buffer read-write 必须是明确 access；不能复用模糊的 texture read + color write 组合。
+  和 named read/write slots；18.2 已新增 `rhi_vulkan_rendergraph` 的 buffer usage / transition / `VkBufferMemoryBarrier2`
+  映射，当前覆盖 `TransferWrite` 与 `ShaderRead(fragment/compute)`。
+- Storage image/buffer read-write 必须是明确 access，不能复用模糊的 texture read + color write 组合。
 - MRT 通过 named color slots 表达，例如 `albedo`、`normal`、`material`、`velocity`，并在 schema 中声明
   可选/必需关系。
 - 所有新增 state 都要有 `--smoke-rendergraph` 负向用例和 `rhi_vulkan_rendergraph` 映射验证。

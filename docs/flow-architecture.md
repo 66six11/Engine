@@ -599,15 +599,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    RGTransition["RenderGraphImageTransition<br/>oldState/newState"]
-    Binding["RenderGraphImageHandle -> VkImage binding"]
-    VkTransition["VulkanRenderGraphImageTransition<br/>oldLayout/newLayout<br/>stage/access"]
-    Barrier["VkImageMemoryBarrier2"]
+    RGTransition["RenderGraphImageTransition / RenderGraphBufferTransition<br/>oldState/newState"]
+    Binding["RenderGraph handle -> VkImage / VkBuffer binding"]
+    VkTransition["VulkanRenderGraph transition<br/>layout or buffer range<br/>stage/access"]
+    Barrier["VkImageMemoryBarrier2 / VkBufferMemoryBarrier2"]
     CmdBarrier["vkCmdPipelineBarrier2"]
 
-    RGTransition -->|"vulkanImageTransition"| VkTransition
-    RGTransition -->|"image handle"| Binding
-    VkTransition -->|"vulkanImageBarrier + bound VkImage"| Barrier
+    RGTransition -->|"vulkanImageTransition / vulkanBufferTransition"| VkTransition
+    RGTransition -->|"resource handle"| Binding
+    VkTransition -->|"barrier helper + bound resource"| Barrier
     Binding --> Barrier
     Barrier --> CmdBarrier
 ```
@@ -616,11 +616,13 @@ flowchart TD
 
 - `vulkanImageTransition` 已实现。
 - `vulkanImageBarrier` 已实现。
+- `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferWrite` 与 `ShaderRead(fragment/compute)`。
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
+- `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)` 和 compute shader-read usage 映射到 `VkBufferMemoryBarrier2` 所需 stage/access 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、dependencies、slots、commands、transitions、
   transients 的 Markdown 调试表格，并验证 pass type、params type、slot schema、command summary、

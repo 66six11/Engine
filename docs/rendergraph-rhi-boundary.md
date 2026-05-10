@@ -28,10 +28,13 @@
 RenderGraph 层使用引擎自己的抽象类型：
 
 - `RenderGraphImageHandle`
+- `RenderGraphBufferHandle`
 - `RenderGraphImageFormat`
 - `RenderGraphExtent2D`
 - `RenderGraphImageState`
+- `RenderGraphBufferState`
 - `RenderGraphImageTransition`
+- `RenderGraphBufferTransition`
 - `RenderGraphPassContext`
 
 资源状态应描述意图，而不是 API 细节。例如：
@@ -52,14 +55,17 @@ Vulkan 相关翻译放在 `packages/rhi-vulkan`，例如：
 - `vulkanImageLayout(RenderGraphImageState)`
 - `vulkanImageUsage(RenderGraphImageState)`
 - `vulkanImageTransition(RenderGraphImageTransition)`
+- `vulkanBufferUsage(RenderGraphBufferState)`
+- `vulkanBufferTransition(RenderGraphBufferTransition)`
+- `vulkanBufferBarrier(RenderGraphBufferTransition, VkBuffer, offset, size)`
 
 这类翻译接口应由专门的适配 target 暴露，例如 `vke::rhi_vulkan_rendergraph`。基础 Vulkan target `vke::rhi_vulkan` 不应为了适配 RenderGraph 而公开依赖 `vke::rendergraph`。
 
-如果未来需要更完整的 barrier planner，也应先保留 RenderGraph 的抽象 plan，再由 Vulkan 后端生成 `VkImageMemoryBarrier2` 和 `VkDependencyInfo`。
+如果未来需要更完整的 barrier planner，也应先保留 RenderGraph 的抽象 plan，再由 Vulkan 后端生成 `VkImageMemoryBarrier2`、`VkBufferMemoryBarrier2` 和 `VkDependencyInfo`。
 
 ## 执行期资源绑定
 
-RenderGraph 编译结果只携带 `RenderGraphImageHandle` 和抽象状态，不携带 Vulkan 资源。Vulkan 后端录制命令前必须建立执行期 binding 表，把每个参与录制的 `RenderGraphImageHandle` 映射到真实的 `VkImage`。
+RenderGraph 编译结果只携带 `RenderGraphImageHandle` / `RenderGraphBufferHandle` 和抽象状态，不携带 Vulkan 资源。Vulkan 后端录制命令前必须建立执行期 binding 表，把每个参与录制的 `RenderGraphImageHandle` 映射到真实的 `VkImage`，把每个参与录制的 `RenderGraphBufferHandle` 映射到真实的 `VkBuffer`。
 
 当前 Backbuffer smoke 使用 `VulkanRenderGraphImageBinding` 显式绑定 swapchain image。后续加入 depth、transient color、postprocess 中间图或 imported texture 时，必须把这些资源加入同一 binding 表，barrier 录制不得回退到“默认当前 swapchain image”的隐式路径。
 
