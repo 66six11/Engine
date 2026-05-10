@@ -14,9 +14,23 @@ set(VKE_IMGUI_BACKEND_SOURCES
     "${VKE_IMGUI_BACKENDS_DIR}/imgui_impl_vulkan.cpp"
 )
 
+set(VKE_EDITOR_RESOURCE_SOURCES)
+
+if(WIN32)
+    enable_language(RC)
+    list(APPEND VKE_EDITOR_RESOURCE_SOURCES
+        resources/vke-editor.rc
+    )
+    set_source_files_properties(resources/vke-editor.rc
+        PROPERTIES
+            OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/vke-editor.ico"
+    )
+endif()
+
 add_executable(vke-editor
     src/main.cpp
     ${VKE_IMGUI_BACKEND_SOURCES}
+    ${VKE_EDITOR_RESOURCE_SOURCES}
 )
 
 add_executable(vke::editor ALIAS vke-editor)
