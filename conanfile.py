@@ -16,6 +16,7 @@ class VkEngineConan(ConanFile):
         self.requires("glfw/3.4")
         self.requires("glm/1.0.1")
         self.requires("imgui/1.92.7-docking")
+        self.requires("nlohmann_json/3.12.0")
         self.requires("vulkan-headers/1.4.313.0")
         self.requires("vulkan-memory-allocator/3.3.0")
 

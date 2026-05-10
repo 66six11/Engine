@@ -1,0 +1,8 @@
+{
+  "name": "com.vke.reflection",
+  "version": "0.1.0",
+  "displayName": "VkEngine Reflection",
+  "description": "Stable type and field metadata for serialization, editor, and scripting projections.",
+  "dependencies": ["com.vke.core"],
+  "targets": ["vke-reflection"]
+}

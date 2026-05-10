@@ -11,6 +11,8 @@ enum class ErrorDomain {
     Vulkan,
     Shader,
     RenderGraph,
+    Reflection,
+    Serialization,
 };
 
 struct Error {

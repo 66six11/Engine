@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <span>
@@ -20,6 +21,8 @@
 #include "vke/core/log.hpp"
 #include "vke/core/version.hpp"
 #include "vke/profiling/frame_profiler.hpp"
+#include "vke/reflection/context_view.hpp"
+#include "vke/reflection/type_builder.hpp"
 #include "vke/renderer_basic/render_graph_schemas.hpp"
 #include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
 #include "vke/renderer_basic_vulkan/clear_frame.hpp"
@@ -28,6 +31,8 @@
 #include "vke/rhi_vulkan/vulkan_context.hpp"
 #include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "vke/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
+#include "vke/serialization/serializer.hpp"
+#include "vke/serialization/text_archive.hpp"
 #include "vke/window_glfw/glfw_window.hpp"
 
 namespace {
@@ -61,6 +66,9 @@ namespace {
                      "[--smoke-mesh-3d] [--smoke-draw-list] "
                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
                      "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
+                     "[--smoke-reflection-registry] [--smoke-reflection-transform] "
+                     "[--smoke-reflection-contexts] [--smoke-serialization-roundtrip] "
+                     "[--smoke-serialization-json-archive] "
                      "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
@@ -134,6 +142,458 @@ namespace {
             return false;
         }
         return true;
+    }
+
+    constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
+    constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
+    constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
+
+    struct ReflectionSmokeVec3 {
+        float x{};
+        float y{};
+        float z{};
+    };
+
+    struct ReflectionSmokeQuat {
+        float x{};
+        float y{};
+        float z{};
+        float w{1.0F};
+    };
+
+    struct ReflectionSmokeTransform {
+        ReflectionSmokeVec3 position;
+        ReflectionSmokeQuat rotation;
+        ReflectionSmokeVec3 scale{.x = 1.0F, .y = 1.0F, .z = 1.0F};
+        std::string debugName;
+        float cachedMagnitude{};
+        std::int32_t scriptCounter{};
+    };
+
+    const vke::reflection::FieldInfo* findField(const vke::reflection::TypeInfo& type,
+                                                std::string_view name) {
+        const auto found =
+            std::ranges::find_if(type.fields, [name](const vke::reflection::FieldInfo& field) {
+                return field.name == name;
+            });
+        return found == type.fields.end() ? nullptr : &*found;
+    }
+
+    bool hasContextField(const vke::reflection::ContextFieldView& view, std::string_view name) {
+        return std::ranges::any_of(view.fields, [name](const vke::reflection::FieldInfo* field) {
+            return field != nullptr && field->name == name;
+        });
+    }
+
+    vke::VoidResult registerReflectionSmokeTypes(vke::reflection::TypeRegistry& registry) {
+        using namespace vke::reflection;
+
+        auto builtins = registerBuiltinTypes(registry);
+        if (!builtins) {
+            return builtins;
+        }
+
+        const FieldFlagSet savedEditable = field_flags::serializableEditorRuntimeScript();
+        const TypeId vec3Type = makeTypeId(kSmokeVec3TypeName);
+        const TypeId quatType = makeTypeId(kSmokeQuatTypeName);
+
+        auto vec3Registered = TypeBuilder<ReflectionSmokeVec3>(registry, kSmokeVec3TypeName)
+                                  .kind(TypeKind::Struct)
+                                  .field("x", &ReflectionSmokeVec3::x, savedEditable)
+                                  .field("y", &ReflectionSmokeVec3::y, savedEditable)
+                                  .field("z", &ReflectionSmokeVec3::z, savedEditable)
+                                  .commit();
+        if (!vec3Registered) {
+            return vec3Registered;
+        }
+
+        auto quatRegistered = TypeBuilder<ReflectionSmokeQuat>(registry, kSmokeQuatTypeName)
+                                  .kind(TypeKind::Struct)
+                                  .field("x", &ReflectionSmokeQuat::x, savedEditable)
+                                  .field("y", &ReflectionSmokeQuat::y, savedEditable)
+                                  .field("z", &ReflectionSmokeQuat::z, savedEditable)
+                                  .field("w", &ReflectionSmokeQuat::w, savedEditable)
+                                  .commit();
+        if (!quatRegistered) {
+            return quatRegistered;
+        }
+
+        const FieldFlagSet editorOnly =
+            FieldFlag::Serializable | FieldFlag::EditorVisible | FieldFlag::EditorOnly;
+        const FieldFlagSet runtimeReadOnly =
+            FieldFlag::EditorVisible | FieldFlag::RuntimeVisible | FieldFlag::ReadOnly;
+        const FieldFlagSet scriptReadOnly =
+            FieldFlag::RuntimeVisible | FieldFlag::ScriptVisible | FieldFlag::ReadOnly;
+
+        return TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
+            .kind(TypeKind::Component)
+            .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
+            .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
+            .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
+            .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
+            .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude, runtimeReadOnly)
+            .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+            .commit();
+    }
+
+    std::optional<vke::reflection::TypeRegistry> makeReflectionSmokeRegistry() {
+        vke::reflection::TypeRegistry registry;
+        auto registered = registerReflectionSmokeTypes(registry);
+        if (!registered) {
+            vke::logError(registered.error().message);
+            return std::nullopt;
+        }
+        auto frozen = registry.freeze();
+        if (!frozen) {
+            vke::logError(frozen.error().message);
+            return std::nullopt;
+        }
+        return registry;
+    }
+
+    int runSmokeReflectionRegistry() {
+        vke::reflection::TypeRegistry registry;
+        auto registered = registerReflectionSmokeTypes(registry);
+        if (!registered) {
+            vke::logError(registered.error().message);
+            return EXIT_FAILURE;
+        }
+
+        if (registry.findType(kSmokeTransformTypeName) == nullptr) {
+            vke::logError("Reflection registry smoke could not find the transform type.");
+            return EXIT_FAILURE;
+        }
+
+        vke::reflection::TypeInfo duplicate{
+            .id = vke::reflection::makeTypeId(kSmokeTransformTypeName),
+            .name = std::string{kSmokeTransformTypeName},
+            .version = 1,
+            .kind = vke::reflection::TypeKind::Component,
+            .fields = {},
+        };
+        auto duplicateRegistered = registry.registerType(std::move(duplicate));
+        if (duplicateRegistered) {
+            vke::logError("Reflection registry smoke accepted a duplicate type.");
+            return EXIT_FAILURE;
+        }
+
+        auto frozen = registry.freeze();
+        if (!frozen) {
+            vke::logError(frozen.error().message);
+            return EXIT_FAILURE;
+        }
+
+        vke::reflection::TypeInfo lateType{
+            .id = vke::reflection::makeTypeId("com.asharia.smoke.LateType"),
+            .name = "com.asharia.smoke.LateType",
+            .version = 1,
+            .kind = vke::reflection::TypeKind::Struct,
+            .fields = {},
+        };
+        auto lateRegistered = registry.registerType(std::move(lateType));
+        if (lateRegistered) {
+            vke::logError("Reflection registry smoke accepted registration after freeze.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Reflection registry types: " << registry.types().size() << '\n';
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeReflectionTransform() {
+        auto registry = makeReflectionSmokeRegistry();
+        if (!registry) {
+            return EXIT_FAILURE;
+        }
+
+        const vke::reflection::TypeInfo* transformType =
+            registry->findType(kSmokeTransformTypeName);
+        if (transformType == nullptr || transformType->fields.size() != 6) {
+            vke::logError("Reflection transform smoke saw an unexpected field count.");
+            return EXIT_FAILURE;
+        }
+
+        const vke::reflection::FieldInfo* positionField = findField(*transformType, "position");
+        const vke::reflection::FieldInfo* cachedField =
+            findField(*transformType, "cachedMagnitude");
+        if (positionField == nullptr || cachedField == nullptr ||
+            !positionField->flags.has(vke::reflection::FieldFlag::Serializable) ||
+            !positionField->flags.has(vke::reflection::FieldFlag::EditorVisible) ||
+            !positionField->flags.has(vke::reflection::FieldFlag::RuntimeVisible) ||
+            !positionField->flags.has(vke::reflection::FieldFlag::ScriptVisible) ||
+            cachedField->accessor.writeAddress) {
+            vke::logError("Reflection transform smoke saw unexpected field metadata.");
+            return EXIT_FAILURE;
+        }
+
+        ReflectionSmokeTransform transform{
+            .position = {.x = 1.0F, .y = 2.0F, .z = 3.0F},
+            .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
+            .scale = {.x = 1.0F, .y = 1.0F, .z = 1.0F},
+            .debugName = "transform smoke",
+            .cachedMagnitude = 3.0F,
+            .scriptCounter = 7,
+        };
+
+        const auto* readPosition = static_cast<const ReflectionSmokeVec3*>(
+            positionField->accessor.readAddress(&transform));
+        auto* writePosition =
+            static_cast<ReflectionSmokeVec3*>(positionField->accessor.writeAddress(&transform));
+        if (readPosition == nullptr || writePosition == nullptr || readPosition->x != 1.0F) {
+            vke::logError("Reflection transform smoke failed to read position through accessor.");
+            return EXIT_FAILURE;
+        }
+        writePosition->x = 4.0F;
+        if (transform.position.x != 4.0F) {
+            vke::logError("Reflection transform smoke failed to write position through accessor.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Reflection transform fields: " << transformType->fields.size() << '\n';
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeReflectionContexts() {
+        auto registry = makeReflectionSmokeRegistry();
+        if (!registry) {
+            return EXIT_FAILURE;
+        }
+
+        const vke::reflection::TypeInfo* transformType =
+            registry->findType(kSmokeTransformTypeName);
+        if (transformType == nullptr) {
+            vke::logError("Reflection context smoke could not find transform type.");
+            return EXIT_FAILURE;
+        }
+
+        const vke::reflection::ContextFieldView serializeView =
+            vke::reflection::makeSerializeContextView(*transformType);
+        const vke::reflection::ContextFieldView editView =
+            vke::reflection::makeEditContextView(*transformType);
+        const vke::reflection::ContextFieldView scriptView =
+            vke::reflection::makeScriptContextView(*transformType);
+
+        if (!hasContextField(serializeView, "debugName") ||
+            hasContextField(serializeView, "cachedMagnitude") ||
+            !hasContextField(editView, "cachedMagnitude") ||
+            hasContextField(editView, "scriptCounter") ||
+            !hasContextField(scriptView, "scriptCounter") ||
+            hasContextField(scriptView, "debugName")) {
+            vke::logError("Reflection context smoke produced unexpected field projections.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Reflection context fields: serialize=" << serializeView.fields.size()
+                  << ", edit=" << editView.fields.size() << ", script=" << scriptView.fields.size()
+                  << '\n';
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeSerializationRoundtrip() {
+        auto registry = makeReflectionSmokeRegistry();
+        if (!registry) {
+            return EXIT_FAILURE;
+        }
+
+        const vke::reflection::TypeId transformType =
+            vke::reflection::makeTypeId(kSmokeTransformTypeName);
+        const ReflectionSmokeTransform source{
+            .position = {.x = 1.0F, .y = 2.0F, .z = 3.0F},
+            .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
+            .scale = {.x = 2.0F, .y = 2.0F, .z = 2.0F},
+            .debugName = "roundtrip",
+            .cachedMagnitude = 99.0F,
+            .scriptCounter = 12,
+        };
+
+        auto archive = vke::serialization::serializeObject(*registry, transformType, &source);
+        if (!archive) {
+            vke::logError(archive.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto firstText = vke::serialization::writeTextArchive(*archive);
+        if (!firstText) {
+            vke::logError(firstText.error().message);
+            return EXIT_FAILURE;
+        }
+        auto secondText = vke::serialization::writeTextArchive(*archive);
+        if (!secondText) {
+            vke::logError(secondText.error().message);
+            return EXIT_FAILURE;
+        }
+        if (*firstText != *secondText) {
+            vke::logError("Serialization roundtrip smoke produced nondeterministic text.");
+            return EXIT_FAILURE;
+        }
+
+        ReflectionSmokeTransform loaded{};
+        auto loadedResult =
+            vke::serialization::deserializeObject(*registry, transformType, *archive, &loaded);
+        if (!loadedResult) {
+            vke::logError(loadedResult.error().message);
+            return EXIT_FAILURE;
+        }
+
+        if (loaded.position.x != source.position.x || loaded.position.y != source.position.y ||
+            loaded.position.z != source.position.z || loaded.rotation.w != source.rotation.w ||
+            loaded.scale.x != source.scale.x || loaded.debugName != source.debugName ||
+            loaded.cachedMagnitude != 0.0F || loaded.scriptCounter != 0) {
+            vke::logError("Serialization roundtrip smoke loaded unexpected values.");
+            return EXIT_FAILURE;
+        }
+
+        vke::serialization::ArchiveValue badArchive = *archive;
+        vke::serialization::ArchiveValue* fields = badArchive.findMemberValue("fields");
+        vke::serialization::ArchiveValue* position =
+            fields == nullptr ? nullptr : fields->findMemberValue("position");
+        vke::serialization::ArchiveValue* positionFields =
+            position == nullptr ? nullptr : position->findMemberValue("fields");
+        vke::serialization::ArchiveValue* xValue =
+            positionFields == nullptr ? nullptr : positionFields->findMemberValue("x");
+        if (xValue == nullptr) {
+            vke::logError("Serialization roundtrip smoke could not edit the bad archive.");
+            return EXIT_FAILURE;
+        }
+        *xValue = vke::serialization::ArchiveValue::string("wrong");
+
+        ReflectionSmokeTransform rejected{};
+        auto rejectedResult =
+            vke::serialization::deserializeObject(*registry, transformType, badArchive, &rejected);
+        if (rejectedResult || rejectedResult.error().message.find(".x") == std::string::npos) {
+            vke::logError("Serialization roundtrip smoke did not reject a bad field type.");
+            return EXIT_FAILURE;
+        }
+
+        vke::serialization::ArchiveValue badVersionArchive = *archive;
+        vke::serialization::ArchiveValue* versionValue =
+            badVersionArchive.findMemberValue("version");
+        if (versionValue == nullptr) {
+            vke::logError("Serialization roundtrip smoke could not edit the archive version.");
+            return EXIT_FAILURE;
+        }
+        *versionValue = vke::serialization::ArchiveValue::integer(2);
+
+        ReflectionSmokeTransform rejectedVersion{};
+        auto rejectedVersionResult = vke::serialization::deserializeObject(
+            *registry, transformType, badVersionArchive, &rejectedVersion);
+        if (rejectedVersionResult ||
+            rejectedVersionResult.error().message.find("version") == std::string::npos) {
+            vke::logError("Serialization roundtrip smoke did not reject a bad type version.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Serialization roundtrip bytes: " << firstText->size() << '\n';
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeSerializationJsonArchive() {
+        std::string escaped = "quote \" slash \\ newline \n carriage \r tab \t";
+        escaped.push_back('\b');
+        escaped.push_back('\f');
+
+        std::string validUtf8 = "utf8 ";
+        validUtf8.push_back(static_cast<char>(0xC3));
+        validUtf8.push_back(static_cast<char>(0xA9));
+
+        vke::serialization::ArchiveValue archive = vke::serialization::ArchiveValue::object({
+            vke::serialization::ArchiveMember{
+                .key = "escaped",
+                .value = vke::serialization::ArchiveValue::string(escaped),
+            },
+            vke::serialization::ArchiveMember{
+                .key = "validUtf8",
+                .value = vke::serialization::ArchiveValue::string(validUtf8),
+            },
+            vke::serialization::ArchiveMember{
+                .key = "array",
+                .value = vke::serialization::ArchiveValue::array({
+                    vke::serialization::ArchiveValue::integer(7),
+                    vke::serialization::ArchiveValue::floating(0.25),
+                    vke::serialization::ArchiveValue::boolean(true),
+                }),
+            },
+        });
+
+        auto firstText = vke::serialization::writeTextArchive(archive);
+        if (!firstText) {
+            vke::logError(firstText.error().message);
+            return EXIT_FAILURE;
+        }
+        auto secondText = vke::serialization::writeTextArchive(archive);
+        if (!secondText) {
+            vke::logError(secondText.error().message);
+            return EXIT_FAILURE;
+        }
+        if (*firstText != *secondText) {
+            vke::logError("JSON archive smoke produced nondeterministic output.");
+            return EXIT_FAILURE;
+        }
+
+        auto parsed = vke::serialization::readTextArchive(*firstText);
+        if (!parsed) {
+            vke::logError(parsed.error().message);
+            return EXIT_FAILURE;
+        }
+        const vke::serialization::ArchiveValue* parsedEscaped = parsed->findMemberValue("escaped");
+        const vke::serialization::ArchiveValue* parsedUtf8 = parsed->findMemberValue("validUtf8");
+        if (parsedEscaped == nullptr ||
+            parsedEscaped->kind != vke::serialization::ArchiveValueKind::String ||
+            parsedEscaped->stringValue != escaped || parsedUtf8 == nullptr ||
+            parsedUtf8->kind != vke::serialization::ArchiveValueKind::String ||
+            parsedUtf8->stringValue != validUtf8) {
+            vke::logError("JSON archive smoke failed to round-trip escaped strings.");
+            return EXIT_FAILURE;
+        }
+
+        auto duplicate = vke::serialization::readTextArchive(R"({"field":1,"field":2})");
+        if (duplicate || duplicate.error().message.find("duplicate key") == std::string::npos) {
+            vke::logError("JSON archive smoke did not reject a duplicate object key.");
+            return EXIT_FAILURE;
+        }
+
+        auto malformed = vke::serialization::readTextArchive("{");
+        if (malformed || malformed.error().message.find("byte") == std::string::npos) {
+            vke::logError("JSON archive smoke did not report a parse byte for malformed input.");
+            return EXIT_FAILURE;
+        }
+
+        std::string invalidUtf8;
+        invalidUtf8.push_back(static_cast<char>(0xFF));
+        auto invalidWrite = vke::serialization::writeTextArchive(
+            vke::serialization::ArchiveValue::string(invalidUtf8));
+        if (invalidWrite) {
+            vke::logError("JSON archive smoke accepted invalid UTF-8 output.");
+            return EXIT_FAILURE;
+        }
+
+        auto duplicateObjectWrite =
+            vke::serialization::writeTextArchive(vke::serialization::ArchiveValue::object({
+                vke::serialization::ArchiveMember{
+                    .key = "field",
+                    .value = vke::serialization::ArchiveValue::integer(1),
+                },
+                vke::serialization::ArchiveMember{
+                    .key = "field",
+                    .value = vke::serialization::ArchiveValue::integer(2),
+                },
+            }));
+        if (duplicateObjectWrite ||
+            duplicateObjectWrite.error().message.find("duplicate key") == std::string::npos) {
+            vke::logError("JSON archive smoke did not reject duplicate ArchiveValue keys.");
+            return EXIT_FAILURE;
+        }
+
+        auto nonFiniteWrite = vke::serialization::writeTextArchive(
+            vke::serialization::ArchiveValue::floating(std::numeric_limits<double>::infinity()));
+        if (nonFiniteWrite ||
+            nonFiniteWrite.error().message.find("non-finite") == std::string::npos) {
+            vke::logError("JSON archive smoke did not reject a non-finite float.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Serialization JSON archive bytes: " << firstText->size() << '\n';
+        return EXIT_SUCCESS;
     }
 
     bool validateDescriptorAllocatorStats(vke::VulkanDescriptorAllocatorStats stats,
@@ -2623,8 +3083,8 @@ namespace {
         return true;
     }
 
-    bool validateSmokeRenderGraphBufferVulkanMappings(
-        const vke::RenderGraphCompileResult& compiled) {
+    bool
+    validateSmokeRenderGraphBufferVulkanMappings(const vke::RenderGraphCompileResult& compiled) {
         const auto vulkanBufferWriteTransition =
             vke::vulkanBufferTransition(compiled.passes[0].bufferTransitionsBefore.front());
         if (vulkanBufferWriteTransition.srcStageMask != VK_PIPELINE_STAGE_2_NONE ||
@@ -2658,9 +3118,8 @@ namespace {
             return false;
         }
 
-        const vke::VulkanRenderGraphBufferUsage computeReadUsage =
-            vke::vulkanBufferUsage(vke::RenderGraphBufferState::ShaderRead,
-                                   vke::RenderGraphShaderStage::Compute);
+        const vke::VulkanRenderGraphBufferUsage computeReadUsage = vke::vulkanBufferUsage(
+            vke::RenderGraphBufferState::ShaderRead, vke::RenderGraphShaderStage::Compute);
         if (computeReadUsage.stageMask != VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT ||
             computeReadUsage.accessMask != kExpectedShaderBufferReadAccess) {
             vke::logError("Render graph Vulkan compute buffer read mapping was unexpected.");
@@ -3176,6 +3635,66 @@ namespace {
                    : EXIT_FAILURE;
     }
 
+    int runSmokeDepthTriangle() {
+        return runSmokeTriangle(true);
+    }
+
+    int runSmokeTriangleDefault() {
+        return runSmokeTriangle();
+    }
+
+    int runSmokeMesh() {
+        return runSmokeTriangle(false, vke::BasicMeshKind::IndexedQuad);
+    }
+
+    std::optional<int> runRequestedCommand(std::span<char*> args) {
+        if (hasArg(args, "--bench-rendergraph")) {
+            return runBenchRenderGraph(args);
+        }
+
+        struct SmokeCommand {
+            std::string_view option;
+            int (*run)();
+        };
+
+        const std::array commands{
+            SmokeCommand{.option = "--smoke-window", .run = runSmokeWindow},
+            SmokeCommand{.option = "--smoke-vulkan", .run = runSmokeVulkan},
+            SmokeCommand{.option = "--smoke-frame", .run = runSmokeFrame},
+            SmokeCommand{.option = "--smoke-rendergraph", .run = runSmokeRenderGraph},
+            SmokeCommand{.option = "--smoke-transient", .run = runSmokeTransient},
+            SmokeCommand{.option = "--smoke-dynamic-rendering", .run = runSmokeDynamicRendering},
+            SmokeCommand{.option = "--smoke-resize", .run = runSmokeResize},
+            SmokeCommand{.option = "--smoke-triangle", .run = runSmokeTriangleDefault},
+            SmokeCommand{.option = "--smoke-depth-triangle", .run = runSmokeDepthTriangle},
+            SmokeCommand{.option = "--smoke-mesh", .run = runSmokeMesh},
+            SmokeCommand{.option = "--smoke-mesh-3d", .run = runSmokeMesh3D},
+            SmokeCommand{.option = "--smoke-draw-list", .run = runSmokeDrawList},
+            SmokeCommand{.option = "--smoke-descriptor-layout", .run = runSmokeDescriptorLayout},
+            SmokeCommand{.option = "--smoke-fullscreen-texture", .run = runSmokeFullscreenTexture},
+            SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},
+            SmokeCommand{.option = "--smoke-deferred-deletion", .run = runSmokeDeferredDeletion},
+            SmokeCommand{.option = "--smoke-reflection-registry",
+                         .run = runSmokeReflectionRegistry},
+            SmokeCommand{.option = "--smoke-reflection-transform",
+                         .run = runSmokeReflectionTransform},
+            SmokeCommand{.option = "--smoke-reflection-contexts",
+                         .run = runSmokeReflectionContexts},
+            SmokeCommand{.option = "--smoke-serialization-roundtrip",
+                         .run = runSmokeSerializationRoundtrip},
+            SmokeCommand{.option = "--smoke-serialization-json-archive",
+                         .run = runSmokeSerializationJsonArchive},
+        };
+
+        for (const SmokeCommand& command : commands) {
+            if (hasArg(args, command.option)) {
+                return command.run();
+            }
+        }
+
+        return std::nullopt;
+    }
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -3195,77 +3714,13 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
 
-        if (hasArg(args, "--smoke-window")) {
-            return runSmokeWindow();
-        }
-
-        if (hasArg(args, "--smoke-vulkan")) {
-            return runSmokeVulkan();
-        }
-
-        if (hasArg(args, "--smoke-frame")) {
-            return runSmokeFrame();
-        }
-
-        if (hasArg(args, "--smoke-rendergraph")) {
-            return runSmokeRenderGraph();
-        }
-
-        if (hasArg(args, "--bench-rendergraph")) {
-            return runBenchRenderGraph(args);
-        }
-
-        if (hasArg(args, "--smoke-transient")) {
-            return runSmokeTransient();
-        }
-
-        if (hasArg(args, "--smoke-dynamic-rendering")) {
-            return runSmokeDynamicRendering();
-        }
-
-        if (hasArg(args, "--smoke-resize")) {
-            return runSmokeResize();
-        }
-
-        if (hasArg(args, "--smoke-triangle")) {
-            return runSmokeTriangle();
-        }
-
-        if (hasArg(args, "--smoke-depth-triangle")) {
-            return runSmokeTriangle(true);
-        }
-
-        if (hasArg(args, "--smoke-mesh")) {
-            return runSmokeTriangle(false, vke::BasicMeshKind::IndexedQuad);
-        }
-
-        if (hasArg(args, "--smoke-mesh-3d")) {
-            return runSmokeMesh3D();
-        }
-
-        if (hasArg(args, "--smoke-draw-list")) {
-            return runSmokeDrawList();
-        }
-
-        if (hasArg(args, "--smoke-descriptor-layout")) {
-            return runSmokeDescriptorLayout();
-        }
-
-        if (hasArg(args, "--smoke-fullscreen-texture")) {
-            return runSmokeFullscreenTexture();
-        }
-
-        if (hasArg(args, "--smoke-offscreen-viewport")) {
-            return runSmokeOffscreenViewport();
-        }
-
-        if (hasArg(args, "--smoke-deferred-deletion")) {
-            return runSmokeDeferredDeletion();
+        if (const std::optional<int> commandResult = runRequestedCommand(args)) {
+            return *commandResult;
         }
 
         printVersion();
         printUsage();
-        return EXIT_SUCCESS;
+        return EXIT_FAILURE;
     } catch (const std::exception& exception) {
         vke::logError(exception.what());
     } catch (...) {

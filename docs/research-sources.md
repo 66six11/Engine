@@ -52,6 +52,29 @@
 - 资产管线、反射序列化、scene/world、resource lifetime、input、event/command、editor transaction、
   material/pipeline 和 diagnostics 是完整引擎不可缺少的架构前置项，但不应全部进入当前 MVP 实现。
 
+## Reflection / Serialization / C# metadata
+
+一手资料：
+
+- Unity serialization rules：https://docs.unity3d.com/Manual/script-serialization-rules.html
+- Unity Asset Database：https://docs.unity3d.com/Manual/AssetDatabase.html
+- O3DE reflection contexts：https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/
+- Unreal property system reflection：https://www.unrealengine.com/blog/unreal-property-system-reflection
+- Unreal Object Handling：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine
+- Godot Object class：https://docs.godotengine.org/en/stable/engine_details/architecture/object_class.html
+- WG21 P2996R13 Reflection for C++26：https://www.open-std.org/jtc1/SC22/wg21/docs/papers/2025/p2996r13.html
+- .NET native hosting：https://learn.microsoft.com/en-us/dotnet/core/tutorials/netcore-hosting
+- C# language versioning：https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-versioning
+- Roslyn source generators：https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/#source-generators
+
+结论：
+
+- VkEngine 第一版反射/序列化应采用 opt-in 类型注册，不自动扫描所有 C++ 类型。
+- Serialize/Edit/Script context 必须分开，不能用 public/private 或单个字段 flags 粗暴决定所有行为。
+- 运行时引用不能直接保存 pointer 或 GPU handle；`EntityId`、`AssetGuid`、`AssetHandle<T>` 需要专门 serializer 和诊断。
+- 当前项目使用 C++23，不能依赖 C++26 静态反射；第一版应使用手写注册表，未来可替换为 generated table。
+- 后续 C# 接入应作为 scripting package，使用 .NET hosting 和 Roslyn/source generator 生成 managed metadata，不进入 `reflection` / `serialization` 底座。
+
 ## Vulkan 1.4
 
 一手资料：

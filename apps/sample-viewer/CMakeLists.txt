@@ -10,9 +10,11 @@ target_link_libraries(vke-sample-viewer
     PRIVATE
         vke::core
         vke::profiling
+        vke::reflection
         vke::rendergraph
         vke::rhi_vulkan
         vke::rhi_vulkan_rendergraph
+        vke::serialization
         vke::window_glfw
         vke::renderer_basic
         vke::renderer_basic_vulkan

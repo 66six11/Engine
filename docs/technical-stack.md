@@ -23,6 +23,8 @@
 - `vulkan-loader` 或系统 Vulkan SDK loader：运行时 Vulkan dispatch。
 - `vulkan-memory-allocator`：GPU 内存分配。
 - `glm`：可选数学库。第一阶段可以使用，后续也可以替换为项目自研 math 层。
+- `nlohmann_json`：`packages/serialization` 私有使用的严格 JSON 读写实现，public API 仍然暴露
+  `ArchiveValue`，不向其他 package 泄漏第三方 JSON 类型。
 
 Vulkan loader/binding 策略：
 

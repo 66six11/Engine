@@ -67,9 +67,9 @@ tools/
 
 1. 当前阶段：继续完成 RenderGraph diagnostics、deferred destruction、descriptor/transient/pipeline cache。
 2. P4 之前：补 `resource-lifetime.md`，把 GPU retirement、upload、fallback 和 hot reload invalidation 写清楚。
-3. Mesh/material 前：补 `asset-architecture.md` 和 `reflection-serialization.md`，先定义 GUID、import settings、product hash、field metadata 和 version converter。
-4. Editor 前：补 `scene-world-architecture.md` 和 editor transaction 规则，确保 undo/redo、selection、inspector 不污染 runtime package。
-5. Script 前：先让 C++ builder、typed params、command summary 和 schema 稳定；脚本只作为这些 API 的前端，不进入 command recording 阶段。
+3. Mesh/material 前：补 `asset-architecture.md`；`reflection-serialization.md` 已记录 field metadata、context、version converter 和 Inspector/script binding 边界，asset 文档需在其上定义 GUID、import settings 和 product hash。
+4. Editor 前：`scene-world-architecture.md` 已记录 scene/world、selection、transaction、render snapshot 和 Play Mode 边界，后续 editor UI 必须消费这些服务而不是直接修改 runtime package。
+5. Script 前：`scripting-architecture.md` 已记录 ScriptHost、binding registry、execution context、权限和诊断边界；脚本只作为 scene/editor/asset/RenderGraph record API 的前端，不进入 command recording 阶段。
 
 ## 审查规则
 
