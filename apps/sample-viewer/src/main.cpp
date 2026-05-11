@@ -64,6 +64,7 @@ namespace {
                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
                      "[--smoke-mesh-3d] [--smoke-draw-list] "
+                     "[--smoke-mrt] "
                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
                      "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
@@ -1239,6 +1240,110 @@ namespace {
 
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered transient frames: " << extent.width << 'x' << extent.height << '\n';
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeMrt() {
+        auto glfw = asharia::GlfwInstance::create();
+        if (!glfw) {
+            asharia::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            asharia::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine MRT Smoke"});
+        if (!window) {
+            asharia::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine MRT Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
+                },
+            .debugLabels = kSmokeDebugLabels,
+        };
+
+        auto context = asharia::VulkanContext::create(contextDesc);
+        if (!context) {
+            asharia::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto renderer = asharia::BasicMrtRenderer::create(asharia::BasicMrtRendererDesc{
+            .device = context->device(),
+            .allocator = context->allocator(),
+        });
+        if (!renderer) {
+            asharia::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        asharia::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.04F, 0.07F, 0.11F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            asharia::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanFrameRecordCallback record =
+            [&renderer](const asharia::VulkanFrameRecordContext& frame) {
+                return renderer->recordFrame(frame);
+            };
+
+        for (int frame = 0; frame < 3; ++frame) {
+            asharia::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(record);
+            if (!status) {
+                asharia::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during MRT smoke.");
+                return EXIT_FAILURE;
+            }
+
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+
+        const asharia::VulkanTransientImagePoolStats transientPoolStats =
+            renderer->transientPoolStats();
+        if (transientPoolStats.created < 2 || transientPoolStats.reused < 2 ||
+            transientPoolStats.retired < 2) {
+            asharia::logError("MRT smoke did not reuse both transient color attachments.");
+            return EXIT_FAILURE;
+        }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "MRT smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(), "MRT smoke")) {
+            return EXIT_FAILURE;
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered MRT frames: " << extent.width << 'x' << extent.height << '\n';
         window->requestClose();
         return EXIT_SUCCESS;
     }
@@ -2495,6 +2600,7 @@ namespace {
         RasterTriangle,
         RasterDepthTriangle,
         RasterMesh3D,
+        RasterMrt,
         RasterFullscreen,
         RasterDrawList,
     };
@@ -2509,6 +2615,7 @@ namespace {
 
     struct BuiltinSchemaSmokeImages {
         asharia::RenderGraphImageHandle colorTarget{};
+        asharia::RenderGraphImageHandle colorTarget1{};
         asharia::RenderGraphImageHandle colorSource{};
         asharia::RenderGraphImageHandle depthTarget{};
         asharia::RenderGraphImageHandle unexpectedTarget{};
@@ -2528,6 +2635,13 @@ namespace {
                 .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
                 .initialState = asharia::RenderGraphImageState::Undefined,
                 .finalState = asharia::RenderGraphImageState::Present,
+            }),
+            .colorTarget1 = graph.importImage(asharia::RenderGraphImageDesc{
+                .name = "BuiltinSchemaColorTarget1",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::ColorAttachment,
             }),
             .colorSource = graph.importImage(asharia::RenderGraphImageDesc{
                 .name = "BuiltinSchemaColorSource",
@@ -2588,6 +2702,14 @@ namespace {
             }
             if (omittedSlot != "depth") {
                 pass.writeDepth("depth", images.depthTarget);
+            }
+            break;
+        case BuiltinSchemaSmokePass::RasterMrt:
+            if (omittedSlot != "color0") {
+                pass.writeColor("color0", images.colorTarget);
+            }
+            if (omittedSlot != "color1") {
+                pass.writeColor("color1", images.colorTarget1);
             }
             break;
         case BuiltinSchemaSmokePass::RasterFullscreen:
@@ -2707,6 +2829,13 @@ namespace {
                 .paramsType = asharia::kBasicRasterMesh3DParamsType,
                 .missingSlot = "depth",
                 .context = "builtin raster mesh3D",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RasterMrt,
+                .type = asharia::kBasicRasterMrtPassType,
+                .paramsType = asharia::kBasicRasterMrtParamsType,
+                .missingSlot = "color1",
+                .context = "builtin raster MRT",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterFullscreen,
@@ -3670,6 +3799,7 @@ namespace {
             SmokeCommand{.option = "--smoke-mesh", .run = runSmokeMesh},
             SmokeCommand{.option = "--smoke-mesh-3d", .run = runSmokeMesh3D},
             SmokeCommand{.option = "--smoke-draw-list", .run = runSmokeDrawList},
+            SmokeCommand{.option = "--smoke-mrt", .run = runSmokeMrt},
             SmokeCommand{.option = "--smoke-descriptor-layout", .run = runSmokeDescriptorLayout},
             SmokeCommand{.option = "--smoke-fullscreen-texture", .run = runSmokeFullscreenTexture},
             SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},

@@ -127,6 +127,7 @@ flowchart TD
     MeshSmoke["--smoke-mesh"]
     Mesh3DSmoke["--smoke-mesh-3d"]
     DrawListSmoke["--smoke-draw-list"]
+    MrtSmoke["--smoke-mrt"]
     DescriptorSmoke["--smoke-descriptor-layout"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
     DeferredDeletionSmoke["--smoke-deferred-deletion"]
@@ -151,6 +152,7 @@ flowchart TD
     Args --> MeshSmoke
     Args --> Mesh3DSmoke
     Args --> DrawListSmoke
+    Args --> MrtSmoke
     Args --> DescriptorSmoke
     Args --> FullscreenTextureSmoke
     Args --> DeferredDeletionSmoke
@@ -189,6 +191,9 @@ flowchart TD
     DrawListSmoke --> Context
     DrawListSmoke --> ShaderBuild
     DrawListSmoke --> RendererObject
+    MrtSmoke --> GLFW
+    MrtSmoke --> Ext
+    MrtSmoke --> Context
     DescriptorSmoke --> GLFW
     DescriptorSmoke --> Ext
     DescriptorSmoke --> Context
@@ -221,6 +226,9 @@ flowchart TD
 - `--smoke-draw-list` 已接入独立 `BasicDrawListRenderer`：使用后端无关 `BasicDrawListItem`、
   `builtin.raster-draw-list` schema、typed params payload、transient depth attachment 和共享 cube
   vertex/index buffer，验证 buffer upload counters、多 item 的 `vkCmdPushConstants` + indexed draw 循环。
+- `--smoke-mrt` 已接入独立 `BasicMrtRenderer`：使用 `builtin.raster-mrt` schema、两个 named color
+  slots、两张 transient color attachments 和 dynamic rendering multi-color clear，验证 transient image
+  pool 对两张 color attachments 的 retire/reuse。
 - `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout /
   pipeline layout 的创建验证，并验证 descriptor allocator-backed pool、descriptor set allocation、
   uniform-buffer write、sampled-image write、sampler write 和 allocator counters。

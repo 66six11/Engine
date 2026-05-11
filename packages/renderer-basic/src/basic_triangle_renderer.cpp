@@ -1156,6 +1156,94 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
+        [[nodiscard]] Result<VkClearValue>
+        basicMrtClearValue(const RenderGraphCommand& command, std::string_view slotName) {
+            auto commandKind =
+                expectCommandKind(command, RenderGraphCommandKind::ClearColor, "MRT clear");
+            if (!commandKind) {
+                return std::unexpected{std::move(commandKind.error())};
+            }
+            if (command.name != slotName) {
+                return std::unexpected{
+                    renderGraphError("MRT clear command does not match its color slot")};
+            }
+
+            return VkClearValue{
+                .color =
+                    VkClearColorValue{{
+                        command.floatValues[0],
+                        command.floatValues[1],
+                        command.floatValues[2],
+                        command.floatValues[3],
+                    }},
+            };
+        }
+
+        [[nodiscard]] Result<std::array<VkClearValue, 2>>
+        basicMrtClearValues(RenderGraphPassContext pass) {
+            constexpr std::size_t kAttachmentCount = 2;
+            if (pass.commands.size() != kAttachmentCount) {
+                return std::unexpected{
+                    renderGraphError("MRT pass expected exactly two clear commands")};
+            }
+
+            auto color0 = basicMrtClearValue(pass.commands[0], "color0");
+            if (!color0) {
+                return std::unexpected{std::move(color0.error())};
+            }
+            auto color1 = basicMrtClearValue(pass.commands[1], "color1");
+            if (!color1) {
+                return std::unexpected{std::move(color1.error())};
+            }
+
+            return std::array{*color0, *color1};
+        }
+
+        void recordMrtClear(const VulkanFrameRecordContext& frame,
+                            const std::array<VulkanRenderGraphImageBinding, 2>& colors,
+                            const std::array<VkClearValue, 2>& clearValues) {
+            const std::array colorAttachments{
+                VkRenderingAttachmentInfo{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                    .pNext = nullptr,
+                    .imageView = colors[0].vulkanImageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .resolveMode = VK_RESOLVE_MODE_NONE,
+                    .resolveImageView = VK_NULL_HANDLE,
+                    .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                    .clearValue = clearValues[0],
+                },
+                VkRenderingAttachmentInfo{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                    .pNext = nullptr,
+                    .imageView = colors[1].vulkanImageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .resolveMode = VK_RESOLVE_MODE_NONE,
+                    .resolveImageView = VK_NULL_HANDLE,
+                    .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                    .clearValue = clearValues[1],
+                },
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = frame.extent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount =
+                static_cast<std::uint32_t>(colorAttachments.size());
+            renderingInfo.pColorAttachments = colorAttachments.data();
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
         [[nodiscard]] Result<void>
         updateBasicFullscreenSourceDescriptor(VkDevice device, VkDescriptorSet descriptorSet,
                                               VkImageView sourceImageView) {
@@ -2144,6 +2232,160 @@ namespace asharia {
 
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        };
+    }
+
+    BasicMrtRenderer::BasicMrtRenderer(BasicMrtRenderer&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    BasicMrtRenderer& BasicMrtRenderer::operator=(BasicMrtRenderer&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        allocator_ = std::exchange(other.allocator_, nullptr);
+        transientImagePool_ = std::move(other.transientImagePool_);
+        transientImages_ = std::move(other.transientImages_);
+        return *this;
+    }
+
+    Result<BasicMrtRenderer> BasicMrtRenderer::create(const BasicMrtRendererDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0, "Cannot create MRT renderer without a device"}};
+        }
+        if (desc.allocator == nullptr) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0, "Cannot create MRT renderer without an allocator"}};
+        }
+
+        BasicMrtRenderer renderer;
+        renderer.device_ = desc.device;
+        renderer.allocator_ = desc.allocator;
+        return renderer;
+    }
+
+    VulkanTransientImagePoolStats BasicMrtRenderer::transientPoolStats() const {
+        return transientImagePool_.stats();
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicMrtRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
+        const RenderGraphImageFormat colorFormat = basicRenderGraphImageFormat(frame.format);
+        if (colorFormat == RenderGraphImageFormat::Undefined) {
+            return std::unexpected{
+                renderGraphError("MRT renderer does not support the current swapchain format")};
+        }
+
+        RenderGraph graph;
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const RenderGraphExtent2D graphExtent = basicRenderGraphExtent(frame.extent);
+        const auto color0 = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "MrtColor0",
+            .format = colorFormat,
+            .extent = graphExtent,
+        });
+        const auto color1 = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "MrtColor1",
+            .format = colorFormat,
+            .extent = graphExtent,
+        });
+        const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
+
+        std::vector<VulkanRenderGraphImageBinding> bindings;
+        bindings.reserve(3);
+        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+
+        graph.addPass("ClearBackbuffer", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
+            .writeTransfer("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
+                [[maybe_unused]] const auto debugLabel =
+                    VulkanDebugLabelScope::begin(frame, pass.name);
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto params = readPassParams<BasicTransferClearParams>(
+                    pass, kBasicTransferClearParamsType, "MRT backbuffer clear pass");
+                if (!params) {
+                    return std::unexpected{std::move(params.error())};
+                }
+                recordTransferClear(frame, basicClearColorValue(*params));
+                return {};
+            });
+
+        graph.addPass("MrtClear", kBasicRasterMrtPassType)
+            .setParamsType(kBasicRasterMrtParamsType)
+            .writeColor("color0", color0)
+            .writeColor("color1", color1)
+            .recordCommands([](RenderGraphCommandList& commands) {
+                commands.clearColor("color0", std::array{0.72F, 0.18F, 0.10F, 1.0F})
+                    .clearColor("color1", std::array{0.08F, 0.34F, 0.78F, 1.0F});
+            })
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
+                [[maybe_unused]] const auto debugLabel =
+                    VulkanDebugLabelScope::begin(frame, pass.name);
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto color0Binding = findVulkanRenderGraphColorWrite(pass, "color0", bindings);
+                if (!color0Binding) {
+                    return std::unexpected{std::move(color0Binding.error())};
+                }
+                auto color1Binding = findVulkanRenderGraphColorWrite(pass, "color1", bindings);
+                if (!color1Binding) {
+                    return std::unexpected{std::move(color1Binding.error())};
+                }
+                auto clearValues = basicMrtClearValues(pass);
+                if (!clearValues) {
+                    return std::unexpected{std::move(clearValues.error())};
+                }
+
+                recordMrtClear(frame, std::array{*color0Binding, *color1Binding}, *clearValues);
+                return {};
+            });
+
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
+                                                  transientImagePool_, transientImages_);
+        if (!prepared) {
+            return std::unexpected{std::move(prepared.error())};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+
+        return VulkanFrameRecordResult{
+            .waitStageMask =
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         };
     }
 

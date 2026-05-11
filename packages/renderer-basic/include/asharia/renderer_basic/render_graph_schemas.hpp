@@ -21,6 +21,8 @@ namespace asharia {
         "builtin.raster-depth-triangle.params";
     inline constexpr char kBasicRasterMesh3DPassType[] = "builtin.raster-mesh3d";
     inline constexpr char kBasicRasterMesh3DParamsType[] = "builtin.raster-mesh3d.params";
+    inline constexpr char kBasicRasterMrtPassType[] = "builtin.raster-mrt";
+    inline constexpr char kBasicRasterMrtParamsType[] = "builtin.raster-mrt.params";
     inline constexpr char kBasicRasterFullscreenPassType[] = "builtin.raster-fullscreen";
     inline constexpr char kBasicRasterFullscreenParamsType[] = "builtin.raster-fullscreen.params";
     inline constexpr char kBasicRasterDrawListPassType[] = "builtin.raster-draw-list";
@@ -158,6 +160,29 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicRasterMrtSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRasterMrtPassType,
+            .paramsType = kBasicRasterMrtParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "color0",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "color1",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {RenderGraphCommandKind::ClearColor},
+        });
+    }
+
     inline void registerBasicRasterFullscreenSchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicRasterFullscreenPassType,
@@ -218,6 +243,7 @@ namespace asharia {
         registerBasicRasterTriangleSchema(schemas);
         registerBasicRasterDepthTriangleSchema(schemas);
         registerBasicRasterMesh3DSchema(schemas);
+        registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
         return schemas;

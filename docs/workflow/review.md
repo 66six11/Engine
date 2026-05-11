@@ -54,6 +54,7 @@ $smokes = @(
     "--smoke-mesh",
     "--smoke-mesh-3d",
     "--smoke-draw-list",
+    "--smoke-mrt",
     "--smoke-descriptor-layout",
     "--smoke-fullscreen-texture",
     "--smoke-offscreen-viewport",

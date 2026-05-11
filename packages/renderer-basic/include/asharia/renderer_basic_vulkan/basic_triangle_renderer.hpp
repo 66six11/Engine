@@ -36,6 +36,11 @@ namespace asharia {
         std::filesystem::path shaderDirectory;
     };
 
+    struct BasicMrtRendererDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        VmaAllocator allocator{};
+    };
+
     struct BasicMesh3DRendererDesc {
         VkDevice device{VK_NULL_HANDLE};
         VmaAllocator allocator{};
@@ -136,6 +141,27 @@ namespace asharia {
         VkDescriptorSet compositeDescriptorSet_{VK_NULL_HANDLE};
         VulkanBuffer uniformBuffer_;
         VulkanSampler sampler_;
+        VulkanTransientImagePool transientImagePool_;
+        std::vector<VulkanTransientImageResource> transientImages_;
+    };
+
+    class BasicMrtRenderer {
+    public:
+        BasicMrtRenderer() = default;
+        BasicMrtRenderer(const BasicMrtRenderer&) = delete;
+        BasicMrtRenderer& operator=(const BasicMrtRenderer&) = delete;
+        BasicMrtRenderer(BasicMrtRenderer&& other) noexcept;
+        BasicMrtRenderer& operator=(BasicMrtRenderer&& other) noexcept;
+        ~BasicMrtRenderer() = default;
+
+        [[nodiscard]] static Result<BasicMrtRenderer> create(const BasicMrtRendererDesc& desc);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] VulkanTransientImagePoolStats transientPoolStats() const;
+
+    private:
+        VkDevice device_{VK_NULL_HANDLE};
+        VmaAllocator allocator_{};
         VulkanTransientImagePool transientImagePool_;
         std::vector<VulkanTransientImageResource> transientImages_;
     };
