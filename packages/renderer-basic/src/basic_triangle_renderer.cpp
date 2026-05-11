@@ -1439,7 +1439,13 @@ namespace asharia {
                     .vulkanImage = resource->image.handle(),
                     .vulkanImageView = resource->imageView.handle(),
                     .aspectMask = resource->image.aspectMask(),
+                    .debugName = allocation.imageName,
                 });
+                auto named =
+                    setVulkanRenderGraphImageDebugNames(frame, bindings.back());
+                if (!named) {
+                    return std::unexpected{std::move(named.error())};
+                }
                 transientImages.push_back(std::move(*resource));
             }
 
@@ -1531,6 +1537,7 @@ namespace asharia {
                 .vulkanImage = target.image,
                 .vulkanImageView = target.imageView,
                 .aspectMask = target.aspectMask,
+                .debugName = {},
             };
         }
 
@@ -2297,6 +2304,10 @@ namespace asharia {
         std::vector<VulkanRenderGraphImageBinding> bindings;
         bindings.reserve(3);
         bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+        auto namedBackbuffer = setVulkanRenderGraphImageDebugNames(frame, bindings.back());
+        if (!namedBackbuffer) {
+            return std::unexpected{std::move(namedBackbuffer.error())};
+        }
 
         graph.addPass("ClearBackbuffer", kBasicTransferClearPassType)
             .setParams(kBasicTransferClearParamsType, clearParams)
@@ -2308,7 +2319,7 @@ namespace asharia {
                 [[maybe_unused]] const auto timestamp =
                     VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
-                    VulkanDebugLabelScope::begin(frame, pass.name);
+                    VulkanDebugLabelScope::begin(frame, renderGraphPassDebugLabel(pass, bindings));
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {
@@ -2336,7 +2347,7 @@ namespace asharia {
                 [[maybe_unused]] const auto timestamp =
                     VulkanTimestampScope::begin(frame, pass.name);
                 [[maybe_unused]] const auto debugLabel =
-                    VulkanDebugLabelScope::begin(frame, pass.name);
+                    VulkanDebugLabelScope::begin(frame, renderGraphPassDebugLabel(pass, bindings));
                 auto transitions =
                     recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
                 if (!transitions) {

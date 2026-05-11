@@ -60,12 +60,12 @@ namespace {
 
     void printUsage() {
         std::cout << "Usage: asharia-sample-viewer [--help] [--version] [--smoke-window] "
-                     "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
-                     "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
-                     "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
-                     "[--smoke-mesh-3d] [--smoke-draw-list] "
-                     "[--smoke-mrt] "
-                     "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
+                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
+                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
+                      "[--smoke-mesh-3d] [--smoke-draw-list] "
+                      "[--smoke-mrt [--frames N] [--hold]] "
+                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
                      "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
                      "[--smoke-reflection-contexts] [--smoke-serialization-roundtrip] "
@@ -667,6 +667,11 @@ namespace {
         double maxMilliseconds{};
     };
 
+    struct SmokeMrtOptions {
+        std::size_t frameCount{3};
+        bool hold{};
+    };
+
     bool parseSizeOption(std::span<char*> args, std::string_view option, std::size_t& value) {
         const std::optional<std::string_view> text = argValue(args, option);
         if (!text) {
@@ -697,6 +702,17 @@ namespace {
             options.outputPath = std::filesystem::path{std::string{*output}};
         }
 
+        return options;
+    }
+
+    std::optional<SmokeMrtOptions> parseSmokeMrtOptions(std::span<char*> args) {
+        SmokeMrtOptions options{
+            .frameCount = 3,
+            .hold = hasArg(args, "--hold"),
+        };
+        if (!parseSizeOption(args, "--frames", options.frameCount)) {
+            return std::nullopt;
+        }
         return options;
     }
 
@@ -1244,7 +1260,12 @@ namespace {
         return EXIT_SUCCESS;
     }
 
-    int runSmokeMrt() {
+    int runSmokeMrt(std::span<char*> args) {
+        const std::optional<SmokeMrtOptions> options = parseSmokeMrtOptions(args);
+        if (!options) {
+            return EXIT_FAILURE;
+        }
+
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
             asharia::logError(glfw.error().message);
@@ -1307,7 +1328,8 @@ namespace {
                 return renderer->recordFrame(frame);
             };
 
-        for (int frame = 0; frame < 3; ++frame) {
+        std::size_t renderedFrames = 0;
+        while (options->hold ? !window->shouldClose() : renderedFrames < options->frameCount) {
             asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
@@ -1323,21 +1345,33 @@ namespace {
                 return EXIT_FAILURE;
             }
 
+            ++renderedFrames;
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(16ms);
+        }
+        if (renderedFrames == 0) {
+            asharia::logError("MRT smoke did not render any frames.");
+            return EXIT_FAILURE;
         }
 
         const asharia::VulkanTransientImagePoolStats transientPoolStats =
             renderer->transientPoolStats();
-        if (transientPoolStats.created < 2 || transientPoolStats.reused < 2 ||
-            transientPoolStats.retired < 2) {
+        if (renderedFrames >= 3 && (transientPoolStats.created < 2 ||
+                                    transientPoolStats.reused < 2 ||
+                                    transientPoolStats.retired < 2)) {
             asharia::logError("MRT smoke did not reuse both transient color attachments.");
             return EXIT_FAILURE;
         }
-        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "MRT smoke")) {
+        const asharia::VulkanDebugLabelStats debugLabelStats = frameLoop->debugLabelStats();
+        if (!validateDebugLabelStats(debugLabelStats, "MRT smoke")) {
             return EXIT_FAILURE;
         }
-        if (!validateTimestampStats(frameLoop->timestampStats(),
+        if (debugLabelStats.objectsNamed == 0) {
+            asharia::logError("MRT smoke did not name Vulkan resources for capture tools.");
+            return EXIT_FAILURE;
+        }
+        if (renderedFrames >= 3 &&
+            !validateTimestampStats(frameLoop->timestampStats(),
                                     frameLoop->latestTimestampTimings(), "MRT smoke")) {
             return EXIT_FAILURE;
         }
@@ -3780,6 +3814,9 @@ namespace {
         if (hasArg(args, "--bench-rendergraph")) {
             return runBenchRenderGraph(args);
         }
+        if (hasArg(args, "--smoke-mrt")) {
+            return runSmokeMrt(args);
+        }
 
         struct SmokeCommand {
             std::string_view option;
@@ -3799,7 +3836,6 @@ namespace {
             SmokeCommand{.option = "--smoke-mesh", .run = runSmokeMesh},
             SmokeCommand{.option = "--smoke-mesh-3d", .run = runSmokeMesh3D},
             SmokeCommand{.option = "--smoke-draw-list", .run = runSmokeDrawList},
-            SmokeCommand{.option = "--smoke-mrt", .run = runSmokeMrt},
             SmokeCommand{.option = "--smoke-descriptor-layout", .run = runSmokeDescriptorLayout},
             SmokeCommand{.option = "--smoke-fullscreen-texture", .run = runSmokeFullscreenTexture},
             SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},

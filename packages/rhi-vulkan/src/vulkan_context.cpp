@@ -229,15 +229,21 @@ namespace asharia {
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
                     vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT"));
+            const auto setObjectName =
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
+                    vkGetInstanceProcAddr(instance, "vkSetDebugUtilsObjectNameEXT"));
 
-            if (beginCommandLabel == nullptr || endCommandLabel == nullptr) {
+            if (beginCommandLabel == nullptr || endCommandLabel == nullptr ||
+                setObjectName == nullptr) {
                 return std::unexpected{
-                    vulkanError("Failed to load Vulkan debug utils command label functions")};
+                    vulkanError("Failed to load Vulkan debug utils annotation functions")};
             }
 
             return VulkanDebugLabelFunctions{
                 .beginCommandLabel = beginCommandLabel,
                 .endCommandLabel = endCommandLabel,
+                .setObjectName = setObjectName,
             };
         }
 

@@ -45,6 +45,7 @@ namespace asharia {
     struct VulkanDebugLabelFunctions {
         PFN_vkCmdBeginDebugUtilsLabelEXT beginCommandLabel{};
         PFN_vkCmdEndDebugUtilsLabelEXT endCommandLabel{};
+        PFN_vkSetDebugUtilsObjectNameEXT setObjectName{};
     };
 
     class VulkanContext {
