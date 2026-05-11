@@ -18,10 +18,10 @@ flowchart TD
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
     RG["packages/rendergraph"]
-    RhiVk["packages/rhi-vulkan<br/>vke::rhi_vulkan"]
-    RhiVkRG["packages/rhi-vulkan<br/>vke::rhi_vulkan_rendergraph"]
-    Renderer["packages/renderer-basic<br/>vke::renderer_basic"]
-    RendererVk["packages/renderer-basic<br/>vke::renderer_basic_vulkan"]
+    RhiVk["packages/rhi-vulkan<br/>asharia::rhi_vulkan"]
+    RhiVkRG["packages/rhi-vulkan<br/>asharia::rhi_vulkan_rendergraph"]
+    Renderer["packages/renderer-basic<br/>asharia::renderer_basic"]
+    RendererVk["packages/renderer-basic<br/>asharia::renderer_basic_vulkan"]
     Shader["packages/shader-slang"]
 
     Platform --> Core
@@ -49,8 +49,8 @@ flowchart TD
 
 当前约束：
 
-- `vke::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
-- `vke::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
+- `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
+- `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
 - `renderer-basic-vulkan` 组合 RenderGraph、Vulkan frame callback 和 Vulkan adapter，承载当前 clear frame orchestration。
 - `profiling` 提供后端无关 CPU scope、frame profile 和 JSONL 输出；当前只由 sample-viewer benchmark 使用。
@@ -570,7 +570,7 @@ flowchart TD
 - `readDepth("depth", image)` 会要求 image 进入 `DepthAttachmentRead`。
 - `sampleDepth("depth", image, shaderStage)` 会要求 image 进入 `DepthSampledRead(shaderStage)`。
 - 同一 pass 内同一 image 现在不能跨 access group 重复声明。Unity/RDG 工具里的 read-write 展示是访问摘要；
-  VkEngine 后续若支持 attachment read/write、blend/load、storage read/write、framebuffer fetch 或
+  Asharia Engine 后续若支持 attachment read/write、blend/load、storage read/write、framebuffer fetch 或
   grab/copy-to-temp，必须先新增明确 state/API 和 Vulkan feature/layout/access 映射。
 - compiled pass 和 executor context 已携带 `colorWriteSlots` / `shaderReadSlots` / `transferWriteSlots`，
   `--smoke-rendergraph` 会验证 slot name、shader stage 并在调试表输出 slot。

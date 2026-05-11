@@ -1,4 +1,4 @@
-﻿#include "vke/serialization/text_archive.hpp"
+﻿#include "asharia/serialization/text_archive.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace vke::serialization {
+namespace asharia::serialization {
     namespace {
 
         using OrderedJson = nlohmann::ordered_json;
@@ -216,4 +216,4 @@ namespace vke::serialization {
         return archive;
     }
 
-} // namespace vke::serialization
+} // namespace asharia::serialization

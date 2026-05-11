@@ -1,55 +1,55 @@
 cmake_minimum_required(VERSION 3.28)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(VkEngineSerialization VERSION 0.1.0 LANGUAGES CXX)
+  project(AshariaEngineSerialization VERSION 0.1.0 LANGUAGES CXX)
 endif()
 
-if(NOT DEFINED VKE_REPOSITORY_ROOT)
-  get_filename_component(VKE_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
+  get_filename_component(ASHARIA_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 endif()
-include("${VKE_REPOSITORY_ROOT}/cmake/VkePackage.cmake")
-vke_package_init()
-vke_require_package_target(vke::core engine/core)
-vke_require_package_target(vke::reflection packages/reflection)
+include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
+asharia_package_init()
+asharia_require_package_target(asharia::core engine/core)
+asharia_require_package_target(asharia::reflection packages/reflection)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 
-add_library(vke-serialization STATIC
+add_library(asharia-serialization STATIC
     src/archive_value.cpp
     src/serializer.cpp
     src/text_archive.cpp
 )
 
-add_library(vke::serialization ALIAS vke-serialization)
+add_library(asharia::serialization ALIAS asharia-serialization)
 
-target_include_directories(vke-serialization
+target_include_directories(asharia-serialization
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(vke-serialization
+target_link_libraries(asharia-serialization
     PUBLIC
-        vke::core
-        vke::reflection
+        asharia::core
+        asharia::reflection
     PRIVATE
         nlohmann_json::nlohmann_json
 )
 
-vke_configure_target(vke-serialization)
+asharia_configure_target(asharia-serialization)
 
-if(VKE_BUILD_TESTS)
+if(ASHARIA_BUILD_TESTS)
   enable_testing()
 
-  add_executable(vke-serialization-smoke-tests
+  add_executable(asharia-serialization-smoke-tests
       tests/serialization_smoke_tests.cpp
   )
 
-  target_link_libraries(vke-serialization-smoke-tests
+  target_link_libraries(asharia-serialization-smoke-tests
       PRIVATE
-          vke::serialization
+          asharia::serialization
   )
 
-  vke_configure_target(vke-serialization-smoke-tests)
+  asharia_configure_target(asharia-serialization-smoke-tests)
 
-  add_test(NAME vke-serialization-smoke-tests COMMAND vke-serialization-smoke-tests)
+  add_test(NAME asharia-serialization-smoke-tests COMMAND asharia-serialization-smoke-tests)
 endif()

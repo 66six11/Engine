@@ -5,7 +5,7 @@
 当前仓库布局：
 
 ```text
-VkEngine/
+AshariaEngine/
   CMakeLists.txt
   CMakePresets.json
   conanfile.py

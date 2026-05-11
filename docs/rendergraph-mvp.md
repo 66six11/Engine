@@ -34,7 +34,7 @@
 
 当前基线：
 
-- `vke-sample-viewer --smoke-frame` 创建 swapchain，清理当前 backbuffer，并 present 一帧。
+- `asharia-sample-viewer --smoke-frame` 创建 swapchain，清理当前 backbuffer，并 present 一帧。
 - out-of-date/suboptimal 已接入 swapchain recreate；窗口最小化等零尺寸情况会返回 `OutOfDate`，等待调用方在恢复尺寸后继续渲染。
 
 ## 里程碑 3：第一个 Render Graph
@@ -49,7 +49,7 @@
 
 当前基线：
 
-- `vke-sample-viewer --smoke-rendergraph` 构建一个导入 backbuffer 的单 pass graph。
+- `asharia-sample-viewer --smoke-rendergraph` 构建一个导入 backbuffer 的单 pass graph。
 - 编译结果输出 transfer-dst transition 和 present final transition，匹配当前 clear frame 使用的 `vkCmdClearColorImage` 路径。
 - execute 路径会按编译后的 pass 顺序调用 pass callback，并向 callback 暴露 transitions、color writes 与 transfer writes。
 - execute 支持消费已有 `RenderGraphCompileResult`，避免需要外部读取编译结果时重复编译。

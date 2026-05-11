@@ -1,47 +1,47 @@
 cmake_minimum_required(VERSION 3.28)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(VkEngineReflection VERSION 0.1.0 LANGUAGES CXX)
+  project(AshariaEngineReflection VERSION 0.1.0 LANGUAGES CXX)
 endif()
 
-if(NOT DEFINED VKE_REPOSITORY_ROOT)
-  get_filename_component(VKE_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
+  get_filename_component(ASHARIA_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 endif()
-include("${VKE_REPOSITORY_ROOT}/cmake/VkePackage.cmake")
-vke_package_init()
-vke_require_package_target(vke::core engine/core)
+include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
+asharia_package_init()
+asharia_require_package_target(asharia::core engine/core)
 
-add_library(vke-reflection STATIC
+add_library(asharia-reflection STATIC
     src/type_registry.cpp
 )
 
-add_library(vke::reflection ALIAS vke-reflection)
+add_library(asharia::reflection ALIAS asharia-reflection)
 
-target_include_directories(vke-reflection
+target_include_directories(asharia-reflection
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(vke-reflection
+target_link_libraries(asharia-reflection
     PUBLIC
-        vke::core
+        asharia::core
 )
 
-vke_configure_target(vke-reflection)
+asharia_configure_target(asharia-reflection)
 
-if(VKE_BUILD_TESTS)
+if(ASHARIA_BUILD_TESTS)
   enable_testing()
 
-  add_executable(vke-reflection-smoke-tests
+  add_executable(asharia-reflection-smoke-tests
       tests/reflection_smoke_tests.cpp
   )
 
-  target_link_libraries(vke-reflection-smoke-tests
+  target_link_libraries(asharia-reflection-smoke-tests
       PRIVATE
-          vke::reflection
+          asharia::reflection
   )
 
-  vke_configure_target(vke-reflection-smoke-tests)
+  asharia_configure_target(asharia-reflection-smoke-tests)
 
-  add_test(NAME vke-reflection-smoke-tests COMMAND vke-reflection-smoke-tests)
+  add_test(NAME asharia-reflection-smoke-tests COMMAND asharia-reflection-smoke-tests)
 endif()

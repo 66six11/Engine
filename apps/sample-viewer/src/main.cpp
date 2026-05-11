@@ -18,26 +18,26 @@
 #include <thread>
 #include <vector>
 
-#include "vke/core/log.hpp"
-#include "vke/core/version.hpp"
-#include "vke/profiling/frame_profiler.hpp"
-#include "vke/reflection/context_view.hpp"
-#include "vke/reflection/type_builder.hpp"
-#include "vke/renderer_basic/render_graph_schemas.hpp"
-#include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
-#include "vke/renderer_basic_vulkan/clear_frame.hpp"
-#include "vke/rendergraph/render_graph.hpp"
-#include "vke/rhi_vulkan/deferred_deletion_queue.hpp"
-#include "vke/rhi_vulkan/vulkan_context.hpp"
-#include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
-#include "vke/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
-#include "vke/serialization/serializer.hpp"
-#include "vke/serialization/text_archive.hpp"
-#include "vke/window_glfw/glfw_window.hpp"
+#include "asharia/core/log.hpp"
+#include "asharia/core/version.hpp"
+#include "asharia/profiling/frame_profiler.hpp"
+#include "asharia/reflection/context_view.hpp"
+#include "asharia/reflection/type_builder.hpp"
+#include "asharia/renderer_basic/render_graph_schemas.hpp"
+#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/renderer_basic_vulkan/clear_frame.hpp"
+#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rhi_vulkan/deferred_deletion_queue.hpp"
+#include "asharia/rhi_vulkan/vulkan_context.hpp"
+#include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
+#include "asharia/serialization/serializer.hpp"
+#include "asharia/serialization/text_archive.hpp"
+#include "asharia/window_glfw/glfw_window.hpp"
 
 namespace {
 
-    constexpr vke::VulkanDebugLabelMode kSmokeDebugLabels = vke::VulkanDebugLabelMode::Required;
+    constexpr asharia::VulkanDebugLabelMode kSmokeDebugLabels = asharia::VulkanDebugLabelMode::Required;
 
     bool hasArg(std::span<char*> args, std::string_view expected) {
         return std::ranges::any_of(
@@ -54,12 +54,12 @@ namespace {
     }
 
     void printVersion() {
-        std::cout << vke::kEngineName << ' ' << vke::kEngineVersion.major << '.'
-                  << vke::kEngineVersion.minor << '.' << vke::kEngineVersion.patch << '\n';
+        std::cout << asharia::kEngineName << ' ' << asharia::kEngineVersion.major << '.'
+                  << asharia::kEngineVersion.minor << '.' << asharia::kEngineVersion.patch << '\n';
     }
 
     void printUsage() {
-        std::cout << "Usage: vke-sample-viewer [--help] [--version] [--smoke-window] "
+        std::cout << "Usage: asharia-sample-viewer [--help] [--version] [--smoke-window] "
                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
@@ -72,26 +72,26 @@ namespace {
                      "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
-    bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
+    bool isRenderableExtent(asharia::WindowFramebufferExtent extent) {
         return extent.width > 0 && extent.height > 0;
     }
 
-    bool extentMatches(VkExtent2D lhs, vke::WindowFramebufferExtent rhs) {
+    bool extentMatches(VkExtent2D lhs, asharia::WindowFramebufferExtent rhs) {
         return lhs.width == rhs.width && lhs.height == rhs.height;
     }
 
-    std::string_view triangleSmokeTitle(bool useDepth, vke::BasicMeshKind meshKind) {
-        if (meshKind == vke::BasicMeshKind::IndexedQuad) {
-            return "VkEngine Mesh Smoke";
+    std::string_view triangleSmokeTitle(bool useDepth, asharia::BasicMeshKind meshKind) {
+        if (meshKind == asharia::BasicMeshKind::IndexedQuad) {
+            return "Asharia Engine Mesh Smoke";
         }
         if (useDepth) {
-            return "VkEngine Depth Triangle Smoke";
+            return "Asharia Engine Depth Triangle Smoke";
         }
-        return "VkEngine Triangle Smoke";
+        return "Asharia Engine Triangle Smoke";
     }
 
-    std::string_view triangleSmokeOutOfDateMessage(bool useDepth, vke::BasicMeshKind meshKind) {
-        if (meshKind == vke::BasicMeshKind::IndexedQuad) {
+    std::string_view triangleSmokeOutOfDateMessage(bool useDepth, asharia::BasicMeshKind meshKind) {
+        if (meshKind == asharia::BasicMeshKind::IndexedQuad) {
             return "Swapchain remained out of date during mesh smoke.";
         }
         if (useDepth) {
@@ -100,8 +100,8 @@ namespace {
         return "Swapchain remained out of date during triangle smoke.";
     }
 
-    std::string_view triangleSmokeRenderedPrefix(bool useDepth, vke::BasicMeshKind meshKind) {
-        if (meshKind == vke::BasicMeshKind::IndexedQuad) {
+    std::string_view triangleSmokeRenderedPrefix(bool useDepth, asharia::BasicMeshKind meshKind) {
+        if (meshKind == asharia::BasicMeshKind::IndexedQuad) {
             return "Rendered indexed mesh frames: ";
         }
         if (useDepth) {
@@ -110,34 +110,34 @@ namespace {
         return "Rendered triangle frames: ";
     }
 
-    bool validatePipelineCacheStats(vke::BasicPipelineCacheStats stats, std::string_view context) {
+    bool validatePipelineCacheStats(asharia::BasicPipelineCacheStats stats, std::string_view context) {
         if (stats.created != 1 || stats.reused < 2) {
-            vke::logError(std::string{context} +
+            asharia::logError(std::string{context} +
                           " did not reuse its renderer pipeline after the first frame.");
             return false;
         }
         return true;
     }
 
-    bool validateOffscreenViewportStats(vke::BasicOffscreenViewportStats stats,
+    bool validateOffscreenViewportStats(asharia::BasicOffscreenViewportStats stats,
                                         std::string_view context) {
         if (stats.renderTargetsCreated != 2 || stats.renderTargetsReused < 2 ||
             stats.renderTargetsDeferredForDeletion != 1) {
-            vke::logError(std::string{context} +
+            asharia::logError(std::string{context} +
                           " did not resize and reuse its offscreen viewport render target.");
             return false;
         }
         return true;
     }
 
-    bool validateOffscreenViewportTarget(vke::BasicOffscreenViewportTarget target,
+    bool validateOffscreenViewportTarget(asharia::BasicOffscreenViewportTarget target,
                                          VkFormat expectedFormat, VkExtent2D expectedExtent,
                                          std::string_view context) {
         if (target.image == VK_NULL_HANDLE || target.imageView == VK_NULL_HANDLE ||
             target.format != expectedFormat || target.extent.width != expectedExtent.width ||
             target.extent.height != expectedExtent.height ||
             target.sampledLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            vke::logError(std::string{context} +
+            asharia::logError(std::string{context} +
                           " did not expose a sampled offscreen viewport target.");
             return false;
         }
@@ -170,23 +170,23 @@ namespace {
         std::int32_t scriptCounter{};
     };
 
-    const vke::reflection::FieldInfo* findField(const vke::reflection::TypeInfo& type,
+    const asharia::reflection::FieldInfo* findField(const asharia::reflection::TypeInfo& type,
                                                 std::string_view name) {
         const auto found =
-            std::ranges::find_if(type.fields, [name](const vke::reflection::FieldInfo& field) {
+            std::ranges::find_if(type.fields, [name](const asharia::reflection::FieldInfo& field) {
                 return field.name == name;
             });
         return found == type.fields.end() ? nullptr : &*found;
     }
 
-    bool hasContextField(const vke::reflection::ContextFieldView& view, std::string_view name) {
-        return std::ranges::any_of(view.fields, [name](const vke::reflection::FieldInfo* field) {
+    bool hasContextField(const asharia::reflection::ContextFieldView& view, std::string_view name) {
+        return std::ranges::any_of(view.fields, [name](const asharia::reflection::FieldInfo* field) {
             return field != nullptr && field->name == name;
         });
     }
 
-    vke::VoidResult registerReflectionSmokeTypes(vke::reflection::TypeRegistry& registry) {
-        using namespace vke::reflection;
+    asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
+        using namespace asharia::reflection;
 
         auto builtins = registerBuiltinTypes(registry);
         if (!builtins) {
@@ -236,63 +236,63 @@ namespace {
             .commit();
     }
 
-    std::optional<vke::reflection::TypeRegistry> makeReflectionSmokeRegistry() {
-        vke::reflection::TypeRegistry registry;
+    std::optional<asharia::reflection::TypeRegistry> makeReflectionSmokeRegistry() {
+        asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
-            vke::logError(registered.error().message);
+            asharia::logError(registered.error().message);
             return std::nullopt;
         }
         auto frozen = registry.freeze();
         if (!frozen) {
-            vke::logError(frozen.error().message);
+            asharia::logError(frozen.error().message);
             return std::nullopt;
         }
         return registry;
     }
 
     int runSmokeReflectionRegistry() {
-        vke::reflection::TypeRegistry registry;
+        asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
-            vke::logError(registered.error().message);
+            asharia::logError(registered.error().message);
             return EXIT_FAILURE;
         }
 
         if (registry.findType(kSmokeTransformTypeName) == nullptr) {
-            vke::logError("Reflection registry smoke could not find the transform type.");
+            asharia::logError("Reflection registry smoke could not find the transform type.");
             return EXIT_FAILURE;
         }
 
-        vke::reflection::TypeInfo duplicate{
-            .id = vke::reflection::makeTypeId(kSmokeTransformTypeName),
+        asharia::reflection::TypeInfo duplicate{
+            .id = asharia::reflection::makeTypeId(kSmokeTransformTypeName),
             .name = std::string{kSmokeTransformTypeName},
             .version = 1,
-            .kind = vke::reflection::TypeKind::Component,
+            .kind = asharia::reflection::TypeKind::Component,
             .fields = {},
         };
         auto duplicateRegistered = registry.registerType(std::move(duplicate));
         if (duplicateRegistered) {
-            vke::logError("Reflection registry smoke accepted a duplicate type.");
+            asharia::logError("Reflection registry smoke accepted a duplicate type.");
             return EXIT_FAILURE;
         }
 
         auto frozen = registry.freeze();
         if (!frozen) {
-            vke::logError(frozen.error().message);
+            asharia::logError(frozen.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::reflection::TypeInfo lateType{
-            .id = vke::reflection::makeTypeId("com.asharia.smoke.LateType"),
+        asharia::reflection::TypeInfo lateType{
+            .id = asharia::reflection::makeTypeId("com.asharia.smoke.LateType"),
             .name = "com.asharia.smoke.LateType",
             .version = 1,
-            .kind = vke::reflection::TypeKind::Struct,
+            .kind = asharia::reflection::TypeKind::Struct,
             .fields = {},
         };
         auto lateRegistered = registry.registerType(std::move(lateType));
         if (lateRegistered) {
-            vke::logError("Reflection registry smoke accepted registration after freeze.");
+            asharia::logError("Reflection registry smoke accepted registration after freeze.");
             return EXIT_FAILURE;
         }
 
@@ -306,23 +306,23 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        const vke::reflection::TypeInfo* transformType =
+        const asharia::reflection::TypeInfo* transformType =
             registry->findType(kSmokeTransformTypeName);
         if (transformType == nullptr || transformType->fields.size() != 6) {
-            vke::logError("Reflection transform smoke saw an unexpected field count.");
+            asharia::logError("Reflection transform smoke saw an unexpected field count.");
             return EXIT_FAILURE;
         }
 
-        const vke::reflection::FieldInfo* positionField = findField(*transformType, "position");
-        const vke::reflection::FieldInfo* cachedField =
+        const asharia::reflection::FieldInfo* positionField = findField(*transformType, "position");
+        const asharia::reflection::FieldInfo* cachedField =
             findField(*transformType, "cachedMagnitude");
         if (positionField == nullptr || cachedField == nullptr ||
-            !positionField->flags.has(vke::reflection::FieldFlag::Serializable) ||
-            !positionField->flags.has(vke::reflection::FieldFlag::EditorVisible) ||
-            !positionField->flags.has(vke::reflection::FieldFlag::RuntimeVisible) ||
-            !positionField->flags.has(vke::reflection::FieldFlag::ScriptVisible) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::Serializable) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::EditorVisible) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::RuntimeVisible) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::ScriptVisible) ||
             cachedField->accessor.writeAddress) {
-            vke::logError("Reflection transform smoke saw unexpected field metadata.");
+            asharia::logError("Reflection transform smoke saw unexpected field metadata.");
             return EXIT_FAILURE;
         }
 
@@ -340,12 +340,12 @@ namespace {
         auto* writePosition =
             static_cast<ReflectionSmokeVec3*>(positionField->accessor.writeAddress(&transform));
         if (readPosition == nullptr || writePosition == nullptr || readPosition->x != 1.0F) {
-            vke::logError("Reflection transform smoke failed to read position through accessor.");
+            asharia::logError("Reflection transform smoke failed to read position through accessor.");
             return EXIT_FAILURE;
         }
         writePosition->x = 4.0F;
         if (transform.position.x != 4.0F) {
-            vke::logError("Reflection transform smoke failed to write position through accessor.");
+            asharia::logError("Reflection transform smoke failed to write position through accessor.");
             return EXIT_FAILURE;
         }
 
@@ -359,19 +359,19 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        const vke::reflection::TypeInfo* transformType =
+        const asharia::reflection::TypeInfo* transformType =
             registry->findType(kSmokeTransformTypeName);
         if (transformType == nullptr) {
-            vke::logError("Reflection context smoke could not find transform type.");
+            asharia::logError("Reflection context smoke could not find transform type.");
             return EXIT_FAILURE;
         }
 
-        const vke::reflection::ContextFieldView serializeView =
-            vke::reflection::makeSerializeContextView(*transformType);
-        const vke::reflection::ContextFieldView editView =
-            vke::reflection::makeEditContextView(*transformType);
-        const vke::reflection::ContextFieldView scriptView =
-            vke::reflection::makeScriptContextView(*transformType);
+        const asharia::reflection::ContextFieldView serializeView =
+            asharia::reflection::makeSerializeContextView(*transformType);
+        const asharia::reflection::ContextFieldView editView =
+            asharia::reflection::makeEditContextView(*transformType);
+        const asharia::reflection::ContextFieldView scriptView =
+            asharia::reflection::makeScriptContextView(*transformType);
 
         if (!hasContextField(serializeView, "debugName") ||
             hasContextField(serializeView, "cachedMagnitude") ||
@@ -379,7 +379,7 @@ namespace {
             hasContextField(editView, "scriptCounter") ||
             !hasContextField(scriptView, "scriptCounter") ||
             hasContextField(scriptView, "debugName")) {
-            vke::logError("Reflection context smoke produced unexpected field projections.");
+            asharia::logError("Reflection context smoke produced unexpected field projections.");
             return EXIT_FAILURE;
         }
 
@@ -395,8 +395,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        const vke::reflection::TypeId transformType =
-            vke::reflection::makeTypeId(kSmokeTransformTypeName);
+        const asharia::reflection::TypeId transformType =
+            asharia::reflection::makeTypeId(kSmokeTransformTypeName);
         const ReflectionSmokeTransform source{
             .position = {.x = 1.0F, .y = 2.0F, .z = 3.0F},
             .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
@@ -406,32 +406,32 @@ namespace {
             .scriptCounter = 12,
         };
 
-        auto archive = vke::serialization::serializeObject(*registry, transformType, &source);
+        auto archive = asharia::serialization::serializeObject(*registry, transformType, &source);
         if (!archive) {
-            vke::logError(archive.error().message);
+            asharia::logError(archive.error().message);
             return EXIT_FAILURE;
         }
 
-        auto firstText = vke::serialization::writeTextArchive(*archive);
+        auto firstText = asharia::serialization::writeTextArchive(*archive);
         if (!firstText) {
-            vke::logError(firstText.error().message);
+            asharia::logError(firstText.error().message);
             return EXIT_FAILURE;
         }
-        auto secondText = vke::serialization::writeTextArchive(*archive);
+        auto secondText = asharia::serialization::writeTextArchive(*archive);
         if (!secondText) {
-            vke::logError(secondText.error().message);
+            asharia::logError(secondText.error().message);
             return EXIT_FAILURE;
         }
         if (*firstText != *secondText) {
-            vke::logError("Serialization roundtrip smoke produced nondeterministic text.");
+            asharia::logError("Serialization roundtrip smoke produced nondeterministic text.");
             return EXIT_FAILURE;
         }
 
         ReflectionSmokeTransform loaded{};
         auto loadedResult =
-            vke::serialization::deserializeObject(*registry, transformType, *archive, &loaded);
+            asharia::serialization::deserializeObject(*registry, transformType, *archive, &loaded);
         if (!loadedResult) {
-            vke::logError(loadedResult.error().message);
+            asharia::logError(loadedResult.error().message);
             return EXIT_FAILURE;
         }
 
@@ -439,47 +439,47 @@ namespace {
             loaded.position.z != source.position.z || loaded.rotation.w != source.rotation.w ||
             loaded.scale.x != source.scale.x || loaded.debugName != source.debugName ||
             loaded.cachedMagnitude != 0.0F || loaded.scriptCounter != 0) {
-            vke::logError("Serialization roundtrip smoke loaded unexpected values.");
+            asharia::logError("Serialization roundtrip smoke loaded unexpected values.");
             return EXIT_FAILURE;
         }
 
-        vke::serialization::ArchiveValue badArchive = *archive;
-        vke::serialization::ArchiveValue* fields = badArchive.findMemberValue("fields");
-        vke::serialization::ArchiveValue* position =
+        asharia::serialization::ArchiveValue badArchive = *archive;
+        asharia::serialization::ArchiveValue* fields = badArchive.findMemberValue("fields");
+        asharia::serialization::ArchiveValue* position =
             fields == nullptr ? nullptr : fields->findMemberValue("position");
-        vke::serialization::ArchiveValue* positionFields =
+        asharia::serialization::ArchiveValue* positionFields =
             position == nullptr ? nullptr : position->findMemberValue("fields");
-        vke::serialization::ArchiveValue* xValue =
+        asharia::serialization::ArchiveValue* xValue =
             positionFields == nullptr ? nullptr : positionFields->findMemberValue("x");
         if (xValue == nullptr) {
-            vke::logError("Serialization roundtrip smoke could not edit the bad archive.");
+            asharia::logError("Serialization roundtrip smoke could not edit the bad archive.");
             return EXIT_FAILURE;
         }
-        *xValue = vke::serialization::ArchiveValue::string("wrong");
+        *xValue = asharia::serialization::ArchiveValue::string("wrong");
 
         ReflectionSmokeTransform rejected{};
         auto rejectedResult =
-            vke::serialization::deserializeObject(*registry, transformType, badArchive, &rejected);
+            asharia::serialization::deserializeObject(*registry, transformType, badArchive, &rejected);
         if (rejectedResult || rejectedResult.error().message.find(".x") == std::string::npos) {
-            vke::logError("Serialization roundtrip smoke did not reject a bad field type.");
+            asharia::logError("Serialization roundtrip smoke did not reject a bad field type.");
             return EXIT_FAILURE;
         }
 
-        vke::serialization::ArchiveValue badVersionArchive = *archive;
-        vke::serialization::ArchiveValue* versionValue =
+        asharia::serialization::ArchiveValue badVersionArchive = *archive;
+        asharia::serialization::ArchiveValue* versionValue =
             badVersionArchive.findMemberValue("version");
         if (versionValue == nullptr) {
-            vke::logError("Serialization roundtrip smoke could not edit the archive version.");
+            asharia::logError("Serialization roundtrip smoke could not edit the archive version.");
             return EXIT_FAILURE;
         }
-        *versionValue = vke::serialization::ArchiveValue::integer(2);
+        *versionValue = asharia::serialization::ArchiveValue::integer(2);
 
         ReflectionSmokeTransform rejectedVersion{};
-        auto rejectedVersionResult = vke::serialization::deserializeObject(
+        auto rejectedVersionResult = asharia::serialization::deserializeObject(
             *registry, transformType, badVersionArchive, &rejectedVersion);
         if (rejectedVersionResult ||
             rejectedVersionResult.error().message.find("version") == std::string::npos) {
-            vke::logError("Serialization roundtrip smoke did not reject a bad type version.");
+            asharia::logError("Serialization roundtrip smoke did not reject a bad type version.");
             return EXIT_FAILURE;
         }
 
@@ -496,99 +496,99 @@ namespace {
         validUtf8.push_back(static_cast<char>(0xC3));
         validUtf8.push_back(static_cast<char>(0xA9));
 
-        vke::serialization::ArchiveValue archive = vke::serialization::ArchiveValue::object({
-            vke::serialization::ArchiveMember{
+        asharia::serialization::ArchiveValue archive = asharia::serialization::ArchiveValue::object({
+            asharia::serialization::ArchiveMember{
                 .key = "escaped",
-                .value = vke::serialization::ArchiveValue::string(escaped),
+                .value = asharia::serialization::ArchiveValue::string(escaped),
             },
-            vke::serialization::ArchiveMember{
+            asharia::serialization::ArchiveMember{
                 .key = "validUtf8",
-                .value = vke::serialization::ArchiveValue::string(validUtf8),
+                .value = asharia::serialization::ArchiveValue::string(validUtf8),
             },
-            vke::serialization::ArchiveMember{
+            asharia::serialization::ArchiveMember{
                 .key = "array",
-                .value = vke::serialization::ArchiveValue::array({
-                    vke::serialization::ArchiveValue::integer(7),
-                    vke::serialization::ArchiveValue::floating(0.25),
-                    vke::serialization::ArchiveValue::boolean(true),
+                .value = asharia::serialization::ArchiveValue::array({
+                    asharia::serialization::ArchiveValue::integer(7),
+                    asharia::serialization::ArchiveValue::floating(0.25),
+                    asharia::serialization::ArchiveValue::boolean(true),
                 }),
             },
         });
 
-        auto firstText = vke::serialization::writeTextArchive(archive);
+        auto firstText = asharia::serialization::writeTextArchive(archive);
         if (!firstText) {
-            vke::logError(firstText.error().message);
+            asharia::logError(firstText.error().message);
             return EXIT_FAILURE;
         }
-        auto secondText = vke::serialization::writeTextArchive(archive);
+        auto secondText = asharia::serialization::writeTextArchive(archive);
         if (!secondText) {
-            vke::logError(secondText.error().message);
+            asharia::logError(secondText.error().message);
             return EXIT_FAILURE;
         }
         if (*firstText != *secondText) {
-            vke::logError("JSON archive smoke produced nondeterministic output.");
+            asharia::logError("JSON archive smoke produced nondeterministic output.");
             return EXIT_FAILURE;
         }
 
-        auto parsed = vke::serialization::readTextArchive(*firstText);
+        auto parsed = asharia::serialization::readTextArchive(*firstText);
         if (!parsed) {
-            vke::logError(parsed.error().message);
+            asharia::logError(parsed.error().message);
             return EXIT_FAILURE;
         }
-        const vke::serialization::ArchiveValue* parsedEscaped = parsed->findMemberValue("escaped");
-        const vke::serialization::ArchiveValue* parsedUtf8 = parsed->findMemberValue("validUtf8");
+        const asharia::serialization::ArchiveValue* parsedEscaped = parsed->findMemberValue("escaped");
+        const asharia::serialization::ArchiveValue* parsedUtf8 = parsed->findMemberValue("validUtf8");
         if (parsedEscaped == nullptr ||
-            parsedEscaped->kind != vke::serialization::ArchiveValueKind::String ||
+            parsedEscaped->kind != asharia::serialization::ArchiveValueKind::String ||
             parsedEscaped->stringValue != escaped || parsedUtf8 == nullptr ||
-            parsedUtf8->kind != vke::serialization::ArchiveValueKind::String ||
+            parsedUtf8->kind != asharia::serialization::ArchiveValueKind::String ||
             parsedUtf8->stringValue != validUtf8) {
-            vke::logError("JSON archive smoke failed to round-trip escaped strings.");
+            asharia::logError("JSON archive smoke failed to round-trip escaped strings.");
             return EXIT_FAILURE;
         }
 
-        auto duplicate = vke::serialization::readTextArchive(R"({"field":1,"field":2})");
+        auto duplicate = asharia::serialization::readTextArchive(R"({"field":1,"field":2})");
         if (duplicate || duplicate.error().message.find("duplicate key") == std::string::npos) {
-            vke::logError("JSON archive smoke did not reject a duplicate object key.");
+            asharia::logError("JSON archive smoke did not reject a duplicate object key.");
             return EXIT_FAILURE;
         }
 
-        auto malformed = vke::serialization::readTextArchive("{");
+        auto malformed = asharia::serialization::readTextArchive("{");
         if (malformed || malformed.error().message.find("byte") == std::string::npos) {
-            vke::logError("JSON archive smoke did not report a parse byte for malformed input.");
+            asharia::logError("JSON archive smoke did not report a parse byte for malformed input.");
             return EXIT_FAILURE;
         }
 
         std::string invalidUtf8;
         invalidUtf8.push_back(static_cast<char>(0xFF));
-        auto invalidWrite = vke::serialization::writeTextArchive(
-            vke::serialization::ArchiveValue::string(invalidUtf8));
+        auto invalidWrite = asharia::serialization::writeTextArchive(
+            asharia::serialization::ArchiveValue::string(invalidUtf8));
         if (invalidWrite) {
-            vke::logError("JSON archive smoke accepted invalid UTF-8 output.");
+            asharia::logError("JSON archive smoke accepted invalid UTF-8 output.");
             return EXIT_FAILURE;
         }
 
         auto duplicateObjectWrite =
-            vke::serialization::writeTextArchive(vke::serialization::ArchiveValue::object({
-                vke::serialization::ArchiveMember{
+            asharia::serialization::writeTextArchive(asharia::serialization::ArchiveValue::object({
+                asharia::serialization::ArchiveMember{
                     .key = "field",
-                    .value = vke::serialization::ArchiveValue::integer(1),
+                    .value = asharia::serialization::ArchiveValue::integer(1),
                 },
-                vke::serialization::ArchiveMember{
+                asharia::serialization::ArchiveMember{
                     .key = "field",
-                    .value = vke::serialization::ArchiveValue::integer(2),
+                    .value = asharia::serialization::ArchiveValue::integer(2),
                 },
             }));
         if (duplicateObjectWrite ||
             duplicateObjectWrite.error().message.find("duplicate key") == std::string::npos) {
-            vke::logError("JSON archive smoke did not reject duplicate ArchiveValue keys.");
+            asharia::logError("JSON archive smoke did not reject duplicate ArchiveValue keys.");
             return EXIT_FAILURE;
         }
 
-        auto nonFiniteWrite = vke::serialization::writeTextArchive(
-            vke::serialization::ArchiveValue::floating(std::numeric_limits<double>::infinity()));
+        auto nonFiniteWrite = asharia::serialization::writeTextArchive(
+            asharia::serialization::ArchiveValue::floating(std::numeric_limits<double>::infinity()));
         if (nonFiniteWrite ||
             nonFiniteWrite.error().message.find("non-finite") == std::string::npos) {
-            vke::logError("JSON archive smoke did not reject a non-finite float.");
+            asharia::logError("JSON archive smoke did not reject a non-finite float.");
             return EXIT_FAILURE;
         }
 
@@ -596,56 +596,56 @@ namespace {
         return EXIT_SUCCESS;
     }
 
-    bool validateDescriptorAllocatorStats(vke::VulkanDescriptorAllocatorStats stats,
+    bool validateDescriptorAllocatorStats(asharia::VulkanDescriptorAllocatorStats stats,
                                           std::string_view context,
                                           std::uint64_t expectedSets = 1) {
         if (stats.poolsCreated != 1 || stats.allocationCalls != 1 ||
             stats.setsAllocated != expectedSets) {
-            vke::logError(std::string{context} +
+            asharia::logError(std::string{context} +
                           " did not allocate descriptors through the descriptor allocator.");
             return false;
         }
         return true;
     }
 
-    bool validateBufferUploadStats(vke::VulkanBufferStats stats, std::uint64_t expectedBuffers,
+    bool validateBufferUploadStats(asharia::VulkanBufferStats stats, std::uint64_t expectedBuffers,
                                    std::string_view context) {
         if (stats.created != expectedBuffers || stats.hostUploadCreated != expectedBuffers ||
             stats.uploadCalls != expectedBuffers || stats.allocatedBytes == 0 ||
             stats.uploadedBytes == 0 || stats.uploadedBytes > stats.allocatedBytes) {
-            vke::logError(std::string{context} +
+            asharia::logError(std::string{context} +
                           " did not record the expected buffer upload counters.");
             return false;
         }
         return true;
     }
 
-    bool validateDebugLabelStats(vke::VulkanDebugLabelStats stats, std::string_view context) {
+    bool validateDebugLabelStats(asharia::VulkanDebugLabelStats stats, std::string_view context) {
         if (!stats.available || stats.regionsBegun == 0 ||
             stats.regionsBegun != stats.regionsEnded) {
-            vke::logError(std::string{context} + " did not record balanced Vulkan debug labels.");
+            asharia::logError(std::string{context} + " did not record balanced Vulkan debug labels.");
             return false;
         }
         return true;
     }
 
-    bool validateTimestampStats(vke::VulkanTimestampQueryStats stats,
-                                std::span<const vke::VulkanTimestampRegionTiming> timings,
+    bool validateTimestampStats(asharia::VulkanTimestampQueryStats stats,
+                                std::span<const asharia::VulkanTimestampRegionTiming> timings,
                                 std::string_view context) {
         if (!stats.available || stats.framesBegun == 0 || stats.framesResolved == 0 ||
             stats.regionsBegun == 0 || stats.regionsBegun != stats.regionsEnded ||
             stats.regionsResolved == 0 || stats.queryReadbacks == 0 || timings.empty()) {
-            vke::logError(std::string{context} +
+            asharia::logError(std::string{context} +
                           " did not record delayed Vulkan timestamp query results.");
             return false;
         }
 
         const bool hasFrameTiming =
-            std::ranges::any_of(timings, [](const vke::VulkanTimestampRegionTiming& timing) {
+            std::ranges::any_of(timings, [](const asharia::VulkanTimestampRegionTiming& timing) {
                 return timing.name == "VulkanFrame" && timing.milliseconds >= 0.0;
             });
         if (!hasFrameTiming) {
-            vke::logError(std::string{context} +
+            asharia::logError(std::string{context} +
                           " did not read back a VulkanFrame timestamp duration.");
             return false;
         }
@@ -677,7 +677,7 @@ namespace {
         const char* end = text->data() + text->size();
         const auto parsedResult = std::from_chars(begin, end, parsed);
         if (parsedResult.ec != std::errc{} || parsedResult.ptr != end || parsed == 0U) {
-            vke::logError("Invalid positive integer for " + std::string{option} + ".");
+            asharia::logError("Invalid positive integer for " + std::string{option} + ".");
             return false;
         }
 
@@ -699,43 +699,43 @@ namespace {
         return options;
     }
 
-    vke::RenderGraph createBenchRenderGraph() {
-        vke::RenderGraph graph;
-        const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
+    asharia::RenderGraph createBenchRenderGraph() {
+        asharia::RenderGraph graph;
+        const auto backbuffer = graph.importImage(asharia::RenderGraphImageDesc{
             .name = "BenchBackbuffer",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
-            .initialState = vke::RenderGraphImageState::Undefined,
-            .finalState = vke::RenderGraphImageState::Present,
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 1280, .height = 720},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
         });
-        const auto sceneColor = graph.createTransientImage(vke::RenderGraphImageDesc{
+        const auto sceneColor = graph.createTransientImage(asharia::RenderGraphImageDesc{
             .name = "BenchSceneColor",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 1280, .height = 720},
         });
-        const auto depth = graph.createTransientImage(vke::RenderGraphImageDesc{
+        const auto depth = graph.createTransientImage(asharia::RenderGraphImageDesc{
             .name = "BenchDepth",
-            .format = vke::RenderGraphImageFormat::D32Sfloat,
-            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
+            .format = asharia::RenderGraphImageFormat::D32Sfloat,
+            .extent = asharia::RenderGraphExtent2D{.width = 1280, .height = 720},
         });
 
-        graph.addPass("BenchClearScene", vke::kBasicDynamicClearPassType)
-            .setParams(vke::kBasicDynamicClearParamsType,
-                       vke::BasicTransferClearParams{.color = {0.02F, 0.08F, 0.10F, 1.0F}})
+        graph.addPass("BenchClearScene", asharia::kBasicDynamicClearPassType)
+            .setParams(asharia::kBasicDynamicClearParamsType,
+                       asharia::BasicTransferClearParams{.color = {0.02F, 0.08F, 0.10F, 1.0F}})
             .writeColor("target", sceneColor)
-            .recordCommands([](vke::RenderGraphCommandList& commands) {
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
                 commands.clearColor("target", std::array{0.02F, 0.08F, 0.10F, 1.0F});
             });
-        graph.addPass("BenchDepthDraw", vke::kBasicRasterDepthTrianglePassType)
-            .setParamsType(vke::kBasicRasterDepthTriangleParamsType)
+        graph.addPass("BenchDepthDraw", asharia::kBasicRasterDepthTrianglePassType)
+            .setParamsType(asharia::kBasicRasterDepthTriangleParamsType)
             .writeColor("target", sceneColor)
             .writeDepth("depth", depth);
-        graph.addPass("BenchComposite", vke::kBasicRasterFullscreenPassType)
-            .setParams(vke::kBasicRasterFullscreenParamsType,
-                       vke::BasicFullscreenParams{.tint = {1.0F, 1.0F, 1.0F, 1.0F}})
-            .readTexture("source", sceneColor, vke::RenderGraphShaderStage::Fragment)
+        graph.addPass("BenchComposite", asharia::kBasicRasterFullscreenPassType)
+            .setParams(asharia::kBasicRasterFullscreenParamsType,
+                       asharia::BasicFullscreenParams{.tint = {1.0F, 1.0F, 1.0F, 1.0F}})
+            .readTexture("source", sceneColor, asharia::RenderGraphShaderStage::Fragment)
             .writeColor("target", backbuffer)
-            .recordCommands([](vke::RenderGraphCommandList& commands) {
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
                 commands.setShader("Hidden/BenchComposite", "Fragment")
                     .setTexture("SourceTex", "source")
                     .setVec4("Tint", std::array{1.0F, 1.0F, 1.0F, 1.0F})
@@ -746,18 +746,18 @@ namespace {
     }
 
     [[nodiscard]] std::uint64_t
-    renderGraphTransitionCount(const vke::RenderGraphCompileResult& compiled) {
+    renderGraphTransitionCount(const asharia::RenderGraphCompileResult& compiled) {
         auto count = static_cast<std::uint64_t>(compiled.finalTransitions.size());
         count += static_cast<std::uint64_t>(compiled.finalBufferTransitions.size());
-        for (const vke::RenderGraphCompiledPass& pass : compiled.passes) {
+        for (const asharia::RenderGraphCompiledPass& pass : compiled.passes) {
             count += static_cast<std::uint64_t>(pass.transitionsBefore.size());
             count += static_cast<std::uint64_t>(pass.bufferTransitionsBefore.size());
         }
         return count;
     }
 
-    void addRenderGraphBenchCounters(vke::FrameProfiler& profiler,
-                                     const vke::RenderGraphCompileResult& compiled) {
+    void addRenderGraphBenchCounters(asharia::FrameProfiler& profiler,
+                                     const asharia::RenderGraphCompileResult& compiled) {
         profiler.addCounter("declaredPassCount",
                             static_cast<std::uint64_t>(compiled.declaredPassCount));
         profiler.addCounter("declaredImageCount",
@@ -777,9 +777,9 @@ namespace {
                             static_cast<std::uint64_t>(compiled.transientBuffers.size()));
     }
 
-    [[nodiscard]] std::optional<double> cpuScopeMilliseconds(const vke::FrameProfile& frame,
+    [[nodiscard]] std::optional<double> cpuScopeMilliseconds(const asharia::FrameProfile& frame,
                                                              std::string_view scopeName) {
-        for (const vke::CpuScopeSample& scope : frame.cpuScopes) {
+        for (const asharia::CpuScopeSample& scope : frame.cpuScopes) {
             if (scope.name == scopeName && scope.endNanoseconds >= scope.beginNanoseconds) {
                 const std::uint64_t elapsed = scope.endNanoseconds - scope.beginNanoseconds;
                 return static_cast<double>(elapsed) / 1'000'000.0;
@@ -814,10 +814,10 @@ namespace {
                            const RenderGraphBenchStats& recordStats,
                            const RenderGraphBenchStats& compileStats,
                            const RenderGraphBenchStats& totalStats,
-                           const vke::FrameProfile& lastFrame) {
+                           const asharia::FrameProfile& lastFrame) {
         output << R"({"type":"summary","warmupFrames":)" << options.warmupFrames
                << R"(,"measuredFrames":)" << options.measuredFrames << R"(,"outputPath":)";
-        vke::writeJsonString(output, options.outputPath.generic_string());
+        asharia::writeJsonString(output, options.outputPath.generic_string());
         output << R"(,"recordGraph":{"averageMilliseconds":)" << recordStats.averageMilliseconds
                << R"(,"p50Milliseconds":)" << recordStats.p50Milliseconds
                << R"(,"p95Milliseconds":)" << recordStats.p95Milliseconds
@@ -832,11 +832,11 @@ namespace {
                << totalStats.maxMilliseconds << '}';
         output << R"(,"lastCounters":{)";
         for (std::size_t index = 0; index < lastFrame.counters.size(); ++index) {
-            const vke::CounterSample& counter = lastFrame.counters[index];
+            const asharia::CounterSample& counter = lastFrame.counters[index];
             if (index > 0) {
                 output << ',';
             }
-            vke::writeJsonString(output, counter.name);
+            asharia::writeJsonString(output, counter.name);
             output << ':' << counter.value;
         }
         output << "}}\n";
@@ -850,17 +850,17 @@ namespace {
         }
 
         const RenderGraphBenchOptions& options = *parsedOptions;
-        const vke::RenderGraphSchemaRegistry schemas = vke::basicRenderGraphSchemaRegistry();
+        const asharia::RenderGraphSchemaRegistry schemas = asharia::basicRenderGraphSchemaRegistry();
         for (std::size_t frame = 0; frame < options.warmupFrames; ++frame) {
-            vke::RenderGraph graph = createBenchRenderGraph();
+            asharia::RenderGraph graph = createBenchRenderGraph();
             auto compiled = graph.compile(schemas);
             if (!compiled) {
-                vke::logError(compiled.error().message);
+                asharia::logError(compiled.error().message);
                 return EXIT_FAILURE;
             }
         }
 
-        vke::FrameProfiler profiler{options.measuredFrames};
+        asharia::FrameProfiler profiler{options.measuredFrames};
         std::vector<double> recordMilliseconds;
         std::vector<double> compileMilliseconds;
         std::vector<double> totalMilliseconds;
@@ -869,29 +869,29 @@ namespace {
         totalMilliseconds.reserve(options.measuredFrames);
 
         for (std::size_t frame = 0; frame < options.measuredFrames; ++frame) {
-            profiler.beginFrame(vke::FrameProfileInfo{
+            profiler.beginFrame(asharia::FrameProfileInfo{
                 .frameIndex = static_cast<std::uint64_t>(frame),
-                .target = vke::ProfileTarget::Bench,
+                .target = asharia::ProfileTarget::Bench,
                 .viewName = "RenderGraphBench",
             });
 
-            vke::RenderGraph graph;
-            const vke::CpuScopeHandle recordScope = profiler.beginCpuScope("RecordGraph");
+            asharia::RenderGraph graph;
+            const asharia::CpuScopeHandle recordScope = profiler.beginCpuScope("RecordGraph");
             graph = createBenchRenderGraph();
             profiler.endCpuScope(recordScope);
 
-            const vke::CpuScopeHandle compileScope = profiler.beginCpuScope("CompileGraph");
+            const asharia::CpuScopeHandle compileScope = profiler.beginCpuScope("CompileGraph");
             auto compiled = graph.compile(schemas);
             profiler.endCpuScope(compileScope);
             if (!compiled) {
-                vke::logError(compiled.error().message);
+                asharia::logError(compiled.error().message);
                 return EXIT_FAILURE;
             }
 
             addRenderGraphBenchCounters(profiler, *compiled);
             profiler.endFrame();
 
-            const vke::FrameProfile& profile = profiler.lastFrame();
+            const asharia::FrameProfile& profile = profiler.lastFrame();
             const double recordMs = cpuScopeMilliseconds(profile, "RecordGraph").value_or(0.0);
             const double compileMs = cpuScopeMilliseconds(profile, "CompileGraph").value_or(0.0);
             recordMilliseconds.push_back(recordMs);
@@ -906,7 +906,7 @@ namespace {
 
         std::ofstream output{options.outputPath};
         if (!output) {
-            vke::logError("Failed to open render graph benchmark output file.");
+            asharia::logError("Failed to open render graph benchmark output file.");
             return EXIT_FAILURE;
         }
 
@@ -915,7 +915,7 @@ namespace {
         const RenderGraphBenchStats totalStats = makeBenchStats(totalMilliseconds);
         writeBenchSummary(output, options, recordStats, compileStats, totalStats,
                           profiler.lastFrame());
-        vke::writeFrameProfileJsonl(output, profiler.frames());
+        asharia::writeFrameProfileJsonl(output, profiler.frames());
 
         std::cout << "RenderGraph bench frames: " << options.measuredFrames
                   << ", record avg ms: " << recordStats.averageMilliseconds
@@ -927,11 +927,11 @@ namespace {
     }
 
     int runSmokeDeferredDeletion() {
-        vke::VulkanDeferredDeletionQueue queue;
+        asharia::VulkanDeferredDeletionQueue queue;
         std::vector<int> retired;
 
         if (queue.enqueue(0, {})) {
-            vke::logError("Deferred deletion queue accepted an empty callback.");
+            asharia::logError("Deferred deletion queue accepted an empty callback.");
             return EXIT_FAILURE;
         }
 
@@ -939,47 +939,47 @@ namespace {
                               queue.enqueue(1, [&retired]() { retired.push_back(1); }) &&
                               queue.enqueue(3, [&retired]() { retired.push_back(3); });
         if (!enqueued) {
-            vke::logError("Deferred deletion queue rejected a valid callback.");
+            asharia::logError("Deferred deletion queue rejected a valid callback.");
             return EXIT_FAILURE;
         }
 
-        vke::VulkanDeferredDeletionStats stats = queue.stats();
+        asharia::VulkanDeferredDeletionStats stats = queue.stats();
         if (stats.pending != 3 || stats.enqueued != 3 || stats.retired != 0 || stats.flushed != 0 ||
             queue.pendingCount() != 3 || queue.empty()) {
-            vke::logError("Deferred deletion queue reported unexpected initial counters.");
+            asharia::logError("Deferred deletion queue reported unexpected initial counters.");
             return EXIT_FAILURE;
         }
 
         if (queue.retireCompleted(1) != 1 || retired != std::vector<int>{1}) {
-            vke::logError("Deferred deletion queue retired the wrong epoch 1 callbacks.");
+            asharia::logError("Deferred deletion queue retired the wrong epoch 1 callbacks.");
             return EXIT_FAILURE;
         }
 
         if (!queue.enqueue(2, [&retired]() { retired.push_back(22); })) {
-            vke::logError("Deferred deletion queue rejected a valid late callback.");
+            asharia::logError("Deferred deletion queue rejected a valid late callback.");
             return EXIT_FAILURE;
         }
 
         if (queue.retireCompleted(2) != 2 || retired != std::vector<int>{1, 2, 22}) {
-            vke::logError("Deferred deletion queue retired the wrong epoch 2 callbacks.");
+            asharia::logError("Deferred deletion queue retired the wrong epoch 2 callbacks.");
             return EXIT_FAILURE;
         }
 
         stats = queue.stats();
         if (stats.pending != 1 || stats.enqueued != 4 || stats.retired != 3 || stats.flushed != 0) {
-            vke::logError("Deferred deletion queue reported unexpected post-retire counters.");
+            asharia::logError("Deferred deletion queue reported unexpected post-retire counters.");
             return EXIT_FAILURE;
         }
 
         if (queue.flush() != 1 || retired != std::vector<int>{1, 2, 22, 3}) {
-            vke::logError("Deferred deletion queue flush retired the wrong callbacks.");
+            asharia::logError("Deferred deletion queue flush retired the wrong callbacks.");
             return EXIT_FAILURE;
         }
 
         stats = queue.stats();
         if (stats.pending != 0 || stats.enqueued != 4 || stats.retired != 4 || stats.flushed != 1 ||
             !queue.empty()) {
-            vke::logError("Deferred deletion queue reported unexpected final counters.");
+            asharia::logError("Deferred deletion queue reported unexpected final counters.");
             return EXIT_FAILURE;
         }
 
@@ -989,128 +989,128 @@ namespace {
     }
 
     int runSmokeWindow() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Smoke"});
+        auto window = asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::logInfo("GLFW smoke window created.");
-        vke::GlfwWindow::pollEvents();
+        asharia::logInfo("GLFW smoke window created.");
+        asharia::GlfwWindow::pollEvents();
         window->requestClose();
         return EXIT_SUCCESS;
     }
 
     int runSmokeVulkan() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
         auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Vulkan Smoke"});
+            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Vulkan Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc desc{
-            .applicationName = "VkEngine Vulkan Smoke",
+        const asharia::VulkanContextDesc desc{
+            .applicationName = "Asharia Engine Vulkan Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .enableValidation = false,
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(desc);
+        auto context = asharia::VulkanContext::create(desc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
         const auto& info = context->deviceInfo();
         std::cout << "Vulkan device: " << info.name << " API "
-                  << vke::vulkanVersionString(info.apiVersion) << '\n';
+                  << asharia::vulkanVersionString(info.apiVersion) << '\n';
         return EXIT_SUCCESS;
     }
 
-    int runSmokeFrame(const vke::VulkanFrameRecordCallback& record, std::string_view title,
+    int runSmokeFrame(const asharia::VulkanFrameRecordCallback& record, std::string_view title,
                       VkClearColorValue clearColor) {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = std::string{title}});
+        auto window = asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
+        const asharia::VulkanContextDesc contextDesc{
             .applicationName = std::string{title},
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(*context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(*context, asharia::VulkanFrameLoopDesc{
                                                                     .width = framebuffer.width,
                                                                     .height = framebuffer.height,
                                                                     .clearColor = clearColor,
                                                                 });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
         for (int frame = 0; frame < 3; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(record);
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
 
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during frame smoke.");
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during frame smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1133,84 +1133,84 @@ namespace {
     }
 
     int runSmokeFrame() {
-        return runSmokeFrame(vke::recordBasicClearFrame, "VkEngine Frame Smoke",
+        return runSmokeFrame(asharia::recordBasicClearFrame, "Asharia Engine Frame Smoke",
                              VkClearColorValue{{0.02F, 0.12F, 0.18F, 1.0F}});
     }
 
     int runSmokeDynamicRendering() {
-        return runSmokeFrame(vke::recordBasicDynamicClearFrame, "VkEngine Dynamic Rendering Smoke",
+        return runSmokeFrame(asharia::recordBasicDynamicClearFrame, "Asharia Engine Dynamic Rendering Smoke",
                              VkClearColorValue{{0.18F, 0.06F, 0.14F, 1.0F}});
     }
 
     int runSmokeTransient() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(
-            *glfw, vke::WindowDesc{.title = "VkEngine Transient Image Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Transient Image Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Transient Image Smoke",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Transient Image Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::BasicTransientFrameRecorder recorder{context->device(), context->allocator()};
+        asharia::BasicTransientFrameRecorder recorder{context->device(), context->allocator()};
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.08F, 0.14F, 0.22F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanFrameRecordCallback record =
-            [&recorder](const vke::VulkanFrameRecordContext& frame) {
+        const asharia::VulkanFrameRecordCallback record =
+            [&recorder](const asharia::VulkanFrameRecordContext& frame) {
                 return recorder.record(frame);
             };
 
         for (int frame = 0; frame < 3; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(record);
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
 
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during transient smoke.");
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during transient smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1218,15 +1218,15 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
-        const vke::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
+        const asharia::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
         if (deletionStats.enqueued == 0 || deletionStats.retired == 0) {
-            vke::logError("Transient smoke did not retire deferred Vulkan resource destruction.");
+            asharia::logError("Transient smoke did not retire deferred Vulkan resource destruction.");
             return EXIT_FAILURE;
         }
-        const vke::VulkanTransientImagePoolStats transientPoolStats = recorder.transientPoolStats();
+        const asharia::VulkanTransientImagePoolStats transientPoolStats = recorder.transientPoolStats();
         if (transientPoolStats.created == 0 || transientPoolStats.reused == 0 ||
             transientPoolStats.retired == 0) {
-            vke::logError("Transient smoke did not reuse a retired transient Vulkan image.");
+            asharia::logError("Transient smoke did not reuse a retired transient Vulkan image.");
             return EXIT_FAILURE;
         }
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Transient smoke")) {
@@ -1244,100 +1244,100 @@ namespace {
     }
 
     int runSmokeResize() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
         auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Resize Smoke"});
+            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Resize Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Resize Smoke",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Resize Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.06F, 0.10F, 0.18F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        auto firstFrame = frameLoop->renderFrame(vke::recordBasicDynamicClearFrame);
+        auto firstFrame = frameLoop->renderFrame(asharia::recordBasicDynamicClearFrame);
         if (!firstFrame) {
-            vke::logError(firstFrame.error().message);
+            asharia::logError(firstFrame.error().message);
             return EXIT_FAILURE;
         }
-        if (*firstFrame == vke::VulkanFrameStatus::OutOfDate) {
-            vke::logError("Initial resize smoke frame was unexpectedly out of date.");
+        if (*firstFrame == asharia::VulkanFrameStatus::OutOfDate) {
+            asharia::logError("Initial resize smoke frame was unexpectedly out of date.");
             return EXIT_FAILURE;
         }
 
         frameLoop->setTargetExtent(0, 0);
         auto zeroExtent = frameLoop->recreate();
         if (!zeroExtent) {
-            vke::logError(zeroExtent.error().message);
+            asharia::logError(zeroExtent.error().message);
             return EXIT_FAILURE;
         }
-        if (*zeroExtent != vke::VulkanFrameStatus::OutOfDate) {
-            vke::logError("Zero-sized resize smoke did not report OutOfDate.");
+        if (*zeroExtent != asharia::VulkanFrameStatus::OutOfDate) {
+            asharia::logError("Zero-sized resize smoke did not report OutOfDate.");
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto restoredFramebuffer = window->framebufferExtent();
         frameLoop->setTargetExtent(restoredFramebuffer.width, restoredFramebuffer.height);
         auto recreated = frameLoop->recreate();
         if (!recreated) {
-            vke::logError(recreated.error().message);
+            asharia::logError(recreated.error().message);
             return EXIT_FAILURE;
         }
-        if (*recreated != vke::VulkanFrameStatus::Recreated) {
-            vke::logError("Resize smoke did not recreate the swapchain after extent restore.");
+        if (*recreated != asharia::VulkanFrameStatus::Recreated) {
+            asharia::logError("Resize smoke did not recreate the swapchain after extent restore.");
             return EXIT_FAILURE;
         }
 
         for (int frame = 0; frame < 3; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
-            auto status = frameLoop->renderFrame(vke::recordBasicDynamicClearFrame);
+            auto status = frameLoop->renderFrame(asharia::recordBasicDynamicClearFrame);
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during resize smoke.");
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during resize smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1352,86 +1352,86 @@ namespace {
     }
 
     int runSmokeTriangle(bool useDepth = false,
-                         vke::BasicMeshKind meshKind = vke::BasicMeshKind::Triangle) {
-        auto glfw = vke::GlfwInstance::create();
+                         asharia::BasicMeshKind meshKind = asharia::BasicMeshKind::Triangle) {
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
         const std::string_view title = triangleSmokeTitle(useDepth, meshKind);
-        auto window = vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = std::string{title}});
+        auto window = asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
+        const asharia::VulkanContextDesc contextDesc{
             .applicationName = std::string{title},
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.015F, 0.02F, 0.025F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto triangleRenderer = vke::BasicTriangleRenderer::create(vke::BasicTriangleRendererDesc{
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto triangleRenderer = asharia::BasicTriangleRenderer::create(asharia::BasicTriangleRendererDesc{
             .device = context->device(),
             .allocator = context->allocator(),
             .shaderDirectory = shaderDir,
             .meshKind = meshKind,
         });
         if (!triangleRenderer) {
-            vke::logError(triangleRenderer.error().message);
+            asharia::logError(triangleRenderer.error().message);
             return EXIT_FAILURE;
         }
 
         for (int frame = 0; frame < 3; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&triangleRenderer, useDepth](const vke::VulkanFrameRecordContext& recordContext) {
+                [&triangleRenderer, useDepth](const asharia::VulkanFrameRecordContext& recordContext) {
                     if (useDepth) {
                         return triangleRenderer->recordFrameWithDepth(recordContext);
                     }
                     return triangleRenderer->recordFrame(recordContext);
                 });
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
 
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError(std::string{triangleSmokeOutOfDateMessage(useDepth, meshKind)});
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError(std::string{triangleSmokeOutOfDateMessage(useDepth, meshKind)});
                 return EXIT_FAILURE;
             }
 
@@ -1443,7 +1443,7 @@ namespace {
             return EXIT_FAILURE;
         }
         const std::uint64_t expectedBuffers =
-            meshKind == vke::BasicMeshKind::IndexedQuad ? 2ULL : 1ULL;
+            meshKind == asharia::BasicMeshKind::IndexedQuad ? 2ULL : 1ULL;
         if (!validateBufferUploadStats(triangleRenderer->bufferStats(), expectedBuffers, title)) {
             return EXIT_FAILURE;
         }
@@ -1460,8 +1460,8 @@ namespace {
                   << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            vke::logError("Failed to wait for Vulkan queue before triangle pipeline teardown: " +
-                          vke::vkResultName(idleResult));
+            asharia::logError("Failed to wait for Vulkan queue before triangle pipeline teardown: " +
+                          asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1470,50 +1470,50 @@ namespace {
     }
 
     int runSmokeDescriptorLayout() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(
-            *glfw, vke::WindowDesc{.title = "VkEngine Descriptor Layout Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Descriptor Layout Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Descriptor Layout Smoke",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Descriptor Layout Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
         auto validated =
-            vke::validateBasicDescriptorLayoutSmoke(vke::BasicDescriptorLayoutSmokeDesc{
+            asharia::validateBasicDescriptorLayoutSmoke(asharia::BasicDescriptorLayoutSmokeDesc{
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
             });
         if (!validated) {
-            vke::logError(validated.error().message);
+            asharia::logError(validated.error().message);
             return EXIT_FAILURE;
         }
 
@@ -1523,81 +1523,81 @@ namespace {
     }
 
     int runSmokeMesh3D() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
         auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Mesh 3D Smoke"});
+            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Mesh 3D Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Mesh 3D Smoke",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Mesh 3D Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.015F, 0.02F, 0.025F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto meshRenderer = vke::BasicMesh3DRenderer::create(vke::BasicMesh3DRendererDesc{
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto meshRenderer = asharia::BasicMesh3DRenderer::create(asharia::BasicMesh3DRendererDesc{
             .device = context->device(),
             .allocator = context->allocator(),
             .shaderDirectory = shaderDir,
         });
         if (!meshRenderer) {
-            vke::logError(meshRenderer.error().message);
+            asharia::logError(meshRenderer.error().message);
             return EXIT_FAILURE;
         }
 
         for (int frame = 0; frame < 3; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&meshRenderer](const vke::VulkanFrameRecordContext& recordContext) {
+                [&meshRenderer](const asharia::VulkanFrameRecordContext& recordContext) {
                     return meshRenderer->recordFrame(recordContext);
                 });
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
 
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during mesh 3D smoke.");
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during mesh 3D smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1623,8 +1623,8 @@ namespace {
         std::cout << "Rendered mesh 3D frames: " << extent.width << 'x' << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            vke::logError("Failed to wait for Vulkan queue before mesh 3D teardown: " +
-                          vke::vkResultName(idleResult));
+            asharia::logError("Failed to wait for Vulkan queue before mesh 3D teardown: " +
+                          asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1633,83 +1633,83 @@ namespace {
     }
 
     int runSmokeDrawList() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
         auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Draw List Smoke"});
+            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Draw List Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Draw List Smoke",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Draw List Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.010F, 0.012F, 0.018F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        constexpr auto drawItems = vke::basicDrawListSmokeItems();
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto renderer = vke::BasicDrawListRenderer::create(vke::BasicDrawListRendererDesc{
+        constexpr auto drawItems = asharia::basicDrawListSmokeItems();
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto renderer = asharia::BasicDrawListRenderer::create(asharia::BasicDrawListRendererDesc{
             .device = context->device(),
             .allocator = context->allocator(),
             .shaderDirectory = shaderDir,
             .drawItems = drawItems,
         });
         if (!renderer) {
-            vke::logError(renderer.error().message);
+            asharia::logError(renderer.error().message);
             return EXIT_FAILURE;
         }
 
         for (int frame = 0; frame < 3; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&renderer](const vke::VulkanFrameRecordContext& recordContext) {
+                [&renderer](const asharia::VulkanFrameRecordContext& recordContext) {
                     return renderer->recordFrame(recordContext);
                 });
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
 
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during draw list smoke.");
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during draw list smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1735,8 +1735,8 @@ namespace {
         std::cout << "Rendered draw list frames: " << extent.width << 'x' << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            vke::logError("Failed to wait for Vulkan queue before draw list teardown: " +
-                          vke::vkResultName(idleResult));
+            asharia::logError("Failed to wait for Vulkan queue before draw list teardown: " +
+                          asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1745,81 +1745,81 @@ namespace {
     }
 
     int runSmokeFullscreenTexture() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(
-            *glfw, vke::WindowDesc{.title = "VkEngine Fullscreen Texture Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Fullscreen Texture Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Fullscreen Texture Smoke",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Fullscreen Texture Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.0F, 0.0F, 0.0F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
         auto renderer =
-            vke::BasicFullscreenTextureRenderer::create(vke::BasicFullscreenTextureRendererDesc{
+            asharia::BasicFullscreenTextureRenderer::create(asharia::BasicFullscreenTextureRendererDesc{
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
             });
         if (!renderer) {
-            vke::logError(renderer.error().message);
+            asharia::logError(renderer.error().message);
             return EXIT_FAILURE;
         }
 
         for (int frame = 0; frame < 3; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&renderer](const vke::VulkanFrameRecordContext& recordContext) {
+                [&renderer](const asharia::VulkanFrameRecordContext& recordContext) {
                     return renderer->recordFrame(recordContext);
                 });
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during fullscreen texture smoke.");
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during fullscreen texture smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1852,8 +1852,8 @@ namespace {
                   << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            vke::logError("Failed to wait for Vulkan queue before fullscreen texture teardown: " +
-                          vke::vkResultName(idleResult));
+            asharia::logError("Failed to wait for Vulkan queue before fullscreen texture teardown: " +
+                          asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1862,69 +1862,69 @@ namespace {
     }
 
     int runSmokeOffscreenViewport() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(
-            *glfw, vke::WindowDesc{.title = "VkEngine Offscreen Viewport Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Offscreen Viewport Smoke"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Offscreen Viewport Smoke",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Offscreen Viewport Smoke",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.0F, 0.0F, 0.0F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
         auto renderer =
-            vke::BasicFullscreenTextureRenderer::create(vke::BasicFullscreenTextureRendererDesc{
+            asharia::BasicFullscreenTextureRenderer::create(asharia::BasicFullscreenTextureRendererDesc{
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
             });
         if (!renderer) {
-            vke::logError(renderer.error().message);
+            asharia::logError(renderer.error().message);
             return EXIT_FAILURE;
         }
 
         VkExtent2D lastViewportExtent{};
         for (int frame = 0; frame < 4; ++frame) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
             VkExtent2D viewportExtent{
@@ -1938,15 +1938,15 @@ namespace {
             lastViewportExtent = viewportExtent;
 
             auto status = frameLoop->renderFrame(
-                [&renderer, viewportExtent](const vke::VulkanFrameRecordContext& recordContext) {
+                [&renderer, viewportExtent](const asharia::VulkanFrameRecordContext& recordContext) {
                     return renderer->recordOffscreenViewportFrame(recordContext, viewportExtent);
                 });
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
-            if (*status == vke::VulkanFrameStatus::OutOfDate) {
-                vke::logError("Swapchain remained out of date during offscreen viewport smoke.");
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during offscreen viewport smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1967,9 +1967,9 @@ namespace {
                                              "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
         }
-        const vke::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
+        const asharia::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
         if (deletionStats.enqueued < 2 || deletionStats.retired < 2) {
-            vke::logError("Offscreen viewport smoke did not retire resized viewport resources.");
+            asharia::logError("Offscreen viewport smoke did not retire resized viewport resources.");
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
@@ -1994,8 +1994,8 @@ namespace {
                   << 'x' << swapchainExtent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            vke::logError("Failed to wait for Vulkan queue before offscreen viewport teardown: " +
-                          vke::vkResultName(idleResult));
+            asharia::logError("Failed to wait for Vulkan queue before offscreen viewport teardown: " +
+                          asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -2004,76 +2004,76 @@ namespace {
     }
 
     int runInteractiveViewer() {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
         auto window =
-            vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Sample Viewer"});
+            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Sample Viewer"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Sample Viewer",
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Sample Viewer",
             .requiredInstanceExtensions = *extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(*window, instance);
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
         };
 
-        auto context = vke::VulkanContext::create(contextDesc);
+        auto context = asharia::VulkanContext::create(contextDesc);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         auto framebuffer = window->framebufferExtent();
         while (!window->shouldClose() && !isRenderableExtent(framebuffer)) {
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(16ms);
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             framebuffer = window->framebufferExtent();
         }
         if (window->shouldClose()) {
             return EXIT_SUCCESS;
         }
 
-        auto frameLoop = vke::VulkanFrameLoop::create(
-            *context, vke::VulkanFrameLoopDesc{
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
                           .width = framebuffer.width,
                           .height = framebuffer.height,
                           .clearColor = VkClearColorValue{{0.015F, 0.02F, 0.025F, 1.0F}},
                       });
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto triangleRenderer = vke::BasicTriangleRenderer::create(vke::BasicTriangleRendererDesc{
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto triangleRenderer = asharia::BasicTriangleRenderer::create(asharia::BasicTriangleRendererDesc{
             .device = context->device(),
             .allocator = context->allocator(),
             .shaderDirectory = shaderDir,
         });
         if (!triangleRenderer) {
-            vke::logError(triangleRenderer.error().message);
+            asharia::logError(triangleRenderer.error().message);
             return EXIT_FAILURE;
         }
 
         while (!window->shouldClose()) {
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
             if (!isRenderableExtent(currentFramebuffer)) {
@@ -2085,10 +2085,10 @@ namespace {
             if (!extentMatches(frameLoop->extent(), currentFramebuffer)) {
                 auto recreated = frameLoop->recreate();
                 if (!recreated) {
-                    vke::logError(recreated.error().message);
+                    asharia::logError(recreated.error().message);
                     return EXIT_FAILURE;
                 }
-                if (*recreated == vke::VulkanFrameStatus::OutOfDate) {
+                if (*recreated == asharia::VulkanFrameStatus::OutOfDate) {
                     using namespace std::chrono_literals;
                     std::this_thread::sleep_for(16ms);
                     continue;
@@ -2096,11 +2096,11 @@ namespace {
             }
 
             auto status = frameLoop->renderFrame(
-                [&triangleRenderer](const vke::VulkanFrameRecordContext& recordContext) {
+                [&triangleRenderer](const asharia::VulkanFrameRecordContext& recordContext) {
                     return triangleRenderer->recordFrame(recordContext);
                 });
             if (!status) {
-                vke::logError(status.error().message);
+                asharia::logError(status.error().message);
                 return EXIT_FAILURE;
             }
 
@@ -2110,42 +2110,42 @@ namespace {
 
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            vke::logError("Failed to wait for Vulkan queue before viewer shutdown: " +
-                          vke::vkResultName(idleResult));
+            asharia::logError("Failed to wait for Vulkan queue before viewer shutdown: " +
+                          asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
         return EXIT_SUCCESS;
     }
 
-    bool validateSmokeRenderGraphVulkanMappings(const vke::RenderGraphCompileResult& compiled) {
+    bool validateSmokeRenderGraphVulkanMappings(const asharia::RenderGraphCompileResult& compiled) {
         const auto vulkanFinalTransition =
-            vke::vulkanImageTransition(compiled.finalTransitions.front());
+            asharia::vulkanImageTransition(compiled.finalTransitions.front());
         if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             vulkanFinalTransition.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
-            vke::logError("Render graph Vulkan transition mapping produced unexpected layouts.");
+            asharia::logError("Render graph Vulkan transition mapping produced unexpected layouts.");
             return false;
         }
 
         const VkImageMemoryBarrier2 barrier =
-            vke::vulkanImageBarrier(vulkanFinalTransition, VK_NULL_HANDLE);
+            asharia::vulkanImageBarrier(vulkanFinalTransition, VK_NULL_HANDLE);
         if (barrier.oldLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             barrier.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR ||
             barrier.srcStageMask != VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
             barrier.srcAccessMask != VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) {
-            vke::logError("Render graph Vulkan barrier mapping produced unexpected masks.");
+            asharia::logError("Render graph Vulkan barrier mapping produced unexpected masks.");
             return false;
         }
 
         const auto vulkanShaderReadTransition =
-            vke::vulkanImageTransition(compiled.passes[1].transitionsBefore.front());
+            asharia::vulkanImageTransition(compiled.passes[1].transitionsBefore.front());
         if (vulkanShaderReadTransition.oldLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||
             vulkanShaderReadTransition.newLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             vulkanShaderReadTransition.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
             vulkanShaderReadTransition.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT ||
             vulkanShaderReadTransition.dstStageMask != VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
             vulkanShaderReadTransition.dstAccessMask != VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) {
-            vke::logError("Render graph Vulkan shader-read mapping produced unexpected masks.");
+            asharia::logError("Render graph Vulkan shader-read mapping produced unexpected masks.");
             return false;
         }
 
@@ -2153,7 +2153,7 @@ namespace {
             VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         const auto vulkanDepthWriteTransition =
-            vke::vulkanImageTransition(compiled.passes[2].transitionsBefore.front());
+            asharia::vulkanImageTransition(compiled.passes[2].transitionsBefore.front());
         if (vulkanDepthWriteTransition.oldLayout != VK_IMAGE_LAYOUT_UNDEFINED ||
             vulkanDepthWriteTransition.newLayout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
             vulkanDepthWriteTransition.srcStageMask != VK_PIPELINE_STAGE_2_NONE ||
@@ -2161,19 +2161,19 @@ namespace {
             vulkanDepthWriteTransition.dstStageMask != depthTestsStages ||
             vulkanDepthWriteTransition.dstAccessMask !=
                 VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) {
-            vke::logError("Render graph Vulkan depth-write mapping produced unexpected masks.");
+            asharia::logError("Render graph Vulkan depth-write mapping produced unexpected masks.");
             return false;
         }
 
-        const VkImageMemoryBarrier2 depthBarrier = vke::vulkanImageBarrier(
+        const VkImageMemoryBarrier2 depthBarrier = asharia::vulkanImageBarrier(
             vulkanDepthWriteTransition, VK_NULL_HANDLE, VK_IMAGE_ASPECT_DEPTH_BIT);
         if (depthBarrier.subresourceRange.aspectMask != VK_IMAGE_ASPECT_DEPTH_BIT) {
-            vke::logError("Render graph Vulkan depth barrier used an unexpected aspect mask.");
+            asharia::logError("Render graph Vulkan depth barrier used an unexpected aspect mask.");
             return false;
         }
 
         const auto vulkanDepthSampledTransition =
-            vke::vulkanImageTransition(compiled.passes[3].transitionsBefore.front());
+            asharia::vulkanImageTransition(compiled.passes[3].transitionsBefore.front());
         if (vulkanDepthSampledTransition.oldLayout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
             vulkanDepthSampledTransition.newLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             vulkanDepthSampledTransition.srcStageMask != depthTestsStages ||
@@ -2181,13 +2181,13 @@ namespace {
                 VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT ||
             vulkanDepthSampledTransition.dstStageMask != VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
             vulkanDepthSampledTransition.dstAccessMask != VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) {
-            vke::logError(
+            asharia::logError(
                 "Render graph Vulkan depth sampled-read mapping produced unexpected masks.");
             return false;
         }
 
         const auto vulkanTransientWriteTransition =
-            vke::vulkanImageTransition(compiled.passes[4].transitionsBefore.front());
+            asharia::vulkanImageTransition(compiled.passes[4].transitionsBefore.front());
         if (vulkanTransientWriteTransition.oldLayout != VK_IMAGE_LAYOUT_UNDEFINED ||
             vulkanTransientWriteTransition.newLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
             vulkanTransientWriteTransition.srcStageMask != VK_PIPELINE_STAGE_2_NONE ||
@@ -2196,12 +2196,12 @@ namespace {
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT ||
             vulkanTransientWriteTransition.dstAccessMask !=
                 VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT) {
-            vke::logError("Render graph Vulkan transient write mapping produced unexpected masks.");
+            asharia::logError("Render graph Vulkan transient write mapping produced unexpected masks.");
             return false;
         }
 
         const auto vulkanTransientSampleTransition =
-            vke::vulkanImageTransition(compiled.passes[5].transitionsBefore.front());
+            asharia::vulkanImageTransition(compiled.passes[5].transitionsBefore.front());
         if (vulkanTransientSampleTransition.oldLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
             vulkanTransientSampleTransition.newLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             vulkanTransientSampleTransition.srcStageMask !=
@@ -2211,7 +2211,7 @@ namespace {
             vulkanTransientSampleTransition.dstStageMask !=
                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
             vulkanTransientSampleTransition.dstAccessMask != VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) {
-            vke::logError(
+            asharia::logError(
                 "Render graph Vulkan transient sampled-read mapping produced unexpected masks.");
             return false;
         }
@@ -2219,73 +2219,73 @@ namespace {
         return true;
     }
 
-    bool validateSmokeRenderGraphTransientPlan(const vke::RenderGraphCompileResult& compiled) {
+    bool validateSmokeRenderGraphTransientPlan(const asharia::RenderGraphCompileResult& compiled) {
         if (compiled.transientImages.size() != 1) {
-            vke::logError("Render graph did not produce the expected transient allocation plan.");
+            asharia::logError("Render graph did not produce the expected transient allocation plan.");
             return false;
         }
 
-        const vke::RenderGraphTransientImageAllocation& transient =
+        const asharia::RenderGraphTransientImageAllocation& transient =
             compiled.transientImages.front();
         if (transient.image.index != 2 || transient.imageName != "TransientColor" ||
-            transient.format != vke::RenderGraphImageFormat::B8G8R8A8Srgb ||
+            transient.format != asharia::RenderGraphImageFormat::B8G8R8A8Srgb ||
             transient.extent.width != 640 || transient.extent.height != 360 ||
             transient.firstPassIndex != 4 || transient.lastPassIndex != 5 ||
-            transient.finalState != vke::RenderGraphImageState::ShaderRead ||
-            transient.finalShaderStage != vke::RenderGraphShaderStage::Fragment) {
-            vke::logError("Render graph transient allocation plan contained unexpected fields.");
+            transient.finalState != asharia::RenderGraphImageState::ShaderRead ||
+            transient.finalShaderStage != asharia::RenderGraphShaderStage::Fragment) {
+            asharia::logError("Render graph transient allocation plan contained unexpected fields.");
             return false;
         }
 
         return true;
     }
 
-    bool validateSmokeRenderGraphCommands(const vke::RenderGraphCompileResult& compiled) {
+    bool validateSmokeRenderGraphCommands(const asharia::RenderGraphCompileResult& compiled) {
         if (compiled.passes.size() != 6) {
-            vke::logError("Render graph command smoke received an unexpected pass count.");
+            asharia::logError("Render graph command smoke received an unexpected pass count.");
             return false;
         }
 
         const auto& clearCommands = compiled.passes[0].commands;
         if (clearCommands.size() != 1 ||
-            clearCommands.front().kind != vke::RenderGraphCommandKind::ClearColor ||
+            clearCommands.front().kind != asharia::RenderGraphCommandKind::ClearColor ||
             clearCommands.front().name != "target") {
-            vke::logError("Render graph clear command summary contained unexpected fields.");
+            asharia::logError("Render graph clear command summary contained unexpected fields.");
             return false;
         }
 
         const auto& sampleCommands = compiled.passes[1].commands;
         if (sampleCommands.size() != 4 ||
-            sampleCommands[0].kind != vke::RenderGraphCommandKind::SetShader ||
+            sampleCommands[0].kind != asharia::RenderGraphCommandKind::SetShader ||
             sampleCommands[0].name != "Hidden/SmokeSample" ||
-            sampleCommands[1].kind != vke::RenderGraphCommandKind::SetTexture ||
+            sampleCommands[1].kind != asharia::RenderGraphCommandKind::SetTexture ||
             sampleCommands[1].secondaryName != "source" ||
-            sampleCommands[2].kind != vke::RenderGraphCommandKind::SetFloat ||
-            sampleCommands[3].kind != vke::RenderGraphCommandKind::DrawFullscreenTriangle) {
-            vke::logError("Render graph sample command summary contained unexpected fields.");
+            sampleCommands[2].kind != asharia::RenderGraphCommandKind::SetFloat ||
+            sampleCommands[3].kind != asharia::RenderGraphCommandKind::DrawFullscreenTriangle) {
+            asharia::logError("Render graph sample command summary contained unexpected fields.");
             return false;
         }
 
         const auto& transientCommands = compiled.passes[5].commands;
         if (transientCommands.size() != 4 ||
-            transientCommands[0].kind != vke::RenderGraphCommandKind::SetShader ||
-            transientCommands[1].kind != vke::RenderGraphCommandKind::SetTexture ||
-            transientCommands[2].kind != vke::RenderGraphCommandKind::SetVec4 ||
-            transientCommands[3].kind != vke::RenderGraphCommandKind::DrawFullscreenTriangle) {
-            vke::logError("Render graph transient command summary contained unexpected fields.");
+            transientCommands[0].kind != asharia::RenderGraphCommandKind::SetShader ||
+            transientCommands[1].kind != asharia::RenderGraphCommandKind::SetTexture ||
+            transientCommands[2].kind != asharia::RenderGraphCommandKind::SetVec4 ||
+            transientCommands[3].kind != asharia::RenderGraphCommandKind::DrawFullscreenTriangle) {
+            asharia::logError("Render graph transient command summary contained unexpected fields.");
             return false;
         }
 
         return true;
     }
 
-    bool hasNoDepthSlots(vke::RenderGraphPassContext context) {
+    bool hasNoDepthSlots(asharia::RenderGraphPassContext context) {
         return context.depthReads.empty() && context.depthWrites.empty() &&
                context.depthSampledReads.empty() && context.depthReadSlots.empty() &&
                context.depthWriteSlots.empty() && context.depthSampledReadSlots.empty();
     }
 
-    vke::Result<void> validateClearTransferContext(vke::RenderGraphPassContext context) {
+    asharia::Result<void> validateClearTransferContext(asharia::RenderGraphPassContext context) {
         if (context.name != "ClearColor" || context.type != "basic.clear-transfer" ||
             context.paramsType != "basic.clear-transfer.params" ||
             context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
@@ -2293,8 +2293,8 @@ namespace {
             context.transferWrites.size() != 1 || !context.colorWriteSlots.empty() ||
             !context.shaderReadSlots.empty() || context.transferWriteSlots.size() != 1 ||
             context.transferWriteSlots.front().name != "target") {
-            return std::unexpected{vke::Error{
-                vke::ErrorDomain::RenderGraph,
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
                 0,
                 "Render graph executor received unexpected pass context.",
             }};
@@ -2303,7 +2303,7 @@ namespace {
         return {};
     }
 
-    vke::Result<void> validateSampleFragmentContext(vke::RenderGraphPassContext context) {
+    asharia::Result<void> validateSampleFragmentContext(asharia::RenderGraphPassContext context) {
         if (context.name != "SampleColor" || context.type != "basic.sample-fragment" ||
             context.paramsType != "basic.sample-fragment.params" ||
             context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
@@ -2311,9 +2311,9 @@ namespace {
             !context.transferWrites.empty() || !context.colorWriteSlots.empty() ||
             context.shaderReadSlots.size() != 1 || !context.transferWriteSlots.empty() ||
             context.shaderReadSlots.front().name != "source" ||
-            context.shaderReadSlots.front().shaderStage != vke::RenderGraphShaderStage::Fragment) {
-            return std::unexpected{vke::Error{
-                vke::ErrorDomain::RenderGraph,
+            context.shaderReadSlots.front().shaderStage != asharia::RenderGraphShaderStage::Fragment) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
                 0,
                 "Render graph shader-read executor received unexpected pass context.",
             }};
@@ -2322,7 +2322,7 @@ namespace {
         return {};
     }
 
-    vke::Result<void> validateDepthWriteContext(vke::RenderGraphPassContext context) {
+    asharia::Result<void> validateDepthWriteContext(asharia::RenderGraphPassContext context) {
         if (context.name != "WriteDepth" || context.type != "basic.depth-write" ||
             context.paramsType != "basic.depth-write.params" ||
             context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
@@ -2333,8 +2333,8 @@ namespace {
             context.depthWriteSlots.size() != 1 || !context.depthSampledReadSlots.empty() ||
             !context.transferWriteSlots.empty() ||
             context.depthWriteSlots.front().name != "depth") {
-            return std::unexpected{vke::Error{
-                vke::ErrorDomain::RenderGraph,
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
                 0,
                 "Render graph depth-write executor received unexpected pass context.",
             }};
@@ -2343,7 +2343,7 @@ namespace {
         return {};
     }
 
-    vke::Result<void> validateDepthSampleContext(vke::RenderGraphPassContext context) {
+    asharia::Result<void> validateDepthSampleContext(asharia::RenderGraphPassContext context) {
         if (context.name != "SampleDepth" || context.type != "basic.depth-sample-fragment" ||
             context.paramsType != "basic.depth-sample-fragment.params" ||
             context.transitionsBefore.size() != 1 || !context.colorWrites.empty() ||
@@ -2355,9 +2355,9 @@ namespace {
             !context.transferWriteSlots.empty() ||
             context.depthSampledReadSlots.front().name != "depth" ||
             context.depthSampledReadSlots.front().shaderStage !=
-                vke::RenderGraphShaderStage::Fragment) {
-            return std::unexpected{vke::Error{
-                vke::ErrorDomain::RenderGraph,
+                asharia::RenderGraphShaderStage::Fragment) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
                 0,
                 "Render graph depth sampled-read executor received unexpected pass context.",
             }};
@@ -2366,7 +2366,7 @@ namespace {
         return {};
     }
 
-    vke::Result<void> validateTransientWriteContext(vke::RenderGraphPassContext context) {
+    asharia::Result<void> validateTransientWriteContext(asharia::RenderGraphPassContext context) {
         if (context.name != "WriteTransientColor" || context.type != "basic.transient-color" ||
             context.paramsType != "basic.transient-color.params" ||
             context.transitionsBefore.size() != 1 || context.colorWrites.size() != 1 ||
@@ -2374,8 +2374,8 @@ namespace {
             !context.transferWrites.empty() || context.colorWriteSlots.size() != 1 ||
             !context.shaderReadSlots.empty() || !context.transferWriteSlots.empty() ||
             context.colorWriteSlots.front().name != "target") {
-            return std::unexpected{vke::Error{
-                vke::ErrorDomain::RenderGraph,
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
                 0,
                 "Render graph transient write executor received unexpected pass context.",
             }};
@@ -2384,7 +2384,7 @@ namespace {
         return {};
     }
 
-    vke::Result<void> validateTransientSampleContext(vke::RenderGraphPassContext context) {
+    asharia::Result<void> validateTransientSampleContext(asharia::RenderGraphPassContext context) {
         if (context.name != "SampleTransientColor" ||
             context.type != "basic.transient-sample-fragment" ||
             context.paramsType != "basic.transient-sample-fragment.params" ||
@@ -2393,9 +2393,9 @@ namespace {
             !context.transferWrites.empty() || !context.colorWriteSlots.empty() ||
             context.shaderReadSlots.size() != 1 || !context.transferWriteSlots.empty() ||
             context.shaderReadSlots.front().name != "source" ||
-            context.shaderReadSlots.front().shaderStage != vke::RenderGraphShaderStage::Fragment) {
-            return std::unexpected{vke::Error{
-                vke::ErrorDomain::RenderGraph,
+            context.shaderReadSlots.front().shaderStage != asharia::RenderGraphShaderStage::Fragment) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
                 0,
                 "Render graph transient sampled-read executor received unexpected pass context.",
             }};
@@ -2404,11 +2404,11 @@ namespace {
         return {};
     }
 
-    void registerSmokeRenderGraphExecutors(vke::RenderGraphExecutorRegistry& executors,
+    void registerSmokeRenderGraphExecutors(asharia::RenderGraphExecutorRegistry& executors,
                                            int& callbackCount) {
         executors.registerExecutor(
             "basic.clear-transfer",
-            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+            [&callbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 auto validated = validateClearTransferContext(context);
                 if (!validated) {
                     return validated;
@@ -2418,7 +2418,7 @@ namespace {
             });
         executors.registerExecutor(
             "basic.sample-fragment",
-            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+            [&callbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 auto validated = validateSampleFragmentContext(context);
                 if (!validated) {
                     return validated;
@@ -2428,7 +2428,7 @@ namespace {
             });
         executors.registerExecutor(
             "basic.depth-write",
-            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+            [&callbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 auto validated = validateDepthWriteContext(context);
                 if (!validated) {
                     return validated;
@@ -2438,7 +2438,7 @@ namespace {
             });
         executors.registerExecutor(
             "basic.depth-sample-fragment",
-            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+            [&callbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 auto validated = validateDepthSampleContext(context);
                 if (!validated) {
                     return validated;
@@ -2448,7 +2448,7 @@ namespace {
             });
         executors.registerExecutor(
             "basic.transient-color",
-            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+            [&callbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 auto validated = validateTransientWriteContext(context);
                 if (!validated) {
                     return validated;
@@ -2458,7 +2458,7 @@ namespace {
             });
         executors.registerExecutor(
             "basic.transient-sample-fragment",
-            [&callbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+            [&callbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 auto validated = validateTransientSampleContext(context);
                 if (!validated) {
                     return validated;
@@ -2473,14 +2473,14 @@ namespace {
         std::string_view context;
     };
 
-    bool expectRenderGraphCompileFailure(const vke::Result<vke::RenderGraphCompileResult>& compiled,
+    bool expectRenderGraphCompileFailure(const asharia::Result<asharia::RenderGraphCompileResult>& compiled,
                                          ExpectedRenderGraphCompileFailure expected) {
         if (compiled) {
-            vke::logError("Render graph accepted invalid graph: " + std::string{expected.context});
+            asharia::logError("Render graph accepted invalid graph: " + std::string{expected.context});
             return false;
         }
         if (compiled.error().message.find(expected.message) == std::string::npos) {
-            vke::logError("Render graph produced an unexpected error for " +
+            asharia::logError("Render graph produced an unexpected error for " +
                           std::string{expected.context} + ": " + compiled.error().message);
             return false;
         }
@@ -2508,10 +2508,10 @@ namespace {
     };
 
     struct BuiltinSchemaSmokeImages {
-        vke::RenderGraphImageHandle colorTarget{};
-        vke::RenderGraphImageHandle colorSource{};
-        vke::RenderGraphImageHandle depthTarget{};
-        vke::RenderGraphImageHandle unexpectedTarget{};
+        asharia::RenderGraphImageHandle colorTarget{};
+        asharia::RenderGraphImageHandle colorSource{};
+        asharia::RenderGraphImageHandle depthTarget{};
+        asharia::RenderGraphImageHandle unexpectedTarget{};
     };
 
     struct BuiltinSchemaSmokeCompileOptions {
@@ -2520,43 +2520,43 @@ namespace {
         bool addUnexpectedSlot{};
     };
 
-    BuiltinSchemaSmokeImages createBuiltinSchemaSmokeImages(vke::RenderGraph& graph) {
+    BuiltinSchemaSmokeImages createBuiltinSchemaSmokeImages(asharia::RenderGraph& graph) {
         return BuiltinSchemaSmokeImages{
-            .colorTarget = graph.importImage(vke::RenderGraphImageDesc{
+            .colorTarget = graph.importImage(asharia::RenderGraphImageDesc{
                 .name = "BuiltinSchemaColorTarget",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
-                .initialState = vke::RenderGraphImageState::Undefined,
-                .finalState = vke::RenderGraphImageState::Present,
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::Present,
             }),
-            .colorSource = graph.importImage(vke::RenderGraphImageDesc{
+            .colorSource = graph.importImage(asharia::RenderGraphImageDesc{
                 .name = "BuiltinSchemaColorSource",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
-                .initialState = vke::RenderGraphImageState::ShaderRead,
-                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-                .finalState = vke::RenderGraphImageState::ShaderRead,
-                .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = asharia::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+                .finalState = asharia::RenderGraphImageState::ShaderRead,
+                .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
             }),
-            .depthTarget = graph.importImage(vke::RenderGraphImageDesc{
+            .depthTarget = graph.importImage(asharia::RenderGraphImageDesc{
                 .name = "BuiltinSchemaDepthTarget",
-                .format = vke::RenderGraphImageFormat::D32Sfloat,
-                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
-                .initialState = vke::RenderGraphImageState::Undefined,
-                .finalState = vke::RenderGraphImageState::DepthAttachmentWrite,
+                .format = asharia::RenderGraphImageFormat::D32Sfloat,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::DepthAttachmentWrite,
             }),
-            .unexpectedTarget = graph.importImage(vke::RenderGraphImageDesc{
+            .unexpectedTarget = graph.importImage(asharia::RenderGraphImageDesc{
                 .name = "BuiltinSchemaUnexpectedTarget",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
-                .initialState = vke::RenderGraphImageState::Undefined,
-                .finalState = vke::RenderGraphImageState::Present,
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::Present,
             }),
         };
     }
 
     void addBuiltinSchemaSmokeSlots(BuiltinSchemaSmokePass passKind,
-                                    vke::RenderGraph::PassBuilder& pass,
+                                    asharia::RenderGraph::PassBuilder& pass,
                                     BuiltinSchemaSmokeImages images,
                                     std::string_view omittedSlot = {}) {
         switch (passKind) {
@@ -2574,7 +2574,7 @@ namespace {
         case BuiltinSchemaSmokePass::TransientPresent:
             if (omittedSlot != "source") {
                 pass.readTexture("source", images.colorSource,
-                                 vke::RenderGraphShaderStage::Fragment);
+                                 asharia::RenderGraphShaderStage::Fragment);
             }
             if (omittedSlot != "target") {
                 pass.writeTransfer("target", images.colorTarget);
@@ -2593,7 +2593,7 @@ namespace {
         case BuiltinSchemaSmokePass::RasterFullscreen:
             if (omittedSlot != "source") {
                 pass.readTexture("source", images.colorSource,
-                                 vke::RenderGraphShaderStage::Fragment);
+                                 asharia::RenderGraphShaderStage::Fragment);
             }
             if (omittedSlot != "target") {
                 pass.writeColor("target", images.colorTarget);
@@ -2602,11 +2602,11 @@ namespace {
         }
     }
 
-    vke::Result<vke::RenderGraphCompileResult>
+    asharia::Result<asharia::RenderGraphCompileResult>
     compileBuiltinSchemaSmokePass(const BuiltinSchemaSmokeCase& testCase,
-                                  const vke::RenderGraphSchemaRegistry& schemas,
+                                  const asharia::RenderGraphSchemaRegistry& schemas,
                                   BuiltinSchemaSmokeCompileOptions options) {
-        vke::RenderGraph graph;
+        asharia::RenderGraph graph;
         const BuiltinSchemaSmokeImages images = createBuiltinSchemaSmokeImages(graph);
         auto pass = graph.addPass(std::string{testCase.context}, std::string{testCase.type});
         pass.setParamsType(std::string{options.paramsType});
@@ -2618,7 +2618,7 @@ namespace {
         return graph.compile(schemas);
     }
 
-    bool validateBuiltinSchemaSmokeCase(const vke::RenderGraphSchemaRegistry& builtinSchemas,
+    bool validateBuiltinSchemaSmokeCase(const asharia::RenderGraphSchemaRegistry& builtinSchemas,
                                         const BuiltinSchemaSmokeCase& testCase) {
         if (!expectRenderGraphCompileFailure(
                 compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
@@ -2664,61 +2664,61 @@ namespace {
     }
 
     bool validateSmokeRenderGraphBuiltinSchemaFailures() {
-        const vke::RenderGraphSchemaRegistry builtinSchemas = vke::basicRenderGraphSchemaRegistry();
+        const asharia::RenderGraphSchemaRegistry builtinSchemas = asharia::basicRenderGraphSchemaRegistry();
         const std::array builtinCases{
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::TransferClear,
-                .type = vke::kBasicTransferClearPassType,
-                .paramsType = vke::kBasicTransferClearParamsType,
+                .type = asharia::kBasicTransferClearPassType,
+                .paramsType = asharia::kBasicTransferClearParamsType,
                 .missingSlot = "target",
                 .context = "builtin transfer clear",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::DynamicClear,
-                .type = vke::kBasicDynamicClearPassType,
-                .paramsType = vke::kBasicDynamicClearParamsType,
+                .type = asharia::kBasicDynamicClearPassType,
+                .paramsType = asharia::kBasicDynamicClearParamsType,
                 .missingSlot = "target",
                 .context = "builtin dynamic clear",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::TransientPresent,
-                .type = vke::kBasicTransientPresentPassType,
-                .paramsType = vke::kBasicTransientPresentParamsType,
+                .type = asharia::kBasicTransientPresentPassType,
+                .paramsType = asharia::kBasicTransientPresentParamsType,
                 .missingSlot = "source",
                 .context = "builtin transient present",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterTriangle,
-                .type = vke::kBasicRasterTrianglePassType,
-                .paramsType = vke::kBasicRasterTriangleParamsType,
+                .type = asharia::kBasicRasterTrianglePassType,
+                .paramsType = asharia::kBasicRasterTriangleParamsType,
                 .missingSlot = "target",
                 .context = "builtin raster triangle",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterDepthTriangle,
-                .type = vke::kBasicRasterDepthTrianglePassType,
-                .paramsType = vke::kBasicRasterDepthTriangleParamsType,
+                .type = asharia::kBasicRasterDepthTrianglePassType,
+                .paramsType = asharia::kBasicRasterDepthTriangleParamsType,
                 .missingSlot = "depth",
                 .context = "builtin raster depth triangle",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterMesh3D,
-                .type = vke::kBasicRasterMesh3DPassType,
-                .paramsType = vke::kBasicRasterMesh3DParamsType,
+                .type = asharia::kBasicRasterMesh3DPassType,
+                .paramsType = asharia::kBasicRasterMesh3DParamsType,
                 .missingSlot = "depth",
                 .context = "builtin raster mesh3D",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterFullscreen,
-                .type = vke::kBasicRasterFullscreenPassType,
-                .paramsType = vke::kBasicRasterFullscreenParamsType,
+                .type = asharia::kBasicRasterFullscreenPassType,
+                .paramsType = asharia::kBasicRasterFullscreenParamsType,
                 .missingSlot = "source",
                 .context = "builtin raster fullscreen",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterDrawList,
-                .type = vke::kBasicRasterDrawListPassType,
-                .paramsType = vke::kBasicRasterDrawListParamsType,
+                .type = asharia::kBasicRasterDrawListPassType,
+                .paramsType = asharia::kBasicRasterDrawListParamsType,
                 .missingSlot = "depth",
                 .context = "builtin raster draw list",
             },
@@ -2730,96 +2730,96 @@ namespace {
             });
     }
 
-    bool validateSmokeRenderGraphNegativeCompiles(const vke::RenderGraphSchemaRegistry& schemas) {
-        vke::RenderGraph missingProducerGraph;
+    bool validateSmokeRenderGraphNegativeCompiles(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph missingProducerGraph;
         const auto orphanColor =
-            missingProducerGraph.createTransientImage(vke::RenderGraphImageDesc{
+            missingProducerGraph.createTransientImage(asharia::RenderGraphImageDesc{
                 .name = "OrphanTransientColor",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
             });
         int missingProducerCallbackCount = 0;
         missingProducerGraph.addPass("SampleOrphanTransient", "basic.transient-sample-fragment")
             .setParamsType("basic.transient-sample-fragment.params")
-            .readTexture("source", orphanColor, vke::RenderGraphShaderStage::Fragment)
-            .execute([&missingProducerCallbackCount](vke::RenderGraphPassContext) {
+            .readTexture("source", orphanColor, asharia::RenderGraphShaderStage::Fragment)
+            .execute([&missingProducerCallbackCount](asharia::RenderGraphPassContext) {
                 ++missingProducerCallbackCount;
-                return vke::Result<void>{};
+                return asharia::Result<void>{};
             });
 
         auto missingProducerCompiled = missingProducerGraph.compile(schemas);
         if (missingProducerCompiled) {
-            vke::logError("Render graph accepted a transient read without a producer.");
+            asharia::logError("Render graph accepted a transient read without a producer.");
             return false;
         }
         if (missingProducerCompiled.error().message.find("before any pass writes it") ==
             std::string::npos) {
-            vke::logError("Render graph produced an unexpected missing-producer error: " +
+            asharia::logError("Render graph produced an unexpected missing-producer error: " +
                           missingProducerCompiled.error().message);
             return false;
         }
 
         auto missingProducerExecuted = missingProducerGraph.execute();
         if (missingProducerExecuted) {
-            vke::logError("Render graph executed a transient read without a producer.");
+            asharia::logError("Render graph executed a transient read without a producer.");
             return false;
         }
         if (missingProducerCallbackCount != 0) {
-            vke::logError(
+            asharia::logError(
                 "Render graph invoked a callback after missing-producer compile failure.");
             return false;
         }
 
-        vke::RenderGraph missingSchemaGraph;
-        const auto schemaBackbuffer = missingSchemaGraph.importImage(vke::RenderGraphImageDesc{
+        asharia::RenderGraph missingSchemaGraph;
+        const auto schemaBackbuffer = missingSchemaGraph.importImage(asharia::RenderGraphImageDesc{
             .name = "UnknownSchemaBackbuffer",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-            .initialState = vke::RenderGraphImageState::Undefined,
-            .finalState = vke::RenderGraphImageState::Present,
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
         });
         int missingSchemaCallbackCount = 0;
         missingSchemaGraph.addPass("UnknownTypedPass", "basic.unknown-pass")
             .setParamsType("basic.unknown-pass.params")
             .writeTransfer("target", schemaBackbuffer)
-            .execute([&missingSchemaCallbackCount](vke::RenderGraphPassContext) {
+            .execute([&missingSchemaCallbackCount](asharia::RenderGraphPassContext) {
                 ++missingSchemaCallbackCount;
-                return vke::Result<void>{};
+                return asharia::Result<void>{};
             });
 
         auto missingSchemaCompiled = missingSchemaGraph.compile(schemas);
         if (missingSchemaCompiled) {
-            vke::logError("Render graph accepted a pass type without a registered schema.");
+            asharia::logError("Render graph accepted a pass type without a registered schema.");
             return false;
         }
         if (missingSchemaCompiled.error().message.find("has no registered schema") ==
             std::string::npos) {
-            vke::logError("Render graph produced an unexpected missing-schema error: " +
+            asharia::logError("Render graph produced an unexpected missing-schema error: " +
                           missingSchemaCompiled.error().message);
             return false;
         }
         if (missingSchemaCallbackCount != 0) {
-            vke::logError("Render graph invoked a callback during missing-schema compile.");
+            asharia::logError("Render graph invoked a callback during missing-schema compile.");
             return false;
         }
 
-        vke::RenderGraph mixedReadWriteGraph;
-        const auto mixedReadWriteImage = mixedReadWriteGraph.importImage(vke::RenderGraphImageDesc{
+        asharia::RenderGraph mixedReadWriteGraph;
+        const auto mixedReadWriteImage = mixedReadWriteGraph.importImage(asharia::RenderGraphImageDesc{
             .name = "MixedReadWriteImage",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-            .initialState = vke::RenderGraphImageState::ShaderRead,
-            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-            .finalState = vke::RenderGraphImageState::Present,
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = asharia::RenderGraphImageState::ShaderRead,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+            .finalState = asharia::RenderGraphImageState::Present,
         });
         int mixedReadWriteCallbackCount = 0;
         mixedReadWriteGraph.addPass("MixedReadWritePass", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
-            .readTexture("source", mixedReadWriteImage, vke::RenderGraphShaderStage::Fragment)
+            .readTexture("source", mixedReadWriteImage, asharia::RenderGraphShaderStage::Fragment)
             .writeColor("target", mixedReadWriteImage)
-            .execute([&mixedReadWriteCallbackCount](vke::RenderGraphPassContext) {
+            .execute([&mixedReadWriteCallbackCount](asharia::RenderGraphPassContext) {
                 ++mixedReadWriteCallbackCount;
-                return vke::Result<void>{};
+                return asharia::Result<void>{};
             });
         if (!expectRenderGraphCompileFailure(
                 mixedReadWriteGraph.compile(schemas),
@@ -2831,18 +2831,18 @@ namespace {
         }
         auto mixedReadWriteExecuted = mixedReadWriteGraph.execute();
         if (mixedReadWriteExecuted || mixedReadWriteCallbackCount != 0) {
-            vke::logError("Render graph executed a same-image shader read and color write pass.");
+            asharia::logError("Render graph executed a same-image shader read and color write pass.");
             return false;
         }
 
-        vke::RenderGraph mixedColorTransferGraph;
+        asharia::RenderGraph mixedColorTransferGraph;
         const auto mixedColorTransferImage =
-            mixedColorTransferGraph.importImage(vke::RenderGraphImageDesc{
+            mixedColorTransferGraph.importImage(asharia::RenderGraphImageDesc{
                 .name = "MixedColorTransferImage",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-                .initialState = vke::RenderGraphImageState::Undefined,
-                .finalState = vke::RenderGraphImageState::Present,
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::Present,
             });
         mixedColorTransferGraph.addPass("MixedColorTransferPass", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
@@ -2856,20 +2856,20 @@ namespace {
             return false;
         }
 
-        vke::RenderGraph mixedDepthGraph;
-        const auto mixedDepthImage = mixedDepthGraph.importImage(vke::RenderGraphImageDesc{
+        asharia::RenderGraph mixedDepthGraph;
+        const auto mixedDepthImage = mixedDepthGraph.importImage(asharia::RenderGraphImageDesc{
             .name = "MixedDepthImage",
-            .format = vke::RenderGraphImageFormat::D32Sfloat,
-            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-            .initialState = vke::RenderGraphImageState::Undefined,
-            .finalState = vke::RenderGraphImageState::DepthSampledRead,
-            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .format = asharia::RenderGraphImageFormat::D32Sfloat,
+            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::DepthSampledRead,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
         });
         mixedDepthGraph.addPass("MixedDepthPass", "basic.depth-write")
             .setParamsType("basic.depth-write.params")
             .writeDepth("depthWrite", mixedDepthImage)
             .readDepthTexture("depthSample", mixedDepthImage,
-                              vke::RenderGraphShaderStage::Fragment);
+                              asharia::RenderGraphShaderStage::Fragment);
         if (!expectRenderGraphCompileFailure(
                 mixedDepthGraph.compile(schemas),
                 ExpectedRenderGraphCompileFailure{
@@ -2879,16 +2879,16 @@ namespace {
             return false;
         }
 
-        vke::RenderGraph ambiguousProducerGraph;
+        asharia::RenderGraph ambiguousProducerGraph;
         const auto ambiguousProducerImage =
-            ambiguousProducerGraph.createTransientImage(vke::RenderGraphImageDesc{
+            ambiguousProducerGraph.createTransientImage(asharia::RenderGraphImageDesc{
                 .name = "AmbiguousProducerImage",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
             });
         ambiguousProducerGraph.addPass("ReadBeforeTwoWriters", "basic.transient-sample-fragment")
             .setParamsType("basic.transient-sample-fragment.params")
-            .readTexture("source", ambiguousProducerImage, vke::RenderGraphShaderStage::Fragment);
+            .readTexture("source", ambiguousProducerImage, asharia::RenderGraphShaderStage::Fragment);
         ambiguousProducerGraph.addPass("FutureWriterA", "basic.transient-color")
             .setParamsType("basic.transient-color.params")
             .writeColor("target", ambiguousProducerImage);
@@ -2908,22 +2908,22 @@ namespace {
             ambiguousProducerError.find("AmbiguousProducerImage") == std::string::npos ||
             ambiguousProducerError.find("FutureWriterA") == std::string::npos ||
             ambiguousProducerError.find("FutureWriterB") == std::string::npos) {
-            vke::logError("Render graph ambiguous producer diagnostic omitted context: " +
+            asharia::logError("Render graph ambiguous producer diagnostic omitted context: " +
                           ambiguousProducerError);
             return false;
         }
 
-        vke::RenderGraph missingFinalStateGraph;
-        const auto missingFinalImage = missingFinalStateGraph.importImage(vke::RenderGraphImageDesc{
+        asharia::RenderGraph missingFinalStateGraph;
+        const auto missingFinalImage = missingFinalStateGraph.importImage(asharia::RenderGraphImageDesc{
             .name = "ImportedTextureWithoutFinalState",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-            .initialState = vke::RenderGraphImageState::ShaderRead,
-            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+            .initialState = asharia::RenderGraphImageState::ShaderRead,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
         });
         missingFinalStateGraph.addPass("SampleImportedWithoutFinal", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
-            .readTexture("source", missingFinalImage, vke::RenderGraphShaderStage::Fragment);
+            .readTexture("source", missingFinalImage, asharia::RenderGraphShaderStage::Fragment);
         if (!expectRenderGraphCompileFailure(missingFinalStateGraph.compile(schemas),
                                              ExpectedRenderGraphCompileFailure{
                                                  .message = "must declare an explicit final state",
@@ -2932,50 +2932,50 @@ namespace {
             return false;
         }
 
-        vke::RenderGraph explicitFinalStateGraph;
+        asharia::RenderGraph explicitFinalStateGraph;
         const auto explicitFinalImage =
-            explicitFinalStateGraph.importImage(vke::RenderGraphImageDesc{
+            explicitFinalStateGraph.importImage(asharia::RenderGraphImageDesc{
                 .name = "ExplicitFinalImportedTexture",
-                .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-                .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
-                .initialState = vke::RenderGraphImageState::ShaderRead,
-                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-                .finalState = vke::RenderGraphImageState::ShaderRead,
-                .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = asharia::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+                .finalState = asharia::RenderGraphImageState::ShaderRead,
+                .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
             });
         explicitFinalStateGraph.addPass("SampleExplicitFinalImported", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
-            .readTexture("source", explicitFinalImage, vke::RenderGraphShaderStage::Fragment);
+            .readTexture("source", explicitFinalImage, asharia::RenderGraphShaderStage::Fragment);
         auto explicitFinalCompiled = explicitFinalStateGraph.compile(schemas);
         if (!explicitFinalCompiled) {
-            vke::logError("Render graph rejected an imported image with explicit final state: " +
+            asharia::logError("Render graph rejected an imported image with explicit final state: " +
                           explicitFinalCompiled.error().message);
             return false;
         }
         if (!explicitFinalCompiled->finalTransitions.empty()) {
-            vke::logError(
+            asharia::logError(
                 "Render graph produced a final transition for an already shader-readable import.");
             return false;
         }
 
-        vke::RenderGraph cycleGraph;
-        const auto cycleImageA = cycleGraph.createTransientImage(vke::RenderGraphImageDesc{
+        asharia::RenderGraph cycleGraph;
+        const auto cycleImageA = cycleGraph.createTransientImage(asharia::RenderGraphImageDesc{
             .name = "CycleImageA",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
         });
-        const auto cycleImageB = cycleGraph.createTransientImage(vke::RenderGraphImageDesc{
+        const auto cycleImageB = cycleGraph.createTransientImage(asharia::RenderGraphImageDesc{
             .name = "CycleImageB",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
         });
         cycleGraph.addPass("CycleFirst", "basic.cycle-read-write")
             .setParamsType("basic.cycle-read-write.params")
-            .readTexture("source", cycleImageA, vke::RenderGraphShaderStage::Fragment)
+            .readTexture("source", cycleImageA, asharia::RenderGraphShaderStage::Fragment)
             .writeColor("target", cycleImageB);
         cycleGraph.addPass("CycleSecond", "basic.cycle-read-write")
             .setParamsType("basic.cycle-read-write.params")
-            .readTexture("source", cycleImageB, vke::RenderGraphShaderStage::Fragment)
+            .readTexture("source", cycleImageB, asharia::RenderGraphShaderStage::Fragment)
             .writeColor("target", cycleImageA);
         auto cycleCompiled = cycleGraph.compile(schemas);
         if (!expectRenderGraphCompileFailure(cycleCompiled,
@@ -2990,7 +2990,7 @@ namespace {
             cycleError.find("CycleSecond") == std::string::npos ||
             cycleError.find("CycleImageA") == std::string::npos ||
             cycleError.find("Cycle edge") == std::string::npos) {
-            vke::logError("Render graph cycle diagnostic omitted pass, image, or edge context: " +
+            asharia::logError("Render graph cycle diagnostic omitted pass, image, or edge context: " +
                           cycleError);
             return false;
         }
@@ -2998,19 +2998,19 @@ namespace {
         return true;
     }
 
-    bool validateSmokeRenderGraphCulling(const vke::RenderGraphSchemaRegistry& schemas) {
-        vke::RenderGraph cullingGraph;
-        const auto cullingBackbuffer = cullingGraph.importImage(vke::RenderGraphImageDesc{
+    bool validateSmokeRenderGraphCulling(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph cullingGraph;
+        const auto cullingBackbuffer = cullingGraph.importImage(asharia::RenderGraphImageDesc{
             .name = "CullingBackbuffer",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 64, .height = 64},
-            .initialState = vke::RenderGraphImageState::Undefined,
-            .finalState = vke::RenderGraphImageState::Present,
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
         });
-        const auto unusedTransient = cullingGraph.createTransientImage(vke::RenderGraphImageDesc{
+        const auto unusedTransient = cullingGraph.createTransientImage(asharia::RenderGraphImageDesc{
             .name = "UnusedTransient",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 32, .height = 32},
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
         });
 
         int visibleCallbackCount = 0;
@@ -3019,64 +3019,64 @@ namespace {
         cullingGraph.addPass("VisibleClear", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
             .writeTransfer("target", cullingBackbuffer)
-            .recordCommands([](vke::RenderGraphCommandList& commands) {
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
                 commands.clearColor("target", std::array{0.0F, 0.0F, 0.0F, 1.0F});
             })
-            .execute([&visibleCallbackCount](vke::RenderGraphPassContext) {
+            .execute([&visibleCallbackCount](asharia::RenderGraphPassContext) {
                 ++visibleCallbackCount;
-                return vke::Result<void>{};
+                return asharia::Result<void>{};
             });
         cullingGraph.addPass("WriteUnusedTransient", "basic.transient-color")
             .setParamsType("basic.transient-color.params")
             .writeColor("target", unusedTransient)
             .allowCulling()
-            .execute([&culledCallbackCount](vke::RenderGraphPassContext) {
+            .execute([&culledCallbackCount](asharia::RenderGraphPassContext) {
                 ++culledCallbackCount;
-                return vke::Result<void>{};
+                return asharia::Result<void>{};
             });
         cullingGraph.addPass("SideEffectMarker", "basic.side-effect")
             .setParamsType("basic.side-effect.params")
             .execute([&sideEffectCallbackCount](
-                         vke::RenderGraphPassContext context) -> vke::Result<void> {
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 if (!context.allowCulling || !context.hasSideEffects) {
-                    return std::unexpected{vke::Error{
-                        vke::ErrorDomain::RenderGraph,
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
                         0,
                         "Render graph side-effect context did not preserve culling flags.",
                     }};
                 }
                 ++sideEffectCallbackCount;
-                return vke::Result<void>{};
+                return asharia::Result<void>{};
             });
 
         auto compiled = cullingGraph.compile(schemas);
         if (!compiled) {
-            vke::logError(compiled.error().message);
+            asharia::logError(compiled.error().message);
             return false;
         }
         if (compiled->passes.size() != 2 || compiled->culledPasses.size() != 1 ||
             !compiled->transientImages.empty()) {
-            vke::logError("Render graph culling smoke produced an unexpected compile plan.");
+            asharia::logError("Render graph culling smoke produced an unexpected compile plan.");
             return false;
         }
         if (compiled->culledPasses.front().name != "WriteUnusedTransient" ||
             compiled->culledPasses.front().declarationIndex != 1) {
-            vke::logError("Render graph culling smoke culled the wrong pass.");
+            asharia::logError("Render graph culling smoke culled the wrong pass.");
             return false;
         }
         if (compiled->passes[0].name != "VisibleClear" ||
             compiled->passes[1].name != "SideEffectMarker" || !compiled->passes[1].hasSideEffects) {
-            vke::logError("Render graph culling smoke kept the wrong active passes.");
+            asharia::logError("Render graph culling smoke kept the wrong active passes.");
             return false;
         }
 
         auto executed = cullingGraph.execute(*compiled);
         if (!executed) {
-            vke::logError(executed.error().message);
+            asharia::logError(executed.error().message);
             return false;
         }
         if (visibleCallbackCount != 1 || sideEffectCallbackCount != 1 || culledCallbackCount != 0) {
-            vke::logError("Render graph culling smoke invoked unexpected callbacks.");
+            asharia::logError("Render graph culling smoke invoked unexpected callbacks.");
             return false;
         }
 
@@ -3084,14 +3084,14 @@ namespace {
     }
 
     bool
-    validateSmokeRenderGraphBufferVulkanMappings(const vke::RenderGraphCompileResult& compiled) {
+    validateSmokeRenderGraphBufferVulkanMappings(const asharia::RenderGraphCompileResult& compiled) {
         const auto vulkanBufferWriteTransition =
-            vke::vulkanBufferTransition(compiled.passes[0].bufferTransitionsBefore.front());
+            asharia::vulkanBufferTransition(compiled.passes[0].bufferTransitionsBefore.front());
         if (vulkanBufferWriteTransition.srcStageMask != VK_PIPELINE_STAGE_2_NONE ||
             vulkanBufferWriteTransition.srcAccessMask != 0 ||
             vulkanBufferWriteTransition.dstStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
             vulkanBufferWriteTransition.dstAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT) {
-            vke::logError("Render graph Vulkan buffer transfer-write mapping was unexpected.");
+            asharia::logError("Render graph Vulkan buffer transfer-write mapping was unexpected.");
             return false;
         }
 
@@ -3099,39 +3099,39 @@ namespace {
             VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
             VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
         const auto vulkanBufferReadTransition =
-            vke::vulkanBufferTransition(compiled.passes[1].bufferTransitionsBefore.front());
+            asharia::vulkanBufferTransition(compiled.passes[1].bufferTransitionsBefore.front());
         if (vulkanBufferReadTransition.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
             vulkanBufferReadTransition.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT ||
             vulkanBufferReadTransition.dstStageMask != VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
             vulkanBufferReadTransition.dstAccessMask != kExpectedShaderBufferReadAccess) {
-            vke::logError("Render graph Vulkan buffer shader-read mapping was unexpected.");
+            asharia::logError("Render graph Vulkan buffer shader-read mapping was unexpected.");
             return false;
         }
 
         const VkBufferMemoryBarrier2 bufferBarrier =
-            vke::vulkanBufferBarrier(vulkanBufferReadTransition, VK_NULL_HANDLE, 16, 64);
+            asharia::vulkanBufferBarrier(vulkanBufferReadTransition, VK_NULL_HANDLE, 16, 64);
         if (bufferBarrier.srcQueueFamilyIndex != VK_QUEUE_FAMILY_IGNORED ||
             bufferBarrier.dstQueueFamilyIndex != VK_QUEUE_FAMILY_IGNORED ||
             bufferBarrier.offset != 16 || bufferBarrier.size != 64 ||
             bufferBarrier.buffer != VK_NULL_HANDLE) {
-            vke::logError("Render graph Vulkan buffer barrier fields were unexpected.");
+            asharia::logError("Render graph Vulkan buffer barrier fields were unexpected.");
             return false;
         }
 
-        const vke::VulkanRenderGraphBufferUsage computeReadUsage = vke::vulkanBufferUsage(
-            vke::RenderGraphBufferState::ShaderRead, vke::RenderGraphShaderStage::Compute);
+        const asharia::VulkanRenderGraphBufferUsage computeReadUsage = asharia::vulkanBufferUsage(
+            asharia::RenderGraphBufferState::ShaderRead, asharia::RenderGraphShaderStage::Compute);
         if (computeReadUsage.stageMask != VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT ||
             computeReadUsage.accessMask != kExpectedShaderBufferReadAccess) {
-            vke::logError("Render graph Vulkan compute buffer read mapping was unexpected.");
+            asharia::logError("Render graph Vulkan compute buffer read mapping was unexpected.");
             return false;
         }
 
         return true;
     }
 
-    bool validateSmokeRenderGraphBuffers(const vke::RenderGraphSchemaRegistry& schemas) {
-        vke::RenderGraph bufferGraph;
-        const auto transientBuffer = bufferGraph.createTransientBuffer(vke::RenderGraphBufferDesc{
+    bool validateSmokeRenderGraphBuffers(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph bufferGraph;
+        const auto transientBuffer = bufferGraph.createTransientBuffer(asharia::RenderGraphBufferDesc{
             .name = "TransientUploadBuffer",
             .byteSize = 1024,
         });
@@ -3140,9 +3140,9 @@ namespace {
         int readCallbackCount = 0;
         bufferGraph.addPass("ReadTransientBuffer", "basic.buffer-read-fragment")
             .setParamsType("basic.buffer-read-fragment.params")
-            .readBuffer("source", transientBuffer, vke::RenderGraphShaderStage::Fragment)
+            .readBuffer("source", transientBuffer, asharia::RenderGraphShaderStage::Fragment)
             .execute(
-                [&readCallbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                [&readCallbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                     if (context.name != "ReadTransientBuffer" ||
                         context.type != "basic.buffer-read-fragment" ||
                         context.paramsType != "basic.buffer-read-fragment.params" ||
@@ -3150,16 +3150,16 @@ namespace {
                         context.bufferReadSlots.size() != 1 || !context.bufferWriteSlots.empty() ||
                         context.bufferReadSlots.front().name != "source" ||
                         context.bufferReadSlots.front().shaderStage !=
-                            vke::RenderGraphShaderStage::Fragment ||
+                            asharia::RenderGraphShaderStage::Fragment ||
                         context.bufferTransitionsBefore.size() != 1 ||
                         context.bufferTransitionsBefore.front().oldState !=
-                            vke::RenderGraphBufferState::TransferWrite ||
+                            asharia::RenderGraphBufferState::TransferWrite ||
                         context.bufferTransitionsBefore.front().newState !=
-                            vke::RenderGraphBufferState::ShaderRead ||
+                            asharia::RenderGraphBufferState::ShaderRead ||
                         context.bufferTransitionsBefore.front().newShaderStage !=
-                            vke::RenderGraphShaderStage::Fragment) {
-                        return std::unexpected{vke::Error{
-                            vke::ErrorDomain::RenderGraph,
+                            asharia::RenderGraphShaderStage::Fragment) {
+                        return std::unexpected{asharia::Error{
+                            asharia::ErrorDomain::RenderGraph,
                             0,
                             "Render graph buffer read executor received unexpected pass context.",
                         }};
@@ -3171,7 +3171,7 @@ namespace {
             .setParamsType("basic.buffer-transfer-write.params")
             .writeBuffer("target", transientBuffer)
             .execute(
-                [&writeCallbackCount](vke::RenderGraphPassContext context) -> vke::Result<void> {
+                [&writeCallbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                     if (context.name != "WriteTransientBuffer" ||
                         context.type != "basic.buffer-transfer-write" ||
                         context.paramsType != "basic.buffer-transfer-write.params" ||
@@ -3180,11 +3180,11 @@ namespace {
                         context.bufferWriteSlots.front().name != "target" ||
                         context.bufferTransitionsBefore.size() != 1 ||
                         context.bufferTransitionsBefore.front().oldState !=
-                            vke::RenderGraphBufferState::Undefined ||
+                            asharia::RenderGraphBufferState::Undefined ||
                         context.bufferTransitionsBefore.front().newState !=
-                            vke::RenderGraphBufferState::TransferWrite) {
-                        return std::unexpected{vke::Error{
-                            vke::ErrorDomain::RenderGraph,
+                            asharia::RenderGraphBufferState::TransferWrite) {
+                        return std::unexpected{asharia::Error{
+                            asharia::ErrorDomain::RenderGraph,
                             0,
                             "Render graph buffer write executor received unexpected pass context.",
                         }};
@@ -3195,7 +3195,7 @@ namespace {
 
         auto compiled = bufferGraph.compile(schemas);
         if (!compiled) {
-            vke::logError(compiled.error().message);
+            asharia::logError(compiled.error().message);
             return false;
         }
         if (compiled->declaredBufferCount != 1 || compiled->passes.size() != 2 ||
@@ -3203,7 +3203,7 @@ namespace {
             compiled->passes[1].name != "ReadTransientBuffer" ||
             compiled->dependencies.size() != 1 || compiled->transientBuffers.size() != 1 ||
             !compiled->finalBufferTransitions.empty()) {
-            vke::logError("Render graph buffer smoke produced an unexpected compile plan.");
+            asharia::logError("Render graph buffer smoke produced an unexpected compile plan.");
             return false;
         }
         if (!validateSmokeRenderGraphBufferVulkanMappings(*compiled)) {
@@ -3212,50 +3212,50 @@ namespace {
 
         auto executed = bufferGraph.execute(*compiled);
         if (!executed) {
-            vke::logError(executed.error().message);
+            asharia::logError(executed.error().message);
             return false;
         }
         if (writeCallbackCount != 1 || readCallbackCount != 1) {
-            vke::logError("Render graph buffer smoke invoked unexpected callbacks.");
+            asharia::logError("Render graph buffer smoke invoked unexpected callbacks.");
             return false;
         }
 
-        vke::RenderGraph importedReadGraph;
-        const auto importedBuffer = importedReadGraph.importBuffer(vke::RenderGraphBufferDesc{
+        asharia::RenderGraph importedReadGraph;
+        const auto importedBuffer = importedReadGraph.importBuffer(asharia::RenderGraphBufferDesc{
             .name = "ImportedReadBuffer",
             .byteSize = 256,
-            .initialState = vke::RenderGraphBufferState::ShaderRead,
-            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-            .finalState = vke::RenderGraphBufferState::ShaderRead,
-            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .initialState = asharia::RenderGraphBufferState::ShaderRead,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+            .finalState = asharia::RenderGraphBufferState::ShaderRead,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
         });
         importedReadGraph.addPass("ReadImportedBuffer", "basic.buffer-read-fragment")
             .setParamsType("basic.buffer-read-fragment.params")
-            .readBuffer("source", importedBuffer, vke::RenderGraphShaderStage::Fragment);
+            .readBuffer("source", importedBuffer, asharia::RenderGraphShaderStage::Fragment);
         auto importedReadCompiled = importedReadGraph.compile(schemas);
         if (!importedReadCompiled) {
-            vke::logError("Render graph rejected a shader-readable imported buffer: " +
+            asharia::logError("Render graph rejected a shader-readable imported buffer: " +
                           importedReadCompiled.error().message);
             return false;
         }
         if (!importedReadCompiled->finalBufferTransitions.empty() ||
             !importedReadCompiled->transientBuffers.empty() ||
             !importedReadCompiled->passes.front().bufferTransitionsBefore.empty()) {
-            vke::logError("Render graph produced unexpected transitions for imported buffer read.");
+            asharia::logError("Render graph produced unexpected transitions for imported buffer read.");
             return false;
         }
 
-        vke::RenderGraph missingFinalStateGraph;
+        asharia::RenderGraph missingFinalStateGraph;
         const auto missingFinalBuffer =
-            missingFinalStateGraph.importBuffer(vke::RenderGraphBufferDesc{
+            missingFinalStateGraph.importBuffer(asharia::RenderGraphBufferDesc{
                 .name = "ImportedBufferWithoutFinalState",
                 .byteSize = 64,
-                .initialState = vke::RenderGraphBufferState::ShaderRead,
-                .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
+                .initialState = asharia::RenderGraphBufferState::ShaderRead,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
             });
         missingFinalStateGraph.addPass("ReadImportedWithoutFinal", "basic.buffer-read-fragment")
             .setParamsType("basic.buffer-read-fragment.params")
-            .readBuffer("source", missingFinalBuffer, vke::RenderGraphShaderStage::Fragment);
+            .readBuffer("source", missingFinalBuffer, asharia::RenderGraphShaderStage::Fragment);
         if (!expectRenderGraphCompileFailure(missingFinalStateGraph.compile(schemas),
                                              ExpectedRenderGraphCompileFailure{
                                                  .message = "must declare an explicit final state",
@@ -3264,12 +3264,12 @@ namespace {
             return false;
         }
 
-        vke::RenderGraph missingProducerGraph;
+        asharia::RenderGraph missingProducerGraph;
         const auto orphanBuffer = missingProducerGraph.createTransientBuffer(
-            vke::RenderGraphBufferDesc{.name = "OrphanTransientBuffer", .byteSize = 64});
+            asharia::RenderGraphBufferDesc{.name = "OrphanTransientBuffer", .byteSize = 64});
         missingProducerGraph.addPass("ReadOrphanBuffer", "basic.buffer-read-fragment")
             .setParamsType("basic.buffer-read-fragment.params")
-            .readBuffer("source", orphanBuffer, vke::RenderGraphShaderStage::Fragment);
+            .readBuffer("source", orphanBuffer, asharia::RenderGraphShaderStage::Fragment);
         if (!expectRenderGraphCompileFailure(missingProducerGraph.compile(schemas),
                                              ExpectedRenderGraphCompileFailure{
                                                  .message = "reads buffer",
@@ -3278,18 +3278,18 @@ namespace {
             return false;
         }
 
-        vke::RenderGraph missingStageGraph;
-        const auto stageBuffer = missingStageGraph.importBuffer(vke::RenderGraphBufferDesc{
+        asharia::RenderGraph missingStageGraph;
+        const auto stageBuffer = missingStageGraph.importBuffer(asharia::RenderGraphBufferDesc{
             .name = "BufferMissingShaderStage",
             .byteSize = 64,
-            .initialState = vke::RenderGraphBufferState::ShaderRead,
-            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-            .finalState = vke::RenderGraphBufferState::ShaderRead,
-            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .initialState = asharia::RenderGraphBufferState::ShaderRead,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+            .finalState = asharia::RenderGraphBufferState::ShaderRead,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
         });
         missingStageGraph.addPass("ReadBufferWithoutStage", "basic.buffer-read-fragment")
             .setParamsType("basic.buffer-read-fragment.params")
-            .readBuffer("source", stageBuffer, vke::RenderGraphShaderStage::None);
+            .readBuffer("source", stageBuffer, asharia::RenderGraphShaderStage::None);
         if (!expectRenderGraphCompileFailure(missingStageGraph.compile(schemas),
                                              ExpectedRenderGraphCompileFailure{
                                                  .message = "without a shader stage",
@@ -3298,18 +3298,18 @@ namespace {
             return false;
         }
 
-        vke::RenderGraph zeroSizeGraph;
-        const auto zeroSizeBuffer = zeroSizeGraph.importBuffer(vke::RenderGraphBufferDesc{
+        asharia::RenderGraph zeroSizeGraph;
+        const auto zeroSizeBuffer = zeroSizeGraph.importBuffer(asharia::RenderGraphBufferDesc{
             .name = "ZeroSizeBuffer",
             .byteSize = 0,
-            .initialState = vke::RenderGraphBufferState::ShaderRead,
-            .initialShaderStage = vke::RenderGraphShaderStage::Fragment,
-            .finalState = vke::RenderGraphBufferState::ShaderRead,
-            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .initialState = asharia::RenderGraphBufferState::ShaderRead,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+            .finalState = asharia::RenderGraphBufferState::ShaderRead,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
         });
         zeroSizeGraph.addPass("ReadZeroSizeBuffer", "basic.buffer-read-fragment")
             .setParamsType("basic.buffer-read-fragment.params")
-            .readBuffer("source", zeroSizeBuffer, vke::RenderGraphShaderStage::Fragment);
+            .readBuffer("source", zeroSizeBuffer, asharia::RenderGraphShaderStage::Fragment);
         return expectRenderGraphCompileFailure(zeroSizeGraph.compile(schemas),
                                                ExpectedRenderGraphCompileFailure{
                                                    .message = "non-zero byte size",
@@ -3318,39 +3318,39 @@ namespace {
     }
 
     int runSmokeRenderGraph() {
-        vke::RenderGraph graph;
-        const auto backbuffer = graph.importImage(vke::RenderGraphImageDesc{
+        asharia::RenderGraph graph;
+        const auto backbuffer = graph.importImage(asharia::RenderGraphImageDesc{
             .name = "Backbuffer",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
-            .initialState = vke::RenderGraphImageState::Undefined,
-            .finalState = vke::RenderGraphImageState::Present,
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 1280, .height = 720},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
         });
-        const auto depthBuffer = graph.importImage(vke::RenderGraphImageDesc{
+        const auto depthBuffer = graph.importImage(asharia::RenderGraphImageDesc{
             .name = "DepthBuffer",
-            .format = vke::RenderGraphImageFormat::D32Sfloat,
-            .extent = vke::RenderGraphExtent2D{.width = 1280, .height = 720},
-            .initialState = vke::RenderGraphImageState::Undefined,
-            .finalState = vke::RenderGraphImageState::DepthSampledRead,
-            .finalShaderStage = vke::RenderGraphShaderStage::Fragment,
+            .format = asharia::RenderGraphImageFormat::D32Sfloat,
+            .extent = asharia::RenderGraphExtent2D{.width = 1280, .height = 720},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::DepthSampledRead,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
         });
-        const auto transientColor = graph.createTransientImage(vke::RenderGraphImageDesc{
+        const auto transientColor = graph.createTransientImage(asharia::RenderGraphImageDesc{
             .name = "TransientColor",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 640, .height = 360},
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 640, .height = 360},
         });
 
         int callbackCount = 0;
         graph.addPass("ClearColor", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
             .writeTransfer("target", backbuffer)
-            .recordCommands([](vke::RenderGraphCommandList& commands) {
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
                 commands.clearColor("target", std::array{0.02F, 0.12F, 0.18F, 1.0F});
             });
         graph.addPass("SampleColor", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
-            .readTexture("source", backbuffer, vke::RenderGraphShaderStage::Fragment)
-            .recordCommands([](vke::RenderGraphCommandList& commands) {
+            .readTexture("source", backbuffer, asharia::RenderGraphShaderStage::Fragment)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
                 commands.setShader("Hidden/SmokeSample", "Fragment")
                     .setTexture("SourceTex", "source")
                     .setFloat("Exposure", 1.0F)
@@ -3361,11 +3361,11 @@ namespace {
             .writeDepth("depth", depthBuffer);
         graph.addPass("SampleDepth", "basic.depth-sample-fragment")
             .setParamsType("basic.depth-sample-fragment.params")
-            .readDepthTexture("depth", depthBuffer, vke::RenderGraphShaderStage::Fragment);
+            .readDepthTexture("depth", depthBuffer, asharia::RenderGraphShaderStage::Fragment);
         graph.addPass("SampleTransientColor", "basic.transient-sample-fragment")
             .setParamsType("basic.transient-sample-fragment.params")
-            .readTexture("source", transientColor, vke::RenderGraphShaderStage::Fragment)
-            .recordCommands([](vke::RenderGraphCommandList& commands) {
+            .readTexture("source", transientColor, asharia::RenderGraphShaderStage::Fragment)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
                 commands.setShader("Hidden/TransientSample", "Fragment")
                     .setTexture("SourceTex", "source")
                     .setVec4("Tint", std::array{1.0F, 0.85F, 0.65F, 1.0F})
@@ -3375,124 +3375,124 @@ namespace {
             .setParamsType("basic.transient-color.params")
             .writeColor("target", transientColor);
 
-        vke::RenderGraphSchemaRegistry schemas;
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        asharia::RenderGraphSchemaRegistry schemas;
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.clear-transfer",
             .paramsType = "basic.clear-transfer.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = vke::RenderGraphSlotAccess::TransferWrite,
-                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .access = asharia::RenderGraphSlotAccess::TransferWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
                         .optional = false,
                     },
                 },
-            .allowedCommands = {vke::RenderGraphCommandKind::ClearColor},
+            .allowedCommands = {asharia::RenderGraphCommandKind::ClearColor},
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.sample-fragment",
             .paramsType = "basic.sample-fragment.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "source",
-                        .access = vke::RenderGraphSlotAccess::ShaderRead,
-                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .access = asharia::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
                 },
             .allowedCommands =
                 {
-                    vke::RenderGraphCommandKind::SetShader,
-                    vke::RenderGraphCommandKind::SetTexture,
-                    vke::RenderGraphCommandKind::SetFloat,
-                    vke::RenderGraphCommandKind::DrawFullscreenTriangle,
+                    asharia::RenderGraphCommandKind::SetShader,
+                    asharia::RenderGraphCommandKind::SetTexture,
+                    asharia::RenderGraphCommandKind::SetFloat,
+                    asharia::RenderGraphCommandKind::DrawFullscreenTriangle,
                 },
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.depth-write",
             .paramsType = "basic.depth-write.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "depth",
-                        .access = vke::RenderGraphSlotAccess::DepthAttachmentWrite,
-                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .access = asharia::RenderGraphSlotAccess::DepthAttachmentWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
                         .optional = false,
                     },
                 },
             .allowedCommands = {},
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.depth-sample-fragment",
             .paramsType = "basic.depth-sample-fragment.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "depth",
-                        .access = vke::RenderGraphSlotAccess::DepthSampledRead,
-                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .access = asharia::RenderGraphSlotAccess::DepthSampledRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
                 },
             .allowedCommands = {},
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.transient-color",
             .paramsType = "basic.transient-color.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = vke::RenderGraphSlotAccess::ColorWrite,
-                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .access = asharia::RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
                         .optional = false,
                     },
                 },
             .allowedCommands = {},
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.transient-sample-fragment",
             .paramsType = "basic.transient-sample-fragment.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "source",
-                        .access = vke::RenderGraphSlotAccess::ShaderRead,
-                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .access = asharia::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
                 },
             .allowedCommands =
                 {
-                    vke::RenderGraphCommandKind::SetShader,
-                    vke::RenderGraphCommandKind::SetTexture,
-                    vke::RenderGraphCommandKind::SetVec4,
-                    vke::RenderGraphCommandKind::DrawFullscreenTriangle,
+                    asharia::RenderGraphCommandKind::SetShader,
+                    asharia::RenderGraphCommandKind::SetTexture,
+                    asharia::RenderGraphCommandKind::SetVec4,
+                    asharia::RenderGraphCommandKind::DrawFullscreenTriangle,
                 },
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.cycle-read-write",
             .paramsType = "basic.cycle-read-write.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "source",
-                        .access = vke::RenderGraphSlotAccess::ShaderRead,
-                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .access = asharia::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = vke::RenderGraphSlotAccess::ColorWrite,
-                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .access = asharia::RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
                         .optional = false,
                     },
                 },
             .allowedCommands = {},
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.side-effect",
             .paramsType = "basic.side-effect.params",
             .resourceSlots = {},
@@ -3500,29 +3500,29 @@ namespace {
             .allowCulling = true,
             .hasSideEffects = true,
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.buffer-transfer-write",
             .paramsType = "basic.buffer-transfer-write.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = vke::RenderGraphSlotAccess::BufferTransferWrite,
-                        .shaderStage = vke::RenderGraphShaderStage::None,
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
                         .optional = false,
                     },
                 },
             .allowedCommands = {},
         });
-        schemas.registerSchema(vke::RenderGraphPassSchema{
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.buffer-read-fragment",
             .paramsType = "basic.buffer-read-fragment.params",
             .resourceSlots =
                 {
-                    vke::RenderGraphResourceSlotSchema{
+                    asharia::RenderGraphResourceSlotSchema{
                         .name = "source",
-                        .access = vke::RenderGraphSlotAccess::BufferShaderRead,
-                        .shaderStage = vke::RenderGraphShaderStage::Fragment,
+                        .access = asharia::RenderGraphSlotAccess::BufferShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
                         .optional = false,
                     },
                 },
@@ -3531,11 +3531,11 @@ namespace {
 
         auto compiled = graph.compile(schemas);
         if (!compiled) {
-            vke::logError(compiled.error().message);
+            asharia::logError(compiled.error().message);
             return EXIT_FAILURE;
         }
         if (compiled->finalTransitions.empty()) {
-            vke::logError("Render graph did not produce a final transition.");
+            asharia::logError("Render graph did not produce a final transition.");
             return EXIT_FAILURE;
         }
         if (compiled->passes.size() != 6 || compiled->passes[1].transitionsBefore.empty() ||
@@ -3544,23 +3544,23 @@ namespace {
             compiled->passes[4].transitionsBefore.empty() ||
             compiled->passes[5].transitionsBefore.empty() ||
             compiled->transientImages.size() != 1) {
-            vke::logError("Render graph did not produce the expected shader-read pass transition.");
+            asharia::logError("Render graph did not produce the expected shader-read pass transition.");
             return EXIT_FAILURE;
         }
         if (compiled->passes[4].name != "WriteTransientColor" ||
             compiled->passes[4].declarationIndex != 5 ||
             compiled->passes[5].name != "SampleTransientColor" ||
             compiled->passes[5].declarationIndex != 4) {
-            vke::logError(
+            asharia::logError(
                 "Render graph compiler did not reorder transient producer before reader.");
             return EXIT_FAILURE;
         }
         if (compiled->dependencies.size() != 3) {
-            vke::logError("Render graph compiler produced an unexpected dependency count.");
+            asharia::logError("Render graph compiler produced an unexpected dependency count.");
             return EXIT_FAILURE;
         }
         if (!compiled->culledPasses.empty()) {
-            vke::logError("Render graph compiler culled an unexpected smoke pass.");
+            asharia::logError("Render graph compiler culled an unexpected smoke pass.");
             return EXIT_FAILURE;
         }
 
@@ -3594,31 +3594,31 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        vke::RenderGraph invalidCommandGraph;
-        const auto invalidBackbuffer = invalidCommandGraph.importImage(vke::RenderGraphImageDesc{
+        asharia::RenderGraph invalidCommandGraph;
+        const auto invalidBackbuffer = invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
             .name = "InvalidBackbuffer",
-            .format = vke::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = vke::RenderGraphExtent2D{.width = 16, .height = 16},
-            .initialState = vke::RenderGraphImageState::Undefined,
-            .finalState = vke::RenderGraphImageState::Present,
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
         });
         invalidCommandGraph.addPass("InvalidClearCommand", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
             .writeTransfer("target", invalidBackbuffer)
             .recordCommands(
-                [](vke::RenderGraphCommandList& commands) { commands.drawFullscreenTriangle(); });
+                [](asharia::RenderGraphCommandList& commands) { commands.drawFullscreenTriangle(); });
         auto invalidCompiled = invalidCommandGraph.compile(schemas);
         if (invalidCompiled) {
-            vke::logError("Render graph schema accepted an invalid command kind.");
+            asharia::logError("Render graph schema accepted an invalid command kind.");
             return EXIT_FAILURE;
         }
 
-        vke::RenderGraphExecutorRegistry executors;
+        asharia::RenderGraphExecutorRegistry executors;
         registerSmokeRenderGraphExecutors(executors, callbackCount);
 
         auto executed = graph.execute(*compiled, executors);
         if (!executed) {
-            vke::logError(executed.error().message);
+            asharia::logError(executed.error().message);
             return EXIT_FAILURE;
         }
 
@@ -3644,7 +3644,7 @@ namespace {
     }
 
     int runSmokeMesh() {
-        return runSmokeTriangle(false, vke::BasicMeshKind::IndexedQuad);
+        return runSmokeTriangle(false, asharia::BasicMeshKind::IndexedQuad);
     }
 
     std::optional<int> runRequestedCommand(std::span<char*> args) {
@@ -3722,9 +3722,9 @@ int main(int argc, char** argv) {
         printUsage();
         return EXIT_FAILURE;
     } catch (const std::exception& exception) {
-        vke::logError(exception.what());
+        asharia::logError(exception.what());
     } catch (...) {
-        vke::logError("Unhandled non-standard exception.");
+        asharia::logError("Unhandled non-standard exception.");
     }
 
     return EXIT_FAILURE;

@@ -5,7 +5,7 @@
 先做一个小而完整的 Vulkan renderer，用最少功能证明 render graph 从声明、编译、同步到
 执行、present 的完整流程。第一个稳定 frame 比大而全的抽象更重要。
 
-架构原则是 package-first，而不是 app-first。VkEngine 不应该把所有功能打包进一个
+架构原则是 package-first，而不是 app-first。Asharia Engine 不应该把所有功能打包进一个
 monolithic application；它应该提供一个小核心和一组可组合 package，让 sample app、
 runtime app、editor 和后续工具按需引入能力。
 

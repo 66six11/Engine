@@ -1,0 +1,11 @@
+{
+  "name": "com.asharia.platform",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Platform",
+  "description": "Platform abstractions shared by host applications and packages.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-platform"],
+  "targetDependencies": {
+    "asharia-platform": ["asharia-core"]
+  }
+}

@@ -19,9 +19,9 @@
         "CMAKE_CXX_STANDARD_REQUIRED": "ON",
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
-        "VKE_BUILD_APPS": "ON",
-        "VKE_BUILD_TESTS": "OFF",
-        "VKE_ENABLE_CLANG_TIDY": "OFF"
+        "ASHARIA_BUILD_APPS": "ON",
+        "ASHARIA_BUILD_TESTS": "OFF",
+        "ASHARIA_ENABLE_CLANG_TIDY": "OFF"
       }
     },
     {
@@ -37,9 +37,9 @@
         "CMAKE_CXX_STANDARD_REQUIRED": "ON",
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
-        "VKE_BUILD_APPS": "ON",
-        "VKE_BUILD_TESTS": "OFF",
-        "VKE_ENABLE_CLANG_TIDY": "OFF"
+        "ASHARIA_BUILD_APPS": "ON",
+        "ASHARIA_BUILD_TESTS": "OFF",
+        "ASHARIA_ENABLE_CLANG_TIDY": "OFF"
       }
     },
     {
@@ -55,9 +55,9 @@
         "CMAKE_CXX_STANDARD_REQUIRED": "ON",
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
-        "VKE_BUILD_APPS": "ON",
-        "VKE_BUILD_TESTS": "OFF",
-        "VKE_ENABLE_CLANG_TIDY": "ON"
+        "ASHARIA_BUILD_APPS": "ON",
+        "ASHARIA_BUILD_TESTS": "OFF",
+        "ASHARIA_ENABLE_CLANG_TIDY": "ON"
       },
       "vendor": {
         "microsoft.com/VisualStudioSettings/CMake/1.0": {
@@ -88,9 +88,9 @@
         "CMAKE_CXX_STANDARD_REQUIRED": "ON",
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
-        "VKE_BUILD_APPS": "ON",
-        "VKE_BUILD_TESTS": "OFF",
-        "VKE_ENABLE_CLANG_TIDY": "ON"
+        "ASHARIA_BUILD_APPS": "ON",
+        "ASHARIA_BUILD_TESTS": "OFF",
+        "ASHARIA_ENABLE_CLANG_TIDY": "ON"
       },
       "vendor": {
         "microsoft.com/VisualStudioSettings/CMake/1.0": {

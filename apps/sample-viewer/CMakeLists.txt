@@ -1,40 +1,40 @@
 cmake_minimum_required(VERSION 3.28)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(VkEngineSampleViewer VERSION 0.1.0 LANGUAGES CXX)
+  project(AshariaEngineSampleViewer VERSION 0.1.0 LANGUAGES CXX)
 endif()
 
-if(NOT DEFINED VKE_REPOSITORY_ROOT)
-  get_filename_component(VKE_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
+  get_filename_component(ASHARIA_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 endif()
-include("${VKE_REPOSITORY_ROOT}/cmake/VkePackage.cmake")
-vke_package_init()
-vke_require_package_target(vke::profiling packages/profiling)
-vke_require_package_target(vke::reflection packages/reflection)
-vke_require_package_target(vke::serialization packages/serialization)
-vke_require_package_target(vke::window_glfw packages/window-glfw)
-vke_require_package_target(vke::renderer_basic_vulkan packages/renderer-basic)
+include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
+asharia_package_init()
+asharia_require_package_target(asharia::profiling packages/profiling)
+asharia_require_package_target(asharia::reflection packages/reflection)
+asharia_require_package_target(asharia::serialization packages/serialization)
+asharia_require_package_target(asharia::window_glfw packages/window-glfw)
+asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 
-add_executable(vke-sample-viewer
+add_executable(asharia-sample-viewer
     src/main.cpp
 )
 
-add_executable(vke::sample_viewer ALIAS vke-sample-viewer)
+add_executable(asharia::sample_viewer ALIAS asharia-sample-viewer)
 
-add_dependencies(vke-sample-viewer vke-renderer-basic-shaders)
+add_dependencies(asharia-sample-viewer asharia-renderer-basic-shaders)
 
-target_link_libraries(vke-sample-viewer
+target_link_libraries(asharia-sample-viewer
     PRIVATE
-        vke::core
-        vke::profiling
-        vke::reflection
-        vke::rendergraph
-        vke::rhi_vulkan
-        vke::rhi_vulkan_rendergraph
-        vke::serialization
-        vke::window_glfw
-        vke::renderer_basic
-        vke::renderer_basic_vulkan
+        asharia::core
+        asharia::profiling
+        asharia::reflection
+        asharia::rendergraph
+        asharia::rhi_vulkan
+        asharia::rhi_vulkan_rendergraph
+        asharia::serialization
+        asharia::window_glfw
+        asharia::renderer_basic
+        asharia::renderer_basic_vulkan
 )
 
-vke_configure_target(vke-sample-viewer)
+asharia_configure_target(asharia-sample-viewer)

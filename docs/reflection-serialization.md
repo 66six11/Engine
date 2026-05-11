@@ -2,13 +2,13 @@
 
 研究日期：2026-05-10
 
-本文定义 VkEngine 后续反射、序列化、Inspector、脚本绑定、scene 保存和 asset metadata 的共同基础。
+本文定义 Asharia Engine 后续反射、序列化、Inspector、脚本绑定、scene 保存和 asset metadata 的共同基础。
 它不是立即实现清单，而是约束后续 `reflection`、`serialization`、`scene-core`、`editor-core`、
 `asset-core` 和 `scripting` package 的边界。当前 renderer MVP 不需要立刻实现完整系统，但后续新增
 scene、editor、asset 或 script API 时必须按本文检查依赖、生命周期和可见性。
 
 命名遵循 `naming-conventions.md`：持久化 schema 使用 `com.asharia`，文件后缀使用 `.ascene`、
-`.aprefab`、`.ameta`、`.amat`、`.agraph`。当前 C++ / CMake 实现名暂时保留 `vke`。
+`.aprefab`、`.ameta`、`.amat`、`.agraph`。C++ / CMake 实现名统一使用 `asharia`。
 
 近期实施方案、切片顺序、smoke 和技术资料见 `reflection-serialization-implementation-plan.md`。
 
@@ -37,12 +37,12 @@ scene、editor、asset 或 script API 时必须按本文检查依赖、生命周
 
 ## 一手资料结论
 
-| 资料 | 关键事实 | 对 VkEngine 的约束 |
+| 资料 | 关键事实 | 对 Asharia Engine 的约束 |
 | --- | --- | --- |
-| Unity script serialization: https://docs.unity3d.com/Manual/script-serialization.html | Unity 的序列化直接影响 Inspector、scene/prefab 保存和热重载数据保留；字段可见性和序列化规则不是普通 C# 可见性的简单等价。 | VkEngine 必须区分 `Serializable`、`EditorVisible`、`RuntimeVisible` 和 `ScriptVisible`，不能用一个 public/private 决定全部行为。 |
+| Unity script serialization: https://docs.unity3d.com/Manual/script-serialization.html | Unity 的序列化直接影响 Inspector、scene/prefab 保存和热重载数据保留；字段可见性和序列化规则不是普通 C# 可见性的简单等价。 | Asharia Engine 必须区分 `Serializable`、`EditorVisible`、`RuntimeVisible` 和 `ScriptVisible`，不能用一个 public/private 决定全部行为。 |
 | Unity AssetDatabase: https://docs.unity3d.com/Manual/AssetDatabase.html | AssetDatabase 以 GUID、source asset、import settings 和 artifact/cache 为边界。 | Asset metadata 和 import settings 要能通过反射/序列化保存，但 runtime 不应依赖 source path。 |
-| O3DE reflection / contexts: https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/ | O3DE 使用 Serialize Context、Edit Context、Behavior Context 区分保存、编辑器显示和脚本行为暴露。 | VkEngine 应把 serialization、editor 和 scripting context 分开，让同一类型事实按不同用途投影。 |
-| Unreal Object Handling: https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine | Unreal 通过反射追踪 UObject 引用，自动引用更新和 GC 依赖对象系统。 | VkEngine 不照搬 GC，但要让 `EntityId`、`AssetGuid`、`AssetHandle<T>` 等引用类型有专门 serializer 和失效诊断。 |
+| O3DE reflection / contexts: https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/ | O3DE 使用 Serialize Context、Edit Context、Behavior Context 区分保存、编辑器显示和脚本行为暴露。 | Asharia Engine 应把 serialization、editor 和 scripting context 分开，让同一类型事实按不同用途投影。 |
+| Unreal Object Handling: https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine | Unreal 通过反射追踪 UObject 引用，自动引用更新和 GC 依赖对象系统。 | Asharia Engine 不照搬 GC，但要让 `EntityId`、`AssetGuid`、`AssetHandle<T>` 等引用类型有专门 serializer 和失效诊断。 |
 | Godot Object class: https://docs.godotengine.org/en/stable/engine_details/architecture/object_class.html | Godot 的 Object 系统给属性、方法、通知和 editor/runtime 暴露提供共同基础。 | 反射可以成为 editor 和 script 的 API 边界，但不应把底层 Vulkan 对象变成普通可脚本对象。 |
 
 ## Package 边界
@@ -51,11 +51,11 @@ scene、editor、asset 或 script API 时必须按本文检查依赖、生命周
 
 ```text
 packages/reflection
-  include/vke/reflection/
+  include/asharia/reflection/
   src/
 
 packages/serialization
-  include/vke/serialization/
+  include/asharia/serialization/
   src/
 ```
 
@@ -123,7 +123,7 @@ flowchart TD
 第一版建议以纯数据结构开始，避免模板和宏系统过早扩大：
 
 ```cpp
-namespace vke {
+namespace asharia {
 
 struct TypeId {
     std::uint64_t value;
@@ -194,7 +194,7 @@ struct TypeInfo {
     std::span<const FieldInfo> fields;
 };
 
-} // namespace vke
+} // namespace asharia
 ```
 
 技术点：

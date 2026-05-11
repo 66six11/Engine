@@ -1,0 +1,11 @@
+{
+  "name": "com.asharia.window-glfw",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine GLFW Window",
+  "description": "GLFW-backed window and Vulkan surface integration.",
+  "dependencies": ["com.asharia.core", "com.asharia.platform"],
+  "targets": ["asharia-window-glfw"],
+  "targetDependencies": {
+    "asharia-window-glfw": ["asharia-core", "asharia-platform"]
+  }
+}

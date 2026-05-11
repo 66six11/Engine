@@ -51,7 +51,7 @@ Vulkan loader/binding 策略：
 - 常规构建流程先运行 `conan install` 生成 `conan_toolchain.cmake`、CMake dependency
   config 和 Conan presets，再使用 `cmake --preset` / `cmake --build --preset`。
 - Conan 生成目录和构建目录不进入源码管理。
-- 每个 package 独立 CMake target，并提供 `vke::<name>` alias。
+- 每个 package 独立 CMake target，并提供 `asharia::<name>` alias。
 - app target 只链接需要的 package，不直接 include package 的 private `src/`。
 
 ## Package 策略
@@ -60,7 +60,7 @@ Vulkan loader/binding 策略：
 - `engine/core` 只放稳定基础设施，不依赖 Vulkan、GLFW、Slang 或 editor。
 - `packages/rhi-vulkan`、`packages/rendergraph`、`packages/shader-slang` 等功能包可以独立
   被 app/editor 引入。
-- 后续每个 package 增加 `vke.package.json` manifest，记录名称、版本、依赖、CMake target。
+- 后续每个 package 增加 `Asharia.package.json` manifest，记录名称、版本、依赖、CMake target。
 - editor 是 host，不是 engine 核心的一部分；runtime app 不链接 editor packages。
 
 ## Conan 策略
@@ -101,11 +101,11 @@ MVP 默认路线：
 Slang 状态：
 
 - Slang 作为默认 shader 语言。
-- `packages/shader-slang` 提供 `vke_add_slang_shader()`，把 `slangc` 命令行、entry point、stage、
+- `packages/shader-slang` 提供 `asharia_add_slang_shader()`，把 `slangc` 命令行、entry point、stage、
   target profile、output 路径和 `spirv-val` 检查写入构建流程。
-- `vke_add_slang_shader()` 可生成 `.metadata.json`，记录 source、entry、stage、profile、
+- `asharia_add_slang_shader()` 可生成 `.metadata.json`，记录 source、entry、stage、profile、
   output、`slangc` 路径/版本和 `spirv-val` 路径/版本，作为 shader metadata/reflection 的基线。
-- `vke_add_slang_shader()` 可生成 `.reflection.json`，由 `vke-slang-reflect` 通过 Slang API
+- `asharia_add_slang_shader()` 可生成 `.reflection.json`，由 `asharia-slang-reflect` 通过 Slang API
   读取 `ProgramLayout`，输出 entry、stage、vertex inputs、descriptor bindings、push constants
   和 Slang API version。当前 reflection 作为可审查构建产物，不自动生成 C++。
 - `packages/shader-slang` 提供 reflection JSON 读取模型，renderer 可以在启动或构建验证路径消费

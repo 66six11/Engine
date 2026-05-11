@@ -456,7 +456,7 @@ int main(int argc, char** argv) { // NOLINT(bugprone-exception-escape)
     try {
         const auto options = parseArgs(argc, argv);
         if (!options) {
-            std::cerr << "Usage: vke-slang-reflect --source <file> --entry <name> --stage <stage> "
+            std::cerr << "Usage: asharia-slang-reflect --source <file> --entry <name> --stage <stage> "
                          "--profile <profile> --target <target> --output <file>\n";
             return 1;
         }

@@ -7,8 +7,8 @@
 当前结论很明确：先做一个小而稳定的 C++23 反射元数据层，再做一个确定性文本序列化层。编辑器 Inspector、资产数据库、场景保存、C# 脚本绑定和热更新都消费这套元数据，但不能反过来把 editor、script runtime、ImGui、Vulkan 或资源加载器塞进反射底座。
 
 命名遵循 `naming-conventions.md`：用户可见品牌为 Asharia Engine / 灰咏引擎，持久化 schema 使用
-`com.asharia`，文件后缀使用 `.ascene`、`.aprefab`、`.ameta`、`.amat`、`.agraph`。当前 C++ / CMake
-实现名暂时保留 `vke`，等全仓库 rename 时再统一迁移。
+`com.asharia`，文件后缀使用 `.ascene`、`.aprefab`、`.ameta`、`.amat`、`.agraph`。C++ / CMake
+实现名统一使用 `asharia`。
 
 ## 本轮决策
 
@@ -37,14 +37,14 @@ future C++ type
 
 ## 资料结论
 
-| 来源 | 资料重点 | 对 VkEngine 的实施约束 |
+| 来源 | 资料重点 | 对 Asharia Engine 的实施约束 |
 | --- | --- | --- |
-| Unity Serialization Rules: https://docs.unity3d.com/Manual/script-serialization-rules.html | Unity 序列化直接定义字段进入 scene/prefab/Inspector 的条件，并区分 `UnityEngine.Object` 引用和普通 managed object inline 数据。 | VkEngine 必须显式区分 value、asset reference、entity reference 和 managed reference；不能只靠 C++ public/private 判断保存行为。 |
+| Unity Serialization Rules: https://docs.unity3d.com/Manual/script-serialization-rules.html | Unity 序列化直接定义字段进入 scene/prefab/Inspector 的条件，并区分 `UnityEngine.Object` 引用和普通 managed object inline 数据。 | Asharia Engine 必须显式区分 value、asset reference、entity reference 和 managed reference；不能只靠 C++ public/private 判断保存行为。 |
 | Unity Asset Database: https://docs.unity3d.com/Manual/AssetDatabase.html | Unity 把 source asset、GUID、hash、artifact/import result 和 Library cache 分开。 | 序列化层保存稳定 GUID/import settings，不保存运行时 GPU 指针，也不让 runtime 依赖 source path。 |
-| O3DE Reflection Contexts: https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/ | O3DE 把 Serialize Context、Edit Context、Behavior Context 分开，分别服务持久化、编辑器和脚本。 | VkEngine 不做一个万能 `FieldInfo` 直接暴露给所有系统，而是从同一 TypeRegistry 派生不同 context view。 |
-| Unreal Property System: https://www.unrealengine.com/blog/unreal-property-system-reflection | Unreal 的反射是 opt-in，UHT 生成 C++ 反射数据，支撑 details panel、serialization、GC、replication 和 Blueprint；未反射字段对这些系统不可见。 | VkEngine 也采用 opt-in；反射数据必须和二进制同步；非反射字段默认不参与保存、Inspector、脚本和引用追踪。 |
-| Unreal Object Handling / GC: https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine | Unreal 的 UObject 引用自动置空和 GC 依赖反射可见引用。 | VkEngine 第一版不做 UObject/GC，但对 `AssetHandle<T>`、`EntityId` 这类引用必须有专门 serializer 和失效诊断。 |
-| Godot Object / ClassDB: https://docs.godotengine.org/en/stable/engine_details/architecture/object_class.html | Godot 通过 `_bind_methods`、ClassDB、ObjectID、RefCounted、ResourceLoader/ResourceSaver 建立属性、方法、信号和资源加载基础。 | VkEngine 可借鉴“注册一次、运行期查询”的模型，但对象生命周期用自己的 owner/handle，不把全部对象变成 heap Object。 |
+| O3DE Reflection Contexts: https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/ | O3DE 把 Serialize Context、Edit Context、Behavior Context 分开，分别服务持久化、编辑器和脚本。 | Asharia Engine 不做一个万能 `FieldInfo` 直接暴露给所有系统，而是从同一 TypeRegistry 派生不同 context view。 |
+| Unreal Property System: https://www.unrealengine.com/blog/unreal-property-system-reflection | Unreal 的反射是 opt-in，UHT 生成 C++ 反射数据，支撑 details panel、serialization、GC、replication 和 Blueprint；未反射字段对这些系统不可见。 | Asharia Engine 也采用 opt-in；反射数据必须和二进制同步；非反射字段默认不参与保存、Inspector、脚本和引用追踪。 |
+| Unreal Object Handling / GC: https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine | Unreal 的 UObject 引用自动置空和 GC 依赖反射可见引用。 | Asharia Engine 第一版不做 UObject/GC，但对 `AssetHandle<T>`、`EntityId` 这类引用必须有专门 serializer 和失效诊断。 |
+| Godot Object / ClassDB: https://docs.godotengine.org/en/stable/engine_details/architecture/object_class.html | Godot 通过 `_bind_methods`、ClassDB、ObjectID、RefCounted、ResourceLoader/ResourceSaver 建立属性、方法、信号和资源加载基础。 | Asharia Engine 可借鉴“注册一次、运行期查询”的模型，但对象生命周期用自己的 owner/handle，不把全部对象变成 heap Object。 |
 | C++ P2996R13: https://www.open-std.org/jtc1/SC22/wg21/docs/papers/2025/p2996r13.html | P2996 面向 C++26 静态反射，核心实体是编译期 `std::meta::info`。 | 当前项目锁定 C++23，不能依赖标准反射；未来可让 generator 利用 C++26，但 runtime `TypeRegistry` API 不变。 |
 | .NET hosting: https://learn.microsoft.com/en-us/dotnet/core/tutorials/netcore-hosting | Native host 通过 `nethost`/`hostfxr` 启动 .NET runtime 并获取 managed 入口。 | 后续 C# 接入应作为 `packages/scripting-dotnet`，不进入 reflection/serialization 底座。 |
 | .NET language versioning: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-versioning | C# 语言版本由 target framework 决定；`.NET 10.x` 默认对应 C# 14，preview 版本不应随意作为生产基线。 | 若今天设计 C# 脚本路线，生产基线按 .NET 10 LTS / C# 14 预留；preview 特性不能进入引擎持久化 ABI。 |
@@ -174,7 +174,7 @@ com.asharia.scene.TransformComponent.scale
 建议第一版 public API 形状：
 
 ```cpp
-namespace vke::reflection {
+namespace asharia::reflection {
 
 struct TypeId {
     std::uint64_t value = 0;
@@ -239,7 +239,7 @@ struct TypeInfo {
     std::span<const FieldInfo> fields;
 };
 
-} // namespace vke::reflection
+} // namespace asharia::reflection
 ```
 
 `std::string_view` 的生命周期由注册表或 generated static table 保证。不要把临时字符串传进 `TypeInfo`。
@@ -297,12 +297,12 @@ struct FieldAccessor {
 不要依赖跨 translation unit 的静态初始化顺序。每个 package 暴露显式注册函数：
 
 ```cpp
-namespace vke::scene {
-VoidResult registerSceneReflection(vke::reflection::TypeRegistry& registry);
+namespace asharia::scene {
+VoidResult registerSceneReflection(asharia::reflection::TypeRegistry& registry);
 }
 
-namespace vke::asset {
-VoidResult registerAssetReflection(vke::reflection::TypeRegistry& registry);
+namespace asharia::asset {
+VoidResult registerAssetReflection(asharia::reflection::TypeRegistry& registry);
 }
 ```
 
@@ -377,7 +377,7 @@ builder 必须做校验：
 序列化层先定义与 JSON 形状相近的结构化 value tree，不把文本 parser 和反射逻辑绑死：
 
 ```cpp
-namespace vke::serialization {
+namespace asharia::serialization {
 
 enum class ArchiveValueKind {
     Null,
@@ -404,7 +404,7 @@ struct ArchiveValue {
     // variant payload
 };
 
-} // namespace vke::serialization
+} // namespace asharia::serialization
 ```
 
 用 `std::vector<ArchiveMember>` 而不是 unordered map，是因为用户工程文件需要稳定输出顺序，方便 diff、review 和迁移。
@@ -683,7 +683,7 @@ flowchart TD
 - C# source generator 描述 managed script types。
 - 中间使用稳定 metadata schema 对齐，例如 type name、field name、field flags、lifecycle methods。
 - C++ 不扫描所有 C# method 来猜行为；C# assembly 或 generator 输出明确表。
-- C# 的 `[VkeSerialize]`、`[VkeEditorVisible]`、`[VkeRuntimeOnly]` 等 attribute 只影响 managed script metadata，不改变 native C++ TypeRegistry。
+- C# 的 `[AshariaSerialize]`、`[AshariaEditorVisible]`、`[AshariaRuntimeOnly]` 等 attribute 只影响 managed script metadata，不改变 native C++ TypeRegistry。
 - C# runtime 启动用 `hostfxr`，独立放在 `packages/scripting-dotnet`。
 
 按 2026-05-10 的资料，若今天锁定生产基线，建议：
@@ -798,8 +798,8 @@ flowchart TD
 
 目标：
 
-- 新增 CMake target `vke-reflection` 和 alias `vke::reflection`。
-- 新增 `vke.package.json`。
+- 新增 CMake target `asharia-reflection` 和 alias `asharia::reflection`。
+- 新增 `Asharia.package.json`。
 - public include 只暴露稳定 API。
 
 建议文件：
@@ -807,19 +807,19 @@ flowchart TD
 ```text
 packages/reflection/
   CMakeLists.txt
-  vke.package.json
-  include/vke/reflection/ids.hpp
-  include/vke/reflection/field_flags.hpp
-  include/vke/reflection/type_info.hpp
-  include/vke/reflection/type_registry.hpp
-  include/vke/reflection/type_builder.hpp
-  include/vke/reflection/context_view.hpp
+  Asharia.package.json
+  include/asharia/reflection/ids.hpp
+  include/asharia/reflection/field_flags.hpp
+  include/asharia/reflection/type_info.hpp
+  include/asharia/reflection/type_registry.hpp
+  include/asharia/reflection/type_builder.hpp
+  include/asharia/reflection/context_view.hpp
   src/type_registry.cpp
 ```
 
 依赖：
 
-- public 或 private 依赖 `vke::core`。
+- public 或 private 依赖 `asharia::core`。
 - 不依赖 `serialization`。
 
 验收：
@@ -845,7 +845,7 @@ packages/reflection/
 建议 smoke：
 
 ```text
-vke-sample-viewer.exe --smoke-reflection-registry
+asharia-sample-viewer.exe --smoke-reflection-registry
 ```
 
 smoke 内容：
@@ -875,7 +875,7 @@ struct ReflectionSmokeTransform {
 建议 smoke：
 
 ```text
-vke-sample-viewer.exe --smoke-reflection-transform
+asharia-sample-viewer.exe --smoke-reflection-transform
 ```
 
 smoke 内容：
@@ -894,7 +894,7 @@ smoke 内容：
 
 目标：
 
-- 新增 CMake target `vke-serialization` 和 alias `vke::serialization`。
+- 新增 CMake target `asharia-serialization` 和 alias `asharia::serialization`。
 - 定义 `ArchiveValue`、`ArchiveObject`、`ArchiveArray`。
 - 定义诊断结构和 `SerializationPolicy`。
 
@@ -903,11 +903,11 @@ smoke 内容：
 ```text
 packages/serialization/
   CMakeLists.txt
-  vke.package.json
-  include/vke/serialization/archive_value.hpp
-  include/vke/serialization/text_archive.hpp
-  include/vke/serialization/serializer.hpp
-  include/vke/serialization/migration.hpp
+  Asharia.package.json
+  include/asharia/serialization/archive_value.hpp
+  include/asharia/serialization/text_archive.hpp
+  include/asharia/serialization/serializer.hpp
+  include/asharia/serialization/migration.hpp
   src/archive_value.cpp
   src/text_archive.cpp
 ```
@@ -944,8 +944,8 @@ VoidResult deserializeObject(const reflection::TypeRegistry& registry,
 建议 smoke：
 
 ```text
-vke-sample-viewer.exe --smoke-serialization-roundtrip
-vke-sample-viewer.exe --smoke-serialization-json-archive
+asharia-sample-viewer.exe --smoke-serialization-roundtrip
+asharia-sample-viewer.exe --smoke-serialization-json-archive
 ```
 
 smoke 内容：
@@ -969,7 +969,7 @@ smoke 内容：
 建议 smoke：
 
 ```text
-vke-sample-viewer.exe --smoke-serialization-migration
+asharia-sample-viewer.exe --smoke-serialization-migration
 ```
 
 smoke 内容：
@@ -991,7 +991,7 @@ smoke 内容：
 建议 smoke：
 
 ```text
-vke-sample-viewer.exe --smoke-reflection-contexts
+asharia-sample-viewer.exe --smoke-reflection-contexts
 ```
 
 smoke 内容：
@@ -1005,7 +1005,7 @@ smoke 内容：
 
 目标：
 
-- 反射和序列化错误都能转换到 `vke::Error`。
+- 反射和序列化错误都能转换到 `asharia::Error`。
 - 保留结构化 detail，至少在 message 中包含足够上下文。
 
 建议诊断字段：
@@ -1118,12 +1118,12 @@ git diff --check
 
 ```powershell
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-reflection-registry
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-reflection-transform
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-serialization-roundtrip
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-serialization-json-archive
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-serialization-migration
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-reflection-contexts
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-reflection-registry
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-reflection-transform
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-serialization-roundtrip
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-serialization-json-archive
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-serialization-migration
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-reflection-contexts
 ```
 
 提交前再跑 ClangCL：

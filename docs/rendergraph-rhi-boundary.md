@@ -59,7 +59,7 @@ Vulkan 相关翻译放在 `packages/rhi-vulkan`，例如：
 - `vulkanBufferTransition(RenderGraphBufferTransition)`
 - `vulkanBufferBarrier(RenderGraphBufferTransition, VkBuffer, offset, size)`
 
-这类翻译接口应由专门的适配 target 暴露，例如 `vke::rhi_vulkan_rendergraph`。基础 Vulkan target `vke::rhi_vulkan` 不应为了适配 RenderGraph 而公开依赖 `vke::rendergraph`。
+这类翻译接口应由专门的适配 target 暴露，例如 `asharia::rhi_vulkan_rendergraph`。基础 Vulkan target `asharia::rhi_vulkan` 不应为了适配 RenderGraph 而公开依赖 `asharia::rendergraph`。
 
 如果未来需要更完整的 barrier planner，也应先保留 RenderGraph 的抽象 plan，再由 Vulkan 后端生成 `VkImageMemoryBarrier2`、`VkBufferMemoryBarrier2` 和 `VkDependencyInfo`。
 
@@ -75,8 +75,8 @@ RenderGraph 编译结果只携带 `RenderGraphImageHandle` / `RenderGraphBufferH
 
 只有明确命名为 Vulkan 后端的类型、文件或 package 可以使用 Vulkan 对象。例如：
 
-- `vke/rhi_vulkan/vulkan_context.hpp`
-- `vke/rhi_vulkan/vulkan_frame_loop.hpp`
-- `vke/rhi_vulkan_rendergraph/vulkan_render_graph.hpp`
+- `asharia/rhi_vulkan/vulkan_context.hpp`
+- `asharia/rhi_vulkan/vulkan_frame_loop.hpp`
+- `asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp`
 
 通用 RenderGraph 文档或调试输出可以提到 Vulkan 概念，但不能把 Vulkan 类型作为通用 API 契约。

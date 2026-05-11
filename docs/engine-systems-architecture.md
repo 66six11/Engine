@@ -2,13 +2,13 @@
 
 研究日期：2026-05-08
 
-本文记录 VkEngine 在渲染、内存、脚本、插件、线程之外仍必须提前定义边界的引擎系统。它不是当前
+本文记录 Asharia Engine 在渲染、内存、脚本、插件、线程之外仍必须提前定义边界的引擎系统。它不是当前
 MVP 的实现清单，而是避免后续 asset、material、editor、scene 和 script 反向压坏现有 package-first
 架构的设计地图。所有结论优先来自官方文档；社区文章只可作为辅助理解，不能作为架构约束。
 
 ## 一手资料核对结论
 
-| 引擎 | 已核对事实 | 对 VkEngine 的约束 |
+| 引擎 | 已核对事实 | 对 Asharia Engine 的约束 |
 | --- | --- | --- |
 | Godot | Godot 官方架构把系统分为 Scene layer、Server layer、Drivers/Platform、Core 和 Main；Server 层承载 rendering、audio、physics 等子系统。Godot 4 渲染器建立在 OpenGL 和 RenderingDevice 之上，RenderingDevice 是 Vulkan/D3D12/Metal 抽象。SceneTree 不是线程安全的，Server API 更适合跨线程使用。 | 保持 `rhi_vulkan`、`rendergraph`、renderer package 和 host app 分层；scene/editor 对象默认主线程拥有，跨线程只传数据包或 server-style command。 |
 | Unreal | UObject 反射支撑属性、序列化、自动引用更新和 GC；渲染采用 GameThread、RenderThread、RHIThread 分层，并用 RDG 描述 pass/resource 生命周期和屏障；Module 和 Plugin 是扩展边界。 | 不照搬完整 UObject，但需要最小反射/序列化元数据；渲染线程以后消费 render snapshot，不直接读 gameplay/editor object。 |
@@ -32,7 +32,7 @@ MVP 的实现清单，而是避免后续 asset、material、editor、scene 和 s
 | Material/shader/pipeline | shader program、variant、material layout、material instance、pipeline key、descriptor binding model、render queue/pass tag。 | 在 Slang reflection 和 RenderGraph typed pass 稳定后，建立 material layout 与 pipeline key；pass type 仍表示执行模型，不表示业务 shader tag。 | 不提前复制 Unity ShaderLab 或 Unreal Material Graph；bindless 暂缓。 |
 | Diagnostics | CPU scope、GPU timestamp、asset trace、memory report、validation report、crash dump、structured log。 | `packages/profiling` 继续作为只读观测底座；后续 GPU timestamp 必须延迟读回。 | 不为了当前帧面板阻塞 GPU；不把 profiler 绑死到 renderer 内部对象。 |
 | Build/cook/package | source build、asset cook、runtime product、platform capability、shipping config。 | Conan/CMake 继续只管代码依赖；资产 cook 以后独立为 tool/package 流程。 | 不提交 generated product；不让 editor-only 数据进入 runtime build。 |
-| Testing/automation | smoke、benchmark、encoding、diff check、render capture、asset import regression。 | 维持 `vke-sample-viewer.exe --smoke-*` 入口；每新增系统先有 CLI/smoke，再谈 editor UI。 | 不等完整测试框架才验证；不把人工截图当唯一回归证据。 |
+| Testing/automation | smoke、benchmark、encoding、diff check、render capture、asset import regression。 | 维持 `asharia-sample-viewer.exe --smoke-*` 入口；每新增系统先有 CLI/smoke，再谈 editor UI。 | 不等完整测试框架才验证；不把人工截图当唯一回归证据。 |
 
 ## 推荐分层
 

@@ -2,7 +2,7 @@
 
 研究日期：2026-05-08
 
-本文定义 VkEngine 从当前单线程 frame loop 演进到 worker pool、RenderThread 和多线程 command recording
+本文定义 Asharia Engine 从当前单线程 frame loop 演进到 worker pool、RenderThread 和多线程 command recording
 时必须保持的边界。当前仓库仍以单线程 smoke host 为准；本文中的多线程部分是分阶段设计，不代表已经实现。
 
 ## 设计依据

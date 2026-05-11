@@ -1,9 +1,9 @@
-﻿#include "vke/core/log.hpp"
+﻿#include "asharia/core/log.hpp"
 
 #include <iostream>
 #include <mutex>
 
-namespace vke {
+namespace asharia {
     namespace {
 
         std::mutex& logMutex() {
@@ -36,4 +36,4 @@ namespace vke {
                << location.line() << ")\n";
     }
 
-} // namespace vke
+} // namespace asharia

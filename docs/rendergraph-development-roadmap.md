@@ -12,7 +12,7 @@
 
 ## 资料结论
 
-| 资料 | 关键结论 | VkEngine 采用方式 |
+| 资料 | 关键结论 | Asharia Engine 采用方式 |
 | --- | --- | --- |
 | Khronos Vulkan synchronization guide: https://docs.vulkan.org/guide/latest/synchronization_examples.html | layout transition、stage mask、access mask 必须匹配真实 producer/consumer。`vkCmdPipelineBarrier2` 是当前项目正确的主路径。 | 每新增一个 `RenderGraphImageState`，必须同步补 `rhi_vulkan_rendergraph` 映射和 smoke 校验。 |
 | Vulkan synchronization spec: https://docs.vulkan.org/spec/latest/chapters/synchronization.html | 同步分 execution dependency、memory dependency 和 image layout transition，不能只看 layout 名字。 | RG compiler 输出抽象 transition，Vulkan adapter 负责 stage/access/layout 细节，不能把 Vulkan 类型泄漏到 `rendergraph`。 |
@@ -41,7 +41,7 @@
 当前项目已经具备这些前提：
 
 - `rendergraph` public API 不暴露 Vulkan 类型。
-- `vke::rhi_vulkan` 与 `vke::rhi_vulkan_rendergraph` 已分离。
+- `asharia::rhi_vulkan` 与 `asharia::rhi_vulkan_rendergraph` 已分离。
 - graph transition 使用 `vkCmdPipelineBarrier2`。
 - frame loop 使用 `vkQueueSubmit2`。
 - dynamic rendering 已覆盖 clear、triangle、depth triangle、mesh、draw list 和 fullscreen texture。
@@ -63,7 +63,7 @@
 
 ### 优秀案例只作为约束来源
 
-Unity RenderGraph、Unreal RDG、Frostbite FrameGraph、Granite 和 Blender Vulkan backend 都是成熟系统。VkEngine 当前只借鉴它们已经被反复验证的边界：
+Unity RenderGraph、Unreal RDG、Frostbite FrameGraph、Granite 和 Blender Vulkan backend 都是成熟系统。Asharia Engine 当前只借鉴它们已经被反复验证的边界：
 
 - setup/record 阶段显式声明 pass、resource 和参数。
 - compile 阶段只分析声明数据，产出依赖、lifetime、barrier 和 culling 计划。
@@ -198,11 +198,11 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - **Grab/copy-to-temp**：后处理想“读当前 color 又写回当前 color”时，第一版应显式 copy/grab 到临时图，再读临时图、写目标图；未来可由 graph 自动插入。
 - **Unsafe/native pass**：若后续提供逃生口，必须显式标记为不可分析或弱优化，不能绕过普通 pass 的同步和 alias 假设。
 
-结论：Unity Render Graph Viewer 里的 read-write 颜色是资源访问摘要，不代表可以把所有同图读写折叠成一个 `readTexture + writeColor` pass。VkEngine 只在语义、feature 和 backend 映射都明确后放开具体 read/write 类型。
+结论：Unity Render Graph Viewer 里的 read-write 颜色是资源访问摘要，不代表可以把所有同图读写折叠成一个 `readTexture + writeColor` pass。Asharia Engine 只在语义、feature 和 backend 映射都明确后放开具体 read/write 类型。
 
 涉及文件：
 
-- `packages/rendergraph/include/vke/rendergraph/render_graph.hpp`
+- `packages/rendergraph/include/asharia/rendergraph/render_graph.hpp`
 - `apps/sample-viewer/src/main.cpp`
 
 新增 smoke：
@@ -288,7 +288,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 当前状态：
 
-- 已新增 `vke/renderer_basic/render_graph_schemas.hpp`，集中定义 builtin pass type、params type、POD params 和 schema registry helper。
+- 已新增 `asharia/renderer_basic/render_graph_schemas.hpp`，集中定义 builtin pass type、params type、POD params 和 schema registry helper。
 - `recordBasicClearFrame`、`recordBasicDynamicClearFrame`、`BasicTransientFrameRecorder`、`BasicTriangleRenderer::recordFrame`、`recordFrameWithDepth`、`BasicMesh3DRenderer`、`BasicDrawListRenderer` 和 `BasicFullscreenTextureRenderer` 现在都通过共享 schema compile。
 - `basic_triangle_renderer.cpp` 中 fullscreen / draw-list 的局部 schema registry 已移除，避免同一 pass schema 在多个位置漂移。
 - fullscreen、transient、depth、mesh 和 draw-list 的 Vulkan callbacks 已通过 `RenderGraphPassContext` named slots 查询 binding，不再直接捕获 `source` / `depth` / `transientColor` image handle。
@@ -538,7 +538,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - 编码：
   - C/C++/PowerShell 编码符合 `encoding-policy.md`。
   - 不引入 Vulkan 类型到 `packages/rendergraph`。
-  - 不让 `vke::rhi_vulkan` 依赖 RenderGraph。
+  - 不让 `asharia::rhi_vulkan` 依赖 RenderGraph。
   - 不在 render loop 加未注释的 `vkDeviceWaitIdle`。
 - 验证：
   - `powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1`
@@ -550,13 +550,13 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 RenderGraph/同步/资源生命周期相关改动至少跑：
 
 ```powershell
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-transient
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-depth-triangle
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-draw-list
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-fullscreen-texture
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-rendergraph
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-transient
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-frame
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-dynamic-rendering
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-depth-triangle
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-draw-list
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-fullscreen-texture
 ```
 
 提交前再按 `review-workflow.md` 扩展到 ClangCL 和完整清单。

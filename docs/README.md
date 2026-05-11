@@ -1,6 +1,6 @@
-# VkEngine 知识库
+# Asharia Engine 知识库
 
-这里是 VkEngine 的项目知识入口。根目录 `README.md` 面向快速上手；本目录记录技术依据、架构决策、构建流程、审查门禁和后续演进计划。
+这里是 Asharia Engine 的项目知识入口。根目录 `README.md` 面向快速上手；本目录记录技术依据、架构决策、构建流程、审查门禁和后续演进计划。
 
 ## 快速阅读路径
 
@@ -8,7 +8,7 @@
 
 1. `build-workflow.md` - 本地 bootstrap、configure、build 和 preset 使用方式。
 2. `technical-stack.md` - 平台、依赖、Vulkan、shader、CMake/Conan 策略。
-3. `naming-conventions.md` - Asharia Engine / 灰咏引擎的品牌、schema、文件后缀和代码命名过渡规则。
+3. `naming-conventions.md` - Asharia Engine / 灰咏引擎的品牌、schema、文件后缀和代码命名规则。
 4. `architecture.md` - 模块边界、所有权、生命周期和 RenderGraph 设计。
 5. `flow-architecture.md` - 当前包依赖、启动流程、frame loop、RenderGraph/RHI 数据流。
 6. `engine-systems-architecture.md` - 对照 Godot、Unreal、Unity、O3DE、Bevy 和 Vulkan 资料整理的引擎必备系统地图。
@@ -31,7 +31,7 @@
 | 上手与构建 | `build-workflow.md` | 解释 Conan 生成物、CMake Presets、Visual Studio/Ninja 构建入口。 |
 | 技术依据 | `research-sources.md`、`technical-stack.md`、`performance-profiling-plan.md` | 记录一手资料、版本依据、依赖、工具链决策和性能诊断技术约束。 |
 | 架构设计 | `architecture.md`、`flow-architecture.md`、`package-architecture.md`、`engine-systems-architecture.md`、`reflection-serialization.md`、`reflection-serialization-implementation-plan.md`、`scene-world-architecture.md`、`scripting-architecture.md`、`frame-loop-threading.md` | 记录 package-first 组织、对象生命周期、流程图、依赖方向、引擎必备系统、反射/序列化实施方案、场景/脚本边界和线程边界。 |
-| 命名约定 | `naming-conventions.md` | 记录 Asharia Engine / 灰咏引擎品牌名、`com.asharia` schema、`.ascene` 等文件后缀，以及 `vke` 到 `asharia` 的代码命名过渡规则。 |
+| 命名约定 | `naming-conventions.md` | 记录 Asharia Engine / 灰咏引擎品牌名、`com.asharia` schema、`.ascene` 等文件后缀，以及 `asharia` 实现名前缀。 |
 | RenderGraph | `rendergraph-mvp.md`、`rendergraph-rhi-boundary.md`、`rendergraph-development-roadmap.md` | 记录 MVP 闭环、API 草图、后端无关边界、Vulkan 翻译归属和后续开发路线图。 |
 | 工程规范 | `coding-standard.md`、`encoding-policy.md`、`review-workflow.md` | 记录编码规范、文本编码策略、审查和提交门禁。 |
 | 项目节奏 | `project-management.md`、`next-development-plan.md`、`full-diagnosis-2026-05-05.md` | 记录仓库布局、里程碑、Definition of Done、风险表、诊断结论和下一阶段开发顺序。 |

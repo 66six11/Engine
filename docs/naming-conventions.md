@@ -2,9 +2,9 @@
 
 决策日期：2026-05-10
 
-本文记录引擎品牌、持久化 schema、文件后缀和代码命名的过渡约定。当前仓库目录和已有 C++ API 仍保留
-`VkEngine` / `vke`，避免在 Reflection/Serialization 起步前进行大规模 rename；新设计文档和持久化数据约定
-从现在开始使用 Asharia。
+本文记录引擎品牌、持久化 schema、文件后缀和代码命名约定。仓库已经完成代码侧 rename：
+用户可见品牌使用 `Asharia Engine` / `灰咏引擎`，C++ namespace、CMake target、include path
+和 package manifest 使用小写实现名前缀 `asharia`，持久化数据继续使用稳定前缀 `com.asharia`。
 
 ## 品牌命名
 
@@ -64,49 +64,53 @@ com.asharia.scene.TransformComponent.scale
 后缀职责是表达文件类型并减少冲突；品牌识别由 `Asharia Engine`、`Asharia Editor` 和 `com.asharia.*`
 schema 承担。
 
-## 当前代码过渡规则
+## 当前代码命名规则
 
-当前代码仍处于 `VkEngine` / `vke` 命名阶段：
+当前代码使用小写 namespace：
 
 ```cpp
-namespace vke {
+namespace asharia {
 template <typename T>
 using Result = std::expected<T, Error>;
 }
 ```
 
-Reflection/Serialization 第一版实现时，建议暂时沿用现有工程命名：
+Reflection/Serialization 等 package 使用同一套实现名前缀：
 
 ```text
 packages/reflection
 packages/serialization
-vke-reflection
-vke-serialization
-vke::reflection
-vke::serialization
+asharia-reflection
+asharia-serialization
+asharia::reflection
+asharia::serialization
 ```
 
-原因：
+规则：
 
-- 当前 `engine/core` 已提供 `vke::Result`、`vke::Error` 和日志基础。
-- 局部改成 `asharia::reflection` 会造成 namespace 混用。
-- 全仓库 rename 应作为独立工程任务处理，包含目录、CMake target、alias、namespace、文档和文件头。
+- C++ namespace 使用 `asharia`。
+- CMake target 使用 `asharia-<name>`，alias 使用 `asharia::<name>`。
+- public include path 使用 `include/asharia/...`。
+- package manifest 文件名使用 `asharia.package.json`。
+- CMake options、cache variables 和 compile definitions 使用 `ASHARIA_*`。
 
-因此第一版规则是：
+当前规则是：
 
 ```text
-C++ / CMake implementation name: 暂时使用 vke
+C++ / CMake implementation name: asharia
 Persistent schema / user project data: 使用 com.asharia
 User-facing brand: Asharia Engine / 灰咏引擎
 ```
 
-## 全仓库 Rename 前置条件
+## 全仓库 Rename 完成状态
 
-后续真正把 `vke` 改成 `asharia` 前，至少需要单独计划：
+本次 rename 已覆盖：
 
-- C++ namespace 迁移：`vke` -> `asharia`。
-- CMake target 迁移：`vke-reflection` -> `asharia-reflection`，alias `vke::reflection` -> `asharia::reflection`。
-- include path 迁移：`include/vke/...` -> `include/asharia/...`。
-- package manifest 和文档同步。
-- smoke 和 clangcl/msvc 双构建验证。
+- C++ namespace：`asharia`。
+- CMake target：`asharia-reflection`、`asharia-rendergraph` 等；alias：`asharia::reflection`、`asharia::rendergraph` 等。
+- include path：`include/asharia/...`。
+- package manifest：`asharia.package.json` 和 `com.asharia.*` package names。
+- 文档、README、构建选项、smoke 命令和资源文件同步。
 - 对旧用户数据保持 `com.asharia.*` 不变，不做二次迁移。
+
+仓库根目录名可以按本地工作区需要保留或改成 `AshariaEngine/`；构建脚本和文档命令不依赖固定绝对路径。

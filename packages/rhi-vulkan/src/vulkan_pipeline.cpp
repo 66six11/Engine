@@ -1,12 +1,12 @@
-﻿#include "vke/rhi_vulkan/vulkan_pipeline.hpp"
+﻿#include "asharia/rhi_vulkan/vulkan_pipeline.hpp"
 
 #include <array>
 #include <string>
 #include <utility>
 
-#include "vke/rhi_vulkan/vulkan_error.hpp"
+#include "asharia/rhi_vulkan/vulkan_error.hpp"
 
-namespace vke {
+namespace asharia {
     VulkanShaderModule::VulkanShaderModule(VulkanShaderModule&& other) noexcept {
         *this = std::move(other);
     }
@@ -596,4 +596,4 @@ namespace vke {
         return pipeline_;
     }
 
-} // namespace vke
+} // namespace asharia

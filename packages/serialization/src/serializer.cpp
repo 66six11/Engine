@@ -1,14 +1,14 @@
-﻿#include "vke/serialization/serializer.hpp"
+﻿#include "asharia/serialization/serializer.hpp"
 
 #include <expected>
 #include <limits>
 #include <string>
 #include <utility>
 
-#include "vke/core/error.hpp"
-#include "vke/reflection/context_view.hpp"
+#include "asharia/core/error.hpp"
+#include "asharia/reflection/context_view.hpp"
 
-namespace vke::serialization {
+namespace asharia::serialization {
     namespace {
 
         [[nodiscard]] Error serializationError(std::string message) {
@@ -385,4 +385,4 @@ namespace vke::serialization {
         return deserializeValue(registry, type, value, object, policy, "<root>");
     }
 
-} // namespace vke::serialization
+} // namespace asharia::serialization

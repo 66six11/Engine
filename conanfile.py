@@ -5,8 +5,8 @@ from conan import ConanFile
 from conan.tools.cmake import CMakeDeps, CMakeToolchain, cmake_layout
 
 
-class VkEngineConan(ConanFile):
-    name = "vkengine"
+class AshariaEngineConan(ConanFile):
+    name = "asharia-engine"
     version = "0.1.0"
     package_type = "application"
 
@@ -26,9 +26,9 @@ class VkEngineConan(ConanFile):
     def generate(self):
         toolchain = CMakeToolchain(self)
         toolchain.user_presets_path = "ConanPresets.json"
-        toolchain.cache_variables["VKE_BUILD_APPS"] = "ON"
-        toolchain.cache_variables["VKE_BUILD_TESTS"] = "OFF"
-        toolchain.cache_variables["VKE_ENABLE_CLANG_TIDY"] = "OFF"
+        toolchain.cache_variables["ASHARIA_BUILD_APPS"] = "ON"
+        toolchain.cache_variables["ASHARIA_BUILD_TESTS"] = "OFF"
+        toolchain.cache_variables["ASHARIA_ENABLE_CLANG_TIDY"] = "OFF"
         toolchain.cache_variables["CMAKE_CXX_STANDARD"] = "23"
         toolchain.cache_variables["CMAKE_CXX_STANDARD_REQUIRED"] = "ON"
         toolchain.cache_variables["CMAKE_CXX_EXTENSIONS"] = "OFF"

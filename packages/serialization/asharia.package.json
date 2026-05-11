@@ -1,0 +1,13 @@
+{
+  "name": "com.asharia.serialization",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Serialization",
+  "description": "Deterministic archive values and reflection-driven object serialization.",
+  "dependencies": ["com.asharia.core", "com.asharia.reflection"],
+  "targets": ["asharia-serialization"],
+  "testTargets": ["asharia-serialization-smoke-tests"],
+  "targetDependencies": {
+    "asharia-serialization": ["asharia-core", "asharia-reflection"],
+    "asharia-serialization-smoke-tests": ["asharia-serialization"]
+  }
+}

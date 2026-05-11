@@ -1,12 +1,12 @@
-# VkEngine
+# Asharia Engine
 
-VkEngine 是一个 package-first 的 Vulkan render graph 引擎实验项目。当前目标是在 Windows 桌面端跑通 C++23、Conan 2、CMake Presets、GLFW、Vulkan 1.4、VMA、Slang shader pipeline 和最小 RenderGraph 闭环。
+Asharia Engine 是一个 package-first 的 Vulkan render graph 引擎实验项目。当前目标是在 Windows 桌面端跑通 C++23、Conan 2、CMake Presets、GLFW、Vulkan 1.4、VMA、Slang shader pipeline 和最小 RenderGraph 闭环。
 
 ## 当前状态
 
 - 已建立 `apps/`、`engine/`、`packages/` 三层目录。
 - 已接入 GLFW window、Vulkan context、swapchain frame loop、RenderGraph clear/transient、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、descriptor layout、fullscreen texture smoke 和交互式 triangle viewer。
-- Shader 默认路线是 Slang；`packages/shader-slang` 提供 `vke_add_slang_shader()`，输出 SPIR-V 后执行 `spirv-val`，并生成 reflection JSON 供 renderer 校验 shader 契约。
+- Shader 默认路线是 Slang；`packages/shader-slang` 提供 `asharia_add_slang_shader()`，输出 SPIR-V 后执行 `spirv-val`，并生成 reflection JSON 供 renderer 校验 shader 契约。
 - 日常构建以 MSVC preset 为主，提交前检查以 ClangCL preset 和 `clang-tidy` 为主。
 
 ## 环境要求
@@ -41,23 +41,23 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 运行 sample viewer：
 
 ```powershell
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --help
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --version
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-window
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-vulkan
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-frame
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-rendergraph
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-transient
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-dynamic-rendering
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-resize
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-triangle
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-depth-triangle
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-mesh
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-mesh-3d
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-draw-list
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-descriptor-layout
-build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-fullscreen-texture
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --help
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --version
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-window
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-vulkan
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-frame
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-rendergraph
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-transient
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-dynamic-rendering
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-resize
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-triangle
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-depth-triangle
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-mesh
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-mesh-3d
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-draw-list
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-descriptor-layout
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-fullscreen-texture
 ```
 
 无参数启动会打开交互式 triangle viewer；`--smoke-*` 入口用于自动验证和提交前审查。
@@ -65,7 +65,7 @@ build\cmake\msvc-debug\apps\sample-viewer\vke-sample-viewer.exe --smoke-fullscre
 ## 仓库结构
 
 ```text
-VkEngine/
+AshariaEngine/
   apps/                  Host applications, including sample-viewer.
   engine/                Stable engine foundation packages.
   packages/              Feature packages: window, RHI, render graph, shader, renderer.

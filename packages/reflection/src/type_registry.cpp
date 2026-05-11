@@ -1,4 +1,4 @@
-﻿#include "vke/reflection/type_registry.hpp"
+﻿#include "asharia/reflection/type_registry.hpp"
 
 #include <algorithm>
 #include <array>
@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-namespace vke::reflection {
+namespace asharia::reflection {
     namespace {
 
         [[nodiscard]] bool hasDuplicateFieldName(const TypeInfo& type, const FieldInfo& field) {
@@ -190,4 +190,4 @@ namespace vke::reflection {
         return {};
     }
 
-} // namespace vke::reflection
+} // namespace asharia::reflection

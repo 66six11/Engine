@@ -1,22 +1,22 @@
 cmake_minimum_required(VERSION 3.28)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(VkEngineRhiVulkan VERSION 0.1.0 LANGUAGES CXX)
+  project(AshariaEngineRhiVulkan VERSION 0.1.0 LANGUAGES CXX)
 endif()
 
-if(NOT DEFINED VKE_REPOSITORY_ROOT)
-  get_filename_component(VKE_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
+  get_filename_component(ASHARIA_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 endif()
-include("${VKE_REPOSITORY_ROOT}/cmake/VkePackage.cmake")
-vke_package_init()
-vke_require_package_target(vke::core engine/core)
-vke_require_package_target(vke::rendergraph packages/rendergraph)
+include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
+asharia_package_init()
+asharia_require_package_target(asharia::core engine/core)
+asharia_require_package_target(asharia::rendergraph packages/rendergraph)
 
 find_package(Vulkan REQUIRED)
 find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
-add_library(vke-rhi-vulkan STATIC
+add_library(asharia-rhi-vulkan STATIC
     src/vulkan_frame_loop.cpp
     src/vulkan_context.cpp
     src/vulkan_pipeline.cpp
@@ -25,35 +25,35 @@ add_library(vke-rhi-vulkan STATIC
     src/deferred_deletion_queue.cpp
 )
 
-add_library(vke::rhi_vulkan ALIAS vke-rhi-vulkan)
+add_library(asharia::rhi_vulkan ALIAS asharia-rhi-vulkan)
 
-add_library(vke-rhi-vulkan-rendergraph INTERFACE)
-add_library(vke::rhi_vulkan_rendergraph ALIAS vke-rhi-vulkan-rendergraph)
+add_library(asharia-rhi-vulkan-rendergraph INTERFACE)
+add_library(asharia::rhi_vulkan_rendergraph ALIAS asharia-rhi-vulkan-rendergraph)
 
-target_include_directories(vke-rhi-vulkan
+target_include_directories(asharia-rhi-vulkan
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${Vulkan_INCLUDE_DIRS}"
 )
 
-target_link_libraries(vke-rhi-vulkan
+target_link_libraries(asharia-rhi-vulkan
     PUBLIC
-        vke::core
+        asharia::core
         Vulkan::Vulkan
         vulkan-headers::vulkan-headers
         GPUOpen::VulkanMemoryAllocator
 )
 
-target_link_libraries(vke-rhi-vulkan-rendergraph
+target_link_libraries(asharia-rhi-vulkan-rendergraph
     INTERFACE
-        vke::rhi_vulkan
-        vke::rendergraph
+        asharia::rhi_vulkan
+        asharia::rendergraph
 )
 
-target_include_directories(vke-rhi-vulkan-rendergraph
+target_include_directories(asharia-rhi-vulkan-rendergraph
     INTERFACE
         "${CMAKE_CURRENT_SOURCE_DIR}/include-rendergraph"
 )
 
-vke_configure_target(vke-rhi-vulkan)
-vke_configure_target(vke-rhi-vulkan-rendergraph)
+asharia_configure_target(asharia-rhi-vulkan)
+asharia_configure_target(asharia-rhi-vulkan-rendergraph)

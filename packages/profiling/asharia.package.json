@@ -1,0 +1,11 @@
+{
+  "name": "com.asharia.profiling",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Profiling",
+  "description": "Backend-agnostic CPU scopes, frame samples, counters, and JSONL profiling output.",
+  "dependencies": [],
+  "targets": ["asharia-profiling"],
+  "targetDependencies": {
+    "asharia-profiling": []
+  }
+}

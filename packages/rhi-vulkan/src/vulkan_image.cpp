@@ -1,4 +1,4 @@
-﻿#include "vke/rhi_vulkan/vulkan_image.hpp"
+﻿#include "asharia/rhi_vulkan/vulkan_image.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -6,10 +6,10 @@
 #include <vector>
 #include <vk_mem_alloc.h>
 
-#include "vke/rhi_vulkan/vulkan_error.hpp"
-#include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "asharia/rhi_vulkan/vulkan_error.hpp"
+#include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 
-namespace vke {
+namespace asharia {
     namespace {
 
         [[nodiscard]] bool sameTransientImageKey(const VulkanTransientImageKey& left,
@@ -527,4 +527,4 @@ namespace vke {
         return sampler_;
     }
 
-} // namespace vke
+} // namespace asharia

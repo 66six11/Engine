@@ -17,19 +17,19 @@
 #include <utility>
 #include <vector>
 
-#include "vke/core/log.hpp"
-#include "vke/core/result.hpp"
-#include "vke/core/version.hpp"
-#include "vke/renderer_basic_vulkan/basic_triangle_renderer.hpp"
-#include "vke/rhi_vulkan/vulkan_context.hpp"
-#include "vke/rhi_vulkan/vulkan_error.hpp"
-#include "vke/rhi_vulkan/vulkan_frame_loop.hpp"
-#include "vke/rhi_vulkan/vulkan_image.hpp"
-#include "vke/window_glfw/glfw_window.hpp"
+#include "asharia/core/log.hpp"
+#include "asharia/core/result.hpp"
+#include "asharia/core/version.hpp"
+#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/rhi_vulkan/vulkan_context.hpp"
+#include "asharia/rhi_vulkan/vulkan_error.hpp"
+#include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "asharia/rhi_vulkan/vulkan_image.hpp"
+#include "asharia/window_glfw/glfw_window.hpp"
 
 namespace {
 
-    constexpr vke::VulkanDebugLabelMode kEditorDebugLabels = vke::VulkanDebugLabelMode::Required;
+    constexpr asharia::VulkanDebugLabelMode kEditorDebugLabels = asharia::VulkanDebugLabelMode::Required;
     constexpr int kSmokeFrameCount = 3;
     constexpr int kSmokeAttemptLimit = 120;
 
@@ -39,20 +39,20 @@ namespace {
     }
 
     void printVersion() {
-        std::cout << vke::kEngineName << " editor " << vke::kEngineVersion.major << '.'
-                  << vke::kEngineVersion.minor << '.' << vke::kEngineVersion.patch << '\n';
+        std::cout << asharia::kEngineName << " editor " << asharia::kEngineVersion.major << '.'
+                  << asharia::kEngineVersion.minor << '.' << asharia::kEngineVersion.patch << '\n';
     }
 
     void printUsage() {
-        std::cout << "Usage: vke-editor [--help] [--version] [--smoke-editor-shell] "
+        std::cout << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
                      "[--smoke-editor-viewport]\n";
     }
 
-    bool isRenderableExtent(vke::WindowFramebufferExtent extent) {
+    bool isRenderableExtent(asharia::WindowFramebufferExtent extent) {
         return extent.width > 0 && extent.height > 0;
     }
 
-    bool extentMatches(VkExtent2D lhs, vke::WindowFramebufferExtent rhs) {
+    bool extentMatches(VkExtent2D lhs, asharia::WindowFramebufferExtent rhs) {
         return lhs.width == rhs.width && lhs.height == rhs.height;
     }
 
@@ -113,7 +113,7 @@ namespace {
 
     void checkImguiVkResult(VkResult result) {
         if (result != VK_SUCCESS) {
-            vke::logError("Dear ImGui Vulkan backend error: " + vke::vkResultName(result));
+            asharia::logError("Dear ImGui Vulkan backend error: " + asharia::vkResultName(result));
         }
     }
 
@@ -129,8 +129,8 @@ namespace {
             shutdown();
         }
 
-        [[nodiscard]] vke::VoidResult create(GLFWwindow* window, const vke::VulkanContext& context,
-                                             const vke::VulkanFrameLoop& frameLoop) {
+        [[nodiscard]] asharia::VoidResult create(GLFWwindow* window, const asharia::VulkanContext& context,
+                                             const asharia::VulkanFrameLoop& frameLoop) {
             queue_ = context.graphicsQueue();
 
             IMGUI_CHECKVERSION();
@@ -144,7 +144,7 @@ namespace {
 
             if (!ImGui_ImplGlfw_InitForVulkan(window, true)) {
                 return std::unexpected{
-                    vke::vulkanError("Failed to initialize Dear ImGui GLFW backend")};
+                    asharia::vulkanError("Failed to initialize Dear ImGui GLFW backend")};
             }
             glfwInitialized_ = true;
 
@@ -172,7 +172,7 @@ namespace {
 
             if (!ImGui_ImplVulkan_Init(&initInfo)) {
                 return std::unexpected{
-                    vke::vulkanError("Failed to initialize Dear ImGui Vulkan backend")};
+                    asharia::vulkanError("Failed to initialize Dear ImGui Vulkan backend")};
             }
             vulkanInitialized_ = true;
 
@@ -183,8 +183,8 @@ namespace {
             if (vulkanInitialized_ && queue_ != VK_NULL_HANDLE) {
                 const VkResult idleResult = vkQueueWaitIdle(queue_);
                 if (idleResult != VK_SUCCESS) {
-                    vke::logError("Failed to wait for Vulkan queue before ImGui shutdown: " +
-                                  vke::vkResultName(idleResult));
+                    asharia::logError("Failed to wait for Vulkan queue before ImGui shutdown: " +
+                                  asharia::vkResultName(idleResult));
                 }
             }
 
@@ -237,7 +237,7 @@ namespace {
                 rendered = false;
             }
 
-            vke::VulkanRenderTarget target;
+            asharia::VulkanRenderTarget target;
             VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
             VkImageView imageView{VK_NULL_HANDLE};
             VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
@@ -257,12 +257,12 @@ namespace {
             shutdown();
         }
 
-        [[nodiscard]] vke::VoidResult create(const vke::VulkanContext& context) {
+        [[nodiscard]] asharia::VoidResult create(const asharia::VulkanContext& context) {
             device_ = context.device();
             allocator_ = context.allocator();
             queue_ = context.graphicsQueue();
 
-            auto sampler = vke::VulkanSampler::create(vke::VulkanSamplerDesc{
+            auto sampler = asharia::VulkanSampler::create(asharia::VulkanSamplerDesc{
                 .device = device_,
             });
             if (!sampler) {
@@ -302,9 +302,9 @@ namespace {
             ++textureFramesSubmitted_;
         }
 
-        [[nodiscard]] vke::Result<vke::VulkanFrameRecordResult>
-        recordViewport(const vke::VulkanFrameRecordContext& frame,
-                       vke::BasicFullscreenTextureRenderer& renderer) {
+        [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+        recordViewport(const asharia::VulkanFrameRecordContext& frame,
+                       asharia::BasicFullscreenTextureRenderer& renderer) {
             auto retired = processRetiredTextures(frame);
             if (!retired) {
                 return std::unexpected{std::move(retired.error())};
@@ -312,7 +312,7 @@ namespace {
 
             if (requestedExtent_.width == 0 || requestedExtent_.height == 0 ||
                 requestedFormat_ == VK_FORMAT_UNDEFINED) {
-                return vke::VulkanFrameRecordResult{
+                return asharia::VulkanFrameRecordResult{
                     .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                 };
             }
@@ -326,7 +326,7 @@ namespace {
 
             auto ensured = renderTexture.target.ensure(
                 frame,
-                vke::VulkanRenderTargetDesc{
+                asharia::VulkanRenderTargetDesc{
                     .device = device_,
                     .allocator = allocator_,
                     .format = requestedFormat_,
@@ -338,7 +338,7 @@ namespace {
                 return std::unexpected{std::move(ensured.error())};
             }
 
-            const vke::VulkanSampledTextureView texture = renderTexture.target.sampledTextureView();
+            const asharia::VulkanSampledTextureView texture = renderTexture.target.sampledTextureView();
             auto descriptorReady = ensureDescriptor(renderTexture, texture);
             if (!descriptorReady) {
                 return std::unexpected{std::move(descriptorReady.error())};
@@ -346,15 +346,15 @@ namespace {
 
             auto recorded = renderer.recordViewFrame(
                 frame,
-                vke::BasicRenderViewDesc{
+                asharia::BasicRenderViewDesc{
                     .target =
-                        vke::BasicRenderViewTarget{
+                        asharia::BasicRenderViewTarget{
                             .image = texture.image,
                             .imageView = texture.imageView,
                             .format = texture.format,
                             .extent = texture.extent,
                             .aspectMask = texture.aspectMask,
-                            .finalUsage = vke::BasicRenderViewTargetFinalUsage::SampledTexture,
+                            .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
                         },
                 });
             if (!recorded) {
@@ -374,9 +374,9 @@ namespace {
             if (queue_ != VK_NULL_HANDLE) {
                 const VkResult idleResult = vkQueueWaitIdle(queue_);
                 if (idleResult != VK_SUCCESS) {
-                    vke::logError("Failed to wait for Vulkan queue before editor viewport "
+                    asharia::logError("Failed to wait for Vulkan queue before editor viewport "
                                   "texture shutdown: " +
-                                  vke::vkResultName(idleResult));
+                                  asharia::vkResultName(idleResult));
                 }
             }
             removeDescriptor(presentedTexture_);
@@ -434,27 +434,27 @@ namespace {
             texture.clearDescriptorMetadata();
         }
 
-        [[nodiscard]] vke::VoidResult
-        processRetiredTextures(const vke::VulkanFrameRecordContext& frame) {
+        [[nodiscard]] asharia::VoidResult
+        processRetiredTextures(const asharia::VulkanFrameRecordContext& frame) {
             for (ViewportTexture& texture : retiredTextures_) {
                 removeDescriptor(texture);
                 if (!texture.target.deferDestroy(frame)) {
                     return std::unexpected{
-                        vke::vulkanError("Failed to defer retired editor viewport texture")};
+                        asharia::vulkanError("Failed to defer retired editor viewport texture")};
                 }
             }
             retiredTextures_.clear();
             return {};
         }
 
-        [[nodiscard]] vke::VoidResult ensureDescriptor(ViewportTexture& viewportTexture,
-                                                       vke::VulkanSampledTextureView texture) {
+        [[nodiscard]] asharia::VoidResult ensureDescriptor(ViewportTexture& viewportTexture,
+                                                       asharia::VulkanSampledTextureView texture) {
             if (texture.imageView == VK_NULL_HANDLE ||
                 texture.sampledLayout == VK_IMAGE_LAYOUT_UNDEFINED ||
                 texture.format == VK_FORMAT_UNDEFINED || texture.extent.width == 0 ||
                 texture.extent.height == 0) {
                 return std::unexpected{
-                    vke::vulkanError("Cannot register an incomplete editor viewport texture")};
+                    asharia::vulkanError("Cannot register an incomplete editor viewport texture")};
             }
 
             if (viewportTexture.descriptorSet != VK_NULL_HANDLE &&
@@ -466,7 +466,7 @@ namespace {
             }
 
             if (&viewportTexture == &presentedTexture_ && textureSubmittedThisFrame_) {
-                return std::unexpected{vke::vulkanError(
+                return std::unexpected{asharia::vulkanError(
                     "Cannot replace an editor viewport texture after submitting it to ImGui")};
             }
 
@@ -479,7 +479,7 @@ namespace {
             if (viewportTexture.descriptorSet == VK_NULL_HANDLE) {
                 viewportTexture.clearDescriptorMetadata();
                 return std::unexpected{
-                    vke::vulkanError("Failed to register editor viewport texture with ImGui")};
+                    asharia::vulkanError("Failed to register editor viewport texture with ImGui")};
             }
 
             viewportTexture.imageView = texture.imageView;
@@ -493,7 +493,7 @@ namespace {
         VkDevice device_{VK_NULL_HANDLE};
         VmaAllocator allocator_{};
         VkQueue queue_{VK_NULL_HANDLE};
-        vke::VulkanSampler sampler_;
+        asharia::VulkanSampler sampler_;
         ViewportTexture presentedTexture_;
         ViewportTexture pendingTexture_;
         std::vector<ViewportTexture> retiredTextures_;
@@ -566,8 +566,8 @@ namespace {
         ImGui::End();
     }
 
-    [[nodiscard]] vke::Result<vke::VulkanFrameRecordResult>
-    recordEditorImguiFrame(const vke::VulkanFrameRecordContext& context) {
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordEditorImguiFrame(const asharia::VulkanFrameRecordContext& context) {
         const VkImageMemoryBarrier2 colorBarrier = imageBarrier(ImageBarrierDesc{
             .image = context.image,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -609,57 +609,57 @@ namespace {
         });
         cmdPipelineBarrier(context.commandBuffer, presentBarrier);
 
-        return vke::VulkanFrameRecordResult{
+        return asharia::VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         };
     }
 
-    [[nodiscard]] vke::VoidResult waitForRenderableWindow(vke::GlfwWindow& window, bool smokeMode) {
+    [[nodiscard]] asharia::VoidResult waitForRenderableWindow(asharia::GlfwWindow& window, bool smokeMode) {
         int attempts = 0;
         auto framebuffer = window.framebufferExtent();
         while (!window.shouldClose() && !isRenderableExtent(framebuffer)) {
             if (smokeMode && attempts++ >= kSmokeAttemptLimit) {
                 return std::unexpected{
-                    vke::vulkanError("Timed out waiting for a renderable editor framebuffer")};
+                    asharia::vulkanError("Timed out waiting for a renderable editor framebuffer")};
             }
 
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(16ms);
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             framebuffer = window.framebufferExtent();
         }
 
         return {};
     }
 
-    [[nodiscard]] vke::Result<vke::VulkanContext>
-    createEditorContext(const std::vector<std::string>& extensions, vke::GlfwWindow& window) {
-        const vke::VulkanContextDesc contextDesc{
-            .applicationName = "VkEngine Editor",
+    [[nodiscard]] asharia::Result<asharia::VulkanContext>
+    createEditorContext(const std::vector<std::string>& extensions, asharia::GlfwWindow& window) {
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Editor",
             .requiredInstanceExtensions = extensions,
             .createSurface =
                 [&window](VkInstance instance) {
-                    return vke::glfwCreateVulkanSurface(window, instance);
+                    return asharia::glfwCreateVulkanSurface(window, instance);
                 },
             .debugLabels = kEditorDebugLabels,
         };
 
-        return vke::VulkanContext::create(contextDesc);
+        return asharia::VulkanContext::create(contextDesc);
     }
 
-    [[nodiscard]] vke::Result<vke::VulkanFrameLoop>
-    createEditorFrameLoop(const vke::VulkanContext& context, const vke::GlfwWindow& window) {
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameLoop>
+    createEditorFrameLoop(const asharia::VulkanContext& context, const asharia::GlfwWindow& window) {
         const auto framebuffer = window.framebufferExtent();
-        return vke::VulkanFrameLoop::create(
-            context, vke::VulkanFrameLoopDesc{
+        return asharia::VulkanFrameLoop::create(
+            context, asharia::VulkanFrameLoopDesc{
                          .width = framebuffer.width,
                          .height = framebuffer.height,
                          .clearColor = VkClearColorValue{{0.015F, 0.018F, 0.022F, 1.0F}},
                      });
     }
 
-    [[nodiscard]] vke::Result<bool> prepareFrameLoopExtent(vke::GlfwWindow& window,
-                                                           vke::VulkanFrameLoop& frameLoop) {
+    [[nodiscard]] asharia::Result<bool> prepareFrameLoopExtent(asharia::GlfwWindow& window,
+                                                           asharia::VulkanFrameLoop& frameLoop) {
         const auto currentFramebuffer = window.framebufferExtent();
         frameLoop.setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
         if (!isRenderableExtent(currentFramebuffer)) {
@@ -673,7 +673,7 @@ namespace {
             if (!recreated) {
                 return std::unexpected{std::move(recreated.error())};
             }
-            if (*recreated == vke::VulkanFrameStatus::OutOfDate) {
+            if (*recreated == asharia::VulkanFrameStatus::OutOfDate) {
                 using namespace std::chrono_literals;
                 std::this_thread::sleep_for(16ms);
                 return false;
@@ -683,12 +683,12 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] vke::Result<bool> renderEditorFrame(vke::VulkanFrameLoop& frameLoop,
-                                                      vke::BasicFullscreenTextureRenderer& renderer,
+    [[nodiscard]] asharia::Result<bool> renderEditorFrame(asharia::VulkanFrameLoop& frameLoop,
+                                                      asharia::BasicFullscreenTextureRenderer& renderer,
                                                       EditorViewportHost& viewportHost) {
         auto status = frameLoop.renderFrame(
-            [&renderer, &viewportHost](const vke::VulkanFrameRecordContext& context)
-                -> vke::Result<vke::VulkanFrameRecordResult> {
+            [&renderer, &viewportHost](const asharia::VulkanFrameRecordContext& context)
+                -> asharia::Result<asharia::VulkanFrameRecordResult> {
                 auto viewport = viewportHost.recordViewport(context, renderer);
                 if (!viewport) {
                     return std::unexpected{std::move(viewport.error())};
@@ -700,22 +700,22 @@ namespace {
             return std::unexpected{std::move(status.error())};
         }
 
-        return *status != vke::VulkanFrameStatus::OutOfDate;
+        return *status != asharia::VulkanFrameStatus::OutOfDate;
     }
 
-    [[nodiscard]] vke::Result<int> runEditorLoop(vke::GlfwWindow& window,
-                                                 vke::VulkanFrameLoop& frameLoop,
-                                                 vke::BasicFullscreenTextureRenderer& renderer,
+    [[nodiscard]] asharia::Result<int> runEditorLoop(asharia::GlfwWindow& window,
+                                                 asharia::VulkanFrameLoop& frameLoop,
+                                                 asharia::BasicFullscreenTextureRenderer& renderer,
                                                  EditorViewportHost& viewportHost, bool smokeMode) {
         int renderedFrames = 0;
         int attempts = 0;
         while (!window.shouldClose()) {
             if (smokeMode && attempts++ >= kSmokeAttemptLimit) {
-                return std::unexpected{vke::vulkanError(
+                return std::unexpected{asharia::vulkanError(
                     "Editor shell smoke timed out before rendering enough frames")};
             }
 
-            vke::GlfwWindow::pollEvents();
+            asharia::GlfwWindow::pollEvents();
             auto extentReady = prepareFrameLoopExtent(window, frameLoop);
             if (!extentReady) {
                 return std::unexpected{std::move(extentReady.error())};
@@ -752,33 +752,33 @@ namespace {
     }
 
     int runEditor(bool smokeMode) {
-        auto glfw = vke::GlfwInstance::create();
+        auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
-            vke::logError(glfw.error().message);
+            asharia::logError(glfw.error().message);
             return EXIT_FAILURE;
         }
 
-        auto extensions = vke::glfwRequiredVulkanInstanceExtensions(*glfw);
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
         if (!extensions) {
-            vke::logError(extensions.error().message);
+            asharia::logError(extensions.error().message);
             return EXIT_FAILURE;
         }
 
-        auto window = vke::GlfwWindow::create(*glfw, vke::WindowDesc{.title = "VkEngine Editor"});
+        auto window = asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Editor"});
         if (!window) {
-            vke::logError(window.error().message);
+            asharia::logError(window.error().message);
             return EXIT_FAILURE;
         }
 
         auto context = createEditorContext(*extensions, *window);
         if (!context) {
-            vke::logError(context.error().message);
+            asharia::logError(context.error().message);
             return EXIT_FAILURE;
         }
 
-        vke::GlfwWindow::pollEvents();
+        asharia::GlfwWindow::pollEvents();
         if (auto waited = waitForRenderableWindow(*window, smokeMode); !waited) {
-            vke::logError(waited.error().message);
+            asharia::logError(waited.error().message);
             return EXIT_FAILURE;
         }
         if (window->shouldClose()) {
@@ -787,47 +787,47 @@ namespace {
 
         auto frameLoop = createEditorFrameLoop(*context, *window);
         if (!frameLoop) {
-            vke::logError(frameLoop.error().message);
+            asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
         }
 
         ImGuiRuntime imgui;
         if (auto created = imgui.create(window->nativeHandle(), *context, *frameLoop); !created) {
-            vke::logError(created.error().message);
+            asharia::logError(created.error().message);
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path shaderDir{VKE_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
         auto renderer =
-            vke::BasicFullscreenTextureRenderer::create(vke::BasicFullscreenTextureRendererDesc{
+            asharia::BasicFullscreenTextureRenderer::create(asharia::BasicFullscreenTextureRendererDesc{
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
             });
         if (!renderer) {
-            vke::logError(renderer.error().message);
+            asharia::logError(renderer.error().message);
             return EXIT_FAILURE;
         }
 
         EditorViewportHost viewportHost;
         if (auto created = viewportHost.create(*context); !created) {
-            vke::logError(created.error().message);
+            asharia::logError(created.error().message);
             return EXIT_FAILURE;
         }
 
         auto renderedFrames =
             runEditorLoop(*window, *frameLoop, *renderer, viewportHost, smokeMode);
         if (!renderedFrames) {
-            vke::logError(renderedFrames.error().message);
+            asharia::logError(renderedFrames.error().message);
             return EXIT_FAILURE;
         }
         if (smokeMode && !viewportHost.hasPresentedViewportTexture()) {
-            vke::logError("Editor viewport smoke did not present a sampled viewport texture.");
+            asharia::logError("Editor viewport smoke did not present a sampled viewport texture.");
             return EXIT_FAILURE;
         }
         if (smokeMode && viewportHost.textureFramesSubmitted() + 1U <
                              static_cast<std::uint64_t>(*renderedFrames)) {
-            vke::logError("Editor viewport smoke dropped sampled texture presentation during "
+            asharia::logError("Editor viewport smoke dropped sampled texture presentation during "
                           "resize.");
             return EXIT_FAILURE;
         }
@@ -871,9 +871,9 @@ int main(int argc, char** argv) {
         printUsage();
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
-        vke::logError(exception.what());
+        asharia::logError(exception.what());
     } catch (...) {
-        vke::logError("Unhandled non-standard exception.");
+        asharia::logError("Unhandled non-standard exception.");
     }
 
     return EXIT_FAILURE;

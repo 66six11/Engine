@@ -1,4 +1,4 @@
-﻿#include "vke/rhi_vulkan/vulkan_buffer.hpp"
+﻿#include "asharia/rhi_vulkan/vulkan_buffer.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -7,9 +7,9 @@
 
 #include <vk_mem_alloc.h>
 
-#include "vke/rhi_vulkan/vulkan_error.hpp"
+#include "asharia/rhi_vulkan/vulkan_error.hpp"
 
-namespace vke {
+namespace asharia {
     namespace {
 
         VmaMemoryUsage vmaMemoryUsage(VulkanBufferMemoryUsage usage) {
@@ -152,4 +152,4 @@ namespace vke {
         return stats_;
     }
 
-} // namespace vke
+} // namespace asharia

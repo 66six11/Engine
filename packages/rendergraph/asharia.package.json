@@ -1,0 +1,11 @@
+{
+  "name": "com.asharia.rendergraph",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Render Graph",
+  "description": "Backend-agnostic frame graph, resource lifetime, and barrier planning.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-rendergraph"],
+  "targetDependencies": {
+    "asharia-rendergraph": ["asharia-core"]
+  }
+}

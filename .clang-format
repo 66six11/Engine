@@ -22,7 +22,7 @@ IncludeCategories:
     Priority: 1
   - Regex: '^<'
     Priority: 2
-  - Regex: '^"vke/'
+  - Regex: '^"asharia/'
     Priority: 3
   - Regex: '.*'
     Priority: 4

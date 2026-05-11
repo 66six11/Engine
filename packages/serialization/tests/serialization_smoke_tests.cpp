@@ -6,9 +6,9 @@
 #include <string>
 #include <string_view>
 
-#include "vke/reflection/type_builder.hpp"
-#include "vke/serialization/serializer.hpp"
-#include "vke/serialization/text_archive.hpp"
+#include "asharia/reflection/type_builder.hpp"
+#include "asharia/serialization/serializer.hpp"
+#include "asharia/serialization/text_archive.hpp"
 
 namespace {
 
@@ -42,8 +42,8 @@ namespace {
         std::cerr << message << '\n';
     }
 
-    vke::VoidResult registerReflectionSmokeTypes(vke::reflection::TypeRegistry& registry) {
-        using namespace vke::reflection;
+    asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
+        using namespace asharia::reflection;
 
         auto builtins = registerBuiltinTypes(registry);
         if (!builtins) {
@@ -93,8 +93,8 @@ namespace {
             .commit();
     }
 
-    std::optional<vke::reflection::TypeRegistry> makeReflectionSmokeRegistry() {
-        vke::reflection::TypeRegistry registry;
+    std::optional<asharia::reflection::TypeRegistry> makeReflectionSmokeRegistry() {
+        asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
             logFailure(registered.error().message);
@@ -116,8 +116,8 @@ namespace {
             return false;
         }
 
-        const vke::reflection::TypeId transformType =
-            vke::reflection::makeTypeId(kSmokeTransformTypeName);
+        const asharia::reflection::TypeId transformType =
+            asharia::reflection::makeTypeId(kSmokeTransformTypeName);
         const ReflectionSmokeTransform source{
             .position = {.x = 1.0F, .y = 2.0F, .z = 3.0F},
             .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
@@ -127,19 +127,19 @@ namespace {
             .scriptCounter = 12,
         };
 
-        auto archive = vke::serialization::serializeObject(*registry, transformType, &source);
+        auto archive = asharia::serialization::serializeObject(*registry, transformType, &source);
         if (!archive) {
             logFailure(archive.error().message);
             return false;
         }
 
-        auto firstText = vke::serialization::writeTextArchive(*archive);
+        auto firstText = asharia::serialization::writeTextArchive(*archive);
         if (!firstText) {
             logFailure(firstText.error().message);
             return false;
         }
 
-        auto secondText = vke::serialization::writeTextArchive(*archive);
+        auto secondText = asharia::serialization::writeTextArchive(*archive);
         if (!secondText) {
             logFailure(secondText.error().message);
             return false;
@@ -152,7 +152,7 @@ namespace {
 
         ReflectionSmokeTransform loaded{};
         auto loadedResult =
-            vke::serialization::deserializeObject(*registry, transformType, *archive, &loaded);
+            asharia::serialization::deserializeObject(*registry, transformType, *archive, &loaded);
         if (!loadedResult) {
             logFailure(loadedResult.error().message);
             return false;
@@ -166,39 +166,39 @@ namespace {
             return false;
         }
 
-        vke::serialization::ArchiveValue badArchive = *archive;
-        vke::serialization::ArchiveValue* fields = badArchive.findMemberValue("fields");
-        vke::serialization::ArchiveValue* position =
+        asharia::serialization::ArchiveValue badArchive = *archive;
+        asharia::serialization::ArchiveValue* fields = badArchive.findMemberValue("fields");
+        asharia::serialization::ArchiveValue* position =
             fields == nullptr ? nullptr : fields->findMemberValue("position");
-        vke::serialization::ArchiveValue* positionFields =
+        asharia::serialization::ArchiveValue* positionFields =
             position == nullptr ? nullptr : position->findMemberValue("fields");
-        vke::serialization::ArchiveValue* xValue =
+        asharia::serialization::ArchiveValue* xValue =
             positionFields == nullptr ? nullptr : positionFields->findMemberValue("x");
         if (xValue == nullptr) {
             logFailure("Serialization roundtrip smoke could not edit the bad archive.");
             return false;
         }
-        *xValue = vke::serialization::ArchiveValue::string("wrong");
+        *xValue = asharia::serialization::ArchiveValue::string("wrong");
 
         ReflectionSmokeTransform rejected{};
         auto rejectedResult =
-            vke::serialization::deserializeObject(*registry, transformType, badArchive, &rejected);
+            asharia::serialization::deserializeObject(*registry, transformType, badArchive, &rejected);
         if (rejectedResult || rejectedResult.error().message.find(".x") == std::string::npos) {
             logFailure("Serialization roundtrip smoke did not reject a bad field type.");
             return false;
         }
 
-        vke::serialization::ArchiveValue badVersionArchive = *archive;
-        vke::serialization::ArchiveValue* versionValue =
+        asharia::serialization::ArchiveValue badVersionArchive = *archive;
+        asharia::serialization::ArchiveValue* versionValue =
             badVersionArchive.findMemberValue("version");
         if (versionValue == nullptr) {
             logFailure("Serialization roundtrip smoke could not edit the archive version.");
             return false;
         }
-        *versionValue = vke::serialization::ArchiveValue::integer(2);
+        *versionValue = asharia::serialization::ArchiveValue::integer(2);
 
         ReflectionSmokeTransform rejectedVersion{};
-        auto rejectedVersionResult = vke::serialization::deserializeObject(
+        auto rejectedVersionResult = asharia::serialization::deserializeObject(
             *registry, transformType, badVersionArchive, &rejectedVersion);
         if (rejectedVersionResult ||
             rejectedVersionResult.error().message.find("version") == std::string::npos) {
@@ -219,32 +219,32 @@ namespace {
         validUtf8.push_back(static_cast<char>(0xC3));
         validUtf8.push_back(static_cast<char>(0xA9));
 
-        vke::serialization::ArchiveValue archive = vke::serialization::ArchiveValue::object({
-            vke::serialization::ArchiveMember{
+        asharia::serialization::ArchiveValue archive = asharia::serialization::ArchiveValue::object({
+            asharia::serialization::ArchiveMember{
                 .key = "escaped",
-                .value = vke::serialization::ArchiveValue::string(escaped),
+                .value = asharia::serialization::ArchiveValue::string(escaped),
             },
-            vke::serialization::ArchiveMember{
+            asharia::serialization::ArchiveMember{
                 .key = "validUtf8",
-                .value = vke::serialization::ArchiveValue::string(validUtf8),
+                .value = asharia::serialization::ArchiveValue::string(validUtf8),
             },
-            vke::serialization::ArchiveMember{
+            asharia::serialization::ArchiveMember{
                 .key = "array",
-                .value = vke::serialization::ArchiveValue::array({
-                    vke::serialization::ArchiveValue::integer(7),
-                    vke::serialization::ArchiveValue::floating(0.25),
-                    vke::serialization::ArchiveValue::boolean(true),
+                .value = asharia::serialization::ArchiveValue::array({
+                    asharia::serialization::ArchiveValue::integer(7),
+                    asharia::serialization::ArchiveValue::floating(0.25),
+                    asharia::serialization::ArchiveValue::boolean(true),
                 }),
             },
         });
 
-        auto firstText = vke::serialization::writeTextArchive(archive);
+        auto firstText = asharia::serialization::writeTextArchive(archive);
         if (!firstText) {
             logFailure(firstText.error().message);
             return false;
         }
 
-        auto secondText = vke::serialization::writeTextArchive(archive);
+        auto secondText = asharia::serialization::writeTextArchive(archive);
         if (!secondText) {
             logFailure(secondText.error().message);
             return false;
@@ -255,30 +255,30 @@ namespace {
             return false;
         }
 
-        auto parsed = vke::serialization::readTextArchive(*firstText);
+        auto parsed = asharia::serialization::readTextArchive(*firstText);
         if (!parsed) {
             logFailure(parsed.error().message);
             return false;
         }
 
-        const vke::serialization::ArchiveValue* parsedEscaped = parsed->findMemberValue("escaped");
-        const vke::serialization::ArchiveValue* parsedUtf8 = parsed->findMemberValue("validUtf8");
+        const asharia::serialization::ArchiveValue* parsedEscaped = parsed->findMemberValue("escaped");
+        const asharia::serialization::ArchiveValue* parsedUtf8 = parsed->findMemberValue("validUtf8");
         if (parsedEscaped == nullptr ||
-            parsedEscaped->kind != vke::serialization::ArchiveValueKind::String ||
+            parsedEscaped->kind != asharia::serialization::ArchiveValueKind::String ||
             parsedEscaped->stringValue != escaped || parsedUtf8 == nullptr ||
-            parsedUtf8->kind != vke::serialization::ArchiveValueKind::String ||
+            parsedUtf8->kind != asharia::serialization::ArchiveValueKind::String ||
             parsedUtf8->stringValue != validUtf8) {
             logFailure("JSON archive smoke failed to round-trip escaped strings.");
             return false;
         }
 
-        auto duplicate = vke::serialization::readTextArchive(R"({"field":1,"field":2})");
+        auto duplicate = asharia::serialization::readTextArchive(R"({"field":1,"field":2})");
         if (duplicate || duplicate.error().message.find("duplicate key") == std::string::npos) {
             logFailure("JSON archive smoke did not reject a duplicate object key.");
             return false;
         }
 
-        auto malformed = vke::serialization::readTextArchive("{");
+        auto malformed = asharia::serialization::readTextArchive("{");
         if (malformed || malformed.error().message.find("byte") == std::string::npos) {
             logFailure("JSON archive smoke did not report a parse byte for malformed input.");
             return false;
@@ -286,22 +286,22 @@ namespace {
 
         std::string invalidUtf8;
         invalidUtf8.push_back(static_cast<char>(0xFF));
-        auto invalidWrite = vke::serialization::writeTextArchive(
-            vke::serialization::ArchiveValue::string(invalidUtf8));
+        auto invalidWrite = asharia::serialization::writeTextArchive(
+            asharia::serialization::ArchiveValue::string(invalidUtf8));
         if (invalidWrite) {
             logFailure("JSON archive smoke accepted invalid UTF-8 output.");
             return false;
         }
 
         auto duplicateObjectWrite =
-            vke::serialization::writeTextArchive(vke::serialization::ArchiveValue::object({
-                vke::serialization::ArchiveMember{
+            asharia::serialization::writeTextArchive(asharia::serialization::ArchiveValue::object({
+                asharia::serialization::ArchiveMember{
                     .key = "field",
-                    .value = vke::serialization::ArchiveValue::integer(1),
+                    .value = asharia::serialization::ArchiveValue::integer(1),
                 },
-                vke::serialization::ArchiveMember{
+                asharia::serialization::ArchiveMember{
                     .key = "field",
-                    .value = vke::serialization::ArchiveValue::integer(2),
+                    .value = asharia::serialization::ArchiveValue::integer(2),
                 },
             }));
         if (duplicateObjectWrite ||
@@ -310,8 +310,8 @@ namespace {
             return false;
         }
 
-        auto nonFiniteWrite = vke::serialization::writeTextArchive(
-            vke::serialization::ArchiveValue::floating(std::numeric_limits<double>::infinity()));
+        auto nonFiniteWrite = asharia::serialization::writeTextArchive(
+            asharia::serialization::ArchiveValue::floating(std::numeric_limits<double>::infinity()));
         if (nonFiniteWrite ||
             nonFiniteWrite.error().message.find("non-finite") == std::string::npos) {
             logFailure("JSON archive smoke did not reject a non-finite float.");

@@ -1,4 +1,4 @@
-﻿#include "vke/window_glfw/glfw_window.hpp"
+﻿#include "asharia/window_glfw/glfw_window.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -8,9 +8,9 @@
 #include <span>
 #include <utility>
 
-#include "vke/core/error.hpp"
+#include "asharia/core/error.hpp"
 
-namespace vke {
+namespace asharia {
     namespace {
 
         Error glfwError(std::string_view fallback) {
@@ -173,4 +173,4 @@ namespace vke {
         return window_;
     }
 
-} // namespace vke
+} // namespace asharia

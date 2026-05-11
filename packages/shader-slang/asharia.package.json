@@ -1,0 +1,12 @@
+{
+  "name": "com.asharia.shader-slang",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Slang Shader Tools",
+  "description": "Slang shader compilation, SPIR-V validation, shader metadata, and reflection.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-shader-slang", "asharia-slang-reflect"],
+  "targetDependencies": {
+    "asharia-shader-slang": ["asharia-core"],
+    "asharia-slang-reflect": []
+  }
+}

@@ -7,8 +7,8 @@
 #include <string_view>
 #include <utility>
 
-#include "vke/reflection/context_view.hpp"
-#include "vke/reflection/type_builder.hpp"
+#include "asharia/reflection/context_view.hpp"
+#include "asharia/reflection/type_builder.hpp"
 
 namespace {
 
@@ -42,23 +42,23 @@ namespace {
         std::cerr << message << '\n';
     }
 
-    const vke::reflection::FieldInfo* findField(const vke::reflection::TypeInfo& type,
+    const asharia::reflection::FieldInfo* findField(const asharia::reflection::TypeInfo& type,
                                                 std::string_view name) {
         const auto found =
-            std::ranges::find_if(type.fields, [name](const vke::reflection::FieldInfo& field) {
+            std::ranges::find_if(type.fields, [name](const asharia::reflection::FieldInfo& field) {
                 return field.name == name;
             });
         return found == type.fields.end() ? nullptr : &*found;
     }
 
-    bool hasContextField(const vke::reflection::ContextFieldView& view, std::string_view name) {
-        return std::ranges::any_of(view.fields, [name](const vke::reflection::FieldInfo* field) {
+    bool hasContextField(const asharia::reflection::ContextFieldView& view, std::string_view name) {
+        return std::ranges::any_of(view.fields, [name](const asharia::reflection::FieldInfo* field) {
             return field != nullptr && field->name == name;
         });
     }
 
-    vke::VoidResult registerReflectionSmokeTypes(vke::reflection::TypeRegistry& registry) {
-        using namespace vke::reflection;
+    asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
+        using namespace asharia::reflection;
 
         auto builtins = registerBuiltinTypes(registry);
         if (!builtins) {
@@ -108,8 +108,8 @@ namespace {
             .commit();
     }
 
-    std::optional<vke::reflection::TypeRegistry> makeReflectionSmokeRegistry() {
-        vke::reflection::TypeRegistry registry;
+    std::optional<asharia::reflection::TypeRegistry> makeReflectionSmokeRegistry() {
+        asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
             logFailure(registered.error().message);
@@ -126,7 +126,7 @@ namespace {
     }
 
     bool smokeRegistry() {
-        vke::reflection::TypeRegistry registry;
+        asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
             logFailure(registered.error().message);
@@ -138,11 +138,11 @@ namespace {
             return false;
         }
 
-        vke::reflection::TypeInfo duplicate{
-            .id = vke::reflection::makeTypeId(kSmokeTransformTypeName),
+        asharia::reflection::TypeInfo duplicate{
+            .id = asharia::reflection::makeTypeId(kSmokeTransformTypeName),
             .name = std::string{kSmokeTransformTypeName},
             .version = 1,
-            .kind = vke::reflection::TypeKind::Component,
+            .kind = asharia::reflection::TypeKind::Component,
             .fields = {},
         };
         auto duplicateRegistered = registry.registerType(std::move(duplicate));
@@ -157,11 +157,11 @@ namespace {
             return false;
         }
 
-        vke::reflection::TypeInfo lateType{
-            .id = vke::reflection::makeTypeId("com.asharia.smoke.LateType"),
+        asharia::reflection::TypeInfo lateType{
+            .id = asharia::reflection::makeTypeId("com.asharia.smoke.LateType"),
             .name = "com.asharia.smoke.LateType",
             .version = 1,
-            .kind = vke::reflection::TypeKind::Struct,
+            .kind = asharia::reflection::TypeKind::Struct,
             .fields = {},
         };
         auto lateRegistered = registry.registerType(std::move(lateType));
@@ -180,21 +180,21 @@ namespace {
             return false;
         }
 
-        const vke::reflection::TypeInfo* transformType =
+        const asharia::reflection::TypeInfo* transformType =
             registry->findType(kSmokeTransformTypeName);
         if (transformType == nullptr || transformType->fields.size() != 6) {
             logFailure("Reflection transform smoke saw an unexpected field count.");
             return false;
         }
 
-        const vke::reflection::FieldInfo* positionField = findField(*transformType, "position");
-        const vke::reflection::FieldInfo* cachedField =
+        const asharia::reflection::FieldInfo* positionField = findField(*transformType, "position");
+        const asharia::reflection::FieldInfo* cachedField =
             findField(*transformType, "cachedMagnitude");
         if (positionField == nullptr || cachedField == nullptr ||
-            !positionField->flags.has(vke::reflection::FieldFlag::Serializable) ||
-            !positionField->flags.has(vke::reflection::FieldFlag::EditorVisible) ||
-            !positionField->flags.has(vke::reflection::FieldFlag::RuntimeVisible) ||
-            !positionField->flags.has(vke::reflection::FieldFlag::ScriptVisible) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::Serializable) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::EditorVisible) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::RuntimeVisible) ||
+            !positionField->flags.has(asharia::reflection::FieldFlag::ScriptVisible) ||
             cachedField->accessor.writeAddress) {
             logFailure("Reflection transform smoke saw unexpected field metadata.");
             return false;
@@ -234,19 +234,19 @@ namespace {
             return false;
         }
 
-        const vke::reflection::TypeInfo* transformType =
+        const asharia::reflection::TypeInfo* transformType =
             registry->findType(kSmokeTransformTypeName);
         if (transformType == nullptr) {
             logFailure("Reflection context smoke could not find transform type.");
             return false;
         }
 
-        const vke::reflection::ContextFieldView serializeView =
-            vke::reflection::makeSerializeContextView(*transformType);
-        const vke::reflection::ContextFieldView editView =
-            vke::reflection::makeEditContextView(*transformType);
-        const vke::reflection::ContextFieldView scriptView =
-            vke::reflection::makeScriptContextView(*transformType);
+        const asharia::reflection::ContextFieldView serializeView =
+            asharia::reflection::makeSerializeContextView(*transformType);
+        const asharia::reflection::ContextFieldView editView =
+            asharia::reflection::makeEditContextView(*transformType);
+        const asharia::reflection::ContextFieldView scriptView =
+            asharia::reflection::makeScriptContextView(*transformType);
 
         if (!hasContextField(serializeView, "debugName") ||
             hasContextField(serializeView, "cachedMagnitude") ||

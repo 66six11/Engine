@@ -21,7 +21,7 @@ powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
-python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan_cpp.py D:/TechArt/VkEngine --fail-on warning
+python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan_cpp.py . --fail-on warning
 ```
 
 本次诊断也在 `msvc-debug` 和 `clangcl-debug` 上跑通完整 smoke 清单：
@@ -50,8 +50,8 @@ python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan
 ### 做得好的部分
 
 - Package-first 边界基本成立：`engine/core` 保持低层基础设施，`rhi-vulkan`、`rendergraph`、`shader-slang`、`renderer-basic` 独立成包，`sample-viewer` 是 host 和 smoke harness。
-- RenderGraph public API 没有暴露 Vulkan 类型；Vulkan layout、stage、access 和 barrier 翻译集中在 `vke::rhi_vulkan_rendergraph`。
-- `vke::rhi_vulkan` 与 `vke::rhi_vulkan_rendergraph` 已分离，基础 Vulkan 后端没有公开依赖 RenderGraph。
+- RenderGraph public API 没有暴露 Vulkan 类型；Vulkan layout、stage、access 和 barrier 翻译集中在 `asharia::rhi_vulkan_rendergraph`。
+- `asharia::rhi_vulkan` 与 `asharia::rhi_vulkan_rendergraph` 已分离，基础 Vulkan 后端没有公开依赖 RenderGraph。
 - Vulkan context 查询并启用 `synchronization2`、`dynamicRendering` 和 `shaderDrawParameters`，主提交路径使用 `vkQueueSubmit2`，graph transition 使用 `vkCmdPipelineBarrier2`。
 - Slang 构建链已生成 SPIR-V、执行 `spirv-val`，并通过 Slang API 生成 reflection JSON。
 - Descriptor set layout、pipeline layout、descriptor pool/set allocation、buffer/image/sampler write 和 fullscreen texture bind 已有最小真实 Vulkan smoke。
@@ -112,7 +112,7 @@ Slang reflection JSON 是后续 material、descriptor 和 pipeline layout 契约
 验收：
 
 - 编码检查、`git diff --check`、MSVC/ClangCL Debug 构建和全套 smoke 通过。
-- 文档中的当前状态和 `vke-sample-viewer --help` 一致。
+- 文档中的当前状态和 `asharia-sample-viewer --help` 一致。
 
 ### 阶段 1：Draw List MVP（最小 smoke 已落地）
 

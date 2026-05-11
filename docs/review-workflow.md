@@ -34,7 +34,7 @@ powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
-python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan_cpp.py D:/TechArt/VkEngine --fail-on warning
+python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan_cpp.py . --fail-on warning
 ```
 
 涉及 frame loop、swapchain、RenderGraph、renderer 或 Vulkan adapter 时，必须跑：
@@ -60,7 +60,7 @@ $smokes = @(
 )
 
 foreach ($preset in @("clangcl-debug", "msvc-debug")) {
-    $exe = "build\cmake\$preset\apps\sample-viewer\vke-sample-viewer.exe"
+    $exe = "build\cmake\$preset\apps\sample-viewer\asharia-sample-viewer.exe"
     foreach ($smoke in $smokes) {
         & $exe $smoke
         if ($LASTEXITCODE -ne 0) {
@@ -112,10 +112,10 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 
 ## 包边界审查重点
 
-- `vke::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
-- `vke::rhi_vulkan_rendergraph` 是 RenderGraph 到 Vulkan 的翻译 target。
-- `vke::renderer_basic` 保持后端无关，只描述 basic renderer graph 片段。
-- `vke::renderer_basic_vulkan` 负责 Vulkan 命令录制。
+- `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
+- `asharia::rhi_vulkan_rendergraph` 是 RenderGraph 到 Vulkan 的翻译 target。
+- `asharia::renderer_basic` 保持后端无关，只描述 basic renderer graph 片段。
+- `asharia::renderer_basic_vulkan` 负责 Vulkan 命令录制。
 - app 可以承载 smoke 入口，但不应持有 pass/barrier/pipeline 编排细节。
 
 ## 文档同步要求

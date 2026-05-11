@@ -1,0 +1,11 @@
+{
+  "name": "com.asharia.core",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Core",
+  "description": "Shared low-level utilities for Asharia Engine packages.",
+  "dependencies": [],
+  "targets": ["asharia-core"],
+  "targetDependencies": {
+    "asharia-core": []
+  }
+}

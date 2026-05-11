@@ -1,0 +1,33 @@
+{
+  "name": "com.asharia.renderer-basic",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Basic Renderer",
+  "description": "Basic renderer graph descriptions plus a Vulkan recording backend target.",
+  "dependencies": [
+    "com.asharia.core",
+    "com.asharia.rendergraph",
+    "com.asharia.rhi-vulkan",
+    "com.asharia.shader-slang"
+  ],
+  "targets": [
+    "asharia-renderer-basic",
+    "asharia-renderer-basic-vulkan",
+    "asharia-renderer-basic-shaders"
+  ],
+  "targetDependencies": {
+    "asharia-renderer-basic": ["asharia-core", "asharia-rendergraph", "asharia-shader-slang"],
+    "asharia-renderer-basic-vulkan": [
+      "asharia-renderer-basic",
+      "asharia-rhi-vulkan",
+      "asharia-rhi-vulkan-rendergraph"
+    ],
+    "asharia-renderer-basic-shaders": [
+      "asharia-renderer-basic-triangle-vert",
+      "asharia-renderer-basic-triangle-frag",
+      "asharia-renderer-basic-descriptor-vert",
+      "asharia-renderer-basic-descriptor-frag",
+      "asharia-renderer-basic-mesh3d-vert",
+      "asharia-renderer-basic-mesh3d-frag"
+    ]
+  }
+}

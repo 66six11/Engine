@@ -42,7 +42,7 @@
 
 结论：
 
-- Godot、Unity、O3DE 和 Bevy 都把高层对象/脚本/编辑器体验与底层 renderer/backend 分开；VkEngine
+- Godot、Unity、O3DE 和 Bevy 都把高层对象/脚本/编辑器体验与底层 renderer/backend 分开；Asharia Engine
   继续保持 package-first 和 `rhi_vulkan` / `rendergraph` / renderer package 边界是合理方向。
 - Unreal RDG、Unity RenderGraph、O3DE Pass System 和 Bevy RenderGraph 都强调显式 pass/resource
   依赖；脚本或工具前端不应绕过 RenderGraph 的显式 resource access。
@@ -69,7 +69,7 @@
 
 结论：
 
-- VkEngine 第一版反射/序列化应采用 opt-in 类型注册，不自动扫描所有 C++ 类型。
+- Asharia Engine 第一版反射/序列化应采用 opt-in 类型注册，不自动扫描所有 C++ 类型。
 - Serialize/Edit/Script context 必须分开，不能用 public/private 或单个字段 flags 粗暴决定所有行为。
 - 运行时引用不能直接保存 pointer 或 GPU handle；`EntityId`、`AssetGuid`、`AssetHandle<T>` 需要专门 serializer 和诊断。
 - 当前项目使用 C++23，不能依赖 C++26 静态反射；第一版应使用手写注册表，未来可替换为 generated table。
@@ -210,8 +210,8 @@
 结论：
 
 - Frostbite、Unreal RDG 和 Unity Render Graph 都强调整帧图、延迟执行、资源生命周期、pass culling 和 barrier 由 graph 编译阶段统一管理。
-- Granite 和 vuk 对 Vulkan 工程更贴近：transient/imported resource、access annotation、deferred destruction、upload allocator 都适合作为 VkEngine 中期参考。
-- Diligent 的 Render State Notation/Packager 说明 shader、pipeline 和 resource signature 可以逐步转成离线可审查产物；这支持 VkEngine 先做 reflection JSON，再做 pipeline layout 契约。
+- Granite 和 vuk 对 Vulkan 工程更贴近：transient/imported resource、access annotation、deferred destruction、upload allocator 都适合作为 Asharia Engine 中期参考。
+- Diligent 的 Render State Notation/Packager 说明 shader、pipeline 和 resource signature 可以逐步转成离线可审查产物；这支持 Asharia Engine 先做 reflection JSON，再做 pipeline layout 契约。
 - 这些案例都不意味着下一步要直接引入大型 renderer、async compute、bindless 或多线程 context；当前阶段仍以小 smoke 闭环验证每个抽象。
 
 ## CMake、Conan、MSVC

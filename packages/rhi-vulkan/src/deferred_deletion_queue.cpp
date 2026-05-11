@@ -1,8 +1,8 @@
-﻿#include "vke/rhi_vulkan/deferred_deletion_queue.hpp"
+﻿#include "asharia/rhi_vulkan/deferred_deletion_queue.hpp"
 
 #include <utility>
 
-namespace vke {
+namespace asharia {
     bool VulkanDeferredDeletionQueue::enqueue(std::uint64_t retireEpoch,
                                               VulkanDeferredDeletionCallback callback) {
         if (!callback) {
@@ -73,4 +73,4 @@ namespace vke {
         return records_.empty();
     }
 
-} // namespace vke
+} // namespace asharia

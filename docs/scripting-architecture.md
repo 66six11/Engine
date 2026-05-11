@@ -2,7 +2,7 @@
 
 研究日期：2026-05-10
 
-本文定义 VkEngine 后续脚本系统的边界。脚本系统不是后期给 C++ 随便绑定几个函数，也不是直接访问
+本文定义 Asharia Engine 后续脚本系统的边界。脚本系统不是后期给 C++ 随便绑定几个函数，也不是直接访问
 Vulkan/RHI 的逃生口。它应作为一等系统，通过 reflection、scene public API、asset public API 和
 editor transaction 操作引擎数据。
 
@@ -31,13 +31,13 @@ editor transaction 操作引擎数据。
 
 ## 一手资料结论
 
-| 资料 | 关键事实 | 对 VkEngine 的约束 |
+| 资料 | 关键事实 | 对 Asharia Engine 的约束 |
 | --- | --- | --- |
-| O3DE Behavior Context: https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/behavior-context/ | O3DE 通过 Behavior Context 把 C++ 反射给脚本/工具，而不是让脚本随意碰底层对象。 | VkEngine 脚本 binding 应消费 Script Context，和 Serialize/Edit Context 分开。 |
-| Godot GDExtension overview: https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/what_is_gdextension.html | Godot 把扩展 API 作为引擎和脚本/原生扩展之间的边界。 | VkEngine 需要稳定 facade API，避免脚本依赖内部 package 实现。 |
-| Unity script serialization: https://docs.unity.cn/Manual/script-Serialization.html | Unity 脚本字段序列化、Inspector 和热重载状态强相关。 | VkEngine 脚本组件状态如果要保存，必须进入 reflection/serialization 规则，不能藏在 VM 私有对象里。 |
-| Unreal modules/plugins: https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules | Unreal 用模块和插件组织运行时/editor 扩展。 | VkEngine 脚本 API 应明确 editor-only、runtime、tool/import 上下文，避免 runtime 链接 editor。 |
-| Unity URP RenderGraph pass authoring: https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-write-render-pass.html | 高层语言可以在 record 阶段创建 pass 并声明资源，但执行阶段由受控 command context 运行。 | VkEngine 脚本未来只能生成 RenderGraph 声明和命令摘要，不进入 command buffer recording。 |
+| O3DE Behavior Context: https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/behavior-context/ | O3DE 通过 Behavior Context 把 C++ 反射给脚本/工具，而不是让脚本随意碰底层对象。 | Asharia Engine 脚本 binding 应消费 Script Context，和 Serialize/Edit Context 分开。 |
+| Godot GDExtension overview: https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/what_is_gdextension.html | Godot 把扩展 API 作为引擎和脚本/原生扩展之间的边界。 | Asharia Engine 需要稳定 facade API，避免脚本依赖内部 package 实现。 |
+| Unity script serialization: https://docs.unity.cn/Manual/script-Serialization.html | Unity 脚本字段序列化、Inspector 和热重载状态强相关。 | Asharia Engine 脚本组件状态如果要保存，必须进入 reflection/serialization 规则，不能藏在 VM 私有对象里。 |
+| Unreal modules/plugins: https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules | Unreal 用模块和插件组织运行时/editor 扩展。 | Asharia Engine 脚本 API 应明确 editor-only、runtime、tool/import 上下文，避免 runtime 链接 editor。 |
+| Unity URP RenderGraph pass authoring: https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-write-render-pass.html | 高层语言可以在 record 阶段创建 pass 并声明资源，但执行阶段由受控 command context 运行。 | Asharia Engine 脚本未来只能生成 RenderGraph 声明和命令摘要，不进入 command buffer recording。 |
 | Vulkan threading guide: https://docs.vulkan.org/guide/latest/threading.html | Vulkan object 外部同步由应用负责，命令池和 descriptor pool 不能随意跨线程共享。 | 脚本不能直接创建、销毁或录制 Vulkan 对象；RHI 资源生命周期由 backend owner 管理。 |
 
 ## Package 边界
@@ -46,7 +46,7 @@ editor transaction 操作引擎数据。
 
 ```text
 packages/scripting
-  include/vke/scripting/
+  include/asharia/scripting/
   src/
 ```
 
@@ -78,7 +78,7 @@ flowchart TD
 
 - `scripting` 不依赖 Vulkan、ImGui、renderer implementation 或 `apps/editor`。
 - `editor-core` 可提供 editor scripting facade，但 runtime 不链接 editor facade。
-- 具体 VM integration 可以是子 target，例如 `vke::scripting_lua` 或 `vke::scripting_dotnet`。
+- 具体 VM integration 可以是子 target，例如 `asharia::scripting_lua` 或 `asharia::scripting_dotnet`。
 - 核心 `scripting` package 只定义 host、context、binding、diagnostic 和 facade interface。
 
 ## 总体架构

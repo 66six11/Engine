@@ -2,7 +2,7 @@
 
 研究日期：2026-05-10
 
-本文定义 VkEngine 后续 scene、world、entity、component、selection、transaction、render snapshot 和
+本文定义 Asharia Engine 后续 scene、world、entity、component、selection、transaction、render snapshot 和
 Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `scene-core`、`editor-core`、`scripting`、
 `asset-core` 和 renderer 之间的数据流。核心原则是：World 持有可变游戏/编辑数据，renderer 只消费
 不可变 frame snapshot 或 render packet。
@@ -32,11 +32,11 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 
 ## 一手资料结论
 
-| 资料 | 关键事实 | 对 VkEngine 的约束 |
+| 资料 | 关键事实 | 对 Asharia Engine 的约束 |
 | --- | --- | --- |
-| Godot thread-safe APIs: https://docs.godotengine.org/en/stable/tutorials/performance/thread_safe_apis.html | Godot 文档明确 SceneTree 交互不是任意线程安全；跨线程更适合 server-style API 或 deferred call。 | VkEngine 第一版 World 默认主线程拥有；worker thread 只处理 immutable snapshot、job data 或消息。 |
+| Godot thread-safe APIs: https://docs.godotengine.org/en/stable/tutorials/performance/thread_safe_apis.html | Godot 文档明确 SceneTree 交互不是任意线程安全；跨线程更适合 server-style API 或 deferred call。 | Asharia Engine 第一版 World 默认主线程拥有；worker thread 只处理 immutable snapshot、job data 或消息。 |
 | Unreal parallel rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine | Unreal 把 game thread、render thread 和 RHI thread 分离，渲染侧通过 proxy/snapshot 消费游戏数据。 | Renderer 后续应消费 render snapshot/draw packet，不直接读 gameplay/editor object。 |
-| Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | VkEngine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
+| Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | Asharia Engine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
 | Unity SRP / RenderGraph: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | Editor 可有 Game View、Scene View、preview 等多个渲染视图。 | RenderGraph 和 profiling 不应假设一帧只有一个 view graph。 |
 | Vulkan threading guide: https://docs.vulkan.org/guide/latest/threading.html | Vulkan 对 command pool、descriptor pool 等对象有外部同步要求。 | Scene/renderer 多线程设计不能让多个线程共享录制资源；未来多线程录制要 per-thread pool。 |
 
@@ -46,11 +46,11 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 
 ```text
 packages/scene-core
-  include/vke/scene/
+  include/asharia/scene/
   src/
 
 packages/editor-core
-  include/vke/editor/
+  include/asharia/editor/
   src/
 ```
 
@@ -127,7 +127,7 @@ flowchart TD
 第一版可以简单，重点是 handle、owner 和数据流正确：
 
 ```cpp
-namespace vke {
+namespace asharia {
 
 struct EntityId {
     std::uint32_t index;
@@ -168,7 +168,7 @@ public:
     T* tryGetComponent(EntityId entity);
 };
 
-} // namespace vke
+} // namespace asharia
 ```
 
 技术点：

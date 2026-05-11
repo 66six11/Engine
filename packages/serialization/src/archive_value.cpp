@@ -1,9 +1,9 @@
-﻿#include "vke/serialization/archive_value.hpp"
+﻿#include "asharia/serialization/archive_value.hpp"
 
 #include <algorithm>
 #include <utility>
 
-namespace vke::serialization {
+namespace asharia::serialization {
 
     ArchiveValue::ArchiveValue() = default;
     ArchiveValue::ArchiveValue(const ArchiveValue& other) = default;
@@ -86,4 +86,4 @@ namespace vke::serialization {
         return member == nullptr ? nullptr : &member->value;
     }
 
-} // namespace vke::serialization
+} // namespace asharia::serialization

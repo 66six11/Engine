@@ -1,0 +1,21 @@
+{
+  "name": "com.asharia.apps.editor",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Editor",
+  "description": "Dear ImGui host application for editor shell and viewport integration.",
+  "dependencies": [
+    "com.asharia.core",
+    "com.asharia.renderer-basic",
+    "com.asharia.window-glfw",
+    "com.asharia.rhi-vulkan"
+  ],
+  "targets": ["asharia-editor"],
+  "targetDependencies": {
+    "asharia-editor": [
+      "asharia-core",
+      "asharia-renderer-basic-vulkan",
+      "asharia-rhi-vulkan",
+      "asharia-window-glfw"
+    ]
+  }
+}

@@ -5,10 +5,10 @@
 #include <optional>
 #include <string_view>
 
-#include "vke/core/error.hpp"
-#include "vke/shader_slang/reflection.hpp"
+#include "asharia/core/error.hpp"
+#include "asharia/shader_slang/reflection.hpp"
 
-namespace vke {
+namespace asharia {
     namespace {
 
         [[nodiscard]] Error reflectionError(std::string message) {
@@ -534,4 +534,4 @@ namespace vke {
         return signature;
     }
 
-} // namespace vke
+} // namespace asharia

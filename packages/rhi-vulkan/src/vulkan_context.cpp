@@ -1,9 +1,9 @@
-﻿#include "vke/rhi_vulkan/vulkan_context.hpp"
+﻿#include "asharia/rhi_vulkan/vulkan_context.hpp"
 
-#include "vke/core/error.hpp"
-#include "vke/core/log.hpp"
-#include "vke/core/version.hpp"
-#include "vke/rhi_vulkan/vulkan_error.hpp"
+#include "asharia/core/error.hpp"
+#include "asharia/core/log.hpp"
+#include "asharia/core/version.hpp"
+#include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 #define VMA_IMPLEMENTATION
 // clang-format off
@@ -18,7 +18,7 @@
 #include <string_view>
 #include <utility>
 
-namespace vke {
+namespace asharia {
     namespace {
 
         constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
@@ -837,4 +837,4 @@ namespace vke {
         return debugLabelFunctions_;
     }
 
-} // namespace vke
+} // namespace asharia
