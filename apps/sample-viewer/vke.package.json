@@ -5,10 +5,27 @@
   "description": "Minimal host application for renderer smoke tests.",
   "dependencies": [
     "com.vke.core",
+    "com.vke.profiling",
+    "com.vke.reflection",
     "com.vke.window-glfw",
     "com.vke.rendergraph",
     "com.vke.rhi-vulkan",
+    "com.vke.serialization",
     "com.vke.renderer-basic"
   ],
-  "targets": ["vke-sample-viewer"]
+  "targets": ["vke-sample-viewer"],
+  "targetDependencies": {
+    "vke-sample-viewer": [
+      "vke-core",
+      "vke-profiling",
+      "vke-reflection",
+      "vke-rendergraph",
+      "vke-rhi-vulkan",
+      "vke-rhi-vulkan-rendergraph",
+      "vke-serialization",
+      "vke-window-glfw",
+      "vke-renderer-basic",
+      "vke-renderer-basic-vulkan"
+    ]
+  }
 }

@@ -4,5 +4,8 @@
   "displayName": "VkEngine GLFW Window",
   "description": "GLFW-backed window and Vulkan surface integration.",
   "dependencies": ["com.vke.core", "com.vke.platform"],
-  "targets": ["vke-window-glfw"]
+  "targets": ["vke-window-glfw"],
+  "targetDependencies": {
+    "vke-window-glfw": ["vke-core", "vke-platform"]
+  }
 }

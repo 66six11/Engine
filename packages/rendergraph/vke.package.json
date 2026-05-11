@@ -4,5 +4,8 @@
   "displayName": "VkEngine Render Graph",
   "description": "Backend-agnostic frame graph, resource lifetime, and barrier planning.",
   "dependencies": ["com.vke.core"],
-  "targets": ["vke-rendergraph"]
+  "targets": ["vke-rendergraph"],
+  "targetDependencies": {
+    "vke-rendergraph": ["vke-core"]
+  }
 }

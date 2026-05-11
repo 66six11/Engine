@@ -1,3 +1,19 @@
+cmake_minimum_required(VERSION 3.28)
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(VkEngineRendererBasic VERSION 0.1.0 LANGUAGES CXX)
+endif()
+
+if(NOT DEFINED VKE_REPOSITORY_ROOT)
+  get_filename_component(VKE_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+endif()
+include("${VKE_REPOSITORY_ROOT}/cmake/VkePackage.cmake")
+vke_package_init()
+vke_require_package_target(vke::core engine/core)
+vke_require_package_target(vke::rendergraph packages/rendergraph)
+vke_require_package_target(vke::shader_slang packages/shader-slang)
+vke_require_package_target(vke::rhi_vulkan packages/rhi-vulkan)
+
 add_library(vke-renderer-basic INTERFACE)
 add_library(vke::renderer_basic ALIAS vke-renderer-basic)
 add_library(vke-renderer-basic-vulkan

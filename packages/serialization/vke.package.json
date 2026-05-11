@@ -4,5 +4,10 @@
   "displayName": "VkEngine Serialization",
   "description": "Deterministic archive values and reflection-driven object serialization.",
   "dependencies": ["com.vke.core", "com.vke.reflection"],
-  "targets": ["vke-serialization"]
+  "targets": ["vke-serialization"],
+  "testTargets": ["vke-serialization-smoke-tests"],
+  "targetDependencies": {
+    "vke-serialization": ["vke-core", "vke-reflection"],
+    "vke-serialization-smoke-tests": ["vke-serialization"]
+  }
 }

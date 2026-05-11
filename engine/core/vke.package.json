@@ -4,5 +4,8 @@
   "displayName": "VkEngine Core",
   "description": "Shared low-level utilities for VkEngine packages.",
   "dependencies": [],
-  "targets": ["vke-core"]
+  "targets": ["vke-core"],
+  "targetDependencies": {
+    "vke-core": []
+  }
 }

@@ -4,5 +4,8 @@
   "displayName": "VkEngine Platform",
   "description": "Platform abstractions shared by host applications and packages.",
   "dependencies": ["com.vke.core"],
-  "targets": ["vke-platform"]
+  "targets": ["vke-platform"],
+  "targetDependencies": {
+    "vke-platform": ["vke-core"]
+  }
 }

@@ -1,3 +1,18 @@
+cmake_minimum_required(VERSION 3.28)
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(VkEngineEditor VERSION 0.1.0 LANGUAGES CXX)
+endif()
+
+if(NOT DEFINED VKE_REPOSITORY_ROOT)
+  get_filename_component(VKE_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+endif()
+include("${VKE_REPOSITORY_ROOT}/cmake/VkePackage.cmake")
+vke_package_init()
+vke_require_package_target(vke::renderer_basic_vulkan packages/renderer-basic)
+vke_require_package_target(vke::rhi_vulkan packages/rhi-vulkan)
+vke_require_package_target(vke::window_glfw packages/window-glfw)
+
 find_package(imgui CONFIG REQUIRED)
 
 string(TOUPPER "${CMAKE_BUILD_TYPE}" VKE_IMGUI_CONFIG_SUFFIX)

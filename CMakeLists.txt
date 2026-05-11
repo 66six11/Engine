@@ -19,6 +19,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(VkeCompilerOptions)
 
+if(VKE_BUILD_TESTS)
+    enable_testing()
+endif()
+
 add_subdirectory(engine/core)
 add_subdirectory(engine/platform)
 
@@ -34,8 +38,4 @@ add_subdirectory(packages/renderer-basic)
 if(VKE_BUILD_APPS)
     add_subdirectory(apps/editor)
     add_subdirectory(apps/sample-viewer)
-endif()
-
-if(VKE_BUILD_TESTS)
-    enable_testing()
 endif()

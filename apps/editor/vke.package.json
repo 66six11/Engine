@@ -9,5 +9,13 @@
     "com.vke.window-glfw",
     "com.vke.rhi-vulkan"
   ],
-  "targets": ["vke-editor"]
+  "targets": ["vke-editor"],
+  "targetDependencies": {
+    "vke-editor": [
+      "vke-core",
+      "vke-renderer-basic-vulkan",
+      "vke-rhi-vulkan",
+      "vke-window-glfw"
+    ]
+  }
 }
