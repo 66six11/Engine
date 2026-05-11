@@ -8,6 +8,7 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -185,6 +186,12 @@ namespace {
 
     asharia::Error smokeSerializationError(std::string message) {
         return asharia::Error{asharia::ErrorDomain::Serialization, 0, std::move(message)};
+    }
+
+    bool containsAll(std::string_view text, std::initializer_list<std::string_view> needles) {
+        return std::ranges::all_of(needles, [text](std::string_view needle) {
+            return text.find(needle) != std::string_view::npos;
+        });
     }
 
     const asharia::reflection::FieldInfo* findField(const asharia::reflection::TypeInfo& type,
@@ -438,7 +445,14 @@ namespace {
             .fields = {},
         };
         auto duplicateRegistered = registry.registerType(std::move(duplicate));
-        if (duplicateRegistered) {
+        if (duplicateRegistered ||
+            !containsAll(duplicateRegistered.error().message,
+                         {
+                             "operation=register",
+                             "type=com.asharia.smoke.Transform",
+                             "expected=unique type name",
+                             "actual=duplicate",
+                         })) {
             asharia::logError("Reflection registry smoke accepted a duplicate type.");
             return EXIT_FAILURE;
         }
@@ -457,7 +471,14 @@ namespace {
             .fields = {},
         };
         auto lateRegistered = registry.registerType(std::move(lateType));
-        if (lateRegistered) {
+        if (lateRegistered ||
+            !containsAll(lateRegistered.error().message,
+                         {
+                             "operation=register",
+                             "type=com.asharia.smoke.LateType",
+                             "expected=mutable registry",
+                             "actual=frozen",
+                         })) {
             asharia::logError("Reflection registry smoke accepted registration after freeze.");
             return EXIT_FAILURE;
         }
@@ -626,7 +647,15 @@ namespace {
         ReflectionSmokeTransform rejected{};
         auto rejectedResult =
             asharia::serialization::deserializeObject(*registry, transformType, badArchive, &rejected);
-        if (rejectedResult || rejectedResult.error().message.find(".x") == std::string::npos) {
+        if (rejectedResult ||
+            !containsAll(rejectedResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.position.x",
+                             "type=com.asharia.core.Float",
+                             "expected=float",
+                             "actual=string",
+                         })) {
             asharia::logError("Serialization roundtrip smoke did not reject a bad field type.");
             return EXIT_FAILURE;
         }
@@ -644,7 +673,16 @@ namespace {
         auto rejectedVersionResult = asharia::serialization::deserializeObject(
             *registry, transformType, badVersionArchive, &rejectedVersion);
         if (rejectedVersionResult ||
-            rejectedVersionResult.error().message.find("version") == std::string::npos) {
+            !containsAll(rejectedVersionResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform",
+                             "type=com.asharia.smoke.Transform",
+                             "field=version",
+                             "expected=migration policy",
+                             "actual=no migration registry",
+                             "version=2",
+                         })) {
             asharia::logError("Serialization roundtrip smoke did not reject a bad type version.");
             return EXIT_FAILURE;
         }
@@ -780,7 +818,15 @@ namespace {
 
         auto duplicateMigration = migrations.registerMigration(
             migratedTransformType, 1, 2, migrateSmokeTransformV1ToV2);
-        if (duplicateMigration) {
+        if (duplicateMigration ||
+            !containsAll(duplicateMigration.error().message,
+                         {
+                             "operation=register",
+                             "fromVersion=1",
+                             "toVersion=2",
+                             "expected=unique migration step",
+                             "actual=duplicate",
+                         })) {
             asharia::logError("Serialization migration smoke accepted a duplicate migration.");
             return EXIT_FAILURE;
         }
@@ -791,8 +837,16 @@ namespace {
         auto missingMigrationResult = asharia::serialization::deserializeObject(
             *registry, migratedTransformType, oldArchive, &rejectedWithoutMigration);
         if (missingMigrationResult ||
-            missingMigrationResult.error().message.find("requires migration") ==
-                std::string::npos) {
+            !containsAll(missingMigrationResult.error().message,
+                         {
+                             "requires migration",
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.MigratedTransform",
+                             "type=com.asharia.smoke.MigratedTransform",
+                             "expected=migration policy",
+                             "actual=no migration registry",
+                             "version=1",
+                         })) {
             asharia::logError("Serialization migration smoke did not require a migration policy.");
             return EXIT_FAILURE;
         }
@@ -830,8 +884,15 @@ namespace {
         auto missingRuleResult = asharia::serialization::deserializeObject(
             *registry, migratedTransformType, oldArchive, &rejectedMissingRule, missingPolicy);
         if (missingRuleResult ||
-            missingRuleResult.error().message.find("Missing serialization migration") ==
-                std::string::npos) {
+            !containsAll(missingRuleResult.error().message,
+                         {
+                             "Missing serialization migration",
+                             "operation=migrate",
+                             "fromVersion=1",
+                             "toVersion=2",
+                             "expected=registered migration step",
+                             "actual=missing",
+                         })) {
             asharia::logError(
                 "Serialization migration smoke did not reject a missing migration rule.");
             return EXIT_FAILURE;

@@ -1,6 +1,10 @@
-﻿#include <cstdint>
+﻿#include <algorithm>
+#include <cstdio>
+#include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <expected>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -58,6 +62,12 @@ namespace {
 
     void logFailure(std::string_view message) {
         std::cerr << message << '\n';
+    }
+
+    bool containsAll(std::string_view text, std::initializer_list<std::string_view> needles) {
+        return std::ranges::all_of(needles, [text](std::string_view needle) {
+            return text.find(needle) != std::string_view::npos;
+        });
     }
 
     asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
@@ -347,7 +357,15 @@ namespace {
         ReflectionSmokeTransform rejected{};
         auto rejectedResult = asharia::serialization::deserializeObject(*registry, transformType,
                                                                         badArchive, &rejected);
-        if (rejectedResult || rejectedResult.error().message.find(".x") == std::string::npos) {
+        if (rejectedResult ||
+            !containsAll(rejectedResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.position.x",
+                             "type=com.asharia.core.Float",
+                             "expected=float",
+                             "actual=string",
+                         })) {
             logFailure("Serialization roundtrip smoke did not reject a bad field type.");
             return false;
         }
@@ -365,7 +383,16 @@ namespace {
         auto rejectedVersionResult = asharia::serialization::deserializeObject(
             *registry, transformType, badVersionArchive, &rejectedVersion);
         if (rejectedVersionResult ||
-            rejectedVersionResult.error().message.find("version") == std::string::npos) {
+            !containsAll(rejectedVersionResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform",
+                             "type=com.asharia.smoke.Transform",
+                             "field=version",
+                             "expected=migration policy",
+                             "actual=no migration registry",
+                             "version=2",
+                         })) {
             logFailure("Serialization roundtrip smoke did not reject a bad type version.");
             return false;
         }
@@ -508,7 +535,15 @@ namespace {
 
         auto duplicateMigration =
             migrations.registerMigration(migratedTransformType, 1, 2, migrateSmokeTransformV1ToV2);
-        if (duplicateMigration) {
+        if (duplicateMigration ||
+            !containsAll(duplicateMigration.error().message,
+                         {
+                             "operation=register",
+                             "fromVersion=1",
+                             "toVersion=2",
+                             "expected=unique migration step",
+                             "actual=duplicate",
+                         })) {
             logFailure("Serialization migration smoke accepted a duplicate migration.");
             return false;
         }
@@ -517,8 +552,17 @@ namespace {
         ReflectionSmokeMigratedTransform rejectedWithoutMigration{};
         auto missingMigrationResult = asharia::serialization::deserializeObject(
             *registry, migratedTransformType, oldArchive, &rejectedWithoutMigration);
-        if (missingMigrationResult || missingMigrationResult.error().message.find(
-                                          "requires migration") == std::string::npos) {
+        if (missingMigrationResult ||
+            !containsAll(missingMigrationResult.error().message,
+                         {
+                             "requires migration",
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.MigratedTransform",
+                             "type=com.asharia.smoke.MigratedTransform",
+                             "expected=migration policy",
+                             "actual=no migration registry",
+                             "version=1",
+                         })) {
             logFailure("Serialization migration smoke did not require a migration policy.");
             return false;
         }
@@ -553,8 +597,16 @@ namespace {
         ReflectionSmokeMigratedTransform rejectedMissingRule{};
         auto missingRuleResult = asharia::serialization::deserializeObject(
             *registry, migratedTransformType, oldArchive, &rejectedMissingRule, missingPolicy);
-        if (missingRuleResult || missingRuleResult.error().message.find(
-                                     "Missing serialization migration") == std::string::npos) {
+        if (missingRuleResult ||
+            !containsAll(missingRuleResult.error().message,
+                         {
+                             "Missing serialization migration",
+                             "operation=migrate",
+                             "fromVersion=1",
+                             "toVersion=2",
+                             "expected=registered migration step",
+                             "actual=missing",
+                         })) {
             logFailure("Serialization migration smoke did not reject a missing migration rule.");
             return false;
         }
@@ -566,6 +618,15 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeRoundtrip() && smokeJsonArchive() && smokeMigration();
-    return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    try {
+        const bool passed = smokeRoundtrip() && smokeJsonArchive() && smokeMigration();
+        return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    } catch (const std::exception& exception) {
+        std::fputs("Serialization smoke test threw an exception: ", stderr);
+        std::fputs(exception.what(), stderr);
+        std::fputc('\n', stderr);
+    } catch (...) {
+        std::fputs("Serialization smoke test threw an unknown exception.\n", stderr);
+    }
+    return EXIT_FAILURE;
 }

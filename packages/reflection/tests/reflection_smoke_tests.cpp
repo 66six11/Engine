@@ -1,6 +1,9 @@
 ﻿#include <algorithm>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
+#include <initializer_list>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -40,6 +43,12 @@ namespace {
 
     void logFailure(std::string_view message) {
         std::cerr << message << '\n';
+    }
+
+    bool containsAll(std::string_view text, std::initializer_list<std::string_view> needles) {
+        return std::ranges::all_of(needles, [text](std::string_view needle) {
+            return text.find(needle) != std::string_view::npos;
+        });
     }
 
     const asharia::reflection::FieldInfo* findField(const asharia::reflection::TypeInfo& type,
@@ -146,7 +155,14 @@ namespace {
             .fields = {},
         };
         auto duplicateRegistered = registry.registerType(std::move(duplicate));
-        if (duplicateRegistered) {
+        if (duplicateRegistered ||
+            !containsAll(duplicateRegistered.error().message,
+                         {
+                             "operation=register",
+                             "type=com.asharia.smoke.Transform",
+                             "expected=unique type name",
+                             "actual=duplicate",
+                         })) {
             logFailure("Reflection registry smoke accepted a duplicate type.");
             return false;
         }
@@ -165,7 +181,14 @@ namespace {
             .fields = {},
         };
         auto lateRegistered = registry.registerType(std::move(lateType));
-        if (lateRegistered) {
+        if (lateRegistered ||
+            !containsAll(lateRegistered.error().message,
+                         {
+                             "operation=register",
+                             "type=com.asharia.smoke.LateType",
+                             "expected=mutable registry",
+                             "actual=frozen",
+                         })) {
             logFailure("Reflection registry smoke accepted registration after freeze.");
             return false;
         }
@@ -267,6 +290,15 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeRegistry() && smokeTransform() && smokeContexts();
-    return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    try {
+        const bool passed = smokeRegistry() && smokeTransform() && smokeContexts();
+        return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    } catch (const std::exception& exception) {
+        std::fputs("Reflection smoke test threw an exception: ", stderr);
+        std::fputs(exception.what(), stderr);
+        std::fputc('\n', stderr);
+    } catch (...) {
+        std::fputs("Reflection smoke test threw an unknown exception.\n", stderr);
+    }
+    return EXIT_FAILURE;
 }
