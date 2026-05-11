@@ -22,7 +22,7 @@
 - Python：`.py`。
 - PowerShell：`.ps1`。
 - Markdown/text 文档：`.md`、`.txt`。
-- Git/Clang/EditorConfig 配置：`.gitignore`、`.gitattributes`、`.clang-format`、`.clang-tidy`、`.editorconfig`。
+- Git/Clang/EditorConfig 配置：`.gitignore`、`.gitattributes`、`.clang-format`、`.clang-tidy`、`.editorconfig`、`CODEOWNERS`。
 - Shader 文本：`.slang`、`.vert`、`.frag`、`.comp` 等。
 
 ## 工具

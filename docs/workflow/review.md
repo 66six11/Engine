@@ -31,6 +31,7 @@
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
+powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
 git diff --check
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
@@ -127,6 +128,11 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 - 修改 RenderGraph pass/resource/transition 语义。
 - 修改 frame loop、swapchain、同步、资源生命周期。
 - 新增 renderer backend 或 shader pipeline 阶段。
+
+`tools\check-doc-sync.ps1` 会在 `apps/`、`engine/`、`packages/`、`shaders/`、CMake/Conan、
+`scripts/`、`tools/` 或 GitHub Actions workflow 发生变化但没有文档变化时失败。若确认无需文档更新，
+必须在 PR 模板中说明原因；本地临时验证可使用 `-NoDocsReason` 显式给出原因。脚本默认只检查 tracked
+diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-IncludeUntracked`。
 
 优先更新：
 

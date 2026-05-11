@@ -1,0 +1,22 @@
+# Keep architecture, workflow, and package-boundary changes visible.
+* @66six11
+
+/docs/ @66six11
+/AGENTS.md @66six11
+/README.md @66six11
+
+/.github/ @66six11
+/tools/ @66six11
+/scripts/ @66six11
+
+/CMakeLists.txt @66six11
+/CMakePresets.json @66six11
+/conanfile.py @66six11
+/conan.lock @66six11
+/profiles/ @66six11
+/cmake/ @66six11
+
+/engine/ @66six11
+/packages/ @66six11
+/apps/ @66six11
+/shaders/ @66six11

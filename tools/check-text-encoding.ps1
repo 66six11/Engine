@@ -54,6 +54,7 @@ $ForbidBomFileNames = [System.Collections.Generic.HashSet[string]]::new([System.
     ".editorconfig",
     ".gitattributes",
     ".gitignore",
+    "CODEOWNERS",
     "CMakeLists.txt",
     "CMakePresets.json",
     "CMakeUserPresets.json",
