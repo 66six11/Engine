@@ -3,6 +3,7 @@
 #include <expected>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "asharia/core/error.hpp"
@@ -44,6 +45,69 @@ namespace asharia::serialization {
 
         [[nodiscard]] bool isFloatCompatibleKind(ArchiveValueKind kind) {
             return kind == ArchiveValueKind::Float || kind == ArchiveValueKind::Integer;
+        }
+
+        [[nodiscard]] Result<std::uint32_t> readArchiveVersion(const reflection::TypeInfo& type,
+                                                               const ArchiveValue& value) {
+            const ArchiveValue* archiveType = value.findMemberValue("type");
+            if (archiveType == nullptr || archiveType->kind != ArchiveValueKind::String ||
+                archiveType->stringValue != type.name) {
+                return std::unexpected{serializationError(
+                    "Archive type header is missing or does not match requested type '" +
+                    type.name + "'.")};
+            }
+
+            const ArchiveValue* archiveVersion = value.findMemberValue("version");
+            if (archiveVersion == nullptr || archiveVersion->kind != ArchiveValueKind::Integer ||
+                archiveVersion->integerValue < 0 ||
+                static_cast<std::uint64_t>(archiveVersion->integerValue) >
+                    std::numeric_limits<std::uint32_t>::max()) {
+                return std::unexpected{serializationError(
+                    "Archive version header is missing or invalid for requested type '" +
+                    type.name + "'.")};
+            }
+
+            return static_cast<std::uint32_t>(archiveVersion->integerValue);
+        }
+
+        [[nodiscard]] Result<ArchiveValue>
+        migrateArchiveIfNeeded(const reflection::TypeInfo& type, const ArchiveValue& value,
+                               const SerializationPolicy& policy) {
+            if (!policy.includeTypeHeader) {
+                return value;
+            }
+
+            auto archiveVersion = readArchiveVersion(type, value);
+            if (!archiveVersion) {
+                return std::unexpected{std::move(archiveVersion.error())};
+            }
+            if (*archiveVersion == type.version) {
+                return value;
+            }
+            if (policy.migrations == nullptr) {
+                return std::unexpected{serializationError(
+                    "Archive version " + std::to_string(*archiveVersion) + " for type '" +
+                    type.name + "' requires migration to version " + std::to_string(type.version) +
+                    ".")};
+            }
+
+            auto migrated =
+                policy.migrations->migrateObject(type.id, *archiveVersion, type.version, value);
+            if (!migrated) {
+                return std::unexpected{std::move(migrated.error())};
+            }
+
+            auto migratedVersion = readArchiveVersion(type, *migrated);
+            if (!migratedVersion) {
+                return std::unexpected{std::move(migratedVersion.error())};
+            }
+            if (*migratedVersion != type.version) {
+                return std::unexpected{serializationError(
+                    "Serialization migration for type '" + type.name +
+                    "' did not produce requested version " + std::to_string(type.version) + ".")};
+            }
+
+            return migrated;
         }
 
         [[nodiscard]] Result<ArchiveValue> serializeStruct(const reflection::TypeRegistry& registry,
@@ -182,26 +246,12 @@ namespace asharia::serialization {
                     serializationError("Expected object archive for type '" + type.name + "'.")};
             }
 
-            if (policy.includeTypeHeader) {
-                const ArchiveValue* archiveType = value.findMemberValue("type");
-                if (archiveType == nullptr || archiveType->kind != ArchiveValueKind::String ||
-                    archiveType->stringValue != type.name) {
-                    return std::unexpected{serializationError(
-                        "Archive type header is missing or does not match requested type '" +
-                        type.name + "'.")};
-                }
-
-                const ArchiveValue* archiveVersion = value.findMemberValue("version");
-                if (archiveVersion == nullptr ||
-                    archiveVersion->kind != ArchiveValueKind::Integer ||
-                    archiveVersion->integerValue != static_cast<std::int64_t>(type.version)) {
-                    return std::unexpected{serializationError(
-                        "Archive version header is missing or does not match requested type '" +
-                        type.name + "'.")};
-                }
+            auto migratedValue = migrateArchiveIfNeeded(type, value, policy);
+            if (!migratedValue) {
+                return std::unexpected{std::move(migratedValue.error())};
             }
 
-            const ArchiveValue* fieldsValue = value.findMemberValue("fields");
+            const ArchiveValue* fieldsValue = migratedValue->findMemberValue("fields");
             if (fieldsValue == nullptr || fieldsValue->kind != ArchiveValueKind::Object) {
                 return std::unexpected{
                     serializationError("Archive object for type '" + type.name +

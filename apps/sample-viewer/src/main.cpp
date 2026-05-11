@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -16,8 +17,10 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "asharia/core/error.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/core/version.hpp"
 #include "asharia/profiling/frame_profiler.hpp"
@@ -31,6 +34,7 @@
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
+#include "asharia/serialization/migration.hpp"
 #include "asharia/serialization/serializer.hpp"
 #include "asharia/serialization/text_archive.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
@@ -68,7 +72,7 @@ namespace {
                      "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
                      "[--smoke-reflection-contexts] [--smoke-serialization-roundtrip] "
-                     "[--smoke-serialization-json-archive] "
+                     "[--smoke-serialization-json-archive] [--smoke-serialization-migration] "
                      "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
@@ -147,6 +151,8 @@ namespace {
     constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
     constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
     constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
+    constexpr std::string_view kSmokeMigratedTransformTypeName =
+        "com.asharia.smoke.MigratedTransform";
 
     struct ReflectionSmokeVec3 {
         float x{};
@@ -169,6 +175,17 @@ namespace {
         float cachedMagnitude{};
         std::int32_t scriptCounter{};
     };
+
+    struct ReflectionSmokeMigratedTransform {
+        ReflectionSmokeVec3 position;
+        ReflectionSmokeQuat rotation;
+        ReflectionSmokeVec3 scale{.x = 1.0F, .y = 1.0F, .z = 1.0F};
+        std::string debugName;
+    };
+
+    asharia::Error smokeSerializationError(std::string message) {
+        return asharia::Error{asharia::ErrorDomain::Serialization, 0, std::move(message)};
+    }
 
     const asharia::reflection::FieldInfo* findField(const asharia::reflection::TypeInfo& type,
                                                 std::string_view name) {
@@ -225,14 +242,31 @@ namespace {
         const FieldFlagSet scriptReadOnly =
             FieldFlag::RuntimeVisible | FieldFlag::ScriptVisible | FieldFlag::ReadOnly;
 
-        return TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
+        auto transformRegistered =
+            TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
+                .kind(TypeKind::Component)
+                .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
+                .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
+                .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
+                .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
+                .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude,
+                       runtimeReadOnly)
+                .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+                .commit();
+        if (!transformRegistered) {
+            return transformRegistered;
+        }
+
+        return TypeBuilder<ReflectionSmokeMigratedTransform>(registry,
+                                                             kSmokeMigratedTransformTypeName)
+            .version(2)
             .kind(TypeKind::Component)
-            .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
-            .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
-            .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
-            .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
-            .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude, runtimeReadOnly)
-            .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+            .field("position", &ReflectionSmokeMigratedTransform::position, vec3Type,
+                   savedEditable)
+            .field("rotation", &ReflectionSmokeMigratedTransform::rotation, quatType,
+                   savedEditable)
+            .field("scale", &ReflectionSmokeMigratedTransform::scale, vec3Type, savedEditable)
+            .field("debugName", &ReflectionSmokeMigratedTransform::debugName, editorOnly)
             .commit();
     }
 
@@ -249,6 +283,138 @@ namespace {
             return std::nullopt;
         }
         return registry;
+    }
+
+    asharia::serialization::ArchiveValue makeVec3Archive(float xValue, float yValue,
+                                                         float zValue) {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        return ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeVec3TypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(1),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object({
+                    ArchiveMember{.key = "x", .value = ArchiveValue::floating(xValue)},
+                    ArchiveMember{.key = "y", .value = ArchiveValue::floating(yValue)},
+                    ArchiveMember{.key = "z", .value = ArchiveValue::floating(zValue)},
+                }),
+            },
+        });
+    }
+
+    asharia::serialization::ArchiveValue makeQuatArchive(
+        const asharia::serialization::ArchiveValue& zValue) {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        return ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeQuatTypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(1),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object({
+                    ArchiveMember{.key = "x", .value = ArchiveValue::floating(0.0)},
+                    ArchiveMember{.key = "y", .value = ArchiveValue::floating(0.0)},
+                    ArchiveMember{.key = "z", .value = zValue},
+                    ArchiveMember{.key = "w", .value = ArchiveValue::floating(1.0)},
+                }),
+            },
+        });
+    }
+
+    asharia::serialization::ArchiveValue makeMigratedTransformV1Archive() {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        return ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeMigratedTransformTypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(1),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object({
+                    ArchiveMember{
+                        .key = "position",
+                        .value = makeVec3Archive(1.0F, 2.0F, 3.0F),
+                    },
+                    ArchiveMember{
+                        .key = "eulerRotation",
+                        .value = makeVec3Archive(0.0F, 0.0F, 0.25F),
+                    },
+                    ArchiveMember{
+                        .key = "debugName",
+                        .value = ArchiveValue::string("migrated"),
+                    },
+                }),
+            },
+        });
+    }
+
+    asharia::VoidResult migrateSmokeTransformV1ToV2(
+        asharia::serialization::MigrationContext& context) {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        const ArchiveValue* inputFields =
+            context.input == nullptr ? nullptr : context.input->findMemberValue("fields");
+        const ArchiveValue* position =
+            inputFields == nullptr ? nullptr : inputFields->findMemberValue("position");
+        const ArchiveValue* eulerRotation =
+            inputFields == nullptr ? nullptr : inputFields->findMemberValue("eulerRotation");
+        const ArchiveValue* debugName =
+            inputFields == nullptr ? nullptr : inputFields->findMemberValue("debugName");
+        const ArchiveValue* eulerFields =
+            eulerRotation == nullptr ? nullptr : eulerRotation->findMemberValue("fields");
+        const ArchiveValue* eulerZ =
+            eulerFields == nullptr ? nullptr : eulerFields->findMemberValue("z");
+        if (context.output == nullptr || position == nullptr || eulerZ == nullptr) {
+            return std::unexpected{smokeSerializationError(
+                "Smoke migration is missing position or eulerRotation.z.")};
+        }
+
+        std::vector<ArchiveMember> migratedFields{
+            ArchiveMember{.key = "position", .value = *position},
+            ArchiveMember{.key = "rotation", .value = makeQuatArchive(*eulerZ)},
+            ArchiveMember{.key = "scale", .value = makeVec3Archive(1.0F, 1.0F, 1.0F)},
+        };
+        if (debugName != nullptr) {
+            migratedFields.push_back(ArchiveMember{.key = "debugName", .value = *debugName});
+        }
+
+        *context.output = ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeMigratedTransformTypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(context.toVersion),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object(std::move(migratedFields)),
+            },
+        });
+        return {};
     }
 
     int runSmokeReflectionRegistry() {
@@ -593,6 +759,85 @@ namespace {
         }
 
         std::cout << "Serialization JSON archive bytes: " << firstText->size() << '\n';
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeSerializationMigration() {
+        auto registry = makeReflectionSmokeRegistry();
+        if (!registry) {
+            return EXIT_FAILURE;
+        }
+
+        const asharia::reflection::TypeId migratedTransformType =
+            asharia::reflection::makeTypeId(kSmokeMigratedTransformTypeName);
+        asharia::serialization::MigrationRegistry migrations;
+        auto migrationRegistered = migrations.registerMigration(
+            migratedTransformType, 1, 2, migrateSmokeTransformV1ToV2);
+        if (!migrationRegistered) {
+            asharia::logError(migrationRegistered.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto duplicateMigration = migrations.registerMigration(
+            migratedTransformType, 1, 2, migrateSmokeTransformV1ToV2);
+        if (duplicateMigration) {
+            asharia::logError("Serialization migration smoke accepted a duplicate migration.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::serialization::ArchiveValue oldArchive =
+            makeMigratedTransformV1Archive();
+        ReflectionSmokeMigratedTransform rejectedWithoutMigration{};
+        auto missingMigrationResult = asharia::serialization::deserializeObject(
+            *registry, migratedTransformType, oldArchive, &rejectedWithoutMigration);
+        if (missingMigrationResult ||
+            missingMigrationResult.error().message.find("requires migration") ==
+                std::string::npos) {
+            asharia::logError("Serialization migration smoke did not require a migration policy.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::serialization::SerializationPolicy policy{
+            .includeTypeHeader = true,
+            .allowUnknownFields = false,
+            .migrations = &migrations,
+        };
+        ReflectionSmokeMigratedTransform loaded{};
+        auto loadedResult = asharia::serialization::deserializeObject(
+            *registry, migratedTransformType, oldArchive, &loaded, policy);
+        if (!loadedResult) {
+            asharia::logError(loadedResult.error().message);
+            return EXIT_FAILURE;
+        }
+
+        if (loaded.position.x != 1.0F || loaded.position.y != 2.0F ||
+            loaded.position.z != 3.0F || loaded.rotation.x != 0.0F ||
+            loaded.rotation.y != 0.0F || loaded.rotation.z != 0.25F ||
+            loaded.rotation.w != 1.0F || loaded.scale.x != 1.0F ||
+            loaded.scale.y != 1.0F || loaded.scale.z != 1.0F ||
+            loaded.debugName != "migrated") {
+            asharia::logError("Serialization migration smoke loaded unexpected migrated values.");
+            return EXIT_FAILURE;
+        }
+
+        asharia::serialization::MigrationRegistry emptyMigrations;
+        const asharia::serialization::SerializationPolicy missingPolicy{
+            .includeTypeHeader = true,
+            .allowUnknownFields = false,
+            .migrations = &emptyMigrations,
+        };
+        ReflectionSmokeMigratedTransform rejectedMissingRule{};
+        auto missingRuleResult = asharia::serialization::deserializeObject(
+            *registry, migratedTransformType, oldArchive, &rejectedMissingRule, missingPolicy);
+        if (missingRuleResult ||
+            missingRuleResult.error().message.find("Missing serialization migration") ==
+                std::string::npos) {
+            asharia::logError(
+                "Serialization migration smoke did not reject a missing migration rule.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Serialization migration version: 1 -> 2\n";
         return EXIT_SUCCESS;
     }
 
@@ -3684,6 +3929,8 @@ namespace {
                          .run = runSmokeSerializationRoundtrip},
             SmokeCommand{.option = "--smoke-serialization-json-archive",
                          .run = runSmokeSerializationJsonArchive},
+            SmokeCommand{.option = "--smoke-serialization-migration",
+                         .run = runSmokeSerializationMigration},
         };
 
         for (const SmokeCommand& command : commands) {
