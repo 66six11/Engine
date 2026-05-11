@@ -14,8 +14,8 @@
 
 ## Encoding — critical
 
-- **C/C++ sources (`.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`, `.ipp`, `.inl`, `.ps1`): MUST use UTF-8 with BOM.**
-- **Everything else (`.json`, `.cmake`, `.py`, `.md`, `.slang`, `.ps1` [contradiction — check `.editorconfig`], `.clang-format`, `.clang-tidy`, etc.): MUST use UTF-8 without BOM.**
+- **C/C++ sources (`.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`, `.ipp`, `.inl`): MUST use UTF-8 with BOM.**
+- **Everything else (`.json`, `.cmake`, `.py`, `.md`, `.slang`, `.ps1`, `.clang-format`, `.clang-tidy`, etc.): MUST use UTF-8 without BOM.**
 - Verify with: `powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1`
 - Fix violations with: `powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1 -Fix`
 - Conan-generated `CMakeUserPresets.json` with BOM triggers Python JSON parse errors — this is a known gotcha.
@@ -38,11 +38,11 @@
 
 ## Testing
 
-- **There are no standalone test executables.** All smoke tests live as `--smoke-*` flags in `asharia-sample-viewer.exe`.
-- Run smoke tests: `build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-window`, `--smoke-vulkan`, `--smoke-frame`, `--smoke-rendergraph`, `--smoke-dynamic-rendering`, `--smoke-resize`, `--smoke-triangle`.
-- `ASHARIA_BUILD_TESTS` option exists but is OFF and not yet populated.
+- Runtime smoke tests live as `--smoke-*` flags in `asharia-sample-viewer.exe`; the full current list is maintained in `docs/workflow/review.md`.
+- Core smoke examples: `--smoke-window`, `--smoke-vulkan`, `--smoke-frame`, `--smoke-rendergraph`, `--smoke-dynamic-rendering`, `--smoke-resize`, `--smoke-triangle`.
+- CPU-only package tests may exist behind `ASHARIA_BUILD_TESTS`; package-local commands are documented in `docs/workflow/package-standalone-build.md`.
 
-## Pre-commit gate (from docs/review-workflow.md)
+## Pre-commit gate (from docs/workflow/review.md)
 
 ```
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
@@ -60,12 +60,12 @@ For frame-loop/swapchain/render-graph changes, also run all smoke commands on bo
 
 ## Key docs
 
-- `docs/architecture.md` — module boundaries, ownership, lifetime ordering
-- `docs/flow-architecture.md` — real dependency graph and frame loop data flow (must be updated when these change)
-- `docs/package-architecture.md` — package-first rules and CMake conventions
-- `docs/coding-standard.md` — C++23, Vulkan lifecycle, sync rules
-- `docs/review-workflow.md` — full pre-commit checklist
-- `docs/encoding-policy.md` — BOM rules (with known toolchain quirks)
+- `docs/architecture/overview.md` — module boundaries, ownership, lifetime ordering
+- `docs/architecture/flow.md` — real dependency graph and frame loop data flow (must be updated when these change)
+- `docs/architecture/package-first.md` — package-first rules and CMake conventions
+- `docs/standards/coding.md` — C++23, Vulkan lifecycle, sync rules
+- `docs/workflow/review.md` — full pre-commit checklist
+- `docs/standards/encoding.md` — BOM rules (with known toolchain quirks)
 
 ## Shader pipeline
 

@@ -79,7 +79,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 1. Khronos Vulkan spec、refpage、Vulkan Guide。
 2. VMA、Slang、SPIR-V、shader toolchain 官方文档。
 3. 成熟案例：Frostbite FrameGraph、Granite、Diligent Engine、RenderDoc/Nsight 的资源视图思路。
-4. 本仓库文档：`docs/flow-architecture.md`、`docs/rendergraph-rhi-boundary.md`、`docs/package-architecture.md`、`docs/full-diagnosis-2026-05-05.md`。
+4. 本仓库文档：`docs/architecture/flow.md`、`docs/rendergraph/rhi-boundary.md`、`docs/architecture/package-first.md`、`docs/planning/next-development-plan.md`。
 
 设计审查必须覆盖：
 
@@ -130,11 +130,11 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 
 优先更新：
 
-- `docs/flow-architecture.md`
-- `docs/full-diagnosis-2026-05-05.md`
-- `docs/rendergraph-mvp.md`
-- `docs/rendergraph-rhi-boundary.md`
-- `docs/package-architecture.md`
+- `docs/architecture/flow.md`
+- `docs/planning/next-development-plan.md`
+- `docs/rendergraph/mvp.md`
+- `docs/rendergraph/rhi-boundary.md`
+- `docs/architecture/package-first.md`
 
 ## 提交规则
 
@@ -145,7 +145,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 
 ## 阶段完成 tag
 
-当某个 `docs/next-development-plan.md` 中定义的阶段已经完成实现、文档同步和对应验收门禁后，可以给完成该阶段的提交打 tag。
+当某个 `docs/planning/next-development-plan.md` 中定义的阶段已经完成实现、文档同步和对应验收门禁后，可以给完成该阶段的提交打 tag。
 
 - tag 只打在“完成阶段验收”的实现提交上；如果后续只是补文档或流程，不移动已有阶段 tag。
 - 命名使用 `stage-<number>-<short-slug>`，例如 `stage-14-render-view-target-recording`。

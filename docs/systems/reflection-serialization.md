@@ -7,10 +7,10 @@
 `asset-core` 和 `scripting` package 的边界。当前 renderer MVP 不需要立刻实现完整系统，但后续新增
 scene、editor、asset 或 script API 时必须按本文检查依赖、生命周期和可见性。
 
-命名遵循 `naming-conventions.md`：持久化 schema 使用 `com.asharia`，文件后缀使用 `.ascene`、
+命名遵循 `docs/standards/naming.md`：持久化 schema 使用 `com.asharia`，文件后缀使用 `.ascene`、
 `.aprefab`、`.ameta`、`.amat`、`.agraph`。C++ / CMake 实现名统一使用 `asharia`。
 
-近期实施方案、切片顺序、smoke 和技术资料见 `reflection-serialization-implementation-plan.md`。
+近期实施方案、切片顺序、smoke 和技术资料见 `docs/systems/reflection-serialization-plan.md`。
 
 ## 设计目标
 

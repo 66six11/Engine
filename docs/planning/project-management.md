@@ -12,28 +12,42 @@ AshariaEngine/
   profiles/
     windows-msvc-debug
     windows-msvc-release
+    windows-clangcl-debug
+    windows-clangcl-release
   docs/
+    architecture/
+    planning/
+    rendergraph/
+    research/
+    standards/
+    systems/
+    workflow/
   apps/
+    editor/
     sample-viewer/
   engine/
     core/
     platform/
   packages/
-    window-glfw/
+    profiling/
+    reflection/
+    serialization/
     rhi-vulkan/
     rendergraph/
     renderer-basic/
     shader-slang/
+    window-glfw/
+  scripts/
   tools/
 ```
 
-后续可能新增 `apps/editor/`、`tests/`、`package-registry/`、`packages/asset-core/`、
-`packages/editor-core/` 等目录，但新增前应先明确 package 边界和 CMake target 关系。
+后续可能新增 `tests/`、`package-registry/`、`packages/asset-core/`、`packages/editor-core/`
+等目录，但新增前应先明确 package 边界、CMake target 关系和文档归属。
 
 ## 变更策略
 
 - 每个变更绑定一个里程碑。
-- 首帧跑通前避免大规模重构。
+- 保持小闭环和强门禁，避免在当前阶段一次性扩成完整 editor/runtime/asset 系统。
 - 优先维护 package 边界，避免把 runtime、editor、renderer 全塞进一个 app。
 - 构建文件、依赖文件和 renderer 代码如果互相影响，应一起审核。
 - 构建目录、Conan 输出目录、生成的 toolchain/preset 不提交。
@@ -78,8 +92,8 @@ AshariaEngine/
 5. 从固定顶点数据扩展到最小 mesh asset/index buffer 路线和 `--smoke-mesh`。[x]
 6. 增加最小 3D mesh、depth 和 MVP push constants 路线，不提前引入全局相机系统。[x]
 
-后续完整开发计划只维护在 `next-development-plan.md`，避免项目管理文档、RenderGraph 专项路线图和
-性能文档各自维护一套阶段顺序。新增里程碑时先更新 `next-development-plan.md`，本文件只记录已经完成
+后续完整开发计划只维护在 `docs/planning/next-development-plan.md`，避免项目管理文档、RenderGraph 专项路线图和
+性能文档各自维护一套阶段顺序。新增里程碑时先更新 `docs/planning/next-development-plan.md`，本文件只记录已经完成
 或需要项目管理视角补充的门禁事项。
 
 ## 风险表

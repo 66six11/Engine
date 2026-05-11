@@ -25,7 +25,7 @@ MVP 的实现清单，而是避免后续 asset、material、editor、scene 和 s
 | Asset pipeline | source asset、import settings、product asset、cache、依赖图、GUID、热重载。 | 建议新增 `asset-core` 时使用 `AssetGuid`、`AssetHandle<T>`、importer、product hash 和 dependency graph。 | 不让 runtime 直接依赖源文件路径；不在当前 renderer MVP 引入完整 AssetDatabase。 |
 | Scene/World/Entity | 场景文件存储、运行时对象拥有者、transform hierarchy、component 数据布局、prefab/instance override。 | editor 可用对象树，runtime hot path 用 data-oriented arrays；渲染只消费 frame snapshot。 | 不让 renderer callback 捕获可变 scene object；不提前定完整 ECS。 |
 | Resource lifetime | CPU handle、GPU allocation、upload、retirement、hot reload、fallback resource。 | 用 generation handle、async load state、deferred destruction queue 和 frame retirement；GPU resource 创建/销毁只走 RHI owner。 | 不在析构函数里假设 GPU 已经不用；不散落 `vkDestroy*` 到 renderer feature。 |
-| Frame loop/time | OS event、input、fixed update、game/script update、physics、animation、render packet、submit/present、cleanup 顺序。 | 在 `frame-loop-threading.md` 固化单线程基线和后续 RenderThread 分阶段方案。 | 不让脚本 VM、asset import 或 editor operation 随机插入 command recording 阶段。 |
+| Frame loop/time | OS event、input、fixed update、game/script update、physics、animation、render packet、submit/present、cleanup 顺序。 | 在 `docs/architecture/frame-loop-threading.md` 固化单线程基线和后续 RenderThread 分阶段方案。 | 不让脚本 VM、asset import 或 editor operation 随机插入 command recording 阶段。 |
 | Input | device state、logical action、binding、context、priority、rebinding。 | 从 GLFW callback 提升为 `InputSnapshot` + `InputAction` + `InputContext`；Game、EditorViewport、UI、Console 分 context。 | 不把 raw key code 直接散到 gameplay/editor tool。 |
 | Event/command | 事实事件、请求命令、局部 signal/callback 的区别。 | 只提供窄接口：window/input/frame/asset/editor transaction 各自有明确 channel。 | 不做全局万能 EventBus；不让 event 成为隐藏依赖系统。 |
 | Editor | editor host、selection、inspector、asset browser、viewport、gizmo、undo/redo、editor-only package。 | editor 只是 host；所有编辑操作走 transaction/command，runtime package 不依赖 editor package。 | 不让 editor 成为 engine core 的 owner；不让 inspector 直接改 Vulkan/backend 对象。 |
@@ -66,10 +66,10 @@ tools/
 ## 阶段顺序
 
 1. 当前阶段：继续完成 RenderGraph diagnostics、deferred destruction、descriptor/transient/pipeline cache。
-2. P4 之前：补 `resource-lifetime.md`，把 GPU retirement、upload、fallback 和 hot reload invalidation 写清楚。
-3. Mesh/material 前：补 `asset-architecture.md`；`reflection-serialization.md` 已记录 field metadata、context、version converter 和 Inspector/script binding 边界，asset 文档需在其上定义 GUID、import settings 和 product hash。
-4. Editor 前：`scene-world-architecture.md` 已记录 scene/world、selection、transaction、render snapshot 和 Play Mode 边界，后续 editor UI 必须消费这些服务而不是直接修改 runtime package。
-5. Script 前：`scripting-architecture.md` 已记录 ScriptHost、binding registry、execution context、权限和诊断边界；脚本只作为 scene/editor/asset/RenderGraph record API 的前端，不进入 command recording 阶段。
+2. P4 之前：补 `docs/architecture/resource-lifetime.md`，把 GPU retirement、upload、fallback 和 hot reload invalidation 写清楚。
+3. Mesh/material 前：补 `docs/systems/asset-architecture.md`；`docs/systems/reflection-serialization.md` 已记录 field metadata、context、version converter 和 Inspector/script binding 边界，asset 文档需在其上定义 GUID、import settings 和 product hash。
+4. Editor 前：`docs/systems/scene-world.md` 已记录 scene/world、selection、transaction、render snapshot 和 Play Mode 边界，后续 editor UI 必须消费这些服务而不是直接修改 runtime package。
+5. Script 前：`docs/systems/scripting.md` 已记录 ScriptHost、binding registry、execution context、权限和诊断边界；脚本只作为 scene/editor/asset/RenderGraph record API 的前端，不进入 command recording 阶段。
 
 ## 审查规则
 

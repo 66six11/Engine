@@ -59,7 +59,7 @@
 - `--smoke-dynamic-rendering` 已通过 `renderer-basic-vulkan::recordBasicDynamicClearFrame` 使用 RenderGraph color write 和 `vkCmdBeginRendering` clear backbuffer。
 - `--smoke-triangle` 已通过 `shader-slang` package 调用 `slangc` 编译 Slang、`spirv-val` 验证，并由 `renderer-basic-vulkan::BasicTriangleRenderer` 管理 Vulkan shader module、pipeline layout、host-upload vertex buffer 和 dynamic-rendering graphics pipeline，通过 `BasicDrawItem` 描述 `vkCmdDraw` 参数，录制 ClearColor + Triangle 两个 graph pass 来呈现最小三角形。
 - frame callback 会返回 acquire semaphore 的 wait stage，避免 transfer clear 与 color attachment clear 共用错误同步阶段。
-- RenderGraph public API 保持后端无关；Vulkan layout/stage/access 翻译归属 `packages/rhi-vulkan`，规范见 `docs/rendergraph-rhi-boundary.md`。
+- RenderGraph public API 保持后端无关；Vulkan layout/stage/access 翻译归属 `packages/rhi-vulkan`，规范见 `docs/rendergraph/rhi-boundary.md`。
 
 ## 里程碑 4：Triangle Pass
 

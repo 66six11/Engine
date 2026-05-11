@@ -2,11 +2,11 @@
 
 研究日期：2026-05-10
 
-本文是 `reflection-serialization.md` 的实施版补充，目标是把反射与序列化从“长期架构契约”推进到“可以开始编码的工程方案”。它仍然不要求一次性实现 editor、scene、asset、C# scripting 和热更新全套系统；本轮只定义第一批 package、核心 API、数据流、风险、smoke 和后续扩展点。
+本文是 `docs/systems/reflection-serialization.md` 的实施版补充，目标是把反射与序列化从“长期架构契约”推进到“可以开始编码的工程方案”。它仍然不要求一次性实现 editor、scene、asset、C# scripting 和热更新全套系统；本轮只定义第一批 package、核心 API、数据流、风险、smoke 和后续扩展点。
 
 当前结论很明确：先做一个小而稳定的 C++23 反射元数据层，再做一个确定性文本序列化层。编辑器 Inspector、资产数据库、场景保存、C# 脚本绑定和热更新都消费这套元数据，但不能反过来把 editor、script runtime、ImGui、Vulkan 或资源加载器塞进反射底座。
 
-命名遵循 `naming-conventions.md`：用户可见品牌为 Asharia Engine / 灰咏引擎，持久化 schema 使用
+命名遵循 `docs/standards/naming.md`：用户可见品牌为 Asharia Engine / 灰咏引擎，持久化 schema 使用
 `com.asharia`，文件后缀使用 `.ascene`、`.aprefab`、`.ameta`、`.amat`、`.agraph`。C++ / CMake
 实现名统一使用 `asharia`。
 
@@ -788,7 +788,7 @@ flowchart TD
 
 - 本文档。
 - `docs/README.md` 索引更新。
-- `docs/reflection-serialization.md` 链接到实施计划。
+- `docs/systems/reflection-serialization.md` 链接到实施计划。
 
 验收：
 
@@ -1033,7 +1033,7 @@ version: 1
 建议后续文档：
 
 ```text
-docs/scripting-dotnet-architecture.md
+docs/systems/scripting-dotnet.md
 ```
 
 先不写代码的原因：

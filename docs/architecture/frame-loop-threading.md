@@ -170,7 +170,7 @@ render/resource retirement。
 
 ## 文档与代码审查门禁
 
-- 新增线程或 queue 时，必须更新本文和 `flow-architecture.md` 的真实运行图。
+- 新增线程或 queue 时，必须更新本文和 `docs/architecture/flow.md` 的真实运行图。
 - 新增 worker task 时，必须说明输入所有权、输出所有权、取消/失败语义和是否可并行。
 - 新增 Vulkan 多线程录制时，必须证明 command pool、descriptor pool/cache、upload scratch 是 per-frame/per-thread。
 - 新增 RenderThread 前，必须先有 RenderFramePacket 文档和 smoke fallback。

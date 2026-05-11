@@ -70,4 +70,4 @@ cmd /c "build\conan\clangcl-release\Release\generators\conanbuild.bat && cmake -
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe
 ```
 
-需要自动验证时使用 `--smoke-*` 入口。完整提交前 smoke 清单见 `docs/review-workflow.md`。
+需要自动验证时使用 `--smoke-*` 入口。完整提交前 smoke 清单见 `docs/workflow/review.md`。

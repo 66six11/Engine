@@ -5,7 +5,7 @@
 适用范围：Windows 桌面端、Vulkan 1.4、C++23、single graphics queue、dynamic rendering、synchronization2、VMA、RenderGraph 每帧 record/compile 模型。
 
 本文只定义性能诊断底座和未来编辑器性能面板的技术约束。完整开发顺序以
-`next-development-plan.md` 为唯一来源；本文不维护 editor、asset、material、scene 或 Play Session
+`docs/planning/next-development-plan.md` 为唯一来源；本文不维护 editor、asset、material、scene 或 Play Session
 的阶段排序，只说明这些阶段接入后 profiling 数据应如何分层。
 
 ## 与现有计划的顺序关系
@@ -14,7 +14,7 @@
 
 推荐顺序：
 
-1. 先完成 `rendergraph-development-roadmap.md` 的 P3 compiler diagnostics v2。
+1. 先完成 `docs/rendergraph/roadmap.md` 的 P3 compiler diagnostics v2。
 2. 插入 P3.5 performance profiling substrate：CPU scope、frame profile 数据结构、benchmark CLI、RenderGraph compile counters。
 3. 进入 P4 backend lifetime and caches：deferred deletion、descriptor allocator、transient resource pool、pipeline/layout cache，同时把 cache hit/miss、allocation/reuse 和 delayed destruction counter 接入 profiling。
 4. 在 P4 生命周期稳定后接 Vulkan GPU timestamp 和 debug labels，避免 query readback、fence epoch 和 resize/recreate 生命周期与 MVP 资源路径互相打架。

@@ -70,7 +70,7 @@ AshariaEngine/
   engine/                Stable engine foundation packages.
   packages/              Feature packages: window, RHI, render graph, shader, renderer.
   cmake/                 Shared CMake helpers.
-  docs/                  Architecture, workflow, review, and knowledge documents.
+  docs/                  Categorized workflow, standards, architecture, planning, and research docs.
   profiles/              Conan host/build profiles.
   scripts/               Bootstrap scripts.
   tools/                 Repository maintenance tools.
@@ -79,16 +79,15 @@ AshariaEngine/
 ## 文档入口
 
 - [docs/README.md](docs/README.md)：知识库导航和建议阅读路径。
-- [docs/build-workflow.md](docs/build-workflow.md)：Conan、CMake Presets、Visual Studio 和命令行构建流程。
-- [docs/technical-stack.md](docs/technical-stack.md)：技术栈与依赖决策。
-- [docs/architecture.md](docs/architecture.md)：模块边界、所有权、生命周期和 RenderGraph 设计。
-- [docs/flow-architecture.md](docs/flow-architecture.md)：包依赖、启动流程、frame loop 和 RenderGraph/RHI 数据流。
-- [docs/full-diagnosis-2026-05-05.md](docs/full-diagnosis-2026-05-05.md)：最近一次全量诊断、风险清单和未来开发计划。
-- [docs/review-workflow.md](docs/review-workflow.md)：审查和提交前门禁。
-- [docs/coding-standard.md](docs/coding-standard.md)：C++23、Vulkan、shader、同步和工程风格规范。
+- [docs/workflow/build.md](docs/workflow/build.md)：Conan、CMake Presets、Visual Studio 和命令行构建流程。
+- [docs/standards/coding.md](docs/standards/coding.md)：C++23、Vulkan、shader、同步和工程风格规范。
+- [docs/architecture/flow.md](docs/architecture/flow.md)：包依赖、启动流程、frame loop 和 RenderGraph/RHI 数据流。
+- [docs/rendergraph/rhi-boundary.md](docs/rendergraph/rhi-boundary.md)：RenderGraph 与 Vulkan RHI 边界。
+- [docs/planning/next-development-plan.md](docs/planning/next-development-plan.md)：阶段顺序、近期重点和后续开发计划。
+- [docs/workflow/review.md](docs/workflow/review.md)：审查和提交前门禁。
 
 ## 维护约定
 
-- 文档、脚本、配置文件使用 UTF-8 without BOM；C/C++ 源码和头文件使用 UTF-8 with BOM。详见 [docs/encoding-policy.md](docs/encoding-policy.md)。
+- 文档、脚本、配置文件使用 UTF-8 without BOM；C/C++ 源码和头文件使用 UTF-8 with BOM。详见 [docs/standards/encoding.md](docs/standards/encoding.md)。
 - 修改包依赖、target 依赖、smoke 命令、RenderGraph 语义、frame loop、shader pipeline 或 Vulkan 生命周期时，必须同步相关文档。
 - 构建目录、Conan 输出、生成的 toolchain/preset 不进入源码管理。
