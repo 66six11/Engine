@@ -27,6 +27,8 @@ namespace asharia {
     inline constexpr char kBasicRasterFullscreenParamsType[] = "builtin.raster-fullscreen.params";
     inline constexpr char kBasicRasterDrawListPassType[] = "builtin.raster-draw-list";
     inline constexpr char kBasicRasterDrawListParamsType[] = "builtin.raster-draw-list.params";
+    inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
+    inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
 
     struct BasicTransferClearParams {
         std::array<float, 4> color{};
@@ -38,6 +40,12 @@ namespace asharia {
 
     struct BasicDrawListParams {
         std::uint32_t drawCount{};
+    };
+
+    struct BasicComputeDispatchParams {
+        std::uint32_t groupCountX{};
+        std::uint32_t groupCountY{};
+        std::uint32_t groupCountZ{};
     };
 
     inline void registerBasicTransferClearSchema(RenderGraphSchemaRegistry& schemas) {
@@ -235,6 +243,27 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicComputeDispatchSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicComputeDispatchPassType,
+            .paramsType = kBasicComputeDispatchParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::BufferStorageReadWrite,
+                        .shaderStage = RenderGraphShaderStage::Compute,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::Dispatch,
+                },
+        });
+    }
+
     [[nodiscard]] inline RenderGraphSchemaRegistry basicRenderGraphSchemaRegistry() {
         RenderGraphSchemaRegistry schemas;
         registerBasicTransferClearSchema(schemas);
@@ -246,6 +275,7 @@ namespace asharia {
         registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
+        registerBasicComputeDispatchSchema(schemas);
         return schemas;
     }
 

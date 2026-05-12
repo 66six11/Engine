@@ -57,6 +57,7 @@ namespace asharia {
         Undefined,
         TransferWrite,
         ShaderRead,
+        StorageReadWrite,
     };
 
     enum class RenderGraphShaderStage {
@@ -151,6 +152,7 @@ namespace asharia {
         TransferWrite,
         BufferShaderRead,
         BufferTransferWrite,
+        BufferStorageReadWrite,
     };
 
     struct RenderGraphResourceSlotSchema {
@@ -168,6 +170,7 @@ namespace asharia {
         SetVec4,
         DrawFullscreenTriangle,
         ClearColor,
+        Dispatch,
     };
 
     struct RenderGraphPassSchema {
@@ -185,6 +188,7 @@ namespace asharia {
         std::string secondaryName;
         std::array<float, 4> floatValues{};
         int intValue{};
+        std::array<std::uint32_t, 3> uintValues{};
     };
 
     class RenderGraphCommandList {
@@ -266,6 +270,19 @@ namespace asharia {
             return *this;
         }
 
+        RenderGraphCommandList& dispatch(std::uint32_t groupCountX, std::uint32_t groupCountY,
+                                         std::uint32_t groupCountZ) {
+            commands_.push_back(RenderGraphCommand{
+                .kind = RenderGraphCommandKind::Dispatch,
+                .name = {},
+                .secondaryName = {},
+                .floatValues = {},
+                .intValue = 0,
+                .uintValues = {groupCountX, groupCountY, groupCountZ},
+            });
+            return *this;
+        }
+
         [[nodiscard]] std::span<const RenderGraphCommand> commands() const {
             return commands_;
         }
@@ -296,6 +313,7 @@ namespace asharia {
         std::vector<RenderGraphImageHandle> transferWrites;
         std::vector<RenderGraphBufferHandle> bufferReads;
         std::vector<RenderGraphBufferHandle> bufferWrites;
+        std::vector<RenderGraphBufferHandle> bufferStorageReadWrites;
         std::vector<RenderGraphImageSlot> colorWriteSlots;
         std::vector<RenderGraphImageSlot> shaderReadSlots;
         std::vector<RenderGraphImageSlot> depthReadSlots;
@@ -304,6 +322,7 @@ namespace asharia {
         std::vector<RenderGraphImageSlot> transferWriteSlots;
         std::vector<RenderGraphBufferSlot> bufferReadSlots;
         std::vector<RenderGraphBufferSlot> bufferWriteSlots;
+        std::vector<RenderGraphBufferSlot> bufferStorageReadWriteSlots;
         std::vector<RenderGraphBufferTransition> bufferTransitionsBefore;
     };
 
@@ -381,6 +400,7 @@ namespace asharia {
         std::span<const RenderGraphImageHandle> transferWrites;
         std::span<const RenderGraphBufferHandle> bufferReads;
         std::span<const RenderGraphBufferHandle> bufferWrites;
+        std::span<const RenderGraphBufferHandle> bufferStorageReadWrites;
         std::span<const RenderGraphImageSlot> colorWriteSlots;
         std::span<const RenderGraphImageSlot> shaderReadSlots;
         std::span<const RenderGraphImageSlot> depthReadSlots;
@@ -389,6 +409,7 @@ namespace asharia {
         std::span<const RenderGraphImageSlot> transferWriteSlots;
         std::span<const RenderGraphBufferSlot> bufferReadSlots;
         std::span<const RenderGraphBufferSlot> bufferWriteSlots;
+        std::span<const RenderGraphBufferSlot> bufferStorageReadWriteSlots;
         std::span<const RenderGraphBufferTransition> bufferTransitionsBefore;
     };
 
@@ -474,6 +495,7 @@ namespace asharia {
             std::vector<RenderGraphImageSlot> transferWriteSlots;
             std::vector<RenderGraphBufferSlot> bufferReadSlots;
             std::vector<RenderGraphBufferSlot> bufferWriteSlots;
+            std::vector<RenderGraphBufferSlot> bufferStorageReadWriteSlots;
             std::vector<RenderGraphCommand> commands;
             bool allowCulling{};
             bool hasSideEffects{};
@@ -562,6 +584,18 @@ namespace asharia {
                     .name = std::move(slotName),
                     .buffer = buffer,
                 });
+                return *this;
+            }
+
+            PassBuilder& readWriteStorageBuffer(std::string slotName,
+                                                RenderGraphBufferHandle buffer,
+                                                RenderGraphShaderStage shaderStage) {
+                graph_->passes_[passIndex_].bufferStorageReadWriteSlots.push_back(
+                    RenderGraphBufferSlot{
+                        .name = std::move(slotName),
+                        .buffer = buffer,
+                        .shaderStage = shaderStage,
+                    });
                 return *this;
             }
 
@@ -684,6 +718,7 @@ namespace asharia {
                 .transferWriteSlots = {},
                 .bufferReadSlots = {},
                 .bufferWriteSlots = {},
+                .bufferStorageReadWriteSlots = {},
                 .commands = {},
                 .allowCulling = {},
                 .hasSideEffects = {},
@@ -707,6 +742,7 @@ namespace asharia {
                 .transferWriteSlots = {},
                 .bufferReadSlots = {},
                 .bufferWriteSlots = {},
+                .bufferStorageReadWriteSlots = {},
                 .commands = {},
                 .allowCulling = {},
                 .hasSideEffects = {},
@@ -808,6 +844,7 @@ namespace asharia {
                     .transferWrites = imageHandles(pass.transferWriteSlots),
                     .bufferReads = bufferHandles(pass.bufferReadSlots),
                     .bufferWrites = bufferHandles(pass.bufferWriteSlots),
+                    .bufferStorageReadWrites = bufferHandles(pass.bufferStorageReadWriteSlots),
                     .colorWriteSlots = pass.colorWriteSlots,
                     .shaderReadSlots = pass.shaderReadSlots,
                     .depthReadSlots = pass.depthReadSlots,
@@ -816,6 +853,7 @@ namespace asharia {
                     .transferWriteSlots = pass.transferWriteSlots,
                     .bufferReadSlots = pass.bufferReadSlots,
                     .bufferWriteSlots = pass.bufferWriteSlots,
+                    .bufferStorageReadWriteSlots = pass.bufferStorageReadWriteSlots,
                     .bufferTransitionsBefore = {},
                 };
 
@@ -905,6 +943,17 @@ namespace asharia {
                                       currentBufferAccesses, compiledPass);
                 if (!bufferReadTransitions) {
                     return std::unexpected{std::move(bufferReadTransitions.error())};
+                }
+
+                auto bufferStorageReadWriteTransitions =
+                    transitionBuffers(compiledPass.bufferStorageReadWriteSlots,
+                                      RenderGraphBufferAccess{
+                                          .state = RenderGraphBufferState::StorageReadWrite,
+                                          .shaderStage = RenderGraphShaderStage::None,
+                                      },
+                                      currentBufferAccesses, compiledPass);
+                if (!bufferStorageReadWriteTransitions) {
+                    return std::unexpected{std::move(bufferStorageReadWriteTransitions.error())};
                 }
 
                 result.passes.push_back(std::move(compiledPass));
@@ -1079,6 +1128,7 @@ namespace asharia {
                     .transferWrites = pass.transferWrites,
                     .bufferReads = pass.bufferReads,
                     .bufferWrites = pass.bufferWrites,
+                    .bufferStorageReadWrites = pass.bufferStorageReadWrites,
                     .colorWriteSlots = pass.colorWriteSlots,
                     .shaderReadSlots = pass.shaderReadSlots,
                     .depthReadSlots = pass.depthReadSlots,
@@ -1087,6 +1137,7 @@ namespace asharia {
                     .transferWriteSlots = pass.transferWriteSlots,
                     .bufferReadSlots = pass.bufferReadSlots,
                     .bufferWriteSlots = pass.bufferWriteSlots,
+                    .bufferStorageReadWriteSlots = pass.bufferStorageReadWriteSlots,
                     .bufferTransitionsBefore = pass.bufferTransitionsBefore,
                 });
                 if (!executed) {
@@ -1149,8 +1200,8 @@ namespace asharia {
             output += "| # | Decl # | Name | Type | Params | Cullable | Side Effects | "
                       "Before Transitions | Buffer Transitions | Color Writes | Shader Reads | "
                       "Depth Reads | Depth Writes | Depth Sampled Reads | Transfer Writes | "
-                      "Buffer Reads | Buffer Writes |\n";
-            output += "|---:|---:|---|---|---|---|---|---:|---:|---|---|---|---|---|---|---|\n";
+                      "Buffer Reads | Buffer Writes | Buffer Storage Read/Writes |\n";
+            output += "|---:|---:|---|---|---|---|---|---:|---:|---|---|---|---|---|---|---|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
@@ -1187,6 +1238,8 @@ namespace asharia {
                 output += bufferSlotList(pass.bufferReadSlots);
                 output += " | ";
                 output += bufferSlotList(pass.bufferWriteSlots);
+                output += " | ";
+                output += bufferSlotList(pass.bufferStorageReadWriteSlots);
                 output += " |\n";
             }
 
@@ -1233,6 +1286,8 @@ namespace asharia {
                 appendBufferSlotRows(output, pass.name, "BufferShaderRead", pass.bufferReadSlots);
                 appendBufferSlotRows(output, pass.name, "BufferTransferWrite",
                                      pass.bufferWriteSlots);
+                appendBufferSlotRows(output, pass.name, "BufferStorageReadWrite",
+                                     pass.bufferStorageReadWriteSlots);
             }
 
             output += "\n### RenderGraph Commands\n\n";
@@ -1611,6 +1666,13 @@ namespace asharia {
                 }
 
                 if (!hasSourceWriter) {
+                    if (writers.size() == 1 && writers.front() == reader) {
+                        return std::unexpected{Error{
+                            ErrorDomain::RenderGraph,
+                            0,
+                            missingBufferProducerMessage(reader, buffer),
+                        }};
+                    }
                     if (writers.size() != 1) {
                         return std::unexpected{Error{
                             ErrorDomain::RenderGraph,
@@ -1669,11 +1731,15 @@ namespace asharia {
                 return;
             }
 
-            for (const RenderGraphPassDependency& dependency : dependencies) {
+            for (RenderGraphPassDependency& dependency : dependencies) {
                 if (dependency.fromDeclarationIndex == fromPassIndex &&
                     dependency.toDeclarationIndex == toPassIndex &&
                     dependency.resourceKind == RenderGraphResourceKind::Buffer &&
-                    dependency.buffer == buffer && dependency.reason == reason) {
+                    dependency.buffer == buffer) {
+                    if (dependency.reason.find(reason) == std::string::npos) {
+                        dependency.reason += "; ";
+                        dependency.reason += reason;
+                    }
                     return;
                 }
             }
@@ -1996,12 +2062,14 @@ namespace asharia {
 
         [[nodiscard]] static bool passReadsBuffer(const Pass& pass,
                                                   RenderGraphBufferHandle buffer) {
-            return slotsUseBuffer(pass.bufferReadSlots, buffer);
+            return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
+                   slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
         }
 
         [[nodiscard]] static bool passWritesBuffer(const Pass& pass,
                                                    RenderGraphBufferHandle buffer) {
-            return slotsUseBuffer(pass.bufferWriteSlots, buffer);
+            return slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
+                   slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
         }
 
         [[nodiscard]] Result<void> validateImageHandle(RenderGraphImageHandle image) const {
@@ -2067,6 +2135,11 @@ namespace asharia {
             auto bufferWriteSlots = validateSlots(pass, pass.bufferWriteSlots);
             if (!bufferWriteSlots) {
                 return std::unexpected{std::move(bufferWriteSlots.error())};
+            }
+
+            auto bufferStorageReadWriteSlots = validateBufferStorageReadWriteSlots(pass);
+            if (!bufferStorageReadWriteSlots) {
+                return std::unexpected{std::move(bufferStorageReadWriteSlots.error())};
             }
 
             const std::array<std::span<const RenderGraphImageSlot>, 6> slotGroups{
@@ -2151,7 +2224,7 @@ namespace asharia {
         }
 
         [[nodiscard]] Result<void> validateUniqueBufferAccesses(const Pass& pass) const {
-            const std::array<RenderGraphBufferSlotGroup, 2> namedGroups{
+            const std::array<RenderGraphBufferSlotGroup, 3> namedGroups{
                 RenderGraphBufferSlotGroup{
                     .access = "BufferShaderRead",
                     .slots = pass.bufferReadSlots,
@@ -2159,6 +2232,10 @@ namespace asharia {
                 RenderGraphBufferSlotGroup{
                     .access = "BufferTransferWrite",
                     .slots = pass.bufferWriteSlots,
+                },
+                RenderGraphBufferSlotGroup{
+                    .access = "BufferStorageReadWrite",
+                    .slots = pass.bufferStorageReadWriteSlots,
                 },
             };
 
@@ -2267,6 +2344,13 @@ namespace asharia {
                 pass, pass.bufferWriteSlots, RenderGraphSlotAccess::BufferTransferWrite, *schema);
             if (!bufferWriteSlots) {
                 return std::unexpected{std::move(bufferWriteSlots.error())};
+            }
+
+            auto bufferStorageReadWriteSlots =
+                validateSlotsAgainstSchema(pass, pass.bufferStorageReadWriteSlots,
+                                           RenderGraphSlotAccess::BufferStorageReadWrite, *schema);
+            if (!bufferStorageReadWriteSlots) {
+                return std::unexpected{std::move(bufferStorageReadWriteSlots.error())};
             }
 
             for (const RenderGraphResourceSlotSchema& slotSchema : schema->resourceSlots) {
@@ -2406,6 +2490,7 @@ namespace asharia {
                 return pass.transferWriteSlots;
             case RenderGraphSlotAccess::BufferShaderRead:
             case RenderGraphSlotAccess::BufferTransferWrite:
+            case RenderGraphSlotAccess::BufferStorageReadWrite:
                 return {};
             }
             return {};
@@ -2418,6 +2503,8 @@ namespace asharia {
                 return pass.bufferReadSlots;
             case RenderGraphSlotAccess::BufferTransferWrite:
                 return pass.bufferWriteSlots;
+            case RenderGraphSlotAccess::BufferStorageReadWrite:
+                return pass.bufferStorageReadWriteSlots;
             case RenderGraphSlotAccess::ColorWrite:
             case RenderGraphSlotAccess::ShaderRead:
             case RenderGraphSlotAccess::DepthAttachmentRead:
@@ -2551,6 +2638,27 @@ namespace asharia {
             return {};
         }
 
+        [[nodiscard]] Result<void> validateBufferStorageReadWriteSlots(const Pass& pass) const {
+            auto slots = validateSlots(pass, pass.bufferStorageReadWriteSlots);
+            if (!slots) {
+                return std::unexpected{std::move(slots.error())};
+            }
+
+            for (const RenderGraphBufferSlot& slot : pass.bufferStorageReadWriteSlots) {
+                if (slot.shaderStage == RenderGraphShaderStage::None) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph pass '" + pass.name +
+                            "' declares buffer storage read/write slot '" + slot.name +
+                            "' without a shader stage.",
+                    }};
+                }
+            }
+
+            return {};
+        }
+
         [[nodiscard]] Result<void> validateUniqueResourceSlotNames(const Pass& pass) const {
             std::vector<std::string_view> names;
             const auto addName = [&](std::string_view name) -> Result<void> {
@@ -2610,6 +2718,12 @@ namespace asharia {
                 }
             }
             for (const RenderGraphBufferSlot& slot : pass.bufferWriteSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphBufferSlot& slot : pass.bufferStorageReadWriteSlots) {
                 auto added = addName(slot.name);
                 if (!added) {
                     return added;
@@ -2747,7 +2861,8 @@ namespace asharia {
         [[nodiscard]] static bool passUsesBuffer(const RenderGraphCompiledPass& pass,
                                                  RenderGraphBufferHandle buffer) {
             return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
-                   slotsUseBuffer(pass.bufferWriteSlots, buffer);
+                   slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
+                   slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
         }
 
         [[nodiscard]] static bool
@@ -2846,7 +2961,8 @@ namespace asharia {
                 }
 
                 RenderGraphBufferAccess slotAccess = requiredAccess;
-                if (slotAccess.state == RenderGraphBufferState::ShaderRead) {
+                if (slotAccess.state == RenderGraphBufferState::ShaderRead ||
+                    slotAccess.state == RenderGraphBufferState::StorageReadWrite) {
                     slotAccess.shaderStage = slot.shaderStage;
                 }
 
@@ -2927,6 +3043,8 @@ namespace asharia {
                 return "TransferWrite";
             case RenderGraphBufferState::ShaderRead:
                 return "ShaderRead";
+            case RenderGraphBufferState::StorageReadWrite:
+                return "StorageReadWrite";
             case RenderGraphBufferState::Undefined:
             default:
                 return "Undefined";
@@ -3119,6 +3237,8 @@ namespace asharia {
                 return "DrawFullscreenTriangle";
             case RenderGraphCommandKind::ClearColor:
                 return "ClearColor";
+            case RenderGraphCommandKind::Dispatch:
+                return "Dispatch";
             }
             return "";
         }
@@ -3140,6 +3260,10 @@ namespace asharia {
                        std::to_string(command.floatValues[3]) + ")";
             case RenderGraphCommandKind::DrawFullscreenTriangle:
                 return "-";
+            case RenderGraphCommandKind::Dispatch:
+                return std::to_string(command.uintValues[0]) + " x " +
+                       std::to_string(command.uintValues[1]) + " x " +
+                       std::to_string(command.uintValues[2]);
             }
             return "-";
         }
@@ -3161,6 +3285,12 @@ namespace asharia {
                                                    RenderGraphShaderStage shaderStage) const {
             std::string name{bufferStateName(state)};
             if (state == RenderGraphBufferState::ShaderRead &&
+                shaderStage != RenderGraphShaderStage::None) {
+                name += "(";
+                name += shaderStageName(shaderStage);
+                name += ")";
+            }
+            if (state == RenderGraphBufferState::StorageReadWrite &&
                 shaderStage != RenderGraphShaderStage::None) {
                 name += "(";
                 name += shaderStageName(shaderStage);

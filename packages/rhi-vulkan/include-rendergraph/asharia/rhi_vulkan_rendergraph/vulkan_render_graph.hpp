@@ -145,9 +145,14 @@ namespace asharia {
         case RenderGraphBufferState::ShaderRead:
             return VulkanRenderGraphBufferUsage{
                 .stageMask = vulkanShaderStage(shaderStage),
-                .accessMask = VK_ACCESS_2_UNIFORM_READ_BIT |
-                              VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+                .accessMask = VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
                               VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+            };
+        case RenderGraphBufferState::StorageReadWrite:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = vulkanShaderStage(shaderStage),
+                .accessMask =
+                    VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
             };
         }
         return {};

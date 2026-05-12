@@ -469,6 +469,10 @@ flowchart TD
   Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、
   `target` 或 `depth` 对应 binding，Backbuffer、`--smoke-transient` 的 transient color image 和
   `--smoke-depth-triangle` 的 transient depth image 都已显式加入 binding 表。
+- `--smoke-rendergraph` 已验证 `StorageReadWrite(compute)` buffer access、`Dispatch` command summary、
+  `builtin.compute-dispatch` schema 负向路径，以及 `TransferWrite -> StorageReadWrite(compute)` 的 Vulkan
+  buffer stage/access 映射；真实 compute pipeline、descriptor 绑定和 `vkCmdDispatch` 录制仍留给后续
+  `--smoke-compute-dispatch`。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 和 triangle shader/pipeline 装配已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -630,7 +634,9 @@ flowchart TD
 - `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
-- `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)` 和 compute shader-read usage 映射到 `VkBufferMemoryBarrier2` 所需 stage/access 字段。
+- `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)`、
+  `ShaderRead(compute)` usage 和 `TransferWrite -> StorageReadWrite(compute)` 映射到 `VkBufferMemoryBarrier2`
+  所需 stage/access 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、dependencies、slots、commands、transitions、
   transients 的 Markdown 调试表格，并验证 pass type、params type、slot schema、command summary、
@@ -647,7 +653,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>persistent offscreen viewport target smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>persistent offscreen viewport target smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>multi-view / material expansion"]
     Step2["之后:<br/>resource/material expansion"]
 
