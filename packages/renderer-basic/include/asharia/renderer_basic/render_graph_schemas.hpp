@@ -29,6 +29,7 @@ namespace asharia {
     inline constexpr char kBasicRasterDrawListParamsType[] = "builtin.raster-draw-list.params";
     inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
     inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
+    inline constexpr char kBasicComputeReadbackPassType[] = "builtin.compute-readback";
 
     struct BasicTransferClearParams {
         std::array<float, 4> color{};
@@ -264,6 +265,29 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicComputeReadbackSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicComputeReadbackPassType,
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = RenderGraphSlotAccess::BufferTransferRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+        });
+    }
+
     [[nodiscard]] inline RenderGraphSchemaRegistry basicRenderGraphSchemaRegistry() {
         RenderGraphSchemaRegistry schemas;
         registerBasicTransferClearSchema(schemas);
@@ -276,6 +300,7 @@ namespace asharia {
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
         registerBasicComputeDispatchSchema(schemas);
+        registerBasicComputeReadbackSchema(schemas);
         return schemas;
     }
 

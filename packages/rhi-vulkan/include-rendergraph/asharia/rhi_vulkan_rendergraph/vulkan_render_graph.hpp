@@ -137,10 +137,20 @@ namespace asharia {
         switch (state) {
         case RenderGraphBufferState::Undefined:
             return {};
+        case RenderGraphBufferState::TransferRead:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .accessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+            };
         case RenderGraphBufferState::TransferWrite:
             return VulkanRenderGraphBufferUsage{
                 .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .accessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            };
+        case RenderGraphBufferState::HostRead:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+                .accessMask = VK_ACCESS_2_HOST_READ_BIT,
             };
         case RenderGraphBufferState::ShaderRead:
             return VulkanRenderGraphBufferUsage{

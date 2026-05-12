@@ -38,6 +38,7 @@ namespace asharia {
         std::uint32_t deviceId{};
         std::uint32_t apiVersion{};
         std::uint32_t graphicsQueueFamily{};
+        bool graphicsQueueSupportsCompute{};
         std::uint32_t graphicsQueueTimestampValidBits{};
         float timestampPeriodNanoseconds{};
     };

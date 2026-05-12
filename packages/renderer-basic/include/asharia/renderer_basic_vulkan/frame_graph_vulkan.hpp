@@ -26,6 +26,14 @@ namespace asharia {
         std::string debugName;
     };
 
+    struct VulkanRenderGraphBufferBinding {
+        RenderGraphBufferHandle buffer{};
+        VkBuffer vulkanBuffer{VK_NULL_HANDLE};
+        VkDeviceSize offset{};
+        VkDeviceSize size{VK_WHOLE_SIZE};
+        std::string debugName;
+    };
+
     template <typename VulkanHandle>
     [[nodiscard]] inline std::uint64_t vulkanDebugObjectHandle(VulkanHandle handle) {
         if constexpr (std::is_pointer_v<VulkanHandle>) {
@@ -98,6 +106,22 @@ namespace asharia {
         }};
     }
 
+    [[nodiscard]] inline Result<VulkanRenderGraphBufferBinding>
+    findVulkanRenderGraphBuffer(RenderGraphBufferHandle buffer,
+                                std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        for (const VulkanRenderGraphBufferBinding& binding : bindings) {
+            if (binding.buffer == buffer && binding.vulkanBuffer != VK_NULL_HANDLE) {
+                return binding;
+            }
+        }
+
+        return std::unexpected{Error{
+            ErrorDomain::RenderGraph,
+            0,
+            "RenderGraph buffer is not bound to a Vulkan buffer.",
+        }};
+    }
+
     [[nodiscard]] inline Result<RenderGraphImageHandle>
     findRenderGraphImageSlot(std::span<const RenderGraphImageSlot> slots, std::string_view slotName,
                              std::string_view passName) {
@@ -115,6 +139,23 @@ namespace asharia {
         }};
     }
 
+    [[nodiscard]] inline Result<RenderGraphBufferHandle>
+    findRenderGraphBufferSlot(std::span<const RenderGraphBufferSlot> slots,
+                              std::string_view slotName, std::string_view passName) {
+        for (const RenderGraphBufferSlot& slot : slots) {
+            if (std::string_view{slot.name} == slotName) {
+                return slot.buffer;
+            }
+        }
+
+        return std::unexpected{Error{
+            ErrorDomain::RenderGraph,
+            0,
+            "RenderGraph pass '" + std::string{passName} + "' does not declare buffer slot '" +
+                std::string{slotName} + "'.",
+        }};
+    }
+
     [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
     findVulkanRenderGraphImageSlot(std::span<const RenderGraphImageSlot> slots,
                                    std::string_view slotName, RenderGraphPassContext pass,
@@ -125,6 +166,18 @@ namespace asharia {
         }
 
         return findVulkanRenderGraphImage(*image, bindings);
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphBufferBinding>
+    findVulkanRenderGraphBufferSlot(std::span<const RenderGraphBufferSlot> slots,
+                                    std::string_view slotName, RenderGraphPassContext pass,
+                                    std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        auto buffer = findRenderGraphBufferSlot(slots, slotName, pass.name);
+        if (!buffer) {
+            return std::unexpected{std::move(buffer.error())};
+        }
+
+        return findVulkanRenderGraphBuffer(*buffer, bindings);
     }
 
     [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
@@ -151,6 +204,21 @@ namespace asharia {
         return findVulkanRenderGraphImageSlot(pass.transferWriteSlots, slotName, pass, bindings);
     }
 
+    [[nodiscard]] inline Result<VulkanRenderGraphBufferBinding>
+    findVulkanRenderGraphBufferTransferRead(
+        RenderGraphPassContext pass, std::string_view slotName,
+        std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        return findVulkanRenderGraphBufferSlot(pass.bufferTransferReadSlots, slotName, pass,
+                                               bindings);
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphBufferBinding>
+    findVulkanRenderGraphBufferTransferWrite(
+        RenderGraphPassContext pass, std::string_view slotName,
+        std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        return findVulkanRenderGraphBufferSlot(pass.bufferWriteSlots, slotName, pass, bindings);
+    }
+
     [[nodiscard]] inline std::string
     renderGraphDebugImageName(RenderGraphImageHandle image,
                               std::span<const VulkanRenderGraphImageBinding> bindings) {
@@ -161,6 +229,18 @@ namespace asharia {
         }
 
         return "Image#" + std::to_string(image.index);
+    }
+
+    [[nodiscard]] inline std::string
+    renderGraphDebugBufferName(RenderGraphBufferHandle buffer,
+                               std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        for (const VulkanRenderGraphBufferBinding& binding : bindings) {
+            if (binding.buffer == buffer && !binding.debugName.empty()) {
+                return binding.debugName;
+            }
+        }
+
+        return "Buffer#" + std::to_string(buffer.index);
     }
 
     [[nodiscard]] inline std::string renderGraphImageStateLabel(RenderGraphImageState state,
@@ -206,6 +286,44 @@ namespace asharia {
         return label;
     }
 
+    [[nodiscard]] inline std::string renderGraphBufferStateLabel(
+        RenderGraphBufferState state, RenderGraphShaderStage shaderStage) {
+        std::string label;
+        switch (state) {
+        case RenderGraphBufferState::TransferRead:
+            label = "TransferRead";
+            break;
+        case RenderGraphBufferState::TransferWrite:
+            label = "TransferWrite";
+            break;
+        case RenderGraphBufferState::HostRead:
+            label = "HostRead";
+            break;
+        case RenderGraphBufferState::ShaderRead:
+            label = "ShaderRead";
+            break;
+        case RenderGraphBufferState::StorageReadWrite:
+            label = "StorageReadWrite";
+            break;
+        case RenderGraphBufferState::Undefined:
+        default:
+            label = "Undefined";
+            break;
+        }
+
+        switch (shaderStage) {
+        case RenderGraphShaderStage::Fragment:
+            label += "(fragment)";
+            break;
+        case RenderGraphShaderStage::Compute:
+            label += "(compute)";
+            break;
+        case RenderGraphShaderStage::None:
+            break;
+        }
+        return label;
+    }
+
     inline void appendRenderGraphImageSlotLabels(
         std::string& label, std::string_view group,
         std::span<const RenderGraphImageSlot> slots,
@@ -217,6 +335,20 @@ namespace asharia {
             label += slot.name;
             label += "=";
             label += renderGraphDebugImageName(slot.image, bindings);
+        }
+    }
+
+    inline void appendRenderGraphBufferSlotLabels(
+        std::string& label, std::string_view group,
+        std::span<const RenderGraphBufferSlot> slots,
+        std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        for (const RenderGraphBufferSlot& slot : slots) {
+            label += " ";
+            label += group;
+            label += ".";
+            label += slot.name;
+            label += "=";
+            label += renderGraphDebugBufferName(slot.buffer, bindings);
         }
     }
 
@@ -240,6 +372,21 @@ namespace asharia {
         return label;
     }
 
+    [[nodiscard]] inline std::string renderGraphPassDebugLabel(
+        RenderGraphPassContext pass, std::span<const VulkanRenderGraphImageBinding> imageBindings,
+        std::span<const VulkanRenderGraphBufferBinding> bufferBindings) {
+        std::string label = renderGraphPassDebugLabel(pass, imageBindings);
+        appendRenderGraphBufferSlotLabels(label, "bufferRead", pass.bufferReadSlots,
+                                          bufferBindings);
+        appendRenderGraphBufferSlotLabels(label, "bufferTransferRead",
+                                          pass.bufferTransferReadSlots, bufferBindings);
+        appendRenderGraphBufferSlotLabels(label, "bufferWrite", pass.bufferWriteSlots,
+                                          bufferBindings);
+        appendRenderGraphBufferSlotLabels(label, "bufferStorage",
+                                          pass.bufferStorageReadWriteSlots, bufferBindings);
+        return label;
+    }
+
     [[nodiscard]] inline std::string
     renderGraphTransitionDebugLabel(const RenderGraphImageTransition& transition,
                                     std::span<const VulkanRenderGraphImageBinding> bindings) {
@@ -249,6 +396,18 @@ namespace asharia {
         label += renderGraphImageStateLabel(transition.oldState, transition.oldShaderStage);
         label += " -> ";
         label += renderGraphImageStateLabel(transition.newState, transition.newShaderStage);
+        return label;
+    }
+
+    [[nodiscard]] inline std::string
+    renderGraphTransitionDebugLabel(const RenderGraphBufferTransition& transition,
+                                    std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        std::string label{"RG Barrier: "};
+        label += renderGraphDebugBufferName(transition.buffer, bindings);
+        label += " ";
+        label += renderGraphBufferStateLabel(transition.oldState, transition.oldShaderStage);
+        label += " -> ";
+        label += renderGraphBufferStateLabel(transition.newState, transition.newShaderStage);
         return label;
     }
 
@@ -277,6 +436,18 @@ namespace asharia {
     }
 
     [[nodiscard]] inline Result<void>
+    setVulkanRenderGraphBufferDebugName(const VulkanFrameRecordContext& frame,
+                                        const VulkanRenderGraphBufferBinding& binding) {
+        if (binding.debugName.empty()) {
+            return {};
+        }
+
+        return frame.setDebugObjectName(VK_OBJECT_TYPE_BUFFER,
+                                        vulkanDebugObjectHandle(binding.vulkanBuffer),
+                                        "RG.Buffer." + binding.debugName);
+    }
+
+    [[nodiscard]] inline Result<void>
     recordRenderGraphImageBarrier(VkCommandBuffer commandBuffer,
                                   const RenderGraphImageTransition& transition,
                                   std::span<const VulkanRenderGraphImageBinding> bindings) {
@@ -296,6 +467,25 @@ namespace asharia {
     }
 
     [[nodiscard]] inline Result<void>
+    recordRenderGraphBufferBarrier(VkCommandBuffer commandBuffer,
+                                   const RenderGraphBufferTransition& transition,
+                                   std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        auto buffer = findVulkanRenderGraphBuffer(transition.buffer, bindings);
+        if (!buffer) {
+            return std::unexpected{std::move(buffer.error())};
+        }
+
+        const VkBufferMemoryBarrier2 barrier =
+            vulkanBufferBarrier(transition, buffer->vulkanBuffer, buffer->offset, buffer->size);
+        VkDependencyInfo dependencyInfo{};
+        dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependencyInfo.bufferMemoryBarrierCount = 1;
+        dependencyInfo.pBufferMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+        return {};
+    }
+
+    [[nodiscard]] inline Result<void>
     recordRenderGraphTransitions(const VulkanFrameRecordContext& frame,
                                  std::span<const RenderGraphImageTransition> transitions,
                                  std::span<const VulkanRenderGraphImageBinding> bindings) {
@@ -305,6 +495,24 @@ namespace asharia {
                 VulkanDebugLabelScope::begin(frame, debugLabel);
             auto recorded =
                 recordRenderGraphImageBarrier(frame.commandBuffer, transition, bindings);
+            if (!recorded) {
+                return std::unexpected{std::move(recorded.error())};
+            }
+        }
+
+        return {};
+    }
+
+    [[nodiscard]] inline Result<void>
+    recordRenderGraphBufferTransitions(const VulkanFrameRecordContext& frame,
+                                       std::span<const RenderGraphBufferTransition> transitions,
+                                       std::span<const VulkanRenderGraphBufferBinding> bindings) {
+        for (const RenderGraphBufferTransition& transition : transitions) {
+            const std::string debugLabel = renderGraphTransitionDebugLabel(transition, bindings);
+            [[maybe_unused]] const auto debugScope =
+                VulkanDebugLabelScope::begin(frame, debugLabel);
+            auto recorded =
+                recordRenderGraphBufferBarrier(frame.commandBuffer, transition, bindings);
             if (!recorded) {
                 return std::unexpected{std::move(recorded.error())};
             }

@@ -58,6 +58,7 @@ $smokes = @(
     "--smoke-descriptor-layout",
     "--smoke-fullscreen-texture",
     "--smoke-offscreen-viewport",
+    "--smoke-compute-dispatch",
     "--smoke-deferred-deletion"
 )
 

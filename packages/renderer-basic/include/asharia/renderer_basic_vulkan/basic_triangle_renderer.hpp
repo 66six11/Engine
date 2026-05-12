@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -54,6 +55,13 @@ namespace asharia {
         std::span<const BasicDrawListItem> drawItems{};
     };
 
+    struct BasicComputeDispatchRendererDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        VmaAllocator allocator{};
+        std::filesystem::path shaderDirectory;
+        bool graphicsQueueSupportsCompute{};
+    };
+
     struct BasicPipelineCacheStats {
         std::uint64_t created{};
         std::uint64_t reused{};
@@ -63,6 +71,10 @@ namespace asharia {
         std::uint64_t renderTargetsCreated{};
         std::uint64_t renderTargetsReused{};
         std::uint64_t renderTargetsDeferredForDeletion{};
+    };
+
+    struct BasicComputeDispatchStats {
+        std::uint64_t dispatchesRecorded{};
     };
 
     struct BasicOffscreenViewportTarget {
@@ -164,6 +176,41 @@ namespace asharia {
         VmaAllocator allocator_{};
         VulkanTransientImagePool transientImagePool_;
         std::vector<VulkanTransientImageResource> transientImages_;
+    };
+
+    class BasicComputeDispatchRenderer {
+    public:
+        BasicComputeDispatchRenderer() = default;
+        BasicComputeDispatchRenderer(const BasicComputeDispatchRenderer&) = delete;
+        BasicComputeDispatchRenderer& operator=(const BasicComputeDispatchRenderer&) = delete;
+        BasicComputeDispatchRenderer(BasicComputeDispatchRenderer&& other) noexcept;
+        BasicComputeDispatchRenderer& operator=(BasicComputeDispatchRenderer&& other) noexcept;
+        ~BasicComputeDispatchRenderer() = default;
+
+        [[nodiscard]] static Result<BasicComputeDispatchRenderer>
+        create(const BasicComputeDispatchRendererDesc& desc);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordFrame(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] Result<std::array<std::uint32_t, 4>> readbackValuesAfterGpuComplete();
+        [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
+        [[nodiscard]] VulkanDescriptorAllocatorStats descriptorAllocatorStats() const;
+        [[nodiscard]] VulkanBufferStats bufferStats() const;
+        [[nodiscard]] BasicComputeDispatchStats computeStats() const;
+
+    private:
+        VkDevice device_{VK_NULL_HANDLE};
+        VmaAllocator allocator_{};
+        VulkanShaderModule computeShader_;
+        std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
+        VulkanPipelineLayout pipelineLayout_;
+        VulkanPipelineCache pipelineCache_;
+        VulkanComputePipeline pipeline_;
+        BasicPipelineCacheStats pipelineCacheStats_;
+        VulkanDescriptorAllocator descriptorAllocator_;
+        VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
+        VulkanBuffer storageBuffer_;
+        VulkanBuffer readbackBuffer_;
+        BasicComputeDispatchStats computeStats_;
     };
 
     class BasicTriangleRenderer {
