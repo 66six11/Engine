@@ -46,6 +46,20 @@ namespace asharia::serialization {
             return Error{ErrorDomain::Serialization, 0, std::move(message)};
         }
 
+        [[nodiscard]] VoidResult validateFrozenRegistry(const reflection::TypeRegistry& registry,
+                                                        std::string_view operation) {
+            if (registry.isFrozen()) {
+                return {};
+            }
+            return std::unexpected{serializationError(
+                "Cannot " + std::string{operation} + " with an unfrozen reflection registry.",
+                {
+                    {"operation", operation},
+                    {"expected", "frozen reflection registry"},
+                    {"actual", "mutable registry"},
+                })};
+        }
+
         [[nodiscard]] std::string_view archiveKindName(ArchiveValueKind kind) noexcept {
             switch (kind) {
             case ArchiveValueKind::Null:
@@ -691,12 +705,20 @@ namespace asharia::serialization {
     Result<ArchiveValue> serializeObject(const reflection::TypeRegistry& registry,
                                          reflection::TypeId type, const void* object,
                                          const SerializationPolicy& policy) {
+        auto frozen = validateFrozenRegistry(registry, "serialize");
+        if (!frozen) {
+            return std::unexpected{std::move(frozen.error())};
+        }
         return serializeValue(registry, type, object, policy, {});
     }
 
     VoidResult deserializeObject(const reflection::TypeRegistry& registry, reflection::TypeId type,
                                  const ArchiveValue& value, void* object,
                                  const SerializationPolicy& policy) {
+        auto frozen = validateFrozenRegistry(registry, "deserialize");
+        if (!frozen) {
+            return std::unexpected{std::move(frozen.error())};
+        }
         return deserializeValue(registry, type, value, object, policy, {});
     }
 

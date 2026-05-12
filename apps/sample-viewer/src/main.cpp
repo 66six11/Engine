@@ -669,6 +669,39 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        asharia::reflection::TypeRegistry mutableRegistry;
+        auto mutableRegistered = registerReflectionSmokeTypes(mutableRegistry);
+        if (!mutableRegistered) {
+            asharia::logError(mutableRegistered.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto rejectedMutableSerialize =
+            asharia::serialization::serializeObject(mutableRegistry, transformType, &source);
+        if (rejectedMutableSerialize || !containsAll(rejectedMutableSerialize.error().message,
+                                                     {
+                                                         "operation=serialize",
+                                                         "expected=frozen reflection registry",
+                                                         "actual=mutable registry",
+                                                     })) {
+            asharia::logError("Serialization roundtrip smoke serialized with a mutable registry.");
+            return EXIT_FAILURE;
+        }
+
+        ReflectionSmokeTransform rejectedMutable{};
+        auto rejectedMutableDeserialize = asharia::serialization::deserializeObject(
+            mutableRegistry, transformType, *archive, &rejectedMutable);
+        if (rejectedMutableDeserialize || !containsAll(rejectedMutableDeserialize.error().message,
+                                                       {
+                                                           "operation=deserialize",
+                                                           "expected=frozen reflection registry",
+                                                           "actual=mutable registry",
+                                                       })) {
+            asharia::logError(
+                "Serialization roundtrip smoke deserialized with a mutable registry.");
+            return EXIT_FAILURE;
+        }
+
         auto firstText = asharia::serialization::writeTextArchive(*archive);
         if (!firstText) {
             asharia::logError(firstText.error().message);

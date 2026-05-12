@@ -309,6 +309,38 @@ namespace {
             return false;
         }
 
+        asharia::reflection::TypeRegistry mutableRegistry;
+        auto mutableRegistered = registerReflectionSmokeTypes(mutableRegistry);
+        if (!mutableRegistered) {
+            logFailure(mutableRegistered.error().message);
+            return false;
+        }
+
+        auto rejectedMutableSerialize =
+            asharia::serialization::serializeObject(mutableRegistry, transformType, &source);
+        if (rejectedMutableSerialize || !containsAll(rejectedMutableSerialize.error().message,
+                                                     {
+                                                         "operation=serialize",
+                                                         "expected=frozen reflection registry",
+                                                         "actual=mutable registry",
+                                                     })) {
+            logFailure("Serialization roundtrip smoke serialized with a mutable registry.");
+            return false;
+        }
+
+        ReflectionSmokeTransform rejectedMutable{};
+        auto rejectedMutableDeserialize = asharia::serialization::deserializeObject(
+            mutableRegistry, transformType, *archive, &rejectedMutable);
+        if (rejectedMutableDeserialize || !containsAll(rejectedMutableDeserialize.error().message,
+                                                       {
+                                                           "operation=deserialize",
+                                                           "expected=frozen reflection registry",
+                                                           "actual=mutable registry",
+                                                       })) {
+            logFailure("Serialization roundtrip smoke deserialized with a mutable registry.");
+            return false;
+        }
+
         auto firstText = asharia::serialization::writeTextArchive(*archive);
         if (!firstText) {
             logFailure(firstText.error().message);
