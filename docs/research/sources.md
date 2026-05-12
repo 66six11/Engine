@@ -75,6 +75,31 @@
 - 当前项目使用 C++23，不能依赖 C++26 静态反射；第一版应使用手写注册表，未来可替换为 generated table。
 - 后续 C# 接入应作为 scripting package，使用 .NET hosting 和 Roslyn/source generator 生成 managed metadata，不进入 `reflection` / `serialization` 底座。
 
+## Asset pipeline / asset-core baseline
+
+本次核对日期：2026-05-12
+
+一手资料：
+
+- Unity Asset Database：https://docs.unity.cn/Manual/AssetDatabase.html
+- Unity Asset Metadata：https://docs.unity.cn/Manual/AssetMetadata.html
+- O3DE Asset Processor：https://docs.o3de.org/docs/user-guide/assets/asset-processor/
+- Godot import process：https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html
+- Unreal asynchronous asset loading：https://dev.epicgames.com/documentation/en-us/unreal-engine/asynchronous-asset-loading-in-unreal-engine
+
+结论：
+
+- `packages/asset-core` 第一版只定义 source asset、metadata、import settings、product/cache key、dependency
+  和 stable handle，不拥有 GPU resource 或 editor UI。
+- 用户数据和 scene/material/script 引用必须保存 `AssetGuid` 或 `AssetHandle<T>`，不能保存 source path、
+  runtime pointer 或 GPU handle。
+- `.ameta` 保存稳定 GUID、asset type、importer id/version 和 import settings；generated product/cache
+  应可删除重建，默认不提交。
+- Product key 至少由 source hash、settings hash、importer/tool version、target profile 和 dependency hash
+  共同决定。
+- 真实 importer、file watcher、hot reload、asset browser、resource upload 和 material/pipeline key 应在后续
+  package 或工具层逐步接入。
+
 ## Vulkan 1.4
 
 一手资料：
