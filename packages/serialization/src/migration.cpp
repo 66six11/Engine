@@ -14,19 +14,18 @@ namespace asharia::serialization {
     namespace {
 
         struct DiagnosticField {
-            std::string_view key;
-            std::string_view value;
+            std::string key;
+            std::string value;
 
             // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-            DiagnosticField(std::string_view fieldKey, std::string_view fieldValue) noexcept
-                : key{fieldKey}
-                , value{fieldValue} {}
+            DiagnosticField(std::string_view fieldKey, std::string_view fieldValue)
+                : key{fieldKey}, value{fieldValue} {}
         };
 
         [[nodiscard]] Error migrationError(std::string message,
                                            std::initializer_list<DiagnosticField> details = {}) {
             bool wroteHeader = false;
-            for (const DiagnosticField detail : details) {
+            for (const DiagnosticField& detail : details) {
                 if (detail.value.empty()) {
                     continue;
                 }
@@ -56,16 +55,16 @@ namespace asharia::serialization {
                                                     std::uint32_t fromVersion,
                                                     std::uint32_t toVersion, MigrationFn migrate) {
         if (!type) {
-            return std::unexpected{migrationError(
-                "Cannot register serialization migration for an invalid type id.",
-                {
-                    {"operation", "register"},
-                    {"typeId", typeIdLabel(type)},
-                    {"fromVersion", std::to_string(fromVersion)},
-                    {"toVersion", std::to_string(toVersion)},
-                    {"expected", "valid type id"},
-                    {"actual", "0"},
-                })};
+            return std::unexpected{
+                migrationError("Cannot register serialization migration for an invalid type id.",
+                               {
+                                   {"operation", "register"},
+                                   {"typeId", typeIdLabel(type)},
+                                   {"fromVersion", std::to_string(fromVersion)},
+                                   {"toVersion", std::to_string(toVersion)},
+                                   {"expected", "valid type id"},
+                                   {"actual", "0"},
+                               })};
         }
         if (fromVersion == 0 || toVersion == 0) {
             return std::unexpected{migrationError(
@@ -81,28 +80,28 @@ namespace asharia::serialization {
         }
         if (fromVersion == std::numeric_limits<std::uint32_t>::max() ||
             toVersion != fromVersion + 1U) {
-            return std::unexpected{migrationError(
-                "Serialization migrations must advance exactly one schema version.",
-                {
-                    {"operation", "register"},
-                    {"typeId", typeIdLabel(type)},
-                    {"fromVersion", std::to_string(fromVersion)},
-                    {"toVersion", std::to_string(toVersion)},
-                    {"expected", "toVersion = fromVersion + 1"},
-                    {"actual", std::to_string(toVersion)},
-                })};
+            return std::unexpected{
+                migrationError("Serialization migrations must advance exactly one schema version.",
+                               {
+                                   {"operation", "register"},
+                                   {"typeId", typeIdLabel(type)},
+                                   {"fromVersion", std::to_string(fromVersion)},
+                                   {"toVersion", std::to_string(toVersion)},
+                                   {"expected", "toVersion = fromVersion + 1"},
+                                   {"actual", std::to_string(toVersion)},
+                               })};
         }
         if (migrate == nullptr) {
-            return std::unexpected{migrationError(
-                "Cannot register null serialization migration function.",
-                {
-                    {"operation", "register"},
-                    {"typeId", typeIdLabel(type)},
-                    {"fromVersion", std::to_string(fromVersion)},
-                    {"toVersion", std::to_string(toVersion)},
-                    {"expected", "migration function"},
-                    {"actual", "null"},
-                })};
+            return std::unexpected{
+                migrationError("Cannot register null serialization migration function.",
+                               {
+                                   {"operation", "register"},
+                                   {"typeId", typeIdLabel(type)},
+                                   {"fromVersion", std::to_string(fromVersion)},
+                                   {"toVersion", std::to_string(toVersion)},
+                                   {"expected", "migration function"},
+                                   {"actual", "null"},
+                               })};
         }
         if (findMigration(type, fromVersion) != nullptr) {
             return std::unexpected{migrationError("Duplicate serialization migration for type id " +
@@ -135,18 +134,17 @@ namespace asharia::serialization {
             return input;
         }
         if (fromVersion > toVersion) {
-            return std::unexpected{migrationError("Cannot migrate type id " + typeIdLabel(type) +
-                                                      " backward from " +
-                                                      std::to_string(fromVersion) + " to " +
-                                                      std::to_string(toVersion) + ".",
-                                                  {
-                                                      {"operation", "migrate"},
-                                                      {"typeId", typeIdLabel(type)},
-                                                      {"fromVersion", std::to_string(fromVersion)},
-                                                      {"toVersion", std::to_string(toVersion)},
-                                                      {"expected", "nondecreasing version"},
-                                                      {"actual", "backward migration"},
-                                                  })};
+            return std::unexpected{migrationError(
+                "Cannot migrate type id " + typeIdLabel(type) + " backward from " +
+                    std::to_string(fromVersion) + " to " + std::to_string(toVersion) + ".",
+                {
+                    {"operation", "migrate"},
+                    {"typeId", typeIdLabel(type)},
+                    {"fromVersion", std::to_string(fromVersion)},
+                    {"toVersion", std::to_string(toVersion)},
+                    {"expected", "nondecreasing version"},
+                    {"actual", "backward migration"},
+                })};
         }
 
         ArchiveValue current = input;

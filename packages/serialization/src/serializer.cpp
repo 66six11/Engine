@@ -14,20 +14,19 @@ namespace asharia::serialization {
     namespace {
 
         struct DiagnosticField {
-            std::string_view key;
-            std::string_view value;
+            std::string key;
+            std::string value;
 
             // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-            DiagnosticField(std::string_view fieldKey, std::string_view fieldValue) noexcept
-                : key{fieldKey}
-                , value{fieldValue} {}
+            DiagnosticField(std::string_view fieldKey, std::string_view fieldValue)
+                : key{fieldKey}, value{fieldValue} {}
         };
 
         [[nodiscard]] Error
         serializationError(std::string message,
                            std::initializer_list<DiagnosticField> details = {}) {
             bool wroteHeader = false;
-            for (const DiagnosticField detail : details) {
+            for (const DiagnosticField& detail : details) {
                 if (detail.value.empty()) {
                     continue;
                 }
@@ -151,10 +150,10 @@ namespace asharia::serialization {
             return static_cast<std::uint32_t>(archiveVersion->integerValue);
         }
 
-        [[nodiscard]] Result<ArchiveValue>
-        migrateArchiveIfNeeded(const reflection::TypeInfo& type, const ArchiveValue& value,
-                               const SerializationPolicy& policy,
-                               std::string_view objectPath) {
+        [[nodiscard]] Result<ArchiveValue> migrateArchiveIfNeeded(const reflection::TypeInfo& type,
+                                                                  const ArchiveValue& value,
+                                                                  const SerializationPolicy& policy,
+                                                                  std::string_view objectPath) {
             if (!policy.includeTypeHeader) {
                 return value;
             }
@@ -216,16 +215,16 @@ namespace asharia::serialization {
                                                            std::string_view path) {
             const std::string objectPath = path.empty() ? type.name : std::string{path};
             if (object == nullptr) {
-                return std::unexpected{serializationError(
-                    "Cannot serialize null object for type '" + type.name + "'.",
-                    {
-                        {"operation", "serialize"},
-                        {"objectPath", objectPath},
-                        {"type", type.name},
-                        {"expected", "non-null object"},
-                        {"actual", "null"},
-                        {"version", std::to_string(type.version)},
-                    })};
+                return std::unexpected{
+                    serializationError("Cannot serialize null object for type '" + type.name + "'.",
+                                       {
+                                           {"operation", "serialize"},
+                                           {"objectPath", objectPath},
+                                           {"type", type.name},
+                                           {"expected", "non-null object"},
+                                           {"actual", "null"},
+                                           {"version", std::to_string(type.version)},
+                                       })};
             }
 
             std::vector<ArchiveMember> fieldMembers;
@@ -237,32 +236,32 @@ namespace asharia::serialization {
                 const std::string fieldObjectPath =
                     appendFieldPath(objectPath, field == nullptr ? "<null>" : field->name);
                 if (field == nullptr || !field->accessor.readAddress) {
-                    return std::unexpected{serializationError(
-                        "Serializable field has no read accessor.",
-                        {
-                            {"operation", "serialize"},
-                            {"objectPath", fieldObjectPath},
-                            {"type", type.name},
-                            {"field", field == nullptr ? "<null>" : field->name},
-                            {"expected", "read accessor"},
-                            {"actual", "missing"},
-                            {"version", std::to_string(type.version)},
-                        })};
+                    return std::unexpected{
+                        serializationError("Serializable field has no read accessor.",
+                                           {
+                                               {"operation", "serialize"},
+                                               {"objectPath", fieldObjectPath},
+                                               {"type", type.name},
+                                               {"field", field == nullptr ? "<null>" : field->name},
+                                               {"expected", "read accessor"},
+                                               {"actual", "missing"},
+                                               {"version", std::to_string(type.version)},
+                                           })};
                 }
 
                 const void* fieldAddress = field->accessor.readAddress(object);
                 if (fieldAddress == nullptr) {
-                    return std::unexpected{serializationError(
-                        "Serializable field read returned null.",
-                        {
-                            {"operation", "serialize"},
-                            {"objectPath", fieldObjectPath},
-                            {"type", type.name},
-                            {"field", field->name},
-                            {"expected", "field address"},
-                            {"actual", "null"},
-                            {"version", std::to_string(type.version)},
-                        })};
+                    return std::unexpected{
+                        serializationError("Serializable field read returned null.",
+                                           {
+                                               {"operation", "serialize"},
+                                               {"objectPath", fieldObjectPath},
+                                               {"type", type.name},
+                                               {"field", field->name},
+                                               {"expected", "field address"},
+                                               {"actual", "null"},
+                                               {"version", std::to_string(type.version)},
+                                           })};
                 }
 
                 auto fieldValue =
@@ -301,14 +300,13 @@ namespace asharia::serialization {
                                                           const SerializationPolicy& policy,
                                                           std::string_view path) {
             if (object == nullptr) {
-                return std::unexpected{serializationError(
-                    "Cannot serialize null value.",
-                    {
-                        {"operation", "serialize"},
-                        {"objectPath", path},
-                        {"expected", "non-null value"},
-                        {"actual", "null"},
-                    })};
+                return std::unexpected{serializationError("Cannot serialize null value.",
+                                                          {
+                                                              {"operation", "serialize"},
+                                                              {"objectPath", path},
+                                                              {"expected", "non-null value"},
+                                                              {"actual", "null"},
+                                                          })};
             }
             if (type == reflection::builtin::boolTypeId()) {
                 return ArchiveValue::boolean(*static_cast<const bool*>(object));
@@ -346,15 +344,15 @@ namespace asharia::serialization {
 
             const reflection::TypeInfo* typeInfo = registry.findType(type);
             if (typeInfo == nullptr) {
-                return std::unexpected{serializationError(
-                    "Cannot serialize unknown reflected type id.",
-                    {
-                        {"operation", "serialize"},
-                        {"objectPath", path},
-                        {"typeId", std::to_string(type.value)},
-                        {"expected", "registered reflected type"},
-                        {"actual", "missing"},
-                    })};
+                return std::unexpected{
+                    serializationError("Cannot serialize unknown reflected type id.",
+                                       {
+                                           {"operation", "serialize"},
+                                           {"objectPath", path},
+                                           {"typeId", std::to_string(type.value)},
+                                           {"expected", "registered reflected type"},
+                                           {"actual", "missing"},
+                                       })};
             }
             return serializeStruct(registry, *typeInfo, object, policy, path);
         }
@@ -410,16 +408,16 @@ namespace asharia::serialization {
                     })};
             }
             if (value.kind != ArchiveValueKind::Object) {
-                return std::unexpected{serializationError(
-                    "Expected object archive for type '" + type.name + "'.",
-                    {
-                        {"operation", "deserialize"},
-                        {"objectPath", objectPath},
-                        {"type", type.name},
-                        {"expected", "object archive"},
-                        {"actual", archiveKindName(value.kind)},
-                        {"version", std::to_string(type.version)},
-                    })};
+                return std::unexpected{
+                    serializationError("Expected object archive for type '" + type.name + "'.",
+                                       {
+                                           {"operation", "deserialize"},
+                                           {"objectPath", objectPath},
+                                           {"type", type.name},
+                                           {"expected", "object archive"},
+                                           {"actual", archiveKindName(value.kind)},
+                                           {"version", std::to_string(type.version)},
+                                       })};
             }
 
             auto migratedValue = migrateArchiveIfNeeded(type, value, policy, objectPath);
@@ -429,18 +427,18 @@ namespace asharia::serialization {
 
             const ArchiveValue* fieldsValue = migratedValue->findMemberValue("fields");
             if (fieldsValue == nullptr || fieldsValue->kind != ArchiveValueKind::Object) {
-                return std::unexpected{serializationError(
-                    "Archive object for type '" + type.name +
-                        "' is missing an object 'fields' member.",
-                    {
-                        {"operation", "deserialize"},
-                        {"objectPath", objectPath},
-                        {"type", type.name},
-                        {"field", "fields"},
-                        {"expected", "object"},
-                        {"actual", archiveValueActual(fieldsValue)},
-                        {"version", std::to_string(type.version)},
-                    })};
+                return std::unexpected{
+                    serializationError("Archive object for type '" + type.name +
+                                           "' is missing an object 'fields' member.",
+                                       {
+                                           {"operation", "deserialize"},
+                                           {"objectPath", objectPath},
+                                           {"type", type.name},
+                                           {"field", "fields"},
+                                           {"expected", "object"},
+                                           {"actual", archiveValueActual(fieldsValue)},
+                                           {"version", std::to_string(type.version)},
+                                       })};
             }
 
             if (!policy.allowUnknownFields) {
@@ -459,37 +457,36 @@ namespace asharia::serialization {
                     continue;
                 }
                 if (!field->accessor.writeAddress) {
-                    return std::unexpected{serializationError(
-                        "Serializable field has no write accessor.",
-                        {
-                            {"operation", "deserialize"},
-                            {"objectPath", fieldObjectPath},
-                            {"type", type.name},
-                            {"field", field->name},
-                            {"expected", "write accessor"},
-                            {"actual", "missing"},
-                            {"version", std::to_string(type.version)},
-                        })};
+                    return std::unexpected{
+                        serializationError("Serializable field has no write accessor.",
+                                           {
+                                               {"operation", "deserialize"},
+                                               {"objectPath", fieldObjectPath},
+                                               {"type", type.name},
+                                               {"field", field->name},
+                                               {"expected", "write accessor"},
+                                               {"actual", "missing"},
+                                               {"version", std::to_string(type.version)},
+                                           })};
                 }
 
                 void* fieldAddress = field->accessor.writeAddress(object);
                 if (fieldAddress == nullptr) {
-                    return std::unexpected{serializationError(
-                        "Serializable field write returned null.",
-                        {
-                            {"operation", "deserialize"},
-                            {"objectPath", fieldObjectPath},
-                            {"type", type.name},
-                            {"field", field->name},
-                            {"expected", "field address"},
-                            {"actual", "null"},
-                            {"version", std::to_string(type.version)},
-                        })};
+                    return std::unexpected{
+                        serializationError("Serializable field write returned null.",
+                                           {
+                                               {"operation", "deserialize"},
+                                               {"objectPath", fieldObjectPath},
+                                               {"type", type.name},
+                                               {"field", field->name},
+                                               {"expected", "field address"},
+                                               {"actual", "null"},
+                                               {"version", std::to_string(type.version)},
+                                           })};
                 }
 
-                auto written =
-                    deserializeValue(registry, field->type, *fieldValue, fieldAddress, policy,
-                                     fieldObjectPath);
+                auto written = deserializeValue(registry, field->type, *fieldValue, fieldAddress,
+                                                policy, fieldObjectPath);
                 if (!written) {
                     return written;
                 }
@@ -630,14 +627,13 @@ namespace asharia::serialization {
                                                   const SerializationPolicy& policy,
                                                   std::string_view path) {
             if (object == nullptr) {
-                return std::unexpected{serializationError(
-                    "Cannot deserialize null value.",
-                    {
-                        {"operation", "deserialize"},
-                        {"objectPath", path},
-                        {"expected", "non-null value"},
-                        {"actual", "null"},
-                    })};
+                return std::unexpected{serializationError("Cannot deserialize null value.",
+                                                          {
+                                                              {"operation", "deserialize"},
+                                                              {"objectPath", path},
+                                                              {"expected", "non-null value"},
+                                                              {"actual", "null"},
+                                                          })};
             }
             if (type == reflection::builtin::boolTypeId()) {
                 return deserializeBoolValue(value, object, path);
@@ -663,16 +659,16 @@ namespace asharia::serialization {
 
             const reflection::TypeInfo* typeInfo = registry.findType(type);
             if (typeInfo == nullptr) {
-                return std::unexpected{serializationError(
-                    "Cannot deserialize unknown reflected type id for field '" + std::string{path} +
-                        "'.",
-                    {
-                        {"operation", "deserialize"},
-                        {"objectPath", path},
-                        {"typeId", std::to_string(type.value)},
-                        {"expected", "registered reflected type"},
-                        {"actual", "missing"},
-                    })};
+                return std::unexpected{
+                    serializationError("Cannot deserialize unknown reflected type id for field '" +
+                                           std::string{path} + "'.",
+                                       {
+                                           {"operation", "deserialize"},
+                                           {"objectPath", path},
+                                           {"typeId", std::to_string(type.value)},
+                                           {"expected", "registered reflected type"},
+                                           {"actual", "missing"},
+                                       })};
             }
             if (value.kind != ArchiveValueKind::Object) {
                 return std::unexpected{serializationError(

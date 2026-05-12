@@ -1,15 +1,17 @@
 ﻿#include <algorithm>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <expected>
+#include <filesystem>
 #include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -357,15 +359,14 @@ namespace {
         ReflectionSmokeTransform rejected{};
         auto rejectedResult = asharia::serialization::deserializeObject(*registry, transformType,
                                                                         badArchive, &rejected);
-        if (rejectedResult ||
-            !containsAll(rejectedResult.error().message,
-                         {
-                             "operation=deserialize",
-                             "objectPath=com.asharia.smoke.Transform.position.x",
-                             "type=com.asharia.core.Float",
-                             "expected=float",
-                             "actual=string",
-                         })) {
+        if (rejectedResult || !containsAll(rejectedResult.error().message,
+                                           {
+                                               "operation=deserialize",
+                                               "objectPath=com.asharia.smoke.Transform.position.x",
+                                               "type=com.asharia.core.Float",
+                                               "expected=float",
+                                               "actual=string",
+                                           })) {
             logFailure("Serialization roundtrip smoke did not reject a bad field type.");
             return false;
         }
@@ -382,17 +383,16 @@ namespace {
         ReflectionSmokeTransform rejectedVersion{};
         auto rejectedVersionResult = asharia::serialization::deserializeObject(
             *registry, transformType, badVersionArchive, &rejectedVersion);
-        if (rejectedVersionResult ||
-            !containsAll(rejectedVersionResult.error().message,
-                         {
-                             "operation=deserialize",
-                             "objectPath=com.asharia.smoke.Transform",
-                             "type=com.asharia.smoke.Transform",
-                             "field=version",
-                             "expected=migration policy",
-                             "actual=no migration registry",
-                             "version=2",
-                         })) {
+        if (rejectedVersionResult || !containsAll(rejectedVersionResult.error().message,
+                                                  {
+                                                      "operation=deserialize",
+                                                      "objectPath=com.asharia.smoke.Transform",
+                                                      "type=com.asharia.smoke.Transform",
+                                                      "field=version",
+                                                      "expected=migration policy",
+                                                      "actual=no migration registry",
+                                                      "version=2",
+                                                  })) {
             logFailure("Serialization roundtrip smoke did not reject a bad type version.");
             return false;
         }
@@ -466,6 +466,32 @@ namespace {
             return false;
         }
 
+        const std::filesystem::path archivePath =
+            std::filesystem::temp_directory_path() /
+            "asharia-serialization-json-archive-smoke.json";
+        auto fileWritten = asharia::serialization::writeTextArchiveFile(archivePath, archive);
+        if (!fileWritten) {
+            logFailure(fileWritten.error().message);
+            return false;
+        }
+
+        auto fileParsed = asharia::serialization::readTextArchiveFile(archivePath);
+        std::error_code removeError;
+        std::filesystem::remove(archivePath, removeError);
+        if (!fileParsed) {
+            logFailure(fileParsed.error().message);
+            return false;
+        }
+
+        const asharia::serialization::ArchiveValue* fileEscaped =
+            fileParsed->findMemberValue("escaped");
+        if (fileEscaped == nullptr ||
+            fileEscaped->kind != asharia::serialization::ArchiveValueKind::String ||
+            fileEscaped->stringValue != escaped) {
+            logFailure("JSON archive smoke failed to round-trip through file IO.");
+            return false;
+        }
+
         auto duplicate = asharia::serialization::readTextArchive(R"({"field":1,"field":2})");
         if (duplicate || duplicate.error().message.find("duplicate key") == std::string::npos) {
             logFailure("JSON archive smoke did not reject a duplicate object key.");
@@ -536,14 +562,13 @@ namespace {
         auto duplicateMigration =
             migrations.registerMigration(migratedTransformType, 1, 2, migrateSmokeTransformV1ToV2);
         if (duplicateMigration ||
-            !containsAll(duplicateMigration.error().message,
-                         {
-                             "operation=register",
-                             "fromVersion=1",
-                             "toVersion=2",
-                             "expected=unique migration step",
-                             "actual=duplicate",
-                         })) {
+            !containsAll(duplicateMigration.error().message, {
+                                                                 "operation=register",
+                                                                 "fromVersion=1",
+                                                                 "toVersion=2",
+                                                                 "expected=unique migration step",
+                                                                 "actual=duplicate",
+                                                             })) {
             logFailure("Serialization migration smoke accepted a duplicate migration.");
             return false;
         }
@@ -597,16 +622,15 @@ namespace {
         ReflectionSmokeMigratedTransform rejectedMissingRule{};
         auto missingRuleResult = asharia::serialization::deserializeObject(
             *registry, migratedTransformType, oldArchive, &rejectedMissingRule, missingPolicy);
-        if (missingRuleResult ||
-            !containsAll(missingRuleResult.error().message,
-                         {
-                             "Missing serialization migration",
-                             "operation=migrate",
-                             "fromVersion=1",
-                             "toVersion=2",
-                             "expected=registered migration step",
-                             "actual=missing",
-                         })) {
+        if (missingRuleResult || !containsAll(missingRuleResult.error().message,
+                                              {
+                                                  "Missing serialization migration",
+                                                  "operation=migrate",
+                                                  "fromVersion=1",
+                                                  "toVersion=2",
+                                                  "expected=registered migration step",
+                                                  "actual=missing",
+                                              })) {
             logFailure("Serialization migration smoke did not reject a missing migration rule.");
             return false;
         }

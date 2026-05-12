@@ -171,6 +171,27 @@ namespace asharia::serialization {
         }
     }
 
+    VoidResult writeTextArchiveFile(const std::filesystem::path& path, const ArchiveValue& value) {
+        auto text = writeTextArchive(value);
+        if (!text) {
+            return std::unexpected{textArchiveError("Failed to serialize text archive file '" +
+                                                    path.string() + "': " + text.error().message)};
+        }
+
+        std::ofstream file{path, std::ios::binary | std::ios::trunc};
+        if (!file) {
+            return std::unexpected{
+                textArchiveError("Failed to open text archive file for writing: " + path.string())};
+        }
+
+        file.write(text->data(), static_cast<std::streamsize>(text->size()));
+        if (!file) {
+            return std::unexpected{
+                textArchiveError("Failed to write text archive file: " + path.string())};
+        }
+        return {};
+    }
+
     Result<ArchiveValue> readTextArchive(std::string_view text) {
         try {
             const OrderedJson parsed = parseStrictJson(text);
