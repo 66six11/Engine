@@ -156,6 +156,8 @@ namespace {
     constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
     constexpr std::string_view kSmokeMigratedTransformTypeName =
         "com.asharia.smoke.MigratedTransform";
+    constexpr std::string_view kSmokeDeferredOwnerTypeName = "com.asharia.smoke.DeferredOwner";
+    constexpr std::string_view kSmokeDeferredValueTypeName = "com.asharia.smoke.DeferredValue";
 
     struct ReflectionSmokeVec3 {
         float x{};
@@ -184,6 +186,14 @@ namespace {
         ReflectionSmokeQuat rotation;
         ReflectionSmokeVec3 scale{.x = 1.0F, .y = 1.0F, .z = 1.0F};
         std::string debugName;
+    };
+
+    struct ReflectionSmokeDeferredValue {
+        std::int32_t value{};
+    };
+
+    struct ReflectionSmokeDeferredOwner {
+        ReflectionSmokeDeferredValue deferred;
     };
 
     asharia::Error smokeSerializationError(std::string message) {
@@ -424,7 +434,67 @@ namespace {
         return {};
     }
 
+    bool smokeDeferredFieldRegistration() {
+        using namespace asharia::reflection;
+
+        TypeRegistry registry;
+        auto builtins = registerBuiltinTypes(registry);
+        if (!builtins) {
+            asharia::logError(builtins.error().message);
+            return false;
+        }
+
+        const FieldFlagSet saved = field_flags::serializableEditorRuntime();
+        const TypeId deferredValueType = makeTypeId(kSmokeDeferredValueTypeName);
+        auto ownerRegistered =
+            TypeBuilder<ReflectionSmokeDeferredOwner>(registry, kSmokeDeferredOwnerTypeName)
+                .kind(TypeKind::Struct)
+                .field("deferred", &ReflectionSmokeDeferredOwner::deferred, deferredValueType,
+                       saved)
+                .commit();
+        if (!ownerRegistered) {
+            asharia::logError(ownerRegistered.error().message);
+            return false;
+        }
+
+        auto missingFreeze = registry.freeze();
+        if (missingFreeze ||
+            !containsAll(missingFreeze.error().message, {
+                                                            "operation=freeze",
+                                                            "type=com.asharia.smoke.DeferredOwner",
+                                                            "field=deferred",
+                                                            "expected=registered field type",
+                                                            "actual=missing",
+                                                        })) {
+            asharia::logError(
+                "Reflection registry smoke did not reject missing field type at freeze.");
+            return false;
+        }
+
+        auto valueRegistered =
+            TypeBuilder<ReflectionSmokeDeferredValue>(registry, kSmokeDeferredValueTypeName)
+                .kind(TypeKind::Struct)
+                .field("value", &ReflectionSmokeDeferredValue::value, saved)
+                .commit();
+        if (!valueRegistered) {
+            asharia::logError(valueRegistered.error().message);
+            return false;
+        }
+
+        auto frozen = registry.freeze();
+        if (!frozen) {
+            asharia::logError(frozen.error().message);
+            return false;
+        }
+
+        return true;
+    }
+
     int runSmokeReflectionRegistry() {
+        if (!smokeDeferredFieldRegistration()) {
+            return EXIT_FAILURE;
+        }
+
         asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
@@ -751,9 +821,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        const std::filesystem::path archivePath =
-            std::filesystem::temp_directory_path() /
-            "asharia-serialization-json-archive-smoke.json";
+        const std::filesystem::path archivePath = std::filesystem::temp_directory_path() /
+                                                  "asharia-serialization-json-archive-smoke.json";
         auto fileWritten = asharia::serialization::writeTextArchiveFile(archivePath, archive);
         if (!fileWritten) {
             asharia::logError(fileWritten.error().message);

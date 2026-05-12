@@ -1,6 +1,6 @@
 ﻿#include <algorithm>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <initializer_list>
@@ -18,6 +18,8 @@ namespace {
     constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
     constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
     constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
+    constexpr std::string_view kSmokeDeferredOwnerTypeName = "com.asharia.smoke.DeferredOwner";
+    constexpr std::string_view kSmokeDeferredValueTypeName = "com.asharia.smoke.DeferredValue";
 
     struct ReflectionSmokeVec3 {
         float x{};
@@ -41,6 +43,14 @@ namespace {
         std::int32_t scriptCounter{};
     };
 
+    struct ReflectionSmokeDeferredValue {
+        std::int32_t value{};
+    };
+
+    struct ReflectionSmokeDeferredOwner {
+        ReflectionSmokeDeferredValue deferred;
+    };
+
     void logFailure(std::string_view message) {
         std::cerr << message << '\n';
     }
@@ -52,7 +62,7 @@ namespace {
     }
 
     const asharia::reflection::FieldInfo* findField(const asharia::reflection::TypeInfo& type,
-                                                std::string_view name) {
+                                                    std::string_view name) {
         const auto found =
             std::ranges::find_if(type.fields, [name](const asharia::reflection::FieldInfo& field) {
                 return field.name == name;
@@ -61,9 +71,10 @@ namespace {
     }
 
     bool hasContextField(const asharia::reflection::ContextFieldView& view, std::string_view name) {
-        return std::ranges::any_of(view.fields, [name](const asharia::reflection::FieldInfo* field) {
-            return field != nullptr && field->name == name;
-        });
+        return std::ranges::any_of(view.fields,
+                                   [name](const asharia::reflection::FieldInfo* field) {
+                                       return field != nullptr && field->name == name;
+                                   });
     }
 
     asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
@@ -134,7 +145,66 @@ namespace {
         return registry;
     }
 
+    bool smokeDeferredFieldRegistration() {
+        using namespace asharia::reflection;
+
+        TypeRegistry registry;
+        auto builtins = registerBuiltinTypes(registry);
+        if (!builtins) {
+            logFailure(builtins.error().message);
+            return false;
+        }
+
+        const FieldFlagSet saved = field_flags::serializableEditorRuntime();
+        const TypeId deferredValueType = makeTypeId(kSmokeDeferredValueTypeName);
+        auto ownerRegistered =
+            TypeBuilder<ReflectionSmokeDeferredOwner>(registry, kSmokeDeferredOwnerTypeName)
+                .kind(TypeKind::Struct)
+                .field("deferred", &ReflectionSmokeDeferredOwner::deferred, deferredValueType,
+                       saved)
+                .commit();
+        if (!ownerRegistered) {
+            logFailure(ownerRegistered.error().message);
+            return false;
+        }
+
+        auto missingFreeze = registry.freeze();
+        if (missingFreeze ||
+            !containsAll(missingFreeze.error().message, {
+                                                            "operation=freeze",
+                                                            "type=com.asharia.smoke.DeferredOwner",
+                                                            "field=deferred",
+                                                            "expected=registered field type",
+                                                            "actual=missing",
+                                                        })) {
+            logFailure("Reflection registry smoke did not reject missing field type at freeze.");
+            return false;
+        }
+
+        auto valueRegistered =
+            TypeBuilder<ReflectionSmokeDeferredValue>(registry, kSmokeDeferredValueTypeName)
+                .kind(TypeKind::Struct)
+                .field("value", &ReflectionSmokeDeferredValue::value, saved)
+                .commit();
+        if (!valueRegistered) {
+            logFailure(valueRegistered.error().message);
+            return false;
+        }
+
+        auto frozen = registry.freeze();
+        if (!frozen) {
+            logFailure(frozen.error().message);
+            return false;
+        }
+
+        return true;
+    }
+
     bool smokeRegistry() {
+        if (!smokeDeferredFieldRegistration()) {
+            return false;
+        }
+
         asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
@@ -155,14 +225,13 @@ namespace {
             .fields = {},
         };
         auto duplicateRegistered = registry.registerType(std::move(duplicate));
-        if (duplicateRegistered ||
-            !containsAll(duplicateRegistered.error().message,
-                         {
-                             "operation=register",
-                             "type=com.asharia.smoke.Transform",
-                             "expected=unique type name",
-                             "actual=duplicate",
-                         })) {
+        if (duplicateRegistered || !containsAll(duplicateRegistered.error().message,
+                                                {
+                                                    "operation=register",
+                                                    "type=com.asharia.smoke.Transform",
+                                                    "expected=unique type name",
+                                                    "actual=duplicate",
+                                                })) {
             logFailure("Reflection registry smoke accepted a duplicate type.");
             return false;
         }
@@ -182,13 +251,12 @@ namespace {
         };
         auto lateRegistered = registry.registerType(std::move(lateType));
         if (lateRegistered ||
-            !containsAll(lateRegistered.error().message,
-                         {
-                             "operation=register",
-                             "type=com.asharia.smoke.LateType",
-                             "expected=mutable registry",
-                             "actual=frozen",
-                         })) {
+            !containsAll(lateRegistered.error().message, {
+                                                             "operation=register",
+                                                             "type=com.asharia.smoke.LateType",
+                                                             "expected=mutable registry",
+                                                             "actual=frozen",
+                                                         })) {
             logFailure("Reflection registry smoke accepted registration after freeze.");
             return false;
         }

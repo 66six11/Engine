@@ -66,6 +66,13 @@ namespace asharia::reflection {
             return Error{ErrorDomain::Reflection, 0, std::move(message)};
         }
 
+        [[nodiscard]] const TypeInfo* findRegisteredType(std::span<const TypeInfo> types,
+                                                         TypeId typeId) {
+            const auto found = std::ranges::find_if(
+                types, [typeId](const TypeInfo& type) { return type.id == typeId; });
+            return found == types.end() ? nullptr : &*found;
+        }
+
         [[nodiscard]] VoidResult validateTypeHeader(const TypeInfo& type) {
             if (type.name.empty()) {
                 return std::unexpected{
@@ -224,6 +231,31 @@ namespace asharia::reflection {
             return {};
         }
 
+        [[nodiscard]] VoidResult validateFieldTypeReferences(std::span<const TypeInfo> types) {
+            for (const TypeInfo& type : types) {
+                for (const FieldInfo& field : type.fields) {
+                    if (findRegisteredType(types, field.type) != nullptr) {
+                        continue;
+                    }
+
+                    return std::unexpected{reflectionDiagnostic(
+                        "Cannot freeze reflected registry because field '" + type.name + "." +
+                            field.name + "' references an unregistered field type.",
+                        {
+                            {"operation", "freeze"},
+                            {"type", type.name},
+                            {"field", field.name},
+                            {"typeId", std::to_string(field.type.value)},
+                            {"expected", "registered field type"},
+                            {"actual", "missing"},
+                            {"version", std::to_string(type.version)},
+                        })};
+                }
+            }
+
+            return {};
+        }
+
     } // namespace
 
     Error reflectionError(std::string message) {
@@ -263,20 +295,6 @@ namespace asharia::reflection {
             if (!validFlags) {
                 return validFlags;
             }
-
-            if (findType(field.type) == nullptr) {
-                return std::unexpected{
-                    reflectionDiagnostic("Reflected field '" + type.name + "." + field.name +
-                                             "' references an unregistered field type.",
-                                         {
-                                             {"operation", "register"},
-                                             {"type", type.name},
-                                             {"field", field.name},
-                                             {"expected", "registered field type"},
-                                             {"actual", "missing"},
-                                             {"version", std::to_string(type.version)},
-                                         })};
-            }
         }
 
         types_.push_back(std::move(type));
@@ -284,14 +302,21 @@ namespace asharia::reflection {
     }
 
     VoidResult TypeRegistry::freeze() {
+        if (frozen_) {
+            return {};
+        }
+
+        auto validFieldTypes = validateFieldTypeReferences(types_);
+        if (!validFieldTypes) {
+            return validFieldTypes;
+        }
+
         frozen_ = true;
         return {};
     }
 
     const TypeInfo* TypeRegistry::findType(TypeId typeId) const {
-        const auto found = std::ranges::find_if(
-            types_, [typeId](const TypeInfo& type) { return type.id == typeId; });
-        return found == types_.end() ? nullptr : &*found;
+        return findRegisteredType(types_, typeId);
     }
 
     const TypeInfo* TypeRegistry::findType(std::string_view name) const {
