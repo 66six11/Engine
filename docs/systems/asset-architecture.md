@@ -8,8 +8,10 @@ resource、material、asset browser、scene serialization 和 scripting metadata
 AssetDatabase、不做 editor UI、不做 GPU resource owner。
 
 核心结论：`asset-core` 先负责稳定身份、source metadata、import settings、product/cache key、依赖摘要和
-runtime-safe asset handle。真实 importer、GPU upload、shader/material pipeline key、editor browser 和热重载
-分别在后续 package 或工具层接入，不能反向污染 `asset-core`。
+runtime-safe asset handle。文件修改监听、source hash、metadata IO、import 调度、product cache manifest
+和 dependency invalidation 后续由独立 `asset-pipeline` / `asset-processor` 承担；真实 importer、GPU upload、
+shader/material pipeline key、editor browser 和热重载分别在后续 package 或工具层接入，不能反向污染
+`asset-core`。
 
 ## 资料结论
 
@@ -88,6 +90,7 @@ flowchart TD
     AssetCore["packages/asset-core"]
     Scene["packages/scene-core"]
     Material["future packages/material"]
+    AssetPipeline["future packages/asset-pipeline"]
     ImportTool["future tools/asset-processor"]
     ResourceRuntime["future resource runtime"]
     Editor["apps/editor / editor-core"]
@@ -95,12 +98,34 @@ flowchart TD
     AssetCore --> Core
     Scene --> AssetCore
     Material --> AssetCore
+    AssetPipeline --> AssetCore
+    ImportTool --> AssetPipeline
     ImportTool --> AssetCore
     ResourceRuntime --> AssetCore
     Editor --> AssetCore
     AssetCore -.optional metadata IO.-> Serialization
     AssetCore -.optional reflected settings.-> Reflection
 ```
+
+### 后续 asset-pipeline / asset-processor
+
+为了避免后续 editor 文件修改更新逻辑散落到 UI 或 runtime，单独记录未来 owner：
+
+- `packages/asset-pipeline`：库化的 asset import pipeline。它消费 `asset-core` 的 GUID、metadata、
+  product key 和 dependency 数据，负责 source scan、source hash、metadata IO facade、import request、
+  product manifest、cache hit/miss 判断和 dependency invalidation 规则。
+- `tools/asset-processor`：开发期/后台进程或 CLI host。它可以使用文件 watcher 调用 `asset-pipeline`，
+  执行具体 importer，写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向 editor/resource runtime
+  发布 product 更新通知。
+- `apps/editor` / 未来 `editor-core`：只发出 reimport、rename、move、import settings 修改等命令，并展示
+  pipeline 状态和诊断；不直接扫描 source tree，不直接写 product cache。
+- `asset-core`：继续保持纯身份和数据模型，不拥有 watcher、后台线程、importer、product 文件写入或热更新发布。
+
+进入条件：
+
+- `asset-core` 至少完成 metadata model、product key、dependency 和 catalog 切片。
+- `.ameta` IO facade 已有确定性读写方案，或 `asset-pipeline` 明确依赖后续 serialization package。
+- editor 需要真实文件变更刷新，或 mesh/texture/material product smoke 需要稳定 import/cache 流程。
 
 ## 数据边界
 
@@ -481,6 +506,7 @@ struct AssetLoadResult {
 | 工作 | 等待项 |
 | --- | --- |
 | `.ameta` read/write | 等 `packages/serialization` 分支完成 migration/text archive 细节。 |
+| `packages/asset-pipeline` / `tools/asset-processor` | 等 `asset-core` metadata、product key、dependency、catalog 和 `.ameta` IO 边界稳定。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset / pipeline key | 等 material signature 和 descriptor contract 进入计划阶段。 |
