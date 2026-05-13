@@ -3376,9 +3376,18 @@ namespace {
             .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
             .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
         });
+        const auto importedStorage = cullingGraph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "ImportedStorageSideEffect",
+            .byteSize = 256,
+            .initialState = asharia::RenderGraphBufferState::StorageReadWrite,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Compute,
+            .finalState = asharia::RenderGraphBufferState::StorageReadWrite,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
+        });
 
         int visibleCallbackCount = 0;
         int culledCallbackCount = 0;
+        int importedStorageCallbackCount = 0;
         int sideEffectCallbackCount = 0;
         cullingGraph.addPass("VisibleClear", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
@@ -3396,6 +3405,30 @@ namespace {
             .allowCulling()
             .execute([&culledCallbackCount](asharia::RenderGraphPassContext) {
                 ++culledCallbackCount;
+                return asharia::Result<void>{};
+            });
+        cullingGraph.addPass("ImportedStorageWrite", "basic.compute-dispatch")
+            .setParamsType("basic.compute-dispatch.params")
+            .readWriteStorageBuffer("target", importedStorage,
+                                    asharia::RenderGraphShaderStage::Compute)
+            .allowCulling()
+            .execute([&importedStorageCallbackCount](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                if (!context.allowCulling || context.name != "ImportedStorageWrite" ||
+                    context.type != "basic.compute-dispatch" ||
+                    context.paramsType != "basic.compute-dispatch.params" ||
+                    context.bufferStorageReadWrites.size() != 1 ||
+                    context.bufferStorageReadWriteSlots.size() != 1 ||
+                    context.bufferStorageReadWriteSlots.front().name != "target" ||
+                    context.bufferStorageReadWriteSlots.front().shaderStage !=
+                        asharia::RenderGraphShaderStage::Compute) {
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph imported storage write culling context was unexpected.",
+                    }};
+                }
+                ++importedStorageCallbackCount;
                 return asharia::Result<void>{};
             });
         cullingGraph.addPass("SideEffectMarker", "basic.side-effect")
@@ -3418,7 +3451,7 @@ namespace {
             asharia::logError(compiled.error().message);
             return false;
         }
-        if (compiled->passes.size() != 2 || compiled->culledPasses.size() != 1 ||
+        if (compiled->passes.size() != 3 || compiled->culledPasses.size() != 1 ||
             !compiled->transientImages.empty()) {
             asharia::logError("Render graph culling smoke produced an unexpected compile plan.");
             return false;
@@ -3429,7 +3462,8 @@ namespace {
             return false;
         }
         if (compiled->passes[0].name != "VisibleClear" ||
-            compiled->passes[1].name != "SideEffectMarker" || !compiled->passes[1].hasSideEffects) {
+            compiled->passes[1].name != "ImportedStorageWrite" ||
+            compiled->passes[2].name != "SideEffectMarker" || !compiled->passes[2].hasSideEffects) {
             asharia::logError("Render graph culling smoke kept the wrong active passes.");
             return false;
         }
@@ -3439,7 +3473,8 @@ namespace {
             asharia::logError(executed.error().message);
             return false;
         }
-        if (visibleCallbackCount != 1 || sideEffectCallbackCount != 1 || culledCallbackCount != 0) {
+        if (visibleCallbackCount != 1 || importedStorageCallbackCount != 1 ||
+            sideEffectCallbackCount != 1 || culledCallbackCount != 0) {
             asharia::logError("Render graph culling smoke invoked unexpected callbacks.");
             return false;
         }

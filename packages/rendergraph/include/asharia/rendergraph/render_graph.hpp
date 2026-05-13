@@ -2079,10 +2079,17 @@ namespace asharia {
                 }
             }
 
-            for (const RenderGraphBufferSlot& slot : pass.bufferWriteSlots) {
-                if (slot.buffer.index < buffers_.size() &&
-                    buffers_[slot.buffer.index].lifetime == RenderGraphBufferLifetime::Imported) {
-                    return true;
+            const std::array<std::span<const RenderGraphBufferSlot>, 2> bufferWriteSlotGroups{
+                pass.bufferWriteSlots,
+                pass.bufferStorageReadWriteSlots,
+            };
+            for (std::span<const RenderGraphBufferSlot> slots : bufferWriteSlotGroups) {
+                for (const RenderGraphBufferSlot& slot : slots) {
+                    if (slot.buffer.index < buffers_.size() &&
+                        buffers_[slot.buffer.index].lifetime ==
+                            RenderGraphBufferLifetime::Imported) {
+                        return true;
+                    }
                 }
             }
 

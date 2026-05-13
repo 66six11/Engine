@@ -480,9 +480,10 @@ flowchart TD
   `target` 或 `depth` 对应 binding，Backbuffer、`--smoke-transient` 的 transient color image 和
   `--smoke-depth-triangle` 的 transient depth image 都已显式加入 binding 表。
 - `--smoke-rendergraph` 已验证 `StorageReadWrite(compute)` buffer access、`Dispatch` command summary、
-  `builtin.compute-dispatch` schema 负向路径，以及 `TransferWrite -> StorageReadWrite(compute)` 的 Vulkan
-  buffer stage/access 映射；`--smoke-compute-dispatch` 已验证真实 compute pipeline、storage descriptor、
-  `vkCmdDispatch` 录制和 storage buffer GPU 写入 readback。
+  `builtin.compute-dispatch` / `builtin.compute-readback` schema 负向路径，以及
+  `TransferWrite -> StorageReadWrite(compute)`、`StorageReadWrite(compute) -> TransferRead` 和
+  `TransferWrite -> HostRead` 的 Vulkan buffer stage/access 映射；`--smoke-compute-dispatch` 已验证
+  真实 compute pipeline、storage descriptor、`vkCmdDispatch` 录制和 storage buffer GPU 写入 readback。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 和 triangle shader/pipeline 装配已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -638,15 +639,17 @@ flowchart TD
 
 - `vulkanImageTransition` 已实现。
 - `vulkanImageBarrier` 已实现。
-- `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferWrite`、`ShaderRead(fragment/compute)` 和 `StorageReadWrite(compute)`。
+- `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferRead`、
+  `TransferWrite`、`HostRead`、`ShaderRead(fragment/compute)` 和 `StorageReadWrite(compute)`。
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
 - `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)`、
-  `ShaderRead(compute)` usage 和 `TransferWrite -> StorageReadWrite(compute)` 映射到 `VkBufferMemoryBarrier2`
-  所需 stage/access 字段。
+  `ShaderRead(compute)` usage、`TransferWrite -> StorageReadWrite(compute)`、
+  `StorageReadWrite(compute) -> TransferRead` 和 `TransferWrite -> HostRead` 映射到
+  `VkBufferMemoryBarrier2` 所需 stage/access 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、dependencies、slots、commands、transitions、
   transients 的 Markdown 调试表格，并验证 pass type、params type、slot schema、command summary、

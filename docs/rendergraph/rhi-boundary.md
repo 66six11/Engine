@@ -43,7 +43,9 @@ RenderGraph 层使用引擎自己的抽象类型：
 - `ColorAttachment`
 - `ShaderRead`
 - `StorageReadWrite`
+- `TransferRead`
 - `TransferDst`
+- `HostRead`
 - `Present`
 
 这些状态可以被 Vulkan、D3D、Metal 或测试后端分别翻译。
