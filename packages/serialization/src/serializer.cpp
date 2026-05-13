@@ -1,11 +1,15 @@
 ﻿#include "asharia/serialization/serializer.hpp"
 
+#include <cstddef>
 #include <expected>
 #include <initializer_list>
 #include <limits>
+#include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "asharia/core/error.hpp"
 #include "asharia/reflection/context_view.hpp"
@@ -44,6 +48,23 @@ namespace asharia::serialization {
                 message += ']';
             }
             return Error{ErrorDomain::Serialization, 0, std::move(message)};
+        }
+
+        [[nodiscard]] Error fieldAccessorError(std::string message, std::string_view operation,
+                                               const reflection::TypeInfo& type,
+                                               const reflection::FieldInfo* field,
+                                               std::string_view objectPath,
+                                               std::string_view expected, std::string_view actual) {
+            return serializationError(std::move(message),
+                                      {
+                                          {"operation", operation},
+                                          {"objectPath", objectPath},
+                                          {"type", type.name},
+                                          {"field", field == nullptr ? "<null>" : field->name},
+                                          {"expected", expected},
+                                          {"actual", actual},
+                                          {"version", std::to_string(type.version)},
+                                      });
         }
 
         [[nodiscard]] VoidResult validateFrozenRegistry(const reflection::TypeRegistry& registry,
@@ -100,6 +121,112 @@ namespace asharia::serialization {
             path += '.';
             path += fieldName;
             return path;
+        }
+
+        struct AlignedFieldStorageDeleter {
+            std::size_t alignment{};
+
+            void operator()(void* value) const noexcept {
+                if (value != nullptr) {
+                    ::operator delete(value, std::align_val_t{alignment});
+                }
+            }
+        };
+
+        class ScopedFieldValue {
+        public:
+            ScopedFieldValue() = default;
+
+            ScopedFieldValue(const reflection::FieldAccessor& accessor, void* value) noexcept
+                : accessor_{&accessor},
+                  storage_{value, AlignedFieldStorageDeleter{accessor.alignment}} {}
+
+            ScopedFieldValue(const ScopedFieldValue&) = delete;
+            ScopedFieldValue& operator=(const ScopedFieldValue&) = delete;
+
+            ScopedFieldValue(ScopedFieldValue&& other) noexcept
+                : accessor_{other.accessor_}, storage_{std::move(other.storage_)},
+                  constructed_{other.constructed_} {
+                other.accessor_ = nullptr;
+                other.constructed_ = false;
+            }
+
+            ScopedFieldValue& operator=(ScopedFieldValue&& other) noexcept {
+                if (this != &other) {
+                    reset();
+                    accessor_ = other.accessor_;
+                    storage_ = std::move(other.storage_);
+                    constructed_ = other.constructed_;
+                    other.accessor_ = nullptr;
+                    other.constructed_ = false;
+                }
+                return *this;
+            }
+
+            ~ScopedFieldValue() {
+                reset();
+            }
+
+            [[nodiscard]] void* get() noexcept {
+                return storage_.get();
+            }
+
+            void markConstructed() noexcept {
+                constructed_ = true;
+            }
+
+        private:
+            void reset() noexcept {
+                if (constructed_ && accessor_ != nullptr && accessor_->destroyValue) {
+                    accessor_->destroyValue(storage_.get());
+                }
+                constructed_ = false;
+                accessor_ = nullptr;
+                storage_.reset();
+            }
+
+            const reflection::FieldAccessor* accessor_{};
+            std::unique_ptr<void, AlignedFieldStorageDeleter> storage_{
+                nullptr, AlignedFieldStorageDeleter{}};
+            bool constructed_{};
+        };
+
+        [[nodiscard]] constexpr bool isPowerOfTwo(std::size_t value) noexcept {
+            return value != 0 && (value & (value - 1U)) == 0;
+        }
+
+        [[nodiscard]] Result<ScopedFieldValue>
+        makeTemporaryFieldValue(const reflection::TypeInfo& type,
+                                const reflection::FieldInfo& field, std::string_view objectPath,
+                                std::string_view operation) {
+            if (!field.accessor.constructValue || !field.accessor.destroyValue ||
+                field.accessor.size == 0 || field.accessor.alignment == 0) {
+                return std::unexpected{fieldAccessorError(
+                    "Serializable field has no temporary value accessor.", operation, type, &field,
+                    objectPath, "construct/destroy value accessor", "missing")};
+            }
+            if (!isPowerOfTwo(field.accessor.alignment)) {
+                return std::unexpected{fieldAccessorError(
+                    "Serializable field temporary storage has an invalid alignment.", operation,
+                    type, &field, objectPath, "power-of-two field alignment",
+                    std::to_string(field.accessor.alignment))};
+            }
+
+            void* value = ::operator new(field.accessor.size,
+                                         std::align_val_t{field.accessor.alignment}, std::nothrow);
+            if (value == nullptr) {
+                return std::unexpected{fieldAccessorError(
+                    "Serializable field temporary storage allocation failed.", operation, type,
+                    &field, objectPath, "allocated temporary field value", "allocation failure")};
+            }
+
+            ScopedFieldValue temporary{field.accessor, value};
+            auto constructed = field.accessor.constructValue(temporary.get());
+            if (!constructed) {
+                return std::unexpected{std::move(constructed.error())};
+            }
+            temporary.markConstructed();
+            return temporary;
         }
 
         [[nodiscard]] Result<ArchiveValue> serializeValue(const reflection::TypeRegistry& registry,
@@ -249,33 +376,40 @@ namespace asharia::serialization {
             for (const reflection::FieldInfo* field : serializeView.fields) {
                 const std::string fieldObjectPath =
                     appendFieldPath(objectPath, field == nullptr ? "<null>" : field->name);
-                if (field == nullptr || !field->accessor.readAddress) {
-                    return std::unexpected{
-                        serializationError("Serializable field has no read accessor.",
-                                           {
-                                               {"operation", "serialize"},
-                                               {"objectPath", fieldObjectPath},
-                                               {"type", type.name},
-                                               {"field", field == nullptr ? "<null>" : field->name},
-                                               {"expected", "read accessor"},
-                                               {"actual", "missing"},
-                                               {"version", std::to_string(type.version)},
-                                           })};
+                if (field == nullptr) {
+                    return std::unexpected{fieldAccessorError(
+                        "Serializable field metadata is missing.", "serialize", type, field,
+                        fieldObjectPath, "field metadata", "missing")};
                 }
 
-                const void* fieldAddress = field->accessor.readAddress(object);
-                if (fieldAddress == nullptr) {
-                    return std::unexpected{
-                        serializationError("Serializable field read returned null.",
-                                           {
-                                               {"operation", "serialize"},
-                                               {"objectPath", fieldObjectPath},
-                                               {"type", type.name},
-                                               {"field", field->name},
-                                               {"expected", "field address"},
-                                               {"actual", "null"},
-                                               {"version", std::to_string(type.version)},
-                                           })};
+                ScopedFieldValue temporary;
+                const void* fieldAddress = nullptr;
+                if (field->accessor.readAddress) {
+                    fieldAddress = field->accessor.readAddress(object);
+                    if (fieldAddress == nullptr) {
+                        return std::unexpected{fieldAccessorError(
+                            "Serializable field read returned null.", "serialize", type, field,
+                            fieldObjectPath, "field address", "null")};
+                    }
+                } else {
+                    if (!field->accessor.readValue) {
+                        return std::unexpected{fieldAccessorError(
+                            "Serializable field has no read accessor.", "serialize", type, field,
+                            fieldObjectPath, "read address or read value accessor", "missing")};
+                    }
+
+                    auto temporaryValue =
+                        makeTemporaryFieldValue(type, *field, fieldObjectPath, "serialize");
+                    if (!temporaryValue) {
+                        return std::unexpected{std::move(temporaryValue.error())};
+                    }
+                    temporary = std::move(*temporaryValue);
+
+                    auto read = field->accessor.readValue(object, temporary.get());
+                    if (!read) {
+                        return std::unexpected{std::move(read.error())};
+                    }
+                    fieldAddress = temporary.get();
                 }
 
                 auto fieldValue =
@@ -403,6 +537,60 @@ namespace asharia::serialization {
             return {};
         }
 
+        [[nodiscard]] VoidResult deserializeDirectField(
+            const reflection::TypeRegistry& registry, const reflection::TypeInfo& type,
+            const reflection::FieldInfo& field, const ArchiveValue& fieldValue, void* object,
+            const SerializationPolicy& policy, std::string_view fieldObjectPath) {
+            void* fieldAddress = field.accessor.writeAddress(object);
+            if (fieldAddress == nullptr) {
+                return std::unexpected{
+                    fieldAccessorError("Serializable field write returned null.", "deserialize",
+                                       type, &field, fieldObjectPath, "field address", "null")};
+            }
+
+            return deserializeValue(registry, field.type, fieldValue, fieldAddress, policy,
+                                    fieldObjectPath);
+        }
+
+        [[nodiscard]] VoidResult deserializeValueAccessorField(
+            const reflection::TypeRegistry& registry, const reflection::TypeInfo& type,
+            const reflection::FieldInfo& field, const ArchiveValue& fieldValue, void* object,
+            const SerializationPolicy& policy, std::string_view fieldObjectPath) {
+            if (!field.accessor.writeValue) {
+                return std::unexpected{fieldAccessorError(
+                    "Serializable field has no write accessor.", "deserialize", type, &field,
+                    fieldObjectPath, "write address or write value accessor", "missing")};
+            }
+
+            auto temporaryValue =
+                makeTemporaryFieldValue(type, field, fieldObjectPath, "deserialize");
+            if (!temporaryValue) {
+                return std::unexpected{std::move(temporaryValue.error())};
+            }
+
+            auto written = deserializeValue(registry, field.type, fieldValue, temporaryValue->get(),
+                                            policy, fieldObjectPath);
+            if (!written) {
+                return written;
+            }
+
+            return field.accessor.writeValue(object, temporaryValue->get());
+        }
+
+        [[nodiscard]] VoidResult deserializeField(const reflection::TypeRegistry& registry,
+                                                  const reflection::TypeInfo& type,
+                                                  const reflection::FieldInfo& field,
+                                                  const ArchiveValue& fieldValue, void* object,
+                                                  const SerializationPolicy& policy,
+                                                  std::string_view fieldObjectPath) {
+            if (field.accessor.writeAddress) {
+                return deserializeDirectField(registry, type, field, fieldValue, object, policy,
+                                              fieldObjectPath);
+            }
+            return deserializeValueAccessorField(registry, type, field, fieldValue, object, policy,
+                                                 fieldObjectPath);
+        }
+
         [[nodiscard]] VoidResult deserializeStruct(const reflection::TypeRegistry& registry,
                                                    const reflection::TypeInfo& type,
                                                    const ArchiveValue& value, void* object,
@@ -470,37 +658,9 @@ namespace asharia::serialization {
                 if (fieldValue == nullptr) {
                     continue;
                 }
-                if (!field->accessor.writeAddress) {
-                    return std::unexpected{
-                        serializationError("Serializable field has no write accessor.",
-                                           {
-                                               {"operation", "deserialize"},
-                                               {"objectPath", fieldObjectPath},
-                                               {"type", type.name},
-                                               {"field", field->name},
-                                               {"expected", "write accessor"},
-                                               {"actual", "missing"},
-                                               {"version", std::to_string(type.version)},
-                                           })};
-                }
 
-                void* fieldAddress = field->accessor.writeAddress(object);
-                if (fieldAddress == nullptr) {
-                    return std::unexpected{
-                        serializationError("Serializable field write returned null.",
-                                           {
-                                               {"operation", "deserialize"},
-                                               {"objectPath", fieldObjectPath},
-                                               {"type", type.name},
-                                               {"field", field->name},
-                                               {"expected", "field address"},
-                                               {"actual", "null"},
-                                               {"version", std::to_string(type.version)},
-                                           })};
-                }
-
-                auto written = deserializeValue(registry, field->type, *fieldValue, fieldAddress,
-                                                policy, fieldObjectPath);
+                auto written = deserializeField(registry, type, *field, *fieldValue, object, policy,
+                                                fieldObjectPath);
                 if (!written) {
                     return written;
                 }

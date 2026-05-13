@@ -18,6 +18,8 @@ namespace {
     constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
     constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
     constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
+    constexpr std::string_view kSmokePropertyComponentTypeName =
+        "com.asharia.smoke.PropertyComponent";
     constexpr std::string_view kSmokeDeferredOwnerTypeName = "com.asharia.smoke.DeferredOwner";
     constexpr std::string_view kSmokeDeferredValueTypeName = "com.asharia.smoke.DeferredValue";
 
@@ -49,6 +51,31 @@ namespace {
 
     struct ReflectionSmokeDeferredOwner {
         ReflectionSmokeDeferredValue deferred;
+    };
+
+    struct ReflectionSmokePropertyComponent {
+        [[nodiscard]] float exposure() const noexcept {
+            return exposure_;
+        }
+
+        [[nodiscard]] std::int32_t derivedCounter() const noexcept {
+            return counter_ + 1;
+        }
+
+        asharia::VoidResult setExposure(const float& exposure) noexcept {
+            exposure_ = exposure;
+            dirty_ = true;
+            return {};
+        }
+
+        [[nodiscard]] bool isDirty() const noexcept {
+            return dirty_;
+        }
+
+    private:
+        float exposure_{1.5F};
+        std::int32_t counter_{40};
+        bool dirty_{};
     };
 
     void logFailure(std::string_view message) {
@@ -117,14 +144,39 @@ namespace {
         const FieldFlagSet scriptReadOnly =
             FieldFlag::RuntimeVisible | FieldFlag::ScriptVisible | FieldFlag::ReadOnly;
 
-        return TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
+        auto transformRegistered =
+            TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
+                .kind(TypeKind::Component)
+                .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
+                .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
+                .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
+                .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
+                .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude,
+                       runtimeReadOnly)
+                .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+                .commit();
+        if (!transformRegistered) {
+            return transformRegistered;
+        }
+
+        return TypeBuilder<ReflectionSmokePropertyComponent>(registry,
+                                                             kSmokePropertyComponentTypeName)
             .kind(TypeKind::Component)
-            .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
-            .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
-            .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
-            .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
-            .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude, runtimeReadOnly)
-            .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+            .property<float>(
+                "exposure",
+                [](const ReflectionSmokePropertyComponent& component) {
+                    return component.exposure();
+                },
+                [](ReflectionSmokePropertyComponent& component, const float& exposure) {
+                    return component.setExposure(exposure);
+                },
+                savedEditable)
+            .readonlyProperty<std::int32_t>(
+                "derivedCounter",
+                [](const ReflectionSmokePropertyComponent& component) {
+                    return component.derivedCounter();
+                },
+                FieldFlag::EditorVisible | FieldFlag::RuntimeVisible)
             .commit();
     }
 
@@ -319,6 +371,58 @@ namespace {
         return true;
     }
 
+    bool smokePropertyAccessors() {
+        auto registry = makeReflectionSmokeRegistry();
+        if (!registry) {
+            return false;
+        }
+
+        const asharia::reflection::TypeInfo* propertyType =
+            registry->findType(kSmokePropertyComponentTypeName);
+        if (propertyType == nullptr || propertyType->fields.size() != 2) {
+            logFailure("Reflection property smoke saw an unexpected field count.");
+            return false;
+        }
+
+        const asharia::reflection::FieldInfo* exposureField = findField(*propertyType, "exposure");
+        const asharia::reflection::FieldInfo* derivedField =
+            findField(*propertyType, "derivedCounter");
+        if (exposureField == nullptr || derivedField == nullptr ||
+            exposureField->accessor.readAddress || exposureField->accessor.writeAddress ||
+            !exposureField->accessor.readValue || !exposureField->accessor.writeValue ||
+            !derivedField->flags.has(asharia::reflection::FieldFlag::ReadOnly) ||
+            derivedField->accessor.writeValue || derivedField->accessor.writeAddress ||
+            !derivedField->accessor.readValue) {
+            logFailure("Reflection property smoke saw unexpected accessor metadata.");
+            return false;
+        }
+
+        ReflectionSmokePropertyComponent component;
+        float exposure{};
+        auto readExposure = exposureField->accessor.readValue(&component, &exposure);
+        if (!readExposure || exposure != 1.5F) {
+            logFailure("Reflection property smoke failed to read through getter.");
+            return false;
+        }
+
+        const float updatedExposure = 2.25F;
+        auto wroteExposure = exposureField->accessor.writeValue(&component, &updatedExposure);
+        if (!wroteExposure || component.exposure() != updatedExposure || !component.isDirty()) {
+            logFailure("Reflection property smoke failed to write through setter.");
+            return false;
+        }
+
+        std::int32_t derivedCounter{};
+        auto readDerived = derivedField->accessor.readValue(&component, &derivedCounter);
+        if (!readDerived || derivedCounter != 41) {
+            logFailure("Reflection property smoke failed to read readonly property.");
+            return false;
+        }
+
+        std::cout << "Reflection property fields: " << propertyType->fields.size() << '\n';
+        return true;
+    }
+
     bool smokeContexts() {
         auto registry = makeReflectionSmokeRegistry();
         if (!registry) {
@@ -359,7 +463,8 @@ namespace {
 
 int main() {
     try {
-        const bool passed = smokeRegistry() && smokeTransform() && smokeContexts();
+        const bool passed =
+            smokeRegistry() && smokeTransform() && smokePropertyAccessors() && smokeContexts();
         return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     } catch (const std::exception& exception) {
         std::fputs("Reflection smoke test threw an exception: ", stderr);

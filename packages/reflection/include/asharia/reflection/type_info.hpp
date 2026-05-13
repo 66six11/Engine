@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "asharia/core/result.hpp"
 #include "asharia/reflection/field_flags.hpp"
 #include "asharia/reflection/ids.hpp"
 
@@ -40,6 +41,10 @@ namespace asharia::reflection {
 
     using ReadFieldAddressFn = std::function<const void*(const void*)>;
     using WriteFieldAddressFn = std::function<void*(void*)>;
+    using ConstructFieldValueFn = std::function<VoidResult(void*)>;
+    using DestroyFieldValueFn = std::function<void(void*)>;
+    using ReadFieldValueFn = std::function<VoidResult(const void*, void*)>;
+    using WriteFieldValueFn = std::function<VoidResult(void*, const void*)>;
 
     struct FieldAccessor {
         TypeId ownerType{};
@@ -48,6 +53,10 @@ namespace asharia::reflection {
         std::size_t alignment{};
         ReadFieldAddressFn readAddress;
         WriteFieldAddressFn writeAddress;
+        ConstructFieldValueFn constructValue;
+        DestroyFieldValueFn destroyValue;
+        ReadFieldValueFn readValue;
+        WriteFieldValueFn writeValue;
     };
 
     struct FieldInfo {

@@ -154,6 +154,8 @@ namespace {
     constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
     constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
     constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
+    constexpr std::string_view kSmokePropertyComponentTypeName =
+        "com.asharia.smoke.PropertyComponent";
     constexpr std::string_view kSmokeMigratedTransformTypeName =
         "com.asharia.smoke.MigratedTransform";
     constexpr std::string_view kSmokeDeferredOwnerTypeName = "com.asharia.smoke.DeferredOwner";
@@ -194,6 +196,31 @@ namespace {
 
     struct ReflectionSmokeDeferredOwner {
         ReflectionSmokeDeferredValue deferred;
+    };
+
+    struct ReflectionSmokePropertyComponent {
+        [[nodiscard]] float exposure() const noexcept {
+            return exposure_;
+        }
+
+        [[nodiscard]] std::int32_t derivedCounter() const noexcept {
+            return counter_ + 1;
+        }
+
+        asharia::VoidResult setExposure(const float& exposure) noexcept {
+            exposure_ = exposure;
+            dirty_ = true;
+            return {};
+        }
+
+        [[nodiscard]] bool isDirty() const noexcept {
+            return dirty_;
+        }
+
+    private:
+        float exposure_{1.5F};
+        std::int32_t counter_{40};
+        bool dirty_{};
     };
 
     asharia::Error smokeSerializationError(std::string message) {
@@ -275,6 +302,29 @@ namespace {
                 .commit();
         if (!transformRegistered) {
             return transformRegistered;
+        }
+
+        auto propertyRegistered =
+            TypeBuilder<ReflectionSmokePropertyComponent>(registry, kSmokePropertyComponentTypeName)
+                .kind(TypeKind::Component)
+                .property<float>(
+                    "exposure",
+                    [](const ReflectionSmokePropertyComponent& component) {
+                        return component.exposure();
+                    },
+                    [](ReflectionSmokePropertyComponent& component, const float& exposure) {
+                        return component.setExposure(exposure);
+                    },
+                    savedEditable)
+                .readonlyProperty<std::int32_t>(
+                    "derivedCounter",
+                    [](const ReflectionSmokePropertyComponent& component) {
+                        return component.derivedCounter();
+                    },
+                    FieldFlag::EditorVisible | FieldFlag::RuntimeVisible)
+                .commit();
+        if (!propertyRegistered) {
+            return propertyRegistered;
         }
 
         return TypeBuilder<ReflectionSmokeMigratedTransform>(registry,
@@ -606,6 +656,48 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        const asharia::reflection::TypeInfo* propertyType =
+            registry->findType(kSmokePropertyComponentTypeName);
+        if (propertyType == nullptr || propertyType->fields.size() != 2) {
+            asharia::logError("Reflection property smoke saw an unexpected field count.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::reflection::FieldInfo* exposureField = findField(*propertyType, "exposure");
+        const asharia::reflection::FieldInfo* derivedField =
+            findField(*propertyType, "derivedCounter");
+        if (exposureField == nullptr || derivedField == nullptr ||
+            exposureField->accessor.readAddress || exposureField->accessor.writeAddress ||
+            !exposureField->accessor.readValue || !exposureField->accessor.writeValue ||
+            !derivedField->flags.has(asharia::reflection::FieldFlag::ReadOnly) ||
+            derivedField->accessor.writeValue || derivedField->accessor.writeAddress ||
+            !derivedField->accessor.readValue) {
+            asharia::logError("Reflection property smoke saw unexpected accessor metadata.");
+            return EXIT_FAILURE;
+        }
+
+        ReflectionSmokePropertyComponent component;
+        float exposure{};
+        auto readExposure = exposureField->accessor.readValue(&component, &exposure);
+        if (!readExposure || exposure != 1.5F) {
+            asharia::logError("Reflection property smoke failed to read through getter.");
+            return EXIT_FAILURE;
+        }
+
+        const float updatedExposure = 2.25F;
+        auto wroteExposure = exposureField->accessor.writeValue(&component, &updatedExposure);
+        if (!wroteExposure || component.exposure() != updatedExposure || !component.isDirty()) {
+            asharia::logError("Reflection property smoke failed to write through setter.");
+            return EXIT_FAILURE;
+        }
+
+        std::int32_t derivedCounter{};
+        auto readDerived = derivedField->accessor.readValue(&component, &derivedCounter);
+        if (!readDerived || derivedCounter != 41) {
+            asharia::logError("Reflection property smoke failed to read readonly property.");
+            return EXIT_FAILURE;
+        }
+
         std::cout << "Reflection transform fields: " << transformType->fields.size() << '\n';
         return EXIT_SUCCESS;
     }
@@ -644,6 +736,38 @@ namespace {
                   << ", edit=" << editView.fields.size() << ", script=" << scriptView.fields.size()
                   << '\n';
         return EXIT_SUCCESS;
+    }
+
+    bool smokeSerializationPropertyRoundtrip(const asharia::reflection::TypeRegistry& registry) {
+        const asharia::reflection::TypeId propertyType =
+            asharia::reflection::makeTypeId(kSmokePropertyComponentTypeName);
+        ReflectionSmokePropertyComponent propertySource;
+        const float propertyExposure = 2.75F;
+        auto sourcePropertyWritten = propertySource.setExposure(propertyExposure);
+        if (!sourcePropertyWritten) {
+            asharia::logError(sourcePropertyWritten.error().message);
+            return false;
+        }
+
+        auto propertyArchive =
+            asharia::serialization::serializeObject(registry, propertyType, &propertySource);
+        if (!propertyArchive) {
+            asharia::logError(propertyArchive.error().message);
+            return false;
+        }
+
+        ReflectionSmokePropertyComponent propertyLoaded;
+        auto propertyLoadedResult = asharia::serialization::deserializeObject(
+            registry, propertyType, *propertyArchive, &propertyLoaded);
+        if (!propertyLoadedResult) {
+            asharia::logError(propertyLoadedResult.error().message);
+            return false;
+        }
+        if (propertyLoaded.exposure() != propertyExposure || !propertyLoaded.isDirty()) {
+            asharia::logError("Serialization roundtrip smoke did not use property getter/setter.");
+            return false;
+        }
+        return true;
     }
 
     int runSmokeSerializationRoundtrip() {
@@ -730,6 +854,10 @@ namespace {
             loaded.scale.x != source.scale.x || loaded.debugName != source.debugName ||
             loaded.cachedMagnitude != 0.0F || loaded.scriptCounter != 0) {
             asharia::logError("Serialization roundtrip smoke loaded unexpected values.");
+            return EXIT_FAILURE;
+        }
+
+        if (!smokeSerializationPropertyRoundtrip(*registry)) {
             return EXIT_FAILURE;
         }
 

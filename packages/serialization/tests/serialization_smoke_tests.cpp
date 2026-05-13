@@ -26,6 +26,8 @@ namespace {
     constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
     constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
     constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
+    constexpr std::string_view kSmokePropertyComponentTypeName =
+        "com.asharia.smoke.PropertyComponent";
     constexpr std::string_view kSmokeMigratedTransformTypeName =
         "com.asharia.smoke.MigratedTransform";
 
@@ -56,6 +58,31 @@ namespace {
         ReflectionSmokeQuat rotation;
         ReflectionSmokeVec3 scale{.x = 1.0F, .y = 1.0F, .z = 1.0F};
         std::string debugName;
+    };
+
+    struct ReflectionSmokePropertyComponent {
+        [[nodiscard]] float exposure() const noexcept {
+            return exposure_;
+        }
+
+        [[nodiscard]] std::int32_t derivedCounter() const noexcept {
+            return counter_ + 1;
+        }
+
+        asharia::VoidResult setExposure(const float& exposure) noexcept {
+            exposure_ = exposure;
+            dirty_ = true;
+            return {};
+        }
+
+        [[nodiscard]] bool isDirty() const noexcept {
+            return dirty_;
+        }
+
+    private:
+        float exposure_{1.5F};
+        std::int32_t counter_{40};
+        bool dirty_{};
     };
 
     asharia::Error smokeSerializationError(std::string message) {
@@ -125,6 +152,29 @@ namespace {
                 .commit();
         if (!transformRegistered) {
             return transformRegistered;
+        }
+
+        auto propertyRegistered =
+            TypeBuilder<ReflectionSmokePropertyComponent>(registry, kSmokePropertyComponentTypeName)
+                .kind(TypeKind::Component)
+                .property<float>(
+                    "exposure",
+                    [](const ReflectionSmokePropertyComponent& component) {
+                        return component.exposure();
+                    },
+                    [](ReflectionSmokePropertyComponent& component, const float& exposure) {
+                        return component.setExposure(exposure);
+                    },
+                    savedEditable)
+                .readonlyProperty<std::int32_t>(
+                    "derivedCounter",
+                    [](const ReflectionSmokePropertyComponent& component) {
+                        return component.derivedCounter();
+                    },
+                    FieldFlag::EditorVisible | FieldFlag::RuntimeVisible)
+                .commit();
+        if (!propertyRegistered) {
+            return propertyRegistered;
         }
 
         return TypeBuilder<ReflectionSmokeMigratedTransform>(registry,
@@ -286,6 +336,38 @@ namespace {
         return {};
     }
 
+    bool smokePropertyRoundtrip(const asharia::reflection::TypeRegistry& registry) {
+        const asharia::reflection::TypeId propertyType =
+            asharia::reflection::makeTypeId(kSmokePropertyComponentTypeName);
+        ReflectionSmokePropertyComponent propertySource;
+        const float propertyExposure = 2.75F;
+        auto sourcePropertyWritten = propertySource.setExposure(propertyExposure);
+        if (!sourcePropertyWritten) {
+            logFailure(sourcePropertyWritten.error().message);
+            return false;
+        }
+
+        auto propertyArchive =
+            asharia::serialization::serializeObject(registry, propertyType, &propertySource);
+        if (!propertyArchive) {
+            logFailure(propertyArchive.error().message);
+            return false;
+        }
+
+        ReflectionSmokePropertyComponent propertyLoaded;
+        auto propertyLoadedResult = asharia::serialization::deserializeObject(
+            registry, propertyType, *propertyArchive, &propertyLoaded);
+        if (!propertyLoadedResult) {
+            logFailure(propertyLoadedResult.error().message);
+            return false;
+        }
+        if (propertyLoaded.exposure() != propertyExposure || !propertyLoaded.isDirty()) {
+            logFailure("Serialization roundtrip smoke did not use property getter/setter.");
+            return false;
+        }
+        return true;
+    }
+
     bool smokeRoundtrip() {
         auto registry = makeReflectionSmokeRegistry();
         if (!registry) {
@@ -371,6 +453,10 @@ namespace {
             loaded.scale.x != source.scale.x || loaded.debugName != source.debugName ||
             loaded.cachedMagnitude != 0.0F || loaded.scriptCounter != 0) {
             logFailure("Serialization roundtrip smoke loaded unexpected values.");
+            return false;
+        }
+
+        if (!smokePropertyRoundtrip(*registry)) {
             return false;
         }
 
@@ -498,9 +584,8 @@ namespace {
             return false;
         }
 
-        const std::filesystem::path archivePath =
-            std::filesystem::temp_directory_path() /
-            "asharia-serialization-json-archive-smoke.json";
+        const std::filesystem::path archivePath = std::filesystem::temp_directory_path() /
+                                                  "asharia-serialization-json-archive-smoke.json";
         auto fileWritten = asharia::serialization::writeTextArchiveFile(archivePath, archive);
         if (!fileWritten) {
             logFailure(fileWritten.error().message);
