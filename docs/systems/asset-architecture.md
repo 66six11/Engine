@@ -363,6 +363,10 @@ struct AssetLoadResult {
 - `packages/asset-core/asharia.package.json`。
 - `asharia::asset_core` target。
 
+当前状态：
+
+- 已落地最小 `asharia::asset_core` package 骨架和 package-local smoke test target。
+
 验收：
 
 - package 可独立配置/构建。
@@ -375,6 +379,11 @@ struct AssetLoadResult {
 - `AssetGuid` parse/format。
 - invalid GUID helper。
 - `AssetTypeId` 和 stable asset type name helper。
+
+当前状态：
+
+- 已落地 `AssetGuid` parse/format、invalid all-zero GUID 拒绝、canonical lowercase 输出和
+  `AssetTypeId` stable name hash helper。
 
 验收：
 
@@ -514,4 +523,3 @@ Package-local tests：
 - Missing asset/type mismatch 是否有结构化错误。
 - Editor-only import settings 是否不会进入 runtime manifest。
 - 新增 tests 是否不依赖当前两个并行 worktree 的未合并实现。
-

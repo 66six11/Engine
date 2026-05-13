@@ -62,6 +62,10 @@ Pure CPU packages can expose package-local CTest entries. Reflection and
 serialization currently have standalone smoke tests:
 
 ```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\asset-core -B build\cmake\package-asset-core-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-asset-core-tests-msvc-debug && ctest --test-dir build\cmake\package-asset-core-tests-msvc-debug --output-on-failure"
+```
+
+```powershell
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\reflection -B build\cmake\package-reflection-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-reflection-tests-msvc-debug && ctest --test-dir build\cmake\package-reflection-tests-msvc-debug --output-on-failure"
 ```
 
