@@ -2,13 +2,26 @@
 
 研究日期：2026-04-29
 
-更新日期：2026-05-12
+更新日期：2026-05-14
 
 RenderGraph 后续专项路线图见 `docs/rendergraph/roadmap.md`。本文保留全项目阶段计划和当前基线，RenderGraph 语义修正、typed pass 收敛、compiler diagnostics、后端生命周期和缓存的执行顺序以专项路线图为准。
 性能诊断底座和未来编辑器性能面板的技术细节见 `docs/systems/performance-profiling.md`；编辑器从通用
 RenderTarget / RenderView / ImGui sampled texture registration 契约稳定后以 host 和消费者身份接入，
 不拥有 renderer 或 Vulkan 后端对象。
 引擎级系统边界和线程路线见 `docs/architecture/engine-systems.md`、`docs/architecture/frame-loop-threading.md`。其中反射、资产、scene/world、editor、script、input 和 build/cook/package 按本文阶段逐步进入；资产基线的 GUID、metadata、product/cache 和 dependency 边界见 `docs/systems/asset-architecture.md`。它们用于约束后续设计不要反向污染 RenderGraph、RHI 和 package 边界。
+
+2026-05-14 边界校准：下文 20 之后是全引擎路线，不代表 render 层继续拥有 scene、editor、asset 或
+material 的业务状态。Render 主线只负责 RenderGraph/RHI/renderer feature contract、GPU 资源生命周期、
+RenderView 输出和可审查的 command/resource 语义；scene/editor/asset/material 系统作为上游 owner，向
+render 侧提供 immutable snapshot、draw packet、resource handle 或 material/pipeline contract。
+
+| 主线 | 拥有者 | render 侧只消费/输出 |
+| --- | --- | --- |
+| RenderGraph / RHI / renderer feature | `packages/rendergraph`、`rhi-vulkan(_rendergraph)`、`renderer-basic(_vulkan)` | graph 声明、状态转换、barrier、GPU recording、RenderView sampled/present 输出 |
+| Scene / World | 未来 `packages/scene-core` | immutable frame snapshot、camera/view、draw packet；不捕获 `World*` / `Entity*` / mutable component |
+| Editor / Selection / Inspector | `apps/editor` 和未来 `packages/editor-core` | editor viewport 只消费 RenderView 输出；selection outline 通过 view flags / render packet 表达 |
+| Asset / Import / Product cache | 未来 `packages/asset-core` 和 tools | resource handle、product data、upload request；source path/import settings 不进入 renderer hot path |
+| Material / Pipeline key | 未来 material package 与 renderer feature 层 | shader/resource signature、descriptor contract、pipeline key；`pass.type` 仍只表示执行模型 |
 
 ## 当前基线
 
@@ -74,8 +87,9 @@ deferred destruction、descriptor/transient/pipeline cache 和 multi-view 边界
 
 本轮审查后的核心调整是：编辑器不再只是远期暂缓项。它应在通用 RenderTarget / RenderView 和 ImGui sampled
 texture registration 契约稳定后尽早接入，作为渲染层真实消费方；但 editor 不能成为 renderer 或 RHI 的 owner。
-后续路线按“先建立通用渲染目标，再接 editor viewport，再扩 RenderGraph 资源模型，最后进入 material /
-lighting / scene”的顺序推进。
+后续路线按两条线推进：render 侧先完成通用渲染目标、RenderView、RenderGraph buffer/storage/MRT/compute
+和 renderer feature contract；系统侧再接入 scene/editor/asset/material owner。两边的接口是 snapshot、
+draw packet、resource handle、material contract 和 RenderView target，不是跨 package 访问实现对象。
 
 1. **通用 RenderTarget / RenderView / ImGui texture registration contract**：把当前 offscreen viewport 小闭环提炼为通用 RT、view target 和 editor ImGui backend 可消费的 sampled target 契约。
 2. **Editor app skeleton / ImGui shell / viewport**：新增 editor host，先显示 RenderView 输出，不做 gizmo、inspector 或 asset browser。
@@ -89,6 +103,18 @@ lighting / scene”的顺序推进。
 10. **Scene/world persistence**：保存/加载 scene、entity hierarchy、mesh renderer、camera/light component。
 11. **Postprocess / Temporal**：HDR、tone mapping、bloom、history textures、frame params。
 12. **Play Session / Multi-view diagnostics**：Edit/Game 分离，Game View 与 Scene View 同帧共存，profiling/debug table 按 view 输出。
+
+阶段归属速查：
+
+| 阶段 | 归属判断 |
+| --- | --- |
+| 13-15 | render/RHI contract：通用 RenderTarget、RenderView target 和 sampled output contract |
+| 16-17 | editor host/integration：ImGui shell、viewport texture registration；不进入 renderer core |
+| 18-19 | render 主线：RenderGraph buffer/storage/MRT/compute 和 Vulkan adapter/recording |
+| 20-21 | scene/editor 主线：object、selection、gizmo/grid/debug draw 的数据 owner；render 只消费 Scene View packet |
+| 22 | asset/resource 主线：asset-core 拥有 GUID/import/cache，RHI/renderer 执行 GPU upload 和 lifetime |
+| 23 / 25 / 27 | renderer feature + material contract：材质、lighting、postprocess 可以扩展 graph 语义，但不拥有 asset/editor UI |
+| 24 / 26 / 28 | editor/scene/app 主线：asset browser、scene persistence、play session；render 只接收最终 view/render packet |
 
 高级能力继续放入暂缓池：ray tracing、bindless/descriptor indexing、async compute/multi queue、多线程 command recording、transient memory alias、shader hot reload、完整脚本 VM 和完整 asset database。进入条件是已有 smoke/benchmark 证明前置小闭环稳定，并且新增能力能独立验收。
 
@@ -197,15 +223,15 @@ lighting / scene”的顺序推进。
 | 17 | Editor viewport host | 在 `apps/editor` 接入 `asharia::renderer_basic_vulkan`，editor host 以 Scene View 面板尺寸驱动 sampled render target，使用既有 `recordViewFrame()` 写入 target，并通过 ImGui Vulkan backend 注册 descriptor 后显示；resize 时保留上一张 presented texture 并在后台准备 pending texture，dock chrome 仍只走 ImGui swapchain pass | editor viewport 能显示通用 RT 输出；descriptor 注册/注销由 editor integration 管理，旧 viewport RT 通过 frame deferred destroy 释放，teardown 先等 queue idle 再释放 ImGui texture；`--smoke-editor-shell`/`--smoke-editor-viewport` 验证至少一次 viewport texture 呈现 |
 | 18 | RenderGraph buffer / storage / MRT | Stage 18.1 已落地后端无关 buffer handle、buffer desc、buffer access、import/transient buffer、buffer read/write slot、dependency sort、lifetime/final transition 计划和 debug table；Stage 18.2 已补 buffer usage / transition / `VkBufferMemoryBarrier2` adapter 映射；Stage 18.3 已补 `builtin.raster-mrt`、两个 named color slots 和 dynamic rendering multi-color attachment clear；Stage 18.4 已补 `StorageReadWrite(compute)` buffer access、schema validation、debug table 和 Vulkan stage/access 映射；后续子阶段再补 dynamic rendering pipeline desc 多 color format | `--smoke-rendergraph` 覆盖 buffer dependency、imported final state、missing producer、missing shader stage、zero-size buffer、storage read/write、dispatch command summary、buffer Vulkan adapter 字段和 MRT builtin schema 负向路径；`--smoke-mrt` 验证两张 transient color attachments 的真实 Vulkan dynamic rendering clear 和 pool reuse |
 | 19 | Compute dispatch baseline | Stage 19.1 已补 `Dispatch` command summary 与 `builtin.compute-dispatch` schema；Stage 19.2 已记录 graphics queue compute capability，并新增 compute pipeline wrapper、storage descriptor、RenderGraph buffer transition 录制、`vkCmdDispatch` 和 readback smoke | `--smoke-rendergraph` 覆盖 compile-time compute dispatch 语义；`--smoke-compute-dispatch` 覆盖真实 compute shader、storage buffer descriptor、dispatch 和 GPU 写入 readback |
-| 20 | Scene object / selection baseline | 新增最小 object id、transform、selection model、Scene View debug flags；renderer 只消费 frame snapshot 或 draw packet，不捕获 editor object 指针 | selection 可在 editor-core 中独立测试；Scene View / Game View 对象数据边界清楚 |
-| 21 | Gizmo / grid / debug draw | Scene View 专用 grid、axis gizmo、wire/debug overlay 和 selection outline 前置设计；这些 pass 由 view flag 控制 | Scene View graph 可包含 editor-only pass；Game View graph 不包含 editor-only pass |
-| 22 | Asset-core + resource upload baseline | 新增 GUID、source path、import settings、product hash/cache；最小 mesh/texture resource handle 和 staging/linear upload allocator | `--smoke-mesh-resource`、`--smoke-texture-upload`；runtime 不直接依赖 source asset 路径 |
-| 23 | Material / pipeline key | 定义 material resource signature、descriptor contract、material params、pipeline key、pipeline layout cache 和 descriptor mismatch 诊断 | material mismatch 负向 smoke；fullscreen/draw-list 不再依赖硬编码 descriptor binding 假设 |
+| 20 | Scene object / selection baseline | `scene-core` 新增最小 object id、transform、Scene View debug flags；`editor-core` 拥有 selection model；renderer 只消费 frame snapshot 或 draw packet，不捕获 editor object 指针 | selection 可在 editor-core 中独立测试；Scene View / Game View 对象数据边界清楚 |
+| 21 | Gizmo / grid / debug draw | Scene View 专用 grid、axis gizmo、wire/debug overlay 和 selection outline 由 editor/view flags 驱动；renderer 只实现对应 draw packet / overlay pass 消费 | Scene View graph 可包含 editor-only pass；Game View graph 不包含 editor-only pass |
+| 22 | Asset-core + resource upload baseline | `asset-core` 拥有 GUID、source path、import settings、product hash/cache；renderer/RHI 只消费 resource handle、product data 和 upload request，补 staging/linear upload allocator | `--smoke-mesh-resource`、`--smoke-texture-upload`；runtime 不直接依赖 source asset 路径 |
+| 23 | Material / pipeline key | material package 定义 material resource signature、descriptor contract、material params；renderer feature 层消费 pipeline key、pipeline layout cache 和 descriptor mismatch 诊断 | material mismatch 负向 smoke；fullscreen/draw-list 不再依赖硬编码 descriptor binding 假设 |
 | 24 | Asset browser / material editor | Editor 通过 asset/material public API 显示和编辑资源；texture slot 选择、material 参数编辑和错误诊断只消费 asset/material 模型 | editor 能创建/编辑一个 material；runtime 同样能独立报告 material/descriptor 错误 |
-| 25 | Lighting baseline | 优先做 MRT/G-buffer deferred MVP：G-buffer、depth、lighting fullscreen/compute pass、HDR scene color；后续再评估 Forward+ | `--smoke-gbuffer`、`--smoke-lighting`；至少一个动态 light 输出 HDR scene color |
-| 26 | Scene/world persistence | 最小 scene file、entity hierarchy、mesh renderer、camera/light component、save/load；editor 修改走 transaction | editor 能保存/加载最小 scene；viewport 显示多个 mesh object |
-| 27 | Postprocess / temporal | HDR tone mapping、bloom MVP、history texture/ping-pong RT、per-view frame params、resize/history invalidation | `--smoke-postprocess`、`--smoke-history-resource` |
-| 28 | Play Session / diagnostics | Edit Mode / Play Mode 状态机；Game View 使用 runtime world copy 或 snapshot；RenderGraph pass/counter/timestamp 按 view 输出 | 进入/退出 Play 不污染编辑场景；Game View 和 Scene View 可同帧共存 |
+| 25 | Lighting baseline | renderer feature 层优先做 MRT/G-buffer deferred MVP：G-buffer、depth、lighting fullscreen/compute pass、HDR scene color；scene 只提供 light snapshot | `--smoke-gbuffer`、`--smoke-lighting`；至少一个动态 light 输出 HDR scene color |
+| 26 | Scene/world persistence | `scene-core` + serialization 拥有最小 scene file、entity hierarchy、mesh renderer、camera/light component、save/load；editor 修改走 transaction | editor 能保存/加载最小 scene；viewport 显示多个 mesh object |
+| 27 | Postprocess / temporal | renderer feature 层负责 HDR tone mapping、bloom MVP、history texture/ping-pong RT、per-view frame params、resize/history invalidation | `--smoke-postprocess`、`--smoke-history-resource` |
+| 28 | Play Session / diagnostics | app/editor/scene 层拥有 Edit Mode / Play Mode 状态机；Game View 使用 runtime world copy 或 snapshot；render/profiling 只按 view 输出 graph pass/counter/timestamp | 进入/退出 Play 不污染编辑场景；Game View 和 Scene View 可同帧共存 |
 
 ## 防过度设计执行规则
 
