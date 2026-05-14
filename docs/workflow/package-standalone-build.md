@@ -58,8 +58,10 @@ cmake -S packages\rendergraph -B build\cmake\package-rendergraph-msvc-debug -DAS
 
 ## Package Tests
 
-Pure CPU packages can expose package-local CTest entries. Reflection and
-serialization currently have standalone smoke tests:
+Pure CPU packages can expose package-local CTest entries. The current
+reflection/serialization spike packages have standalone smoke tests; the
+schema-first reset will move equivalent coverage to `schema`, `archive`,
+`cpp-binding`, and `persistence` packages:
 
 ```powershell
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\asset-core -B build\cmake\package-asset-core-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-asset-core-tests-msvc-debug && ctest --test-dir build\cmake\package-asset-core-tests-msvc-debug --output-on-failure"

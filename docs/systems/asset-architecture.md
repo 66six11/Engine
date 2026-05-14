@@ -4,7 +4,7 @@
 
 本文定义 `packages/asset-core` 的第一版边界、资料依据、数据模型和实施切片。它补齐
 `docs/architecture/engine-systems.md` 中提到的 asset pipeline 前置设计，用来支撑后续 mesh/texture
-resource、material、asset browser、scene serialization 和 scripting metadata，但第一版不做完整
+resource、material、asset browser、scene persistence 和 scripting metadata，但第一版不做完整
 AssetDatabase、不做 editor UI、不做 GPU resource owner。
 
 核心结论：`asset-core` 先负责稳定身份、source metadata、import settings、product/cache key、依赖摘要和
@@ -74,8 +74,8 @@ packages/asset-core/
 依赖原则：
 
 - `asharia::asset_core` 第一阶段只依赖 `asharia::core`。
-- 如果要读写 `.ameta` 文本文件，优先放在后续 `asharia::asset_core_serialization` 或同 package 的可选源文件中，
-  并依赖 `asharia::serialization`；不要让 identity/handle 头文件强制依赖 JSON 或 serialization 实现。
+- 如果要读写 `.ameta` 文本文件，优先放在后续 `asharia::asset_core_persistence` 或同 package 的可选源文件中，
+  并按职责依赖 `asharia::archive` / `asharia::persistence`；不要让 identity/handle 头文件强制依赖 JSON 或 persistence 实现。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
 - `apps/editor`、`packages/scene-core`、`packages/material` 和 `packages/scripting` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
@@ -85,8 +85,8 @@ packages/asset-core/
 ```mermaid
 flowchart TD
     Core["engine/core"]
-    Reflection["packages/reflection"]
-    Serialization["packages/serialization"]
+    Reflection["packages/schema<br/>target; reflection spike legacy"]
+    Serialization["packages/persistence<br/>target; serialization spike legacy"]
     AssetCore["packages/asset-core"]
     Scene["packages/scene-core"]
     Material["future packages/material"]
@@ -190,7 +190,7 @@ struct AssetHandle {
 
 ## Metadata 文件
 
-第一版 `.ameta` 使用确定性 JSON 子集，后续可由 `packages/serialization` 统一读写：
+第一版 `.ameta` 使用确定性 JSON 子集，后续可由 `packages/archive` 和 `packages/persistence` 统一读写：
 
 ```json
 {
@@ -347,9 +347,9 @@ struct AssetLoadResult {
 
 ## 与其他系统的关系
 
-### Reflection / Serialization
+### Schema / Persistence
 
-- `AssetGuid`、`AssetReference` 和常见 import settings 应可被 reflection/serialization 描述。
+- `AssetGuid`、`AssetReference` 和常见 import settings 应可被 schema/persistence 描述。
 - `.ascene`、`.amat`、`.ameta` 保存 GUID 和稳定 type name，不保存 runtime pointer。
 - migration 可以把旧 source path 引用迁移成 GUID，但必须保留诊断和人工修复路径。
 
@@ -466,7 +466,7 @@ struct AssetLoadResult {
 
 ### 切片 G：Metadata IO
 
-进入条件：`packages/serialization` 当前分支合并并稳定。
+进入条件：schema-first 的 `packages/archive` 和 `packages/persistence` 合并并稳定。
 
 交付：
 
@@ -497,15 +497,15 @@ struct AssetLoadResult {
 
 | 工作 | 原因 | 注意事项 |
 | --- | --- | --- |
-| `asset-core` GUID / handle / catalog 头文件和 tests | 只依赖 `core`，不抢 RenderGraph 或 serialization worktree。 | 优先 package-local tests，少碰 sample-viewer。 |
-| metadata schema 文档和 `.ameta` 示例 | 纯文档，可和反射/序列化分支并行。 | 不实现 parser 前不要承诺最终 JSON facade。 |
+| `asset-core` GUID / handle / catalog 头文件和 tests | 只依赖 `core`，不抢 RenderGraph 或 schema/archive/persistence worktree。 | 优先 package-local tests，少碰 sample-viewer。 |
+| metadata schema 文档和 `.ameta` 示例 | 纯文档，可和 schema/archive/persistence 分支并行。 | 不实现 parser 前不要承诺最终 JSON facade。 |
 | product key / dependency hash 数据模型 | 可独立验证 hash/key 变化规则。 | 不接真实 importer，不读写 generated product。 |
 
 等待后再做：
 
 | 工作 | 等待项 |
 | --- | --- |
-| `.ameta` read/write | 等 `packages/serialization` 分支完成 migration/text archive 细节。 |
+| `.ameta` read/write | 等 `packages/archive` / `packages/persistence` 分支完成 migration/text archive 细节。 |
 | `packages/asset-pipeline` / `tools/asset-processor` | 等 `asset-core` metadata、product key、dependency、catalog 和 `.ameta` IO 边界稳定。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |

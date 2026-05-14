@@ -11,7 +11,7 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 
 - 同一套 scene/world 数据模型服务 editor 和 runtime。
 - Entity handle 稳定且能检测悬挂引用。
-- Component 数据可反射、可序列化、可被 editor transaction 修改。
+- Component 数据可由 schema 描述、可通过 persistence 保存、可被 editor transaction 修改。
 - Renderer 不捕获 `World*`、`Entity*` 或 mutable component pointer。
 - 脚本通过受控 API 修改 world，不在 render recording 阶段改 scene。
 - Scene View、Game View 和 Preview View 可以同帧共存，各自拥有 RenderView 和 graph。
@@ -59,8 +59,8 @@ packages/editor-core
 ```mermaid
 flowchart TD
     Core["engine/core"]
-    Reflection["packages/reflection"]
-    Serialization["packages/serialization"]
+    Reflection["packages/schema<br/>target; reflection spike legacy"]
+    Serialization["packages/persistence<br/>target; serialization spike legacy"]
     Scene["packages/scene-core"]
     Editor["packages/editor-core"]
     Script["packages/scripting"]
@@ -176,7 +176,7 @@ public:
 - `EntityId` 使用 index + generation。删除 entity 时 generation 增加，旧 id 自动失效。
 - `EntityId{0,0}` 可保留为 invalid，但需要统一 helper。
 - 第一版 component storage 可以是 type-erased sparse array，不急着做 archetype chunk。
-- Component 类型必须注册 reflection，便于 serialization、Inspector 和 script binding。
+- Component 类型必须有 schema 和 C++ binding，便于 persistence、Inspector 和 script binding。
 - Hierarchy 关系不能只存在于 editor UI；它是 scene 数据。
 - Transform dirty propagation 必须定义：parent 改变时 child world transform 失效。
 - 名称不是唯一 ID，不能作为引用基础。
@@ -429,18 +429,18 @@ stateDiagram-v2
 - EntityId 在 Edit World 和 Play World 之间不能直接通用，需要 stable id remap。
 - AssetGuid 可以跨 world 通用。
 - Editor selection 仍指向 Edit World；Game View debug selection 需要单独映射。
-- Play enter 前可要求保存或先序列化到临时 scene buffer。
+- Play enter 前可要求保存或先通过 persistence 写入临时 scene buffer。
 
-## 序列化
+## 持久化
 
-Scene serialization 依赖 `reflection` 和 `serialization`：
+Scene save/load 依赖 schema 和 persistence：
 
 ```mermaid
 flowchart TD
     World["World"]
     StableIds["Scene stable id table"]
-    Serialize["Serialize components"]
-    File[".vkscene text file"]
+    Serialize["Persist components"]
+    File[".ascene text file"]
     Load["Load / migrate"]
     Remap["Runtime EntityId remap"]
     NewWorld["World"]
@@ -451,7 +451,7 @@ flowchart TD
 规则：
 
 - 文件保存 stable scene id，不保存 runtime index/generation。
-- Component 数据通过 Serialize Context 保存。
+- Component 数据通过 schema/persistence 保存。
 - Editor-only component 或字段必须标记，cook 时剥离。
 - Unknown component 可作为 opaque payload 保留或明确失败；第一版建议失败并带诊断。
 - Parent-child 关系保存 stable id。
@@ -541,4 +541,4 @@ Scene error:
 - Network replication。
 - Live link / remote scene edit。
 
-这些能力都依赖稳定的 EntityId、component reflection、transaction、serialization 和 snapshot 小闭环。
+这些能力都依赖稳定的 EntityId、component schema/binding、transaction、persistence 和 snapshot 小闭环。
