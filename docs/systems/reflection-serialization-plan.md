@@ -683,7 +683,9 @@ flowchart TD
 - C# source generator 描述 managed script types。
 - 中间使用稳定 metadata schema 对齐，例如 type name、field name、field flags、lifecycle methods。
 - C++ 不扫描所有 C# method 来猜行为；C# assembly 或 generator 输出明确表。
-- C# 的 `[AshariaSerialize]`、`[AshariaEditorVisible]`、`[AshariaRuntimeOnly]` 等 attribute 只影响 managed script metadata，不改变 native C++ TypeRegistry。
+- C# attribute 放在 `Asharia` 或 `Asharia.*` namespace 下即可，类型名不加品牌前缀，例如
+  `[Serialize]`、`[EditorVisible]`、`[RuntimeOnly]`；这些 attribute 只影响 managed script metadata，
+  不改变 native C++ TypeRegistry。
 - C# runtime 启动用 `hostfxr`，独立放在 `packages/scripting-dotnet`。
 
 按 2026-05-10 的资料，若今天锁定生产基线，建议：
