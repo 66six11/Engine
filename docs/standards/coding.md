@@ -16,6 +16,8 @@
 - 函数和变量：`camelCase`。
 - 常量：`kPascalCase`。
 - 私有成员：后缀下划线，例如 `device_`。
+- 品牌名只用于 namespace、CMake/package/schema 边界；类型、函数、变量、字段和 attribute
+  不加 `Asharia` 前缀。
 - Vulkan wrapper 类型需要体现所有权，例如 `Device`、`Swapchain`、`ImageResource`、
   `CommandPool`。
 

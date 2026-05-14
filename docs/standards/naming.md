@@ -6,6 +6,10 @@
 用户可见品牌使用 `Asharia Engine` / `灰咏引擎`，C++ namespace、CMake target、include path
 和 package manifest 使用小写实现名前缀 `asharia`，持久化数据继续使用稳定前缀 `com.asharia`。
 
+品牌名前缀只用于边界和命名空间，不用于普通类型名、函数名、字段名或 attribute 名。类型应表达
+领域语义和所有权，例如 `RenderGraph`、`VulkanContext`、`AssetGuid`、`SceneView`、`Serialize`，
+而不是 `AshariaRenderGraph`、`AshariaVulkanContext`、`AshariaAssetGuid` 或 `AshariaSerialize`。
+
 ## 品牌命名
 
 | 项 | 名称 |
@@ -93,6 +97,31 @@ asharia::serialization
 - public include path 使用 `include/asharia/...`。
 - package manifest 文件名使用 `asharia.package.json`。
 - CMake options、cache variables 和 compile definitions 使用 `ASHARIA_*`。
+- C++ 类型、函数、变量、字段、枚举值和 attribute 不使用 `Asharia` 品牌前缀。
+- 只有需要说明后端、平台或所有权时才在类型名中使用限定词，例如 `VulkanBuffer`、
+  `GlfwWindow`、`RenderGraphPass`、`AssetHandle`；限定词必须描述技术边界，而不是重复品牌。
+- 如果未来需要 C# / 脚本 attribute，放在 `Asharia` 或 `Asharia.*` namespace 下即可，attribute
+  类型本身使用正常名称，例如 `[Serialize]`、`[EditorVisible]`、`[RuntimeOnly]`。
+
+示例：
+
+```cpp
+namespace asharia {
+
+class RenderGraph;
+class VulkanContext;
+struct AssetGuid;
+
+} // namespace asharia
+```
+
+```csharp
+namespace Asharia.Scripting;
+
+[Serialize]
+[EditorVisible]
+public float Speed { get; set; }
+```
 
 当前规则是：
 
