@@ -11,9 +11,9 @@ MVP 的实现清单，而是避免后续 asset、material、editor、scene 和 s
 | 引擎 | 已核对事实 | 对 Asharia Engine 的约束 |
 | --- | --- | --- |
 | Godot | Godot 官方架构把系统分为 Scene layer、Server layer、Drivers/Platform、Core 和 Main；Server 层承载 rendering、audio、physics 等子系统。Godot 4 渲染器建立在 OpenGL 和 RenderingDevice 之上，RenderingDevice 是 Vulkan/D3D12/Metal 抽象。SceneTree 不是线程安全的，Server API 更适合跨线程使用。 | 保持 `rhi_vulkan`、`rendergraph`、renderer package 和 host app 分层；scene/editor 对象默认主线程拥有，跨线程只传数据包或 server-style command。 |
-| Unreal | UObject 反射支撑属性、序列化、自动引用更新和 GC；渲染采用 GameThread、RenderThread、RHIThread 分层，并用 RDG 描述 pass/resource 生命周期和屏障；Module 和 Plugin 是扩展边界。 | 不照搬完整 UObject，但需要最小反射/序列化元数据；渲染线程以后消费 render snapshot，不直接读 gameplay/editor object。 |
+| Unreal | UObject 反射支撑属性、序列化、自动引用更新和 GC；渲染采用 GameThread、RenderThread、RHIThread 分层，并用 RDG 描述 pass/resource 生命周期和屏障；Module 和 Plugin 是扩展边界。 | 不照搬完整 UObject，但需要最小 schema/binding/persistence 元数据；渲染线程以后消费 render snapshot，不直接读 gameplay/editor object。 |
 | Unity | SRP 是通过 C# 调度和配置渲染命令的薄 API，底层图形架构再提交到图形 API；Job System 使用 worker threads、work stealing 和 safety system；AssetDatabase 是 editor 侧资产访问接口，Unity 序列化影响 inspector、scene 和性能。 | 脚本/工具只能在 record/build 阶段生成显式声明；并行任务处理 blittable/plain data；资产和序列化规则必须可审查。 |
-| O3DE | Atom RPI 是平台无关渲染接口，建在 RHI 之上；Pass System 支持 C++、JSON 或混合 authoring；Asset Processor 后台处理 source asset、生成 product asset、维护依赖和热重载通知；Behavior Context 把 C++ 暴露给 Script Canvas/Lua。 | 先用 C++ typed pass 稳定语义，再考虑数据驱动 pass；asset import 应是独立 product cache 流程；脚本绑定依赖反射而不是直接暴露 backend。 |
+| O3DE | Atom RPI 是平台无关渲染接口，建在 RHI 之上；Pass System 支持 C++、JSON 或混合 authoring；Asset Processor 后台处理 source asset、生成 product asset、维护依赖和热重载通知；Behavior Context 把 C++ 暴露给 Script Canvas/Lua。 | 先用 C++ typed pass 稳定语义，再考虑数据驱动 pass；asset import 应是独立 product cache 流程；脚本绑定依赖 schema/script context 而不是直接暴露 backend。 |
 | Bevy | Bevy 所有 app logic 使用 ECS；系统默认在可行时并行，必要顺序显式声明；所有引擎功能都是 plugin，DefaultPlugins 只是常用组合；RenderGraph 是 nodes/edges/slots 结构，由 graph runner 每帧按依赖执行。 | runtime 热路径优先 data-oriented；package/plugin 应是能力组合，不是 editor 强依赖 runtime；graph 执行依赖显式边，而不是隐式全局状态。 |
 | Vulkan | Vulkan host threading 由应用负责外部同步；同一个 command pool 不得多线程同时访问，descriptor pool 分配/释放也不能多线程同时操作；Khronos sample 使用 per-frame/per-thread command pool、descriptor pool/cache 和 buffer pool。 | 多线程录制的第一版必须是 per-frame/per-thread 资源；queue submit/present 先保持单 owner。 |
 
@@ -21,7 +21,7 @@ MVP 的实现清单，而是避免后续 asset、material、editor、scene 和 s
 
 | 系统 | 必须提前决定的边界 | 当前建议 | 暂不做 |
 | --- | --- | --- | --- |
-| 反射与序列化 | 类型 ID、字段元数据、版本、编辑器可见性、运行时可见性、迁移规则。 | 先支持 POD/resource/component 配置；反射用于 inspector、asset metadata、script binding 和 scene serialization。 | 不做全局 UObject/GC 宇宙，不强迫所有 C++ 对象反射化。 |
+| Schema 与持久化 | 稳定 type/field id、typed metadata、C++ binding、archive value、版本和迁移规则。 | 先支持 POD/resource/component 配置；schema/persistence 用于 inspector、asset metadata、script binding 和 scene save/load。 | 不做全局 UObject/GC 宇宙，不强迫所有 C++ 对象反射化。 |
 | Asset pipeline | source asset、import settings、product asset、cache、依赖图、GUID、热重载。 | 建议新增 `asset-core` 时使用 `AssetGuid`、`AssetHandle<T>`、importer、product hash 和 dependency graph。 | 不让 runtime 直接依赖源文件路径；不在当前 renderer MVP 引入完整 AssetDatabase。 |
 | Scene/World/Entity | 场景文件存储、运行时对象拥有者、transform hierarchy、component 数据布局、prefab/instance override。 | editor 可用对象树，runtime hot path 用 data-oriented arrays；渲染只消费 frame snapshot。 | 不让 renderer callback 捕获可变 scene object；不提前定完整 ECS。 |
 | Resource lifetime | CPU handle、GPU allocation、upload、retirement、hot reload、fallback resource。 | 用 generation handle、async load state、deferred destruction queue 和 frame retirement；GPU resource 创建/销毁只走 RHI owner。 | 不在析构函数里假设 GPU 已经不用；不散落 `vkDestroy*` 到 renderer feature。 |
@@ -51,7 +51,10 @@ packages/
   shader-slang         shader build/reflection/SPIR-V validation
   profiling            CPU/GPU/profile data model
   asset-core           future GUID/import/product/cache handles
-  reflection           future type/field/version metadata
+  schema               future type/field/version metadata
+  archive              future ArchiveValue / JSON IO facade
+  cpp-binding          future C++ object binding
+  persistence          future save/load/migration
   scene-core           future world/entity/component/prefab model
   input                future device/action/context snapshots
   editor-core          future editor services and transactions
@@ -67,7 +70,7 @@ tools/
 
 1. 当前阶段：继续完成 RenderGraph diagnostics、deferred destruction、descriptor/transient/pipeline cache。
 2. P4 之前：补 `docs/architecture/resource-lifetime.md`，把 GPU retirement、upload、fallback 和 hot reload invalidation 写清楚。
-3. Mesh/material 前：[docs/systems/asset-architecture.md](../systems/asset-architecture.md) 已记录 `asset-core` 的 GUID、import settings、product hash、cache 和 dependency 边界；`docs/systems/reflection-serialization.md` 已记录 field metadata、context、version converter 和 Inspector/script binding 边界。
+3. Mesh/material 前：[docs/systems/asset-architecture.md](../systems/asset-architecture.md) 已记录 `asset-core` 的 GUID、import settings、product hash、cache 和 dependency 边界；`docs/systems/reflection-serialization.md` 已记录 schema、archive、C++ binding、persistence、metadata projection 和 Inspector/script binding 边界。
 4. Editor 前：`docs/systems/scene-world.md` 已记录 scene/world、selection、transaction、render snapshot 和 Play Mode 边界，后续 editor UI 必须消费这些服务而不是直接修改 runtime package。
 5. Script 前：`docs/systems/scripting.md` 已记录 ScriptHost、binding registry、execution context、权限和诊断边界；脚本只作为 scene/editor/asset/RenderGraph record API 的前端，不进入 command recording 阶段。
 

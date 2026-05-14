@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-05-08
+最近核对日期：2026-05-14
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -52,16 +52,25 @@
 - 资产管线、反射序列化、scene/world、resource lifetime、input、event/command、editor transaction、
   material/pipeline 和 diagnostics 是完整引擎不可缺少的架构前置项，但不应全部进入当前 MVP 实现。
 
-## Reflection / Serialization / C# metadata
+## Schema / Persistence / C# metadata
 
 一手资料：
 
 - Unity serialization rules：https://docs.unity3d.com/Manual/script-serialization-rules.html
 - Unity Asset Database：https://docs.unity3d.com/Manual/AssetDatabase.html
 - O3DE reflection contexts：https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/
+- O3DE Behavior Context：https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/behavior-context/
+- Serde overview：https://serde.rs/
+- Serde data model：https://serde.rs/data-model.html
 - Unreal property system reflection：https://www.unrealengine.com/blog/unreal-property-system-reflection
+- Unreal FArchiveUObject：https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/CoreUObject/Serialization/FArchiveUObject
+- Unreal Core Redirects：https://dev.epicgames.com/documentation/en-us/unreal-engine/core-redirects?application_version=4.27
 - Unreal Object Handling：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine
 - Godot Object class：https://docs.godotengine.org/en/stable/engine_details/architecture/object_class.html
+- Protocol Buffers overview：https://protobuf.dev/overview/
+- Protocol Buffers C++ generated code：https://protobuf.dev/reference/cpp/cpp-generated/
+- FlatBuffers schema：https://flatbuffers.dev/schema/
+- FlatBuffers evolution：https://flatbuffers.dev/evolution/
 - WG21 P2996R13 Reflection for C++26：https://www.open-std.org/jtc1/SC22/wg21/docs/papers/2025/p2996r13.html
 - .NET native hosting：https://learn.microsoft.com/en-us/dotnet/core/tutorials/netcore-hosting
 - C# language versioning：https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-versioning
@@ -69,11 +78,13 @@
 
 结论：
 
-- Asharia Engine 第一版反射/序列化应采用 opt-in 类型注册，不自动扫描所有 C++ 类型。
-- Serialize/Edit/Script context 必须分开，不能用 public/private 或单个字段 flags 粗暴决定所有行为。
+- Asharia Engine 第一版 schema/persistence 应采用 opt-in schema 和 C++ binding，不自动扫描所有 C++ 类型。
+- Schema、C++ binding、archive 和 persistence 必须分开；ArchiveValue/JSON IO 不应理解 C++ 对象或 editor/script metadata。
+- Serialize/Edit/Script context 必须分开，不能用 public/private、当前 C++ 名字或单个字段 flags 粗暴决定所有行为。
+- 持久化 identity 不能只靠 hash 或当前 C++ 名称；field id、aliases、redirects 和 migration 需要成为 schema 契约。
 - 运行时引用不能直接保存 pointer 或 GPU handle；`EntityId`、`AssetGuid`、`AssetHandle<T>` 需要专门 serializer 和诊断。
 - 当前项目使用 C++23，不能依赖 C++26 静态反射；第一版应使用手写注册表，未来可替换为 generated table。
-- 后续 C# 接入应作为 scripting package，使用 .NET hosting 和 Roslyn/source generator 生成 managed metadata，不进入 `reflection` / `serialization` 底座。
+- 后续 C# 接入应作为 scripting package，使用 .NET hosting 和 Roslyn/source generator 生成 managed metadata，不进入 schema/archive/persistence 底座。
 
 ## Asset pipeline / asset-core baseline
 

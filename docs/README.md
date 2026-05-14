@@ -10,7 +10,7 @@
 | `standards/` | 编码、命名、文本编码等稳定规则 | [coding.md](standards/coding.md)、[encoding.md](standards/encoding.md)、[naming.md](standards/naming.md) |
 | `architecture/` | 当前架构、真实流程、package 边界和线程边界 | [overview.md](architecture/overview.md)、[flow.md](architecture/flow.md)、[package-first.md](architecture/package-first.md)、[engine-systems.md](architecture/engine-systems.md)、[frame-loop-threading.md](architecture/frame-loop-threading.md) |
 | `rendergraph/` | RenderGraph MVP、RHI 边界和专项路线图 | [mvp.md](rendergraph/mvp.md)、[rhi-boundary.md](rendergraph/rhi-boundary.md)、[roadmap.md](rendergraph/roadmap.md) |
-| `systems/` | 反射、序列化、资产、场景、脚本、性能诊断等系统设计 | [reflection-serialization.md](systems/reflection-serialization.md)、[reflection-serialization-plan.md](systems/reflection-serialization-plan.md)、[asset-architecture.md](systems/asset-architecture.md)、[scene-world.md](systems/scene-world.md)、[scripting.md](systems/scripting.md)、[performance-profiling.md](systems/performance-profiling.md) |
+| `systems/` | schema/持久化、资产、场景、脚本、性能诊断等系统设计 | [reflection-serialization.md](systems/reflection-serialization.md)、[reflection-serialization-plan.md](systems/reflection-serialization-plan.md)、[asset-architecture.md](systems/asset-architecture.md)、[scene-world.md](systems/scene-world.md)、[scripting.md](systems/scripting.md)、[performance-profiling.md](systems/performance-profiling.md) |
 | `planning/` | 项目管理、阶段顺序、Definition of Done | [project-management.md](planning/project-management.md)、[next-development-plan.md](planning/next-development-plan.md) |
 | `research/` | 一手资料索引和技术依据 | [sources.md](research/sources.md) |
 

@@ -3,8 +3,8 @@
 研究日期：2026-05-10
 
 本文定义 Asharia Engine 后续脚本系统的边界。脚本系统不是后期给 C++ 随便绑定几个函数，也不是直接访问
-Vulkan/RHI 的逃生口。它应作为一等系统，通过 reflection、scene public API、asset public API 和
-editor transaction 操作引擎数据。
+Vulkan/RHI 的逃生口。它应作为一等系统，通过 schema/script context、scene public API、
+asset public API 和 editor transaction 操作引擎数据。
 
 ## 设计目标
 
@@ -35,7 +35,7 @@ editor transaction 操作引擎数据。
 | --- | --- | --- |
 | O3DE Behavior Context: https://www.docs.o3de.org/docs/user-guide/programming/components/reflection/behavior-context/ | O3DE 通过 Behavior Context 把 C++ 反射给脚本/工具，而不是让脚本随意碰底层对象。 | Asharia Engine 脚本 binding 应消费 Script Context，和 Serialize/Edit Context 分开。 |
 | Godot GDExtension overview: https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/what_is_gdextension.html | Godot 把扩展 API 作为引擎和脚本/原生扩展之间的边界。 | Asharia Engine 需要稳定 facade API，避免脚本依赖内部 package 实现。 |
-| Unity script serialization: https://docs.unity.cn/Manual/script-Serialization.html | Unity 脚本字段序列化、Inspector 和热重载状态强相关。 | Asharia Engine 脚本组件状态如果要保存，必须进入 reflection/serialization 规则，不能藏在 VM 私有对象里。 |
+| Unity script serialization: https://docs.unity.cn/Manual/script-Serialization.html | Unity 脚本字段序列化、Inspector 和热重载状态强相关。 | Asharia Engine 脚本组件状态如果要保存，必须进入 schema/persistence 规则，不能藏在 VM 私有对象里。 |
 | Unreal modules/plugins: https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules | Unreal 用模块和插件组织运行时/editor 扩展。 | Asharia Engine 脚本 API 应明确 editor-only、runtime、tool/import 上下文，避免 runtime 链接 editor。 |
 | Unity URP RenderGraph pass authoring: https://docs.unity.cn/6000.0/Documentation/Manual/urp/render-graph-write-render-pass.html | 高层语言可以在 record 阶段创建 pass 并声明资源，但执行阶段由受控 command context 运行。 | Asharia Engine 脚本未来只能生成 RenderGraph 声明和命令摘要，不进入 command buffer recording。 |
 | Vulkan threading guide: https://docs.vulkan.org/guide/latest/threading.html | Vulkan object 外部同步由应用负责，命令池和 descriptor pool 不能随意跨线程共享。 | 脚本不能直接创建、销毁或录制 Vulkan 对象；RHI 资源生命周期由 backend owner 管理。 |
@@ -55,8 +55,8 @@ packages/scripting
 ```mermaid
 flowchart TD
     Core["engine/core"]
-    Reflection["packages/reflection"]
-    Serialization["packages/serialization"]
+    Reflection["packages/schema<br/>target; reflection spike legacy"]
+    Serialization["packages/persistence<br/>target; serialization spike legacy"]
     Scene["packages/scene-core"]
     Asset["packages/asset-core"]
     Editor["packages/editor-core"]
@@ -154,7 +154,7 @@ struct ScriptExecutionContext {
 | 语言 | 优点 | 风险 | 建议 |
 | --- | --- | --- | --- |
 | Lua | 集成轻，启动快，适合工具脚本、玩法原型、import rule | 静态类型和 IDE 体验弱，长期大型 gameplay 维护成本高 | 适合第一版验证 ScriptHost 和 binding |
-| C#/.NET | 类型系统、IDE、生态和大型 gameplay 体验好 | 集成、热重载、调试、GC 和部署复杂 | 适合中长期，不宜在 reflection/scene 未稳时先上 |
+| C#/.NET | 类型系统、IDE、生态和大型 gameplay 体验好 | 集成、热重载、调试、GC 和部署复杂 | 适合中长期，不宜在 schema/scene 未稳时先上 |
 | Python | 工具生态强，适合离线 pipeline | runtime 部署和性能不适合 gameplay 主路径 | 可用于 tool/asset processor，不建议作为 runtime gameplay 第一语言 |
 | 自研 DSL | 可控 | 成本极高，生态为零 | 暂缓 |
 
@@ -364,7 +364,7 @@ ScriptComponent
 技术点：
 
 - 脚本私有运行时状态默认不保存。
-- 明确暴露的脚本字段通过 reflection/serialization 保存。
+- 明确暴露的脚本字段通过 schema/persistence 保存。
 - Hot reload 时，持久字段从 World/serialized state 恢复，不依赖 VM 私有对象。
 - 脚本 asset 改变时，需要重建 binding 或 instance state。
 
@@ -504,4 +504,4 @@ flowchart LR
 - 多线程脚本调度。
 - 脚本驱动 RenderGraph unsafe/native pass。
 
-这些能力应等 reflection、scene/world、editor transaction 和最小 ScriptHost ABI 稳定后再进入。
+这些能力应等 schema、scene/world、editor transaction 和最小 ScriptHost ABI 稳定后再进入。

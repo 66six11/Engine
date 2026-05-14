@@ -23,7 +23,8 @@
 - `vulkan-loader` 或系统 Vulkan SDK loader：运行时 Vulkan dispatch。
 - `vulkan-memory-allocator`：GPU 内存分配。
 - `glm`：可选数学库。第一阶段可以使用，后续也可以替换为项目自研 math 层。
-- `nlohmann_json`：`packages/serialization` 私有使用的严格 JSON 读写实现，public API 仍然暴露
+- `nlohmann_json`：严格 JSON 读写实现，必须隐藏在 archive facade 后。当前 spike 位于
+  `packages/serialization`，schema-first 重置后的目标归属是 `packages/archive`；public API 只暴露
   `ArchiveValue`，不向其他 package 泄漏第三方 JSON 类型。
 
 Vulkan loader/binding 策略：
@@ -62,6 +63,8 @@ Vulkan loader/binding 策略：
   被 app/editor 引入。
 - 后续每个 package 增加 `Asharia.package.json` manifest，记录名称、版本、依赖、CMake target。
 - editor 是 host，不是 engine 核心的一部分；runtime app 不链接 editor packages。
+- 反射/序列化重置采用 schema-first 底层边界：`schema`、`archive`、`cpp-binding`、`persistence`。
+  当前 `reflection` / `serialization` package 是 spike/过渡实现，不继续承载 editor、script、asset 或 migration 语义。
 
 ## Conan 策略
 

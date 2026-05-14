@@ -79,16 +79,24 @@ using Result = std::expected<T, Error>;
 }
 ```
 
-Reflection/Serialization 等 package 使用同一套实现名前缀：
+Schema-first 底层 package 使用同一套实现名前缀：
 
 ```text
-packages/reflection
-packages/serialization
-asharia-reflection
-asharia-serialization
-asharia::reflection
-asharia::serialization
+packages/schema
+packages/archive
+packages/cpp-binding
+packages/persistence
+asharia-schema
+asharia-archive
+asharia-cpp-binding
+asharia-persistence
+asharia::schema
+asharia::archive
+asharia::cpp_binding
+asharia::persistence
 ```
+
+当前 `packages/reflection` / `packages/serialization` 属于 spike/过渡命名，后续不作为长期 schema 命名范例。
 
 规则：
 
@@ -136,7 +144,7 @@ User-facing brand: Asharia Engine / 灰咏引擎
 本次 rename 已覆盖：
 
 - C++ namespace：`asharia`。
-- CMake target：`asharia-reflection`、`asharia-rendergraph` 等；alias：`asharia::reflection`、`asharia::rendergraph` 等。
+- CMake target：`asharia-rendergraph`、`asharia-rhi-vulkan` 等；alias：`asharia::rendergraph`、`asharia::rhi_vulkan` 等。
 - include path：`include/asharia/...`。
 - package manifest：`asharia.package.json` 和 `com.asharia.*` package names。
 - 文档、README、构建选项、smoke 命令和资源文件同步。
