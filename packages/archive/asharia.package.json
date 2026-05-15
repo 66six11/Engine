@@ -1,0 +1,13 @@
+{
+  "name": "com.asharia.archive",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Archive",
+  "description": "Schema-free archive value tree and strict JSON facade.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-archive"],
+  "testTargets": ["asharia-archive-smoke-tests"],
+  "targetDependencies": {
+    "asharia-archive": ["asharia-core"],
+    "asharia-archive-smoke-tests": ["asharia-archive"]
+  }
+}

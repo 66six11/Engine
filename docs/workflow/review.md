@@ -60,7 +60,7 @@ $smokes = @(
     "--smoke-deferred-deletion",
     "--smoke-reflection-registry",
     "--smoke-reflection-transform",
-    "--smoke-reflection-contexts",
+    "--smoke-reflection-attributes",
     "--smoke-serialization-roundtrip",
     "--smoke-serialization-json-archive",
     "--smoke-serialization-migration"

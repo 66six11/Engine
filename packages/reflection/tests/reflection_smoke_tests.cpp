@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <expected>
 #include <initializer_list>
 #include <iostream>
 #include <optional>
@@ -22,6 +23,10 @@ namespace {
         "com.asharia.smoke.PropertyComponent";
     constexpr std::string_view kSmokeDeferredOwnerTypeName = "com.asharia.smoke.DeferredOwner";
     constexpr std::string_view kSmokeDeferredValueTypeName = "com.asharia.smoke.DeferredValue";
+    constexpr std::string_view kStoragePersistentAttribute = "asharia.storage.persistent";
+    constexpr std::string_view kEditorVisibleAttribute = "asharia.editor.visible";
+    constexpr std::string_view kRuntimeVisibleAttribute = "asharia.runtime.visible";
+    constexpr std::string_view kScriptVisibleAttribute = "asharia.script.visible";
 
     struct ReflectionSmokeVec3 {
         float x{};
@@ -104,6 +109,36 @@ namespace {
                                    });
     }
 
+    [[nodiscard]] asharia::reflection::AttributeSet storedEditableScriptAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kStoragePersistentAttribute, true),
+            asharia::reflection::attributes::boolean(kEditorVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kScriptVisibleAttribute, true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet editorOnlyPersistentAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kStoragePersistentAttribute, true),
+            asharia::reflection::attributes::boolean(kEditorVisibleAttribute, true),
+            asharia::reflection::attributes::boolean("asharia.editor.only", true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet runtimeVisibleAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet scriptVisibleAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kScriptVisibleAttribute, true),
+        };
+    }
+
     asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
         using namespace asharia::reflection;
 
@@ -112,48 +147,56 @@ namespace {
             return builtins;
         }
 
-        const FieldFlagSet savedEditable = field_flags::serializableEditorRuntimeScript();
         const TypeId vec3Type = makeTypeId(kSmokeVec3TypeName);
         const TypeId quatType = makeTypeId(kSmokeQuatTypeName);
 
-        auto vec3Registered = TypeBuilder<ReflectionSmokeVec3>(registry, kSmokeVec3TypeName)
-                                  .kind(TypeKind::Struct)
-                                  .field("x", &ReflectionSmokeVec3::x, savedEditable)
-                                  .field("y", &ReflectionSmokeVec3::y, savedEditable)
-                                  .field("z", &ReflectionSmokeVec3::z, savedEditable)
-                                  .commit();
+        auto vec3Registered =
+            TypeBuilder<ReflectionSmokeVec3>(registry, kSmokeVec3TypeName)
+                .kind(TypeKind::Struct)
+                .field("x", &ReflectionSmokeVec3::x, storedEditableScriptAttributes())
+                .field("y", &ReflectionSmokeVec3::y, storedEditableScriptAttributes())
+                .field("z", &ReflectionSmokeVec3::z, storedEditableScriptAttributes())
+                .commit();
         if (!vec3Registered) {
             return vec3Registered;
         }
 
-        auto quatRegistered = TypeBuilder<ReflectionSmokeQuat>(registry, kSmokeQuatTypeName)
-                                  .kind(TypeKind::Struct)
-                                  .field("x", &ReflectionSmokeQuat::x, savedEditable)
-                                  .field("y", &ReflectionSmokeQuat::y, savedEditable)
-                                  .field("z", &ReflectionSmokeQuat::z, savedEditable)
-                                  .field("w", &ReflectionSmokeQuat::w, savedEditable)
-                                  .commit();
+        auto quatRegistered =
+            TypeBuilder<ReflectionSmokeQuat>(registry, kSmokeQuatTypeName)
+                .kind(TypeKind::Struct)
+                .field("x", &ReflectionSmokeQuat::x, storedEditableScriptAttributes())
+                .field("y", &ReflectionSmokeQuat::y, storedEditableScriptAttributes())
+                .field("z", &ReflectionSmokeQuat::z, storedEditableScriptAttributes())
+                .field("w", &ReflectionSmokeQuat::w, storedEditableScriptAttributes())
+                .commit();
         if (!quatRegistered) {
             return quatRegistered;
         }
 
-        const FieldFlagSet editorOnly =
-            FieldFlag::Serializable | FieldFlag::EditorVisible | FieldFlag::EditorOnly;
-        const FieldFlagSet runtimeReadOnly =
-            FieldFlag::EditorVisible | FieldFlag::RuntimeVisible | FieldFlag::ReadOnly;
-        const FieldFlagSet scriptReadOnly =
-            FieldFlag::RuntimeVisible | FieldFlag::ScriptVisible | FieldFlag::ReadOnly;
-
         auto transformRegistered =
             TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
                 .kind(TypeKind::Component)
-                .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
-                .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
-                .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
-                .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
-                .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude,
-                       runtimeReadOnly)
-                .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+                .field("position", &ReflectionSmokeTransform::position, vec3Type,
+                       storedEditableScriptAttributes())
+                .field("rotation", &ReflectionSmokeTransform::rotation, quatType,
+                       storedEditableScriptAttributes())
+                .field("scale", &ReflectionSmokeTransform::scale, vec3Type,
+                       storedEditableScriptAttributes())
+                .defaultValue(ReflectionSmokeVec3{.x = 1.0F, .y = 1.0F, .z = 1.0F})
+                .validator<ReflectionSmokeVec3>(
+                    [](const ReflectionSmokeVec3& scale) -> asharia::VoidResult {
+                        if (scale.x <= 0.0F || scale.y <= 0.0F || scale.z <= 0.0F) {
+                            return std::unexpected{
+                                asharia::reflection::reflectionError("Scale must be positive.")};
+                        }
+                        return asharia::VoidResult{};
+                    })
+                .field("debugName", &ReflectionSmokeTransform::debugName,
+                       editorOnlyPersistentAttributes())
+                .readonlyField("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude,
+                               runtimeVisibleAttributes())
+                .readonlyField("scriptCounter", &ReflectionSmokeTransform::scriptCounter,
+                               scriptVisibleAttributes())
                 .commit();
         if (!transformRegistered) {
             return transformRegistered;
@@ -170,13 +213,13 @@ namespace {
                 [](ReflectionSmokePropertyComponent& component, const float& exposure) {
                     return component.setExposure(exposure);
                 },
-                savedEditable)
+                storedEditableScriptAttributes())
             .readonlyProperty<std::int32_t>(
                 "derivedCounter",
                 [](const ReflectionSmokePropertyComponent& component) {
                     return component.derivedCounter();
                 },
-                FieldFlag::EditorVisible | FieldFlag::RuntimeVisible)
+                runtimeVisibleAttributes())
             .commit();
     }
 
@@ -207,13 +250,13 @@ namespace {
             return false;
         }
 
-        const FieldFlagSet saved = field_flags::serializableEditorRuntime();
         const TypeId deferredValueType = makeTypeId(kSmokeDeferredValueTypeName);
         auto ownerRegistered =
             TypeBuilder<ReflectionSmokeDeferredOwner>(registry, kSmokeDeferredOwnerTypeName)
                 .kind(TypeKind::Struct)
-                .field("deferred", &ReflectionSmokeDeferredOwner::deferred, deferredValueType,
-                       saved)
+                .field(
+                    "deferred", &ReflectionSmokeDeferredOwner::deferred, deferredValueType,
+                    {asharia::reflection::attributes::boolean(kStoragePersistentAttribute, true)})
                 .commit();
         if (!ownerRegistered) {
             logFailure(ownerRegistered.error().message);
@@ -236,7 +279,9 @@ namespace {
         auto valueRegistered =
             TypeBuilder<ReflectionSmokeDeferredValue>(registry, kSmokeDeferredValueTypeName)
                 .kind(TypeKind::Struct)
-                .field("value", &ReflectionSmokeDeferredValue::value, saved)
+                .field(
+                    "value", &ReflectionSmokeDeferredValue::value,
+                    {asharia::reflection::attributes::boolean(kStoragePersistentAttribute, true)})
                 .commit();
         if (!valueRegistered) {
             logFailure(valueRegistered.error().message);
@@ -274,6 +319,7 @@ namespace {
             .name = std::string{kSmokeTransformTypeName},
             .version = 1,
             .kind = asharia::reflection::TypeKind::Component,
+            .attributes = {},
             .fields = {},
         };
         auto duplicateRegistered = registry.registerType(std::move(duplicate));
@@ -299,6 +345,7 @@ namespace {
             .name = "com.asharia.smoke.LateType",
             .version = 1,
             .kind = asharia::reflection::TypeKind::Struct,
+            .attributes = {},
             .fields = {},
         };
         auto lateRegistered = registry.registerType(std::move(lateType));
@@ -331,13 +378,26 @@ namespace {
         }
 
         const asharia::reflection::FieldInfo* positionField = findField(*transformType, "position");
+        const asharia::reflection::FieldInfo* scaleField = findField(*transformType, "scale");
         const asharia::reflection::FieldInfo* cachedField =
             findField(*transformType, "cachedMagnitude");
-        if (positionField == nullptr || cachedField == nullptr ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::Serializable) ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::EditorVisible) ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::RuntimeVisible) ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::ScriptVisible) ||
+        if (positionField == nullptr || scaleField == nullptr || cachedField == nullptr ||
+            !asharia::reflection::hasBoolAttribute(positionField->attributes,
+                                                   kStoragePersistentAttribute) ||
+            !asharia::reflection::hasBoolAttribute(positionField->attributes,
+                                                   kEditorVisibleAttribute) ||
+            !asharia::reflection::hasBoolAttribute(positionField->attributes,
+                                                   kRuntimeVisibleAttribute) ||
+            !asharia::reflection::hasBoolAttribute(positionField->attributes,
+                                                   kScriptVisibleAttribute) ||
+            !asharia::reflection::hasFieldCapability(
+                *positionField, asharia::reflection::FieldCapability::ReadAddress) ||
+            !asharia::reflection::hasFieldCapability(
+                *positionField, asharia::reflection::FieldCapability::WriteAddress) ||
+            !asharia::reflection::hasFieldCapability(
+                *scaleField, asharia::reflection::FieldCapability::DefaultValue) ||
+            !asharia::reflection::hasFieldCapability(
+                *scaleField, asharia::reflection::FieldCapability::ValidateValue) ||
             cachedField->accessor.writeAddress) {
             logFailure("Reflection transform smoke saw unexpected field metadata.");
             return false;
@@ -390,7 +450,6 @@ namespace {
         if (exposureField == nullptr || derivedField == nullptr ||
             exposureField->accessor.readAddress || exposureField->accessor.writeAddress ||
             !exposureField->accessor.readValue || !exposureField->accessor.writeValue ||
-            !derivedField->flags.has(asharia::reflection::FieldFlag::ReadOnly) ||
             derivedField->accessor.writeValue || derivedField->accessor.writeAddress ||
             !derivedField->accessor.readValue) {
             logFailure("Reflection property smoke saw unexpected accessor metadata.");
@@ -423,7 +482,7 @@ namespace {
         return true;
     }
 
-    bool smokeContexts() {
+    bool smokeAttributes() {
         auto registry = makeReflectionSmokeRegistry();
         if (!registry) {
             return false;
@@ -432,30 +491,30 @@ namespace {
         const asharia::reflection::TypeInfo* transformType =
             registry->findType(kSmokeTransformTypeName);
         if (transformType == nullptr) {
-            logFailure("Reflection context smoke could not find transform type.");
+            logFailure("Reflection attribute smoke could not find transform type.");
             return false;
         }
 
-        const asharia::reflection::ContextFieldView serializeView =
-            asharia::reflection::makeSerializeContextView(*transformType);
-        const asharia::reflection::ContextFieldView editView =
-            asharia::reflection::makeEditContextView(*transformType);
+        const asharia::reflection::ContextFieldView storageView =
+            asharia::reflection::makeAttributeContextView(*transformType,
+                                                          kStoragePersistentAttribute);
+        const asharia::reflection::ContextFieldView runtimeView =
+            asharia::reflection::makeAttributeContextView(*transformType, kRuntimeVisibleAttribute);
         const asharia::reflection::ContextFieldView scriptView =
-            asharia::reflection::makeScriptContextView(*transformType);
+            asharia::reflection::makeAttributeContextView(*transformType, kScriptVisibleAttribute);
 
-        if (!hasContextField(serializeView, "debugName") ||
-            hasContextField(serializeView, "cachedMagnitude") ||
-            !hasContextField(editView, "cachedMagnitude") ||
-            hasContextField(editView, "scriptCounter") ||
+        if (!hasContextField(storageView, "debugName") ||
+            hasContextField(storageView, "cachedMagnitude") ||
+            !hasContextField(runtimeView, "cachedMagnitude") ||
             !hasContextField(scriptView, "scriptCounter") ||
             hasContextField(scriptView, "debugName")) {
-            logFailure("Reflection context smoke produced unexpected field projections.");
+            logFailure("Reflection attribute smoke produced unexpected field projections.");
             return false;
         }
 
-        std::cout << "Reflection context fields: serialize=" << serializeView.fields.size()
-                  << ", edit=" << editView.fields.size() << ", script=" << scriptView.fields.size()
-                  << '\n';
+        std::cout << "Reflection attribute fields: storage=" << storageView.fields.size()
+                  << ", runtime=" << runtimeView.fields.size()
+                  << ", script=" << scriptView.fields.size() << '\n';
         return true;
     }
 
@@ -464,7 +523,7 @@ namespace {
 int main() {
     try {
         const bool passed =
-            smokeRegistry() && smokeTransform() && smokePropertyAccessors() && smokeContexts();
+            smokeRegistry() && smokeTransform() && smokePropertyAccessors() && smokeAttributes();
         return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     } catch (const std::exception& exception) {
         std::fputs("Reflection smoke test threw an exception: ", stderr);

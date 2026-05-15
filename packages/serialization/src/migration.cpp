@@ -49,6 +49,20 @@ namespace asharia::serialization {
             return std::to_string(type.value);
         }
 
+        [[nodiscard]] std::string_view migrationScenarioName(MigrationScenario scenario) noexcept {
+            switch (scenario) {
+            case MigrationScenario::Unspecified:
+                return "unspecified";
+            case MigrationScenario::SceneLoad:
+                return "scene load";
+            case MigrationScenario::AssetLoad:
+                return "asset load";
+            case MigrationScenario::EditorRepair:
+                return "editor repair";
+            }
+            return "unknown";
+        }
+
     } // namespace
 
     VoidResult MigrationRegistry::registerMigration(reflection::TypeId type,
@@ -126,10 +140,11 @@ namespace asharia::serialization {
         return {};
     }
 
-    Result<ArchiveValue> MigrationRegistry::migrateObject(reflection::TypeId type,
-                                                          std::uint32_t fromVersion,
-                                                          std::uint32_t toVersion,
-                                                          const ArchiveValue& input) const {
+    Result<ArchiveValue>
+    MigrationRegistry::migrateObject(reflection::TypeId type, std::string_view typeName,
+                                     std::string_view objectPath, std::string_view archivePath,
+                                     MigrationScenario scenario, std::uint32_t fromVersion,
+                                     std::uint32_t toVersion, const ArchiveValue& input) const {
         if (fromVersion == toVersion) {
             return input;
         }
@@ -139,6 +154,10 @@ namespace asharia::serialization {
                     std::to_string(fromVersion) + " to " + std::to_string(toVersion) + ".",
                 {
                     {"operation", "migrate"},
+                    {"objectPath", objectPath},
+                    {"archivePath", archivePath},
+                    {"scenario", migrationScenarioName(scenario)},
+                    {"type", typeName},
                     {"typeId", typeIdLabel(type)},
                     {"fromVersion", std::to_string(fromVersion)},
                     {"toVersion", std::to_string(toVersion)},
@@ -158,6 +177,10 @@ namespace asharia::serialization {
                         std::to_string(currentVersion + 1U) + ".",
                     {
                         {"operation", "migrate"},
+                        {"objectPath", objectPath},
+                        {"archivePath", archivePath},
+                        {"scenario", migrationScenarioName(scenario)},
+                        {"type", typeName},
                         {"typeId", typeIdLabel(type)},
                         {"fromVersion", std::to_string(currentVersion)},
                         {"toVersion", std::to_string(currentVersion + 1U)},
@@ -169,6 +192,10 @@ namespace asharia::serialization {
             ArchiveValue output;
             MigrationContext context{
                 .type = type,
+                .typeName = typeName,
+                .objectPath = objectPath,
+                .archivePath = archivePath,
+                .scenario = scenario,
                 .fromVersion = currentVersion,
                 .toVersion = rule->toVersion,
                 .input = &current,
@@ -182,6 +209,10 @@ namespace asharia::serialization {
                         std::to_string(rule->toVersion) + ": " + migrated.error().message,
                     {
                         {"operation", "migrate"},
+                        {"objectPath", objectPath},
+                        {"archivePath", archivePath},
+                        {"scenario", migrationScenarioName(scenario)},
+                        {"type", typeName},
                         {"typeId", typeIdLabel(type)},
                         {"fromVersion", std::to_string(currentVersion)},
                         {"toVersion", std::to_string(rule->toVersion)},
@@ -195,6 +226,10 @@ namespace asharia::serialization {
                         std::to_string(currentVersion) + " did not produce an object archive.",
                     {
                         {"operation", "migrate"},
+                        {"objectPath", objectPath},
+                        {"archivePath", archivePath},
+                        {"scenario", migrationScenarioName(scenario)},
+                        {"type", typeName},
                         {"typeId", typeIdLabel(type)},
                         {"fromVersion", std::to_string(currentVersion)},
                         {"toVersion", std::to_string(rule->toVersion)},

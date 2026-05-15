@@ -4,6 +4,7 @@
 #include <array>
 #include <expected>
 #include <initializer_list>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,12 +24,24 @@ namespace asharia::reflection {
                    }) > 1;
         }
 
+        [[nodiscard]] bool hasDuplicateAttributeKey(std::span<const FieldAttribute> attributes,
+                                                    const FieldAttribute& attribute) {
+            return std::ranges::count_if(attributes, [&attribute](const FieldAttribute& other) {
+                       return other.key == attribute.key;
+                   }) > 1;
+        }
+
+        [[nodiscard]] bool hasAttributeNamespace(std::string_view key) {
+            return key.find('.') != std::string_view::npos;
+        }
+
         [[nodiscard]] TypeInfo builtinType(std::string_view name, TypeKind kind) {
             return TypeInfo{
                 .id = makeTypeId(name),
                 .name = std::string{name},
                 .version = 1,
                 .kind = kind,
+                .attributes = {},
                 .fields = {},
             };
         }
@@ -130,6 +143,50 @@ namespace asharia::reflection {
             return {};
         }
 
+        [[nodiscard]] VoidResult validateTypeAttributes(const TypeInfo& type) {
+            for (const FieldAttribute& attribute : type.attributes) {
+                if (attribute.key.empty()) {
+                    return std::unexpected{reflectionDiagnostic(
+                        "Reflected type '" + type.name + "' has an attribute with no key.",
+                        {
+                            {"operation", "register"},
+                            {"type", type.name},
+                            {"expected", "non-empty attribute key"},
+                            {"actual", "empty"},
+                            {"version", std::to_string(type.version)},
+                        })};
+                }
+                if (!hasAttributeNamespace(attribute.key)) {
+                    return std::unexpected{reflectionDiagnostic(
+                        "Reflected type '" + type.name + "' has non-namespaced attribute key '" +
+                            attribute.key + "'.",
+                        {
+                            {"operation", "register"},
+                            {"type", type.name},
+                            {"attribute", attribute.key},
+                            {"expected", "namespaced attribute key"},
+                            {"actual", attribute.key},
+                            {"version", std::to_string(type.version)},
+                        })};
+                }
+                if (hasDuplicateAttributeKey(type.attributes, attribute)) {
+                    return std::unexpected{reflectionDiagnostic(
+                        "Reflected type '" + type.name + "' has duplicate attribute key '" +
+                            attribute.key + "'.",
+                        {
+                            {"operation", "register"},
+                            {"type", type.name},
+                            {"attribute", attribute.key},
+                            {"expected", "unique attribute key"},
+                            {"actual", "duplicate"},
+                            {"version", std::to_string(type.version)},
+                        })};
+                }
+            }
+
+            return {};
+        }
+
         [[nodiscard]] VoidResult validateFieldIdentity(const TypeInfo& type,
                                                        const FieldInfo& field) {
             if (field.name.empty()) {
@@ -198,34 +255,158 @@ namespace asharia::reflection {
             return {};
         }
 
-        [[nodiscard]] VoidResult validateFieldFlags(const TypeInfo& type, const FieldInfo& field) {
-            if (field.flags.has(FieldFlag::Serializable) && field.flags.has(FieldFlag::Transient)) {
+        [[nodiscard]] VoidResult validateFieldAttributes(const TypeInfo& type,
+                                                         const FieldInfo& field) {
+            for (const FieldAttribute& attribute : field.attributes) {
+                if (attribute.key.empty()) {
+                    return std::unexpected{
+                        reflectionDiagnostic("Reflected field '" + type.name + "." + field.name +
+                                                 "' has an attribute with no key.",
+                                             {
+                                                 {"operation", "register"},
+                                                 {"type", type.name},
+                                                 {"field", field.name},
+                                                 {"expected", "non-empty attribute key"},
+                                                 {"actual", "empty"},
+                                                 {"version", std::to_string(type.version)},
+                                             })};
+                }
+                if (!hasAttributeNamespace(attribute.key)) {
+                    return std::unexpected{reflectionDiagnostic(
+                        "Reflected field '" + type.name + "." + field.name +
+                            "' has non-namespaced attribute key '" + attribute.key + "'.",
+                        {
+                            {"operation", "register"},
+                            {"type", type.name},
+                            {"field", field.name},
+                            {"attribute", attribute.key},
+                            {"expected", "namespaced attribute key"},
+                            {"actual", attribute.key},
+                            {"version", std::to_string(type.version)},
+                        })};
+                }
+                if (hasDuplicateAttributeKey(field.attributes, attribute)) {
+                    return std::unexpected{reflectionDiagnostic(
+                        "Reflected field '" + type.name + "." + field.name +
+                            "' has duplicate attribute key '" + attribute.key + "'.",
+                        {
+                            {"operation", "register"},
+                            {"type", type.name},
+                            {"field", field.name},
+                            {"attribute", attribute.key},
+                            {"expected", "unique attribute key"},
+                            {"actual", "duplicate"},
+                            {"version", std::to_string(type.version)},
+                        })};
+                }
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] VoidResult validateFieldAccessor(const TypeInfo& type,
+                                                       const FieldInfo& field) {
+            if (field.accessor.ownerType != type.id) {
+                return std::unexpected{reflectionDiagnostic(
+                    "Reflected field '" + type.name + "." + field.name +
+                        "' has an accessor owner type mismatch.",
+                    {
+                        {"operation", "register"},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", std::to_string(type.id.value)},
+                        {"actual", std::to_string(field.accessor.ownerType.value)},
+                        {"version", std::to_string(type.version)},
+                    })};
+            }
+
+            if (field.accessor.fieldType != field.type) {
+                return std::unexpected{reflectionDiagnostic(
+                    "Reflected field '" + type.name + "." + field.name +
+                        "' has an accessor field type mismatch.",
+                    {
+                        {"operation", "register"},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", std::to_string(field.type.value)},
+                        {"actual", std::to_string(field.accessor.fieldType.value)},
+                        {"version", std::to_string(type.version)},
+                    })};
+            }
+
+            if (!field.accessor.readAddress && !field.accessor.readValue) {
                 return std::unexpected{
                     reflectionDiagnostic("Reflected field '" + type.name + "." + field.name +
-                                             "' cannot be Serializable and Transient.",
+                                             "' has no readable accessor.",
                                          {
                                              {"operation", "register"},
                                              {"type", type.name},
                                              {"field", field.name},
-                                             {"expected", "non-conflicting field flags"},
-                                             {"actual", "Serializable+Transient"},
+                                             {"expected", "read address or read value accessor"},
+                                             {"actual", "missing"},
                                              {"version", std::to_string(type.version)},
                                          })};
             }
 
-            if (field.flags.has(FieldFlag::EditorOnly) &&
-                field.flags.has(FieldFlag::RuntimeVisible)) {
+            const bool requiresTemporaryValue =
+                field.accessor.readValue || field.accessor.writeValue;
+            if (requiresTemporaryValue &&
+                (!field.accessor.constructValue || !field.accessor.destroyValue ||
+                 field.accessor.size == 0 || field.accessor.alignment == 0)) {
+                return std::unexpected{reflectionDiagnostic(
+                    "Reflected field '" + type.name + "." + field.name +
+                        "' has value accessors without complete temporary value support.",
+                    {
+                        {"operation", "register"},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", "construct/destroy value accessor with size and alignment"},
+                        {"actual", "incomplete temporary value accessor"},
+                        {"version", std::to_string(type.version)},
+                    })};
+            }
+
+            if (field.defaultProvider && field.defaultProvider.valueType != field.type) {
+                return std::unexpected{reflectionDiagnostic(
+                    "Reflected field '" + type.name + "." + field.name +
+                        "' has a default provider type mismatch.",
+                    {
+                        {"operation", "register"},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", std::to_string(field.type.value)},
+                        {"actual", std::to_string(field.defaultProvider.valueType.value)},
+                        {"version", std::to_string(type.version)},
+                    })};
+            }
+
+            if (field.defaultProvider && !field.accessor.writeAddress &&
+                !field.accessor.writeValue) {
                 return std::unexpected{
                     reflectionDiagnostic("Reflected field '" + type.name + "." + field.name +
-                                             "' cannot be EditorOnly and RuntimeVisible.",
+                                             "' has a default provider but no writable accessor.",
                                          {
                                              {"operation", "register"},
                                              {"type", type.name},
                                              {"field", field.name},
-                                             {"expected", "non-conflicting field flags"},
-                                             {"actual", "EditorOnly+RuntimeVisible"},
+                                             {"expected", "write address or write value accessor"},
+                                             {"actual", "missing"},
                                              {"version", std::to_string(type.version)},
                                          })};
+            }
+
+            if (field.validator && field.validator.valueType != field.type) {
+                return std::unexpected{reflectionDiagnostic(
+                    "Reflected field '" + type.name + "." + field.name +
+                        "' has a validator type mismatch.",
+                    {
+                        {"operation", "register"},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", std::to_string(field.type.value)},
+                        {"actual", std::to_string(field.validator.valueType.value)},
+                        {"version", std::to_string(type.version)},
+                    })};
             }
 
             return {};
@@ -285,15 +466,25 @@ namespace asharia::reflection {
             return validIdentity;
         }
 
+        auto validTypeAttributes = validateTypeAttributes(type);
+        if (!validTypeAttributes) {
+            return validTypeAttributes;
+        }
+
         for (const FieldInfo& field : type.fields) {
             auto validFieldIdentity = validateFieldIdentity(type, field);
             if (!validFieldIdentity) {
                 return validFieldIdentity;
             }
 
-            auto validFlags = validateFieldFlags(type, field);
-            if (!validFlags) {
-                return validFlags;
+            auto validFieldAttributes = validateFieldAttributes(type, field);
+            if (!validFieldAttributes) {
+                return validFieldAttributes;
+            }
+
+            auto validFieldAccessor = validateFieldAccessor(type, field);
+            if (!validFieldAccessor) {
+                return validFieldAccessor;
             }
         }
 

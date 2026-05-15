@@ -58,17 +58,23 @@ cmake -S packages\rendergraph -B build\cmake\package-rendergraph-msvc-debug -DAS
 
 ## Package Tests
 
-Pure CPU packages can expose package-local CTest entries. The current
-reflection/serialization spike packages have standalone smoke tests; the
-schema-first reset will move equivalent coverage to `schema`, `archive`,
-`cpp-binding`, and `persistence` packages:
+Pure CPU packages can expose package-local CTest entries. The schema-first
+reflection/serialization packages can be configured and tested directly:
 
 ```powershell
-cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\reflection -B build\cmake\package-reflection-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-reflection-tests-msvc-debug && ctest --test-dir build\cmake\package-reflection-tests-msvc-debug --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\schema -B build\cmake\package-schema-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-schema-tests-msvc-debug && ctest --test-dir build\cmake\package-schema-tests-msvc-debug --output-on-failure"
 ```
 
 ```powershell
-cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\serialization -B build\cmake\package-serialization-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-serialization-tests-msvc-debug && ctest --test-dir build\cmake\package-serialization-tests-msvc-debug --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\archive -B build\cmake\package-archive-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-archive-tests-msvc-debug && ctest --test-dir build\cmake\package-archive-tests-msvc-debug --output-on-failure"
+```
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\cpp-binding -B build\cmake\package-cpp-binding-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-cpp-binding-tests-msvc-debug && ctest --test-dir build\cmake\package-cpp-binding-tests-msvc-debug --output-on-failure"
+```
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\persistence -B build\cmake\package-persistence-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-persistence-tests-msvc-debug && ctest --test-dir build\cmake\package-persistence-tests-msvc-debug --output-on-failure"
 ```
 
 Package manifests may list these under `testTargets` while keeping shipping

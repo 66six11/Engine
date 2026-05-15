@@ -1,5 +1,6 @@
 ﻿#include "asharia/serialization/serializer.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <expected>
 #include <initializer_list>
@@ -12,7 +13,6 @@
 #include <vector>
 
 #include "asharia/core/error.hpp"
-#include "asharia/reflection/context_view.hpp"
 
 namespace asharia::serialization {
     namespace {
@@ -111,6 +111,30 @@ namespace asharia::serialization {
             return std::string{archiveKindName(value->kind)};
         }
 
+        [[nodiscard]] std::string_view unknownFieldPolicyName(UnknownFieldPolicy policy) noexcept {
+            switch (policy) {
+            case UnknownFieldPolicy::Error:
+                return "error";
+            case UnknownFieldPolicy::Ignore:
+                return "ignore";
+            case UnknownFieldPolicy::Preserve:
+                return "preserve";
+            }
+            return "unknown";
+        }
+
+        [[nodiscard]] std::string_view missingFieldPolicyName(MissingFieldPolicy policy) noexcept {
+            switch (policy) {
+            case MissingFieldPolicy::Error:
+                return "error";
+            case MissingFieldPolicy::KeepConstructedValue:
+                return "keep constructed value";
+            case MissingFieldPolicy::UseDefault:
+                return "use default";
+            }
+            return "unknown";
+        }
+
         // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
         [[nodiscard]] std::string appendFieldPath(std::string_view objectPath,
                                                   std::string_view fieldName) {
@@ -121,6 +145,12 @@ namespace asharia::serialization {
             path += '.';
             path += fieldName;
             return path;
+        }
+
+        [[nodiscard]] bool isPersistentStorageField(const reflection::FieldInfo& field) {
+            return reflection::hasBoolAttribute(field.attributes,
+                                                storage_attributes::kPersistent) &&
+                   !reflection::hasBoolAttribute(field.attributes, storage_attributes::kTransient);
         }
 
         struct AlignedFieldStorageDeleter {
@@ -249,6 +279,38 @@ namespace asharia::serialization {
             return kind == ArchiveValueKind::Float || kind == ArchiveValueKind::Integer;
         }
 
+        [[nodiscard]] VoidResult validateReflectedFieldValue(const reflection::TypeInfo& type,
+                                                             const reflection::FieldInfo& field,
+                                                             const void* fieldValue,
+                                                             std::string_view objectPath,
+                                                             std::string_view operation) {
+            if (!field.validator) {
+                return {};
+            }
+            if (fieldValue == nullptr) {
+                return std::unexpected{fieldAccessorError(
+                    "Reflected field validator received a null value.", operation, type, &field,
+                    objectPath, "non-null field value", "null")};
+            }
+
+            auto validated = field.validator.validateValue(fieldValue);
+            if (!validated) {
+                return std::unexpected{serializationError(
+                    "Reflected field validator failed for '" + std::string{objectPath} +
+                        "': " + validated.error().message,
+                    {
+                        {"operation", operation},
+                        {"objectPath", objectPath},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", "valid reflected field value"},
+                        {"actual", "validator failed"},
+                        {"version", std::to_string(type.version)},
+                    })};
+            }
+            return {};
+        }
+
         [[nodiscard]] Result<std::uint32_t> readArchiveVersion(const reflection::TypeInfo& type,
                                                                const ArchiveValue& value,
                                                                std::string_view objectPath) {
@@ -322,8 +384,9 @@ namespace asharia::serialization {
                     })};
             }
 
-            auto migrated =
-                policy.migrations->migrateObject(type.id, *archiveVersion, type.version, value);
+            auto migrated = policy.migrations->migrateObject(
+                type.id, type.name, objectPath, policy.archivePath, policy.migrationScenario,
+                *archiveVersion, type.version, value);
             if (!migrated) {
                 return std::unexpected{std::move(migrated.error())};
             }
@@ -369,18 +432,17 @@ namespace asharia::serialization {
             }
 
             std::vector<ArchiveMember> fieldMembers;
-            const reflection::ContextFieldView serializeView =
-                reflection::makeSerializeContextView(type);
-            fieldMembers.reserve(serializeView.fields.size());
+            fieldMembers.reserve(static_cast<std::size_t>(
+                std::ranges::count_if(type.fields, [](const reflection::FieldInfo& field) {
+                    return isPersistentStorageField(field);
+                })));
 
-            for (const reflection::FieldInfo* field : serializeView.fields) {
-                const std::string fieldObjectPath =
-                    appendFieldPath(objectPath, field == nullptr ? "<null>" : field->name);
-                if (field == nullptr) {
-                    return std::unexpected{fieldAccessorError(
-                        "Serializable field metadata is missing.", "serialize", type, field,
-                        fieldObjectPath, "field metadata", "missing")};
+            for (const reflection::FieldInfo& reflectedField : type.fields) {
+                if (!isPersistentStorageField(reflectedField)) {
+                    continue;
                 }
+                const reflection::FieldInfo* field = &reflectedField;
+                const std::string fieldObjectPath = appendFieldPath(objectPath, field->name);
 
                 ScopedFieldValue temporary;
                 const void* fieldAddress = nullptr;
@@ -410,6 +472,12 @@ namespace asharia::serialization {
                         return std::unexpected{std::move(read.error())};
                     }
                     fieldAddress = temporary.get();
+                }
+
+                auto validated = validateReflectedFieldValue(type, *field, fieldAddress,
+                                                             fieldObjectPath, "serialize");
+                if (!validated) {
+                    return std::unexpected{std::move(validated.error())};
                 }
 
                 auto fieldValue =
@@ -505,9 +573,10 @@ namespace asharia::serialization {
             return serializeStruct(registry, *typeInfo, object, policy, path);
         }
 
-        [[nodiscard]] VoidResult validateNoUnknownFields(const reflection::TypeInfo& type,
-                                                         const ArchiveValue& fieldsValue,
-                                                         std::string_view objectPath) {
+        [[nodiscard]] VoidResult handleUnknownFields(const reflection::TypeInfo& type,
+                                                     const ArchiveValue& fieldsValue,
+                                                     UnknownFieldPolicy policy,
+                                                     std::string_view objectPath) {
             if (fieldsValue.kind != ArchiveValueKind::Object) {
                 return {};
             }
@@ -515,12 +584,29 @@ namespace asharia::serialization {
             for (const ArchiveMember& member : fieldsValue.objectValue) {
                 bool known = false;
                 for (const reflection::FieldInfo& field : type.fields) {
-                    if (reflection::isSerializableField(field) && field.name == member.key) {
+                    if (isPersistentStorageField(field) && field.name == member.key) {
                         known = true;
                         break;
                     }
                 }
                 if (!known) {
+                    if (policy == UnknownFieldPolicy::Ignore) {
+                        continue;
+                    }
+                    if (policy == UnknownFieldPolicy::Preserve) {
+                        return std::unexpected{serializationError(
+                            "Archive contains unknown field '" + type.name + "." + member.key +
+                                "' but preserve mode is not implemented for object writes.",
+                            {
+                                {"operation", "deserialize"},
+                                {"objectPath", appendFieldPath(objectPath, member.key)},
+                                {"type", type.name},
+                                {"field", member.key},
+                                {"expected", "unknown field preservation support"},
+                                {"actual", "preserve policy unsupported"},
+                                {"version", std::to_string(type.version)},
+                            })};
+                    }
                     return std::unexpected{serializationError(
                         "Archive contains unknown field '" + type.name + "." + member.key + "'.",
                         {
@@ -530,11 +616,115 @@ namespace asharia::serialization {
                             {"field", member.key},
                             {"expected", "registered serializable field"},
                             {"actual", "unknown field"},
+                            {"policy", unknownFieldPolicyName(policy)},
                             {"version", std::to_string(type.version)},
                         })};
                 }
             }
             return {};
+        }
+
+        [[nodiscard]] VoidResult writeDefaultValueToStorage(const reflection::TypeInfo& type,
+                                                            const reflection::FieldInfo& field,
+                                                            void* fieldValue,
+                                                            std::string_view fieldObjectPath) {
+            if (!field.defaultProvider) {
+                return std::unexpected{fieldAccessorError(
+                    "Missing archive field has no reflected default value.", "deserialize", type,
+                    &field, fieldObjectPath, "reflected field default value", "missing")};
+            }
+
+            auto defaulted = field.defaultProvider.writeValue(fieldValue);
+            if (!defaulted) {
+                return std::unexpected{serializationError(
+                    "Failed to write reflected default value for missing field '" +
+                        std::string{fieldObjectPath} + "': " + defaulted.error().message,
+                    {
+                        {"operation", "deserialize"},
+                        {"objectPath", fieldObjectPath},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", "successful default value write"},
+                        {"actual", "default provider failed"},
+                        {"version", std::to_string(type.version)},
+                    })};
+            }
+
+            return validateReflectedFieldValue(type, field, fieldValue, fieldObjectPath,
+                                               "deserialize");
+        }
+
+        [[nodiscard]] VoidResult applyMissingFieldDefault(const reflection::TypeInfo& type,
+                                                          const reflection::FieldInfo& field,
+                                                          void* object,
+                                                          std::string_view fieldObjectPath) {
+            if (field.accessor.writeAddress) {
+                void* fieldAddress = field.accessor.writeAddress(object);
+                if (fieldAddress == nullptr) {
+                    return std::unexpected{fieldAccessorError(
+                        "Missing archive field default write returned null.", "deserialize", type,
+                        &field, fieldObjectPath, "field address", "null")};
+                }
+                return writeDefaultValueToStorage(type, field, fieldAddress, fieldObjectPath);
+            }
+
+            if (!field.accessor.writeValue) {
+                return std::unexpected{fieldAccessorError(
+                    "Missing archive field has no write accessor for default value.", "deserialize",
+                    type, &field, fieldObjectPath, "write address or write value accessor",
+                    "missing")};
+            }
+
+            auto temporaryValue =
+                makeTemporaryFieldValue(type, field, fieldObjectPath, "deserialize");
+            if (!temporaryValue) {
+                return std::unexpected{std::move(temporaryValue.error())};
+            }
+
+            auto defaulted =
+                writeDefaultValueToStorage(type, field, temporaryValue->get(), fieldObjectPath);
+            if (!defaulted) {
+                return defaulted;
+            }
+
+            return field.accessor.writeValue(object, temporaryValue->get());
+        }
+
+        [[nodiscard]] VoidResult handleMissingField(const reflection::TypeInfo& type,
+                                                    const reflection::FieldInfo& field,
+                                                    void* object, MissingFieldPolicy policy,
+                                                    std::string_view fieldObjectPath) {
+            switch (policy) {
+            case MissingFieldPolicy::Error:
+                return std::unexpected{serializationError(
+                    "Archive is missing required field '" + std::string{fieldObjectPath} + "'.",
+                    {
+                        {"operation", "deserialize"},
+                        {"objectPath", fieldObjectPath},
+                        {"type", type.name},
+                        {"field", field.name},
+                        {"expected", "archive field"},
+                        {"actual", "missing"},
+                        {"policy", missingFieldPolicyName(policy)},
+                        {"version", std::to_string(type.version)},
+                    })};
+            case MissingFieldPolicy::KeepConstructedValue:
+                return {};
+            case MissingFieldPolicy::UseDefault:
+                return applyMissingFieldDefault(type, field, object, fieldObjectPath);
+            }
+
+            return std::unexpected{serializationError(
+                "Unsupported missing field policy for '" + std::string{fieldObjectPath} + "'.",
+                {
+                    {"operation", "deserialize"},
+                    {"objectPath", fieldObjectPath},
+                    {"type", type.name},
+                    {"field", field.name},
+                    {"expected", "supported missing field policy"},
+                    {"actual", missingFieldPolicyName(policy)},
+                    {"version", std::to_string(type.version)},
+                })};
         }
 
         [[nodiscard]] VoidResult deserializeDirectField(
@@ -548,8 +738,14 @@ namespace asharia::serialization {
                                        type, &field, fieldObjectPath, "field address", "null")};
             }
 
-            return deserializeValue(registry, field.type, fieldValue, fieldAddress, policy,
-                                    fieldObjectPath);
+            auto written = deserializeValue(registry, field.type, fieldValue, fieldAddress, policy,
+                                            fieldObjectPath);
+            if (!written) {
+                return written;
+            }
+
+            return validateReflectedFieldValue(type, field, fieldAddress, fieldObjectPath,
+                                               "deserialize");
         }
 
         [[nodiscard]] VoidResult deserializeValueAccessorField(
@@ -572,6 +768,12 @@ namespace asharia::serialization {
                                             policy, fieldObjectPath);
             if (!written) {
                 return written;
+            }
+
+            auto validated = validateReflectedFieldValue(type, field, temporaryValue->get(),
+                                                         fieldObjectPath, "deserialize");
+            if (!validated) {
+                return validated;
             }
 
             return field.accessor.writeValue(object, temporaryValue->get());
@@ -643,23 +845,28 @@ namespace asharia::serialization {
                                        })};
             }
 
-            if (!policy.allowUnknownFields) {
-                auto unknownFields = validateNoUnknownFields(type, *fieldsValue, objectPath);
-                if (!unknownFields) {
-                    return unknownFields;
-                }
+            auto unknownFields =
+                handleUnknownFields(type, *fieldsValue, policy.unknownFields, objectPath);
+            if (!unknownFields) {
+                return unknownFields;
             }
 
-            const reflection::ContextFieldView serializeView =
-                reflection::makeSerializeContextView(type);
-            for (const reflection::FieldInfo* field : serializeView.fields) {
-                const std::string fieldObjectPath = appendFieldPath(objectPath, field->name);
-                const ArchiveValue* fieldValue = fieldsValue->findMemberValue(field->name);
+            for (const reflection::FieldInfo& field : type.fields) {
+                if (!isPersistentStorageField(field)) {
+                    continue;
+                }
+                const std::string fieldObjectPath = appendFieldPath(objectPath, field.name);
+                const ArchiveValue* fieldValue = fieldsValue->findMemberValue(field.name);
                 if (fieldValue == nullptr) {
+                    auto handledMissing = handleMissingField(type, field, object,
+                                                             policy.missingFields, fieldObjectPath);
+                    if (!handledMissing) {
+                        return handledMissing;
+                    }
                     continue;
                 }
 
-                auto written = deserializeField(registry, type, *field, *fieldValue, object, policy,
+                auto written = deserializeField(registry, type, field, *fieldValue, object, policy,
                                                 fieldObjectPath);
                 if (!written) {
                     return written;

@@ -30,6 +30,9 @@ namespace {
         "com.asharia.smoke.PropertyComponent";
     constexpr std::string_view kSmokeMigratedTransformTypeName =
         "com.asharia.smoke.MigratedTransform";
+    constexpr std::string_view kEditorVisibleAttribute = "asharia.editor.visible";
+    constexpr std::string_view kRuntimeVisibleAttribute = "asharia.runtime.visible";
+    constexpr std::string_view kScriptVisibleAttribute = "asharia.script.visible";
 
     struct ReflectionSmokeVec3 {
         float x{};
@@ -99,6 +102,50 @@ namespace {
         });
     }
 
+    bool removeArchiveMember(asharia::serialization::ArchiveValue& object,
+                             std::string_view memberKey) {
+        if (object.kind != asharia::serialization::ArchiveValueKind::Object) {
+            return false;
+        }
+
+        const std::size_t originalSize = object.objectValue.size();
+        std::erase_if(object.objectValue,
+                      [memberKey](const asharia::serialization::ArchiveMember& member) {
+                          return member.key == memberKey;
+                      });
+        return object.objectValue.size() != originalSize;
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet storedEditableScriptAttributes() {
+        return {
+            asharia::serialization::storage_attributes::persistent(),
+            asharia::reflection::attributes::boolean(kEditorVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kScriptVisibleAttribute, true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet editorOnlyPersistentAttributes() {
+        return {
+            asharia::serialization::storage_attributes::persistent(),
+            asharia::reflection::attributes::boolean(kEditorVisibleAttribute, true),
+            asharia::reflection::attributes::boolean("asharia.editor.only", true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet runtimeVisibleAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet scriptVisibleAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kScriptVisibleAttribute, true),
+        };
+    }
+
     asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
         using namespace asharia::reflection;
 
@@ -107,48 +154,56 @@ namespace {
             return builtins;
         }
 
-        const FieldFlagSet savedEditable = field_flags::serializableEditorRuntimeScript();
         const TypeId vec3Type = makeTypeId(kSmokeVec3TypeName);
         const TypeId quatType = makeTypeId(kSmokeQuatTypeName);
 
-        auto vec3Registered = TypeBuilder<ReflectionSmokeVec3>(registry, kSmokeVec3TypeName)
-                                  .kind(TypeKind::Struct)
-                                  .field("x", &ReflectionSmokeVec3::x, savedEditable)
-                                  .field("y", &ReflectionSmokeVec3::y, savedEditable)
-                                  .field("z", &ReflectionSmokeVec3::z, savedEditable)
-                                  .commit();
+        auto vec3Registered =
+            TypeBuilder<ReflectionSmokeVec3>(registry, kSmokeVec3TypeName)
+                .kind(TypeKind::Struct)
+                .field("x", &ReflectionSmokeVec3::x, storedEditableScriptAttributes())
+                .field("y", &ReflectionSmokeVec3::y, storedEditableScriptAttributes())
+                .field("z", &ReflectionSmokeVec3::z, storedEditableScriptAttributes())
+                .commit();
         if (!vec3Registered) {
             return vec3Registered;
         }
 
-        auto quatRegistered = TypeBuilder<ReflectionSmokeQuat>(registry, kSmokeQuatTypeName)
-                                  .kind(TypeKind::Struct)
-                                  .field("x", &ReflectionSmokeQuat::x, savedEditable)
-                                  .field("y", &ReflectionSmokeQuat::y, savedEditable)
-                                  .field("z", &ReflectionSmokeQuat::z, savedEditable)
-                                  .field("w", &ReflectionSmokeQuat::w, savedEditable)
-                                  .commit();
+        auto quatRegistered =
+            TypeBuilder<ReflectionSmokeQuat>(registry, kSmokeQuatTypeName)
+                .kind(TypeKind::Struct)
+                .field("x", &ReflectionSmokeQuat::x, storedEditableScriptAttributes())
+                .field("y", &ReflectionSmokeQuat::y, storedEditableScriptAttributes())
+                .field("z", &ReflectionSmokeQuat::z, storedEditableScriptAttributes())
+                .field("w", &ReflectionSmokeQuat::w, storedEditableScriptAttributes())
+                .commit();
         if (!quatRegistered) {
             return quatRegistered;
         }
 
-        const FieldFlagSet editorOnly =
-            FieldFlag::Serializable | FieldFlag::EditorVisible | FieldFlag::EditorOnly;
-        const FieldFlagSet runtimeReadOnly =
-            FieldFlag::EditorVisible | FieldFlag::RuntimeVisible | FieldFlag::ReadOnly;
-        const FieldFlagSet scriptReadOnly =
-            FieldFlag::RuntimeVisible | FieldFlag::ScriptVisible | FieldFlag::ReadOnly;
-
         auto transformRegistered =
             TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
                 .kind(TypeKind::Component)
-                .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
-                .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
-                .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
-                .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
-                .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude,
-                       runtimeReadOnly)
-                .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+                .field("position", &ReflectionSmokeTransform::position, vec3Type,
+                       storedEditableScriptAttributes())
+                .field("rotation", &ReflectionSmokeTransform::rotation, quatType,
+                       storedEditableScriptAttributes())
+                .field("scale", &ReflectionSmokeTransform::scale, vec3Type,
+                       storedEditableScriptAttributes())
+                .defaultValue(ReflectionSmokeVec3{.x = 1.0F, .y = 1.0F, .z = 1.0F})
+                .validator<ReflectionSmokeVec3>(
+                    [](const ReflectionSmokeVec3& scale) -> asharia::VoidResult {
+                        if (scale.x <= 0.0F || scale.y <= 0.0F || scale.z <= 0.0F) {
+                            return std::unexpected{
+                                smokeSerializationError("Scale must be positive.")};
+                        }
+                        return {};
+                    })
+                .field("debugName", &ReflectionSmokeTransform::debugName,
+                       editorOnlyPersistentAttributes())
+                .readonlyField("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude,
+                               runtimeVisibleAttributes())
+                .readonlyField("scriptCounter", &ReflectionSmokeTransform::scriptCounter,
+                               scriptVisibleAttributes())
                 .commit();
         if (!transformRegistered) {
             return transformRegistered;
@@ -165,13 +220,13 @@ namespace {
                     [](ReflectionSmokePropertyComponent& component, const float& exposure) {
                         return component.setExposure(exposure);
                     },
-                    savedEditable)
+                    storedEditableScriptAttributes())
                 .readonlyProperty<std::int32_t>(
                     "derivedCounter",
                     [](const ReflectionSmokePropertyComponent& component) {
                         return component.derivedCounter();
                     },
-                    FieldFlag::EditorVisible | FieldFlag::RuntimeVisible)
+                    runtimeVisibleAttributes())
                 .commit();
         if (!propertyRegistered) {
             return propertyRegistered;
@@ -181,10 +236,22 @@ namespace {
                                                              kSmokeMigratedTransformTypeName)
             .version(2)
             .kind(TypeKind::Component)
-            .field("position", &ReflectionSmokeMigratedTransform::position, vec3Type, savedEditable)
-            .field("rotation", &ReflectionSmokeMigratedTransform::rotation, quatType, savedEditable)
-            .field("scale", &ReflectionSmokeMigratedTransform::scale, vec3Type, savedEditable)
-            .field("debugName", &ReflectionSmokeMigratedTransform::debugName, editorOnly)
+            .field("position", &ReflectionSmokeMigratedTransform::position, vec3Type,
+                   storedEditableScriptAttributes())
+            .field("rotation", &ReflectionSmokeMigratedTransform::rotation, quatType,
+                   storedEditableScriptAttributes())
+            .field("scale", &ReflectionSmokeMigratedTransform::scale, vec3Type,
+                   storedEditableScriptAttributes())
+            .defaultValue(ReflectionSmokeVec3{.x = 1.0F, .y = 1.0F, .z = 1.0F})
+            .validator<ReflectionSmokeVec3>(
+                [](const ReflectionSmokeVec3& scale) -> asharia::VoidResult {
+                    if (scale.x <= 0.0F || scale.y <= 0.0F || scale.z <= 0.0F) {
+                        return std::unexpected{smokeSerializationError("Scale must be positive.")};
+                    }
+                    return {};
+                })
+            .field("debugName", &ReflectionSmokeMigratedTransform::debugName,
+                   editorOnlyPersistentAttributes())
             .commit();
     }
 
@@ -293,6 +360,14 @@ namespace {
         using asharia::serialization::ArchiveMember;
         using asharia::serialization::ArchiveValue;
 
+        if (context.typeName != kSmokeMigratedTransformTypeName ||
+            context.objectPath != kSmokeMigratedTransformTypeName ||
+            context.archivePath != "smoke://scene/transform.ascene" ||
+            context.scenario != asharia::serialization::MigrationScenario::SceneLoad) {
+            return std::unexpected{
+                smokeSerializationError("Smoke migration received incomplete context.")};
+        }
+
         const ArchiveValue* inputFields =
             context.input == nullptr ? nullptr : context.input->findMemberValue("fields");
         const ArchiveValue* position =
@@ -365,6 +440,216 @@ namespace {
             logFailure("Serialization roundtrip smoke did not use property getter/setter.");
             return false;
         }
+        return true;
+    }
+
+    bool smokeUnknownFieldPolicies(const asharia::reflection::TypeRegistry& registry,
+                                   asharia::reflection::TypeId transformType,
+                                   const asharia::serialization::ArchiveValue& archive,
+                                   const ReflectionSmokeTransform& source) {
+        asharia::serialization::ArchiveValue unknownFieldArchive = archive;
+        asharia::serialization::ArchiveValue* unknownFields =
+            unknownFieldArchive.findMemberValue("fields");
+        if (unknownFields == nullptr ||
+            unknownFields->kind != asharia::serialization::ArchiveValueKind::Object) {
+            logFailure("Serialization roundtrip smoke could not edit unknown fields.");
+            return false;
+        }
+        unknownFields->objectValue.push_back(asharia::serialization::ArchiveMember{
+            .key = "unknownFutureField",
+            .value = asharia::serialization::ArchiveValue::integer(7),
+        });
+
+        ReflectionSmokeTransform rejectedUnknown{};
+        auto rejectedUnknownResult = asharia::serialization::deserializeObject(
+            registry, transformType, unknownFieldArchive, &rejectedUnknown);
+        if (rejectedUnknownResult ||
+            !containsAll(rejectedUnknownResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.unknownFutureField",
+                             "field=unknownFutureField",
+                             "expected=registered serializable field",
+                             "actual=unknown field",
+                             "policy=error",
+                         })) {
+            logFailure("Serialization roundtrip smoke did not reject an unknown field.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy ignoreUnknownPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Ignore,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform ignoredUnknown{};
+        auto ignoredUnknownResult = asharia::serialization::deserializeObject(
+            registry, transformType, unknownFieldArchive, &ignoredUnknown, ignoreUnknownPolicy);
+        if (!ignoredUnknownResult || ignoredUnknown.position.x != source.position.x) {
+            logFailure("Serialization roundtrip smoke did not ignore an unknown field.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy preserveUnknownPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Preserve,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform preserveUnknown{};
+        auto preserveUnknownResult = asharia::serialization::deserializeObject(
+            registry, transformType, unknownFieldArchive, &preserveUnknown, preserveUnknownPolicy);
+        if (preserveUnknownResult || preserveUnknownResult.error().message.find(
+                                         "preserve policy unsupported") == std::string::npos) {
+            logFailure("Serialization roundtrip smoke did not reject unsupported preserve policy.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeMissingFieldPolicies(const asharia::reflection::TypeRegistry& registry,
+                                   asharia::reflection::TypeId transformType,
+                                   const asharia::serialization::ArchiveValue& archive) {
+        asharia::serialization::ArchiveValue missingScaleArchive = archive;
+        asharia::serialization::ArchiveValue* missingScaleFields =
+            missingScaleArchive.findMemberValue("fields");
+        if (missingScaleFields == nullptr || !removeArchiveMember(*missingScaleFields, "scale")) {
+            logFailure("Serialization roundtrip smoke could not remove scale.");
+            return false;
+        }
+
+        ReflectionSmokeTransform loadedMissingScale{
+            .position = {},
+            .rotation = {},
+            .scale = {.x = 8.0F, .y = 8.0F, .z = 8.0F},
+            .debugName = {},
+            .cachedMagnitude = 0.0F,
+            .scriptCounter = 0,
+        };
+        auto missingScaleResult = asharia::serialization::deserializeObject(
+            registry, transformType, missingScaleArchive, &loadedMissingScale);
+        if (!missingScaleResult || loadedMissingScale.scale.x != 1.0F ||
+            loadedMissingScale.scale.y != 1.0F || loadedMissingScale.scale.z != 1.0F) {
+            logFailure("Serialization roundtrip smoke did not apply field default.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy keepConstructedPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::KeepConstructedValue,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform keptConstructed{
+            .position = {},
+            .rotation = {},
+            .scale = {.x = 8.0F, .y = 8.0F, .z = 8.0F},
+            .debugName = {},
+            .cachedMagnitude = 0.0F,
+            .scriptCounter = 0,
+        };
+        auto keptConstructedResult = asharia::serialization::deserializeObject(
+            registry, transformType, missingScaleArchive, &keptConstructed, keepConstructedPolicy);
+        if (!keptConstructedResult || keptConstructed.scale.x != 8.0F ||
+            keptConstructed.scale.y != 8.0F || keptConstructed.scale.z != 8.0F) {
+            logFailure("Serialization roundtrip smoke did not keep constructed field.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy missingErrorPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::Error,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform rejectedMissingScale{};
+        auto rejectedMissingScaleResult =
+            asharia::serialization::deserializeObject(registry, transformType, missingScaleArchive,
+                                                      &rejectedMissingScale, missingErrorPolicy);
+        if (rejectedMissingScaleResult ||
+            !containsAll(rejectedMissingScaleResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.scale",
+                             "expected=archive field",
+                             "actual=missing",
+                             "policy=error",
+                         })) {
+            logFailure("Serialization roundtrip smoke did not reject missing field.");
+            return false;
+        }
+
+        asharia::serialization::ArchiveValue missingPositionArchive = archive;
+        asharia::serialization::ArchiveValue* missingPositionFields =
+            missingPositionArchive.findMemberValue("fields");
+        if (missingPositionFields == nullptr ||
+            !removeArchiveMember(*missingPositionFields, "position")) {
+            logFailure("Serialization roundtrip smoke could not remove position.");
+            return false;
+        }
+
+        ReflectionSmokeTransform rejectedMissingDefault{};
+        auto rejectedMissingDefaultResult = asharia::serialization::deserializeObject(
+            registry, transformType, missingPositionArchive, &rejectedMissingDefault);
+        if (rejectedMissingDefaultResult ||
+            !containsAll(rejectedMissingDefaultResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.position",
+                             "expected=reflected field default value",
+                             "actual=missing",
+                         })) {
+            logFailure("Serialization roundtrip smoke accepted missing default metadata.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeFieldValidator(const asharia::reflection::TypeRegistry& registry,
+                             asharia::reflection::TypeId transformType,
+                             const asharia::serialization::ArchiveValue& archive) {
+        asharia::serialization::ArchiveValue invalidScaleArchive = archive;
+        asharia::serialization::ArchiveValue* invalidScaleFields =
+            invalidScaleArchive.findMemberValue("fields");
+        asharia::serialization::ArchiveValue* scale =
+            invalidScaleFields == nullptr ? nullptr : invalidScaleFields->findMemberValue("scale");
+        asharia::serialization::ArchiveValue* scaleFields =
+            scale == nullptr ? nullptr : scale->findMemberValue("fields");
+        asharia::serialization::ArchiveValue* scaleX =
+            scaleFields == nullptr ? nullptr : scaleFields->findMemberValue("x");
+        if (scaleX == nullptr) {
+            logFailure("Serialization roundtrip smoke could not edit scale.");
+            return false;
+        }
+        *scaleX = asharia::serialization::ArchiveValue::floating(-1.0);
+
+        ReflectionSmokeTransform rejectedInvalidScale{};
+        auto rejectedInvalidScaleResult = asharia::serialization::deserializeObject(
+            registry, transformType, invalidScaleArchive, &rejectedInvalidScale);
+        if (rejectedInvalidScaleResult ||
+            !containsAll(rejectedInvalidScaleResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.scale",
+                             "field=scale",
+                             "actual=validator failed",
+                             "Scale must be positive",
+                         })) {
+            logFailure("Serialization roundtrip smoke accepted an invalid reflected value.");
+            return false;
+        }
+
         return true;
     }
 
@@ -453,6 +738,12 @@ namespace {
             loaded.scale.x != source.scale.x || loaded.debugName != source.debugName ||
             loaded.cachedMagnitude != 0.0F || loaded.scriptCounter != 0) {
             logFailure("Serialization roundtrip smoke loaded unexpected values.");
+            return false;
+        }
+
+        if (!smokeUnknownFieldPolicies(*registry, transformType, *archive, source) ||
+            !smokeMissingFieldPolicies(*registry, transformType, *archive) ||
+            !smokeFieldValidator(*registry, transformType, *archive)) {
             return false;
         }
 
@@ -711,8 +1002,11 @@ namespace {
 
         const asharia::serialization::SerializationPolicy policy{
             .includeTypeHeader = true,
-            .allowUnknownFields = false,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
             .migrations = &migrations,
+            .archivePath = "smoke://scene/transform.ascene",
+            .migrationScenario = asharia::serialization::MigrationScenario::SceneLoad,
         };
         ReflectionSmokeMigratedTransform loaded{};
         auto loadedResult = asharia::serialization::deserializeObject(
@@ -733,8 +1027,11 @@ namespace {
         asharia::serialization::MigrationRegistry emptyMigrations;
         const asharia::serialization::SerializationPolicy missingPolicy{
             .includeTypeHeader = true,
-            .allowUnknownFields = false,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
             .migrations = &emptyMigrations,
+            .archivePath = "smoke://scene/transform.ascene",
+            .migrationScenario = asharia::serialization::MigrationScenario::SceneLoad,
         };
         ReflectionSmokeMigratedTransform rejectedMissingRule{};
         auto missingRuleResult = asharia::serialization::deserializeObject(
@@ -743,6 +1040,10 @@ namespace {
                                               {
                                                   "Missing serialization migration",
                                                   "operation=migrate",
+                                                  "objectPath=com.asharia.smoke.MigratedTransform",
+                                                  "archivePath=smoke://scene/transform.ascene",
+                                                  "scenario=scene load",
+                                                  "type=com.asharia.smoke.MigratedTransform",
                                                   "fromVersion=1",
                                                   "toVersion=2",
                                                   "expected=registered migration step",

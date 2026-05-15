@@ -1,0 +1,13 @@
+{
+  "name": "com.asharia.cpp-binding",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine C++ Binding",
+  "description": "C++ object read/write bindings for schema fields.",
+  "dependencies": ["com.asharia.core", "com.asharia.schema"],
+  "targets": ["asharia-cpp-binding"],
+  "testTargets": ["asharia-cpp-binding-smoke-tests"],
+  "targetDependencies": {
+    "asharia-cpp-binding": ["asharia-core", "asharia-schema"],
+    "asharia-cpp-binding-smoke-tests": ["asharia-cpp-binding"]
+  }
+}

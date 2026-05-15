@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <string_view>
 #include <vector>
 
 #include "asharia/reflection/type_info.hpp"
@@ -10,30 +11,12 @@ namespace asharia::reflection {
         std::vector<const FieldInfo*> fields;
     };
 
-    [[nodiscard]] inline ContextFieldView makeSerializeContextView(const TypeInfo& type) {
+    [[nodiscard]] inline ContextFieldView makeAttributeContextView(const TypeInfo& type,
+                                                                   std::string_view attributeKey,
+                                                                   bool expectedValue = true) {
         ContextFieldView view;
         for (const FieldInfo& field : type.fields) {
-            if (isSerializableField(field)) {
-                view.fields.push_back(&field);
-            }
-        }
-        return view;
-    }
-
-    [[nodiscard]] inline ContextFieldView makeEditContextView(const TypeInfo& type) {
-        ContextFieldView view;
-        for (const FieldInfo& field : type.fields) {
-            if (isEditorVisibleField(field)) {
-                view.fields.push_back(&field);
-            }
-        }
-        return view;
-    }
-
-    [[nodiscard]] inline ContextFieldView makeScriptContextView(const TypeInfo& type) {
-        ContextFieldView view;
-        for (const FieldInfo& field : type.fields) {
-            if (isScriptVisibleField(field)) {
+            if (hasBoolAttribute(field.attributes, attributeKey, expectedValue)) {
                 view.fields.push_back(&field);
             }
         }
