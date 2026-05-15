@@ -477,6 +477,13 @@ struct AssetLoadResult {
 - `findByGuid()` / `findBySourcePath()`。
 - explicit add/update/remove command API。
 
+当前状态：
+
+- 已落地 `AssetCatalog`、`findByGuid()`、`findBySourcePath()`、`sources()` 和显式
+  `addSource()` / `updateSource()` / `removeSource()`。source path relocation 必须通过
+  `AssetCatalogRelocationPolicy::AllowPathChange` 显式开启；catalog 仍不做后台扫描、
+  文件 watcher、`.ameta` IO 或 loaded resource 管理。
+
 验收：
 
 - smoke 覆盖查询、重复 GUID、重复 path、relocation policy。

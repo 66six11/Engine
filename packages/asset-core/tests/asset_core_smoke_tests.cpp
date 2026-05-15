@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "asharia/asset_core/asset_catalog.hpp"
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_handle.hpp"
 #include "asharia/asset_core/asset_metadata.hpp"
@@ -410,10 +411,113 @@ namespace {
         return true;
     }
 
+    bool expectCatalogFailure(asharia::VoidResult result, std::string_view expectedReason) {
+        if (result) {
+            logFailure("Asset catalog smoke accepted an invalid catalog command.");
+            return false;
+        }
+
+        const std::string& message = result.error().message;
+        if (result.error().domain != asharia::ErrorDomain::Asset ||
+            !messageContains(message, expectedReason)) {
+            logFailure("Asset catalog smoke produced an incomplete diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeAssetCatalog() {
+        constexpr std::string_view kTextureGuidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21";
+        constexpr std::string_view kMeshGuidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61";
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+        constexpr std::string_view kMeshTypeName = "com.asharia.asset.Mesh";
+        constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
+        constexpr std::string_view kMeshImporterName = "com.asharia.importer.mesh";
+
+        auto textureGuid = asharia::asset::parseAssetGuid(kTextureGuidText);
+        auto meshGuid = asharia::asset::parseAssetGuid(kMeshGuidText);
+        if (!textureGuid || !meshGuid) {
+            logFailure("Asset catalog smoke could not parse fixture GUIDs.");
+            return false;
+        }
+
+        asharia::asset::SourceAssetRecord textureRecord{
+            .guid = *textureGuid,
+            .assetType = asharia::asset::makeAssetTypeId(kTextureTypeName),
+            .assetTypeName = std::string{kTextureTypeName},
+            .sourcePath = "Content/Textures/Crate.png",
+            .importerId = asharia::asset::makeImporterId(kTextureImporterName),
+            .importerName = std::string{kTextureImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = 0x1000F00DULL,
+            .settingsHash = 0x2000F00DULL,
+        };
+        asharia::asset::SourceAssetRecord meshRecord{
+            .guid = *meshGuid,
+            .assetType = asharia::asset::makeAssetTypeId(kMeshTypeName),
+            .assetTypeName = std::string{kMeshTypeName},
+            .sourcePath = "Content/Meshes/Crate.fbx",
+            .importerId = asharia::asset::makeImporterId(kMeshImporterName),
+            .importerName = std::string{kMeshImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = 0x3000F00DULL,
+            .settingsHash = 0x4000F00DULL,
+        };
+
+        asharia::asset::AssetCatalog catalog;
+        auto addedTexture = catalog.addSource(textureRecord);
+        if (!addedTexture || catalog.sources().size() != 1 ||
+            catalog.findByGuid(*textureGuid) == nullptr ||
+            catalog.findBySourcePath(textureRecord.sourcePath) == nullptr) {
+            logFailure("Asset catalog smoke failed add/query behavior.");
+            return false;
+        }
+
+        asharia::asset::SourceAssetRecord duplicateGuid = textureRecord;
+        duplicateGuid.sourcePath = "Content/Textures/CrateCopy.png";
+        asharia::asset::SourceAssetRecord duplicatePath = meshRecord;
+        duplicatePath.sourcePath = textureRecord.sourcePath;
+        if (!expectCatalogFailure(catalog.addSource(duplicateGuid), "duplicate GUID") ||
+            !expectCatalogFailure(catalog.addSource(duplicatePath), "duplicate source path")) {
+            return false;
+        }
+
+        asharia::asset::SourceAssetRecord relocatedTexture = textureRecord;
+        relocatedTexture.sourcePath = "Content/Props/Crate.png";
+        if (!expectCatalogFailure(catalog.updateSource(relocatedTexture), "relocation rejected")) {
+            return false;
+        }
+
+        auto relocated = catalog.updateSource(
+            relocatedTexture, asharia::asset::AssetCatalogRelocationPolicy::AllowPathChange);
+        if (!relocated || catalog.findBySourcePath(textureRecord.sourcePath) != nullptr ||
+            catalog.findBySourcePath(relocatedTexture.sourcePath) == nullptr) {
+            logFailure("Asset catalog smoke failed explicit relocation behavior.");
+            return false;
+        }
+
+        if (!catalog.addSource(meshRecord) || catalog.sources().size() != 2) {
+            logFailure("Asset catalog smoke failed second add behavior.");
+            return false;
+        }
+
+        if (!catalog.removeSource(*textureGuid) || catalog.findByGuid(*textureGuid) != nullptr ||
+            catalog.sources().size() != 1 ||
+            !expectCatalogFailure(catalog.removeSource(*textureGuid), "missing source")) {
+            logFailure("Asset catalog smoke failed remove behavior.");
+            return false;
+        }
+
+        std::cout << "Asset catalog source count: " << catalog.sources().size() << '\n';
+        return true;
+    }
+
 } // namespace
 
 int main() {
     const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetHandleAndReference() &&
-                        smokeAssetMetadata() && smokeAssetProductKeyAndDependency();
+                        smokeAssetMetadata() && smokeAssetProductKeyAndDependency() &&
+                        smokeAssetCatalog();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
