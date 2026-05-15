@@ -107,8 +107,6 @@ namespace asharia::persistence {
                 return "error";
             case UnknownFieldPolicy::Drop:
                 return "drop";
-            case UnknownFieldPolicy::Preserve:
-                return "preserve";
             }
             return "unknown";
         }
@@ -530,10 +528,11 @@ namespace asharia::persistence {
             return false;
         }
 
-        [[nodiscard]] VoidResult validatePersistentFieldKind(
-            const schema::TypeSchema& ownerType, const schema::FieldSchema& field,
-            const schema::TypeSchema& fieldType, std::string_view operation,
-            std::string_view objectPath) {
+        [[nodiscard]] VoidResult validatePersistentFieldKind(const schema::TypeSchema& ownerType,
+                                                             const schema::FieldSchema& field,
+                                                             const schema::TypeSchema& fieldType,
+                                                             std::string_view operation,
+                                                             std::string_view objectPath) {
             if (!isSupportedPersistentFieldKind(field.valueKind)) {
                 return std::unexpected{
                     fieldError("Persistent schema field kind is not supported yet.", operation,
@@ -542,11 +541,10 @@ namespace asharia::persistence {
             }
 
             if (field.valueKind != fieldType.kind) {
-                return std::unexpected{
-                    fieldError("Persistent schema field kind does not match field type kind.",
-                               operation, ownerType, &field, objectPath,
-                               schemaValueKindName(fieldType.kind),
-                               schemaValueKindName(field.valueKind))};
+                return std::unexpected{fieldError(
+                    "Persistent schema field kind does not match field type kind.", operation,
+                    ownerType, &field, objectPath, schemaValueKindName(fieldType.kind),
+                    schemaValueKindName(field.valueKind))};
             }
 
             return {};
@@ -594,8 +592,8 @@ namespace asharia::persistence {
                 const void* fieldObject = fieldBinding.readAddress(object);
                 if (fieldObject == nullptr) {
                     return std::unexpected{
-                            fieldError("C++ binding field read address returned null.", "save",
-                                       ownerType, &field, objectPath, "field object", "null")};
+                        fieldError("C++ binding field read address returned null.", "save",
+                                   ownerType, &field, objectPath, "field object", "null")};
                 }
                 return saveValue(schemas, bindings, *fieldType, fieldObject,
                                  fieldRequiresEnvelope(field), objectPath);
@@ -704,17 +702,6 @@ namespace asharia::persistence {
                 if (policy.unknownFields == UnknownFieldPolicy::Drop) {
                     continue;
                 }
-                if (policy.unknownFields == UnknownFieldPolicy::Preserve) {
-                    return std::unexpected{makePersistenceError(
-                        "Unknown field preserve policy is not implemented yet.",
-                        {{"operation", "load"},
-                         {"objectPath", appendMemberPath(objectPath, member)},
-                         {"type", type.id.stableName},
-                         {"field", member.key},
-                         {"expected", "preserve policy support"},
-                         {"actual", "unsupported"},
-                         {"policy", unknownFieldPolicyName(policy.unknownFields)}})};
-                }
                 return std::unexpected{makePersistenceError(
                     "Archive object contains an unknown persistent field.",
                     {{"operation", "load"},
@@ -819,9 +806,9 @@ namespace asharia::persistence {
                 if (!temporary) {
                     return std::unexpected{std::move(temporary.error())};
                 }
-                auto loaded = loadValue(schemas, bindings, *fieldType, archiveValue,
-                                        temporary->get(), fieldRequiresEnvelope(field),
-                                        objectPath, policy);
+                auto loaded =
+                    loadValue(schemas, bindings, *fieldType, archiveValue, temporary->get(),
+                              fieldRequiresEnvelope(field), objectPath, policy);
                 if (!loaded) {
                     return loaded;
                 }

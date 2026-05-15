@@ -12,6 +12,12 @@
 
 namespace asharia::cpp_binding {
 
+    template <typename T> struct ReflectedType {
+        [[nodiscard]] static schema::TypeId typeId() {
+            return {};
+        }
+    };
+
     template <typename T> [[nodiscard]] schema::TypeId reflectedTypeId() {
         using ValueT = std::remove_cvref_t<T>;
         if constexpr (std::is_same_v<ValueT, bool>) {
@@ -29,7 +35,7 @@ namespace asharia::cpp_binding {
         } else if constexpr (std::is_same_v<ValueT, std::string>) {
             return schema::builtin::stringTypeId();
         } else {
-            return {};
+            return ReflectedType<ValueT>::typeId();
         }
     }
 
@@ -114,9 +120,6 @@ namespace asharia::cpp_binding {
 
             if (!binding_.fields.empty()) {
                 schema::TypeId defaultValueType = reflectedTypeId<ValueT>();
-                if (!defaultValueType) {
-                    defaultValueType = binding_.fields.back().valueType;
-                }
                 binding_.fields.back().defaultValueType = std::move(defaultValueType);
                 binding_.fields.back().writeDefaultValue =
                     [defaultValue = ValueT{std::move(value)}](void* fieldValue) -> VoidResult {
@@ -169,15 +172,11 @@ namespace asharia::cpp_binding {
         [[nodiscard]] FieldBinding makeBindingHeader(schema::FieldId fieldId,
                                                      std::string_view cppMemberName) const {
             using ValueT = std::remove_cvref_t<FieldT>;
-            schema::TypeId valueType = reflectedTypeId<ValueT>();
-            if (!valueType) {
-                valueType = schemaValueType(fieldId);
-            }
             return FieldBinding{
                 .ownerSchema = binding_.schemaType,
                 .fieldId = fieldId,
                 .cppMemberName = std::string{cppMemberName},
-                .valueType = std::move(valueType),
+                .valueType = reflectedTypeId<ValueT>(),
                 .defaultValueType = {},
                 .size = sizeof(ValueT),
                 .alignment = alignof(ValueT),
@@ -211,14 +210,6 @@ namespace asharia::cpp_binding {
                 }
             };
             return field;
-        }
-
-        [[nodiscard]] schema::TypeId schemaValueType(schema::FieldId fieldId) const {
-            const schema::TypeSchema* schemaType =
-                registry_.schemaRegistry().findType(binding_.schemaType);
-            const schema::FieldSchema* schemaField =
-                schemaType == nullptr ? nullptr : schema::findFieldById(*schemaType, fieldId);
-            return schemaField == nullptr ? schema::TypeId{} : schemaField->valueType;
         }
 
         BindingRegistry& registry_;

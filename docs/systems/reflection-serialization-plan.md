@@ -32,10 +32,10 @@ persistence
 
 | 包 | 当前状态 | 已验证能力 | 仍缺口 |
 | --- | --- | --- | --- |
-| `packages/schema` | 已落地 | `TypeId`、`FieldId`、`ValueKind`、typed metadata、`SchemaRegistry`、builtin types、field alias、reserved field id、freeze、stable/canonical 交叉唯一性 | schema 文件/loader、type redirect、完整 deprecated 字段策略 |
+| `packages/schema` | 已落地 | `TypeId`、`FieldId`、`ValueKind`、typed metadata、`SchemaRegistry`、builtin types、field alias、reserved field id、freeze、stable/canonical 交叉唯一性、schema JSON document loader、golden fixture | type redirect、完整 deprecated 字段策略、codegen |
 | `packages/archive` | 已落地 | `ArchiveValue`、strict JSON read/write、duplicate key 拒绝、deterministic output、invalid UTF-8 和 non-finite float 拒绝、`nlohmann_json` 不出 public API | 二进制格式、文件级 schema header、archive diff/patch |
-| `packages/cpp-binding` | 已落地 | pointer-to-member、readonly field、getter/setter property、default value、duplicate binding 检查、builtin scalar C++ 类型 mismatch 检查 | 自定义 struct 的显式 C++ type identity、generated binding、复杂容器 binding |
-| `packages/persistence` | 部分落地 | scalar/object/inline struct save/load、root/object envelope、object-valued field envelope、unknown field error/drop、missing field default、migration chain、alias load | `UnknownFieldPolicy::Preserve` 未实现；`Enum`、`Array`、`AssetReference`、`EntityReference` 只明确拒绝；scene/asset 文件格式尚未接入 |
+| `packages/cpp-binding` | 已落地 | pointer-to-member、readonly field、getter/setter property、default value、duplicate binding 检查、builtin scalar C++ 类型 mismatch 检查、自定义 Object/InlineStruct C++ type identity 校验 | generated binding、binding manifest、复杂容器 binding |
+| `packages/persistence` | 部分落地 | scalar/object/inline struct save/load、root/object envelope、object-valued field envelope、unknown field error/drop、missing field default、migration chain、alias load、unsupported kind save/load 负向测试 | `Enum`、`Array`、`AssetReference`、`EntityReference` 仍无持久化语义；scene/asset 文件格式尚未接入；unknown-field preserve 需要未来文件级保留模型后重新设计 |
 | `packages/reflection` / `packages/serialization` | 仍保留过渡 | 旧 smoke 继续作为兼容面回归 | 必须收口为 legacy facade 或删除，不能继续承载新语义 |
 
 当前完成度判断：
@@ -504,8 +504,8 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 已补充规则：
 
 - builtin scalar 类型必须从 C++ 实际字段类型推导并与 schema `valueType` 匹配。
-- default value 的 C++ 类型也必须与 schema `valueType` 匹配。
-- 自定义 struct 目前仍回退到 schema `valueType`，下一阶段需要显式 type identity 或 generated binding 支撑。
+- `Object` / `InlineStruct` 字段的自定义 C++ 类型必须通过 `ReflectedType<T>` 提供显式 `TypeId`，不再回退到 schema `valueType`。
+- default value 的 C++ 类型也必须与 schema `valueType` 匹配；custom struct default 缺失 reflected type id 会拒绝注册。
 
 ### 切片 E：`packages/persistence`
 
@@ -531,7 +531,7 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 
 当前明确不支持：
 
-- `UnknownFieldPolicy::Preserve`，当前返回 not implemented。
+- unknown-field preserve；当前 public policy 只暴露 `Error` 和 `Drop`。
 - `Enum`、`Array`、`AssetReference`、`EntityReference` 的持久化语义。
 - scene/prefab/asset 文件级 envelope、对象表和引用解析。
 
@@ -542,7 +542,7 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 - `Vec3` inline struct。
 - component/root object envelope。
 - object-valued field envelope。
-- unknown field error/drop，preserve 必须明确失败直到实现。
+- unknown field error/drop。
 - missing required field。
 - read-only binding 写入失败诊断。
 - unsupported kind 拒绝：array、enum、asset reference、entity reference。
@@ -628,13 +628,16 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 ### P0：锁定 MVP 支持集
 
+状态：已收口第一轮。`UnknownFieldPolicy::Preserve` 不再作为当前 public policy 暴露；
+`Enum`、`Array`、`AssetReference`、`EntityReference` 均有 save/load 负向测试，继续作为 P3 的语义扩展入口。
+
 目标：把当前可用能力和未支持能力写成明确契约，避免使用方误认为 schema 中所有 `ValueKind` 都可持久化。
 
 工作：
 
-- 在 persistence public 文档中声明支持 `Bool/Integer/Float/String/Object/InlineStruct`。
-- 为 `Enum`、`Array`、`AssetReference`、`EntityReference` 增加负向测试。
-- 如果短期不实现 `UnknownFieldPolicy::Preserve`，将其标记为 reserved policy，或者从 public API 收窄。
+- 在 persistence public 文档中声明支持 `Bool/Integer/Float/String/Object/InlineStruct`。[x]
+- 为 `Enum`、`Array`、`AssetReference`、`EntityReference` 增加负向测试。[x]
+- 如果短期不实现 `UnknownFieldPolicy::Preserve`，将其标记为 reserved policy，或者从 public API 收窄。[x]
 
 验收：
 
@@ -646,28 +649,38 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 
 目标：让 custom struct binding 也能像 builtin scalar 一样被校验，而不是只回退到 schema field `valueType`。
 
+状态：首轮已完成。当前采用 `ReflectedType<T>` specialization 作为显式身份入口，`BindingRegistry` 在注册阶段拒绝 `Object` / `InlineStruct` 字段缺失或不匹配的 reflected `TypeId`。生成式 binding 和手写 manifest 留作后续增强。
+
 候选方案：
 
-- 显式 specialization：`reflectedTypeId<T>()` 可由类型所在 package 提供。
+- 显式 specialization：`reflectedTypeId<T>()` 可由类型所在 package 提供，当前已采用。
 - 生成式 binding：后续 schema codegen 输出 C++ type identity 和 binding skeleton。
 - 手写 binding manifest：先作为过渡，避免引入完整 AST/codegen。
 
 验收：
 
-- 错误绑定 `Vec3` 字段到 `Quat` 或其他 custom struct 时必须失败。
-- default value custom struct 类型 mismatch 必须失败。
-- 不引入跨 package `src/` include。
+- [x] 错误绑定 `Vec3` 字段到 `Quat` 或其他 custom struct 时必须失败。
+- [x] default value custom struct 类型 mismatch 必须失败。
+- [x] 不引入跨 package `src/` include。
 
 ### P2：补 schema 文件和 golden tests
 
 目标：真正从“C++ 内声明 schema”推进到 schema-first。
 
+状态：首轮已完成。当前定义 `schemaVersion: 1` JSON document，schema package 内部私有使用 JSON parser，public API 只返回 `TypeSchema` / `FieldSchema`，不依赖 archive/persistence/editor/script。
+
 工作：
 
-- 定义 schema JSON 或等价文本格式。
-- 加载后生成 `TypeSchema` / `FieldSchema`。
-- 增加 golden schema fixtures，覆盖 field id、alias、reserved id、version 和 metadata。
-- schema 文件解析仍不依赖 archive/persistence/editor/script。
+- [x] 定义 schema JSON 或等价文本格式。
+- [x] 加载后生成 `TypeSchema` / `FieldSchema`。
+- [x] 增加 golden schema fixtures，覆盖 field id、alias、reserved id、version 和 metadata。
+- [x] schema 文件解析仍不依赖 archive/persistence/editor/script。
+
+后续增强：
+
+- schema file format version migration。
+- type redirect / rename table。
+- generated C++ type identity 和 binding skeleton。
 
 ### P3：实现 Array/Enum/Reference 的最小语义
 

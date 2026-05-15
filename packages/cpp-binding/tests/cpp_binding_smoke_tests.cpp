@@ -1,5 +1,5 @@
-﻿#include <cstdlib>
-#include <cstdint>
+﻿#include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -8,7 +8,22 @@
 
 namespace {
 
+    constexpr std::string_view kVec3TypeName = "com.asharia.cppBindingSmoke.Vec3";
+    constexpr std::string_view kQuatTypeName = "com.asharia.cppBindingSmoke.Quat";
     constexpr std::string_view kComponentTypeName = "com.asharia.cppBindingSmoke.Component";
+
+    struct SmokeVec3 {
+        float x{};
+        float y{};
+        float z{};
+    };
+
+    struct SmokeQuat {
+        float x{};
+        float y{};
+        float z{};
+        float w{1.0F};
+    };
 
     struct SmokeComponent {
         [[nodiscard]] float exposure() const noexcept {
@@ -27,14 +42,68 @@ namespace {
 
         float value{};
         std::int32_t mismatchedValue{};
+        SmokeVec3 vectorValue;
+        SmokeQuat mismatchedVectorValue;
 
     private:
         float exposure_{1.5F};
         bool dirty_{};
     };
 
+} // namespace
+
+namespace asharia::cpp_binding {
+
+    template <> struct ReflectedType<SmokeVec3> {
+        [[nodiscard]] static schema::TypeId typeId() {
+            return schema::makeTypeId(kVec3TypeName);
+        }
+    };
+
+    template <> struct ReflectedType<SmokeQuat> {
+        [[nodiscard]] static schema::TypeId typeId() {
+            return schema::makeTypeId(kQuatTypeName);
+        }
+    };
+
+} // namespace asharia::cpp_binding
+
+namespace {
+
     [[nodiscard]] bool contains(std::string_view text, std::string_view needle) {
         return text.find(needle) != std::string_view::npos;
+    }
+
+    [[nodiscard]] asharia::schema::FieldSchema persistentFloat(std::uint32_t id,
+                                                               std::string_view key) {
+        return asharia::schema::FieldSchema{
+            .id = asharia::schema::makeFieldId(id),
+            .key = std::string{key},
+            .valueType = asharia::schema::builtin::floatTypeId(),
+            .valueKind = asharia::schema::ValueKind::Float,
+            .metadata = {.persistence = {.stored = true}},
+        };
+    }
+
+    [[nodiscard]] asharia::schema::TypeSchema makeVec3Schema() {
+        return asharia::schema::TypeSchema{
+            .id = asharia::schema::makeTypeId(kVec3TypeName),
+            .canonicalName = std::string{kVec3TypeName},
+            .version = 1,
+            .kind = asharia::schema::ValueKind::InlineStruct,
+            .fields = {persistentFloat(1, "x"), persistentFloat(2, "y"), persistentFloat(3, "z")},
+        };
+    }
+
+    [[nodiscard]] asharia::schema::TypeSchema makeQuatSchema() {
+        return asharia::schema::TypeSchema{
+            .id = asharia::schema::makeTypeId(kQuatTypeName),
+            .canonicalName = std::string{kQuatTypeName},
+            .version = 1,
+            .kind = asharia::schema::ValueKind::InlineStruct,
+            .fields = {persistentFloat(1, "x"), persistentFloat(2, "y"), persistentFloat(3, "z"),
+                       persistentFloat(4, "w")},
+        };
     }
 
     [[nodiscard]] asharia::schema::TypeSchema makeComponentSchema() {
@@ -59,6 +128,13 @@ namespace {
                         .valueKind = asharia::schema::ValueKind::Float,
                         .metadata = {.persistence = {.stored = true}},
                     },
+                    asharia::schema::FieldSchema{
+                        .id = asharia::schema::makeFieldId(3),
+                        .key = "vectorValue",
+                        .valueType = asharia::schema::makeTypeId(kVec3TypeName),
+                        .valueKind = asharia::schema::ValueKind::InlineStruct,
+                        .metadata = {.persistence = {.stored = true}},
+                    },
                 },
         };
     }
@@ -68,6 +144,14 @@ namespace {
 int main() {
     asharia::schema::SchemaRegistry schemas;
     if (auto registered = asharia::schema::registerBuiltinSchemas(schemas); !registered) {
+        std::cerr << registered.error().message << '\n';
+        return EXIT_FAILURE;
+    }
+    if (auto registered = schemas.registerType(makeVec3Schema()); !registered) {
+        std::cerr << registered.error().message << '\n';
+        return EXIT_FAILURE;
+    }
+    if (auto registered = schemas.registerType(makeQuatSchema()); !registered) {
         std::cerr << registered.error().message << '\n';
         return EXIT_FAILURE;
     }
@@ -92,6 +176,17 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    auto mismatchedCustomField =
+        asharia::cpp_binding::CppBindingBuilder<SmokeComponent>(
+            bindings, asharia::schema::makeTypeId(kComponentTypeName), "SmokeComponent")
+            .field(asharia::schema::makeFieldId(3), "mismatchedVectorValue",
+                   &SmokeComponent::mismatchedVectorValue)
+            .commit();
+    if (mismatchedCustomField || !contains(mismatchedCustomField.error().message, "value type")) {
+        std::cerr << "C++ binding registry accepted a custom member type mismatch.\n";
+        return EXIT_FAILURE;
+    }
+
     auto mismatchedDefault =
         asharia::cpp_binding::CppBindingBuilder<SmokeComponent>(
             bindings, asharia::schema::makeTypeId(kComponentTypeName), "SmokeComponent")
@@ -100,6 +195,18 @@ int main() {
             .commit();
     if (mismatchedDefault || !contains(mismatchedDefault.error().message, "default value type")) {
         std::cerr << "C++ binding registry accepted a default value type mismatch.\n";
+        return EXIT_FAILURE;
+    }
+
+    auto mismatchedCustomDefault =
+        asharia::cpp_binding::CppBindingBuilder<SmokeComponent>(
+            bindings, asharia::schema::makeTypeId(kComponentTypeName), "SmokeComponent")
+            .field(asharia::schema::makeFieldId(3), "vectorValue", &SmokeComponent::vectorValue)
+            .defaultValue(SmokeQuat{})
+            .commit();
+    if (mismatchedCustomDefault ||
+        !contains(mismatchedCustomDefault.error().message, "default value type")) {
+        std::cerr << "C++ binding registry accepted a custom default value type mismatch.\n";
         return EXIT_FAILURE;
     }
 
@@ -114,6 +221,8 @@ int main() {
                 [](SmokeComponent& component, const float& exposure) {
                     return component.setExposure(exposure);
                 })
+            .field(asharia::schema::makeFieldId(3), "vectorValue", &SmokeComponent::vectorValue)
+            .defaultValue(SmokeVec3{.x = 1.0F, .y = 2.0F, .z = 3.0F})
             .commit();
     if (!componentBinding) {
         std::cerr << componentBinding.error().message << '\n';
@@ -147,8 +256,11 @@ int main() {
         asharia::cpp_binding::findFieldBinding(*binding, asharia::schema::makeFieldId(1));
     const asharia::cpp_binding::FieldBinding* exposureField =
         asharia::cpp_binding::findFieldBinding(*binding, asharia::schema::makeFieldId(2));
+    const asharia::cpp_binding::FieldBinding* vectorField =
+        asharia::cpp_binding::findFieldBinding(*binding, asharia::schema::makeFieldId(3));
     if (valueField == nullptr || exposureField == nullptr || !valueField->writeAddress ||
-        !exposureField->readValue || !exposureField->writeValue || !valueField->writeDefaultValue) {
+        vectorField == nullptr || !exposureField->readValue || !exposureField->writeValue ||
+        !valueField->writeDefaultValue || !vectorField->writeDefaultValue) {
         std::cerr << "C++ binding fields did not expose expected thunks.\n";
         return EXIT_FAILURE;
     }

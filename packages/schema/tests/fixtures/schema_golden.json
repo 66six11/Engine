@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "types": [
+    {
+      "stableName": "com.asharia.schemaGolden.Vec3",
+      "canonicalName": "com.asharia.schemaGolden.Vec3",
+      "version": 2,
+      "kind": "InlineStruct",
+      "metadata": {
+        "editor": {
+          "displayName": "Vector 3",
+          "category": "Math"
+        },
+        "script": {
+          "visible": true,
+          "read": true,
+          "write": true,
+          "context": "component",
+          "threadAffinity": "main",
+          "lifetime": "value"
+        }
+      },
+      "fields": [
+        {
+          "id": 1,
+          "key": "x",
+          "valueType": "com.asharia.core.Float",
+          "valueKind": "Float",
+          "aliases": ["oldX"],
+          "metadata": {
+            "persistence": {
+              "stored": true,
+              "required": true,
+              "hasDefault": false,
+              "sinceVersion": 1
+            },
+            "editor": {
+              "visible": true,
+              "displayName": "X"
+            },
+            "script": {
+              "visible": true,
+              "read": true,
+              "write": true
+            },
+            "numeric": {
+              "hasMin": true,
+              "hasMax": true,
+              "min": -1000.0,
+              "max": 1000.0,
+              "step": 0.01,
+              "unit": "meter"
+            }
+          }
+        },
+        {
+          "id": 2,
+          "key": "y",
+          "valueType": "com.asharia.core.Float",
+          "valueKind": "Float",
+          "metadata": {
+            "persistence": {
+              "stored": true
+            },
+            "editor": {
+              "visible": true,
+              "displayName": "Y"
+            },
+            "script": {
+              "visible": true,
+              "read": true,
+              "write": true
+            }
+          }
+        },
+        {
+          "id": 3,
+          "key": "z",
+          "valueType": "com.asharia.core.Float",
+          "valueKind": "Float",
+          "metadata": {
+            "persistence": {
+              "stored": true
+            },
+            "editor": {
+              "visible": true,
+              "displayName": "Z"
+            },
+            "script": {
+              "visible": true,
+              "read": true,
+              "write": true
+            }
+          }
+        }
+      ],
+      "reservedFieldIds": [99]
+    },
+    {
+      "stableName": "com.asharia.schemaGolden.Transform",
+      "canonicalName": "com.asharia.schemaGolden.TransformComponent",
+      "version": 3,
+      "kind": "Object",
+      "metadata": {
+        "editor": {
+          "displayName": "Transform",
+          "category": "Scene"
+        },
+        "script": {
+          "visible": true,
+          "read": true,
+          "write": true,
+          "context": "component",
+          "threadAffinity": "main",
+          "lifetime": "entity"
+        }
+      },
+      "fields": [
+        {
+          "id": 1,
+          "key": "position",
+          "valueType": "com.asharia.schemaGolden.Vec3",
+          "valueKind": "InlineStruct",
+          "aliases": ["translation", "localPosition"],
+          "metadata": {
+            "persistence": {
+              "stored": true,
+              "required": true,
+              "sinceVersion": 1
+            },
+            "editor": {
+              "visible": true,
+              "displayName": "Position",
+              "category": "Transform"
+            },
+            "script": {
+              "visible": true,
+              "read": true,
+              "write": true
+            }
+          }
+        },
+        {
+          "id": 2,
+          "key": "cachedMagnitude",
+          "valueType": "com.asharia.core.Float",
+          "valueKind": "Float",
+          "metadata": {
+            "persistence": {
+              "stored": false,
+              "required": false
+            },
+            "editor": {
+              "visible": true,
+              "readOnly": true,
+              "displayName": "Cached Magnitude",
+              "readOnlyReason": "Derived from position"
+            },
+            "script": {
+              "visible": false
+            }
+          }
+        }
+      ],
+      "reservedFieldIds": [77, 99]
+    }
+  ]
+}
