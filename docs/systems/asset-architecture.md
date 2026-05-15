@@ -422,6 +422,11 @@ struct AssetLoadResult {
 - `AssetReference`。
 - expected type 校验 helper。
 
+当前状态：
+
+- 已落地 `AssetHandle<T>`、`AssetReference`、`makeAssetReference()` 和最小
+  `validateAssetReference()`。类型约束仍由后续 metadata、catalog 和 load policy 继续补全。
+
 验收：
 
 - smoke 覆盖 typed handle、untyped reference、type mismatch 诊断。
