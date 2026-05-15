@@ -15,6 +15,7 @@ namespace asharia {
         VmaMemoryUsage vmaMemoryUsage(VulkanBufferMemoryUsage usage) {
             switch (usage) {
             case VulkanBufferMemoryUsage::HostUpload:
+            case VulkanBufferMemoryUsage::HostReadback:
                 return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
             case VulkanBufferMemoryUsage::DeviceLocal:
             default:
@@ -26,6 +27,9 @@ namespace asharia {
             switch (usage) {
             case VulkanBufferMemoryUsage::HostUpload:
                 return VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                       VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            case VulkanBufferMemoryUsage::HostReadback:
+                return VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
                        VMA_ALLOCATION_CREATE_MAPPED_BIT;
             case VulkanBufferMemoryUsage::DeviceLocal:
             default:
@@ -98,6 +102,9 @@ namespace asharia {
         case VulkanBufferMemoryUsage::HostUpload:
             buffer.stats_.hostUploadCreated = 1;
             break;
+        case VulkanBufferMemoryUsage::HostReadback:
+            buffer.stats_.hostReadbackCreated = 1;
+            break;
         case VulkanBufferMemoryUsage::DeviceLocal:
         default:
             buffer.stats_.deviceLocalCreated = 1;
@@ -137,6 +144,34 @@ namespace asharia {
 
         ++stats_.uploadCalls;
         stats_.uploadedBytes += bytes.size_bytes();
+        return {};
+    }
+
+    Result<void> VulkanBuffer::read(std::span<std::byte> bytes) {
+        if (buffer_ == VK_NULL_HANDLE || allocation_ == nullptr || allocator_ == nullptr) {
+            return std::unexpected{vulkanError("Cannot read from an uninitialized Vulkan buffer")};
+        }
+        if (bytes.size_bytes() > size_) {
+            return std::unexpected{
+                vulkanError("Cannot read more data than the Vulkan buffer holds")};
+        }
+
+        const auto byteCount = static_cast<VkDeviceSize>(bytes.size_bytes());
+        const VkResult invalidateResult = vmaInvalidateAllocation(allocator_, allocation_, 0,
+                                                                  byteCount);
+        if (invalidateResult != VK_SUCCESS) {
+            return std::unexpected{
+                vulkanError("Failed to invalidate Vulkan buffer memory", invalidateResult)};
+        }
+
+        void* mapped = nullptr;
+        const VkResult mapResult = vmaMapMemory(allocator_, allocation_, &mapped);
+        if (mapResult != VK_SUCCESS) {
+            return std::unexpected{vulkanError("Failed to map Vulkan buffer memory", mapResult)};
+        }
+
+        std::memcpy(bytes.data(), mapped, bytes.size_bytes());
+        vmaUnmapMemory(allocator_, allocation_);
         return {};
     }
 

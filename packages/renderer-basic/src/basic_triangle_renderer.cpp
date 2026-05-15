@@ -67,6 +67,8 @@ namespace asharia {
             std::array<float, 4> mvpRow3{};
         };
 
+        constexpr std::uint32_t kBasicComputeValueCount = 4;
+
         struct BasicFullscreenTexturePassMessages {
             std::string_view paramsContext;
             std::string_view unknownTextureSlotMessage;
@@ -131,6 +133,7 @@ namespace asharia {
             const VulkanBufferStats stats = buffer.stats();
             total.created += stats.created;
             total.hostUploadCreated += stats.hostUploadCreated;
+            total.hostReadbackCreated += stats.hostReadbackCreated;
             total.deviceLocalCreated += stats.deviceLocalCreated;
             total.allocatedBytes += stats.allocatedBytes;
             total.uploadCalls += stats.uploadCalls;
@@ -392,7 +395,8 @@ namespace asharia {
         [[nodiscard]] Result<void>
         validateDescriptorBinding(const ShaderResourceSignature& signature, std::uint32_t set,
                                   std::uint32_t binding, std::string_view expectedKind,
-                                  std::string_view context) {
+                                  std::string_view context,
+                                  std::string_view expectedStageVisibility = "fragment") {
             const ShaderDescriptorBindingReflection* descriptor =
                 findDescriptorBinding(signature, set, binding);
             if (descriptor == nullptr) {
@@ -418,7 +422,7 @@ namespace asharia {
             if (!kind) {
                 return std::unexpected{std::move(kind.error())};
             }
-            auto stage = expectString(descriptor->stageVisibility, "fragment",
+            auto stage = expectString(descriptor->stageVisibility, expectedStageVisibility,
                                       std::string{context} + " stage");
             if (!stage) {
                 return std::unexpected{std::move(stage.error())};
@@ -734,6 +738,66 @@ namespace asharia {
                 return std::unexpected{std::move(vertexInputCount.error())};
             }
             return *fragmentSignature;
+        }
+
+        [[nodiscard]] Result<ShaderResourceSignature>
+        validateBasicComputeReflection(const std::filesystem::path& shaderDirectory) {
+            auto computeReflection =
+                readShaderReflection(shaderDirectory / "basic_compute.comp.reflection.json");
+            if (!computeReflection) {
+                return std::unexpected{std::move(computeReflection.error())};
+            }
+
+            auto computeEntry = expectString(computeReflection->entry, "computeMain",
+                                             "Compute shader reflection entry");
+            if (!computeEntry) {
+                return std::unexpected{std::move(computeEntry.error())};
+            }
+            auto computeStage = expectString(computeReflection->stage, "compute",
+                                             "Compute shader reflection stage");
+            if (!computeStage) {
+                return std::unexpected{std::move(computeStage.error())};
+            }
+
+            const std::array shaderReflections{*computeReflection};
+            ShaderResourceSignature signature = shaderResourceSignature(shaderReflections);
+            auto descriptorSignature =
+                expectUint(signature.descriptorBindingCount, 1,
+                           "Compute dispatch descriptor binding signature");
+            if (!descriptorSignature) {
+                return std::unexpected{std::move(descriptorSignature.error())};
+            }
+            auto pushConstantSignature = expectUint(
+                signature.pushConstantCount, 0, "Compute dispatch push constant signature");
+            if (!pushConstantSignature) {
+                return std::unexpected{std::move(pushConstantSignature.error())};
+            }
+
+            const ShaderDescriptorBindingReflection* storageBuffer =
+                findDescriptorBinding(signature, 0, 0);
+            if (storageBuffer == nullptr) {
+                return std::unexpected{
+                    shaderError("Compute dispatch storage buffer missing descriptor binding")};
+            }
+            auto storageCount = expectUint(storageBuffer->count, 1,
+                                           "Compute dispatch storage buffer count");
+            if (!storageCount) {
+                return std::unexpected{std::move(storageCount.error())};
+            }
+            if (storageBuffer->kind != "mutableTypedBuffer" &&
+                storageBuffer->kind != "mutableRawBuffer") {
+                return std::unexpected{
+                    shaderError("Compute dispatch storage buffer kind expected mutable storage "
+                                "buffer but found " +
+                                storageBuffer->kind)};
+            }
+            auto storageStage = expectString(storageBuffer->stageVisibility, "compute",
+                                             "Compute dispatch storage buffer stage");
+            if (!storageStage) {
+                return std::unexpected{std::move(storageStage.error())};
+            }
+
+            return signature;
         }
 
         void recordTransferClear(const VulkanFrameRecordContext& frame,
@@ -1156,6 +1220,94 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
+        [[nodiscard]] Result<VkClearValue>
+        basicMrtClearValue(const RenderGraphCommand& command, std::string_view slotName) {
+            auto commandKind =
+                expectCommandKind(command, RenderGraphCommandKind::ClearColor, "MRT clear");
+            if (!commandKind) {
+                return std::unexpected{std::move(commandKind.error())};
+            }
+            if (command.name != slotName) {
+                return std::unexpected{
+                    renderGraphError("MRT clear command does not match its color slot")};
+            }
+
+            return VkClearValue{
+                .color =
+                    VkClearColorValue{{
+                        command.floatValues[0],
+                        command.floatValues[1],
+                        command.floatValues[2],
+                        command.floatValues[3],
+                    }},
+            };
+        }
+
+        [[nodiscard]] Result<std::array<VkClearValue, 2>>
+        basicMrtClearValues(RenderGraphPassContext pass) {
+            constexpr std::size_t kAttachmentCount = 2;
+            if (pass.commands.size() != kAttachmentCount) {
+                return std::unexpected{
+                    renderGraphError("MRT pass expected exactly two clear commands")};
+            }
+
+            auto color0 = basicMrtClearValue(pass.commands[0], "color0");
+            if (!color0) {
+                return std::unexpected{std::move(color0.error())};
+            }
+            auto color1 = basicMrtClearValue(pass.commands[1], "color1");
+            if (!color1) {
+                return std::unexpected{std::move(color1.error())};
+            }
+
+            return std::array{*color0, *color1};
+        }
+
+        void recordMrtClear(const VulkanFrameRecordContext& frame,
+                            const std::array<VulkanRenderGraphImageBinding, 2>& colors,
+                            const std::array<VkClearValue, 2>& clearValues) {
+            const std::array colorAttachments{
+                VkRenderingAttachmentInfo{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                    .pNext = nullptr,
+                    .imageView = colors[0].vulkanImageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .resolveMode = VK_RESOLVE_MODE_NONE,
+                    .resolveImageView = VK_NULL_HANDLE,
+                    .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                    .clearValue = clearValues[0],
+                },
+                VkRenderingAttachmentInfo{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                    .pNext = nullptr,
+                    .imageView = colors[1].vulkanImageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .resolveMode = VK_RESOLVE_MODE_NONE,
+                    .resolveImageView = VK_NULL_HANDLE,
+                    .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                    .clearValue = clearValues[1],
+                },
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = frame.extent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount =
+                static_cast<std::uint32_t>(colorAttachments.size());
+            renderingInfo.pColorAttachments = colorAttachments.data();
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
         [[nodiscard]] Result<void>
         updateBasicFullscreenSourceDescriptor(VkDevice device, VkDescriptorSet descriptorSet,
                                               VkImageView sourceImageView) {
@@ -1268,6 +1420,122 @@ namespace asharia {
             return {};
         }
 
+        [[nodiscard]] Result<void> validateBasicComputeCommands(RenderGraphPassContext pass,
+                                                                BasicComputeDispatchParams params) {
+            if (pass.commands.size() != 2) {
+                return std::unexpected{
+                    renderGraphError("Compute dispatch pass expected exactly two commands")};
+            }
+
+            const RenderGraphCommand& shader = pass.commands[0];
+            const RenderGraphCommand& dispatch = pass.commands[1];
+            auto shaderKind =
+                expectCommandKind(shader, RenderGraphCommandKind::SetShader, "Compute shader");
+            if (!shaderKind) {
+                return std::unexpected{std::move(shaderKind.error())};
+            }
+            auto dispatchKind =
+                expectCommandKind(dispatch, RenderGraphCommandKind::Dispatch, "Compute dispatch");
+            if (!dispatchKind) {
+                return std::unexpected{std::move(dispatchKind.error())};
+            }
+            if (shader.name != "Hidden/BasicCompute" || shader.secondaryName != "Main") {
+                return std::unexpected{
+                    renderGraphError("Compute dispatch shader command does not match the current "
+                                     "pipeline key")};
+            }
+            if (dispatch.uintValues != std::array<std::uint32_t, 3>{
+                                           params.groupCountX,
+                                           params.groupCountY,
+                                           params.groupCountZ,
+                                       }) {
+                return std::unexpected{
+                    renderGraphError("Compute dispatch command does not match typed params")};
+            }
+            return {};
+        }
+
+        [[nodiscard]] Result<void> executeBasicComputeDispatchPass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> imageBindings,
+            std::span<const VulkanRenderGraphBufferBinding> bufferBindings, VkPipeline pipeline,
+            VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
+            BasicComputeDispatchStats& stats) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
+                frame, renderGraphPassDebugLabel(pass, imageBindings, bufferBindings));
+
+            auto transitions =
+                recordRenderGraphBufferTransitions(frame, pass.bufferTransitionsBefore,
+                                                   bufferBindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+
+            auto params = readPassParams<BasicComputeDispatchParams>(
+                pass, kBasicComputeDispatchParamsType, "Compute dispatch pass");
+            if (!params) {
+                return std::unexpected{std::move(params.error())};
+            }
+            auto commands = validateBasicComputeCommands(pass, *params);
+            if (!commands) {
+                return std::unexpected{std::move(commands.error())};
+            }
+
+            vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+            vkCmdBindDescriptorSets(frame.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                    pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+            vkCmdDispatch(frame.commandBuffer, params->groupCountX, params->groupCountY,
+                          params->groupCountZ);
+            ++stats.dispatchesRecorded;
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void> executeBasicComputeReadbackPass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> imageBindings,
+            std::span<const VulkanRenderGraphBufferBinding> bufferBindings) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
+                frame, renderGraphPassDebugLabel(pass, imageBindings, bufferBindings));
+
+            auto transitions =
+                recordRenderGraphBufferTransitions(frame, pass.bufferTransitionsBefore,
+                                                   bufferBindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+            if (!pass.commands.empty()) {
+                return std::unexpected{
+                    renderGraphError("Compute readback copy pass expected no commands")};
+            }
+
+            auto source =
+                findVulkanRenderGraphBufferTransferRead(pass, "source", bufferBindings);
+            if (!source) {
+                return std::unexpected{std::move(source.error())};
+            }
+            auto target =
+                findVulkanRenderGraphBufferTransferWrite(pass, "target", bufferBindings);
+            if (!target) {
+                return std::unexpected{std::move(target.error())};
+            }
+            if (source->size == VK_WHOLE_SIZE || target->size == VK_WHOLE_SIZE ||
+                source->size > target->size) {
+                return std::unexpected{
+                    renderGraphError("Compute readback copy buffer bindings have invalid sizes")};
+            }
+
+            VkBufferCopy copy{};
+            copy.srcOffset = source->offset;
+            copy.dstOffset = target->offset;
+            copy.size = source->size;
+            vkCmdCopyBuffer(frame.commandBuffer, source->vulkanBuffer, target->vulkanBuffer, 1,
+                            &copy);
+            return {};
+        }
+
         [[nodiscard]] bool usesImage(std::span<const RenderGraphImageHandle> images,
                                      RenderGraphImageHandle image) {
             return std::ranges::any_of(
@@ -1351,7 +1619,13 @@ namespace asharia {
                     .vulkanImage = resource->image.handle(),
                     .vulkanImageView = resource->imageView.handle(),
                     .aspectMask = resource->image.aspectMask(),
+                    .debugName = allocation.imageName,
                 });
+                auto named =
+                    setVulkanRenderGraphImageDebugNames(frame, bindings.back());
+                if (!named) {
+                    return std::unexpected{std::move(named.error())};
+                }
                 transientImages.push_back(std::move(*resource));
             }
 
@@ -1443,6 +1717,7 @@ namespace asharia {
                 .vulkanImage = target.image,
                 .vulkanImageView = target.imageView,
                 .aspectMask = target.aspectMask,
+                .debugName = {},
             };
         }
 
@@ -2145,6 +2420,502 @@ namespace asharia {
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         };
+    }
+
+    BasicMrtRenderer::BasicMrtRenderer(BasicMrtRenderer&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    BasicMrtRenderer& BasicMrtRenderer::operator=(BasicMrtRenderer&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        allocator_ = std::exchange(other.allocator_, nullptr);
+        transientImagePool_ = std::move(other.transientImagePool_);
+        transientImages_ = std::move(other.transientImages_);
+        return *this;
+    }
+
+    Result<BasicMrtRenderer> BasicMrtRenderer::create(const BasicMrtRendererDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0, "Cannot create MRT renderer without a device"}};
+        }
+        if (desc.allocator == nullptr) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0, "Cannot create MRT renderer without an allocator"}};
+        }
+
+        BasicMrtRenderer renderer;
+        renderer.device_ = desc.device;
+        renderer.allocator_ = desc.allocator;
+        return renderer;
+    }
+
+    VulkanTransientImagePoolStats BasicMrtRenderer::transientPoolStats() const {
+        return transientImagePool_.stats();
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicMrtRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
+        const RenderGraphImageFormat colorFormat = basicRenderGraphImageFormat(frame.format);
+        if (colorFormat == RenderGraphImageFormat::Undefined) {
+            return std::unexpected{
+                renderGraphError("MRT renderer does not support the current swapchain format")};
+        }
+
+        RenderGraph graph;
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const RenderGraphExtent2D graphExtent = basicRenderGraphExtent(frame.extent);
+        const auto color0 = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "MrtColor0",
+            .format = colorFormat,
+            .extent = graphExtent,
+        });
+        const auto color1 = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "MrtColor1",
+            .format = colorFormat,
+            .extent = graphExtent,
+        });
+        const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
+
+        std::vector<VulkanRenderGraphImageBinding> bindings;
+        bindings.reserve(3);
+        bindings.push_back(basicBackbufferBinding(backbuffer, frame));
+        auto namedBackbuffer = setVulkanRenderGraphImageDebugNames(frame, bindings.back());
+        if (!namedBackbuffer) {
+            return std::unexpected{std::move(namedBackbuffer.error())};
+        }
+
+        graph.addPass("ClearBackbuffer", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
+            .writeTransfer("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
+                [[maybe_unused]] const auto debugLabel =
+                    VulkanDebugLabelScope::begin(frame, renderGraphPassDebugLabel(pass, bindings));
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto params = readPassParams<BasicTransferClearParams>(
+                    pass, kBasicTransferClearParamsType, "MRT backbuffer clear pass");
+                if (!params) {
+                    return std::unexpected{std::move(params.error())};
+                }
+                recordTransferClear(frame, basicClearColorValue(*params));
+                return {};
+            });
+
+        graph.addPass("MrtClear", kBasicRasterMrtPassType)
+            .setParamsType(kBasicRasterMrtParamsType)
+            .writeColor("color0", color0)
+            .writeColor("color1", color1)
+            .recordCommands([](RenderGraphCommandList& commands) {
+                commands.clearColor("color0", std::array{0.72F, 0.18F, 0.10F, 1.0F})
+                    .clearColor("color1", std::array{0.08F, 0.34F, 0.78F, 1.0F});
+            })
+            .execute([&frame, &bindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
+                [[maybe_unused]] const auto debugLabel =
+                    VulkanDebugLabelScope::begin(frame, renderGraphPassDebugLabel(pass, bindings));
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto color0Binding = findVulkanRenderGraphColorWrite(pass, "color0", bindings);
+                if (!color0Binding) {
+                    return std::unexpected{std::move(color0Binding.error())};
+                }
+                auto color1Binding = findVulkanRenderGraphColorWrite(pass, "color1", bindings);
+                if (!color1Binding) {
+                    return std::unexpected{std::move(color1Binding.error())};
+                }
+                auto clearValues = basicMrtClearValues(pass);
+                if (!clearValues) {
+                    return std::unexpected{std::move(clearValues.error())};
+                }
+
+                recordMrtClear(frame, std::array{*color0Binding, *color1Binding}, *clearValues);
+                return {};
+            });
+
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
+                                                  transientImagePool_, transientImages_);
+        if (!prepared) {
+            return std::unexpected{std::move(prepared.error())};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, bindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+
+        return VulkanFrameRecordResult{
+            .waitStageMask =
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        };
+    }
+
+    BasicComputeDispatchRenderer::BasicComputeDispatchRenderer(
+        BasicComputeDispatchRenderer&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    BasicComputeDispatchRenderer&
+    BasicComputeDispatchRenderer::operator=(BasicComputeDispatchRenderer&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        allocator_ = std::exchange(other.allocator_, nullptr);
+        computeShader_ = std::move(other.computeShader_);
+        descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
+        pipelineLayout_ = std::move(other.pipelineLayout_);
+        pipelineCache_ = std::move(other.pipelineCache_);
+        pipeline_ = std::move(other.pipeline_);
+        pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
+        descriptorAllocator_ = std::move(other.descriptorAllocator_);
+        descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
+        storageBuffer_ = std::move(other.storageBuffer_);
+        readbackBuffer_ = std::move(other.readbackBuffer_);
+        computeStats_ = std::exchange(other.computeStats_, {});
+        return *this;
+    }
+
+    Result<BasicComputeDispatchRenderer>
+    BasicComputeDispatchRenderer::create(const BasicComputeDispatchRendererDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot create compute dispatch renderer without a device"}};
+        }
+        if (desc.allocator == nullptr) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot create compute dispatch renderer without an allocator"}};
+        }
+        if (!desc.graphicsQueueSupportsCompute) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Compute dispatch renderer requires a graphics queue with compute support"}};
+        }
+
+        auto signature = validateBasicComputeReflection(desc.shaderDirectory);
+        if (!signature) {
+            return std::unexpected{std::move(signature.error())};
+        }
+        auto resources = createPipelineLayoutResources(desc.device, *signature);
+        if (!resources) {
+            return std::unexpected{std::move(resources.error())};
+        }
+        if (resources->descriptorSetLayouts.empty()) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Compute dispatch renderer produced no descriptor set layout"}};
+        }
+
+        auto computeCode = readSpirvFile(desc.shaderDirectory / "basic_compute.comp.spv");
+        if (!computeCode) {
+            return std::unexpected{std::move(computeCode.error())};
+        }
+        auto computeShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+            .device = desc.device,
+            .code = *computeCode,
+        });
+        if (!computeShader) {
+            return std::unexpected{std::move(computeShader.error())};
+        }
+
+        const auto byteSize =
+            static_cast<VkDeviceSize>(sizeof(std::uint32_t) * kBasicComputeValueCount);
+        auto storageBuffer = VulkanBuffer::create(VulkanBufferDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .size = byteSize,
+            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::DeviceLocal,
+        });
+        if (!storageBuffer) {
+            return std::unexpected{std::move(storageBuffer.error())};
+        }
+        auto readbackBuffer = VulkanBuffer::create(VulkanBufferDesc{
+            .device = desc.device,
+            .allocator = desc.allocator,
+            .size = byteSize,
+            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::HostReadback,
+        });
+        if (!readbackBuffer) {
+            return std::unexpected{std::move(readbackBuffer.error())};
+        }
+
+        constexpr std::array poolSizes{
+            VulkanDescriptorPoolSize{
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .count = 1,
+            },
+        };
+        auto descriptorAllocator = VulkanDescriptorAllocator::create(VulkanDescriptorPoolDesc{
+            .device = desc.device,
+            .maxSets = 1,
+            .poolSizes = poolSizes,
+        });
+        if (!descriptorAllocator) {
+            return std::unexpected{std::move(descriptorAllocator.error())};
+        }
+
+        const std::array setLayouts{resources->descriptorSetLayouts.front().handle()};
+        auto descriptorSets = descriptorAllocator->allocate(VulkanDescriptorSetAllocationDesc{
+            .setLayouts = setLayouts,
+        });
+        if (!descriptorSets) {
+            return std::unexpected{std::move(descriptorSets.error())};
+        }
+        if (descriptorSets->size() != 1 || descriptorSets->front() == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Compute dispatch renderer failed to allocate one descriptor set"}};
+        }
+
+        const std::array descriptorWrites{
+            VulkanDescriptorBufferWrite{
+                .descriptorSet = descriptorSets->front(),
+                .binding = 0,
+                .arrayElement = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .buffer = storageBuffer->handle(),
+                .offset = 0,
+                .range = storageBuffer->size(),
+            },
+        };
+        updateVulkanDescriptorBuffers(desc.device, descriptorWrites);
+
+        auto pipelineCache = createBasicPipelineCache(desc.device);
+        if (!pipelineCache) {
+            return std::unexpected{std::move(pipelineCache.error())};
+        }
+        auto pipeline = VulkanComputePipeline::create(VulkanComputePipelineDesc{
+            .device = desc.device,
+            .pipelineCache = pipelineCache->handle(),
+            .layout = resources->pipelineLayout.handle(),
+            .shader = computeShader->handle(),
+            .entryPoint = "main",
+        });
+        if (!pipeline) {
+            return std::unexpected{std::move(pipeline.error())};
+        }
+
+        BasicComputeDispatchRenderer renderer;
+        renderer.device_ = desc.device;
+        renderer.allocator_ = desc.allocator;
+        renderer.computeShader_ = std::move(*computeShader);
+        renderer.descriptorSetLayouts_ = std::move(resources->descriptorSetLayouts);
+        renderer.pipelineLayout_ = std::move(resources->pipelineLayout);
+        renderer.pipelineCache_ = std::move(*pipelineCache);
+        renderer.pipeline_ = std::move(*pipeline);
+        renderer.pipelineCacheStats_.created = 1;
+        renderer.descriptorAllocator_ = std::move(*descriptorAllocator);
+        renderer.descriptorSet_ = descriptorSets->front();
+        renderer.storageBuffer_ = std::move(*storageBuffer);
+        renderer.readbackBuffer_ = std::move(*readbackBuffer);
+        return renderer;
+    }
+
+    Result<VulkanFrameRecordResult>
+    BasicComputeDispatchRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
+        if (pipeline_.handle() == VK_NULL_HANDLE || descriptorSet_ == VK_NULL_HANDLE) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Cannot record compute dispatch without initialized resources"}};
+        }
+
+        const VkDeviceSize byteSize = storageBuffer_.size();
+        vkCmdFillBuffer(frame.commandBuffer, storageBuffer_.handle(), 0, byteSize, 0);
+
+        RenderGraph graph;
+        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        const auto storage = graph.importBuffer(RenderGraphBufferDesc{
+            .name = "ComputeStorageBuffer",
+            .byteSize = byteSize,
+            .initialState = RenderGraphBufferState::TransferWrite,
+            .finalState = RenderGraphBufferState::TransferRead,
+        });
+        const auto readback = graph.importBuffer(RenderGraphBufferDesc{
+            .name = "ComputeReadbackBuffer",
+            .byteSize = byteSize,
+            .initialState = RenderGraphBufferState::Undefined,
+            .finalState = RenderGraphBufferState::HostRead,
+        });
+
+        std::vector<VulkanRenderGraphImageBinding> imageBindings;
+        imageBindings.reserve(1);
+        imageBindings.push_back(basicBackbufferBinding(backbuffer, frame));
+        auto namedBackbuffer = setVulkanRenderGraphImageDebugNames(frame, imageBindings.back());
+        if (!namedBackbuffer) {
+            return std::unexpected{std::move(namedBackbuffer.error())};
+        }
+
+        std::vector<VulkanRenderGraphBufferBinding> bufferBindings;
+        bufferBindings.push_back(VulkanRenderGraphBufferBinding{
+            .buffer = storage,
+            .vulkanBuffer = storageBuffer_.handle(),
+            .offset = 0,
+            .size = storageBuffer_.size(),
+            .debugName = "ComputeStorageBuffer",
+        });
+        auto namedStorage = setVulkanRenderGraphBufferDebugName(frame, bufferBindings.back());
+        if (!namedStorage) {
+            return std::unexpected{std::move(namedStorage.error())};
+        }
+        bufferBindings.push_back(VulkanRenderGraphBufferBinding{
+            .buffer = readback,
+            .vulkanBuffer = readbackBuffer_.handle(),
+            .offset = 0,
+            .size = readbackBuffer_.size(),
+            .debugName = "ComputeReadbackBuffer",
+        });
+        auto namedReadback = setVulkanRenderGraphBufferDebugName(frame, bufferBindings.back());
+        if (!namedReadback) {
+            return std::unexpected{std::move(namedReadback.error())};
+        }
+
+        const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
+        graph.addPass("ClearBackbuffer", kBasicTransferClearPassType)
+            .setParams(kBasicTransferClearParamsType, clearParams)
+            .writeTransfer("target", backbuffer)
+            .recordCommands([clearParams](RenderGraphCommandList& commands) {
+                commands.clearColor("target", clearParams.color);
+            })
+            .execute([&frame, &imageBindings](RenderGraphPassContext pass) -> Result<void> {
+                [[maybe_unused]] const auto timestamp =
+                    VulkanTimestampScope::begin(frame, pass.name);
+                [[maybe_unused]] const auto debugLabel =
+                    VulkanDebugLabelScope::begin(frame,
+                                                 renderGraphPassDebugLabel(pass, imageBindings));
+                auto transitions =
+                    recordRenderGraphTransitions(frame, pass.transitionsBefore, imageBindings);
+                if (!transitions) {
+                    return std::unexpected{std::move(transitions.error())};
+                }
+
+                auto params = readPassParams<BasicTransferClearParams>(
+                    pass, kBasicTransferClearParamsType, "Compute dispatch backbuffer clear pass");
+                if (!params) {
+                    return std::unexpected{std::move(params.error())};
+                }
+                recordTransferClear(frame, basicClearColorValue(*params));
+                return {};
+            });
+
+        constexpr BasicComputeDispatchParams kDispatchParams{
+            .groupCountX = kBasicComputeValueCount,
+            .groupCountY = 1,
+            .groupCountZ = 1,
+        };
+        graph.addPass("ComputeDispatch", kBasicComputeDispatchPassType)
+            .setParams(kBasicComputeDispatchParamsType, kDispatchParams)
+            .readWriteStorageBuffer("target", storage, RenderGraphShaderStage::Compute)
+            .recordCommands([](RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/BasicCompute", "Main")
+                    .dispatch(kDispatchParams.groupCountX, kDispatchParams.groupCountY,
+                              kDispatchParams.groupCountZ);
+            })
+            .execute([&frame, &imageBindings, &bufferBindings,
+                      this](RenderGraphPassContext pass) -> Result<void> {
+                return executeBasicComputeDispatchPass(
+                    frame, pass, imageBindings, bufferBindings, pipeline_.handle(),
+                    pipelineLayout_.handle(), descriptorSet_, computeStats_);
+            });
+
+        graph.addPass("ComputeReadbackCopy", kBasicComputeReadbackPassType)
+            .readTransferBuffer("source", storage)
+            .writeBuffer("target", readback)
+            .execute([&frame, &imageBindings,
+                      &bufferBindings](RenderGraphPassContext pass) -> Result<void> {
+                return executeBasicComputeReadbackPass(frame, pass, imageBindings, bufferBindings);
+            });
+
+        const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+
+        auto finalTransitions =
+            recordRenderGraphTransitions(frame, compiled->finalTransitions, imageBindings);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+        auto finalBufferTransitions = recordRenderGraphBufferTransitions(
+            frame, compiled->finalBufferTransitions, bufferBindings);
+        if (!finalBufferTransitions) {
+            return std::unexpected{std::move(finalBufferTransitions.error())};
+        }
+
+        return VulkanFrameRecordResult{
+            .waitStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        };
+    }
+
+    Result<std::array<std::uint32_t, 4>>
+    BasicComputeDispatchRenderer::readbackValuesAfterGpuComplete() {
+        std::array<std::uint32_t, kBasicComputeValueCount> values{};
+        auto read = readbackBuffer_.read(std::as_writable_bytes(std::span{values}));
+        if (!read) {
+            return std::unexpected{std::move(read.error())};
+        }
+        return values;
+    }
+
+    BasicPipelineCacheStats BasicComputeDispatchRenderer::pipelineCacheStats() const {
+        return pipelineCacheStats_;
+    }
+
+    VulkanDescriptorAllocatorStats
+    BasicComputeDispatchRenderer::descriptorAllocatorStats() const {
+        return descriptorAllocator_.stats();
+    }
+
+    VulkanBufferStats BasicComputeDispatchRenderer::bufferStats() const {
+        VulkanBufferStats stats;
+        accumulateBufferStats(stats, storageBuffer_);
+        accumulateBufferStats(stats, readbackBuffer_);
+        return stats;
+    }
+
+    BasicComputeDispatchStats BasicComputeDispatchRenderer::computeStats() const {
+        return computeStats_;
     }
 
     BasicTriangleRenderer::BasicTriangleRenderer(BasicTriangleRenderer&& other) noexcept {

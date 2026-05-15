@@ -21,10 +21,15 @@ namespace asharia {
         "builtin.raster-depth-triangle.params";
     inline constexpr char kBasicRasterMesh3DPassType[] = "builtin.raster-mesh3d";
     inline constexpr char kBasicRasterMesh3DParamsType[] = "builtin.raster-mesh3d.params";
+    inline constexpr char kBasicRasterMrtPassType[] = "builtin.raster-mrt";
+    inline constexpr char kBasicRasterMrtParamsType[] = "builtin.raster-mrt.params";
     inline constexpr char kBasicRasterFullscreenPassType[] = "builtin.raster-fullscreen";
     inline constexpr char kBasicRasterFullscreenParamsType[] = "builtin.raster-fullscreen.params";
     inline constexpr char kBasicRasterDrawListPassType[] = "builtin.raster-draw-list";
     inline constexpr char kBasicRasterDrawListParamsType[] = "builtin.raster-draw-list.params";
+    inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
+    inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
+    inline constexpr char kBasicComputeReadbackPassType[] = "builtin.compute-readback";
 
     struct BasicTransferClearParams {
         std::array<float, 4> color{};
@@ -36,6 +41,12 @@ namespace asharia {
 
     struct BasicDrawListParams {
         std::uint32_t drawCount{};
+    };
+
+    struct BasicComputeDispatchParams {
+        std::uint32_t groupCountX{};
+        std::uint32_t groupCountY{};
+        std::uint32_t groupCountZ{};
     };
 
     inline void registerBasicTransferClearSchema(RenderGraphSchemaRegistry& schemas) {
@@ -158,6 +169,29 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicRasterMrtSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRasterMrtPassType,
+            .paramsType = kBasicRasterMrtParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "color0",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "color1",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {RenderGraphCommandKind::ClearColor},
+        });
+    }
+
     inline void registerBasicRasterFullscreenSchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicRasterFullscreenPassType,
@@ -210,6 +244,50 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicComputeDispatchSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicComputeDispatchPassType,
+            .paramsType = kBasicComputeDispatchParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::BufferStorageReadWrite,
+                        .shaderStage = RenderGraphShaderStage::Compute,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::Dispatch,
+                },
+        });
+    }
+
+    inline void registerBasicComputeReadbackSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicComputeReadbackPassType,
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = RenderGraphSlotAccess::BufferTransferRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+        });
+    }
+
     [[nodiscard]] inline RenderGraphSchemaRegistry basicRenderGraphSchemaRegistry() {
         RenderGraphSchemaRegistry schemas;
         registerBasicTransferClearSchema(schemas);
@@ -218,8 +296,11 @@ namespace asharia {
         registerBasicRasterTriangleSchema(schemas);
         registerBasicRasterDepthTriangleSchema(schemas);
         registerBasicRasterMesh3DSchema(schemas);
+        registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
+        registerBasicComputeDispatchSchema(schemas);
+        registerBasicComputeReadbackSchema(schemas);
         return schemas;
     }
 

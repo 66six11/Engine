@@ -67,12 +67,14 @@ namespace {
 
     void printUsage() {
         std::cout << "Usage: asharia-sample-viewer [--help] [--version] [--smoke-window] "
-                     "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
-                     "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
-                     "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
-                     "[--smoke-mesh-3d] [--smoke-draw-list] "
-                     "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
-                     "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
+                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
+                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
+                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
+                      "[--smoke-mesh-3d] [--smoke-draw-list] "
+                      "[--smoke-mrt [--frames N] [--hold]] "
+                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                     "[--smoke-offscreen-viewport] [--smoke-compute-dispatch] "
+                     "[--smoke-deferred-deletion] "
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
                      "[--smoke-reflection-attributes] [--smoke-serialization-roundtrip] "
                      "[--smoke-serialization-json-archive] [--smoke-serialization-migration] "
@@ -1430,6 +1432,26 @@ namespace {
         return true;
     }
 
+    bool validateComputeBufferStats(asharia::VulkanBufferStats stats, std::string_view context) {
+        if (stats.created != 2 || stats.deviceLocalCreated != 1 ||
+            stats.hostReadbackCreated != 1 || stats.allocatedBytes == 0) {
+            asharia::logError(std::string{context} +
+                          " did not create the expected storage and readback buffers.");
+            return false;
+        }
+        return true;
+    }
+
+    bool validateComputeDispatchStats(asharia::BasicComputeDispatchStats stats,
+                                      std::string_view context) {
+        if (stats.dispatchesRecorded != 1) {
+            asharia::logError(std::string{context} +
+                          " did not record exactly one compute dispatch.");
+            return false;
+        }
+        return true;
+    }
+
     bool validateDebugLabelStats(asharia::VulkanDebugLabelStats stats, std::string_view context) {
         if (!stats.available || stats.regionsBegun == 0 ||
             stats.regionsBegun != stats.regionsEnded) {
@@ -1477,6 +1499,11 @@ namespace {
         double maxMilliseconds{};
     };
 
+    struct SmokeMrtOptions {
+        std::size_t frameCount{3};
+        bool hold{};
+    };
+
     bool parseSizeOption(std::span<char*> args, std::string_view option, std::size_t& value) {
         const std::optional<std::string_view> text = argValue(args, option);
         if (!text) {
@@ -1507,6 +1534,17 @@ namespace {
             options.outputPath = std::filesystem::path{std::string{*output}};
         }
 
+        return options;
+    }
+
+    std::optional<SmokeMrtOptions> parseSmokeMrtOptions(std::span<char*> args) {
+        SmokeMrtOptions options{
+            .frameCount = 3,
+            .hold = hasArg(args, "--hold"),
+        };
+        if (!parseSizeOption(args, "--frames", options.frameCount)) {
+            return std::nullopt;
+        }
         return options;
     }
 
@@ -2062,6 +2100,128 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    int runSmokeMrt(std::span<char*> args) {
+        const std::optional<SmokeMrtOptions> options = parseSmokeMrtOptions(args);
+        if (!options) {
+            return EXIT_FAILURE;
+        }
+
+        auto glfw = asharia::GlfwInstance::create();
+        if (!glfw) {
+            asharia::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            asharia::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine MRT Smoke"});
+        if (!window) {
+            asharia::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine MRT Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
+                },
+            .debugLabels = kSmokeDebugLabels,
+        };
+
+        auto context = asharia::VulkanContext::create(contextDesc);
+        if (!context) {
+            asharia::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto renderer = asharia::BasicMrtRenderer::create(asharia::BasicMrtRendererDesc{
+            .device = context->device(),
+            .allocator = context->allocator(),
+        });
+        if (!renderer) {
+            asharia::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        asharia::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.04F, 0.07F, 0.11F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            asharia::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanFrameRecordCallback record =
+            [&renderer](const asharia::VulkanFrameRecordContext& frame) {
+                return renderer->recordFrame(frame);
+            };
+
+        std::size_t renderedFrames = 0;
+        while (options->hold ? !window->shouldClose() : renderedFrames < options->frameCount) {
+            asharia::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status = frameLoop->renderFrame(record);
+            if (!status) {
+                asharia::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError("Swapchain remained out of date during MRT smoke.");
+                return EXIT_FAILURE;
+            }
+
+            ++renderedFrames;
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(16ms);
+        }
+        if (renderedFrames == 0) {
+            asharia::logError("MRT smoke did not render any frames.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanTransientImagePoolStats transientPoolStats =
+            renderer->transientPoolStats();
+        if (renderedFrames >= 3 && (transientPoolStats.created < 2 ||
+                                    transientPoolStats.reused < 2 ||
+                                    transientPoolStats.retired < 2)) {
+            asharia::logError("MRT smoke did not reuse both transient color attachments.");
+            return EXIT_FAILURE;
+        }
+        const asharia::VulkanDebugLabelStats debugLabelStats = frameLoop->debugLabelStats();
+        if (!validateDebugLabelStats(debugLabelStats, "MRT smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (debugLabelStats.objectsNamed == 0) {
+            asharia::logError("MRT smoke did not name Vulkan resources for capture tools.");
+            return EXIT_FAILURE;
+        }
+        if (renderedFrames >= 3 &&
+            !validateTimestampStats(frameLoop->timestampStats(),
+                                    frameLoop->latestTimestampTimings(), "MRT smoke")) {
+            return EXIT_FAILURE;
+        }
+
+        const VkExtent2D extent = frameLoop->extent();
+        std::cout << "Rendered MRT frames: " << extent.width << 'x' << extent.height << '\n';
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
     int runSmokeResize() {
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
@@ -2341,6 +2501,134 @@ namespace {
         }
 
         std::cout << "Descriptor layout smoke: set 0 bindings 0-2 buffer/image/sampler allocated\n";
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeComputeDispatch() {
+        auto glfw = asharia::GlfwInstance::create();
+        if (!glfw) {
+            asharia::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            asharia::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Compute Dispatch Smoke"});
+        if (!window) {
+            asharia::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Compute Dispatch Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
+                },
+            .debugLabels = kSmokeDebugLabels,
+        };
+
+        auto context = asharia::VulkanContext::create(contextDesc);
+        if (!context) {
+            asharia::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        asharia::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.03F, 0.03F, 0.04F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            asharia::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto renderer = asharia::BasicComputeDispatchRenderer::create(
+            asharia::BasicComputeDispatchRendererDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+                .graphicsQueueSupportsCompute =
+                    context->deviceInfo().graphicsQueueSupportsCompute,
+            });
+        if (!renderer) {
+            asharia::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        asharia::GlfwWindow::pollEvents();
+        const auto currentFramebuffer = window->framebufferExtent();
+        frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+        auto status = frameLoop->renderFrame(
+            [&renderer](const asharia::VulkanFrameRecordContext& recordContext) {
+                return renderer->recordFrame(recordContext);
+            });
+        if (!status) {
+            asharia::logError(status.error().message);
+            return EXIT_FAILURE;
+        }
+        if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+            asharia::logError("Swapchain remained out of date during compute dispatch smoke.");
+            return EXIT_FAILURE;
+        }
+
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            asharia::logError("Failed to wait for Vulkan queue before compute readback: " +
+                          asharia::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
+        auto values = renderer->readbackValuesAfterGpuComplete();
+        if (!values) {
+            asharia::logError(values.error().message);
+            return EXIT_FAILURE;
+        }
+
+        constexpr std::array<std::uint32_t, 4> kExpectedValues{
+            0xA5000000U,
+            0xA5000001U,
+            0xA5000002U,
+            0xA5000003U,
+        };
+        if (*values != kExpectedValues) {
+            asharia::logError("Compute dispatch smoke read back unexpected storage buffer data.");
+            return EXIT_FAILURE;
+        }
+        const asharia::BasicPipelineCacheStats pipelineStats = renderer->pipelineCacheStats();
+        if (pipelineStats.created != 1) {
+            asharia::logError("Compute dispatch smoke did not create exactly one pipeline.");
+            return EXIT_FAILURE;
+        }
+        if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
+                                              "Compute dispatch smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateComputeBufferStats(renderer->bufferStats(), "Compute dispatch smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateComputeDispatchStats(renderer->computeStats(), "Compute dispatch smoke")) {
+            return EXIT_FAILURE;
+        }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Compute dispatch smoke")) {
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Compute dispatch storage values: " << (*values)[0] << ", " << (*values)[1]
+                  << ", " << (*values)[2] << ", " << (*values)[3] << '\n';
         window->requestClose();
         return EXIT_SUCCESS;
     }
@@ -3335,8 +3623,11 @@ namespace {
         RasterTriangle,
         RasterDepthTriangle,
         RasterMesh3D,
+        RasterMrt,
         RasterFullscreen,
         RasterDrawList,
+        ComputeDispatch,
+        ComputeReadback,
     };
 
     struct BuiltinSchemaSmokeCase {
@@ -3349,9 +3640,12 @@ namespace {
 
     struct BuiltinSchemaSmokeImages {
         asharia::RenderGraphImageHandle colorTarget{};
+        asharia::RenderGraphImageHandle colorTarget1{};
         asharia::RenderGraphImageHandle colorSource{};
         asharia::RenderGraphImageHandle depthTarget{};
         asharia::RenderGraphImageHandle unexpectedTarget{};
+        asharia::RenderGraphBufferHandle storageTarget{};
+        asharia::RenderGraphBufferHandle readbackTarget{};
     };
 
     struct BuiltinSchemaSmokeCompileOptions {
@@ -3359,6 +3653,17 @@ namespace {
         std::string_view omittedSlot;
         bool addUnexpectedSlot{};
     };
+
+    void addBuiltinComputeReadbackSmokeSlots(asharia::RenderGraph::PassBuilder& pass,
+                                             BuiltinSchemaSmokeImages images,
+                                             std::string_view omittedSlot) {
+        if (omittedSlot != "source") {
+            pass.readTransferBuffer("source", images.storageTarget);
+        }
+        if (omittedSlot != "target") {
+            pass.writeBuffer("target", images.readbackTarget);
+        }
+    }
 
     BuiltinSchemaSmokeImages createBuiltinSchemaSmokeImages(asharia::RenderGraph& graph) {
         return BuiltinSchemaSmokeImages{
@@ -3368,6 +3673,13 @@ namespace {
                 .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
                 .initialState = asharia::RenderGraphImageState::Undefined,
                 .finalState = asharia::RenderGraphImageState::Present,
+            }),
+            .colorTarget1 = graph.importImage(asharia::RenderGraphImageDesc{
+                .name = "BuiltinSchemaColorTarget1",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::ColorAttachment,
             }),
             .colorSource = graph.importImage(asharia::RenderGraphImageDesc{
                 .name = "BuiltinSchemaColorSource",
@@ -3391,6 +3703,20 @@ namespace {
                 .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
                 .initialState = asharia::RenderGraphImageState::Undefined,
                 .finalState = asharia::RenderGraphImageState::Present,
+            }),
+            .storageTarget = graph.importBuffer(asharia::RenderGraphBufferDesc{
+                .name = "BuiltinSchemaStorageBuffer",
+                .byteSize = 256,
+                .initialState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Compute,
+                .finalState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
+            }),
+            .readbackTarget = graph.importBuffer(asharia::RenderGraphBufferDesc{
+                .name = "BuiltinSchemaReadbackBuffer",
+                .byteSize = 256,
+                .initialState = asharia::RenderGraphBufferState::Undefined,
+                .finalState = asharia::RenderGraphBufferState::HostRead,
             }),
         };
     }
@@ -3430,6 +3756,14 @@ namespace {
                 pass.writeDepth("depth", images.depthTarget);
             }
             break;
+        case BuiltinSchemaSmokePass::RasterMrt:
+            if (omittedSlot != "color0") {
+                pass.writeColor("color0", images.colorTarget);
+            }
+            if (omittedSlot != "color1") {
+                pass.writeColor("color1", images.colorTarget1);
+            }
+            break;
         case BuiltinSchemaSmokePass::RasterFullscreen:
             if (omittedSlot != "source") {
                 pass.readTexture("source", images.colorSource,
@@ -3438,6 +3772,15 @@ namespace {
             if (omittedSlot != "target") {
                 pass.writeColor("target", images.colorTarget);
             }
+            break;
+        case BuiltinSchemaSmokePass::ComputeDispatch:
+            if (omittedSlot != "target") {
+                pass.readWriteStorageBuffer("target", images.storageTarget,
+                                            asharia::RenderGraphShaderStage::Compute);
+            }
+            break;
+        case BuiltinSchemaSmokePass::ComputeReadback:
+            addBuiltinComputeReadbackSmokeSlots(pass, images, omittedSlot);
             break;
         }
     }
@@ -3550,6 +3893,13 @@ namespace {
                 .context = "builtin raster mesh3D",
             },
             BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RasterMrt,
+                .type = asharia::kBasicRasterMrtPassType,
+                .paramsType = asharia::kBasicRasterMrtParamsType,
+                .missingSlot = "color1",
+                .context = "builtin raster MRT",
+            },
+            BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterFullscreen,
                 .type = asharia::kBasicRasterFullscreenPassType,
                 .paramsType = asharia::kBasicRasterFullscreenParamsType,
@@ -3562,6 +3912,20 @@ namespace {
                 .paramsType = asharia::kBasicRasterDrawListParamsType,
                 .missingSlot = "depth",
                 .context = "builtin raster draw list",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::ComputeDispatch,
+                .type = asharia::kBasicComputeDispatchPassType,
+                .paramsType = asharia::kBasicComputeDispatchParamsType,
+                .missingSlot = "target",
+                .context = "builtin compute dispatch",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::ComputeReadback,
+                .type = asharia::kBasicComputeReadbackPassType,
+                .paramsType = {},
+                .missingSlot = "source",
+                .context = "builtin compute readback",
             },
         };
 
@@ -3861,9 +4225,18 @@ namespace {
                 .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
                 .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
             });
+        const auto importedStorage = cullingGraph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "ImportedStorageSideEffect",
+            .byteSize = 256,
+            .initialState = asharia::RenderGraphBufferState::StorageReadWrite,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Compute,
+            .finalState = asharia::RenderGraphBufferState::StorageReadWrite,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
+        });
 
         int visibleCallbackCount = 0;
         int culledCallbackCount = 0;
+        int importedStorageCallbackCount = 0;
         int sideEffectCallbackCount = 0;
         cullingGraph.addPass("VisibleClear", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
@@ -3881,6 +4254,30 @@ namespace {
             .allowCulling()
             .execute([&culledCallbackCount](asharia::RenderGraphPassContext) {
                 ++culledCallbackCount;
+                return asharia::Result<void>{};
+            });
+        cullingGraph.addPass("ImportedStorageWrite", "basic.compute-dispatch")
+            .setParamsType("basic.compute-dispatch.params")
+            .readWriteStorageBuffer("target", importedStorage,
+                                    asharia::RenderGraphShaderStage::Compute)
+            .allowCulling()
+            .execute([&importedStorageCallbackCount](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                if (!context.allowCulling || context.name != "ImportedStorageWrite" ||
+                    context.type != "basic.compute-dispatch" ||
+                    context.paramsType != "basic.compute-dispatch.params" ||
+                    context.bufferStorageReadWrites.size() != 1 ||
+                    context.bufferStorageReadWriteSlots.size() != 1 ||
+                    context.bufferStorageReadWriteSlots.front().name != "target" ||
+                    context.bufferStorageReadWriteSlots.front().shaderStage !=
+                        asharia::RenderGraphShaderStage::Compute) {
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph imported storage write culling context was unexpected.",
+                    }};
+                }
+                ++importedStorageCallbackCount;
                 return asharia::Result<void>{};
             });
         cullingGraph.addPass("SideEffectMarker", "basic.side-effect")
@@ -3903,7 +4300,7 @@ namespace {
             asharia::logError(compiled.error().message);
             return false;
         }
-        if (compiled->passes.size() != 2 || compiled->culledPasses.size() != 1 ||
+        if (compiled->passes.size() != 3 || compiled->culledPasses.size() != 1 ||
             !compiled->transientImages.empty()) {
             asharia::logError("Render graph culling smoke produced an unexpected compile plan.");
             return false;
@@ -3914,7 +4311,8 @@ namespace {
             return false;
         }
         if (compiled->passes[0].name != "VisibleClear" ||
-            compiled->passes[1].name != "SideEffectMarker" || !compiled->passes[1].hasSideEffects) {
+            compiled->passes[1].name != "ImportedStorageWrite" ||
+            compiled->passes[2].name != "SideEffectMarker" || !compiled->passes[2].hasSideEffects) {
             asharia::logError("Render graph culling smoke kept the wrong active passes.");
             return false;
         }
@@ -3924,7 +4322,8 @@ namespace {
             asharia::logError(executed.error().message);
             return false;
         }
-        if (visibleCallbackCount != 1 || sideEffectCallbackCount != 1 || culledCallbackCount != 0) {
+        if (visibleCallbackCount != 1 || importedStorageCallbackCount != 1 ||
+            sideEffectCallbackCount != 1 || culledCallbackCount != 0) {
             asharia::logError("Render graph culling smoke invoked unexpected callbacks.");
             return false;
         }
@@ -3976,6 +4375,216 @@ namespace {
         }
 
         return true;
+    }
+
+    bool validateSmokeRenderGraphCompute(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph computeGraph;
+        const auto storageBuffer = computeGraph.createTransientBuffer(asharia::RenderGraphBufferDesc{
+            .name = "ComputeStorageBuffer",
+            .byteSize = 4096,
+        });
+        const auto readbackBuffer = computeGraph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "ComputeReadbackBuffer",
+            .byteSize = 4096,
+            .initialState = asharia::RenderGraphBufferState::Undefined,
+            .finalState = asharia::RenderGraphBufferState::HostRead,
+        });
+
+        int seedCallbackCount = 0;
+        int dispatchCallbackCount = 0;
+        int readbackCallbackCount = 0;
+        computeGraph.addPass("SeedComputeStorage", "basic.buffer-transfer-write")
+            .setParamsType("basic.buffer-transfer-write.params")
+            .writeBuffer("target", storageBuffer)
+            .execute(
+                [&seedCallbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                    if (context.name != "SeedComputeStorage" ||
+                        context.bufferWrites.size() != 1 ||
+                        !context.bufferTransferReads.empty() ||
+                        !context.bufferStorageReadWrites.empty() ||
+                        context.bufferTransitionsBefore.size() != 1 ||
+                        context.bufferTransitionsBefore.front().newState !=
+                            asharia::RenderGraphBufferState::TransferWrite) {
+                        return std::unexpected{asharia::Error{
+                            asharia::ErrorDomain::RenderGraph,
+                            0,
+                            "Render graph compute seed executor received unexpected context.",
+                        }};
+                    }
+                    ++seedCallbackCount;
+                    return {};
+                });
+        computeGraph.addPass("ComputeDispatch", "basic.compute-dispatch")
+            .setParamsType("basic.compute-dispatch.params")
+            .readWriteStorageBuffer("target", storageBuffer,
+                                    asharia::RenderGraphShaderStage::Compute)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/ComputeSmoke", "Main").dispatch(4, 2, 1);
+            })
+            .execute([&dispatchCallbackCount](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                if (context.name != "ComputeDispatch" ||
+                    context.type != "basic.compute-dispatch" ||
+                    context.paramsType != "basic.compute-dispatch.params" ||
+                    !context.bufferReads.empty() || !context.bufferTransferReads.empty() ||
+                    !context.bufferWrites.empty() ||
+                    context.bufferStorageReadWrites.size() != 1 ||
+                    context.bufferStorageReadWriteSlots.size() != 1 ||
+                    context.bufferStorageReadWriteSlots.front().name != "target" ||
+                    context.bufferStorageReadWriteSlots.front().shaderStage !=
+                        asharia::RenderGraphShaderStage::Compute ||
+                    context.bufferTransitionsBefore.size() != 1 ||
+                    context.bufferTransitionsBefore.front().oldState !=
+                        asharia::RenderGraphBufferState::TransferWrite ||
+                    context.bufferTransitionsBefore.front().newState !=
+                        asharia::RenderGraphBufferState::StorageReadWrite ||
+                    context.bufferTransitionsBefore.front().newShaderStage !=
+                        asharia::RenderGraphShaderStage::Compute ||
+                    context.commands.size() != 2 ||
+                    context.commands[0].kind != asharia::RenderGraphCommandKind::SetShader ||
+                    context.commands[0].name != "Hidden/ComputeSmoke" ||
+                    context.commands[1].kind != asharia::RenderGraphCommandKind::Dispatch ||
+                    context.commands[1].uintValues != std::array<std::uint32_t, 3>{4, 2, 1}) {
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph compute dispatch executor received unexpected context.",
+                    }};
+                }
+                ++dispatchCallbackCount;
+                return {};
+            });
+        computeGraph.addPass("ComputeReadbackCopy", asharia::kBasicComputeReadbackPassType)
+            .readTransferBuffer("source", storageBuffer)
+            .writeBuffer("target", readbackBuffer)
+            .execute([&readbackCallbackCount](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                if (context.name != "ComputeReadbackCopy" ||
+                    context.type != asharia::kBasicComputeReadbackPassType ||
+                    !context.bufferReads.empty() || context.bufferTransferReads.size() != 1 ||
+                    context.bufferTransferReadSlots.size() != 1 ||
+                    context.bufferTransferReadSlots.front().name != "source" ||
+                    context.bufferWrites.size() != 1 || context.bufferWriteSlots.size() != 1 ||
+                    context.bufferWriteSlots.front().name != "target" ||
+                    !context.bufferStorageReadWrites.empty() ||
+                    context.bufferTransitionsBefore.size() != 2) {
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph compute readback executor received unexpected context.",
+                    }};
+                }
+                ++readbackCallbackCount;
+                return {};
+            });
+
+        auto compiled = computeGraph.compile(schemas);
+        if (!compiled) {
+            asharia::logError(compiled.error().message);
+            return false;
+        }
+        if (compiled->passes.size() != 3 || compiled->passes[0].name != "SeedComputeStorage" ||
+            compiled->passes[1].name != "ComputeDispatch" ||
+            compiled->passes[2].name != "ComputeReadbackCopy" ||
+            compiled->dependencies.size() != 2 || compiled->transientBuffers.size() != 1 ||
+            compiled->transientBuffers.front().finalState !=
+                asharia::RenderGraphBufferState::TransferRead ||
+            compiled->transientBuffers.front().finalShaderStage !=
+                asharia::RenderGraphShaderStage::None ||
+            compiled->finalBufferTransitions.size() != 1 ||
+            compiled->finalBufferTransitions.front().newState !=
+                asharia::RenderGraphBufferState::HostRead) {
+            asharia::logError("Render graph compute dispatch smoke produced an unexpected plan.");
+            return false;
+        }
+        const auto computeTransition =
+            asharia::vulkanBufferTransition(compiled->passes[1].bufferTransitionsBefore.front());
+        if (computeTransition.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            computeTransition.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT ||
+            computeTransition.dstStageMask != VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT ||
+            computeTransition.dstAccessMask !=
+                (VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT)) {
+            asharia::logError("Render graph Vulkan compute storage mapping was unexpected.");
+            return false;
+        }
+        const auto copySourceTransition =
+            asharia::vulkanBufferTransition(compiled->passes[2].bufferTransitionsBefore[1]);
+        if (copySourceTransition.srcStageMask != VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT ||
+            copySourceTransition.srcAccessMask !=
+                (VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT) ||
+            copySourceTransition.dstStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            copySourceTransition.dstAccessMask != VK_ACCESS_2_TRANSFER_READ_BIT) {
+            asharia::logError("Render graph Vulkan compute transfer-read mapping was unexpected.");
+            return false;
+        }
+        const auto readbackFinalTransition =
+            asharia::vulkanBufferTransition(compiled->finalBufferTransitions.front());
+        if (readbackFinalTransition.srcStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            readbackFinalTransition.srcAccessMask != VK_ACCESS_2_TRANSFER_WRITE_BIT ||
+            readbackFinalTransition.dstStageMask != VK_PIPELINE_STAGE_2_HOST_BIT ||
+            readbackFinalTransition.dstAccessMask != VK_ACCESS_2_HOST_READ_BIT) {
+            asharia::logError("Render graph Vulkan host-read mapping was unexpected.");
+            return false;
+        }
+
+        auto executed = computeGraph.execute(*compiled);
+        if (!executed) {
+            asharia::logError(executed.error().message);
+            return false;
+        }
+        if (seedCallbackCount != 1 || dispatchCallbackCount != 1 ||
+            readbackCallbackCount != 1) {
+            asharia::logError("Render graph compute dispatch smoke invoked unexpected callbacks.");
+            return false;
+        }
+
+        asharia::RenderGraph missingStageGraph;
+        const auto missingStageBuffer =
+            missingStageGraph.importBuffer(asharia::RenderGraphBufferDesc{
+                .name = "ComputeStorageMissingStage",
+                .byteSize = 64,
+                .initialState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Compute,
+                .finalState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
+            });
+        missingStageGraph.addPass("StorageWithoutStage", "basic.compute-dispatch")
+            .setParamsType("basic.compute-dispatch.params")
+            .readWriteStorageBuffer("target", missingStageBuffer,
+                                    asharia::RenderGraphShaderStage::None)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/ComputeSmoke", "Main").dispatch(1, 1, 1);
+            });
+        if (!expectRenderGraphCompileFailure(missingStageGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "without a shader stage",
+                                                 .context = "storage buffer without shader stage",
+                                             })) {
+            return false;
+        }
+
+        asharia::RenderGraph invalidCommandGraph;
+        const auto invalidCommandBuffer =
+            invalidCommandGraph.importBuffer(asharia::RenderGraphBufferDesc{
+                .name = "ComputeStorageInvalidCommand",
+                .byteSize = 64,
+                .initialState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Compute,
+                .finalState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
+            });
+        invalidCommandGraph.addPass("ComputeWithDrawCommand", "basic.compute-dispatch")
+            .setParamsType("basic.compute-dispatch.params")
+            .readWriteStorageBuffer("target", invalidCommandBuffer,
+                                    asharia::RenderGraphShaderStage::Compute)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.drawFullscreenTriangle();
+            });
+        return expectRenderGraphCompileFailure(invalidCommandGraph.compile(schemas),
+                                               ExpectedRenderGraphCompileFailure{
+                                                   .message = "is not allowed by schema",
+                                                   .context = "compute pass invalid command",
+                                               });
     }
 
     bool validateSmokeRenderGraphBuffers(const asharia::RenderGraphSchemaRegistry& schemas) {
@@ -4379,6 +4988,44 @@ namespace {
                 },
             .allowedCommands = {},
         });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "basic.compute-dispatch",
+            .paramsType = "basic.compute-dispatch.params",
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::BufferStorageReadWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::Compute,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    asharia::RenderGraphCommandKind::SetShader,
+                    asharia::RenderGraphCommandKind::Dispatch,
+                },
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = asharia::kBasicComputeReadbackPassType,
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+        });
 
         auto compiled = graph.compile(schemas);
         if (!compiled) {
@@ -4446,6 +5093,10 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        if (!validateSmokeRenderGraphCompute(schemas)) {
+            return EXIT_FAILURE;
+        }
+
         asharia::RenderGraph invalidCommandGraph;
         const auto invalidBackbuffer =
             invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
@@ -4505,6 +5156,9 @@ namespace {
         if (hasArg(args, "--bench-rendergraph")) {
             return runBenchRenderGraph(args);
         }
+        if (hasArg(args, "--smoke-mrt")) {
+            return runSmokeMrt(args);
+        }
 
         struct SmokeCommand {
             std::string_view option;
@@ -4527,6 +5181,7 @@ namespace {
             SmokeCommand{.option = "--smoke-descriptor-layout", .run = runSmokeDescriptorLayout},
             SmokeCommand{.option = "--smoke-fullscreen-texture", .run = runSmokeFullscreenTexture},
             SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},
+            SmokeCommand{.option = "--smoke-compute-dispatch", .run = runSmokeComputeDispatch},
             SmokeCommand{.option = "--smoke-deferred-deletion", .run = runSmokeDeferredDeletion},
             SmokeCommand{.option = "--smoke-reflection-registry",
                          .run = runSmokeReflectionRegistry},

@@ -94,6 +94,21 @@ set(ASHARIA_RENDERER_BASIC_MESH3D_FRAG_METADATA
 set(ASHARIA_RENDERER_BASIC_MESH3D_FRAG_REFLECTION
     "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.frag.reflection.json"
 )
+set(ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/basic_compute.slang"
+)
+set(ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/basic_compute.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_COMPUTE_COMP_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_compute.comp.spv"
+)
+set(ASHARIA_RENDERER_BASIC_COMPUTE_COMP_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_compute.comp.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_COMPUTE_COMP_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_compute.comp.reflection.json"
+)
 
 asharia_add_slang_shader(asharia-renderer-basic-triangle-vert
     SOURCE "${ASHARIA_RENDERER_BASIC_TRIANGLE_SHADER_SOURCE}"
@@ -155,6 +170,16 @@ asharia_add_slang_shader(asharia-renderer-basic-mesh3d-frag
     DEPENDS "${ASHARIA_RENDERER_BASIC_MESH3D_SHADER_MANIFEST}"
 )
 
+asharia_add_slang_shader(asharia-renderer-basic-compute-comp
+    SOURCE "${ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_SOURCE}"
+    ENTRY computeMain
+    STAGE compute
+    OUTPUT "${ASHARIA_RENDERER_BASIC_COMPUTE_COMP_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_COMPUTE_COMP_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_COMPUTE_COMP_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_MANIFEST}"
+)
+
 add_custom_target(asharia-renderer-basic-shaders
     DEPENDS
         asharia-renderer-basic-triangle-vert
@@ -163,6 +188,7 @@ add_custom_target(asharia-renderer-basic-shaders
         asharia-renderer-basic-descriptor-frag
         asharia-renderer-basic-mesh3d-vert
         asharia-renderer-basic-mesh3d-frag
+        asharia-renderer-basic-compute-comp
 )
 
 target_include_directories(asharia-renderer-basic

@@ -596,4 +596,69 @@ namespace asharia {
         return pipeline_;
     }
 
+    VulkanComputePipeline::VulkanComputePipeline(VulkanComputePipeline&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    VulkanComputePipeline&
+    VulkanComputePipeline::operator=(VulkanComputePipeline&& other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        destroy();
+        device_ = std::exchange(other.device_, VK_NULL_HANDLE);
+        pipeline_ = std::exchange(other.pipeline_, VK_NULL_HANDLE);
+        return *this;
+    }
+
+    VulkanComputePipeline::~VulkanComputePipeline() {
+        destroy();
+    }
+
+    void VulkanComputePipeline::destroy() {
+        if (pipeline_ != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device_, pipeline_, nullptr);
+        }
+
+        device_ = VK_NULL_HANDLE;
+        pipeline_ = VK_NULL_HANDLE;
+    }
+
+    Result<VulkanComputePipeline>
+    VulkanComputePipeline::create(const VulkanComputePipelineDesc& desc) {
+        if (desc.device == VK_NULL_HANDLE || desc.layout == VK_NULL_HANDLE ||
+            desc.shader == VK_NULL_HANDLE || desc.entryPoint.empty()) {
+            return std::unexpected{
+                vulkanError("Cannot create a Vulkan compute pipeline from incomplete inputs")};
+        }
+
+        const std::string entryPoint{desc.entryPoint};
+        VkPipelineShaderStageCreateInfo stage{};
+        stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        stage.module = desc.shader;
+        stage.pName = entryPoint.c_str();
+
+        VkComputePipelineCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        createInfo.stage = stage;
+        createInfo.layout = desc.layout;
+
+        VulkanComputePipeline pipeline;
+        pipeline.device_ = desc.device;
+        const VkResult result = vkCreateComputePipelines(
+            desc.device, desc.pipelineCache, 1, &createInfo, nullptr, &pipeline.pipeline_);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vulkanError("Failed to create Vulkan compute pipeline", result)};
+        }
+
+        return pipeline;
+    }
+
+    VkPipeline VulkanComputePipeline::handle() const {
+        return pipeline_;
+    }
+
 } // namespace asharia

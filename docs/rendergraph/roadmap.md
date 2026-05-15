@@ -19,10 +19,10 @@
 | Khronos unified image layouts: https://www.khronos.org/blog/so-long-image-layouts-simplifying-vulkan-synchronisation | 新式 unified image layout 能减少 layout 数量，但需要明确 feature/extension 和设备支持。 | 作为后续优化观察项；当前先保持显式精确 layout，避免过早依赖新能力。 |
 | Vulkan object destruction refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImage.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImageView.html | `VkImage` / `VkImageView` 销毁前，所有引用它们的已提交命令必须完成。 | transient wrapper 不在下一帧准备阶段直接析构旧 Vulkan 对象，而是挂到 `VulkanFrameLoop` 的 fence/epoch deferred deletion。 |
 | Vulkan image barrier refpage: https://docs.vulkan.org/refpages/latest/refpages/source/VkImageMemoryBarrier2.html | `oldLayout = VK_IMAGE_LAYOUT_UNDEFINED` 表示不保留旧内容，适合 discard 型 transient 复用。 | pooled transient image 每次被重新 acquire 后仍从 RG 的 `Undefined` 初始状态开始 transition，不依赖上一帧内容。 |
-| Vulkan buffer barrier refpage: https://docs.vulkan.org/refpages/latest/refpages/source/VkBufferMemoryBarrier2.html | buffer barrier 表达 buffer range 的内存依赖，stage/access 仍需匹配真实 producer / consumer。 | `rhi_vulkan_rendergraph` 先把 RG buffer `TransferWrite` 与 `ShaderRead(fragment/compute)` 映射为 `VkBufferMemoryBarrier2` 字段；offset/size 由录制侧按实际绑定范围提供。 |
+| Vulkan buffer barrier refpage: https://docs.vulkan.org/refpages/latest/refpages/source/VkBufferMemoryBarrier2.html | buffer barrier 表达 buffer range 的内存依赖，stage/access 仍需匹配真实 producer / consumer。 | `rhi_vulkan_rendergraph` 先把 RG buffer `TransferRead`、`TransferWrite`、`HostRead`、`ShaderRead(fragment/compute)` 与 `StorageReadWrite(compute)` 映射为 `VkBufferMemoryBarrier2` 字段；offset/size 由录制侧按实际绑定范围提供。 |
 | Vulkan pipeline cache refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreatePipelineCache.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateGraphicsPipelines.html | `VkPipelineCache` 可传给 graphics pipeline creation，让实现复用 pipeline 创建数据。 | RHI 提供 `VulkanPipelineCache` RAII wrapper；renderer 仍保留引擎侧 key/counter，smoke 验证每帧复用而不重建 pipeline。 |
 | Vulkan descriptor pool/allocation refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateDescriptorPool.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkAllocateDescriptorSets.html | descriptor set 从 descriptor pool 分配，pool 的 `maxSets` 与 `pPoolSizes` 定义容量边界，分配失败通过 `VkResult` 返回。 | RHI 先提供单 pool `VulkanDescriptorAllocator` facade 和 counters；后续再演进到 per-frame/per-flight arena。 |
-| Vulkan buffer creation refpage: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateBuffer.html | buffer 是显式创建的 Vulkan object，创建失败必须通过 `VkResult` 传播；usage/size 是后续绑定和命令合法性的基础。 | `VulkanBuffer` 继续作为 buffer + VMA allocation facade，并记录 create/upload byte counters 供 smoke 验证。 |
+| Vulkan buffer creation refpage: https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateBuffer.html | buffer 是显式创建的 Vulkan object，创建失败必须通过 `VkResult` 传播；usage/size 是后续绑定和命令合法性的基础。 | `VulkanBuffer` 继续作为 buffer + VMA allocation facade，并记录 create/upload/readback counters 供 smoke 验证。 |
 | Vulkan debug utils refpages: https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_debug_utils.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBeginDebugUtilsLabelEXT.html | `VK_EXT_debug_utils` 是 instance extension，可给 command buffer 区间打 label，外部 capture/profiler 能按 label 组织命令。 | context 加载 command label 函数，frame loop 提供 RAII label scope；renderer-basic-vulkan 以 RenderGraph pass name 标记 GPU command 区间。 |
 | Vulkan timestamp query refpages: https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdWriteTimestamp2.html and https://docs.vulkan.org/refpages/latest/refpages/source/vkGetQueryPoolResults.html | timestamp query 需要有效 timestamp bits；query 必须先 reset，再在 command buffer 中写入，结果只在 GPU 完成后读取。 | frame loop 持有 timestamp query pool，用 fence-confirmed delayed readback 解析上一帧 frame/pass duration，避免当前帧阻塞。 |
 | VMA usage patterns: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html | image/buffer allocation 应集中到 allocator facade，由用途决定 memory type。 | transient resource pool 使用 VMA，key 包含 format/extent/usage/aspect/sample count。 |
@@ -47,7 +47,7 @@
 - dynamic rendering 已覆盖 clear、triangle、depth triangle、mesh、draw list 和 fullscreen texture。
 - Slang 生成 SPIR-V、metadata 和 reflection JSON，SPIR-V 经过 `spirv-val`。
 - `--smoke-rendergraph` 已覆盖 dependency sort、negative compile、schema validation、command summary、transient plan、显式 culling 和 side-effect pass。
-- `--smoke-transient`、`--smoke-depth-triangle`、`--smoke-draw-list`、`--smoke-fullscreen-texture` 已把 RG 结果接入真实 Vulkan 路径。
+- `--smoke-transient`、`--smoke-depth-triangle`、`--smoke-draw-list`、`--smoke-fullscreen-texture`、`--smoke-compute-dispatch` 已把 RG 结果接入真实 Vulkan 路径。
 
 仍需修正的主要审查发现：
 
@@ -138,13 +138,19 @@ flowchart LR
 RenderGraph 专项历史阶段；后续 RenderTarget、RenderView、editor viewport、buffer/storage/MRT、
 compute、asset/material、lighting、scene 和 Play Session 的相对顺序不在本文重复维护。
 
+RenderGraph 专项只记录图语义和后端适配约束，不拥有上游系统状态。Scene/world、selection、asset database、
+importer、material editor、inspector、Play Mode 状态机都属于总计划中的对应 package 或 host；它们进入
+RenderGraph 的唯一形式应该是 view-local graph、resource handle、material/resource signature、frame params
+或 immutable render packet。
+
 后续与 RenderGraph 直接相关的能力按下面方式映射到总计划：
 
 | 总计划阶段 | RenderGraph 关注点 | 本文职责 |
 | --- | --- | --- |
 | 13-15 通用 RenderTarget / RenderView / ImGui sampled texture contract | imported target final state、view-local graph、sampled output layout、debug table 按 view 标注 | 约束 `rendergraph` 不暴露 Vulkan handle；ImGui texture registration 只属于 editor integration，不进入 RenderGraph 专项 |
-| 18 RenderGraph buffer / storage / MRT | 18.1 已落地 buffer handle、desc、lifetime、access、import/transient buffer、read/write slots、dependency/lifetime/final transition diagnostics；后续补 storage read/write、MRT slots 和 buffer barrier 映射 | 先稳定后端无关 resource/access/state，再进入 `rhi_vulkan_rendergraph` 映射要求 |
-| 19 Compute dispatch baseline | compute pass schema、storage descriptor、dispatch command summary、compute stage/access | 约束 compute 仍走显式 resource access，不把任意 compute callback 当默认路径 |
+| 18 RenderGraph buffer / storage / MRT | 18.1 已落地 buffer handle、desc、lifetime、access、import/transient buffer、read/write slots、dependency/lifetime/final transition diagnostics；18.2 已补 buffer barrier 映射；18.3 已补 MRT named color slots schema 和真实 dynamic rendering multi-color clear smoke；18.4 已补 `StorageReadWrite(compute)` buffer access、schema validation、debug table 和 Vulkan stage/access 映射；后续补 pipeline desc 多 color format | 先稳定后端无关 resource/access/state，再进入 `rhi_vulkan_rendergraph` 映射要求 |
+| 19 Compute dispatch baseline | 19.1 已补 `Dispatch` command summary、`builtin.compute-dispatch` schema 和 compile-only smoke；19.2 已补 compute capability 记录、compute pipeline wrapper、storage descriptor 绑定、RenderGraph buffer transition 录制和真实 `vkCmdDispatch` readback smoke | 约束 compute 仍走显式 resource access，不把任意 compute callback 当默认路径 |
+| 20-21 Scene / selection / gizmo | Scene View overlay、selection outline、debug draw 进入 graph 时所需的 view flags、draw packet 和资源访问声明 | 不拥有 scene tree、selection set 或 editor transaction；只要求 Game View 与 Scene View graph 可区分 |
 | 22-24 Asset/material | material resource signature、descriptor contract、pipeline key 所需 command/slot 数据 | 保证 pass type 仍表示执行模型，不退化成业务 shader tag |
 | 25 Lighting baseline | G-buffer/MRT、depth、lighting pass、HDR scene color 的 graph 语义 | 要求 lighting smoke 能解释 dependency、transition、transient lifetime |
 | 27 Postprocess / temporal | history texture、ping-pong target、frame params、resize invalidation | 要求 history/imported resource final state 显式，不能默认 Present |
@@ -413,10 +419,10 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
   - `--smoke-descriptor-layout` 与 `--smoke-fullscreen-texture` 会验证 descriptor allocation 经过 allocator；
     第一版不做自动扩容或 frame reset，避免在线程/flight ownership 未固定前提前复杂化。
 - `BufferUploadCounters`
-  - 当前已在 RHI `VulkanBuffer` 记录 create、HostUpload/DeviceLocal、allocated bytes、upload calls
-    和 uploaded bytes。
-  - renderer-basic-vulkan 聚合 uniform/vertex/index buffer stats；triangle、mesh、mesh3D、draw-list、
-    descriptor layout 和 fullscreen smoke 会验证 buffer upload counters。
+  - 当前已在 RHI `VulkanBuffer` 记录 create、HostUpload/DeviceLocal/HostReadback、allocated bytes、
+    upload calls 和 uploaded bytes。
+  - renderer-basic-vulkan 聚合 uniform/vertex/index/storage/readback buffer stats；triangle、mesh、mesh3D、
+    draw-list、descriptor layout、fullscreen 和 compute-dispatch smoke 会验证 buffer counters。
   - 第一版只做可观测性；真正的 staging buffer suballocation、device-local copy 和 fence 后回收留到 asset/material 阶段。
 - `TransientResourcePool`
   - image key：format、extent、usage、aspect、sample count、mip/layer、memory domain。
@@ -460,13 +466,14 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 - 多帧运行 fullscreen/depth/draw-list 时不重复创建长期 pipeline/layout。
 - descriptor layout/fullscreen texture smoke 能验证 descriptor allocator counter。
-- triangle/mesh/fullscreen smoke 能验证 buffer upload counter。
+- triangle/mesh/fullscreen/compute-dispatch smoke 能验证 buffer counter。
 - frame/renderer smoke 能验证 debug label begin/end counter 配对。
 - frame/renderer smoke 能验证 timestamp query delayed readback 和 `VulkanFrame` duration。
 - offscreen viewport smoke 能验证持久 viewport color target 独立尺寸、resize deferred deletion、多帧复用、
   sampled target 输出和 sampled composite。
 - resize 后资源销毁路径无 validation warning。
-- `--smoke-resize`、`--smoke-fullscreen-texture`、`--smoke-depth-triangle`、`--smoke-draw-list` 通过。
+- `--smoke-resize`、`--smoke-fullscreen-texture`、`--smoke-depth-triangle`、`--smoke-draw-list`、
+  `--smoke-compute-dispatch` 通过。
 
 ## 后续专项能力要求
 
@@ -485,20 +492,28 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 - 18.1 已新增 `RenderGraphBufferHandle`、buffer desc、buffer lifetime、buffer access、import/transient buffer
   和 named read/write slots；18.2 已新增 `rhi_vulkan_rendergraph` 的 buffer usage / transition / `VkBufferMemoryBarrier2`
-  映射，当前覆盖 `TransferWrite` 与 `ShaderRead(fragment/compute)`。
-- Storage image/buffer read-write 必须是明确 access，不能复用模糊的 texture read + color write 组合。
+  映射，当前覆盖 `TransferRead`、`TransferWrite`、`HostRead` 与 `ShaderRead(fragment/compute)`。
+- Storage image/buffer read-write 必须是明确 access，不能复用模糊的 texture read + color write 组合；buffer 侧第一版已提供
+  `StorageReadWrite(compute)`、transfer-read readback copy 和 host-read final state，并在
+  `--smoke-rendergraph` 中验证 `TransferWrite -> StorageReadWrite(compute)`、`StorageReadWrite(compute) -> TransferRead`
+  与 `TransferWrite -> HostRead` 的 stage/access 映射。
 - MRT 通过 named color slots 表达，例如 `albedo`、`normal`、`material`、`velocity`，并在 schema 中声明
   可选/必需关系。
+- `builtin.raster-mrt` 当前先验证两个必需 color slots 和 dynamic rendering multi-color clear；完整
+  MRT graphics pipeline key、多 color format desc 和 G-buffer 语义留给 material/lighting 阶段。
 - 所有新增 state 都要有 `--smoke-rendergraph` 负向用例和 `rhi_vulkan_rendergraph` 映射验证。
 
 ### Compute dispatch
 
 - Compute pass 第一版仍使用 typed schema、params 和 command summary；`Dispatch` 命令只允许出现在
-  `builtin.compute-dispatch` 一类执行模型中。
-- 真实 Vulkan smoke 前必须查询并记录 compute queue capability；single graphics queue 可继续作为 MVP，
-  但设备选择不能假设 graphics queue 一定支持 compute。
+  `builtin.compute-dispatch` 一类执行模型中。当前已完成 compile-only 语义和 schema smoke，并在
+  `renderer_basic_vulkan` 中接入真实 compute pipeline、storage descriptor、`vkCmdDispatch`、
+  graph-modeled readback copy pass 和 readback smoke。
+- `VulkanContext` 会记录 graphics queue 是否支持 compute；single graphics queue 继续作为 MVP，但
+  compute renderer 创建时会显式检查 capability，不再隐式假设 graphics queue 一定支持 compute。
 - Compute 阶段涉及 storage buffer/image、descriptor writes、pipeline bind point 和 dispatch barriers，
-  需要独立 smoke，而不是挂在 lighting 或 material smoke 里顺手验证。
+  需要独立 smoke，而不是挂在 lighting 或 material smoke 里顺手验证；当前独立入口是
+  `--smoke-compute-dispatch`。
 
 ### Asset / material / lighting
 
