@@ -16,6 +16,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 add_library(asharia-serialization STATIC
     src/archive_value.cpp
+    src/migration.cpp
     src/serializer.cpp
     src/text_archive.cpp
 )

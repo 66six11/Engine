@@ -1,0 +1,13 @@
+{
+  "name": "com.asharia.schema",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Schema",
+  "description": "Stable schema metadata, explicit field ids, and typed metadata projections.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-schema"],
+  "testTargets": ["asharia-schema-smoke-tests"],
+  "targetDependencies": {
+    "asharia-schema": ["asharia-core"],
+    "asharia-schema-smoke-tests": ["asharia-schema"]
+  }
+}

@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <expected>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -16,8 +18,10 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "asharia/core/error.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/core/version.hpp"
 #include "asharia/profiling/frame_profiler.hpp"
@@ -31,13 +35,16 @@
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
+#include "asharia/serialization/migration.hpp"
 #include "asharia/serialization/serializer.hpp"
+#include "asharia/serialization/storage_attributes.hpp"
 #include "asharia/serialization/text_archive.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
 namespace {
 
-    constexpr asharia::VulkanDebugLabelMode kSmokeDebugLabels = asharia::VulkanDebugLabelMode::Required;
+    constexpr asharia::VulkanDebugLabelMode kSmokeDebugLabels =
+        asharia::VulkanDebugLabelMode::Required;
 
     bool hasArg(std::span<char*> args, std::string_view expected) {
         return std::ranges::any_of(
@@ -67,8 +74,8 @@ namespace {
                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
                      "[--smoke-offscreen-viewport] [--smoke-deferred-deletion] "
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
-                     "[--smoke-reflection-contexts] [--smoke-serialization-roundtrip] "
-                     "[--smoke-serialization-json-archive] "
+                     "[--smoke-reflection-attributes] [--smoke-serialization-roundtrip] "
+                     "[--smoke-serialization-json-archive] [--smoke-serialization-migration] "
                      "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
@@ -110,10 +117,11 @@ namespace {
         return "Rendered triangle frames: ";
     }
 
-    bool validatePipelineCacheStats(asharia::BasicPipelineCacheStats stats, std::string_view context) {
+    bool validatePipelineCacheStats(asharia::BasicPipelineCacheStats stats,
+                                    std::string_view context) {
         if (stats.created != 1 || stats.reused < 2) {
             asharia::logError(std::string{context} +
-                          " did not reuse its renderer pipeline after the first frame.");
+                              " did not reuse its renderer pipeline after the first frame.");
             return false;
         }
         return true;
@@ -124,7 +132,7 @@ namespace {
         if (stats.renderTargetsCreated != 2 || stats.renderTargetsReused < 2 ||
             stats.renderTargetsDeferredForDeletion != 1) {
             asharia::logError(std::string{context} +
-                          " did not resize and reuse its offscreen viewport render target.");
+                              " did not resize and reuse its offscreen viewport render target.");
             return false;
         }
         return true;
@@ -138,7 +146,7 @@ namespace {
             target.extent.height != expectedExtent.height ||
             target.sampledLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
             asharia::logError(std::string{context} +
-                          " did not expose a sampled offscreen viewport target.");
+                              " did not expose a sampled offscreen viewport target.");
             return false;
         }
         return true;
@@ -147,6 +155,15 @@ namespace {
     constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
     constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
     constexpr std::string_view kSmokeTransformTypeName = "com.asharia.smoke.Transform";
+    constexpr std::string_view kSmokePropertyComponentTypeName =
+        "com.asharia.smoke.PropertyComponent";
+    constexpr std::string_view kSmokeMigratedTransformTypeName =
+        "com.asharia.smoke.MigratedTransform";
+    constexpr std::string_view kSmokeDeferredOwnerTypeName = "com.asharia.smoke.DeferredOwner";
+    constexpr std::string_view kSmokeDeferredValueTypeName = "com.asharia.smoke.DeferredValue";
+    constexpr std::string_view kEditorVisibleAttribute = "asharia.editor.visible";
+    constexpr std::string_view kRuntimeVisibleAttribute = "asharia.runtime.visible";
+    constexpr std::string_view kScriptVisibleAttribute = "asharia.script.visible";
 
     struct ReflectionSmokeVec3 {
         float x{};
@@ -170,8 +187,72 @@ namespace {
         std::int32_t scriptCounter{};
     };
 
+    struct ReflectionSmokeMigratedTransform {
+        ReflectionSmokeVec3 position;
+        ReflectionSmokeQuat rotation;
+        ReflectionSmokeVec3 scale{.x = 1.0F, .y = 1.0F, .z = 1.0F};
+        std::string debugName;
+    };
+
+    struct ReflectionSmokeDeferredValue {
+        std::int32_t value{};
+    };
+
+    struct ReflectionSmokeDeferredOwner {
+        ReflectionSmokeDeferredValue deferred;
+    };
+
+    struct ReflectionSmokePropertyComponent {
+        [[nodiscard]] float exposure() const noexcept {
+            return exposure_;
+        }
+
+        [[nodiscard]] std::int32_t derivedCounter() const noexcept {
+            return counter_ + 1;
+        }
+
+        asharia::VoidResult setExposure(const float& exposure) noexcept {
+            exposure_ = exposure;
+            dirty_ = true;
+            return {};
+        }
+
+        [[nodiscard]] bool isDirty() const noexcept {
+            return dirty_;
+        }
+
+    private:
+        float exposure_{1.5F};
+        std::int32_t counter_{40};
+        bool dirty_{};
+    };
+
+    asharia::Error smokeSerializationError(std::string message) {
+        return asharia::Error{asharia::ErrorDomain::Serialization, 0, std::move(message)};
+    }
+
+    bool containsAll(std::string_view text, std::initializer_list<std::string_view> needles) {
+        return std::ranges::all_of(needles, [text](std::string_view needle) {
+            return text.find(needle) != std::string_view::npos;
+        });
+    }
+
+    bool removeArchiveMember(asharia::serialization::ArchiveValue& object,
+                             std::string_view memberKey) {
+        if (object.kind != asharia::serialization::ArchiveValueKind::Object) {
+            return false;
+        }
+
+        const std::size_t originalSize = object.objectValue.size();
+        std::erase_if(object.objectValue,
+                      [memberKey](const asharia::serialization::ArchiveMember& member) {
+                          return member.key == memberKey;
+                      });
+        return object.objectValue.size() != originalSize;
+    }
+
     const asharia::reflection::FieldInfo* findField(const asharia::reflection::TypeInfo& type,
-                                                std::string_view name) {
+                                                    std::string_view name) {
         const auto found =
             std::ranges::find_if(type.fields, [name](const asharia::reflection::FieldInfo& field) {
                 return field.name == name;
@@ -180,9 +261,40 @@ namespace {
     }
 
     bool hasContextField(const asharia::reflection::ContextFieldView& view, std::string_view name) {
-        return std::ranges::any_of(view.fields, [name](const asharia::reflection::FieldInfo* field) {
-            return field != nullptr && field->name == name;
-        });
+        return std::ranges::any_of(view.fields,
+                                   [name](const asharia::reflection::FieldInfo* field) {
+                                       return field != nullptr && field->name == name;
+                                   });
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet storedEditableScriptAttributes() {
+        return {
+            asharia::serialization::storage_attributes::persistent(),
+            asharia::reflection::attributes::boolean(kEditorVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kScriptVisibleAttribute, true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet editorOnlyPersistentAttributes() {
+        return {
+            asharia::serialization::storage_attributes::persistent(),
+            asharia::reflection::attributes::boolean(kEditorVisibleAttribute, true),
+            asharia::reflection::attributes::boolean("asharia.editor.only", true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet runtimeVisibleAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+        };
+    }
+
+    [[nodiscard]] asharia::reflection::AttributeSet scriptVisibleAttributes() {
+        return {
+            asharia::reflection::attributes::boolean(kRuntimeVisibleAttribute, true),
+            asharia::reflection::attributes::boolean(kScriptVisibleAttribute, true),
+        };
     }
 
     asharia::VoidResult registerReflectionSmokeTypes(asharia::reflection::TypeRegistry& registry) {
@@ -193,46 +305,89 @@ namespace {
             return builtins;
         }
 
-        const FieldFlagSet savedEditable = field_flags::serializableEditorRuntimeScript();
         const TypeId vec3Type = makeTypeId(kSmokeVec3TypeName);
         const TypeId quatType = makeTypeId(kSmokeQuatTypeName);
 
-        auto vec3Registered = TypeBuilder<ReflectionSmokeVec3>(registry, kSmokeVec3TypeName)
-                                  .kind(TypeKind::Struct)
-                                  .field("x", &ReflectionSmokeVec3::x, savedEditable)
-                                  .field("y", &ReflectionSmokeVec3::y, savedEditable)
-                                  .field("z", &ReflectionSmokeVec3::z, savedEditable)
-                                  .commit();
+        auto vec3Registered =
+            TypeBuilder<ReflectionSmokeVec3>(registry, kSmokeVec3TypeName)
+                .kind(TypeKind::Struct)
+                .field("x", &ReflectionSmokeVec3::x, storedEditableScriptAttributes())
+                .field("y", &ReflectionSmokeVec3::y, storedEditableScriptAttributes())
+                .field("z", &ReflectionSmokeVec3::z, storedEditableScriptAttributes())
+                .commit();
         if (!vec3Registered) {
             return vec3Registered;
         }
 
-        auto quatRegistered = TypeBuilder<ReflectionSmokeQuat>(registry, kSmokeQuatTypeName)
-                                  .kind(TypeKind::Struct)
-                                  .field("x", &ReflectionSmokeQuat::x, savedEditable)
-                                  .field("y", &ReflectionSmokeQuat::y, savedEditable)
-                                  .field("z", &ReflectionSmokeQuat::z, savedEditable)
-                                  .field("w", &ReflectionSmokeQuat::w, savedEditable)
-                                  .commit();
+        auto quatRegistered =
+            TypeBuilder<ReflectionSmokeQuat>(registry, kSmokeQuatTypeName)
+                .kind(TypeKind::Struct)
+                .field("x", &ReflectionSmokeQuat::x, storedEditableScriptAttributes())
+                .field("y", &ReflectionSmokeQuat::y, storedEditableScriptAttributes())
+                .field("z", &ReflectionSmokeQuat::z, storedEditableScriptAttributes())
+                .field("w", &ReflectionSmokeQuat::w, storedEditableScriptAttributes())
+                .commit();
         if (!quatRegistered) {
             return quatRegistered;
         }
 
-        const FieldFlagSet editorOnly =
-            FieldFlag::Serializable | FieldFlag::EditorVisible | FieldFlag::EditorOnly;
-        const FieldFlagSet runtimeReadOnly =
-            FieldFlag::EditorVisible | FieldFlag::RuntimeVisible | FieldFlag::ReadOnly;
-        const FieldFlagSet scriptReadOnly =
-            FieldFlag::RuntimeVisible | FieldFlag::ScriptVisible | FieldFlag::ReadOnly;
+        auto transformRegistered =
+            TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
+                .kind(TypeKind::Component)
+                .field("position", &ReflectionSmokeTransform::position, vec3Type,
+                       storedEditableScriptAttributes())
+                .field("rotation", &ReflectionSmokeTransform::rotation, quatType,
+                       storedEditableScriptAttributes())
+                .field("scale", &ReflectionSmokeTransform::scale, vec3Type,
+                       storedEditableScriptAttributes())
+                .defaultValue(ReflectionSmokeVec3{.x = 1.0F, .y = 1.0F, .z = 1.0F})
+                .field("debugName", &ReflectionSmokeTransform::debugName,
+                       editorOnlyPersistentAttributes())
+                .readonlyField("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude,
+                               runtimeVisibleAttributes())
+                .readonlyField("scriptCounter", &ReflectionSmokeTransform::scriptCounter,
+                               scriptVisibleAttributes())
+                .commit();
+        if (!transformRegistered) {
+            return transformRegistered;
+        }
 
-        return TypeBuilder<ReflectionSmokeTransform>(registry, kSmokeTransformTypeName)
+        auto propertyRegistered =
+            TypeBuilder<ReflectionSmokePropertyComponent>(registry, kSmokePropertyComponentTypeName)
+                .kind(TypeKind::Component)
+                .property<float>(
+                    "exposure",
+                    [](const ReflectionSmokePropertyComponent& component) {
+                        return component.exposure();
+                    },
+                    [](ReflectionSmokePropertyComponent& component, const float& exposure) {
+                        return component.setExposure(exposure);
+                    },
+                    storedEditableScriptAttributes())
+                .readonlyProperty<std::int32_t>(
+                    "derivedCounter",
+                    [](const ReflectionSmokePropertyComponent& component) {
+                        return component.derivedCounter();
+                    },
+                    runtimeVisibleAttributes())
+                .commit();
+        if (!propertyRegistered) {
+            return propertyRegistered;
+        }
+
+        return TypeBuilder<ReflectionSmokeMigratedTransform>(registry,
+                                                             kSmokeMigratedTransformTypeName)
+            .version(2)
             .kind(TypeKind::Component)
-            .field("position", &ReflectionSmokeTransform::position, vec3Type, savedEditable)
-            .field("rotation", &ReflectionSmokeTransform::rotation, quatType, savedEditable)
-            .field("scale", &ReflectionSmokeTransform::scale, vec3Type, savedEditable)
-            .field("debugName", &ReflectionSmokeTransform::debugName, editorOnly)
-            .field("cachedMagnitude", &ReflectionSmokeTransform::cachedMagnitude, runtimeReadOnly)
-            .field("scriptCounter", &ReflectionSmokeTransform::scriptCounter, scriptReadOnly)
+            .field("position", &ReflectionSmokeMigratedTransform::position, vec3Type,
+                   storedEditableScriptAttributes())
+            .field("rotation", &ReflectionSmokeMigratedTransform::rotation, quatType,
+                   storedEditableScriptAttributes())
+            .field("scale", &ReflectionSmokeMigratedTransform::scale, vec3Type,
+                   storedEditableScriptAttributes())
+            .defaultValue(ReflectionSmokeVec3{.x = 1.0F, .y = 1.0F, .z = 1.0F})
+            .field("debugName", &ReflectionSmokeMigratedTransform::debugName,
+                   editorOnlyPersistentAttributes())
             .commit();
     }
 
@@ -251,7 +406,198 @@ namespace {
         return registry;
     }
 
+    asharia::serialization::ArchiveValue makeVec3Archive(float xValue, float yValue, float zValue) {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        return ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeVec3TypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(1),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object({
+                    ArchiveMember{.key = "x", .value = ArchiveValue::floating(xValue)},
+                    ArchiveMember{.key = "y", .value = ArchiveValue::floating(yValue)},
+                    ArchiveMember{.key = "z", .value = ArchiveValue::floating(zValue)},
+                }),
+            },
+        });
+    }
+
+    asharia::serialization::ArchiveValue
+    makeQuatArchive(const asharia::serialization::ArchiveValue& zValue) {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        return ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeQuatTypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(1),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object({
+                    ArchiveMember{.key = "x", .value = ArchiveValue::floating(0.0)},
+                    ArchiveMember{.key = "y", .value = ArchiveValue::floating(0.0)},
+                    ArchiveMember{.key = "z", .value = zValue},
+                    ArchiveMember{.key = "w", .value = ArchiveValue::floating(1.0)},
+                }),
+            },
+        });
+    }
+
+    asharia::serialization::ArchiveValue makeMigratedTransformV1Archive() {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        return ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeMigratedTransformTypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(1),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object({
+                    ArchiveMember{
+                        .key = "position",
+                        .value = makeVec3Archive(1.0F, 2.0F, 3.0F),
+                    },
+                    ArchiveMember{
+                        .key = "eulerRotation",
+                        .value = makeVec3Archive(0.0F, 0.0F, 0.25F),
+                    },
+                    ArchiveMember{
+                        .key = "debugName",
+                        .value = ArchiveValue::string("migrated"),
+                    },
+                }),
+            },
+        });
+    }
+
+    asharia::VoidResult
+    migrateSmokeTransformV1ToV2(asharia::serialization::MigrationContext& context) {
+        using asharia::serialization::ArchiveMember;
+        using asharia::serialization::ArchiveValue;
+
+        const ArchiveValue* inputFields =
+            context.input == nullptr ? nullptr : context.input->findMemberValue("fields");
+        const ArchiveValue* position =
+            inputFields == nullptr ? nullptr : inputFields->findMemberValue("position");
+        const ArchiveValue* eulerRotation =
+            inputFields == nullptr ? nullptr : inputFields->findMemberValue("eulerRotation");
+        const ArchiveValue* debugName =
+            inputFields == nullptr ? nullptr : inputFields->findMemberValue("debugName");
+        const ArchiveValue* eulerFields =
+            eulerRotation == nullptr ? nullptr : eulerRotation->findMemberValue("fields");
+        const ArchiveValue* eulerZ =
+            eulerFields == nullptr ? nullptr : eulerFields->findMemberValue("z");
+        if (context.output == nullptr || position == nullptr || eulerZ == nullptr) {
+            return std::unexpected{
+                smokeSerializationError("Smoke migration is missing position or eulerRotation.z.")};
+        }
+
+        std::vector<ArchiveMember> migratedFields{
+            ArchiveMember{.key = "position", .value = *position},
+            ArchiveMember{.key = "rotation", .value = makeQuatArchive(*eulerZ)},
+            ArchiveMember{.key = "scale", .value = makeVec3Archive(1.0F, 1.0F, 1.0F)},
+        };
+        if (debugName != nullptr) {
+            migratedFields.push_back(ArchiveMember{.key = "debugName", .value = *debugName});
+        }
+
+        *context.output = ArchiveValue::object({
+            ArchiveMember{
+                .key = "type",
+                .value = ArchiveValue::string(std::string{kSmokeMigratedTransformTypeName}),
+            },
+            ArchiveMember{
+                .key = "version",
+                .value = ArchiveValue::integer(context.toVersion),
+            },
+            ArchiveMember{
+                .key = "fields",
+                .value = ArchiveValue::object(std::move(migratedFields)),
+            },
+        });
+        return {};
+    }
+
+    bool smokeDeferredFieldRegistration() {
+        using namespace asharia::reflection;
+
+        TypeRegistry registry;
+        auto builtins = registerBuiltinTypes(registry);
+        if (!builtins) {
+            asharia::logError(builtins.error().message);
+            return false;
+        }
+
+        const TypeId deferredValueType = makeTypeId(kSmokeDeferredValueTypeName);
+        auto ownerRegistered =
+            TypeBuilder<ReflectionSmokeDeferredOwner>(registry, kSmokeDeferredOwnerTypeName)
+                .kind(TypeKind::Struct)
+                .field("deferred", &ReflectionSmokeDeferredOwner::deferred, deferredValueType,
+                       {asharia::serialization::storage_attributes::persistent()})
+                .commit();
+        if (!ownerRegistered) {
+            asharia::logError(ownerRegistered.error().message);
+            return false;
+        }
+
+        auto missingFreeze = registry.freeze();
+        if (missingFreeze ||
+            !containsAll(missingFreeze.error().message, {
+                                                            "operation=freeze",
+                                                            "type=com.asharia.smoke.DeferredOwner",
+                                                            "field=deferred",
+                                                            "expected=registered field type",
+                                                            "actual=missing",
+                                                        })) {
+            asharia::logError(
+                "Reflection registry smoke did not reject missing field type at freeze.");
+            return false;
+        }
+
+        auto valueRegistered =
+            TypeBuilder<ReflectionSmokeDeferredValue>(registry, kSmokeDeferredValueTypeName)
+                .kind(TypeKind::Struct)
+                .field("value", &ReflectionSmokeDeferredValue::value,
+                       {asharia::serialization::storage_attributes::persistent()})
+                .commit();
+        if (!valueRegistered) {
+            asharia::logError(valueRegistered.error().message);
+            return false;
+        }
+
+        auto frozen = registry.freeze();
+        if (!frozen) {
+            asharia::logError(frozen.error().message);
+            return false;
+        }
+
+        return true;
+    }
+
     int runSmokeReflectionRegistry() {
+        if (!smokeDeferredFieldRegistration()) {
+            return EXIT_FAILURE;
+        }
+
         asharia::reflection::TypeRegistry registry;
         auto registered = registerReflectionSmokeTypes(registry);
         if (!registered) {
@@ -269,10 +615,17 @@ namespace {
             .name = std::string{kSmokeTransformTypeName},
             .version = 1,
             .kind = asharia::reflection::TypeKind::Component,
+            .attributes = {},
             .fields = {},
         };
         auto duplicateRegistered = registry.registerType(std::move(duplicate));
-        if (duplicateRegistered) {
+        if (duplicateRegistered || !containsAll(duplicateRegistered.error().message,
+                                                {
+                                                    "operation=register",
+                                                    "type=com.asharia.smoke.Transform",
+                                                    "expected=unique type name",
+                                                    "actual=duplicate",
+                                                })) {
             asharia::logError("Reflection registry smoke accepted a duplicate type.");
             return EXIT_FAILURE;
         }
@@ -288,10 +641,17 @@ namespace {
             .name = "com.asharia.smoke.LateType",
             .version = 1,
             .kind = asharia::reflection::TypeKind::Struct,
+            .attributes = {},
             .fields = {},
         };
         auto lateRegistered = registry.registerType(std::move(lateType));
-        if (lateRegistered) {
+        if (lateRegistered ||
+            !containsAll(lateRegistered.error().message, {
+                                                             "operation=register",
+                                                             "type=com.asharia.smoke.LateType",
+                                                             "expected=mutable registry",
+                                                             "actual=frozen",
+                                                         })) {
             asharia::logError("Reflection registry smoke accepted registration after freeze.");
             return EXIT_FAILURE;
         }
@@ -317,10 +677,15 @@ namespace {
         const asharia::reflection::FieldInfo* cachedField =
             findField(*transformType, "cachedMagnitude");
         if (positionField == nullptr || cachedField == nullptr ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::Serializable) ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::EditorVisible) ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::RuntimeVisible) ||
-            !positionField->flags.has(asharia::reflection::FieldFlag::ScriptVisible) ||
+            !asharia::reflection::hasBoolAttribute(
+                positionField->attributes,
+                asharia::serialization::storage_attributes::kPersistent) ||
+            !asharia::reflection::hasBoolAttribute(positionField->attributes,
+                                                   kEditorVisibleAttribute) ||
+            !asharia::reflection::hasBoolAttribute(positionField->attributes,
+                                                   kRuntimeVisibleAttribute) ||
+            !asharia::reflection::hasBoolAttribute(positionField->attributes,
+                                                   kScriptVisibleAttribute) ||
             cachedField->accessor.writeAddress) {
             asharia::logError("Reflection transform smoke saw unexpected field metadata.");
             return EXIT_FAILURE;
@@ -340,12 +705,55 @@ namespace {
         auto* writePosition =
             static_cast<ReflectionSmokeVec3*>(positionField->accessor.writeAddress(&transform));
         if (readPosition == nullptr || writePosition == nullptr || readPosition->x != 1.0F) {
-            asharia::logError("Reflection transform smoke failed to read position through accessor.");
+            asharia::logError(
+                "Reflection transform smoke failed to read position through accessor.");
             return EXIT_FAILURE;
         }
         writePosition->x = 4.0F;
         if (transform.position.x != 4.0F) {
-            asharia::logError("Reflection transform smoke failed to write position through accessor.");
+            asharia::logError(
+                "Reflection transform smoke failed to write position through accessor.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::reflection::TypeInfo* propertyType =
+            registry->findType(kSmokePropertyComponentTypeName);
+        if (propertyType == nullptr || propertyType->fields.size() != 2) {
+            asharia::logError("Reflection property smoke saw an unexpected field count.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::reflection::FieldInfo* exposureField = findField(*propertyType, "exposure");
+        const asharia::reflection::FieldInfo* derivedField =
+            findField(*propertyType, "derivedCounter");
+        if (exposureField == nullptr || derivedField == nullptr ||
+            exposureField->accessor.readAddress || exposureField->accessor.writeAddress ||
+            !exposureField->accessor.readValue || !exposureField->accessor.writeValue ||
+            derivedField->accessor.writeValue || derivedField->accessor.writeAddress ||
+            !derivedField->accessor.readValue) {
+            asharia::logError("Reflection property smoke saw unexpected accessor metadata.");
+            return EXIT_FAILURE;
+        }
+
+        ReflectionSmokePropertyComponent component;
+        float exposure{};
+        auto readExposure = exposureField->accessor.readValue(&component, &exposure);
+        if (!readExposure || exposure != 1.5F) {
+            asharia::logError("Reflection property smoke failed to read through getter.");
+            return EXIT_FAILURE;
+        }
+
+        const float updatedExposure = 2.25F;
+        auto wroteExposure = exposureField->accessor.writeValue(&component, &updatedExposure);
+        if (!wroteExposure || component.exposure() != updatedExposure || !component.isDirty()) {
+            asharia::logError("Reflection property smoke failed to write through setter.");
+            return EXIT_FAILURE;
+        }
+
+        std::int32_t derivedCounter{};
+        auto readDerived = derivedField->accessor.readValue(&component, &derivedCounter);
+        if (!readDerived || derivedCounter != 41) {
+            asharia::logError("Reflection property smoke failed to read readonly property.");
             return EXIT_FAILURE;
         }
 
@@ -353,7 +761,7 @@ namespace {
         return EXIT_SUCCESS;
     }
 
-    int runSmokeReflectionContexts() {
+    int runSmokeReflectionAttributes() {
         auto registry = makeReflectionSmokeRegistry();
         if (!registry) {
             return EXIT_FAILURE;
@@ -362,31 +770,238 @@ namespace {
         const asharia::reflection::TypeInfo* transformType =
             registry->findType(kSmokeTransformTypeName);
         if (transformType == nullptr) {
-            asharia::logError("Reflection context smoke could not find transform type.");
+            asharia::logError("Reflection attribute smoke could not find transform type.");
             return EXIT_FAILURE;
         }
 
-        const asharia::reflection::ContextFieldView serializeView =
-            asharia::reflection::makeSerializeContextView(*transformType);
-        const asharia::reflection::ContextFieldView editView =
-            asharia::reflection::makeEditContextView(*transformType);
+        const asharia::reflection::ContextFieldView storageView =
+            asharia::reflection::makeAttributeContextView(
+                *transformType, asharia::serialization::storage_attributes::kPersistent);
+        const asharia::reflection::ContextFieldView runtimeView =
+            asharia::reflection::makeAttributeContextView(*transformType, kRuntimeVisibleAttribute);
         const asharia::reflection::ContextFieldView scriptView =
-            asharia::reflection::makeScriptContextView(*transformType);
+            asharia::reflection::makeAttributeContextView(*transformType, kScriptVisibleAttribute);
 
-        if (!hasContextField(serializeView, "debugName") ||
-            hasContextField(serializeView, "cachedMagnitude") ||
-            !hasContextField(editView, "cachedMagnitude") ||
-            hasContextField(editView, "scriptCounter") ||
+        if (!hasContextField(storageView, "debugName") ||
+            hasContextField(storageView, "cachedMagnitude") ||
+            !hasContextField(runtimeView, "cachedMagnitude") ||
             !hasContextField(scriptView, "scriptCounter") ||
             hasContextField(scriptView, "debugName")) {
-            asharia::logError("Reflection context smoke produced unexpected field projections.");
+            asharia::logError("Reflection attribute smoke produced unexpected field projections.");
             return EXIT_FAILURE;
         }
 
-        std::cout << "Reflection context fields: serialize=" << serializeView.fields.size()
-                  << ", edit=" << editView.fields.size() << ", script=" << scriptView.fields.size()
-                  << '\n';
+        std::cout << "Reflection attribute fields: storage=" << storageView.fields.size()
+                  << ", runtime=" << runtimeView.fields.size()
+                  << ", script=" << scriptView.fields.size() << '\n';
         return EXIT_SUCCESS;
+    }
+
+    bool smokeSerializationPropertyRoundtrip(const asharia::reflection::TypeRegistry& registry) {
+        const asharia::reflection::TypeId propertyType =
+            asharia::reflection::makeTypeId(kSmokePropertyComponentTypeName);
+        ReflectionSmokePropertyComponent propertySource;
+        const float propertyExposure = 2.75F;
+        auto sourcePropertyWritten = propertySource.setExposure(propertyExposure);
+        if (!sourcePropertyWritten) {
+            asharia::logError(sourcePropertyWritten.error().message);
+            return false;
+        }
+
+        auto propertyArchive =
+            asharia::serialization::serializeObject(registry, propertyType, &propertySource);
+        if (!propertyArchive) {
+            asharia::logError(propertyArchive.error().message);
+            return false;
+        }
+
+        ReflectionSmokePropertyComponent propertyLoaded;
+        auto propertyLoadedResult = asharia::serialization::deserializeObject(
+            registry, propertyType, *propertyArchive, &propertyLoaded);
+        if (!propertyLoadedResult) {
+            asharia::logError(propertyLoadedResult.error().message);
+            return false;
+        }
+        if (propertyLoaded.exposure() != propertyExposure || !propertyLoaded.isDirty()) {
+            asharia::logError("Serialization roundtrip smoke did not use property getter/setter.");
+            return false;
+        }
+        return true;
+    }
+
+    bool smokeSerializationUnknownFieldPolicies(const asharia::reflection::TypeRegistry& registry,
+                                                asharia::reflection::TypeId transformType,
+                                                const asharia::serialization::ArchiveValue& archive,
+                                                const ReflectionSmokeTransform& source) {
+        asharia::serialization::ArchiveValue unknownFieldArchive = archive;
+        asharia::serialization::ArchiveValue* unknownFields =
+            unknownFieldArchive.findMemberValue("fields");
+        if (unknownFields == nullptr ||
+            unknownFields->kind != asharia::serialization::ArchiveValueKind::Object) {
+            asharia::logError("Serialization roundtrip smoke could not edit unknown fields.");
+            return false;
+        }
+        unknownFields->objectValue.push_back(asharia::serialization::ArchiveMember{
+            .key = "unknownFutureField",
+            .value = asharia::serialization::ArchiveValue::integer(7),
+        });
+
+        ReflectionSmokeTransform rejectedUnknown{};
+        auto rejectedUnknownResult = asharia::serialization::deserializeObject(
+            registry, transformType, unknownFieldArchive, &rejectedUnknown);
+        if (rejectedUnknownResult ||
+            !containsAll(rejectedUnknownResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.unknownFutureField",
+                             "field=unknownFutureField",
+                             "expected=registered serializable field",
+                             "actual=unknown field",
+                             "policy=error",
+                         })) {
+            asharia::logError("Serialization roundtrip smoke did not reject an unknown field.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy ignoreUnknownPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Ignore,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform ignoredUnknown{};
+        auto ignoredUnknownResult = asharia::serialization::deserializeObject(
+            registry, transformType, unknownFieldArchive, &ignoredUnknown, ignoreUnknownPolicy);
+        if (!ignoredUnknownResult || ignoredUnknown.position.x != source.position.x) {
+            asharia::logError("Serialization roundtrip smoke did not ignore an unknown field.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy preserveUnknownPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Preserve,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform preserveUnknown{};
+        auto preserveUnknownResult = asharia::serialization::deserializeObject(
+            registry, transformType, unknownFieldArchive, &preserveUnknown, preserveUnknownPolicy);
+        if (preserveUnknownResult || preserveUnknownResult.error().message.find(
+                                         "preserve policy unsupported") == std::string::npos) {
+            asharia::logError(
+                "Serialization roundtrip smoke did not reject unsupported preserve policy.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool
+    smokeSerializationMissingFieldPolicies(const asharia::reflection::TypeRegistry& registry,
+                                           asharia::reflection::TypeId transformType,
+                                           const asharia::serialization::ArchiveValue& archive) {
+        asharia::serialization::ArchiveValue missingScaleArchive = archive;
+        asharia::serialization::ArchiveValue* missingScaleFields =
+            missingScaleArchive.findMemberValue("fields");
+        if (missingScaleFields == nullptr || !removeArchiveMember(*missingScaleFields, "scale")) {
+            asharia::logError("Serialization roundtrip smoke could not remove scale.");
+            return false;
+        }
+
+        ReflectionSmokeTransform loadedMissingScale{
+            .position = {},
+            .rotation = {},
+            .scale = {.x = 8.0F, .y = 8.0F, .z = 8.0F},
+            .debugName = {},
+            .cachedMagnitude = 0.0F,
+            .scriptCounter = 0,
+        };
+        auto missingScaleResult = asharia::serialization::deserializeObject(
+            registry, transformType, missingScaleArchive, &loadedMissingScale);
+        if (!missingScaleResult || loadedMissingScale.scale.x != 1.0F ||
+            loadedMissingScale.scale.y != 1.0F || loadedMissingScale.scale.z != 1.0F) {
+            asharia::logError("Serialization roundtrip smoke did not apply field default.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy keepConstructedPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::KeepConstructedValue,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform keptConstructed{
+            .position = {},
+            .rotation = {},
+            .scale = {.x = 8.0F, .y = 8.0F, .z = 8.0F},
+            .debugName = {},
+            .cachedMagnitude = 0.0F,
+            .scriptCounter = 0,
+        };
+        auto keptConstructedResult = asharia::serialization::deserializeObject(
+            registry, transformType, missingScaleArchive, &keptConstructed, keepConstructedPolicy);
+        if (!keptConstructedResult || keptConstructed.scale.x != 8.0F ||
+            keptConstructed.scale.y != 8.0F || keptConstructed.scale.z != 8.0F) {
+            asharia::logError("Serialization roundtrip smoke did not keep constructed field.");
+            return false;
+        }
+
+        const asharia::serialization::SerializationPolicy missingErrorPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::Error,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeTransform rejectedMissingScale{};
+        auto rejectedMissingScaleResult =
+            asharia::serialization::deserializeObject(registry, transformType, missingScaleArchive,
+                                                      &rejectedMissingScale, missingErrorPolicy);
+        if (rejectedMissingScaleResult ||
+            !containsAll(rejectedMissingScaleResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.scale",
+                             "expected=archive field",
+                             "actual=missing",
+                             "policy=error",
+                         })) {
+            asharia::logError("Serialization roundtrip smoke did not reject missing field.");
+            return false;
+        }
+
+        asharia::serialization::ArchiveValue missingPositionArchive = archive;
+        asharia::serialization::ArchiveValue* missingPositionFields =
+            missingPositionArchive.findMemberValue("fields");
+        if (missingPositionFields == nullptr ||
+            !removeArchiveMember(*missingPositionFields, "position")) {
+            asharia::logError("Serialization roundtrip smoke could not remove position.");
+            return false;
+        }
+
+        ReflectionSmokeTransform rejectedMissingDefault{};
+        auto rejectedMissingDefaultResult = asharia::serialization::deserializeObject(
+            registry, transformType, missingPositionArchive, &rejectedMissingDefault);
+        if (rejectedMissingDefaultResult ||
+            !containsAll(rejectedMissingDefaultResult.error().message,
+                         {
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.Transform.position",
+                             "expected=reflected field default value",
+                             "actual=missing",
+                         })) {
+            asharia::logError("Serialization roundtrip smoke accepted missing default metadata.");
+            return false;
+        }
+
+        return true;
     }
 
     int runSmokeSerializationRoundtrip() {
@@ -409,6 +1024,39 @@ namespace {
         auto archive = asharia::serialization::serializeObject(*registry, transformType, &source);
         if (!archive) {
             asharia::logError(archive.error().message);
+            return EXIT_FAILURE;
+        }
+
+        asharia::reflection::TypeRegistry mutableRegistry;
+        auto mutableRegistered = registerReflectionSmokeTypes(mutableRegistry);
+        if (!mutableRegistered) {
+            asharia::logError(mutableRegistered.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto rejectedMutableSerialize =
+            asharia::serialization::serializeObject(mutableRegistry, transformType, &source);
+        if (rejectedMutableSerialize || !containsAll(rejectedMutableSerialize.error().message,
+                                                     {
+                                                         "operation=serialize",
+                                                         "expected=frozen reflection registry",
+                                                         "actual=mutable registry",
+                                                     })) {
+            asharia::logError("Serialization roundtrip smoke serialized with a mutable registry.");
+            return EXIT_FAILURE;
+        }
+
+        ReflectionSmokeTransform rejectedMutable{};
+        auto rejectedMutableDeserialize = asharia::serialization::deserializeObject(
+            mutableRegistry, transformType, *archive, &rejectedMutable);
+        if (rejectedMutableDeserialize || !containsAll(rejectedMutableDeserialize.error().message,
+                                                       {
+                                                           "operation=deserialize",
+                                                           "expected=frozen reflection registry",
+                                                           "actual=mutable registry",
+                                                       })) {
+            asharia::logError(
+                "Serialization roundtrip smoke deserialized with a mutable registry.");
             return EXIT_FAILURE;
         }
 
@@ -443,6 +1091,18 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        if (!smokeSerializationUnknownFieldPolicies(*registry, transformType, *archive, source)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!smokeSerializationMissingFieldPolicies(*registry, transformType, *archive)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!smokeSerializationPropertyRoundtrip(*registry)) {
+            return EXIT_FAILURE;
+        }
+
         asharia::serialization::ArchiveValue badArchive = *archive;
         asharia::serialization::ArchiveValue* fields = badArchive.findMemberValue("fields");
         asharia::serialization::ArchiveValue* position =
@@ -458,9 +1118,16 @@ namespace {
         *xValue = asharia::serialization::ArchiveValue::string("wrong");
 
         ReflectionSmokeTransform rejected{};
-        auto rejectedResult =
-            asharia::serialization::deserializeObject(*registry, transformType, badArchive, &rejected);
-        if (rejectedResult || rejectedResult.error().message.find(".x") == std::string::npos) {
+        auto rejectedResult = asharia::serialization::deserializeObject(*registry, transformType,
+                                                                        badArchive, &rejected);
+        if (rejectedResult || !containsAll(rejectedResult.error().message,
+                                           {
+                                               "operation=deserialize",
+                                               "objectPath=com.asharia.smoke.Transform.position.x",
+                                               "type=com.asharia.core.Float",
+                                               "expected=float",
+                                               "actual=string",
+                                           })) {
             asharia::logError("Serialization roundtrip smoke did not reject a bad field type.");
             return EXIT_FAILURE;
         }
@@ -477,8 +1144,16 @@ namespace {
         ReflectionSmokeTransform rejectedVersion{};
         auto rejectedVersionResult = asharia::serialization::deserializeObject(
             *registry, transformType, badVersionArchive, &rejectedVersion);
-        if (rejectedVersionResult ||
-            rejectedVersionResult.error().message.find("version") == std::string::npos) {
+        if (rejectedVersionResult || !containsAll(rejectedVersionResult.error().message,
+                                                  {
+                                                      "operation=deserialize",
+                                                      "objectPath=com.asharia.smoke.Transform",
+                                                      "type=com.asharia.smoke.Transform",
+                                                      "field=version",
+                                                      "expected=migration policy",
+                                                      "actual=no migration registry",
+                                                      "version=2",
+                                                  })) {
             asharia::logError("Serialization roundtrip smoke did not reject a bad type version.");
             return EXIT_FAILURE;
         }
@@ -496,24 +1171,25 @@ namespace {
         validUtf8.push_back(static_cast<char>(0xC3));
         validUtf8.push_back(static_cast<char>(0xA9));
 
-        asharia::serialization::ArchiveValue archive = asharia::serialization::ArchiveValue::object({
-            asharia::serialization::ArchiveMember{
-                .key = "escaped",
-                .value = asharia::serialization::ArchiveValue::string(escaped),
-            },
-            asharia::serialization::ArchiveMember{
-                .key = "validUtf8",
-                .value = asharia::serialization::ArchiveValue::string(validUtf8),
-            },
-            asharia::serialization::ArchiveMember{
-                .key = "array",
-                .value = asharia::serialization::ArchiveValue::array({
-                    asharia::serialization::ArchiveValue::integer(7),
-                    asharia::serialization::ArchiveValue::floating(0.25),
-                    asharia::serialization::ArchiveValue::boolean(true),
-                }),
-            },
-        });
+        asharia::serialization::ArchiveValue archive =
+            asharia::serialization::ArchiveValue::object({
+                asharia::serialization::ArchiveMember{
+                    .key = "escaped",
+                    .value = asharia::serialization::ArchiveValue::string(escaped),
+                },
+                asharia::serialization::ArchiveMember{
+                    .key = "validUtf8",
+                    .value = asharia::serialization::ArchiveValue::string(validUtf8),
+                },
+                asharia::serialization::ArchiveMember{
+                    .key = "array",
+                    .value = asharia::serialization::ArchiveValue::array({
+                        asharia::serialization::ArchiveValue::integer(7),
+                        asharia::serialization::ArchiveValue::floating(0.25),
+                        asharia::serialization::ArchiveValue::boolean(true),
+                    }),
+                },
+            });
 
         auto firstText = asharia::serialization::writeTextArchive(archive);
         if (!firstText) {
@@ -535,14 +1211,41 @@ namespace {
             asharia::logError(parsed.error().message);
             return EXIT_FAILURE;
         }
-        const asharia::serialization::ArchiveValue* parsedEscaped = parsed->findMemberValue("escaped");
-        const asharia::serialization::ArchiveValue* parsedUtf8 = parsed->findMemberValue("validUtf8");
+        const asharia::serialization::ArchiveValue* parsedEscaped =
+            parsed->findMemberValue("escaped");
+        const asharia::serialization::ArchiveValue* parsedUtf8 =
+            parsed->findMemberValue("validUtf8");
         if (parsedEscaped == nullptr ||
             parsedEscaped->kind != asharia::serialization::ArchiveValueKind::String ||
             parsedEscaped->stringValue != escaped || parsedUtf8 == nullptr ||
             parsedUtf8->kind != asharia::serialization::ArchiveValueKind::String ||
             parsedUtf8->stringValue != validUtf8) {
             asharia::logError("JSON archive smoke failed to round-trip escaped strings.");
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path archivePath = std::filesystem::temp_directory_path() /
+                                                  "asharia-serialization-json-archive-smoke.json";
+        auto fileWritten = asharia::serialization::writeTextArchiveFile(archivePath, archive);
+        if (!fileWritten) {
+            asharia::logError(fileWritten.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto fileParsed = asharia::serialization::readTextArchiveFile(archivePath);
+        std::error_code removeError;
+        std::filesystem::remove(archivePath, removeError);
+        if (!fileParsed) {
+            asharia::logError(fileParsed.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::serialization::ArchiveValue* fileEscaped =
+            fileParsed->findMemberValue("escaped");
+        if (fileEscaped == nullptr ||
+            fileEscaped->kind != asharia::serialization::ArchiveValueKind::String ||
+            fileEscaped->stringValue != escaped) {
+            asharia::logError("JSON archive smoke failed to round-trip through file IO.");
             return EXIT_FAILURE;
         }
 
@@ -554,7 +1257,8 @@ namespace {
 
         auto malformed = asharia::serialization::readTextArchive("{");
         if (malformed || malformed.error().message.find("byte") == std::string::npos) {
-            asharia::logError("JSON archive smoke did not report a parse byte for malformed input.");
+            asharia::logError(
+                "JSON archive smoke did not report a parse byte for malformed input.");
             return EXIT_FAILURE;
         }
 
@@ -584,8 +1288,9 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto nonFiniteWrite = asharia::serialization::writeTextArchive(
-            asharia::serialization::ArchiveValue::floating(std::numeric_limits<double>::infinity()));
+        auto nonFiniteWrite =
+            asharia::serialization::writeTextArchive(asharia::serialization::ArchiveValue::floating(
+                std::numeric_limits<double>::infinity()));
         if (nonFiniteWrite ||
             nonFiniteWrite.error().message.find("non-finite") == std::string::npos) {
             asharia::logError("JSON archive smoke did not reject a non-finite float.");
@@ -596,13 +1301,118 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    int runSmokeSerializationMigration() {
+        auto registry = makeReflectionSmokeRegistry();
+        if (!registry) {
+            return EXIT_FAILURE;
+        }
+
+        const asharia::reflection::TypeId migratedTransformType =
+            asharia::reflection::makeTypeId(kSmokeMigratedTransformTypeName);
+        asharia::serialization::MigrationRegistry migrations;
+        auto migrationRegistered =
+            migrations.registerMigration(migratedTransformType, 1, 2, migrateSmokeTransformV1ToV2);
+        if (!migrationRegistered) {
+            asharia::logError(migrationRegistered.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto duplicateMigration =
+            migrations.registerMigration(migratedTransformType, 1, 2, migrateSmokeTransformV1ToV2);
+        if (duplicateMigration ||
+            !containsAll(duplicateMigration.error().message, {
+                                                                 "operation=register",
+                                                                 "fromVersion=1",
+                                                                 "toVersion=2",
+                                                                 "expected=unique migration step",
+                                                                 "actual=duplicate",
+                                                             })) {
+            asharia::logError("Serialization migration smoke accepted a duplicate migration.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::serialization::ArchiveValue oldArchive = makeMigratedTransformV1Archive();
+        ReflectionSmokeMigratedTransform rejectedWithoutMigration{};
+        auto missingMigrationResult = asharia::serialization::deserializeObject(
+            *registry, migratedTransformType, oldArchive, &rejectedWithoutMigration);
+        if (missingMigrationResult ||
+            !containsAll(missingMigrationResult.error().message,
+                         {
+                             "requires migration",
+                             "operation=deserialize",
+                             "objectPath=com.asharia.smoke.MigratedTransform",
+                             "type=com.asharia.smoke.MigratedTransform",
+                             "expected=migration policy",
+                             "actual=no migration registry",
+                             "version=1",
+                         })) {
+            asharia::logError("Serialization migration smoke did not require a migration policy.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::serialization::SerializationPolicy policy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
+            .migrations = &migrations,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeMigratedTransform loaded{};
+        auto loadedResult = asharia::serialization::deserializeObject(
+            *registry, migratedTransformType, oldArchive, &loaded, policy);
+        if (!loadedResult) {
+            asharia::logError(loadedResult.error().message);
+            return EXIT_FAILURE;
+        }
+
+        if (loaded.position.x != 1.0F || loaded.position.y != 2.0F || loaded.position.z != 3.0F ||
+            loaded.rotation.x != 0.0F || loaded.rotation.y != 0.0F || loaded.rotation.z != 0.25F ||
+            loaded.rotation.w != 1.0F || loaded.scale.x != 1.0F || loaded.scale.y != 1.0F ||
+            loaded.scale.z != 1.0F || loaded.debugName != "migrated") {
+            asharia::logError("Serialization migration smoke loaded unexpected migrated values.");
+            return EXIT_FAILURE;
+        }
+
+        asharia::serialization::MigrationRegistry emptyMigrations;
+        const asharia::serialization::SerializationPolicy missingPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::serialization::UnknownFieldPolicy::Error,
+            .missingFields = asharia::serialization::MissingFieldPolicy::UseDefault,
+            .migrations = &emptyMigrations,
+            .archivePath = {},
+            .migrationScenario = asharia::serialization::MigrationScenario::Unspecified,
+        };
+        ReflectionSmokeMigratedTransform rejectedMissingRule{};
+        auto missingRuleResult = asharia::serialization::deserializeObject(
+            *registry, migratedTransformType, oldArchive, &rejectedMissingRule, missingPolicy);
+        if (missingRuleResult || !containsAll(missingRuleResult.error().message,
+                                              {
+                                                  "Missing serialization migration",
+                                                  "operation=migrate",
+                                                  "objectPath=com.asharia.smoke.MigratedTransform",
+                                                  "type=com.asharia.smoke.MigratedTransform",
+                                                  "fromVersion=1",
+                                                  "toVersion=2",
+                                                  "expected=registered migration step",
+                                                  "actual=missing",
+                                              })) {
+            asharia::logError(
+                "Serialization migration smoke did not reject a missing migration rule.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Serialization migration version: 1 -> 2\n";
+        return EXIT_SUCCESS;
+    }
+
     bool validateDescriptorAllocatorStats(asharia::VulkanDescriptorAllocatorStats stats,
                                           std::string_view context,
                                           std::uint64_t expectedSets = 1) {
         if (stats.poolsCreated != 1 || stats.allocationCalls != 1 ||
             stats.setsAllocated != expectedSets) {
             asharia::logError(std::string{context} +
-                          " did not allocate descriptors through the descriptor allocator.");
+                              " did not allocate descriptors through the descriptor allocator.");
             return false;
         }
         return true;
@@ -614,7 +1424,7 @@ namespace {
             stats.uploadCalls != expectedBuffers || stats.allocatedBytes == 0 ||
             stats.uploadedBytes == 0 || stats.uploadedBytes > stats.allocatedBytes) {
             asharia::logError(std::string{context} +
-                          " did not record the expected buffer upload counters.");
+                              " did not record the expected buffer upload counters.");
             return false;
         }
         return true;
@@ -623,7 +1433,8 @@ namespace {
     bool validateDebugLabelStats(asharia::VulkanDebugLabelStats stats, std::string_view context) {
         if (!stats.available || stats.regionsBegun == 0 ||
             stats.regionsBegun != stats.regionsEnded) {
-            asharia::logError(std::string{context} + " did not record balanced Vulkan debug labels.");
+            asharia::logError(std::string{context} +
+                              " did not record balanced Vulkan debug labels.");
             return false;
         }
         return true;
@@ -636,7 +1447,7 @@ namespace {
             stats.regionsBegun == 0 || stats.regionsBegun != stats.regionsEnded ||
             stats.regionsResolved == 0 || stats.queryReadbacks == 0 || timings.empty()) {
             asharia::logError(std::string{context} +
-                          " did not record delayed Vulkan timestamp query results.");
+                              " did not record delayed Vulkan timestamp query results.");
             return false;
         }
 
@@ -646,7 +1457,7 @@ namespace {
             });
         if (!hasFrameTiming) {
             asharia::logError(std::string{context} +
-                          " did not read back a VulkanFrame timestamp duration.");
+                              " did not read back a VulkanFrame timestamp duration.");
             return false;
         }
 
@@ -850,7 +1661,8 @@ namespace {
         }
 
         const RenderGraphBenchOptions& options = *parsedOptions;
-        const asharia::RenderGraphSchemaRegistry schemas = asharia::basicRenderGraphSchemaRegistry();
+        const asharia::RenderGraphSchemaRegistry schemas =
+            asharia::basicRenderGraphSchemaRegistry();
         for (std::size_t frame = 0; frame < options.warmupFrames; ++frame) {
             asharia::RenderGraph graph = createBenchRenderGraph();
             auto compiled = graph.compile(schemas);
@@ -995,7 +1807,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Smoke"});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1020,8 +1833,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Vulkan Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Vulkan Smoke"});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1064,7 +1877,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
+        auto window =
+            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1088,11 +1902,12 @@ namespace {
 
         asharia::GlfwWindow::pollEvents();
         const auto framebuffer = window->framebufferExtent();
-        auto frameLoop = asharia::VulkanFrameLoop::create(*context, asharia::VulkanFrameLoopDesc{
-                                                                    .width = framebuffer.width,
-                                                                    .height = framebuffer.height,
-                                                                    .clearColor = clearColor,
-                                                                });
+        auto frameLoop =
+            asharia::VulkanFrameLoop::create(*context, asharia::VulkanFrameLoopDesc{
+                                                           .width = framebuffer.width,
+                                                           .height = framebuffer.height,
+                                                           .clearColor = clearColor,
+                                                       });
         if (!frameLoop) {
             asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
@@ -1138,7 +1953,8 @@ namespace {
     }
 
     int runSmokeDynamicRendering() {
-        return runSmokeFrame(asharia::recordBasicDynamicClearFrame, "Asharia Engine Dynamic Rendering Smoke",
+        return runSmokeFrame(asharia::recordBasicDynamicClearFrame,
+                             "Asharia Engine Dynamic Rendering Smoke",
                              VkClearColorValue{{0.18F, 0.06F, 0.14F, 1.0F}});
     }
 
@@ -1218,12 +2034,15 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
-        const asharia::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
+        const asharia::VulkanDeferredDeletionStats deletionStats =
+            frameLoop->deferredDeletionStats();
         if (deletionStats.enqueued == 0 || deletionStats.retired == 0) {
-            asharia::logError("Transient smoke did not retire deferred Vulkan resource destruction.");
+            asharia::logError(
+                "Transient smoke did not retire deferred Vulkan resource destruction.");
             return EXIT_FAILURE;
         }
-        const asharia::VulkanTransientImagePoolStats transientPoolStats = recorder.transientPoolStats();
+        const asharia::VulkanTransientImagePoolStats transientPoolStats =
+            recorder.transientPoolStats();
         if (transientPoolStats.created == 0 || transientPoolStats.reused == 0 ||
             transientPoolStats.retired == 0) {
             asharia::logError("Transient smoke did not reuse a retired transient Vulkan image.");
@@ -1256,8 +2075,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Resize Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Resize Smoke"});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1366,7 +2185,8 @@ namespace {
         }
 
         const std::string_view title = triangleSmokeTitle(useDepth, meshKind);
-        auto window = asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
+        auto window =
+            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1402,12 +2222,13 @@ namespace {
         }
 
         const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto triangleRenderer = asharia::BasicTriangleRenderer::create(asharia::BasicTriangleRendererDesc{
-            .device = context->device(),
-            .allocator = context->allocator(),
-            .shaderDirectory = shaderDir,
-            .meshKind = meshKind,
-        });
+        auto triangleRenderer =
+            asharia::BasicTriangleRenderer::create(asharia::BasicTriangleRendererDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+                .meshKind = meshKind,
+            });
         if (!triangleRenderer) {
             asharia::logError(triangleRenderer.error().message);
             return EXIT_FAILURE;
@@ -1418,8 +2239,9 @@ namespace {
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
-            auto status = frameLoop->renderFrame(
-                [&triangleRenderer, useDepth](const asharia::VulkanFrameRecordContext& recordContext) {
+            auto status =
+                frameLoop->renderFrame([&triangleRenderer, useDepth](
+                                           const asharia::VulkanFrameRecordContext& recordContext) {
                     if (useDepth) {
                         return triangleRenderer->recordFrameWithDepth(recordContext);
                     }
@@ -1460,8 +2282,9 @@ namespace {
                   << extent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            asharia::logError("Failed to wait for Vulkan queue before triangle pipeline teardown: " +
-                          asharia::vkResultName(idleResult));
+            asharia::logError(
+                "Failed to wait for Vulkan queue before triangle pipeline teardown: " +
+                asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1535,8 +2358,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Mesh 3D Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Mesh 3D Smoke"});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1624,7 +2447,7 @@ namespace {
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             asharia::logError("Failed to wait for Vulkan queue before mesh 3D teardown: " +
-                          asharia::vkResultName(idleResult));
+                              asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1645,8 +2468,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Draw List Smoke"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Draw List Smoke"});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1736,7 +2559,7 @@ namespace {
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             asharia::logError("Failed to wait for Vulkan queue before draw list teardown: " +
-                          asharia::vkResultName(idleResult));
+                              asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1794,8 +2617,8 @@ namespace {
         }
 
         const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto renderer =
-            asharia::BasicFullscreenTextureRenderer::create(asharia::BasicFullscreenTextureRendererDesc{
+        auto renderer = asharia::BasicFullscreenTextureRenderer::create(
+            asharia::BasicFullscreenTextureRendererDesc{
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
@@ -1819,7 +2642,8 @@ namespace {
                 return EXIT_FAILURE;
             }
             if (*status == asharia::VulkanFrameStatus::OutOfDate) {
-                asharia::logError("Swapchain remained out of date during fullscreen texture smoke.");
+                asharia::logError(
+                    "Swapchain remained out of date during fullscreen texture smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1852,8 +2676,9 @@ namespace {
                   << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            asharia::logError("Failed to wait for Vulkan queue before fullscreen texture teardown: " +
-                          asharia::vkResultName(idleResult));
+            asharia::logError(
+                "Failed to wait for Vulkan queue before fullscreen texture teardown: " +
+                asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -1911,8 +2736,8 @@ namespace {
         }
 
         const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto renderer =
-            asharia::BasicFullscreenTextureRenderer::create(asharia::BasicFullscreenTextureRendererDesc{
+        auto renderer = asharia::BasicFullscreenTextureRenderer::create(
+            asharia::BasicFullscreenTextureRendererDesc{
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
@@ -1937,8 +2762,9 @@ namespace {
             }
             lastViewportExtent = viewportExtent;
 
-            auto status = frameLoop->renderFrame(
-                [&renderer, viewportExtent](const asharia::VulkanFrameRecordContext& recordContext) {
+            auto status =
+                frameLoop->renderFrame([&renderer, viewportExtent](
+                                           const asharia::VulkanFrameRecordContext& recordContext) {
                     return renderer->recordOffscreenViewportFrame(recordContext, viewportExtent);
                 });
             if (!status) {
@@ -1946,7 +2772,8 @@ namespace {
                 return EXIT_FAILURE;
             }
             if (*status == asharia::VulkanFrameStatus::OutOfDate) {
-                asharia::logError("Swapchain remained out of date during offscreen viewport smoke.");
+                asharia::logError(
+                    "Swapchain remained out of date during offscreen viewport smoke.");
                 return EXIT_FAILURE;
             }
 
@@ -1967,9 +2794,11 @@ namespace {
                                              "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
         }
-        const asharia::VulkanDeferredDeletionStats deletionStats = frameLoop->deferredDeletionStats();
+        const asharia::VulkanDeferredDeletionStats deletionStats =
+            frameLoop->deferredDeletionStats();
         if (deletionStats.enqueued < 2 || deletionStats.retired < 2) {
-            asharia::logError("Offscreen viewport smoke did not retire resized viewport resources.");
+            asharia::logError(
+                "Offscreen viewport smoke did not retire resized viewport resources.");
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
@@ -1994,8 +2823,9 @@ namespace {
                   << 'x' << swapchainExtent.height << '\n';
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            asharia::logError("Failed to wait for Vulkan queue before offscreen viewport teardown: " +
-                          asharia::vkResultName(idleResult));
+            asharia::logError(
+                "Failed to wait for Vulkan queue before offscreen viewport teardown: " +
+                asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -2016,8 +2846,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = "Asharia Engine Sample Viewer"});
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Sample Viewer"});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2062,11 +2892,12 @@ namespace {
         }
 
         const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto triangleRenderer = asharia::BasicTriangleRenderer::create(asharia::BasicTriangleRendererDesc{
-            .device = context->device(),
-            .allocator = context->allocator(),
-            .shaderDirectory = shaderDir,
-        });
+        auto triangleRenderer =
+            asharia::BasicTriangleRenderer::create(asharia::BasicTriangleRendererDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+            });
         if (!triangleRenderer) {
             asharia::logError(triangleRenderer.error().message);
             return EXIT_FAILURE;
@@ -2111,7 +2942,7 @@ namespace {
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             asharia::logError("Failed to wait for Vulkan queue before viewer shutdown: " +
-                          asharia::vkResultName(idleResult));
+                              asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -2123,7 +2954,8 @@ namespace {
             asharia::vulkanImageTransition(compiled.finalTransitions.front());
         if (vulkanFinalTransition.oldLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
             vulkanFinalTransition.newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
-            asharia::logError("Render graph Vulkan transition mapping produced unexpected layouts.");
+            asharia::logError(
+                "Render graph Vulkan transition mapping produced unexpected layouts.");
             return false;
         }
 
@@ -2196,7 +3028,8 @@ namespace {
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT ||
             vulkanTransientWriteTransition.dstAccessMask !=
                 VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT) {
-            asharia::logError("Render graph Vulkan transient write mapping produced unexpected masks.");
+            asharia::logError(
+                "Render graph Vulkan transient write mapping produced unexpected masks.");
             return false;
         }
 
@@ -2221,7 +3054,8 @@ namespace {
 
     bool validateSmokeRenderGraphTransientPlan(const asharia::RenderGraphCompileResult& compiled) {
         if (compiled.transientImages.size() != 1) {
-            asharia::logError("Render graph did not produce the expected transient allocation plan.");
+            asharia::logError(
+                "Render graph did not produce the expected transient allocation plan.");
             return false;
         }
 
@@ -2233,7 +3067,8 @@ namespace {
             transient.firstPassIndex != 4 || transient.lastPassIndex != 5 ||
             transient.finalState != asharia::RenderGraphImageState::ShaderRead ||
             transient.finalShaderStage != asharia::RenderGraphShaderStage::Fragment) {
-            asharia::logError("Render graph transient allocation plan contained unexpected fields.");
+            asharia::logError(
+                "Render graph transient allocation plan contained unexpected fields.");
             return false;
         }
 
@@ -2272,7 +3107,8 @@ namespace {
             transientCommands[1].kind != asharia::RenderGraphCommandKind::SetTexture ||
             transientCommands[2].kind != asharia::RenderGraphCommandKind::SetVec4 ||
             transientCommands[3].kind != asharia::RenderGraphCommandKind::DrawFullscreenTriangle) {
-            asharia::logError("Render graph transient command summary contained unexpected fields.");
+            asharia::logError(
+                "Render graph transient command summary contained unexpected fields.");
             return false;
         }
 
@@ -2311,7 +3147,8 @@ namespace {
             !context.transferWrites.empty() || !context.colorWriteSlots.empty() ||
             context.shaderReadSlots.size() != 1 || !context.transferWriteSlots.empty() ||
             context.shaderReadSlots.front().name != "source" ||
-            context.shaderReadSlots.front().shaderStage != asharia::RenderGraphShaderStage::Fragment) {
+            context.shaderReadSlots.front().shaderStage !=
+                asharia::RenderGraphShaderStage::Fragment) {
             return std::unexpected{asharia::Error{
                 asharia::ErrorDomain::RenderGraph,
                 0,
@@ -2393,7 +3230,8 @@ namespace {
             !context.transferWrites.empty() || !context.colorWriteSlots.empty() ||
             context.shaderReadSlots.size() != 1 || !context.transferWriteSlots.empty() ||
             context.shaderReadSlots.front().name != "source" ||
-            context.shaderReadSlots.front().shaderStage != asharia::RenderGraphShaderStage::Fragment) {
+            context.shaderReadSlots.front().shaderStage !=
+                asharia::RenderGraphShaderStage::Fragment) {
             return std::unexpected{asharia::Error{
                 asharia::ErrorDomain::RenderGraph,
                 0,
@@ -2473,15 +3311,17 @@ namespace {
         std::string_view context;
     };
 
-    bool expectRenderGraphCompileFailure(const asharia::Result<asharia::RenderGraphCompileResult>& compiled,
-                                         ExpectedRenderGraphCompileFailure expected) {
+    bool expectRenderGraphCompileFailure(
+        const asharia::Result<asharia::RenderGraphCompileResult>& compiled,
+        ExpectedRenderGraphCompileFailure expected) {
         if (compiled) {
-            asharia::logError("Render graph accepted invalid graph: " + std::string{expected.context});
+            asharia::logError("Render graph accepted invalid graph: " +
+                              std::string{expected.context});
             return false;
         }
         if (compiled.error().message.find(expected.message) == std::string::npos) {
             asharia::logError("Render graph produced an unexpected error for " +
-                          std::string{expected.context} + ": " + compiled.error().message);
+                              std::string{expected.context} + ": " + compiled.error().message);
             return false;
         }
 
@@ -2664,7 +3504,8 @@ namespace {
     }
 
     bool validateSmokeRenderGraphBuiltinSchemaFailures() {
-        const asharia::RenderGraphSchemaRegistry builtinSchemas = asharia::basicRenderGraphSchemaRegistry();
+        const asharia::RenderGraphSchemaRegistry builtinSchemas =
+            asharia::basicRenderGraphSchemaRegistry();
         const std::array builtinCases{
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::TransferClear,
@@ -2730,7 +3571,8 @@ namespace {
             });
     }
 
-    bool validateSmokeRenderGraphNegativeCompiles(const asharia::RenderGraphSchemaRegistry& schemas) {
+    bool
+    validateSmokeRenderGraphNegativeCompiles(const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph missingProducerGraph;
         const auto orphanColor =
             missingProducerGraph.createTransientImage(asharia::RenderGraphImageDesc{
@@ -2755,7 +3597,7 @@ namespace {
         if (missingProducerCompiled.error().message.find("before any pass writes it") ==
             std::string::npos) {
             asharia::logError("Render graph produced an unexpected missing-producer error: " +
-                          missingProducerCompiled.error().message);
+                              missingProducerCompiled.error().message);
             return false;
         }
 
@@ -2795,7 +3637,7 @@ namespace {
         if (missingSchemaCompiled.error().message.find("has no registered schema") ==
             std::string::npos) {
             asharia::logError("Render graph produced an unexpected missing-schema error: " +
-                          missingSchemaCompiled.error().message);
+                              missingSchemaCompiled.error().message);
             return false;
         }
         if (missingSchemaCallbackCount != 0) {
@@ -2804,14 +3646,15 @@ namespace {
         }
 
         asharia::RenderGraph mixedReadWriteGraph;
-        const auto mixedReadWriteImage = mixedReadWriteGraph.importImage(asharia::RenderGraphImageDesc{
-            .name = "MixedReadWriteImage",
-            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
-            .initialState = asharia::RenderGraphImageState::ShaderRead,
-            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
-            .finalState = asharia::RenderGraphImageState::Present,
-        });
+        const auto mixedReadWriteImage =
+            mixedReadWriteGraph.importImage(asharia::RenderGraphImageDesc{
+                .name = "MixedReadWriteImage",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = asharia::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+                .finalState = asharia::RenderGraphImageState::Present,
+            });
         int mixedReadWriteCallbackCount = 0;
         mixedReadWriteGraph.addPass("MixedReadWritePass", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
@@ -2831,7 +3674,8 @@ namespace {
         }
         auto mixedReadWriteExecuted = mixedReadWriteGraph.execute();
         if (mixedReadWriteExecuted || mixedReadWriteCallbackCount != 0) {
-            asharia::logError("Render graph executed a same-image shader read and color write pass.");
+            asharia::logError(
+                "Render graph executed a same-image shader read and color write pass.");
             return false;
         }
 
@@ -2888,7 +3732,8 @@ namespace {
             });
         ambiguousProducerGraph.addPass("ReadBeforeTwoWriters", "basic.transient-sample-fragment")
             .setParamsType("basic.transient-sample-fragment.params")
-            .readTexture("source", ambiguousProducerImage, asharia::RenderGraphShaderStage::Fragment);
+            .readTexture("source", ambiguousProducerImage,
+                         asharia::RenderGraphShaderStage::Fragment);
         ambiguousProducerGraph.addPass("FutureWriterA", "basic.transient-color")
             .setParamsType("basic.transient-color.params")
             .writeColor("target", ambiguousProducerImage);
@@ -2909,18 +3754,19 @@ namespace {
             ambiguousProducerError.find("FutureWriterA") == std::string::npos ||
             ambiguousProducerError.find("FutureWriterB") == std::string::npos) {
             asharia::logError("Render graph ambiguous producer diagnostic omitted context: " +
-                          ambiguousProducerError);
+                              ambiguousProducerError);
             return false;
         }
 
         asharia::RenderGraph missingFinalStateGraph;
-        const auto missingFinalImage = missingFinalStateGraph.importImage(asharia::RenderGraphImageDesc{
-            .name = "ImportedTextureWithoutFinalState",
-            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
-            .initialState = asharia::RenderGraphImageState::ShaderRead,
-            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
-        });
+        const auto missingFinalImage =
+            missingFinalStateGraph.importImage(asharia::RenderGraphImageDesc{
+                .name = "ImportedTextureWithoutFinalState",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+                .initialState = asharia::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+            });
         missingFinalStateGraph.addPass("SampleImportedWithoutFinal", "basic.sample-fragment")
             .setParamsType("basic.sample-fragment.params")
             .readTexture("source", missingFinalImage, asharia::RenderGraphShaderStage::Fragment);
@@ -2948,8 +3794,9 @@ namespace {
             .readTexture("source", explicitFinalImage, asharia::RenderGraphShaderStage::Fragment);
         auto explicitFinalCompiled = explicitFinalStateGraph.compile(schemas);
         if (!explicitFinalCompiled) {
-            asharia::logError("Render graph rejected an imported image with explicit final state: " +
-                          explicitFinalCompiled.error().message);
+            asharia::logError(
+                "Render graph rejected an imported image with explicit final state: " +
+                explicitFinalCompiled.error().message);
             return false;
         }
         if (!explicitFinalCompiled->finalTransitions.empty()) {
@@ -2990,8 +3837,9 @@ namespace {
             cycleError.find("CycleSecond") == std::string::npos ||
             cycleError.find("CycleImageA") == std::string::npos ||
             cycleError.find("Cycle edge") == std::string::npos) {
-            asharia::logError("Render graph cycle diagnostic omitted pass, image, or edge context: " +
-                          cycleError);
+            asharia::logError(
+                "Render graph cycle diagnostic omitted pass, image, or edge context: " +
+                cycleError);
             return false;
         }
 
@@ -3007,11 +3855,12 @@ namespace {
             .initialState = asharia::RenderGraphImageState::Undefined,
             .finalState = asharia::RenderGraphImageState::Present,
         });
-        const auto unusedTransient = cullingGraph.createTransientImage(asharia::RenderGraphImageDesc{
-            .name = "UnusedTransient",
-            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
-        });
+        const auto unusedTransient =
+            cullingGraph.createTransientImage(asharia::RenderGraphImageDesc{
+                .name = "UnusedTransient",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 32, .height = 32},
+            });
 
         int visibleCallbackCount = 0;
         int culledCallbackCount = 0;
@@ -3083,8 +3932,8 @@ namespace {
         return true;
     }
 
-    bool
-    validateSmokeRenderGraphBufferVulkanMappings(const asharia::RenderGraphCompileResult& compiled) {
+    bool validateSmokeRenderGraphBufferVulkanMappings(
+        const asharia::RenderGraphCompileResult& compiled) {
         const auto vulkanBufferWriteTransition =
             asharia::vulkanBufferTransition(compiled.passes[0].bufferTransitionsBefore.front());
         if (vulkanBufferWriteTransition.srcStageMask != VK_PIPELINE_STAGE_2_NONE ||
@@ -3131,67 +3980,68 @@ namespace {
 
     bool validateSmokeRenderGraphBuffers(const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph bufferGraph;
-        const auto transientBuffer = bufferGraph.createTransientBuffer(asharia::RenderGraphBufferDesc{
-            .name = "TransientUploadBuffer",
-            .byteSize = 1024,
-        });
+        const auto transientBuffer =
+            bufferGraph.createTransientBuffer(asharia::RenderGraphBufferDesc{
+                .name = "TransientUploadBuffer",
+                .byteSize = 1024,
+            });
 
         int writeCallbackCount = 0;
         int readCallbackCount = 0;
         bufferGraph.addPass("ReadTransientBuffer", "basic.buffer-read-fragment")
             .setParamsType("basic.buffer-read-fragment.params")
             .readBuffer("source", transientBuffer, asharia::RenderGraphShaderStage::Fragment)
-            .execute(
-                [&readCallbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
-                    if (context.name != "ReadTransientBuffer" ||
-                        context.type != "basic.buffer-read-fragment" ||
-                        context.paramsType != "basic.buffer-read-fragment.params" ||
-                        !context.bufferWrites.empty() || context.bufferReads.size() != 1 ||
-                        context.bufferReadSlots.size() != 1 || !context.bufferWriteSlots.empty() ||
-                        context.bufferReadSlots.front().name != "source" ||
-                        context.bufferReadSlots.front().shaderStage !=
-                            asharia::RenderGraphShaderStage::Fragment ||
-                        context.bufferTransitionsBefore.size() != 1 ||
-                        context.bufferTransitionsBefore.front().oldState !=
-                            asharia::RenderGraphBufferState::TransferWrite ||
-                        context.bufferTransitionsBefore.front().newState !=
-                            asharia::RenderGraphBufferState::ShaderRead ||
-                        context.bufferTransitionsBefore.front().newShaderStage !=
-                            asharia::RenderGraphShaderStage::Fragment) {
-                        return std::unexpected{asharia::Error{
-                            asharia::ErrorDomain::RenderGraph,
-                            0,
-                            "Render graph buffer read executor received unexpected pass context.",
-                        }};
-                    }
-                    ++readCallbackCount;
-                    return {};
-                });
+            .execute([&readCallbackCount](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                if (context.name != "ReadTransientBuffer" ||
+                    context.type != "basic.buffer-read-fragment" ||
+                    context.paramsType != "basic.buffer-read-fragment.params" ||
+                    !context.bufferWrites.empty() || context.bufferReads.size() != 1 ||
+                    context.bufferReadSlots.size() != 1 || !context.bufferWriteSlots.empty() ||
+                    context.bufferReadSlots.front().name != "source" ||
+                    context.bufferReadSlots.front().shaderStage !=
+                        asharia::RenderGraphShaderStage::Fragment ||
+                    context.bufferTransitionsBefore.size() != 1 ||
+                    context.bufferTransitionsBefore.front().oldState !=
+                        asharia::RenderGraphBufferState::TransferWrite ||
+                    context.bufferTransitionsBefore.front().newState !=
+                        asharia::RenderGraphBufferState::ShaderRead ||
+                    context.bufferTransitionsBefore.front().newShaderStage !=
+                        asharia::RenderGraphShaderStage::Fragment) {
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph buffer read executor received unexpected pass context.",
+                    }};
+                }
+                ++readCallbackCount;
+                return {};
+            });
         bufferGraph.addPass("WriteTransientBuffer", "basic.buffer-transfer-write")
             .setParamsType("basic.buffer-transfer-write.params")
             .writeBuffer("target", transientBuffer)
-            .execute(
-                [&writeCallbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
-                    if (context.name != "WriteTransientBuffer" ||
-                        context.type != "basic.buffer-transfer-write" ||
-                        context.paramsType != "basic.buffer-transfer-write.params" ||
-                        !context.bufferReads.empty() || context.bufferWrites.size() != 1 ||
-                        !context.bufferReadSlots.empty() || context.bufferWriteSlots.size() != 1 ||
-                        context.bufferWriteSlots.front().name != "target" ||
-                        context.bufferTransitionsBefore.size() != 1 ||
-                        context.bufferTransitionsBefore.front().oldState !=
-                            asharia::RenderGraphBufferState::Undefined ||
-                        context.bufferTransitionsBefore.front().newState !=
-                            asharia::RenderGraphBufferState::TransferWrite) {
-                        return std::unexpected{asharia::Error{
-                            asharia::ErrorDomain::RenderGraph,
-                            0,
-                            "Render graph buffer write executor received unexpected pass context.",
-                        }};
-                    }
-                    ++writeCallbackCount;
-                    return {};
-                });
+            .execute([&writeCallbackCount](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                if (context.name != "WriteTransientBuffer" ||
+                    context.type != "basic.buffer-transfer-write" ||
+                    context.paramsType != "basic.buffer-transfer-write.params" ||
+                    !context.bufferReads.empty() || context.bufferWrites.size() != 1 ||
+                    !context.bufferReadSlots.empty() || context.bufferWriteSlots.size() != 1 ||
+                    context.bufferWriteSlots.front().name != "target" ||
+                    context.bufferTransitionsBefore.size() != 1 ||
+                    context.bufferTransitionsBefore.front().oldState !=
+                        asharia::RenderGraphBufferState::Undefined ||
+                    context.bufferTransitionsBefore.front().newState !=
+                        asharia::RenderGraphBufferState::TransferWrite) {
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph buffer write executor received unexpected pass context.",
+                    }};
+                }
+                ++writeCallbackCount;
+                return {};
+            });
 
         auto compiled = bufferGraph.compile(schemas);
         if (!compiled) {
@@ -3235,13 +4085,14 @@ namespace {
         auto importedReadCompiled = importedReadGraph.compile(schemas);
         if (!importedReadCompiled) {
             asharia::logError("Render graph rejected a shader-readable imported buffer: " +
-                          importedReadCompiled.error().message);
+                              importedReadCompiled.error().message);
             return false;
         }
         if (!importedReadCompiled->finalBufferTransitions.empty() ||
             !importedReadCompiled->transientBuffers.empty() ||
             !importedReadCompiled->passes.front().bufferTransitionsBefore.empty()) {
-            asharia::logError("Render graph produced unexpected transitions for imported buffer read.");
+            asharia::logError(
+                "Render graph produced unexpected transitions for imported buffer read.");
             return false;
         }
 
@@ -3544,7 +4395,8 @@ namespace {
             compiled->passes[4].transitionsBefore.empty() ||
             compiled->passes[5].transitionsBefore.empty() ||
             compiled->transientImages.size() != 1) {
-            asharia::logError("Render graph did not produce the expected shader-read pass transition.");
+            asharia::logError(
+                "Render graph did not produce the expected shader-read pass transition.");
             return EXIT_FAILURE;
         }
         if (compiled->passes[4].name != "WriteTransientColor" ||
@@ -3595,18 +4447,20 @@ namespace {
         }
 
         asharia::RenderGraph invalidCommandGraph;
-        const auto invalidBackbuffer = invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
-            .name = "InvalidBackbuffer",
-            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
-            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
-            .initialState = asharia::RenderGraphImageState::Undefined,
-            .finalState = asharia::RenderGraphImageState::Present,
-        });
+        const auto invalidBackbuffer =
+            invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
+                .name = "InvalidBackbuffer",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::Present,
+            });
         invalidCommandGraph.addPass("InvalidClearCommand", "basic.clear-transfer")
             .setParamsType("basic.clear-transfer.params")
             .writeTransfer("target", invalidBackbuffer)
-            .recordCommands(
-                [](asharia::RenderGraphCommandList& commands) { commands.drawFullscreenTriangle(); });
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.drawFullscreenTriangle();
+            });
         auto invalidCompiled = invalidCommandGraph.compile(schemas);
         if (invalidCompiled) {
             asharia::logError("Render graph schema accepted an invalid command kind.");
@@ -3678,12 +4532,14 @@ namespace {
                          .run = runSmokeReflectionRegistry},
             SmokeCommand{.option = "--smoke-reflection-transform",
                          .run = runSmokeReflectionTransform},
-            SmokeCommand{.option = "--smoke-reflection-contexts",
-                         .run = runSmokeReflectionContexts},
+            SmokeCommand{.option = "--smoke-reflection-attributes",
+                         .run = runSmokeReflectionAttributes},
             SmokeCommand{.option = "--smoke-serialization-roundtrip",
                          .run = runSmokeSerializationRoundtrip},
             SmokeCommand{.option = "--smoke-serialization-json-archive",
                          .run = runSmokeSerializationJsonArchive},
+            SmokeCommand{.option = "--smoke-serialization-migration",
+                         .run = runSmokeSerializationMigration},
         };
 
         for (const SmokeCommand& command : commands) {

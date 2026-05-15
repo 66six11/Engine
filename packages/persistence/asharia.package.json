@@ -1,0 +1,23 @@
+{
+  "name": "com.asharia.persistence",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Persistence",
+  "description": "Schema, archive, and C++ binding based save/load and migration.",
+  "dependencies": [
+    "com.asharia.core",
+    "com.asharia.schema",
+    "com.asharia.archive",
+    "com.asharia.cpp-binding"
+  ],
+  "targets": ["asharia-persistence"],
+  "testTargets": ["asharia-persistence-smoke-tests"],
+  "targetDependencies": {
+    "asharia-persistence": [
+      "asharia-core",
+      "asharia-schema",
+      "asharia-archive",
+      "asharia-cpp-binding"
+    ],
+    "asharia-persistence-smoke-tests": ["asharia-persistence"]
+  }
+}
