@@ -1,10 +1,14 @@
-﻿#include <cstdlib>
+﻿#include <array>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <span>
 #include <string>
 #include <string_view>
 
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_handle.hpp"
+#include "asharia/asset_core/asset_metadata.hpp"
 #include "asharia/asset_core/asset_reference.hpp"
 #include "asharia/asset_core/asset_type.hpp"
 
@@ -59,8 +63,7 @@ namespace {
             return false;
         }
 
-        std::cout << "Asset GUID canonical: " << asharia::asset::formatAssetGuid(*parsed)
-                  << '\n';
+        std::cout << "Asset GUID canonical: " << asharia::asset::formatAssetGuid(*parsed) << '\n';
         return true;
     }
 
@@ -94,13 +97,11 @@ namespace {
     }
 
     bool expectInvalidReference(asharia::asset::AssetReference reference,
-                                asharia::asset::AssetTypeId actualType,
-                                std::string_view sourcePath,
-                                std::string_view expectedTypeName,
-                                std::string_view actualTypeName,
+                                asharia::asset::AssetTypeId actualType, std::string_view sourcePath,
+                                std::string_view expectedTypeName, std::string_view actualTypeName,
                                 std::string_view expectedReason) {
-        auto validated = asharia::asset::validateAssetReference(
-            reference, actualType, sourcePath, expectedTypeName, actualTypeName);
+        auto validated = asharia::asset::validateAssetReference(reference, actualType, sourcePath,
+                                                                expectedTypeName, actualTypeName);
         if (validated) {
             logFailure("Asset reference smoke accepted an invalid reference.");
             return false;
@@ -109,7 +110,8 @@ namespace {
         const std::string& message = validated.error().message;
         if (validated.error().domain != asharia::ErrorDomain::Asset ||
             !messageContains(message, sourcePath) || !messageContains(message, expectedTypeName) ||
-            !messageContains(message, actualTypeName) || !messageContains(message, expectedReason) ||
+            !messageContains(message, actualTypeName) ||
+            !messageContains(message, expectedReason) ||
             !messageContains(message, asharia::asset::formatAssetGuid(reference.guid))) {
             logFailure("Asset reference smoke produced an incomplete diagnostic.");
             return false;
@@ -119,8 +121,7 @@ namespace {
     }
 
     bool smokeAssetHandleAndReference() {
-        constexpr std::string_view kTextureGuidText =
-            "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21";
+        constexpr std::string_view kTextureGuidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21";
         constexpr std::string_view kMeshGuidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61";
         constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
         constexpr std::string_view kMeshTypeName = "com.asharia.asset.Mesh";
@@ -165,29 +166,15 @@ namespace {
         }
 
         if (!expectInvalidReference(asharia::asset::makeAssetReference({}, textureType),
-                                    textureType,
-                                    kSourcePath,
-                                    kTextureTypeName,
-                                    kTextureTypeName,
+                                    textureType, kSourcePath, kTextureTypeName, kTextureTypeName,
                                     "asset GUID is invalid") ||
             !expectInvalidReference(asharia::asset::makeAssetReference(*textureGuid, {}),
-                                    textureType,
-                                    kSourcePath,
-                                    kTextureTypeName,
-                                    kTextureTypeName,
+                                    textureType, kSourcePath, kTextureTypeName, kTextureTypeName,
                                     "expected asset type is invalid") ||
-            !expectInvalidReference(textureReference,
-                                    {},
-                                    kSourcePath,
-                                    kTextureTypeName,
-                                    kTextureTypeName,
-                                    "actual asset type is invalid") ||
-            !expectInvalidReference(textureReference,
-                                    meshType,
-                                    kSourcePath,
-                                    kTextureTypeName,
-                                    kMeshTypeName,
-                                    "asset type mismatch")) {
+            !expectInvalidReference(textureReference, {}, kSourcePath, kTextureTypeName,
+                                    kTextureTypeName, "actual asset type is invalid") ||
+            !expectInvalidReference(textureReference, meshType, kSourcePath, kTextureTypeName,
+                                    kMeshTypeName, "asset type mismatch")) {
             return false;
         }
 
@@ -196,9 +183,127 @@ namespace {
         return true;
     }
 
+    bool expectInvalidSourceRecords(std::span<const asharia::asset::SourceAssetRecord> records,
+                                    std::string_view expectedReason) {
+        auto validated = asharia::asset::validateSourceAssetRecords(records);
+        if (validated) {
+            logFailure("Asset metadata smoke accepted invalid source records.");
+            return false;
+        }
+
+        const std::string& message = validated.error().message;
+        if (validated.error().domain != asharia::ErrorDomain::Asset ||
+            !messageContains(message, expectedReason)) {
+            logFailure("Asset metadata smoke produced an incomplete diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeAssetMetadata() {
+        constexpr std::string_view kTextureGuidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21";
+        constexpr std::string_view kMeshGuidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61";
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+        constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
+        constexpr std::string_view kMeshImporterName = "com.asharia.importer.mesh";
+
+        auto textureGuid = asharia::asset::parseAssetGuid(kTextureGuidText);
+        auto meshGuid = asharia::asset::parseAssetGuid(kMeshGuidText);
+        if (!textureGuid || !meshGuid) {
+            logFailure("Asset metadata smoke could not parse fixture GUIDs.");
+            return false;
+        }
+
+        const asharia::asset::ImporterId textureImporterA =
+            asharia::asset::makeImporterId(kTextureImporterName);
+        const asharia::asset::ImporterId textureImporterB =
+            asharia::asset::makeImporterId(kTextureImporterName);
+        const asharia::asset::ImporterId meshImporter =
+            asharia::asset::makeImporterId(kMeshImporterName);
+        const asharia::asset::ImporterId emptyImporter = asharia::asset::makeImporterId("");
+
+        if (asharia::asset::kAssetMetadataSchema.empty() ||
+            asharia::asset::kAssetMetadataVersion == 0 || !textureImporterA ||
+            textureImporterA != textureImporterB || textureImporterA == meshImporter ||
+            emptyImporter) {
+            logFailure("Asset metadata smoke saw invalid schema or importer identity.");
+            return false;
+        }
+
+        const std::array settingsA{
+            asharia::asset::AssetImportSetting{.key = "colorSpace", .value = "srgb"},
+            asharia::asset::AssetImportSetting{.key = "generateMipmaps", .value = "true"},
+            asharia::asset::AssetImportSetting{.key = "compression", .value = "auto"},
+        };
+        const std::array settingsB{
+            asharia::asset::AssetImportSetting{.key = "colorSpace", .value = "srgb"},
+            asharia::asset::AssetImportSetting{.key = "generateMipmaps", .value = "true"},
+            asharia::asset::AssetImportSetting{.key = "compression", .value = "auto"},
+        };
+        const std::array settingsChanged{
+            asharia::asset::AssetImportSetting{.key = "colorSpace", .value = "srgb"},
+            asharia::asset::AssetImportSetting{.key = "generateMipmaps", .value = "true"},
+            asharia::asset::AssetImportSetting{.key = "compression", .value = "bc7"},
+        };
+
+        const std::uint64_t settingsHashA = asharia::asset::hashAssetImportSettings(settingsA);
+        const std::uint64_t settingsHashB = asharia::asset::hashAssetImportSettings(settingsB);
+        const std::uint64_t changedSettingsHash =
+            asharia::asset::hashAssetImportSettings(settingsChanged);
+        if (settingsHashA == 0 || settingsHashA != settingsHashB ||
+            settingsHashA == changedSettingsHash) {
+            logFailure("Asset metadata smoke saw unstable settings hash behavior.");
+            return false;
+        }
+
+        const asharia::asset::AssetTypeId textureType =
+            asharia::asset::makeAssetTypeId(kTextureTypeName);
+        const asharia::asset::SourceAssetRecord textureRecord{
+            .guid = *textureGuid,
+            .assetType = textureType,
+            .assetTypeName = std::string{kTextureTypeName},
+            .sourcePath = "Content/Textures/Crate.png",
+            .importerId = textureImporterA,
+            .importerName = std::string{kTextureImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = 0xF00DCAFEULL,
+            .settingsHash = settingsHashA,
+        };
+
+        if (!textureRecord || !asharia::asset::validateSourceAssetRecord(textureRecord) ||
+            !asharia::asset::validateSourceAssetRecords(std::array{textureRecord})) {
+            logFailure("Asset metadata smoke rejected a valid source record.");
+            return false;
+        }
+
+        asharia::asset::SourceAssetRecord missingType = textureRecord;
+        missingType.assetType = {};
+        missingType.assetTypeName.clear();
+
+        asharia::asset::SourceAssetRecord duplicateGuid = textureRecord;
+        duplicateGuid.sourcePath = "Content/Textures/CrateCopy.png";
+
+        asharia::asset::SourceAssetRecord duplicatePath = textureRecord;
+        duplicatePath.guid = *meshGuid;
+
+        const std::array missingTypeRecords{missingType};
+        const std::array duplicateGuidRecords{textureRecord, duplicateGuid};
+        const std::array duplicatePathRecords{textureRecord, duplicatePath};
+        if (!expectInvalidSourceRecords(missingTypeRecords, "asset type is missing") ||
+            !expectInvalidSourceRecords(duplicateGuidRecords, "duplicate asset GUID") ||
+            !expectInvalidSourceRecords(duplicatePathRecords, "duplicate source path")) {
+            return false;
+        }
+
+        std::cout << "Asset metadata settings hash: " << settingsHashA << '\n';
+        return true;
+    }
+
 } // namespace
 
 int main() {
-    const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetHandleAndReference();
+    const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetHandleAndReference() &&
+                        smokeAssetMetadata();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

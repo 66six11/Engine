@@ -440,6 +440,12 @@ struct AssetLoadResult {
 - metadata schema/version constants。
 - deterministic settings hash 输入模型。
 
+当前状态：
+
+- 已落地 `SourceAssetRecord`、`ImporterId`、`ImporterVersion`、metadata schema/version 常量、
+  settings hash helper 和最小 source record 校验。`.ameta` IO、catalog mutation 和 product key
+  仍在后续切片实现。
+
 验收：
 
 - smoke 覆盖 duplicate GUID/path、missing type、settings hash 稳定性。
