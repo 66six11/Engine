@@ -15,7 +15,7 @@ format yet.
 - Conan still owns external dependencies and toolchain generation.
 - The repository root is still the source of shared CMake helpers and local
   package dependencies.
-- `Asharia.package.json` records package targets plus `targetDependencies` so
+- `asharia.package.json` records package targets plus `targetDependencies` so
   package-level dependencies do not have to blur target-level boundaries.
 
 ## Example

@@ -17,7 +17,7 @@
 
 ## 禁止 UTF-8 BOM
 
-- JSON：`.json`，包括 `CMakePresets.json`、`Asharia.package.json`、Conan 生成的 `CMakeUserPresets.json`。
+- JSON：`.json`，包括 `CMakePresets.json`、`asharia.package.json`、Conan 生成的 `CMakeUserPresets.json`。
 - CMake：`CMakeLists.txt`、`.cmake`。
 - Python：`.py`。
 - PowerShell：`.ps1`。

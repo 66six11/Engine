@@ -29,20 +29,28 @@ AshariaEngine/
     core/
     platform/
   packages/
+    archive/
+    cpp-binding/
+    persistence/
     profiling/
     reflection/
-    serialization/
-    rhi-vulkan/
     rendergraph/
     renderer-basic/
+    rhi-vulkan/
+    schema/
+    serialization/
     shader-slang/
     window-glfw/
   scripts/
   tools/
+    check-doc-sync.ps1
+    check-text-encoding.ps1
+    count-code-lines.ps1
 ```
 
-后续可能新增 `tests/`、`package-registry/`、`packages/asset-core/`、`packages/editor-core/`
-等目录，但新增前应先明确 package 边界、CMake target 关系和文档归属。
+后续可能新增 `tests/`、`package-registry/`、`packages/asset-core/`、`packages/scene-core/`、
+`packages/editor-core/`、`packages/input/` 等目录，但新增前应先明确 package 边界、CMake target
+关系和文档归属。
 
 ## 变更策略
 
@@ -51,6 +59,7 @@ AshariaEngine/
 - 优先维护 package 边界，避免把 runtime、editor、renderer 全塞进一个 app。
 - 构建文件、依赖文件和 renderer 代码如果互相影响，应一起审核。
 - 构建目录、Conan 输出目录、生成的 toolchain/preset 不提交。
+- 仓库维护脚本位于 `tools/`；新增或修改工具时必须同步 `docs/workflow/build.md` 或相关 workflow 文档。
 
 ## 里程碑门禁
 

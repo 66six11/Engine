@@ -71,3 +71,17 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe
 ```
 
 需要自动验证时使用 `--smoke-*` 入口。完整提交前 smoke 清单见 `docs/workflow/review.md`。
+
+## 仓库维护工具
+
+这些脚本不替代构建门禁，但用于本地自检和变更审查：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
+powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
+powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
+```
+
+- `check-text-encoding.ps1` 验证 C/C++ 源码 UTF-8 with BOM、其他文本 UTF-8 without BOM。
+- `check-doc-sync.ps1` 在 code/build/tooling 变更缺少文档同步时失败；临时验证未跟踪文件时可加 `-IncludeUntracked`。
+- `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。

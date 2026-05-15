@@ -23,9 +23,9 @@
 - `vulkan-loader` 或系统 Vulkan SDK loader：运行时 Vulkan dispatch。
 - `vulkan-memory-allocator`：GPU 内存分配。
 - `glm`：可选数学库。第一阶段可以使用，后续也可以替换为项目自研 math 层。
-- `nlohmann_json`：严格 JSON 读写实现，必须隐藏在 archive facade 后。当前 spike 位于
-  `packages/serialization`，schema-first 重置后的目标归属是 `packages/archive`；public API 只暴露
-  `ArchiveValue`，不向其他 package 泄漏第三方 JSON 类型。
+- `nlohmann_json`：严格 JSON 读写实现，必须隐藏在 archive facade 后。当前 schema-first 路线已由
+  `packages/archive` 暴露 `ArchiveValue` 和 JSON facade；旧 `packages/serialization` 仅作为过渡兼容面，
+  不向其他 package 泄漏第三方 JSON 类型。
 
 Vulkan loader/binding 策略：
 
@@ -40,6 +40,8 @@ Vulkan loader/binding 策略：
 - `glslang`、`shaderc` 或 `dxc`：fallback shader 编译器，不作为默认路线。
 - `spirv-tools`：`spirv-val`、`spirv-dis` 和可选优化检查。
 - `clang-format`、`clang-tidy`：格式化和静态检查。主编译器仍然是 MSVC。
+- 仓库维护脚本：`tools/check-text-encoding.ps1`、`tools/check-doc-sync.ps1` 和
+  `tools/count-code-lines.ps1` 分别负责编码检查、文档同步检查和 tracked 文本行数统计。
 
 ## CMake 策略
 
@@ -61,7 +63,8 @@ Vulkan loader/binding 策略：
 - `engine/core` 只放稳定基础设施，不依赖 Vulkan、GLFW、Slang 或 editor。
 - `packages/rhi-vulkan`、`packages/rendergraph`、`packages/shader-slang` 等功能包可以独立
   被 app/editor 引入。
-- 后续每个 package 增加 `Asharia.package.json` manifest，记录名称、版本、依赖、CMake target。
+- 每个已落地的 engine/package/app 入口维护 `asharia.package.json` manifest，记录名称、版本、依赖、
+  CMake target、test target 和 target-level dependency。
 - editor 是 host，不是 engine 核心的一部分；runtime app 不链接 editor packages。
 - 反射/序列化重置采用 schema-first 底层边界：`schema`、`archive`、`cpp-binding`、`persistence`。
   当前 `reflection` / `serialization` package 是 spike/过渡实现，不继续承载 editor、script、asset 或 migration 语义。
