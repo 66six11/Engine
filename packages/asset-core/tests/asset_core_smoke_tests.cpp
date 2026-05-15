@@ -9,6 +9,7 @@
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_handle.hpp"
 #include "asharia/asset_core/asset_metadata.hpp"
+#include "asharia/asset_core/asset_product.hpp"
 #include "asharia/asset_core/asset_reference.hpp"
 #include "asharia/asset_core/asset_type.hpp"
 
@@ -300,10 +301,119 @@ namespace {
         return true;
     }
 
+    bool smokeAssetProductKeyAndDependency() {
+        constexpr std::string_view kTextureGuidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21";
+        constexpr std::string_view kShaderGuidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61";
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+        constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
+
+        auto textureGuid = asharia::asset::parseAssetGuid(kTextureGuidText);
+        auto shaderGuid = asharia::asset::parseAssetGuid(kShaderGuidText);
+        if (!textureGuid || !shaderGuid) {
+            logFailure("Asset product smoke could not parse fixture GUIDs.");
+            return false;
+        }
+
+        const std::array settings{
+            asharia::asset::AssetImportSetting{.key = "colorSpace", .value = "srgb"},
+            asharia::asset::AssetImportSetting{.key = "generateMipmaps", .value = "true"},
+        };
+        const asharia::asset::SourceAssetRecord source{
+            .guid = *textureGuid,
+            .assetType = asharia::asset::makeAssetTypeId(kTextureTypeName),
+            .assetTypeName = std::string{kTextureTypeName},
+            .sourcePath = "Content/Textures/Crate.png",
+            .importerId = asharia::asset::makeImporterId(kTextureImporterName),
+            .importerName = std::string{kTextureImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = 0x1000F00DULL,
+            .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+        };
+
+        const std::array dependencies{
+            asharia::asset::AssetDependency{
+                .owner = *textureGuid,
+                .kind = asharia::asset::AssetDependencyKind::SourceFile,
+                .path = "Content/Textures/Crate.png",
+                .hash = source.sourceHash,
+            },
+            asharia::asset::AssetDependency{
+                .owner = *textureGuid,
+                .kind = asharia::asset::AssetDependencyKind::AssetReference,
+                .asset = *shaderGuid,
+                .path = "Content/Shaders/TextureImport.slang",
+                .hash = 0xCAFE1234ULL,
+            },
+        };
+        const std::uint64_t dependencyHashA = asharia::asset::hashAssetDependencies(dependencies);
+        const std::uint64_t dependencyHashB = asharia::asset::hashAssetDependencies(dependencies);
+        if (dependencyHashA == 0 || dependencyHashA != dependencyHashB) {
+            logFailure("Asset product smoke saw unstable dependency hash behavior.");
+            return false;
+        }
+
+        const std::uint64_t msvcTargetHash =
+            asharia::asset::makeAssetTargetProfileHash("windows-msvc-debug");
+        const std::uint64_t clangTargetHash =
+            asharia::asset::makeAssetTargetProfileHash("windows-clangcl-debug");
+        const asharia::asset::AssetProductKey baseKey =
+            asharia::asset::makeAssetProductKey(source, dependencyHashA, msvcTargetHash);
+        const asharia::asset::AssetProductKey matchingKey =
+            asharia::asset::makeAssetProductKey(source, dependencyHashB, msvcTargetHash);
+
+        if (!baseKey || baseKey != matchingKey ||
+            asharia::asset::hashAssetProductKey(baseKey) !=
+                asharia::asset::hashAssetProductKey(matchingKey)) {
+            logFailure("Asset product smoke saw unstable product key behavior.");
+            return false;
+        }
+
+        asharia::asset::SourceAssetRecord changedSourceHash = source;
+        changedSourceHash.sourceHash ^= 0x1ULL;
+        const asharia::asset::AssetProductKey sourceChangedKey =
+            asharia::asset::makeAssetProductKey(changedSourceHash, dependencyHashA, msvcTargetHash);
+
+        asharia::asset::SourceAssetRecord changedSettingsHash = source;
+        changedSettingsHash.settingsHash ^= 0x1ULL;
+        const asharia::asset::AssetProductKey settingsChangedKey =
+            asharia::asset::makeAssetProductKey(changedSettingsHash, dependencyHashA,
+                                                msvcTargetHash);
+
+        const asharia::asset::AssetProductKey targetChangedKey =
+            asharia::asset::makeAssetProductKey(source, dependencyHashA, clangTargetHash);
+
+        if (baseKey == sourceChangedKey || baseKey == settingsChangedKey ||
+            baseKey == targetChangedKey ||
+            asharia::asset::hashAssetProductKey(baseKey) ==
+                asharia::asset::hashAssetProductKey(sourceChangedKey) ||
+            asharia::asset::hashAssetProductKey(baseKey) ==
+                asharia::asset::hashAssetProductKey(settingsChangedKey) ||
+            asharia::asset::hashAssetProductKey(baseKey) ==
+                asharia::asset::hashAssetProductKey(targetChangedKey)) {
+            logFailure("Asset product smoke did not react to key input changes.");
+            return false;
+        }
+
+        const asharia::asset::AssetProductRecord record{
+            .key = baseKey,
+            .relativeProductPath = "textures/crate.texture.bin",
+            .productSizeBytes = 4096,
+            .productHash = asharia::asset::hashAssetProductKey(baseKey),
+        };
+        if (!record) {
+            logFailure("Asset product smoke rejected a valid product record.");
+            return false;
+        }
+
+        std::cout << "Asset product key hash: " << asharia::asset::hashAssetProductKey(baseKey)
+                  << '\n';
+        return true;
+    }
+
 } // namespace
 
 int main() {
     const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetHandleAndReference() &&
-                        smokeAssetMetadata();
+                        smokeAssetMetadata() && smokeAssetProductKeyAndDependency();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

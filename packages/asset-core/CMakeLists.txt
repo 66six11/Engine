@@ -14,6 +14,7 @@ asharia_require_package_target(asharia::core engine/core)
 add_library(asharia-asset-core STATIC
     src/asset_guid.cpp
     src/asset_metadata.cpp
+    src/asset_product.cpp
     src/asset_reference.cpp
 )
 

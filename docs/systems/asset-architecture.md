@@ -459,6 +459,12 @@ struct AssetLoadResult {
 - `AssetDependency`。
 - key/hash 组合 helper。
 
+当前状态：
+
+- 已落地 `AssetProductKey`、`AssetProductRecord`、`AssetDependency`、dependency hash、
+  target profile hash 和 product key hash helper。真实 product path 生成、cache manifest 和
+  invalidation 调度仍由后续 catalog / asset-pipeline 切片实现。
+
 验收：
 
 - smoke 覆盖 source hash、settings hash、target profile 改变时 product key 改变。
