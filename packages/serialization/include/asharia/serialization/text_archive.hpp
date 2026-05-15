@@ -10,6 +10,8 @@
 namespace asharia::serialization {
 
     [[nodiscard]] Result<std::string> writeTextArchive(const ArchiveValue& value);
+    [[nodiscard]] VoidResult writeTextArchiveFile(const std::filesystem::path& path,
+                                                  const ArchiveValue& value);
     [[nodiscard]] Result<ArchiveValue> readTextArchive(std::string_view text);
     [[nodiscard]] Result<ArchiveValue> readTextArchiveFile(const std::filesystem::path& path);
 

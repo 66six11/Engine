@@ -1,0 +1,14 @@
+{
+  "name": "basic_compute",
+  "source": "basic_compute.slang",
+  "outputs": [
+    {
+      "entry": "computeMain",
+      "stage": "compute",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "basic_compute.comp.spv"
+    }
+  ],
+  "validation": "spirv-val"
+}

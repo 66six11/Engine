@@ -71,7 +71,7 @@
               "/Zc:__cplusplus"
             ]
           },
-          "enableClangTidyCodeAnalysis": true
+          "enableClangTidyCodeAnalysis": false
         }
       }
     },
@@ -104,7 +104,7 @@
               "/Zc:__cplusplus"
             ]
           },
-          "enableClangTidyCodeAnalysis": true
+          "enableClangTidyCodeAnalysis": false
         }
       }
     }

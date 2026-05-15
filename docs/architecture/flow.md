@@ -127,15 +127,17 @@ flowchart TD
     MeshSmoke["--smoke-mesh"]
     Mesh3DSmoke["--smoke-mesh-3d"]
     DrawListSmoke["--smoke-draw-list"]
+    MrtSmoke["--smoke-mrt"]
     DescriptorSmoke["--smoke-descriptor-layout"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
+    ComputeDispatchSmoke["--smoke-compute-dispatch"]
     DeferredDeletionSmoke["--smoke-deferred-deletion"]
     GLFW["GlfwInstance / GlfwWindow"]
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
-    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d SPIR-V + reflection JSON"]
-    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer<br/>shader modules / pipeline layout / vertex/index buffer / pipeline<br/>BasicDrawItem / BasicDrawListItem / MVP push constants"]
+    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d / compute SPIR-V + reflection JSON"]
+    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer / BasicComputeDispatchRenderer<br/>shader modules / pipeline layout / buffers / pipeline<br/>BasicDrawItem / BasicDrawListItem / MVP push constants / dispatch params"]
     DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout<br/>descriptor allocator-backed pool/set<br/>buffer + image + sampler write"]
 
     Start --> Args
@@ -151,8 +153,10 @@ flowchart TD
     Args --> MeshSmoke
     Args --> Mesh3DSmoke
     Args --> DrawListSmoke
+    Args --> MrtSmoke
     Args --> DescriptorSmoke
     Args --> FullscreenTextureSmoke
+    Args --> ComputeDispatchSmoke
     Args --> DeferredDeletionSmoke
     WindowSmoke --> GLFW
     VulkanSmoke --> GLFW
@@ -189,6 +193,9 @@ flowchart TD
     DrawListSmoke --> Context
     DrawListSmoke --> ShaderBuild
     DrawListSmoke --> RendererObject
+    MrtSmoke --> GLFW
+    MrtSmoke --> Ext
+    MrtSmoke --> Context
     DescriptorSmoke --> GLFW
     DescriptorSmoke --> Ext
     DescriptorSmoke --> Context
@@ -199,6 +206,11 @@ flowchart TD
     FullscreenTextureSmoke --> Context
     FullscreenTextureSmoke --> ShaderBuild
     FullscreenTextureSmoke --> RendererObject
+    ComputeDispatchSmoke --> GLFW
+    ComputeDispatchSmoke --> Ext
+    ComputeDispatchSmoke --> Context
+    ComputeDispatchSmoke --> ShaderBuild
+    ComputeDispatchSmoke --> RendererObject
     Context --> Device
 ```
 
@@ -221,6 +233,9 @@ flowchart TD
 - `--smoke-draw-list` 已接入独立 `BasicDrawListRenderer`：使用后端无关 `BasicDrawListItem`、
   `builtin.raster-draw-list` schema、typed params payload、transient depth attachment 和共享 cube
   vertex/index buffer，验证 buffer upload counters、多 item 的 `vkCmdPushConstants` + indexed draw 循环。
+- `--smoke-mrt` 已接入独立 `BasicMrtRenderer`：使用 `builtin.raster-mrt` schema、两个 named color
+  slots、两张 transient color attachments 和 dynamic rendering multi-color clear，验证 transient image
+  pool 对两张 color attachments 的 retire/reuse。
 - `--smoke-descriptor-layout` 已接入非空 descriptor reflection signature 到 Vulkan descriptor set layout /
   pipeline layout 的创建验证，并验证 descriptor allocator-backed pool、descriptor set allocation、
   uniform-buffer write、sampled-image write、sampler write 和 allocator counters。
@@ -375,8 +390,8 @@ flowchart TD
 ```mermaid
 flowchart TD
     ShaderBuild["shader-slang package<br/>slangc 编译 Slang<br/>spirv-val 验证 SPIR-V<br/>Slang API 生成 reflection JSON"]
-    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer"]
-    PipelineObjects["VulkanShaderModule<br/>VulkanPipelineLayout<br/>VulkanBuffer vertex/index<br/>VulkanGraphicsPipeline"]
+    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer / BasicComputeDispatchRenderer"]
+    PipelineObjects["VulkanShaderModule<br/>VulkanPipelineLayout<br/>VulkanBuffer vertex/index/storage/readback<br/>VulkanGraphicsPipeline / VulkanComputePipeline"]
     DepthObjects["depth path only<br/>VMA-backed transient depth image<br/>VkImageView<br/>depth-enabled pipeline"]
     Begin["vkBeginCommandBuffer"]
     BuildGraph["Build RenderGraph<br/>Backbuffer + ClearColor transfer write<br/>+ Triangle/Mesh/DrawList color write<br/>+ optional DepthBuffer depth write"]
@@ -452,6 +467,9 @@ flowchart TD
   transient source texture 采样；`BasicFullscreenTextureRenderer::recordFrame()` 现在是
   `recordViewFrame()` 的 swapchain target 便捷包装；renderer 为 view write 和 composite 各持有一个
   descriptor set，避免同一 command buffer 内更新已绑定 set。
+- `--smoke-compute-dispatch` 已验证 graphics queue compute capability、compute shader reflection、
+  storage buffer descriptor、compute pipeline、RenderGraph buffer transition 录制、`vkCmdDispatch`
+  和 readback buffer 校验。
 - `--smoke-offscreen-viewport` 已验证 editor viewport 的核心离屏路径：通用 `VulkanRenderTarget`
   持有的 color attachment image 独立尺寸、resize 后 deferred deletion、多帧复用、`recordViewFrame()`
   写入 sampled target、sampled image descriptor 更新、renderer 输出可供未来 editor ImGui backend
@@ -461,6 +479,11 @@ flowchart TD
   Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、
   `target` 或 `depth` 对应 binding，Backbuffer、`--smoke-transient` 的 transient color image 和
   `--smoke-depth-triangle` 的 transient depth image 都已显式加入 binding 表。
+- `--smoke-rendergraph` 已验证 `StorageReadWrite(compute)` buffer access、`Dispatch` command summary、
+  `builtin.compute-dispatch` / `builtin.compute-readback` schema 负向路径，以及
+  `TransferWrite -> StorageReadWrite(compute)`、`StorageReadWrite(compute) -> TransferRead` 和
+  `TransferWrite -> HostRead` 的 Vulkan buffer stage/access 映射；`--smoke-compute-dispatch` 已验证
+  真实 compute pipeline、storage descriptor、`vkCmdDispatch` 录制和 storage buffer GPU 写入 readback。
 - 默认 `VulkanFrameLoop::renderFrame()` 仍保留内置 clear 路径，作为基础 RHI smoke fallback。
 - frame callback 会返回 `VulkanFrameRecordResult.waitStageMask`，用于匹配 acquire semaphore 的等待阶段。
 - `recordBasicClearFrame` 和 triangle shader/pipeline 装配已下沉到 `renderer-basic-vulkan`，sample-viewer 只传入后端 recording callback。
@@ -616,13 +639,17 @@ flowchart TD
 
 - `vulkanImageTransition` 已实现。
 - `vulkanImageBarrier` 已实现。
-- `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferWrite` 与 `ShaderRead(fragment/compute)`。
+- `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferRead`、
+  `TransferWrite`、`HostRead`、`ShaderRead(fragment/compute)` 和 `StorageReadWrite(compute)`。
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
-- `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)` 和 compute shader-read usage 映射到 `VkBufferMemoryBarrier2` 所需 stage/access 字段。
+- `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)`、
+  `ShaderRead(compute)` usage、`TransferWrite -> StorageReadWrite(compute)`、
+  `StorageReadWrite(compute) -> TransferRead` 和 `TransferWrite -> HostRead` 映射到
+  `VkBufferMemoryBarrier2` 所需 stage/access 字段。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、dependencies、slots、commands、transitions、
   transients 的 Markdown 调试表格，并验证 pass type、params type、slot schema、command summary、
@@ -639,9 +666,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>persistent offscreen viewport target smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
-    Step1["下一步:<br/>multi-view / material expansion"]
-    Step2["之后:<br/>resource/material expansion"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
+    Step2["之后:<br/>upstream systems<br/>scene-core / editor-core / asset-core"]
 
     Now --> Step1 --> Step2
 
@@ -678,13 +705,17 @@ flowchart TD
 1. 保持 `VulkanFrameLoop` 基础 target 不依赖 RenderGraph。
 2. 保持 `renderer-basic` 后端无关，Vulkan 命令录制放在 `renderer-basic-vulkan`。
 3. 保持 RenderGraph 调试表格只输出抽象 RG 信息；Vulkan layout/stage/access 调试表应放在 Vulkan adapter 层。
-4. Slang reflection JSON、固定 descriptor set layout RAII、reflection-derived pipeline layout 和非空 descriptor signature smoke 已接入；descriptor bind 和 fullscreen texture pass 已有 `--smoke-fullscreen-texture` 真实 Vulkan 路径，fullscreen clear/tint 已开始走 typed params payload；`--smoke-mesh` 已验证最小 indexed mesh；`--smoke-mesh-3d` 已验证最小 3D cube、depth 和 MVP push constants；`--smoke-draw-list` 已验证多 item indexed cube draw 和 `builtin.raster-draw-list` typed pass。
+4. Slang reflection JSON、固定 descriptor set layout RAII、reflection-derived pipeline layout 和非空 descriptor signature smoke 已接入；descriptor bind 和 fullscreen texture pass 已有 `--smoke-fullscreen-texture` 真实 Vulkan 路径，fullscreen clear/tint 已开始走 typed params payload；`--smoke-mesh` 已验证最小 indexed mesh；`--smoke-mesh-3d` 已验证最小 3D cube、depth 和 MVP push constants；`--smoke-draw-list` 已验证多 item indexed cube draw 和 `builtin.raster-draw-list` typed pass；`--smoke-compute-dispatch` 已验证 compute pipeline、storage descriptor、`vkCmdDispatch` 和 GPU 写入 readback。
 5. `pass.type` 只负责执行模型 / typed pass 分发；RenderQueue、shader pass tag 和 RendererList 等到 mesh/material 阶段再引入。
-6. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 grab/copy 语义进入，不放开模糊的 `readTexture + writeColor`。
-7. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
-8. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
-9. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续再补资源上传、material/pipeline key 和 asset database，不提前暴露逐 object 脚本 draw loop。
-10. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
+6. Scene/world、selection、asset import/cache、inspector 和 Play Mode 状态不属于 render 层。它们由
+   `scene-core`、`editor-core`、`asset-core` 或 app/editor host 拥有；render 侧只消费 immutable snapshot、
+   draw packet、resource handle、material/resource signature 和 RenderView target。
+7. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 grab/copy 语义进入，不放开模糊的 `readTexture + writeColor`。
+8. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
+9. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
+10. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续 asset-core 拥有 GUID/import/cache，
+    renderer/RHI 只消费 resource handle、product data 和 upload request，不提前暴露逐 object 脚本 draw loop。
+11. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的
     culling 策略。

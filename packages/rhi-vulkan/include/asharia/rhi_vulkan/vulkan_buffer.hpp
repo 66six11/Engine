@@ -13,6 +13,7 @@ namespace asharia {
 
     enum class VulkanBufferMemoryUsage {
         HostUpload,
+        HostReadback,
         DeviceLocal,
     };
 
@@ -27,6 +28,7 @@ namespace asharia {
     struct VulkanBufferStats {
         std::uint64_t created{};
         std::uint64_t hostUploadCreated{};
+        std::uint64_t hostReadbackCreated{};
         std::uint64_t deviceLocalCreated{};
         std::uint64_t allocatedBytes{};
         std::uint64_t uploadCalls{};
@@ -45,6 +47,7 @@ namespace asharia {
         [[nodiscard]] static Result<VulkanBuffer> create(const VulkanBufferDesc& desc);
 
         [[nodiscard]] Result<void> upload(std::span<const std::byte> bytes);
+        [[nodiscard]] Result<void> read(std::span<std::byte> bytes);
         [[nodiscard]] VkBuffer handle() const;
         [[nodiscard]] VkDeviceSize size() const;
         [[nodiscard]] VulkanBufferStats stats() const;

@@ -137,17 +137,32 @@ namespace asharia {
         switch (state) {
         case RenderGraphBufferState::Undefined:
             return {};
+        case RenderGraphBufferState::TransferRead:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .accessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+            };
         case RenderGraphBufferState::TransferWrite:
             return VulkanRenderGraphBufferUsage{
                 .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .accessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
             };
+        case RenderGraphBufferState::HostRead:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+                .accessMask = VK_ACCESS_2_HOST_READ_BIT,
+            };
         case RenderGraphBufferState::ShaderRead:
             return VulkanRenderGraphBufferUsage{
                 .stageMask = vulkanShaderStage(shaderStage),
-                .accessMask = VK_ACCESS_2_UNIFORM_READ_BIT |
-                              VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+                .accessMask = VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
                               VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+            };
+        case RenderGraphBufferState::StorageReadWrite:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = vulkanShaderStage(shaderStage),
+                .accessMask =
+                    VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
             };
         }
         return {};

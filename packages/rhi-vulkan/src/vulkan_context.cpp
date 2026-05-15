@@ -229,15 +229,21 @@ namespace asharia {
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
                     vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT"));
+            const auto setObjectName =
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
+                    vkGetInstanceProcAddr(instance, "vkSetDebugUtilsObjectNameEXT"));
 
-            if (beginCommandLabel == nullptr || endCommandLabel == nullptr) {
+            if (beginCommandLabel == nullptr || endCommandLabel == nullptr ||
+                setObjectName == nullptr) {
                 return std::unexpected{
-                    vulkanError("Failed to load Vulkan debug utils command label functions")};
+                    vulkanError("Failed to load Vulkan debug utils annotation functions")};
             }
 
             return VulkanDebugLabelFunctions{
                 .beginCommandLabel = beginCommandLabel,
                 .endCommandLabel = endCommandLabel,
+                .setObjectName = setObjectName,
             };
         }
 
@@ -263,6 +269,7 @@ namespace asharia {
 
         struct QueueSelection {
             std::uint32_t graphicsFamily{};
+            bool graphicsSupportsCompute{};
             std::uint32_t timestampValidBits{};
         };
 
@@ -293,6 +300,8 @@ namespace asharia {
                 vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, queues.data());
             }
 
+            std::optional<QueueSelection> fallback;
+
             for (std::uint32_t index = 0; index < queues.size(); ++index) {
                 auto supportsPresent = queueSupportsPresentation(physicalDevice, index, surface);
                 if (!supportsPresent) {
@@ -300,14 +309,22 @@ namespace asharia {
                 }
 
                 if ((queues[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0 && *supportsPresent) {
-                    return QueueSelection{
+                    QueueSelection selection{
                         .graphicsFamily = index,
+                        .graphicsSupportsCompute =
+                            (queues[index].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0,
                         .timestampValidBits = queues[index].timestampValidBits,
                     };
+                    if (selection.graphicsSupportsCompute) {
+                        return selection;
+                    }
+                    if (!fallback) {
+                        fallback = selection;
+                    }
                 }
             }
 
-            return std::nullopt;
+            return fallback;
         }
 
         bool supportsRequiredVersion(const VkPhysicalDeviceProperties& properties,
@@ -787,6 +804,7 @@ namespace asharia {
             .deviceId = selected.properties.deviceID,
             .apiVersion = selected.properties.apiVersion,
             .graphicsQueueFamily = context.graphicsQueueFamily_,
+            .graphicsQueueSupportsCompute = selected.queues.graphicsSupportsCompute,
             .graphicsQueueTimestampValidBits = selected.queues.timestampValidBits,
             .timestampPeriodNanoseconds = selected.properties.limits.timestampPeriod,
         };

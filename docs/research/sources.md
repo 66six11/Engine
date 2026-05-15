@@ -85,7 +85,6 @@
 - 运行时引用不能直接保存 pointer 或 GPU handle；`EntityId`、`AssetGuid`、`AssetHandle<T>` 需要专门 serializer 和诊断。
 - 当前项目使用 C++23，不能依赖 C++26 静态反射；第一版应使用手写注册表，未来可替换为 generated table。
 - 后续 C# 接入应作为 scripting package，使用 .NET hosting 和 Roslyn/source generator 生成 managed metadata，不进入 schema/archive/persistence 底座。
-
 ## Asset pipeline / asset-core baseline
 
 本次核对日期：2026-05-12

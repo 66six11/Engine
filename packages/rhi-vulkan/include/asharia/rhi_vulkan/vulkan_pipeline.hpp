@@ -237,4 +237,32 @@ namespace asharia {
         VkPipeline pipeline_{VK_NULL_HANDLE};
     };
 
+    struct VulkanComputePipelineDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        VkPipelineCache pipelineCache{VK_NULL_HANDLE};
+        VkPipelineLayout layout{VK_NULL_HANDLE};
+        VkShaderModule shader{VK_NULL_HANDLE};
+        std::string_view entryPoint{"main"};
+    };
+
+    class VulkanComputePipeline {
+    public:
+        VulkanComputePipeline() = default;
+        VulkanComputePipeline(const VulkanComputePipeline&) = delete;
+        VulkanComputePipeline& operator=(const VulkanComputePipeline&) = delete;
+        VulkanComputePipeline(VulkanComputePipeline&& other) noexcept;
+        VulkanComputePipeline& operator=(VulkanComputePipeline&& other) noexcept;
+        ~VulkanComputePipeline();
+
+        [[nodiscard]] static Result<VulkanComputePipeline>
+        create(const VulkanComputePipelineDesc& desc);
+        [[nodiscard]] VkPipeline handle() const;
+
+    private:
+        void destroy();
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VkPipeline pipeline_{VK_NULL_HANDLE};
+    };
+
 } // namespace asharia

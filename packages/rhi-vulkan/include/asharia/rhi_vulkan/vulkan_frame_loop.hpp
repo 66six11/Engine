@@ -42,12 +42,16 @@ namespace asharia {
 
         [[nodiscard]] bool deferDeletion(VulkanDeferredDeletionCallback callback) const;
         [[nodiscard]] bool beginDebugLabel(std::string_view name) const;
+        [[nodiscard]] Result<void> setDebugObjectName(VkObjectType objectType,
+                                                       std::uint64_t objectHandle,
+                                                       std::string_view name) const;
         void endDebugLabel() const;
     };
 
     struct VulkanDebugLabelStats {
         std::uint64_t regionsBegun{};
         std::uint64_t regionsEnded{};
+        std::uint64_t objectsNamed{};
         bool available{};
     };
 
@@ -179,6 +183,9 @@ namespace asharia {
         void discardRecordedTimestampQueries();
         [[nodiscard]] bool beginDebugLabel(VkCommandBuffer commandBuffer, std::string_view name);
         void endDebugLabel(VkCommandBuffer commandBuffer);
+        [[nodiscard]] Result<void> setDebugObjectName(VkObjectType objectType,
+                                                       std::uint64_t objectHandle,
+                                                       std::string_view name);
         [[nodiscard]] bool beginTimestampRegion(VkCommandBuffer commandBuffer,
                                                 std::string_view name,
                                                 std::uint32_t& endQuery);

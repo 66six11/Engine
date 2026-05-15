@@ -54,10 +54,18 @@ $smokes = @(
     "--smoke-mesh",
     "--smoke-mesh-3d",
     "--smoke-draw-list",
+    "--smoke-mrt",
     "--smoke-descriptor-layout",
     "--smoke-fullscreen-texture",
     "--smoke-offscreen-viewport",
-    "--smoke-deferred-deletion"
+    "--smoke-compute-dispatch",
+    "--smoke-deferred-deletion",
+    "--smoke-reflection-registry",
+    "--smoke-reflection-transform",
+    "--smoke-reflection-attributes",
+    "--smoke-serialization-roundtrip",
+    "--smoke-serialization-json-archive",
+    "--smoke-serialization-migration"
 )
 
 foreach ($preset in @("clangcl-debug", "msvc-debug")) {

@@ -2,6 +2,8 @@
 
 重置日期：2026-05-14
 
+更新日期：2026-05-15
+
 本文取代 2026-05-10 的 reflection/serialization spike 实施计划。旧计划验证了几个正确的小块，
 但把 C++ binding、schema、persistence、editor/script metadata 压进了同一组 `TypeInfo` / `FieldInfo`
 概念里，不适合继续扩展成最终架构。
@@ -23,6 +25,60 @@ persistence
 ```
 
 `editor-core`、`scripting`、`scene-core`、`asset-core` 后续只作为消费者接入，不在本次重置里创建空壳。
+
+## 2026-05-15 状态快照
+
+当前 schema-first 底层包已经从计划进入可构建原型阶段：
+
+| 包 | 当前状态 | 已验证能力 | 仍缺口 |
+| --- | --- | --- | --- |
+| `packages/schema` | 已落地 | `TypeId`、`FieldId`、`ValueKind`、typed metadata、`SchemaRegistry`、builtin types、field alias、reserved field id、freeze、stable/canonical 交叉唯一性 | schema 文件/loader、type redirect、完整 deprecated 字段策略 |
+| `packages/archive` | 已落地 | `ArchiveValue`、strict JSON read/write、duplicate key 拒绝、deterministic output、invalid UTF-8 和 non-finite float 拒绝、`nlohmann_json` 不出 public API | 二进制格式、文件级 schema header、archive diff/patch |
+| `packages/cpp-binding` | 已落地 | pointer-to-member、readonly field、getter/setter property、default value、duplicate binding 检查、builtin scalar C++ 类型 mismatch 检查 | 自定义 struct 的显式 C++ type identity、generated binding、复杂容器 binding |
+| `packages/persistence` | 部分落地 | scalar/object/inline struct save/load、root/object envelope、object-valued field envelope、unknown field error/drop、missing field default、migration chain、alias load | `UnknownFieldPolicy::Preserve` 未实现；`Enum`、`Array`、`AssetReference`、`EntityReference` 只明确拒绝；scene/asset 文件格式尚未接入 |
+| `packages/reflection` / `packages/serialization` | 仍保留过渡 | 旧 smoke 继续作为兼容面回归 | 必须收口为 legacy facade 或删除，不能继续承载新语义 |
+
+当前完成度判断：
+
+- 架构骨架：约 75%。
+- 核心 round-trip：约 65%。
+- 测试覆盖：约 60-65%。
+- 可产品化程度：约 40%。
+- 总体：约 60%，属于可验证原型，不是稳定 API。
+
+当前支持的 persistence 字段 kind：
+
+```text
+Bool
+Integer
+Float
+String
+Object
+InlineStruct
+```
+
+当前明确拒绝的字段 kind：
+
+```text
+Null
+Enum
+Array
+AssetReference
+EntityReference
+```
+
+拒绝这些 kind 是当前 MVP 的有意边界。不要在 scene、asset 或 editor 接入前把临时数组、GUID、entity index
+编码塞进 persistence walker；这些类型需要先定义 schema 形状、文件表达、migration 和加载策略。
+
+最近验证证据：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap-conan.ps1
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
+powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
+git diff --check
+```
 
 ## 当前 spike 处理
 
@@ -90,6 +146,19 @@ persistence
 | Protobuf C++ generated code: https://protobuf.dev/reference/cpp/cpp-generated/ | 支持 C++ binding 由 schema 生成或手写适配，而不是 schema 本身。 |
 | FlatBuffers schema: https://flatbuffers.dev/schema/ | 支持 stable schema、root type、file identifier、field `id` 等格式契约。 |
 | FlatBuffers evolution: https://flatbuffers.dev/evolution/ | 支持 schema evolution 单独设计，字段删除/改名/重排不能随意处理。 |
+
+资料驱动的计划约束：
+
+- Unity 的 serialized field 经验说明编辑器、prefab 和热重载很容易被持久化字段牵引；Asharia 的 editor metadata
+  必须是 schema projection，不能直接等同 persistence 字段。
+- O3DE 的 context 分离说明 persistence、editing、behavior/script 应有独立消费面；底层 schema 只保存事实和 typed
+  metadata，不执行 editor 或 script 行为。
+- Serde 的 data model 分层说明 archive/value tree 应独立于具体格式和语言 binding；`packages/archive` 不理解
+  schema，也不读取 C++ 对象。
+- Unreal redirect 经验说明类型和字段改名需要稳定 alias/redirect/migration；当前 `aliases` 只是第一步，后续还要补 type
+  redirect 和 deprecated id 生命周期。
+- Protobuf/FlatBuffers 的 schema evolution 经验说明 field id 不能复用，删除、改名和重排必须有规则；当前 `reservedFieldIds`
+  已落地，但还需要 schema 文件级 golden tests 固化。
 
 ## 目标 package
 
@@ -349,6 +418,8 @@ Persistence package 验收：
 
 ### 切片 A：文档与冻结
 
+状态：已完成第一轮，仍需随着实现继续同步。
+
 目标：
 
 - 更新 `docs/systems/reflection-serialization.md` 为 schema-first 架构。
@@ -366,6 +437,8 @@ git diff --check
 
 ### 切片 B：`packages/schema`
 
+状态：已落地 MVP。
+
 目标：
 
 - 新增 `asharia-schema` / `asharia::schema`。
@@ -375,11 +448,12 @@ git diff --check
 
 必须校验：
 
-- duplicate type stable name。
+- duplicate type stable name 和 stable/canonical 交叉冲突。
 - duplicate field id。
-- duplicate field key without alias。
+- duplicate field key / alias 冲突。
 - id reuse reserved/deprecated。
 - freeze 后禁止注册。
+- freeze 时 field value type 必须可解析。
 
 建议 package-local test：
 
@@ -388,6 +462,8 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 ```
 
 ### 切片 C：`packages/archive`
+
+状态：已落地 MVP。
 
 目标：
 
@@ -401,8 +477,16 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 - 引入 schema registry 依赖。
 - 引入 C++ binding 依赖。
 - 在 archive 层处理 type/version envelope。
+- 在 public header 暴露 `nlohmann_json`。
+
+后续补充：
+
+- 文件级 schema header 由更高层 scene/asset 文件格式定义，不进入 archive package。
+- 二进制 archive 等 JSON 路径稳定后再评估。
 
 ### 切片 D：`packages/cpp-binding`
+
+状态：已落地 MVP。
 
 目标：
 
@@ -417,7 +501,15 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 - 在 binding package 解释 editor/script metadata。
 - 对非标准布局类型暴露裸 offset 写入。
 
+已补充规则：
+
+- builtin scalar 类型必须从 C++ 实际字段类型推导并与 schema `valueType` 匹配。
+- default value 的 C++ 类型也必须与 schema `valueType` 匹配。
+- 自定义 struct 目前仍回退到 schema `valueType`，下一阶段需要显式 type identity 或 generated binding 支撑。
+
 ### 切片 E：`packages/persistence`
+
+状态：部分落地，当前是 MVP 的主要收敛点。
 
 目标：
 
@@ -427,24 +519,44 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 - 实现 unknown field 策略。
 - 实现 default value。
 
+当前已支持：
+
+- root object `type/version/fields` envelope。
+- `ValueKind::Object` 字段保存子对象 envelope。
+- `ValueKind::InlineStruct` 字段 inline 保存，不带子对象 envelope。
+- builtin scalar save/load。
+- missing field 使用 C++ default value，缺少 default 时返回诊断。
+- unknown field `Error` 和 `Drop`。
+- 版本 migration chain。
+
+当前明确不支持：
+
+- `UnknownFieldPolicy::Preserve`，当前返回 not implemented。
+- `Enum`、`Array`、`AssetReference`、`EntityReference` 的持久化语义。
+- scene/prefab/asset 文件级 envelope、对象表和引用解析。
+
 建议测试：
 
 - scalar round-trip。
 - struct round-trip。
-- `Vec3` inline array。
-- component envelope。
-- unknown field error/preserve/drop。
+- `Vec3` inline struct。
+- component/root object envelope。
+- object-valued field envelope。
+- unknown field error/drop，preserve 必须明确失败直到实现。
 - missing required field。
 - read-only binding 写入失败诊断。
+- unsupported kind 拒绝：array、enum、asset reference、entity reference。
 
 ### 切片 F：migration / aliases / redirects
 
+状态：部分落地。
+
 目标：
 
-- Type-level version migration。
-- Field aliases。
-- Deprecated/reserved field id。
-- `1 -> 2 -> 3` migration chain。
+- Type-level version migration。已落地 migration registry 和链式执行。
+- Field aliases。已落地 key/alias lookup。
+- Deprecated/reserved field id。已落地 reserved id 校验，deprecated 生命周期尚未完整。
+- `1 -> 2 -> 3` migration chain。执行器支持链式，测试仍需补多步链。
 
 建议测试：
 
@@ -452,8 +564,13 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 - field key rename but same field id。
 - field id removed and reserved。
 - missing migration produces diagnostic。
+- multi-step migration `1 -> 2 -> 3`。
+- type stable name redirect。
+- deprecated field 在保存时不再写出、加载时仍可迁移或忽略。
 
 ### 切片 G：旧 package 收口
+
+状态：未完成。
 
 目标：
 
@@ -507,14 +624,83 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 这些切片不改 Vulkan frame loop、swapchain、RenderGraph 或 renderer 时，不需要额外跑图形 smoke。
 
-## 推荐开始顺序
+## 下一阶段优先级
 
-1. 文档冻结旧 spike。
-2. 新增 `packages/schema`。
-3. 新增 `packages/archive`，迁移 `ArchiveValue` 和 JSON IO。
-4. 新增 `packages/cpp-binding`。
-5. 新增 `packages/persistence`，实现 round-trip。
-6. 增加 migration/alias/redirect。
-7. 收口或删除旧 `reflection` / `serialization` facade。
+### P0：锁定 MVP 支持集
+
+目标：把当前可用能力和未支持能力写成明确契约，避免使用方误认为 schema 中所有 `ValueKind` 都可持久化。
+
+工作：
+
+- 在 persistence public 文档中声明支持 `Bool/Integer/Float/String/Object/InlineStruct`。
+- 为 `Enum`、`Array`、`AssetReference`、`EntityReference` 增加负向测试。
+- 如果短期不实现 `UnknownFieldPolicy::Preserve`，将其标记为 reserved policy，或者从 public API 收窄。
+
+验收：
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\persistence -B build\cmake\package-persistence-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-persistence-tests-msvc-debug && ctest --test-dir build\cmake\package-persistence-tests-msvc-debug --output-on-failure"
+```
+
+### P1：补 C++ 自定义类型身份
+
+目标：让 custom struct binding 也能像 builtin scalar 一样被校验，而不是只回退到 schema field `valueType`。
+
+候选方案：
+
+- 显式 specialization：`reflectedTypeId<T>()` 可由类型所在 package 提供。
+- 生成式 binding：后续 schema codegen 输出 C++ type identity 和 binding skeleton。
+- 手写 binding manifest：先作为过渡，避免引入完整 AST/codegen。
+
+验收：
+
+- 错误绑定 `Vec3` 字段到 `Quat` 或其他 custom struct 时必须失败。
+- default value custom struct 类型 mismatch 必须失败。
+- 不引入跨 package `src/` include。
+
+### P2：补 schema 文件和 golden tests
+
+目标：真正从“C++ 内声明 schema”推进到 schema-first。
+
+工作：
+
+- 定义 schema JSON 或等价文本格式。
+- 加载后生成 `TypeSchema` / `FieldSchema`。
+- 增加 golden schema fixtures，覆盖 field id、alias、reserved id、version 和 metadata。
+- schema 文件解析仍不依赖 archive/persistence/editor/script。
+
+### P3：实现 Array/Enum/Reference 的最小语义
+
+顺序：
+
+1. `Enum`：先支持 string key 或 stable numeric value，必须定义 unknown enum 策略。
+2. `Array`：先支持 homogeneous array，元素 kind 和元素 type 必须来自 schema。
+3. `AssetReference`：只保存 GUID/type constraint，不触发加载。
+4. `EntityReference`：只保存 scene-local stable id，不保存 runtime index/generation。
+
+### P4：旧 `reflection` / `serialization` 收口
+
+目标：减少双系统心智负担。
+
+工作：
+
+- 标记旧 package 为 legacy/spike。
+- 将 sample-viewer 的旧 reflection/serialization smoke 改为 compatibility smoke。
+- 新代码只依赖 `schema/archive/cpp-binding/persistence`。
+- 删除或隔离旧 `ArchiveValue` / serializer 语义，避免与新 archive/persistence 重名冲突。
+
+### P5：scene/world persistence 接入
+
+进入条件：
+
+- P0-P2 完成。
+- persistence package-local tests 在 MSVC 和 ClangCL 下通过。
+- `reflection` / `serialization` 过渡边界明确。
+
+目标：
+
+- 保存/加载 scene root、entity hierarchy、Transform、mesh renderer、camera/light component。
+- asset reference 只保存稳定 GUID/type，不加载 GPU 资源。
+- scene 文件格式拥有文件级 schema/version/header，不把这些规则塞回 archive package。
 
 这条路线保留 spike 的有效验证结果，但不让它继续决定长期场景格式、编辑器行为、脚本暴露或 C++ 内存布局。

@@ -41,7 +41,11 @@ RenderGraph 层使用引擎自己的抽象类型：
 
 - `Undefined`
 - `ColorAttachment`
+- `ShaderRead`
+- `StorageReadWrite`
+- `TransferRead`
 - `TransferDst`
+- `HostRead`
 - `Present`
 
 这些状态可以被 Vulkan、D3D、Metal 或测试后端分别翻译。
@@ -58,6 +62,10 @@ Vulkan 相关翻译放在 `packages/rhi-vulkan`，例如：
 - `vulkanBufferUsage(RenderGraphBufferState)`
 - `vulkanBufferTransition(RenderGraphBufferTransition)`
 - `vulkanBufferBarrier(RenderGraphBufferTransition, VkBuffer, offset, size)`
+
+例如，RenderGraph 的 `StorageReadWrite(compute)` buffer 状态只表达“compute shader 可读写 storage
+buffer”的意图；`VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT`、`VK_ACCESS_2_SHADER_STORAGE_READ_BIT` 和
+`VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT` 的具体映射只属于 `rhi_vulkan_rendergraph`。
 
 这类翻译接口应由专门的适配 target 暴露，例如 `asharia::rhi_vulkan_rendergraph`。基础 Vulkan target `asharia::rhi_vulkan` 不应为了适配 RenderGraph 而公开依赖 `asharia::rendergraph`。
 

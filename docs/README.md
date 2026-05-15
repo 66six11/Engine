@@ -6,7 +6,7 @@
 
 | 目录 | 用途 | 主要文档 |
 | --- | --- | --- |
-| `workflow/` | 日常工作流、构建、审查、独立 package 构建 | [build.md](workflow/build.md)、[technical-stack.md](workflow/technical-stack.md)、[review.md](workflow/review.md)、[package-standalone-build.md](workflow/package-standalone-build.md) |
+| `workflow/` | 日常工作流、构建、仓库维护工具、审查、独立 package 构建 | [build.md](workflow/build.md)、[technical-stack.md](workflow/technical-stack.md)、[review.md](workflow/review.md)、[package-standalone-build.md](workflow/package-standalone-build.md) |
 | `standards/` | 编码、命名、文本编码等稳定规则 | [coding.md](standards/coding.md)、[encoding.md](standards/encoding.md)、[naming.md](standards/naming.md) |
 | `architecture/` | 当前架构、真实流程、package 边界和线程边界 | [overview.md](architecture/overview.md)、[flow.md](architecture/flow.md)、[package-first.md](architecture/package-first.md)、[engine-systems.md](architecture/engine-systems.md)、[frame-loop-threading.md](architecture/frame-loop-threading.md) |
 | `rendergraph/` | RenderGraph MVP、RHI 边界和专项路线图 | [mvp.md](rendergraph/mvp.md)、[rhi-boundary.md](rendergraph/rhi-boundary.md)、[roadmap.md](rendergraph/roadmap.md) |
@@ -32,7 +32,7 @@
 - Scope：Windows 桌面端，Vulkan 1.4，C++23，GLFW，VMA，CMake，Conan，MSVC/ClangCL。
 - Research：已有官方资料索引；涉及最新 SDK、扩展、工具行为时仍需重新核对一手资料。
 - Design：已形成 package-first、RenderGraph/RHI 边界、frame loop 和 shader pipeline 初版设计。
-- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、transient image、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、draw list、descriptor layout、fullscreen texture 和无参数交互式 triangle viewer。
+- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、transient image、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、draw list、MRT、descriptor layout、fullscreen texture、offscreen viewport、compute dispatch、deferred deletion、asset-core identity/metadata model 和无参数交互式 triangle viewer。
 - Validation：提交前按 [workflow/review.md](workflow/review.md) 运行编码检查、构建、smoke 和 Vulkan/C++ 审查脚本。
 
 ## 文档维护规则
@@ -42,6 +42,7 @@
 - 提交门禁以 [workflow/review.md](workflow/review.md) 为准；新增 smoke 或审查规则时优先改这里。
 - 全局阶段顺序以 [planning/next-development-plan.md](planning/next-development-plan.md) 为准；专项文档只能补约束，不维护第二套总路线。
 - Markdown 文件按 [standards/encoding.md](standards/encoding.md) 使用 UTF-8 without BOM。
+- 维护脚本入口记录在 [workflow/build.md](workflow/build.md)；新增 `tools/` 脚本时必须同步工具用途、默认统计范围或门禁语义。
 
 ## 清理记录
 

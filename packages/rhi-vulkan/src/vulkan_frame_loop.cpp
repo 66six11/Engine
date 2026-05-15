@@ -560,6 +560,16 @@ namespace asharia {
         return frameLoop->beginDebugLabel(commandBuffer, name);
     }
 
+    Result<void> VulkanFrameRecordContext::setDebugObjectName(VkObjectType objectType,
+                                                              std::uint64_t objectHandle,
+                                                              std::string_view name) const {
+        if (frameLoop == nullptr) {
+            return {};
+        }
+
+        return frameLoop->setDebugObjectName(objectType, objectHandle, name);
+    }
+
     void VulkanFrameRecordContext::endDebugLabel() const {
         if (frameLoop != nullptr) {
             frameLoop->endDebugLabel(commandBuffer);
@@ -722,7 +732,8 @@ namespace asharia {
         frameLoop.debugLabelFunctions_ = context.debugLabelFunctions();
         frameLoop.debugLabelStats_.available =
             frameLoop.debugLabelFunctions_.beginCommandLabel != nullptr &&
-            frameLoop.debugLabelFunctions_.endCommandLabel != nullptr;
+            frameLoop.debugLabelFunctions_.endCommandLabel != nullptr &&
+            frameLoop.debugLabelFunctions_.setObjectName != nullptr;
         frameLoop.timestampValidBits_ = context.deviceInfo().graphicsQueueTimestampValidBits;
         frameLoop.timestampPeriodNanoseconds_ = context.deviceInfo().timestampPeriodNanoseconds;
         frameLoop.clearColor_ = desc.clearColor;
@@ -844,6 +855,32 @@ namespace asharia {
         debugLabelFunctions_.endCommandLabel(commandBuffer);
         ++debugLabelStats_.regionsEnded;
         debugLabelStats_.available = true;
+    }
+
+    Result<void> VulkanFrameLoop::setDebugObjectName(VkObjectType objectType,
+                                                     std::uint64_t objectHandle,
+                                                     std::string_view name) {
+        if (device_ == VK_NULL_HANDLE || objectHandle == 0U || name.empty() ||
+            debugLabelFunctions_.setObjectName == nullptr) {
+            return {};
+        }
+
+        const std::string objectName{name};
+        VkDebugUtilsObjectNameInfoEXT nameInfo{};
+        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        nameInfo.objectType = objectType;
+        nameInfo.objectHandle = objectHandle;
+        nameInfo.pObjectName = objectName.c_str();
+
+        const VkResult result = debugLabelFunctions_.setObjectName(device_, &nameInfo);
+        if (result != VK_SUCCESS) {
+            return std::unexpected{
+                vulkanError("Failed to set Vulkan debug object name", result)};
+        }
+
+        ++debugLabelStats_.objectsNamed;
+        debugLabelStats_.available = true;
+        return {};
     }
 
     bool VulkanFrameLoop::beginTimestampRegion(VkCommandBuffer commandBuffer,
@@ -1369,7 +1406,8 @@ namespace asharia {
     VulkanDebugLabelStats VulkanFrameLoop::debugLabelStats() const {
         VulkanDebugLabelStats stats = debugLabelStats_;
         stats.available = debugLabelFunctions_.beginCommandLabel != nullptr &&
-                          debugLabelFunctions_.endCommandLabel != nullptr;
+                          debugLabelFunctions_.endCommandLabel != nullptr &&
+                          debugLabelFunctions_.setObjectName != nullptr;
         return stats;
     }
 

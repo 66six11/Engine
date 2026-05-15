@@ -374,6 +374,7 @@ namespace asharia {
                     .vulkanImage = resource->image.handle(),
                     .vulkanImageView = resource->imageView.handle(),
                     .aspectMask = resource->image.aspectMask(),
+                    .debugName = allocation.imageName,
                 });
                 transientImages_.push_back(std::move(*resource));
             }
