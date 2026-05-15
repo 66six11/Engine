@@ -29,6 +29,10 @@ asset public API 和 editor transaction 操作引擎数据。
 - 脚本 sandbox 完整安全模型。
 - 网络同步。
 
+Graph C# 子集与蓝图互通的中长期技术验证路线见
+[graph-csharp-blueprint.md](graph-csharp-blueprint.md)。该路线把 `.ash.cs` 作为语义资产真相、
+蓝图作为图形投影视图、Behavior IR 作为内部编译模型；它不改变本文件对第一版 runtime 脚本系统的非目标约束。
+
 ## 一手资料结论
 
 | 资料 | 关键事实 | 对 Asharia Engine 的约束 |
