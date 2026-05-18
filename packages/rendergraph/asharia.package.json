@@ -5,7 +5,9 @@
   "description": "Backend-agnostic frame graph, resource lifetime, and barrier planning.",
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-rendergraph"],
+  "testTargets": ["asharia-rendergraph-compile-tests"],
   "targetDependencies": {
-    "asharia-rendergraph": ["asharia-core"]
+    "asharia-rendergraph": ["asharia-core"],
+    "asharia-rendergraph-compile-tests": ["asharia-rendergraph"]
   }
 }

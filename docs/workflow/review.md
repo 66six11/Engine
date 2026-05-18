@@ -38,6 +38,14 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset
 python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan_cpp.py . --fail-on warning
 ```
 
+开发中可先运行本地 pre-PR 提示脚本，让它按当前 diff 提示固定门禁、包级 CTest、smoke 范围和需要检查的文档：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\pre-pr.ps1 -IncludeUntracked
+```
+
+该脚本默认只提示；需要先跑 encoding、doc sync 和 whitespace 这三个快速门禁时，追加 `-RunCheapGates`。
+
 涉及 frame loop、swapchain、RenderGraph、renderer 或 Vulkan adapter 时，必须跑：
 
 ```powershell

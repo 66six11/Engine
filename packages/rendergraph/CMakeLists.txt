@@ -25,3 +25,20 @@ target_link_libraries(asharia-rendergraph
 )
 
 asharia_configure_target(asharia-rendergraph)
+
+if(ASHARIA_BUILD_TESTS)
+  enable_testing()
+
+  add_executable(asharia-rendergraph-compile-tests
+      tests/rendergraph_compile_tests.cpp
+  )
+
+  target_link_libraries(asharia-rendergraph-compile-tests
+      PRIVATE
+          asharia::rendergraph
+  )
+
+  asharia_configure_target(asharia-rendergraph-compile-tests)
+
+  add_test(NAME asharia-rendergraph-compile-tests COMMAND asharia-rendergraph-compile-tests)
+endif()
