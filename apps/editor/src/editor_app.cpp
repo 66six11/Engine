@@ -42,14 +42,29 @@ namespace {
     constexpr asharia::VulkanDebugLabelMode kEditorDebugLabels =
         asharia::VulkanDebugLabelMode::Required;
     constexpr int kSmokeFrameCount = 3;
+    constexpr int kResizeSmokeFrameCount = 8;
     constexpr int kSmokeAttemptLimit = 120;
+    constexpr int kResizeSmokeWindowWidth = 960;
+    constexpr int kResizeSmokeWindowHeight = 540;
 
     bool isSmokeMode(asharia::editor::EditorRunMode mode) {
         return mode != asharia::editor::EditorRunMode::Interactive;
     }
 
     bool isViewportSmokeMode(asharia::editor::EditorRunMode mode) {
-        return mode == asharia::editor::EditorRunMode::SmokeViewport;
+        return mode == asharia::editor::EditorRunMode::SmokeViewport ||
+               mode == asharia::editor::EditorRunMode::SmokeViewportResize;
+    }
+
+    bool isViewportResizeSmokeMode(asharia::editor::EditorRunMode mode) {
+        return mode == asharia::editor::EditorRunMode::SmokeViewportResize;
+    }
+
+    int smokeFrameCount(asharia::editor::EditorRunMode mode) {
+        if (isViewportResizeSmokeMode(mode)) {
+            return kResizeSmokeFrameCount;
+        }
+        return kSmokeFrameCount;
     }
 
     bool isRenderableExtent(asharia::WindowFramebufferExtent extent) {
@@ -58,6 +73,18 @@ namespace {
 
     bool extentMatches(VkExtent2D lhs, asharia::WindowFramebufferExtent rhs) {
         return lhs.width == rhs.width && lhs.height == rhs.height;
+    }
+
+    bool isRenderableExtent(VkExtent2D extent) {
+        return extent.width > 0 && extent.height > 0;
+    }
+
+    bool differs(VkExtent2D lhs, VkExtent2D rhs) {
+        return lhs.width != rhs.width || lhs.height != rhs.height;
+    }
+
+    std::uint64_t extentArea(VkExtent2D extent) {
+        return static_cast<std::uint64_t>(extent.width) * static_cast<std::uint64_t>(extent.height);
     }
 
     asharia::editor::EditorExtent2D editorExtentFromVk(VkExtent2D extent) {
@@ -76,6 +103,95 @@ namespace {
         VkPipelineStageFlags2 dstStageMask{};
         VkAccessFlags2 dstAccessMask{};
     };
+
+    struct EditorSmokeRunResult {
+        int renderedFrames{};
+        bool resizeRequested{};
+        bool resizedViewportPresented{};
+        VkExtent2D viewportExtentBeforeResize{};
+        VkExtent2D viewportExtentAfterResize{};
+        std::uint64_t textureFramesBeforeResize{};
+    };
+
+    struct EditorViewportResizeSmokeState {
+        bool requested{};
+        bool presentedAfterResize{};
+        VkExtent2D extentBeforeResize{};
+        VkExtent2D extentAfterResize{};
+        std::uint64_t textureFramesBeforeResize{};
+    };
+
+    void updateViewportResizeSmoke(asharia::GlfwWindow& window,
+                                   const asharia::editor::EditorViewportCoordinator& viewportHost,
+                                   EditorViewportResizeSmokeState& state) {
+        if (!state.requested && viewportHost.hasPresentedViewportTexture()) {
+            state.extentBeforeResize = viewportHost.descriptorExtent();
+            state.textureFramesBeforeResize = viewportHost.textureFramesSubmitted();
+            window.setSize(kResizeSmokeWindowWidth, kResizeSmokeWindowHeight);
+            state.requested = true;
+        }
+
+        const VkExtent2D currentViewportExtent = viewportHost.descriptorExtent();
+        if (state.requested && !state.presentedAfterResize &&
+            isRenderableExtent(currentViewportExtent) &&
+            differs(currentViewportExtent, state.extentBeforeResize) &&
+            extentArea(currentViewportExtent) < extentArea(state.extentBeforeResize) &&
+            viewportHost.textureFramesSubmitted() > state.textureFramesBeforeResize) {
+            state.extentAfterResize = currentViewportExtent;
+            state.presentedAfterResize = true;
+        }
+    }
+
+    [[nodiscard]] bool validateViewportSmokePresentation(
+        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        const asharia::editor::EditorViewportCoordinator& viewportHost,
+        const asharia::editor::ImGuiTextureRegistryStats& textureRegistryStats) {
+        if (!isViewportSmokeMode(mode)) {
+            return true;
+        }
+        if (!viewportHost.hasPresentedViewportTexture()) {
+            asharia::logError("Editor viewport smoke did not present a sampled viewport texture.");
+            return false;
+        }
+        if (viewportHost.textureFramesSubmitted() + 1U <
+            static_cast<std::uint64_t>(runResult.renderedFrames)) {
+            asharia::logError("Editor viewport smoke dropped sampled texture presentation during "
+                              "resize.");
+            return false;
+        }
+        if (textureRegistryStats.peakLiveDescriptors >
+            asharia::editor::kEditorViewportTextureDescriptorBudget) {
+            asharia::logError("Editor viewport smoke exceeded ImGui texture descriptor budget.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateViewportResizeSmoke(
+        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        const asharia::editor::EditorViewportCoordinatorStats& viewportStats,
+        const asharia::editor::ImGuiTextureRegistryStats& textureRegistryStats) {
+        if (!isViewportResizeSmokeMode(mode)) {
+            return true;
+        }
+        if (!runResult.resizeRequested || !runResult.resizedViewportPresented) {
+            asharia::logError(
+                "Editor viewport resize smoke did not present a resized viewport texture.");
+            return false;
+        }
+        if (textureRegistryStats.descriptorsCreated < 2 ||
+            textureRegistryStats.descriptorsRetired == 0) {
+            asharia::logError(
+                "Editor viewport resize smoke did not retire an ImGui texture descriptor.");
+            return false;
+        }
+        if (viewportStats.renderTargetsRetired == 0 || viewportStats.renderTargetsDeferred == 0) {
+            asharia::logError("Editor viewport resize smoke did not defer retired viewport "
+                              "render target destruction.");
+            return false;
+        }
+        return true;
+    }
 
     VkImageMemoryBarrier2 imageBarrier(const ImageBarrierDesc& desc) {
         VkImageMemoryBarrier2 barrier{};
@@ -254,13 +370,16 @@ namespace {
         return *status != asharia::VulkanFrameStatus::OutOfDate;
     }
 
-    [[nodiscard]] asharia::Result<int>
+    [[nodiscard]] asharia::Result<EditorSmokeRunResult>
     runEditorLoop(asharia::GlfwWindow& window, asharia::VulkanFrameLoop& frameLoop,
                   asharia::BasicFullscreenTextureRenderer& renderer,
                   asharia::editor::EditorViewportCoordinator& viewportHost,
                   asharia::editor::EditorActionRegistry& actionRegistry,
                   asharia::editor::EditorContext& editorContext,
-                  asharia::editor::EditorPanelRegistry& panelRegistry, bool smokeMode) {
+                  asharia::editor::EditorPanelRegistry& panelRegistry,
+                  asharia::editor::EditorRunMode mode) {
+        const bool smokeMode = isSmokeMode(mode);
+        EditorViewportResizeSmokeState resizeSmoke;
         int renderedFrames = 0;
         int attempts = 0;
         while (!window.shouldClose()) {
@@ -302,11 +421,14 @@ namespace {
             if (*rendered) {
                 ++renderedFrames;
             }
+            if (isViewportResizeSmokeMode(mode)) {
+                updateViewportResizeSmoke(window, viewportHost, resizeSmoke);
+            }
             editorContext.diagnosticsLog().appendEvents(editorContext.eventQueue().events());
             editorContext.eventQueue().clear();
             panelRegistry.clearLifecycleEvents();
 
-            if (smokeMode && renderedFrames >= kSmokeFrameCount) {
+            if (smokeMode && renderedFrames >= smokeFrameCount(mode)) {
                 break;
             }
 
@@ -314,7 +436,14 @@ namespace {
             std::this_thread::sleep_for(smokeMode ? 16ms : 1ms);
         }
 
-        return renderedFrames;
+        return EditorSmokeRunResult{
+            .renderedFrames = renderedFrames,
+            .resizeRequested = resizeSmoke.requested,
+            .resizedViewportPresented = resizeSmoke.presentedAfterResize,
+            .viewportExtentBeforeResize = resizeSmoke.extentBeforeResize,
+            .viewportExtentAfterResize = resizeSmoke.extentAfterResize,
+            .textureFramesBeforeResize = resizeSmoke.textureFramesBeforeResize,
+        };
     }
 
     [[nodiscard]] asharia::VoidResult
@@ -554,29 +683,18 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        auto renderedFrames =
-            runEditorLoop(*window, *frameLoop, *renderer, viewportHost, actionRegistry,
-                          editorContext, panelRegistry, smokeMode);
-        if (!renderedFrames) {
-            asharia::logError(renderedFrames.error().message);
+        auto runResult = runEditorLoop(*window, *frameLoop, *renderer, viewportHost, actionRegistry,
+                                       editorContext, panelRegistry, mode);
+        if (!runResult) {
+            asharia::logError(runResult.error().message);
             return EXIT_FAILURE;
         }
-        if (isViewportSmokeMode(mode) && !viewportHost.hasPresentedViewportTexture()) {
-            asharia::logError("Editor viewport smoke did not present a sampled viewport texture.");
-            return EXIT_FAILURE;
-        }
-        if (isViewportSmokeMode(mode) && viewportHost.textureFramesSubmitted() + 1U <
-                                             static_cast<std::uint64_t>(*renderedFrames)) {
-            asharia::logError("Editor viewport smoke dropped sampled texture presentation during "
-                              "resize.");
-            return EXIT_FAILURE;
-        }
+        const asharia::editor::EditorViewportCoordinatorStats viewportStats = viewportHost.stats();
         const asharia::editor::ImGuiTextureRegistryStats textureRegistryStats =
             viewportHost.textureRegistryStats();
-        if (isViewportSmokeMode(mode) &&
-            textureRegistryStats.peakLiveDescriptors >
-                asharia::editor::kEditorViewportTextureDescriptorBudget) {
-            asharia::logError("Editor viewport smoke exceeded ImGui texture descriptor budget.");
+        if (!validateViewportSmokePresentation(mode, *runResult, viewportHost,
+                                               textureRegistryStats) ||
+            !validateViewportResizeSmoke(mode, *runResult, viewportStats, textureRegistryStats)) {
             return EXIT_FAILURE;
         }
 
@@ -585,11 +703,21 @@ namespace asharia::editor {
         imgui.shutdown();
         window->requestClose();
 
-        std::cout << "Editor shell frames: " << *renderedFrames
+        std::cout << "Editor shell frames: " << runResult->renderedFrames
                   << ", viewport frames: " << viewportHost.viewportFramesRendered()
                   << ", texture frames: " << viewportHost.textureFramesSubmitted()
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
+        if (isViewportResizeSmokeMode(mode)) {
+            std::cout << "Editor viewport resize: " << runResult->viewportExtentBeforeResize.width
+                      << 'x' << runResult->viewportExtentBeforeResize.height << " -> "
+                      << runResult->viewportExtentAfterResize.width << 'x'
+                      << runResult->viewportExtentAfterResize.height
+                      << ", retired render targets: " << viewportStats.renderTargetsRetired
+                      << ", deferred render targets: " << viewportStats.renderTargetsDeferred
+                      << ", retired texture descriptors: "
+                      << textureRegistryStats.descriptorsRetired << '\n';
+        }
         return EXIT_SUCCESS;
     }
 

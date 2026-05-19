@@ -163,6 +163,12 @@ namespace asharia {
         glfwPollEvents();
     }
 
+    void GlfwWindow::setSize(int width, int height) {
+        if (window_ != nullptr) {
+            glfwSetWindowSize(window_, std::max(width, 1), std::max(height, 1));
+        }
+    }
+
     void GlfwWindow::requestClose() {
         if (window_ != nullptr) {
             glfwSetWindowShouldClose(window_, GLFW_TRUE);

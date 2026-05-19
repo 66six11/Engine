@@ -57,6 +57,7 @@ namespace asharia {
         [[nodiscard]] bool shouldClose() const;
         [[nodiscard]] WindowFramebufferExtent framebufferExtent() const;
         static void pollEvents();
+        void setSize(int width, int height);
         void requestClose();
 
         [[nodiscard]] GLFWwindow* nativeHandle() const;

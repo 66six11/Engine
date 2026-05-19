@@ -6,6 +6,7 @@ namespace asharia::editor {
         Interactive,
         SmokeShell,
         SmokeViewport,
+        SmokeViewportResize,
     };
 
     int runEditor(EditorRunMode mode);

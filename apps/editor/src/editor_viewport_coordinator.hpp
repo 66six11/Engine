@@ -24,6 +24,11 @@ namespace asharia::editor {
         std::uint64_t submittedFrameEpoch{};
     };
 
+    struct EditorViewportCoordinatorStats {
+        std::uint64_t renderTargetsRetired{};
+        std::uint64_t renderTargetsDeferred{};
+    };
+
     [[nodiscard]] EditorViewportFrameEpochs
     editorViewportFrameEpochs(const asharia::VulkanFrameLoop& frameLoop);
 
@@ -70,6 +75,7 @@ namespace asharia::editor {
         [[nodiscard]] VkExtent2D descriptorExtent() const;
         [[nodiscard]] std::uint64_t viewportFramesRendered() const;
         [[nodiscard]] std::uint64_t textureFramesSubmitted() const;
+        [[nodiscard]] EditorViewportCoordinatorStats stats() const;
         [[nodiscard]] ImGuiTextureRegistryStats textureRegistryStats() const;
 
     private:
@@ -86,6 +92,7 @@ namespace asharia::editor {
         ViewportTexture pendingTexture_;
         std::vector<ViewportTexture> retiredTextures_;
         std::optional<EditorViewportRequest> requestedViewport_;
+        EditorViewportCoordinatorStats stats_;
         std::uint64_t currentFrameSubmittedEpoch_{};
         std::uint64_t viewportFramesRendered_{0};
         std::uint64_t textureFramesSubmitted_{0};

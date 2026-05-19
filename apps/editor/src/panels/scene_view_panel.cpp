@@ -32,13 +32,9 @@ namespace asharia::editor {
                 ImVec2{mainViewport->WorkPos.x + 8.0F, mainViewport->WorkPos.y + 8.0F},
                 sceneWindowCond);
         }
-        const float smokeResizeStep =
-            context.smokeMode ? static_cast<float>(context.frameIndex % 3) * 0.035F : 0.0F;
         ImGui::SetNextWindowSize(
-            ImVec2{std::max(320.0F, static_cast<float>(context.swapchainExtent.width) *
-                                        (0.60F + smokeResizeStep)),
-                   std::max(240.0F, static_cast<float>(context.swapchainExtent.height) *
-                                        (0.62F + smokeResizeStep))},
+            ImVec2{std::max(320.0F, static_cast<float>(context.swapchainExtent.width) * 0.60F),
+                   std::max(240.0F, static_cast<float>(context.swapchainExtent.height) * 0.62F)},
             sceneWindowCond);
     }
 

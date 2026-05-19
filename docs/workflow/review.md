@@ -110,6 +110,10 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
     if ($LASTEXITCODE -ne 0) {
         throw "$preset --smoke-editor-viewport failed with exit code $LASTEXITCODE"
     }
+    & $exe --smoke-editor-viewport-resize
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-viewport-resize failed with exit code $LASTEXITCODE"
+    }
 }
 ```
 

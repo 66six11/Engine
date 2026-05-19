@@ -359,8 +359,8 @@ recording or descriptor lifetime, also run the relevant editor smoke commands:
 ```
 
 `--smoke-editor-shell` covers shell/menu/panel/action/event state. `--smoke-editor-viewport` is the stricter sampled
-viewport texture smoke. `--smoke-editor-viewport-resize` remains a future Stage 17 command until resize coverage needs a
-separate non-flaky entry point.
+viewport texture smoke. `--smoke-editor-viewport-resize` performs a real window resize and verifies resized viewport
+texture presentation plus old descriptor/render-target retirement.
 
 ## Stage Status Rules
 
@@ -385,7 +385,7 @@ Every sub-stage must:
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
-| 17 | 17.1-17.3 Done, 17.4-17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
+| 17 | 17.1-17.5 Done, 17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
@@ -605,7 +605,7 @@ Validation:
 
 ### 17.4 Resize And Pending Texture Flow
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -617,10 +617,15 @@ Validation:
 
 - Rapid resize does not drop to invalid descriptor use.
 - Viewport smoke verifies at least one resize and continued texture presentation.
+- Implemented with presented/pending/retired viewport targets in `EditorViewportCoordinator`.
+- `--smoke-editor-viewport-resize` shrinks the editor window after a sampled viewport texture is presented, then verifies a
+  smaller viewport texture is submitted through ImGui.
+- The resize smoke checks that the old viewport render target reaches frame-loop deferred deletion and the old ImGui
+  descriptor is retired through completed-frame tracking.
 
 ### 17.5 Editor Viewport Smoke
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -631,6 +636,8 @@ Validation:
 
 - Smoke verifies texture registration, at least one rendered viewport frame and at least one submitted ImGui texture frame.
 - For resize smoke, verify old texture retirement and new extent publication.
+- `apps/editor/src/main.cpp` exposes both `--smoke-editor-viewport` and `--smoke-editor-viewport-resize`.
+- `docs/workflow/review.md` includes resize smoke in the editor viewport gate.
 
 ### 17.6 Input Capture Skeleton
 
@@ -933,8 +940,7 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `test: add editor viewport resize smoke`
-2. `refactor: add editor input capture skeleton`
+1. `refactor: add editor input capture skeleton`
 
 Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
 

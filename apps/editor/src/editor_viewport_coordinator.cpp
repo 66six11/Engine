@@ -205,6 +205,10 @@ namespace asharia::editor {
         return textureFramesSubmitted_;
     }
 
+    EditorViewportCoordinatorStats EditorViewportCoordinator::stats() const {
+        return stats_;
+    }
+
     ImGuiTextureRegistryStats EditorViewportCoordinator::textureRegistryStats() const {
         return textureRegistry_.stats();
     }
@@ -215,6 +219,7 @@ namespace asharia::editor {
         }
         if (presentedTexture_.ready()) {
             retiredTextures_.push_back(std::move(presentedTexture_));
+            ++stats_.renderTargetsRetired;
         }
         presentedTexture_ = std::move(pendingTexture_);
         pendingTexture_ = {};
@@ -233,6 +238,7 @@ namespace asharia::editor {
                 return std::unexpected{
                     asharia::vulkanError("Failed to defer retired editor viewport texture")};
             }
+            ++stats_.renderTargetsDeferred;
             texture.clearMetadata();
         }
         retiredTextures_.clear();
