@@ -84,6 +84,7 @@ apps/editor/src/
   editor_event.hpp/.cpp
   editor_panel.hpp/.cpp
   editor_viewport.hpp/.cpp
+  editor_viewport_coordinator.hpp/.cpp
   imgui_runtime.hpp/.cpp
   imgui_editor_shell.hpp/.cpp
   imgui_texture_registry.hpp/.cpp
@@ -99,7 +100,8 @@ apps/editor/src/
 | `editor_action` | action descriptors, callbacks, invocation, shortcut metadata | menu widget code |
 | `editor_event` | small typed queue for editor facts | global EventBus semantics |
 | `editor_panel` | panel descriptors, state, registry, singleton reuse | ImGui backend setup |
-| `editor_viewport` | viewport request/result coordination | ImGui descriptor allocation |
+| `editor_viewport` | backend-neutral viewport request/result model | ImGui descriptor allocation or Vulkan command recording |
+| `editor_viewport_coordinator` | request collection, RenderView recording, render target lifetime, texture registry publication | panel widgets or ImGui backend setup |
 | `imgui_runtime` | ImGui context and GLFW/Vulkan backend lifecycle | panel registry or editor state |
 | `imgui_editor_shell` | dockspace, main menu, panel host windows | renderer command recording |
 | `imgui_texture_registry` | `ImTextureID` creation, descriptor retirement, sampler choice | RenderTarget ownership |
@@ -383,7 +385,7 @@ Every sub-stage must:
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
-| 17 | 17.1-17.2 Done, 17.3-17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
+| 17 | 17.1-17.3 Done, 17.4-17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
@@ -583,7 +585,7 @@ Validation:
 
 ### 17.3 Viewport Render Coordinator
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -595,6 +597,11 @@ Validation:
 
 - Scene View displays sampled RenderView output through the registry.
 - Renderer and RHI still do not include ImGui headers.
+- Implemented as `apps/editor/src/editor_viewport_coordinator.hpp/.cpp`; `editor_app.cpp` now owns frame order and smoke
+  checks, while the coordinator owns the pending/presented/retired viewport render targets.
+- `EditorViewportCoordinator::recordRequestedViews()` is the only editor-side caller of
+  `BasicFullscreenTextureRenderer::recordViewFrame()` for the viewport path.
+- Renderer output is published through `ImGuiTextureRegistry` after the sampled RenderView record succeeds.
 
 ### 17.4 Resize And Pending Texture Flow
 
@@ -926,9 +933,8 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `refactor: add editor viewport coordinator`
-2. `test: add editor viewport resize smoke`
-3. `refactor: add editor input capture skeleton`
+1. `test: add editor viewport resize smoke`
+2. `refactor: add editor input capture skeleton`
 
 Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
 

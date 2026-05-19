@@ -1,0 +1,94 @@
+﻿#pragma once
+
+#include <vulkan/vulkan.h>
+
+#include <cstdint>
+#include <optional>
+#include <string_view>
+#include <vector>
+
+#include "asharia/core/result.hpp"
+#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/rhi_vulkan/vma_fwd.hpp"
+#include "asharia/rhi_vulkan/vulkan_context.hpp"
+#include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "asharia/rhi_vulkan/vulkan_image.hpp"
+
+#include "editor_viewport.hpp"
+#include "imgui_texture_registry.hpp"
+
+namespace asharia::editor {
+
+    struct EditorViewportFrameEpochs {
+        std::uint64_t completedFrameEpoch{};
+        std::uint64_t submittedFrameEpoch{};
+    };
+
+    [[nodiscard]] EditorViewportFrameEpochs
+    editorViewportFrameEpochs(const asharia::VulkanFrameLoop& frameLoop);
+
+    class EditorViewportCoordinator final : public EditorViewportPanelHost {
+        struct ViewportTexture {
+            ViewportTexture() = default;
+            ViewportTexture(const ViewportTexture&) = delete;
+            ViewportTexture& operator=(const ViewportTexture&) = delete;
+            ViewportTexture(ViewportTexture&&) noexcept = default;
+            ViewportTexture& operator=(ViewportTexture&&) noexcept = default;
+            ~ViewportTexture() = default;
+
+            [[nodiscard]] bool ready() const;
+            void clearMetadata();
+
+            asharia::VulkanRenderTarget target;
+            VkFormat format{VK_FORMAT_UNDEFINED};
+            VkExtent2D extent{};
+            EditorId panelId;
+            EditorViewportKind kind{EditorViewportKind::Scene};
+            EditorExtent2D requestedExtent;
+            bool rendered{false};
+        };
+
+    public:
+        EditorViewportCoordinator() = default;
+        EditorViewportCoordinator(const EditorViewportCoordinator&) = delete;
+        EditorViewportCoordinator& operator=(const EditorViewportCoordinator&) = delete;
+        EditorViewportCoordinator(EditorViewportCoordinator&&) = delete;
+        EditorViewportCoordinator& operator=(EditorViewportCoordinator&&) = delete;
+        ~EditorViewportCoordinator() override;
+
+        [[nodiscard]] asharia::VoidResult create(const asharia::VulkanContext& context);
+        void beginImguiFrame(EditorViewportFrameEpochs epochs);
+        void requestViewport(EditorViewportRequest request) override;
+        [[nodiscard]] std::optional<EditorViewportResult>
+        acquireViewportTextureForDraw(std::string_view panelId) override;
+        [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+        recordRequestedViews(const asharia::VulkanFrameRecordContext& frame,
+                             asharia::BasicFullscreenTextureRenderer& renderer);
+        void shutdown();
+
+        [[nodiscard]] bool hasPresentedViewportTexture() const;
+        [[nodiscard]] VkExtent2D descriptorExtent() const;
+        [[nodiscard]] std::uint64_t viewportFramesRendered() const;
+        [[nodiscard]] std::uint64_t textureFramesSubmitted() const;
+        [[nodiscard]] ImGuiTextureRegistryStats textureRegistryStats() const;
+
+    private:
+        void promotePendingTexture();
+        [[nodiscard]] bool hasTextureToRelease() const;
+        [[nodiscard]] asharia::VoidResult
+        processRetiredTextures(const asharia::VulkanFrameRecordContext& frame);
+
+        VkDevice device_{VK_NULL_HANDLE};
+        VmaAllocator allocator_{};
+        VkQueue queue_{VK_NULL_HANDLE};
+        ImGuiTextureRegistry textureRegistry_;
+        ViewportTexture presentedTexture_;
+        ViewportTexture pendingTexture_;
+        std::vector<ViewportTexture> retiredTextures_;
+        std::optional<EditorViewportRequest> requestedViewport_;
+        std::uint64_t currentFrameSubmittedEpoch_{};
+        std::uint64_t viewportFramesRendered_{0};
+        std::uint64_t textureFramesSubmitted_{0};
+    };
+
+} // namespace asharia::editor
