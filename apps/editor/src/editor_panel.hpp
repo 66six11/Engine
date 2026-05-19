@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-#include <vulkan/vulkan.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -14,6 +12,7 @@
 #include "asharia/core/result.hpp"
 
 #include "editor_id.hpp"
+#include "editor_viewport.hpp"
 
 namespace asharia::editor {
 
@@ -34,24 +33,9 @@ namespace asharia::editor {
         std::uint32_t contentHeight{1};
     };
 
-    class EditorViewportPanelHost {
-    public:
-        EditorViewportPanelHost() = default;
-        EditorViewportPanelHost(const EditorViewportPanelHost&) = delete;
-        EditorViewportPanelHost& operator=(const EditorViewportPanelHost&) = delete;
-        EditorViewportPanelHost(EditorViewportPanelHost&&) = delete;
-        EditorViewportPanelHost& operator=(EditorViewportPanelHost&&) = delete;
-        virtual ~EditorViewportPanelHost() = default;
-
-        virtual void requestViewport(VkExtent2D extent, VkFormat format) = 0;
-        [[nodiscard]] virtual bool canDrawRequestedTexture() const = 0;
-        virtual void drawRequestedTexture() = 0;
-    };
-
     struct EditorFrameContext {
         int frameIndex{};
-        VkExtent2D swapchainExtent{};
-        VkFormat swapchainFormat{VK_FORMAT_UNDEFINED};
+        EditorExtent2D swapchainExtent;
         bool smokeMode{};
         EditorEventQueue& eventQueue;
         EditorDiagnosticsLog& diagnosticsLog;

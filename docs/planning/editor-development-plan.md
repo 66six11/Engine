@@ -244,6 +244,11 @@ Default behavior is one-frame delayed:
 
 Do not add two-phase panel drawing until same-frame viewport presentation is required and measured.
 
+Current Stage 17.1 implementation keeps this model in `apps/editor/src/editor_viewport.hpp/.cpp`. `EditorExtent2D`
+remains backend-neutral; `apps/editor` translates it to `VkExtent2D` only inside the viewport host. Scene View submits an
+`EditorViewportRequest`, acquires the last completed viewport texture for ImGui drawing, and reserves the requested
+content area while no completed texture exists.
+
 ## ImGui Texture Registry
 
 `ImGuiTextureRegistry` is an `apps/editor` integration object:
@@ -375,7 +380,7 @@ Every sub-stage must:
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
-| 17 | 17.1-17.6 | Next | Convert Scene View viewport to request/result + delayed texture registry. |
+| 17 | 17.1 Done, 17.2-17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
@@ -533,7 +538,7 @@ Validation:
 
 ### 17.1 Viewport Request Model
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -545,6 +550,12 @@ Validation:
 
 - Panel `draw()` contains no Vulkan command recording.
 - Request/result model supports one-frame delayed display.
+- Implemented as `apps/editor/src/editor_viewport.hpp/.cpp`; panel-facing request/result types use `EditorExtent2D`
+  instead of Vulkan types.
+- `SceneViewPanel::draw()` submits `EditorViewportRequest` and draws the last completed texture if available, otherwise
+  reserves the requested content space.
+- `EditorViewportHost` resets requests at the start of each ImGui frame and records only the current frame's submitted
+  request.
 
 ### 17.2 Texture Registry With Delayed Retirement
 
@@ -906,11 +917,10 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `refactor: add editor viewport request model`
-2. `refactor: isolate imgui texture registry`
-3. `refactor: add editor viewport coordinator`
-4. `test: add editor viewport resize smoke`
-5. `refactor: add editor input capture skeleton`
+1. `refactor: isolate imgui texture registry`
+2. `refactor: add editor viewport coordinator`
+3. `test: add editor viewport resize smoke`
+4. `refactor: add editor input capture skeleton`
 
 Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
 

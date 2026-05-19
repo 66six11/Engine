@@ -1,7 +1,5 @@
 ﻿#include "panels/scene_view_panel.hpp"
 
-#include <vulkan/vulkan.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <imgui.h>
@@ -9,8 +7,8 @@
 
 namespace {
 
-    VkExtent2D viewportExtentFromAvailableSize(ImVec2 available) {
-        return VkExtent2D{
+    asharia::editor::EditorExtent2D viewportExtentFromAvailableSize(ImVec2 available) {
+        return asharia::editor::EditorExtent2D{
             .width = std::max(1U, static_cast<std::uint32_t>(std::max(available.x, 1.0F))),
             .height = std::max(1U, static_cast<std::uint32_t>(std::max(available.y, 1.0F))),
         };
@@ -50,10 +48,18 @@ namespace asharia::editor {
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();
         viewportSize.y =
             std::max(1.0F, viewportSize.y - (ImGui::GetTextLineHeightWithSpacing() * 3.0F));
-        const VkExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
-        context.viewportHost.requestViewport(viewportExtent, context.swapchainFormat);
-        if (context.viewportHost.canDrawRequestedTexture()) {
-            context.viewportHost.drawRequestedTexture();
+        const EditorExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
+        context.viewportHost.requestViewport(EditorViewportRequest{
+            .panelId = desc_.id,
+            .kind = EditorViewportKind::Scene,
+            .extent = viewportExtent,
+        });
+        if (const auto completed =
+                context.viewportHost.acquireViewportTextureForDraw(desc_.id.value);
+            completed && hasEditorViewportTexture(completed->texture)) {
+            ImGui::Image(static_cast<ImTextureID>(completed->texture.textureId),
+                         ImVec2{static_cast<float>(viewportExtent.width),
+                                static_cast<float>(viewportExtent.height)});
         } else {
             ImGui::Dummy(ImVec2{static_cast<float>(viewportExtent.width),
                                 static_cast<float>(viewportExtent.height)});

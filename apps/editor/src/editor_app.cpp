@@ -13,6 +13,7 @@
 #include <imgui_impl_vulkan.h>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <thread>
@@ -31,6 +32,7 @@
 #include "editor_action.hpp"
 #include "editor_context.hpp"
 #include "editor_panel.hpp"
+#include "editor_viewport.hpp"
 #include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
 #include "panels/log_panel.hpp"
@@ -63,10 +65,23 @@ namespace {
         return lhs.width == rhs.width && lhs.height == rhs.height;
     }
 
-    ImTextureID imguiTextureId(VkDescriptorSet descriptorSet) {
-        return static_cast<ImTextureID>(
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            reinterpret_cast<std::uintptr_t>(descriptorSet));
+    asharia::editor::EditorExtent2D editorExtentFromVk(VkExtent2D extent) {
+        return asharia::editor::EditorExtent2D{
+            .width = extent.width,
+            .height = extent.height,
+        };
+    }
+
+    VkExtent2D vkExtentFromEditor(asharia::editor::EditorExtent2D extent) {
+        return VkExtent2D{
+            .width = extent.width,
+            .height = extent.height,
+        };
+    }
+
+    std::uintptr_t imguiTextureId(VkDescriptorSet descriptorSet) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return reinterpret_cast<std::uintptr_t>(descriptorSet);
     }
 
     struct ImageBarrierDesc {
@@ -139,6 +154,9 @@ namespace {
             VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
             VkFormat format{VK_FORMAT_UNDEFINED};
             VkExtent2D extent{};
+            asharia::editor::EditorId panelId;
+            asharia::editor::EditorViewportKind kind{asharia::editor::EditorViewportKind::Scene};
+            asharia::editor::EditorExtent2D requestedExtent;
             bool rendered{false};
         };
 
@@ -170,32 +188,32 @@ namespace {
 
         void beginImguiFrame() {
             textureSubmittedThisFrame_ = false;
+            requestedViewport_.reset();
             promotePendingTexture();
         }
 
-        void requestViewport(VkExtent2D extent, VkFormat format) override {
-            requestedExtent_ = extent;
-            requestedFormat_ = format;
+        void requestViewport(asharia::editor::EditorViewportRequest request) override {
+            requestedViewport_ = std::move(request);
         }
 
-        [[nodiscard]] bool canDrawRequestedTexture() const override {
-            return presentedTexture_.ready();
-        }
-
-        void drawRequestedTexture() override {
-            if (!canDrawRequestedTexture()) {
-                return;
+        [[nodiscard]] std::optional<asharia::editor::EditorViewportResult>
+        acquireViewportTextureForDraw(std::string_view panelId) override {
+            if (!presentedTexture_.ready() || presentedTexture_.panelId.value != panelId) {
+                return std::nullopt;
             }
 
-            const VkExtent2D displayExtent =
-                requestedExtent_.width == 0 || requestedExtent_.height == 0
-                    ? presentedTexture_.extent
-                    : requestedExtent_;
             textureSubmittedThisFrame_ = true;
-            ImGui::Image(imguiTextureId(presentedTexture_.descriptorSet),
-                         ImVec2{static_cast<float>(displayExtent.width),
-                                static_cast<float>(displayExtent.height)});
             ++textureFramesSubmitted_;
+            return asharia::editor::EditorViewportResult{
+                .panelId = presentedTexture_.panelId,
+                .kind = presentedTexture_.kind,
+                .requestedExtent = presentedTexture_.requestedExtent,
+                .texture =
+                    asharia::editor::EditorViewportTexture{
+                        .textureId = imguiTextureId(presentedTexture_.descriptorSet),
+                        .extent = editorExtentFromVk(presentedTexture_.extent),
+                    },
+            };
         }
 
         [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
@@ -206,17 +224,23 @@ namespace {
                 return std::unexpected{std::move(retired.error())};
             }
 
-            if (requestedExtent_.width == 0 || requestedExtent_.height == 0 ||
-                requestedFormat_ == VK_FORMAT_UNDEFINED) {
+            if (!requestedViewport_ ||
+                !asharia::editor::isRenderableEditorExtent(requestedViewport_->extent) ||
+                frame.format == VK_FORMAT_UNDEFINED) {
                 return asharia::VulkanFrameRecordResult{
                     .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                 };
             }
 
+            const asharia::editor::EditorViewportRequest& request = *requestedViewport_;
+            const VkExtent2D requestedExtent = vkExtentFromEditor(request.extent);
+            const VkFormat requestedFormat = frame.format;
             const bool renderPresentedTexture =
                 presentedTexture_.ready() &&
-                sameExtent(presentedTexture_.extent, requestedExtent_) &&
-                presentedTexture_.format == requestedFormat_;
+                presentedTexture_.panelId.value == request.panelId.value &&
+                presentedTexture_.kind == request.kind &&
+                sameExtent(presentedTexture_.extent, requestedExtent) &&
+                presentedTexture_.format == requestedFormat;
             ViewportTexture& renderTexture =
                 renderPresentedTexture ? presentedTexture_ : pendingTexture_;
 
@@ -225,8 +249,8 @@ namespace {
                 asharia::VulkanRenderTargetDesc{
                     .device = device_,
                     .allocator = allocator_,
-                    .format = requestedFormat_,
-                    .extent = requestedExtent_,
+                    .format = requestedFormat,
+                    .extent = requestedExtent,
                     .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 });
@@ -259,6 +283,9 @@ namespace {
             }
 
             renderTexture.rendered = true;
+            renderTexture.panelId = request.panelId;
+            renderTexture.kind = request.kind;
+            renderTexture.requestedExtent = request.extent;
             ++viewportFramesRendered_;
             return *recorded;
         }
@@ -395,8 +422,7 @@ namespace {
         ViewportTexture presentedTexture_;
         ViewportTexture pendingTexture_;
         std::vector<ViewportTexture> retiredTextures_;
-        VkExtent2D requestedExtent_{};
-        VkFormat requestedFormat_{VK_FORMAT_UNDEFINED};
+        std::optional<asharia::editor::EditorViewportRequest> requestedViewport_;
         bool textureSubmittedThisFrame_{false};
         std::uint64_t viewportFramesRendered_{0};
         std::uint64_t textureFramesSubmitted_{0};
@@ -583,8 +609,7 @@ namespace {
             editorContext.eventQueue().clear();
             asharia::editor::EditorFrameContext frameContext{
                 .frameIndex = renderedFrames,
-                .swapchainExtent = frameLoop.extent(),
-                .swapchainFormat = frameLoop.format(),
+                .swapchainExtent = editorExtentFromVk(frameLoop.extent()),
                 .smokeMode = smokeMode,
                 .eventQueue = editorContext.eventQueue(),
                 .diagnosticsLog = editorContext.diagnosticsLog(),

@@ -48,6 +48,7 @@ add_executable(asharia-editor
     src/editor_context.cpp
     src/editor_event.cpp
     src/editor_panel.cpp
+    src/editor_viewport.cpp
     src/imgui_editor_shell.cpp
     src/imgui_runtime.cpp
     src/main.cpp
