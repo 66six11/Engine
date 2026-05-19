@@ -23,6 +23,7 @@ asset public API 和 editor transaction 操作引擎数据。
 - 完整 C# 热重载生态。
 - Visual scripting。
 - 脚本直接调用 Vulkan、RHI、VMA、GLFW、ImGui backend。
+- 脚本拥有 editor shell、dockspace、viewport、Inspector 或 Asset Browser 的第一版 UI 实现。
 - 脚本直接持有 component pointer 跨帧。
 - 多线程 VM 执行。
 - 脚本控制 RenderGraph 后端执行。
@@ -110,6 +111,24 @@ flowchart TD
 ```
 
 脚本只看 facade，不看内部 package 实现。Facade 再按上下文调用 scene、asset、editor 或 renderer 前端。
+
+## Editor UI 扩展边界
+
+Editor UI 的主实现由 C++ `apps/editor` 拥有。脚本系统只提供可审查的扩展点，详细架构见
+`docs/architecture/editor-ui-scripting.md`。
+
+第一版允许的方向：
+
+- 脚本注册 action、menu item、asset context action 或工具命令描述。
+- 脚本 action 在 safe point 执行，并通过 editor transaction 修改 scene、asset 或 project state。
+- 脚本为 Inspector 或工具面板返回 data-only / declarative view model，由 C++ 验证并绘制 ImGui。
+- 脚本错误只产生 diagnostics，不能破坏 ImGui frame loop、Vulkan descriptor 或 viewport texture lifetime。
+
+禁止的方向：
+
+- 脚本直接调用 ImGui API、GLFW callback、Vulkan descriptor API 或 renderer implementation。
+- 脚本在 panel draw 阶段同步修改 scene/asset。
+- 脚本 reload 重建 ImGui context、Vulkan backend、descriptor pool 或 RenderTarget。
 
 ## 执行上下文
 

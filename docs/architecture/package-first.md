@@ -167,6 +167,8 @@ packages/rendergraph/
 - editor 的 UI、inspector、importer、scene authoring 都放在 editor packages。
 - ImGui context、ImGui Vulkan backend 和 editor texture registration 属于 editor host/integration
   层；`editor-core` 不依赖 ImGui、Vulkan 或 renderer implementation。
+- Editor UI 的 C++ / 脚本协作边界以 [editor-ui-scripting.md](editor-ui-scripting.md) 为准；脚本不拥有
+  第一版 editor shell、dockspace、viewport 或 backend integration。
 - runtime app 可以完全不链接 editor packages。
 
 ## MVP 取舍
