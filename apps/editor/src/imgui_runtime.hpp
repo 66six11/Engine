@@ -1,0 +1,35 @@
+﻿#pragma once
+
+#include <vulkan/vulkan.h>
+
+#include "asharia/core/result.hpp"
+#include "asharia/rhi_vulkan/vulkan_context.hpp"
+#include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
+
+struct GLFWwindow;
+
+namespace asharia::editor {
+
+    class ImGuiRuntime {
+    public:
+        ImGuiRuntime() = default;
+        ImGuiRuntime(const ImGuiRuntime&) = delete;
+        ImGuiRuntime& operator=(const ImGuiRuntime&) = delete;
+        ImGuiRuntime(ImGuiRuntime&&) = delete;
+        ImGuiRuntime& operator=(ImGuiRuntime&&) = delete;
+
+        ~ImGuiRuntime();
+
+        [[nodiscard]] asharia::VoidResult create(GLFWwindow* window,
+                                                 const asharia::VulkanContext& context,
+                                                 const asharia::VulkanFrameLoop& frameLoop);
+        void shutdown();
+
+    private:
+        VkQueue queue_{VK_NULL_HANDLE};
+        bool contextCreated_{false};
+        bool glfwInitialized_{false};
+        bool vulkanInitialized_{false};
+    };
+
+} // namespace asharia::editor

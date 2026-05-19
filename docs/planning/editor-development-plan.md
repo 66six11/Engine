@@ -1,6 +1,6 @@
 # Editor 开发方案
 
-更新日期：2026-05-15
+更新日期：2026-05-19
 
 本文是 Asharia Editor 的独立开发文档，覆盖 editor host、ImGui integration、panel/action/event、
 viewport texture registry、输入路由和后续阶段拆分。全局阶段顺序仍以
@@ -369,7 +369,7 @@ Every sub-stage must:
 | Global stage | Editor sub-stage | Status | Goal |
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
-| 16 | 16.1-16.7 | Next | Split editor shell from one file into host/runtime/panel/action/event modules. |
+| 16 | 16.1-16.6 Done, 16.7 Next | In progress | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.6 | Next | Convert Scene View viewport to request/result + delayed texture registry. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
@@ -398,23 +398,27 @@ Validation:
 
 ### 16.1 No-op Main Split
 
-Status: Next.
+Status: Done.
 
 Scope:
 
 - Move startup, frame loop and shutdown into `editor_app`.
 - Move per-frame service references into `editor_context`.
 - Keep rendered output and smoke behavior unchanged.
+- Current implementation keeps per-frame service references inside `editor_app` until panel registry work creates a real
+  `editor_context` consumer.
 
 Validation:
 
 - `asharia-editor` starts.
 - No new package dependencies.
 - Encoding check and both debug builds pass.
+- Implemented by splitting CLI entrypoint into `apps/editor/src/main.cpp` and app lifecycle into
+  `apps/editor/src/editor_app.cpp`.
 
 ### 16.2 ImGui Runtime Isolation
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -426,10 +430,11 @@ Validation:
 
 - Editor shell starts and shuts down without validation-layer lifetime errors.
 - ImGui backend sources remain `SKIP_LINTING`.
+- Implemented in `apps/editor/src/imgui_runtime.hpp/.cpp`; shutdown queue wait remains limited to teardown.
 
 ### 16.3 ImGui Shell Module
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -441,10 +446,12 @@ Validation:
 
 - Dockspace and menu render as before.
 - `imgui_editor_shell` only depends on editor action/panel interfaces and ImGui.
+- Implemented as `apps/editor/src/imgui_editor_shell.hpp/.cpp`; panel window contents remain in `editor_app`
+  until the panel registry baseline.
 
 ### 16.4 Panel Registry Baseline
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -456,10 +463,13 @@ Validation:
 
 - View menu opens/focuses existing Scene View and Log panels.
 - Closing/reopening singleton panels does not create duplicate state.
+- Implemented as `apps/editor/src/editor_panel.hpp/.cpp` plus `apps/editor/src/panels/scene_view_panel.*`
+  and `apps/editor/src/panels/log_panel.*`; View menu now routes through the panel registry.
+- Lifecycle events are emitted by the registry and kept frame-local until the dedicated event queue lands in 16.6.
 
 ### 16.5 Action Registry Baseline
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -471,10 +481,14 @@ Validation:
 
 - Menu only invokes action ids.
 - Action registry can be unit-smoked without ImGui where practical.
+- Implemented as `apps/editor/src/editor_action.hpp/.cpp` and a minimal
+  `apps/editor/src/editor_context.hpp/.cpp`; File menu entries are disabled action placeholders and View menu entries
+  route through action ids to the panel registry.
+- Editor smoke validates action count, disabled action rejection and View/Log action routing without ImGui widgets.
 
 ### 16.6 Event Queue Baseline
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -486,6 +500,10 @@ Validation:
 
 - Log panel can display recent editor events without owning panel internals.
 - No global EventBus or pointer payloads.
+- Implemented as `apps/editor/src/editor_event.hpp/.cpp`; panel registry emits lifecycle facts into the queue, action
+  invocation emits `MenuActionInvoked`, and `LogPanel` keeps a short recent-event history.
+- Editor smoke validates panel lifecycle events, disabled action rejection and View/Log menu action invocation through the
+  typed queue.
 
 ### 16.7 Editor Shell Smoke
 

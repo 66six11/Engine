@@ -43,7 +43,16 @@ if(WIN32)
 endif()
 
 add_executable(asharia-editor
+    src/editor_action.cpp
+    src/editor_app.cpp
+    src/editor_context.cpp
+    src/editor_event.cpp
+    src/editor_panel.cpp
+    src/imgui_editor_shell.cpp
+    src/imgui_runtime.cpp
     src/main.cpp
+    src/panels/log_panel.cpp
+    src/panels/scene_view_panel.cpp
     ${ASHARIA_IMGUI_BACKEND_SOURCES}
     ${ASHARIA_EDITOR_RESOURCE_SOURCES}
 )
@@ -53,6 +62,11 @@ add_executable(asharia::editor ALIAS asharia-editor)
 set_source_files_properties(${ASHARIA_IMGUI_BACKEND_SOURCES}
     PROPERTIES
         SKIP_LINTING ON
+)
+
+target_include_directories(asharia-editor
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
 target_include_directories(asharia-editor
