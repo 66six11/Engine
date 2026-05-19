@@ -43,12 +43,16 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
 
-        if (hasArg(args, "--smoke-editor-shell") || hasArg(args, "--smoke-editor-viewport")) {
-            return asharia::editor::runEditor(true);
+        if (hasArg(args, "--smoke-editor-shell")) {
+            return asharia::editor::runEditor(asharia::editor::EditorRunMode::SmokeShell);
+        }
+
+        if (hasArg(args, "--smoke-editor-viewport")) {
+            return asharia::editor::runEditor(asharia::editor::EditorRunMode::SmokeViewport);
         }
 
         if (args.size() == 1) {
-            return asharia::editor::runEditor(false);
+            return asharia::editor::runEditor(asharia::editor::EditorRunMode::Interactive);
         }
 
         printVersion();

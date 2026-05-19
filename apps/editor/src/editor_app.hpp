@@ -2,6 +2,12 @@
 
 namespace asharia::editor {
 
-    int runEditor(bool smokeMode);
+    enum class EditorRunMode {
+        Interactive,
+        SmokeShell,
+        SmokeViewport,
+    };
+
+    int runEditor(EditorRunMode mode);
 
 } // namespace asharia::editor

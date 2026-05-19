@@ -43,6 +43,14 @@ namespace {
     constexpr int kSmokeFrameCount = 3;
     constexpr int kSmokeAttemptLimit = 120;
 
+    bool isSmokeMode(asharia::editor::EditorRunMode mode) {
+        return mode != asharia::editor::EditorRunMode::Interactive;
+    }
+
+    bool isViewportSmokeMode(asharia::editor::EditorRunMode mode) {
+        return mode == asharia::editor::EditorRunMode::SmokeViewport;
+    }
+
     bool isRenderableExtent(asharia::WindowFramebufferExtent extent) {
         return extent.width > 0 && extent.height > 0;
     }
@@ -753,7 +761,9 @@ namespace {
 
 namespace asharia::editor {
 
-    int runEditor(bool smokeMode) {
+    int runEditor(EditorRunMode mode) {
+        const bool smokeMode = isSmokeMode(mode);
+
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
             asharia::logError(glfw.error().message);
@@ -849,12 +859,12 @@ namespace asharia::editor {
             asharia::logError(renderedFrames.error().message);
             return EXIT_FAILURE;
         }
-        if (smokeMode && !viewportHost.hasPresentedViewportTexture()) {
+        if (isViewportSmokeMode(mode) && !viewportHost.hasPresentedViewportTexture()) {
             asharia::logError("Editor viewport smoke did not present a sampled viewport texture.");
             return EXIT_FAILURE;
         }
-        if (smokeMode && viewportHost.textureFramesSubmitted() + 1U <
-                             static_cast<std::uint64_t>(*renderedFrames)) {
+        if (isViewportSmokeMode(mode) && viewportHost.textureFramesSubmitted() + 1U <
+                                             static_cast<std::uint64_t>(*renderedFrames)) {
             asharia::logError("Editor viewport smoke dropped sampled texture presentation during "
                               "resize.");
             return EXIT_FAILURE;

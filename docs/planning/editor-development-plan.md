@@ -339,8 +339,8 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
 
-When touching viewport rendering, sampled texture registration, swapchain pass recording or descriptor lifetime, also run the
-editor smoke commands once they exist:
+When touching editor shell, panel/action/event state, viewport rendering, sampled texture registration, swapchain pass
+recording or descriptor lifetime, also run the relevant editor smoke commands:
 
 ```text
 --smoke-editor-shell
@@ -348,8 +348,9 @@ editor smoke commands once they exist:
 --smoke-editor-viewport-resize
 ```
 
-Until those commands are added, use existing sample-viewer smoke coverage for RenderTarget/RenderView and manually run
-`asharia-editor` to verify startup and viewport presentation.
+`--smoke-editor-shell` covers shell/menu/panel/action/event state. `--smoke-editor-viewport` is the stricter sampled
+viewport texture smoke. `--smoke-editor-viewport-resize` remains a future Stage 17 command until resize coverage needs a
+separate non-flaky entry point.
 
 ## Stage Status Rules
 
@@ -373,7 +374,7 @@ Every sub-stage must:
 | Global stage | Editor sub-stage | Status | Goal |
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
-| 16 | 16.1-16.6 Done, 16.7 Next | In progress | Split editor shell from one file into host/runtime/panel/action/event modules. |
+| 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.6 | Next | Convert Scene View viewport to request/result + delayed texture registry. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
@@ -512,7 +513,7 @@ Validation:
 
 ### 16.7 Editor Shell Smoke
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -523,6 +524,10 @@ Validation:
 
 - Smoke returns non-zero on initialization, panel registry or ImGui frame failures.
 - `docs/workflow/review.md` includes the editor smoke once stable.
+- Implemented in `apps/editor/src/main.cpp` and `apps/editor/src/editor_app.cpp` with explicit
+  `EditorRunMode::SmokeShell`; shell smoke validates startup, ImGui frame construction, dockspace/menu/panel registry,
+  action registry and event queue without requiring viewport sampled texture presentation.
+- `--smoke-editor-viewport` remains the stricter viewport texture smoke for Stage 17 work.
 
 ## Phase 17: Editor Viewport Host
 
@@ -901,11 +906,11 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `refactor: split editor app runtime modules`
-2. `refactor: add editor panel and action registries`
-3. `refactor: isolate imgui texture registry`
-4. `test: add editor shell smoke`
-5. `test: add editor viewport smoke`
+1. `refactor: add editor viewport request model`
+2. `refactor: isolate imgui texture registry`
+3. `refactor: add editor viewport coordinator`
+4. `test: add editor viewport resize smoke`
+5. `refactor: add editor input capture skeleton`
 
 Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
 

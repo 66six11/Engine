@@ -89,6 +89,30 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 
 如果某个 smoke 命令尚不存在，审查回复必须说明原因，不能默默跳过。
 
+涉及 `apps/editor` shell、menu、panel registry、action registry、event queue 或 ImGui runtime 时，必须跑：
+
+```powershell
+foreach ($preset in @("clangcl-debug", "msvc-debug")) {
+    $exe = "build\cmake\$preset\apps\editor\asharia-editor.exe"
+    & $exe --smoke-editor-shell
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-shell failed with exit code $LASTEXITCODE"
+    }
+}
+```
+
+涉及 editor viewport rendering、sampled texture registration、descriptor lifetime 或 resize flow 时，还必须跑：
+
+```powershell
+foreach ($preset in @("clangcl-debug", "msvc-debug")) {
+    $exe = "build\cmake\$preset\apps\editor\asharia-editor.exe"
+    & $exe --smoke-editor-viewport
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-viewport failed with exit code $LASTEXITCODE"
+    }
+}
+```
+
 ## 设计审查门禁
 
 提交前必须结合相关资料做设计审查。优先资料：
