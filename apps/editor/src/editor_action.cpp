@@ -48,7 +48,7 @@ namespace asharia::editor {
         }
 
         context.eventQueue().push(EditorEvent{
-            .kind = EditorEventKind::MenuActionInvoked,
+            .kind = EditorEventKind::ActionInvoked,
             .sourceId = EditorId{.value = entry->desc.id.value},
         });
         entry->callback(context);

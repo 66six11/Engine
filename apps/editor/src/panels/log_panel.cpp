@@ -1,7 +1,7 @@
 ﻿#include "panels/log_panel.hpp"
 
-#include <cstddef>
 #include <imgui.h>
+#include <span>
 #include <string>
 
 #include "editor_event.hpp"
@@ -12,38 +12,28 @@ namespace asharia::editor {
         return desc_;
     }
 
-    void LogPanel::appendFrameEvents(const EditorFrameContext& context) {
-        constexpr std::size_t kMaxRecentEvents = 12;
-
-        for (const EditorEvent& event : context.eventQueue.events()) {
-            recentEvents_.push_back(std::string{editorEventKindName(event.kind)} + ": " +
-                                    event.sourceId.value);
-        }
-        if (recentEvents_.size() > kMaxRecentEvents) {
-            recentEvents_.erase(recentEvents_.begin(),
-                                recentEvents_.end() -
-                                    static_cast<std::ptrdiff_t>(kMaxRecentEvents));
-        }
-    }
-
     void LogPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
-        appendFrameEvents(context);
         const std::string modeText =
             std::string{"Mode: "} + (context.smokeMode ? "smoke" : "interactive");
         ImGui::TextUnformatted("Editor shell initialized with GLFW + Vulkan + Dear ImGui.");
         ImGui::TextUnformatted(modeText.c_str());
         ImGui::Separator();
         ImGui::TextUnformatted("Recent editor events:");
-        if (recentEvents_.empty()) {
+        const std::span<const EditorDiagnosticEvent> recentEvents =
+            context.diagnosticsLog.recentEvents();
+        if (recentEvents.empty()) {
             ImGui::TextUnformatted("No editor events this session.");
             return;
         }
-        for (const std::string& event : recentEvents_) {
+        for (const EditorDiagnosticEvent& diagnostic : recentEvents) {
+            const std::string eventText = std::to_string(diagnostic.sequence) + " " +
+                                          std::string{editorEventKindName(diagnostic.event.kind)} +
+                                          ": " + diagnostic.event.sourceId.value;
             ImGui::Bullet();
             ImGui::SameLine();
-            ImGui::TextUnformatted(event.c_str());
+            ImGui::TextUnformatted(eventText.c_str());
         }
     }
 

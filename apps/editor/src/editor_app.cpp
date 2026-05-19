@@ -579,6 +579,7 @@ namespace {
                 .swapchainFormat = frameLoop.format(),
                 .smokeMode = smokeMode,
                 .eventQueue = editorContext.eventQueue(),
+                .diagnosticsLog = editorContext.diagnosticsLog(),
                 .viewportHost = viewportHost,
             };
             buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
@@ -591,6 +592,7 @@ namespace {
             if (*rendered) {
                 ++renderedFrames;
             }
+            editorContext.diagnosticsLog().appendEvents(editorContext.eventQueue().events());
             editorContext.eventQueue().clear();
             panelRegistry.clearLifecycleEvents();
 
@@ -730,7 +732,7 @@ namespace {
             });
         const bool invokedLogAction =
             std::ranges::any_of(events, [](const asharia::editor::EditorEvent& event) {
-                return event.kind == asharia::editor::EditorEventKind::MenuActionInvoked &&
+                return event.kind == asharia::editor::EditorEventKind::ActionInvoked &&
                        event.sourceId.value == "view.log";
             });
         const bool openedLog =
@@ -817,6 +819,7 @@ namespace asharia::editor {
         }
 
         asharia::editor::EditorEventQueue eventQueue;
+        asharia::editor::EditorDiagnosticsLog diagnosticsLog;
         asharia::editor::EditorPanelRegistry panelRegistry;
         panelRegistry.setEventQueue(&eventQueue);
         if (auto registered = registerEditorPanels(panelRegistry); !registered) {
@@ -833,7 +836,7 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        asharia::editor::EditorContext editorContext{panelRegistry, eventQueue};
+        asharia::editor::EditorContext editorContext{panelRegistry, eventQueue, diagnosticsLog};
         if (smokeMode &&
             !validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry)) {
             return EXIT_FAILURE;

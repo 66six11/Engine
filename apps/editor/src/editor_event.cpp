@@ -1,5 +1,6 @@
 ﻿#include "editor_event.hpp"
 
+#include <cstddef>
 #include <utility>
 
 namespace asharia::editor {
@@ -12,8 +13,8 @@ namespace asharia::editor {
             return "PanelClosed";
         case EditorEventKind::PanelFocused:
             return "PanelFocused";
-        case EditorEventKind::MenuActionInvoked:
-            return "MenuActionInvoked";
+        case EditorEventKind::ActionInvoked:
+            return "ActionInvoked";
         case EditorEventKind::ViewportResized:
             return "ViewportResized";
         case EditorEventKind::SelectionChanged:
@@ -36,6 +37,24 @@ namespace asharia::editor {
 
     std::span<const EditorEvent> EditorEventQueue::events() const {
         return events_;
+    }
+
+    void EditorDiagnosticsLog::appendEvents(std::span<const EditorEvent> events) {
+        for (const EditorEvent& event : events) {
+            recentEvents_.push_back(EditorDiagnosticEvent{
+                .sequence = nextSequence_++,
+                .event = event,
+            });
+        }
+        if (recentEvents_.size() > kMaxRecentEvents) {
+            recentEvents_.erase(recentEvents_.begin(),
+                                recentEvents_.end() -
+                                    static_cast<std::ptrdiff_t>(kMaxRecentEvents));
+        }
+    }
+
+    std::span<const EditorDiagnosticEvent> EditorDiagnosticsLog::recentEvents() const {
+        return recentEvents_;
     }
 
 } // namespace asharia::editor

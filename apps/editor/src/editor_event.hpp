@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -12,7 +14,7 @@ namespace asharia::editor {
         PanelOpened,
         PanelClosed,
         PanelFocused,
-        MenuActionInvoked,
+        ActionInvoked,
         ViewportResized,
         SelectionChanged,
     };
@@ -33,6 +35,23 @@ namespace asharia::editor {
 
     private:
         std::vector<EditorEvent> events_;
+    };
+
+    struct EditorDiagnosticEvent {
+        std::uint64_t sequence{};
+        EditorEvent event;
+    };
+
+    class EditorDiagnosticsLog {
+    public:
+        void appendEvents(std::span<const EditorEvent> events);
+        [[nodiscard]] std::span<const EditorDiagnosticEvent> recentEvents() const;
+
+    private:
+        static constexpr std::size_t kMaxRecentEvents = 64;
+
+        std::vector<EditorDiagnosticEvent> recentEvents_;
+        std::uint64_t nextSequence_{1};
     };
 
 } // namespace asharia::editor

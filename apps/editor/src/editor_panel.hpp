@@ -17,6 +17,7 @@
 
 namespace asharia::editor {
 
+    class EditorDiagnosticsLog;
     class EditorEventQueue;
 
     struct EditorPanelDesc {
@@ -53,6 +54,7 @@ namespace asharia::editor {
         VkFormat swapchainFormat{VK_FORMAT_UNDEFINED};
         bool smokeMode{};
         EditorEventQueue& eventQueue;
+        EditorDiagnosticsLog& diagnosticsLog;
         EditorViewportPanelHost& viewportHost;
     };
 

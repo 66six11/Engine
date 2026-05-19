@@ -176,7 +176,8 @@ Rules:
 
 - Menus, shortcuts and future command palette invoke the same action ids.
 - Actions mutate editor state only through explicit services such as panel registry, selection, transaction or app commands.
-- `MenuActionInvoked` is an editor event, not the mutation itself.
+- `ActionInvoked` is an editor event, not the mutation itself. Menu, shortcut, command palette and script are invocation
+  sources, not separate action meanings.
 - Disabled actions remain registered so menu/shortcut UI can show stable layout and diagnostics.
 
 ## Event Queue
@@ -188,7 +189,7 @@ enum class EditorEventKind {
     PanelOpened,
     PanelClosed,
     PanelFocused,
-    MenuActionInvoked,
+    ActionInvoked,
     ViewportResized,
     SelectionChanged,
 };
@@ -203,6 +204,8 @@ Rules:
 
 - Events describe facts that already happened in the editor frame.
 - Events are drained at deterministic points in `EditorApp`.
+- UI diagnostics that need history consume events through a diagnostics sink; panels should not treat the frame-local
+  event queue as durable storage.
 - Events do not carry owning pointers to panels, world objects or Vulkan resources.
 - Add typed payload variants only when a real consumer exists.
 
@@ -318,6 +321,7 @@ frameLoop.renderFrame(callback):
   record ImGui draw data into swapchain dynamic-rendering pass
 
 present
+diagnosticsLog.appendEvents(eventQueue)
 eventQueue.clear()
 ```
 
@@ -493,15 +497,16 @@ Status: Done.
 Scope:
 
 - Add small typed `EditorEventQueue`.
-- Emit `PanelOpened`, `PanelClosed`, `PanelFocused` and `MenuActionInvoked`.
+- Emit `PanelOpened`, `PanelClosed`, `PanelFocused` and `ActionInvoked`.
 - Drain events at a deterministic point in `EditorApp`.
 
 Validation:
 
-- Log panel can display recent editor events without owning panel internals.
+- Log panel can display recent editor events from diagnostics history without owning panel internals or reading the
+  frame-local queue directly.
 - No global EventBus or pointer payloads.
 - Implemented as `apps/editor/src/editor_event.hpp/.cpp`; panel registry emits lifecycle facts into the queue, action
-  invocation emits `MenuActionInvoked`, and `LogPanel` keeps a short recent-event history.
+  invocation emits `ActionInvoked`, and `EditorDiagnosticsLog` keeps a short recent-event history consumed by `LogPanel`.
 - Editor smoke validates panel lifecycle events, disabled action rejection and View/Log menu action invocation through the
   typed queue.
 
