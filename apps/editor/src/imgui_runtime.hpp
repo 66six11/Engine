@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
+
 #include "asharia/core/result.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
@@ -9,6 +11,8 @@
 struct GLFWwindow;
 
 namespace asharia::editor {
+
+    inline constexpr std::uint32_t kEditorImGuiDescriptorPoolSize = 128;
 
     class ImGuiRuntime {
     public:

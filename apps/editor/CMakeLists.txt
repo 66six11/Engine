@@ -51,6 +51,7 @@ add_executable(asharia-editor
     src/editor_viewport.cpp
     src/imgui_editor_shell.cpp
     src/imgui_runtime.cpp
+    src/imgui_texture_registry.cpp
     src/main.cpp
     src/panels/log_panel.cpp
     src/panels/scene_view_panel.cpp

@@ -56,7 +56,7 @@ namespace asharia::editor {
         initInfo.Device = context.device();
         initInfo.QueueFamily = context.graphicsQueueFamily();
         initInfo.Queue = context.graphicsQueue();
-        initInfo.DescriptorPoolSize = 128;
+        initInfo.DescriptorPoolSize = kEditorImGuiDescriptorPoolSize;
         initInfo.MinImageCount = 2;
         initInfo.ImageCount = frameLoop.swapchainImageCount();
         initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;

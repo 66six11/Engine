@@ -35,6 +35,7 @@
 #include "editor_viewport.hpp"
 #include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
+#include "imgui_texture_registry.hpp"
 #include "panels/log_panel.hpp"
 #include "panels/scene_view_panel.hpp"
 
@@ -79,9 +80,15 @@ namespace {
         };
     }
 
-    std::uintptr_t imguiTextureId(VkDescriptorSet descriptorSet) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        return reinterpret_cast<std::uintptr_t>(descriptorSet);
+    std::uint64_t nextSubmittedFrameEpoch(const asharia::VulkanFrameLoop& frameLoop) {
+        return frameLoop.submittedFrameEpoch() + 1U;
+    }
+
+    std::uint64_t nextSubmittedFrameEpoch(const asharia::VulkanFrameRecordContext& frame) {
+        if (frame.frameLoop == nullptr) {
+            return 0;
+        }
+        return nextSubmittedFrameEpoch(*frame.frameLoop);
     }
 
     struct ImageBarrierDesc {
@@ -92,6 +99,11 @@ namespace {
         VkAccessFlags2 srcAccessMask{};
         VkPipelineStageFlags2 dstStageMask{};
         VkAccessFlags2 dstAccessMask{};
+    };
+
+    struct EditorViewportFrameEpochs {
+        std::uint64_t completedFrameEpoch{};
+        std::uint64_t submittedFrameEpoch{};
     };
 
     VkImageMemoryBarrier2 imageBarrier(const ImageBarrierDesc& desc) {
@@ -131,27 +143,21 @@ namespace {
             ViewportTexture& operator=(ViewportTexture&&) noexcept = default;
             ~ViewportTexture() = default;
 
-            [[nodiscard]] bool hasDescriptor() const {
-                return descriptorSet != VK_NULL_HANDLE;
-            }
-
             [[nodiscard]] bool ready() const {
-                return hasDescriptor() && rendered;
+                return rendered && format != VK_FORMAT_UNDEFINED && extent.width > 0 &&
+                       extent.height > 0;
             }
 
-            void clearDescriptorMetadata() {
-                descriptorSet = VK_NULL_HANDLE;
-                imageView = VK_NULL_HANDLE;
-                layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            void clearMetadata() {
                 format = VK_FORMAT_UNDEFINED;
                 extent = {};
+                panelId = {};
+                kind = asharia::editor::EditorViewportKind::Scene;
+                requestedExtent = {};
                 rendered = false;
             }
 
             asharia::VulkanRenderTarget target;
-            VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
-            VkImageView imageView{VK_NULL_HANDLE};
-            VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
             VkFormat format{VK_FORMAT_UNDEFINED};
             VkExtent2D extent{};
             asharia::editor::EditorId panelId;
@@ -175,20 +181,13 @@ namespace {
             device_ = context.device();
             allocator_ = context.allocator();
             queue_ = context.graphicsQueue();
-
-            auto sampler = asharia::VulkanSampler::create(asharia::VulkanSamplerDesc{
-                .device = device_,
-            });
-            if (!sampler) {
-                return std::unexpected{std::move(sampler.error())};
-            }
-            sampler_ = std::move(*sampler);
-            return {};
+            return textureRegistry_.create(device_);
         }
 
-        void beginImguiFrame() {
-            textureSubmittedThisFrame_ = false;
+        void beginImguiFrame(EditorViewportFrameEpochs epochs) {
+            currentFrameSubmittedEpoch_ = epochs.submittedFrameEpoch;
             requestedViewport_.reset();
+            textureRegistry_.beginFrame(epochs.completedFrameEpoch);
             promotePendingTexture();
         }
 
@@ -202,18 +201,12 @@ namespace {
                 return std::nullopt;
             }
 
-            textureSubmittedThisFrame_ = true;
+            auto result = textureRegistry_.acquireForDraw(panelId, currentFrameSubmittedEpoch_);
+            if (!result) {
+                return std::nullopt;
+            }
             ++textureFramesSubmitted_;
-            return asharia::editor::EditorViewportResult{
-                .panelId = presentedTexture_.panelId,
-                .kind = presentedTexture_.kind,
-                .requestedExtent = presentedTexture_.requestedExtent,
-                .texture =
-                    asharia::editor::EditorViewportTexture{
-                        .textureId = imguiTextureId(presentedTexture_.descriptorSet),
-                        .extent = editorExtentFromVk(presentedTexture_.extent),
-                    },
-            };
+            return result;
         }
 
         [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
@@ -260,10 +253,6 @@ namespace {
 
             const asharia::VulkanSampledTextureView texture =
                 renderTexture.target.sampledTextureView();
-            auto descriptorReady = ensureDescriptor(renderTexture, texture);
-            if (!descriptorReady) {
-                return std::unexpected{std::move(descriptorReady.error())};
-            }
 
             auto recorded = renderer.recordViewFrame(
                 frame,
@@ -282,10 +271,24 @@ namespace {
                 return std::unexpected{std::move(recorded.error())};
             }
 
+            auto published =
+                textureRegistry_.registerOrUpdate(asharia::editor::ImGuiTextureRegistration{
+                    .ownerId = request.panelId.value,
+                    .kind = request.kind,
+                    .requestedExtent = request.extent,
+                    .texture = texture,
+                    .submittedFrameEpoch = nextSubmittedFrameEpoch(frame),
+                });
+            if (!published) {
+                return std::unexpected{std::move(published.error())};
+            }
+
             renderTexture.rendered = true;
             renderTexture.panelId = request.panelId;
             renderTexture.kind = request.kind;
             renderTexture.requestedExtent = request.extent;
+            renderTexture.format = texture.format;
+            renderTexture.extent = texture.extent;
             ++viewportFramesRendered_;
             return *recorded;
         }
@@ -303,11 +306,7 @@ namespace {
                                       asharia::vkResultName(idleResult));
                 }
             }
-            removeDescriptor(presentedTexture_);
-            removeDescriptor(pendingTexture_);
-            for (ViewportTexture& texture : retiredTextures_) {
-                removeDescriptor(texture);
-            }
+            textureRegistry_.shutdown();
             presentedTexture_ = {};
             pendingTexture_ = {};
             retiredTextures_.clear();
@@ -332,12 +331,16 @@ namespace {
             return textureFramesSubmitted_;
         }
 
+        [[nodiscard]] asharia::editor::ImGuiTextureRegistryStats textureRegistryStats() const {
+            return textureRegistry_.stats();
+        }
+
     private:
         void promotePendingTexture() {
             if (!pendingTexture_.ready()) {
                 return;
             }
-            if (presentedTexture_.hasDescriptor()) {
+            if (presentedTexture_.ready()) {
                 retiredTextures_.push_back(std::move(presentedTexture_));
             }
             presentedTexture_ = std::move(pendingTexture_);
@@ -345,85 +348,35 @@ namespace {
         }
 
         [[nodiscard]] bool hasTextureToRelease() const {
-            return presentedTexture_.hasDescriptor() || pendingTexture_.hasDescriptor() ||
+            return presentedTexture_.ready() || pendingTexture_.ready() ||
+                   !textureRegistry_.empty() ||
                    std::ranges::any_of(retiredTextures_, [](const ViewportTexture& texture) {
-                       return texture.hasDescriptor();
+                       return texture.ready();
                    });
-        }
-
-        static void removeDescriptor(ViewportTexture& texture) {
-            if (texture.descriptorSet != VK_NULL_HANDLE) {
-                ImGui_ImplVulkan_RemoveTexture(texture.descriptorSet);
-            }
-            texture.clearDescriptorMetadata();
         }
 
         [[nodiscard]] asharia::VoidResult
         processRetiredTextures(const asharia::VulkanFrameRecordContext& frame) {
             for (ViewportTexture& texture : retiredTextures_) {
-                removeDescriptor(texture);
                 if (!texture.target.deferDestroy(frame)) {
                     return std::unexpected{
                         asharia::vulkanError("Failed to defer retired editor viewport texture")};
                 }
+                texture.clearMetadata();
             }
             retiredTextures_.clear();
-            return {};
-        }
-
-        [[nodiscard]] asharia::VoidResult
-        ensureDescriptor(ViewportTexture& viewportTexture,
-                         asharia::VulkanSampledTextureView texture) {
-            if (texture.imageView == VK_NULL_HANDLE ||
-                texture.sampledLayout == VK_IMAGE_LAYOUT_UNDEFINED ||
-                texture.format == VK_FORMAT_UNDEFINED || texture.extent.width == 0 ||
-                texture.extent.height == 0) {
-                return std::unexpected{
-                    asharia::vulkanError("Cannot register an incomplete editor viewport texture")};
-            }
-
-            if (viewportTexture.descriptorSet != VK_NULL_HANDLE &&
-                viewportTexture.imageView == texture.imageView &&
-                viewportTexture.layout == texture.sampledLayout &&
-                viewportTexture.format == texture.format &&
-                sameExtent(viewportTexture.extent, texture.extent)) {
-                return {};
-            }
-
-            if (&viewportTexture == &presentedTexture_ && textureSubmittedThisFrame_) {
-                return std::unexpected{asharia::vulkanError(
-                    "Cannot replace an editor viewport texture after submitting it to ImGui")};
-            }
-
-            if (viewportTexture.descriptorSet != VK_NULL_HANDLE) {
-                ImGui_ImplVulkan_RemoveTexture(viewportTexture.descriptorSet);
-            }
-
-            viewportTexture.descriptorSet = ImGui_ImplVulkan_AddTexture(
-                sampler_.handle(), texture.imageView, texture.sampledLayout);
-            if (viewportTexture.descriptorSet == VK_NULL_HANDLE) {
-                viewportTexture.clearDescriptorMetadata();
-                return std::unexpected{
-                    asharia::vulkanError("Failed to register editor viewport texture with ImGui")};
-            }
-
-            viewportTexture.imageView = texture.imageView;
-            viewportTexture.layout = texture.sampledLayout;
-            viewportTexture.format = texture.format;
-            viewportTexture.extent = texture.extent;
-            viewportTexture.rendered = false;
             return {};
         }
 
         VkDevice device_{VK_NULL_HANDLE};
         VmaAllocator allocator_{};
         VkQueue queue_{VK_NULL_HANDLE};
-        asharia::VulkanSampler sampler_;
+        asharia::editor::ImGuiTextureRegistry textureRegistry_;
         ViewportTexture presentedTexture_;
         ViewportTexture pendingTexture_;
         std::vector<ViewportTexture> retiredTextures_;
         std::optional<asharia::editor::EditorViewportRequest> requestedViewport_;
-        bool textureSubmittedThisFrame_{false};
+        std::uint64_t currentFrameSubmittedEpoch_{};
         std::uint64_t viewportFramesRendered_{0};
         std::uint64_t textureFramesSubmitted_{0};
     };
@@ -604,7 +557,10 @@ namespace {
             ImGui_ImplVulkan_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
-            viewportHost.beginImguiFrame();
+            viewportHost.beginImguiFrame(EditorViewportFrameEpochs{
+                .completedFrameEpoch = frameLoop.completedFrameEpoch(),
+                .submittedFrameEpoch = nextSubmittedFrameEpoch(frameLoop),
+            });
             panelRegistry.clearLifecycleEvents();
             editorContext.eventQueue().clear();
             asharia::editor::EditorFrameContext frameContext{
@@ -894,6 +850,14 @@ namespace asharia::editor {
                               "resize.");
             return EXIT_FAILURE;
         }
+        const asharia::editor::ImGuiTextureRegistryStats textureRegistryStats =
+            viewportHost.textureRegistryStats();
+        if (isViewportSmokeMode(mode) &&
+            textureRegistryStats.peakLiveDescriptors >
+                asharia::editor::kEditorViewportTextureDescriptorBudget) {
+            asharia::logError("Editor viewport smoke exceeded ImGui texture descriptor budget.");
+            return EXIT_FAILURE;
+        }
 
         const VkExtent2D viewportExtent = viewportHost.descriptorExtent();
         viewportHost.shutdown();
@@ -903,6 +867,7 @@ namespace asharia::editor {
         std::cout << "Editor shell frames: " << *renderedFrames
                   << ", viewport frames: " << viewportHost.viewportFramesRendered()
                   << ", texture frames: " << viewportHost.textureFramesSubmitted()
+                  << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         return EXIT_SUCCESS;
     }

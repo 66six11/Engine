@@ -272,6 +272,9 @@ Rules:
 - Shutdown may wait for the graphics queue before final descriptor release. This is allowed in shutdown, not in the render loop.
 - Descriptor pool capacity must account for font atlas descriptors plus maximum concurrently live viewport/panel textures and
   delayed retired descriptors.
+- Current Stage 17.2 implementation uses `apps/editor/src/imgui_texture_registry.hpp/.cpp`. The editor ImGui backend
+  descriptor pool size is `kEditorImGuiDescriptorPoolSize = 128`; viewport texture descriptors are checked against
+  `kEditorViewportTextureDescriptorBudget = 32` in viewport smoke.
 
 ## Input Routing
 
@@ -380,7 +383,7 @@ Every sub-stage must:
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
-| 17 | 17.1 Done, 17.2-17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
+| 17 | 17.1-17.2 Done, 17.3-17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
@@ -559,7 +562,7 @@ Validation:
 
 ### 17.2 Texture Registry With Delayed Retirement
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -571,6 +574,12 @@ Validation:
 
 - Resize does not immediately free a descriptor that may be referenced by submitted ImGui draw data.
 - Descriptor pool capacity is documented and checked against expected live descriptors.
+- Implemented as `apps/editor/src/imgui_texture_registry.hpp/.cpp`; the registry wraps `ImGui_ImplVulkan_AddTexture()`
+  and `ImGui_ImplVulkan_RemoveTexture()`, owns the descriptor set lifetime and keeps sampled image/view ownership in
+  `EditorViewportHost`.
+- `acquireForDraw()` marks the active descriptor with the current frame's expected submitted epoch; replacing or retiring
+  the descriptor moves it to a retired list and `beginFrame(completedFrameEpoch)` removes it only after completion.
+- `--smoke-editor-viewport` checks peak live viewport texture descriptors against the editor viewport descriptor budget.
 
 ### 17.3 Viewport Render Coordinator
 
@@ -917,10 +926,9 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `refactor: isolate imgui texture registry`
-2. `refactor: add editor viewport coordinator`
-3. `test: add editor viewport resize smoke`
-4. `refactor: add editor input capture skeleton`
+1. `refactor: add editor viewport coordinator`
+2. `test: add editor viewport resize smoke`
+3. `refactor: add editor input capture skeleton`
 
 Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
 
