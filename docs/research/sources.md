@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-05-14
+最近核对日期：2026-05-15
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -17,6 +17,12 @@
 - Godot import process：https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html
 - Godot GDExtension overview：https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/what_is_gdextension.html
 - Godot editor plugins：https://docs.godotengine.org/en/stable/tutorials/plugins/editor/making_plugins.html
+- Dear ImGui backends：https://github.com/ocornut/imgui/blob/master/docs/BACKENDS.md
+- Dear ImGui FAQ：https://github.com/ocornut/imgui/blob/master/docs/FAQ.md
+- Dear ImGui image loading and display examples：https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples
+- Dear ImGui Vulkan backend header：https://github.com/ocornut/imgui/blob/master/backends/imgui_impl_vulkan.h
+- Unity Editor Windows：https://docs.unity.cn/Manual/editor-EditorWindows.html
+- Unreal FTabManager：https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/Framework/Docking/FTabManager
 - Unreal parallel rendering overview：https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine
 - Unreal Render Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine
 - Unreal Object Handling：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine
@@ -51,6 +57,10 @@
   command pool 和 descriptor pool 这类对象按外部同步规则隔离。
 - 资产管线、反射序列化、scene/world、resource lifetime、input、event/command、editor transaction、
   material/pipeline 和 diagnostics 是完整引擎不可缺少的架构前置项，但不应全部进入当前 MVP 实现。
+- Dear ImGui 的 platform backend、renderer backend 和 core 分层支持把 ImGui integration 留在
+  `apps/editor`；panel/action/event、selection 和 transaction 才是未来 `editor-core` 的候选职责。
+- Unity、Unreal 和 Godot 的 editor window/dock 模型都支持按 id/type 注册和复用 panel，而不是让菜单直接
+  创建任意 UI 实例。
 
 ## Schema / Persistence / C# metadata
 
