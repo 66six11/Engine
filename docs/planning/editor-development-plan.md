@@ -101,6 +101,7 @@ apps/editor/src/
 | `editor_event` | small typed queue for editor facts | global EventBus semantics |
 | `editor_panel` | panel descriptors, state, registry, singleton reuse | ImGui backend setup |
 | `editor_input_router` | ImGui capture snapshot, Scene View hover/focus state and derived input routing flags | raw GLFW callback ownership or camera/gizmo behavior |
+| `editor_shortcut_router` | shortcut metadata parsing, ImGui shortcut polling and input-gated action invocation | transaction semantics or raw GLFW callback ownership |
 | `editor_viewport` | backend-neutral viewport request/result model | ImGui descriptor allocation or Vulkan command recording |
 | `editor_viewport_coordinator` | request collection, RenderView recording, render target lifetime, texture registry publication | panel widgets or ImGui backend setup |
 | `imgui_runtime` | ImGui context and GLFW/Vulkan backend lifecycle | panel registry or editor state |
@@ -386,7 +387,7 @@ Every sub-stage must:
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
-| 17 | 17.1-17.6 Done | Done | Convert Scene View viewport to request/result + delayed texture registry and input capture snapshot. |
+| 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
@@ -659,6 +660,24 @@ Validation:
 - UI-focused keyboard/mouse does not trigger viewport shortcut placeholders.
 - Viewport-focused input path is visible in diagnostics/log panel.
 - `--smoke-editor-shell` validates that input frames are captured and Scene View reports input state.
+
+### 17.7 Shortcut Routing Baseline
+
+Status: Done.
+
+Scope:
+
+- Add `EditorShortcutRouter` as the single per-frame ImGui shortcut poller.
+- Parse `EditorActionDesc::shortcut` strings into ImGui key chords.
+- Gate shortcuts through `EditorInputRouter::snapshot().shortcutsEnabled`.
+- Invoke shortcuts through `EditorActionRegistry::invoke()` so menus and shortcuts share action ids and events.
+- Keep disabled actions registered for menu layout while preventing shortcut invocation.
+
+Validation:
+
+- Synthetic smoke validates that disabled input capture blocks shortcuts.
+- Synthetic smoke validates that disabled actions are not invoked by shortcuts.
+- `--smoke-editor-shell` validates that registered shortcuts are parseable and evaluated every rendered frame.
 
 ## Phase 20: Scene Object And Selection Baseline
 
@@ -945,7 +964,7 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `feat: add editor shortcut routing baseline`
+1. `feat: add scene object identity baseline`
 
 Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
 

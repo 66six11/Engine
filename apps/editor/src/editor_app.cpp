@@ -31,6 +31,7 @@
 #include "editor_context.hpp"
 #include "editor_input_router.hpp"
 #include "editor_panel.hpp"
+#include "editor_shortcut_router.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
 #include "imgui_editor_shell.hpp"
@@ -113,6 +114,7 @@ namespace {
         VkExtent2D viewportExtentAfterResize{};
         std::uint64_t textureFramesBeforeResize{};
         asharia::editor::EditorInputRouterStats inputStats;
+        asharia::editor::EditorShortcutRouterStats shortcutStats;
     };
 
     struct EditorViewportResizeSmokeState {
@@ -207,6 +209,24 @@ namespace {
         }
         if (runResult.inputStats.sceneViewReports == 0) {
             asharia::logError("Editor input router smoke did not receive Scene View input state.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateShortcutRouterRunSmoke(asharia::editor::EditorRunMode mode,
+                                                      const EditorSmokeRunResult& runResult) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+        if (runResult.shortcutStats.evaluatedFrames <
+            static_cast<std::uint64_t>(runResult.renderedFrames)) {
+            asharia::logError("Editor shortcut router smoke did not evaluate every rendered "
+                              "frame.");
+            return false;
+        }
+        if (runResult.shortcutStats.invalidShortcuts != 0) {
+            asharia::logError("Editor shortcut router smoke found an invalid registered shortcut.");
             return false;
         }
         return true;
@@ -400,6 +420,7 @@ namespace {
         const bool smokeMode = isSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
         asharia::editor::EditorInputRouter inputRouter;
+        asharia::editor::EditorShortcutRouter shortcutRouter;
         int renderedFrames = 0;
         int attempts = 0;
         while (!window.shouldClose()) {
@@ -440,6 +461,8 @@ namespace {
             };
             buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
             inputRouter.finalizeFrame();
+            shortcutRouter.beginFrame(inputRouter.snapshot());
+            static_cast<void>(shortcutRouter.routeImGuiShortcuts(actionRegistry, editorContext));
             ImGui::Render();
 
             auto rendered = renderEditorFrame(frameLoop, renderer, viewportHost);
@@ -472,6 +495,7 @@ namespace {
             .viewportExtentAfterResize = resizeSmoke.extentAfterResize,
             .textureFramesBeforeResize = resizeSmoke.textureFramesBeforeResize,
             .inputStats = inputRouter.stats(),
+            .shortcutStats = shortcutRouter.stats(),
         };
     }
 
@@ -527,7 +551,7 @@ namespace {
                 .id = asharia::editor::EditorId{.value = "view.scene-view"},
                 .menuPath = "View",
                 .label = "Scene View",
-                .shortcut = "",
+                .shortcut = "Ctrl+1",
                 .enabled = true,
             },
             [](asharia::editor::EditorContext& context) {
@@ -542,7 +566,7 @@ namespace {
                 .id = asharia::editor::EditorId{.value = "view.log"},
                 .menuPath = "View",
                 .label = "Log",
-                .shortcut = "",
+                .shortcut = "Ctrl+2",
                 .enabled = true,
             },
             [](asharia::editor::EditorContext& context) {
@@ -610,6 +634,50 @@ namespace {
             });
         if (!closedLog || !invokedLogAction || !openedLog) {
             asharia::logError("Editor event queue smoke missed action or panel lifecycle events.");
+            return false;
+        }
+        editorContext.eventQueue().clear();
+
+        return true;
+    }
+
+    [[nodiscard]] bool
+    validateShortcutRouterSmoke(asharia::editor::EditorActionRegistry& actionRegistry,
+                                asharia::editor::EditorContext& editorContext,
+                                asharia::editor::EditorPanelRegistry& panelRegistry) {
+        asharia::editor::EditorShortcutRouter shortcutRouter;
+        editorContext.eventQueue().clear();
+
+        shortcutRouter.beginFrame(asharia::editor::EditorInputSnapshot{
+            .shortcutsEnabled = false,
+        });
+        if (shortcutRouter.routeShortcut(actionRegistry, editorContext, "view.log", true) ||
+            actionRegistry.invokeCount("view.log") != 1 || !editorContext.eventQueue().empty()) {
+            asharia::logError("Editor shortcut router smoke invoked while shortcuts were "
+                              "disabled.");
+            return false;
+        }
+
+        shortcutRouter.beginFrame(asharia::editor::EditorInputSnapshot{
+            .shortcutsEnabled = true,
+        });
+        if (shortcutRouter.routeShortcut(actionRegistry, editorContext, "file.open", true) ||
+            actionRegistry.invokeCount("file.open") != 0 || !editorContext.eventQueue().empty()) {
+            asharia::logError("Editor shortcut router smoke invoked a disabled action.");
+            return false;
+        }
+
+        if (!panelRegistry.closePanel("log") ||
+            !shortcutRouter.routeShortcut(actionRegistry, editorContext, "view.log", true) ||
+            !panelRegistry.isOpen("log") || actionRegistry.invokeCount("view.log") != 2) {
+            asharia::logError("Editor shortcut router smoke failed to invoke View/Log.");
+            return false;
+        }
+
+        const asharia::editor::EditorShortcutRouterStats stats = shortcutRouter.stats();
+        if (stats.evaluatedFrames != 2 || stats.blockedFrames != 1 ||
+            stats.shortcutMatches != 2 || stats.shortcutInvocations != 1) {
+            asharia::logError("Editor shortcut router smoke detected invalid shortcut stats.");
             return false;
         }
         editorContext.eventQueue().clear();
@@ -711,6 +779,10 @@ namespace asharia::editor {
             !validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry)) {
             return EXIT_FAILURE;
         }
+        if (smokeMode &&
+            !validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry)) {
+            return EXIT_FAILURE;
+        }
 
         auto runResult = runEditorLoop(*window, *frameLoop, *renderer, viewportHost, actionRegistry,
                                        editorContext, panelRegistry, mode);
@@ -724,7 +796,8 @@ namespace asharia::editor {
         if (!validateViewportSmokePresentation(mode, *runResult, viewportHost,
                                                textureRegistryStats) ||
             !validateViewportResizeSmoke(mode, *runResult, viewportStats, textureRegistryStats) ||
-            !validateInputRouterSmoke(mode, *runResult)) {
+            !validateInputRouterSmoke(mode, *runResult) ||
+            !validateShortcutRouterRunSmoke(mode, *runResult)) {
             return EXIT_FAILURE;
         }
 
@@ -738,6 +811,8 @@ namespace asharia::editor {
                   << ", texture frames: " << viewportHost.textureFramesSubmitted()
                   << ", input frames: " << runResult->inputStats.capturedFrames
                   << ", scene input reports: " << runResult->inputStats.sceneViewReports
+                  << ", shortcut frames: " << runResult->shortcutStats.evaluatedFrames
+                  << ", shortcut invocations: " << runResult->shortcutStats.shortcutInvocations
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         if (isViewportResizeSmokeMode(mode)) {

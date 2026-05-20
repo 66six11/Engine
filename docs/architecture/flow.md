@@ -360,6 +360,7 @@ sequenceDiagram
     participant FrameLoop as VulkanFrameLoop
     participant ImGui as ImGuiRuntime
     participant Input as EditorInputRouter
+    participant Shortcuts as EditorShortcutRouter
     participant Panels as EditorPanelRegistry
     participant Viewport as EditorViewportCoordinator
     participant RendererVk as BasicFullscreenTextureRenderer
@@ -380,6 +381,8 @@ sequenceDiagram
         Panels->>Viewport: requestViewport(Scene View extent)
         Panels->>Input: report Scene View hover/focus
         Main->>Input: finalizeFrame
+        Main->>Shortcuts: beginFrame(input snapshot)
+        Shortcuts->>Panels: invoke action ids through EditorActionRegistry
         Panels->>Viewport: acquireViewportTextureForDraw(panel id)
         Viewport->>TextureRegistry: acquire latest completed ImTextureID
         Main->>ImGui: Render

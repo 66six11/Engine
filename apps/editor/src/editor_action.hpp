@@ -24,6 +24,7 @@ namespace asharia::editor {
     };
 
     using EditorActionCallback = std::function<void(EditorContext&)>;
+    using EditorActionVisitor = std::function<void(const EditorActionDesc&)>;
 
     class EditorActionRegistry {
     public:
@@ -35,6 +36,7 @@ namespace asharia::editor {
         [[nodiscard]] std::size_t actionCount() const;
         [[nodiscard]] std::size_t enabledActionCount() const;
         [[nodiscard]] std::uint64_t invokeCount(std::string_view actionId) const;
+        void visitActions(const EditorActionVisitor& visitor) const;
 
     private:
         struct ActionEntry {

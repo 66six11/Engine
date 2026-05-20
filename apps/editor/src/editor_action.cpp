@@ -86,6 +86,15 @@ namespace asharia::editor {
         return entry->invokeCount;
     }
 
+    void EditorActionRegistry::visitActions(const EditorActionVisitor& visitor) const {
+        if (!visitor) {
+            return;
+        }
+        for (const ActionEntry& entry : actions_) {
+            visitor(entry.desc);
+        }
+    }
+
     EditorActionRegistry::ActionEntry*
     EditorActionRegistry::findActionEntry(std::string_view actionId) {
         const auto found = std::ranges::find_if(actions_, [actionId](const ActionEntry& entry) {

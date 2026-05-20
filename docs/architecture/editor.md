@@ -3,7 +3,7 @@
 更新日期：2026-05-20
 
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
-integration、panel/action/event、Scene View viewport、ImGui texture registry 和验证入口。
+integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
 阶段拆分见 `docs/planning/editor-development-plan.md`；脚本扩展和 C++/脚本协作边界见
 `docs/architecture/editor-ui-scripting.md`。
 
@@ -21,6 +21,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 - 提供可启动、可 smoke 的 ImGui shell。
 - 用 panel/action/event registry 固化 editor UI 状态流。
 - 让 Scene View 成为 RenderView sampled output 的真实消费者。
+- 让菜单和快捷键通过同一套 action registry 触发 editor 命令。
 - 让 ImGui texture descriptor lifetime 留在 editor integration 层。
 - 保持 panel 代码不直接录制 Vulkan commands。
 
@@ -55,6 +56,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
 | `editor_context` | references to current editor services passed to actions | GPU resources、long-lived document ownership |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
+| `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
 | `editor_viewport` | backend-neutral viewport request/result structs and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
 | `editor_viewport_coordinator` | viewport request collection、RenderView recording bridge、pending/presented/retired viewport targets | panel widgets、ImGui backend lifecycle |
 | `imgui_texture_registry` | `ImTextureID` / descriptor registration and delayed descriptor retirement | `VulkanRenderTarget`、`VkImage`、`VkImageView` ownership |
@@ -101,6 +103,8 @@ eventQueue.clear()
 draw dockspace and main menu
 panelRegistry.drawPanels(frameContext)
 inputRouter.finalizeFrame()
+shortcutRouter.beginFrame(inputRouter.snapshot())
+shortcutRouter.routeImGuiShortcuts(actionRegistry, editorContext)
 
 ImGui::Render()
 
@@ -196,6 +200,7 @@ planned but unavailable, so menus and diagnostics stay stable.
 Action rules:
 
 - Use stable action ids such as `view.scene-view`.
+- Keep `shortcut` strings in action descriptors; `EditorShortcutRouter` is the only per-frame ImGui shortcut poller.
 - Emit `ActionInvoked` through the event queue.
 - 未来状态修改必须通过 command/transaction services。
 
@@ -204,8 +209,12 @@ Action rules:
 `EditorInputRouter` 是 editor host 的输入归属事实源。它当前记录 ImGui capture flags、
 Scene View hover/focus state、`sceneViewCanReceiveMouse` 和 `shortcutsEnabled`。
 
-后续 viewport camera、gizmo、selection picking 和 shortcut routing 都应先消费 input router snapshot，
-不要在各自模块里重新读取全局 ImGui/GLFW 状态。
+`EditorShortcutRouter` 消费 input router snapshot。它只在 `shortcutsEnabled` 为 true 时把
+registered action shortcuts 转为 ImGui key chord，并调用 `EditorActionRegistry::invoke()`。
+菜单、快捷键和未来 command palette 必须共享 action id，不要各自实现命令语义。
+
+后续 viewport camera、gizmo 和 selection picking 也应先消费 input router snapshot，不要在各自模块里
+重新读取全局 ImGui/GLFW 状态。
 
 ### Viewports 扩展
 
