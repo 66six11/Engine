@@ -683,11 +683,11 @@ Validation:
 
 ### 20.1 Scene Object Identity
 
-Status: Blocked.
+Status: Complete.
 
 Depends on:
 
-- `scene-core` object id and transform baseline.
+- Complete: `packages/scene-core` now owns the runtime `EntityId` and local transform baseline.
 
 Scope:
 
@@ -696,7 +696,10 @@ Scope:
 
 Validation:
 
-- Selection can survive object movement and reject deleted ids.
+- `asharia-scene-core-smoke-tests` covers create/destroy, stale id rejection and transform movement keeping
+  `EntityId` stable.
+- `asharia::scene_core` links only `asharia::core`; editor, renderer, ImGui, GLFW and Vulkan stay out of the
+  scene baseline.
 
 ### 20.2 Editor-core Extraction Point
 
@@ -964,9 +967,9 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `feat: add scene object identity baseline`
+1. `feat: add editor selection model`
 
-Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
+Create `packages/editor-core` only with selection or transaction state that gives it a real backend-neutral owner.
 
 ## Non-goals
 
