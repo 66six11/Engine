@@ -1,0 +1,13 @@
+{
+  "name": "com.asharia.asset-core",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Asset Core",
+  "description": "Stable asset identity, type IDs, and asset pipeline data model primitives.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-asset-core"],
+  "testTargets": ["asharia-asset-core-smoke-tests"],
+  "targetDependencies": {
+    "asharia-asset-core": ["asharia-core"],
+    "asharia-asset-core-smoke-tests": ["asharia-asset-core"]
+  }
+}

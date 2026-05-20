@@ -30,6 +30,7 @@ AshariaEngine/
     platform/
   packages/
     archive/
+    asset-core/
     cpp-binding/
     persistence/
     profiling/
@@ -48,9 +49,8 @@ AshariaEngine/
     count-code-lines.ps1
 ```
 
-后续可能新增 `tests/`、`package-registry/`、`packages/asset-core/`、`packages/scene-core/`、
-`packages/editor-core/`、`packages/input/` 等目录，但新增前应先明确 package 边界、CMake target
-关系和文档归属。
+后续可能新增 `tests/`、`package-registry/`、`packages/scene-core/`、`packages/editor-core/`、
+`packages/input/` 等目录，但新增前应先明确 package 边界、CMake target 关系和文档归属。
 
 ## 变更策略
 

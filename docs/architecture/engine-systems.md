@@ -22,7 +22,7 @@ MVP 的实现清单，而是避免后续 asset、material、editor、scene 和 s
 | 系统 | 必须提前决定的边界 | 当前建议 | 暂不做 |
 | --- | --- | --- | --- |
 | Schema 与持久化 | 稳定 type/field id、typed metadata、C++ binding、archive value、版本和迁移规则。 | 先支持 POD/resource/component 配置；schema/persistence 用于 inspector、asset metadata、script binding 和 scene save/load。 | 不做全局 UObject/GC 宇宙，不强迫所有 C++ 对象反射化。 |
-| Asset pipeline | source asset、import settings、product asset、cache、依赖图、GUID、热重载。 | 建议新增 `asset-core` 时使用 `AssetGuid`、`AssetHandle<T>`、importer、product hash 和 dependency graph。 | 不让 runtime 直接依赖源文件路径；不在当前 renderer MVP 引入完整 AssetDatabase。 |
+| Asset pipeline | source asset、import settings、product asset、cache、依赖图、GUID、热重载。 | `asset-core` 已提供 `AssetGuid`、`AssetHandle<T>`、`AssetReference` 和最小 metadata model；importer、product hash/cache 和 dependency graph 继续按资产专项文档推进。 | 不让 runtime 直接依赖源文件路径；不在当前 renderer MVP 引入完整 AssetDatabase。 |
 | Scene/World/Entity | 场景文件存储、运行时对象拥有者、transform hierarchy、component 数据布局、prefab/instance override。 | editor 可用对象树，runtime hot path 用 data-oriented arrays；渲染只消费 frame snapshot。 | 不让 renderer callback 捕获可变 scene object；不提前定完整 ECS。 |
 | Resource lifetime | CPU handle、GPU allocation、upload、retirement、hot reload、fallback resource。 | 用 generation handle、async load state、deferred destruction queue 和 frame retirement；GPU resource 创建/销毁只走 RHI owner。 | 不在析构函数里假设 GPU 已经不用；不散落 `vkDestroy*` 到 renderer feature。 |
 | Frame loop/time | OS event、input、fixed update、game/script update、physics、animation、render packet、submit/present、cleanup 顺序。 | 在 `docs/architecture/frame-loop-threading.md` 固化单线程基线和后续 RenderThread 分阶段方案。 | 不让脚本 VM、asset import 或 editor operation 随机插入 command recording 阶段。 |
@@ -50,7 +50,7 @@ packages/
   renderer-basic-vulkan
   shader-slang         shader build/reflection/SPIR-V validation
   profiling            CPU/GPU/profile data model
-  asset-core           future GUID/import/product/cache handles
+  asset-core           GUID/type/handle/reference metadata baseline
   schema               future type/field/version metadata
   archive              future ArchiveValue / JSON IO facade
   cpp-binding          future C++ object binding

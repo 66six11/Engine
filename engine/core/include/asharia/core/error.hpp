@@ -11,6 +11,7 @@ namespace asharia {
         Vulkan,
         Shader,
         RenderGraph,
+        Asset,
         Reflection,
         Serialization,
         Schema,

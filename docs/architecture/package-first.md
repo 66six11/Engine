@@ -28,6 +28,7 @@ AshariaEngine/
     rendergraph/
     schema/
     archive/
+    asset-core/
     cpp-binding/
     persistence/
     reflection/
@@ -47,7 +48,6 @@ AshariaEngine/
 ```text
 AshariaEngine/
   packages/
-    asset-core/
     scene-core/
     editor-core/
     input/
@@ -83,7 +83,7 @@ package 用来承载可选能力：
 - `renderer-basic` 提供后端无关 renderer contract 和共享 RenderGraph pass schema。
 - `renderer-basic-vulkan` target 负责 Vulkan 命令录制、descriptor/pipeline/resource 绑定和 sample renderer。
 - `shader-slang` 提供 Slang 编译、SPIR-V validation、metadata 和 reflection JSON。
-- `asset-core` 未来提供 GUID、import settings、product/cache key、dependency 和 runtime-safe asset handle。
+- `asset-core` 提供最小资产身份、asset type、runtime-safe handle/reference 和 source metadata model；product/cache key、dependency、catalog 和 metadata IO 继续按 `docs/systems/asset-architecture.md` 分阶段补齐。
 - `editor-core` 未来提供 editor service、selection、inspector、package browser。
 
 ## Package Manifest
