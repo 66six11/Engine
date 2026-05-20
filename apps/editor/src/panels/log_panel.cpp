@@ -5,6 +5,15 @@
 #include <string>
 
 #include "editor_event.hpp"
+#include "editor_input_router.hpp"
+
+namespace {
+
+    const char* yesNo(bool value) {
+        return value ? "yes" : "no";
+    }
+
+} // namespace
 
 namespace asharia::editor {
 
@@ -17,8 +26,20 @@ namespace asharia::editor {
 
         const std::string modeText =
             std::string{"Mode: "} + (context.smokeMode ? "smoke" : "interactive");
+        const EditorInputSnapshot& input = context.inputRouter.snapshot();
+        const std::string inputCaptureText =
+            "Input capture: mouse=" + std::string{yesNo(input.imguiWantsMouse)} +
+            ", keyboard=" + yesNo(input.imguiWantsKeyboard) +
+            ", text=" + yesNo(input.imguiWantsTextInput);
+        const std::string sceneViewInputText =
+            "Scene View input: hovered=" + std::string{yesNo(input.sceneViewHovered)} +
+            ", focused=" + yesNo(input.sceneViewFocused) +
+            ", accepts mouse=" + yesNo(input.sceneViewCanReceiveMouse) +
+            ", shortcuts=" + yesNo(input.shortcutsEnabled);
         ImGui::TextUnformatted("Editor shell initialized with GLFW + Vulkan + Dear ImGui.");
         ImGui::TextUnformatted(modeText.c_str());
+        ImGui::TextUnformatted(inputCaptureText.c_str());
+        ImGui::TextUnformatted(sceneViewInputText.c_str());
         ImGui::Separator();
         ImGui::TextUnformatted("Recent editor events:");
         const std::span<const EditorDiagnosticEvent> recentEvents =

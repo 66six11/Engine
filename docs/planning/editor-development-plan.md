@@ -5,8 +5,8 @@
 本文是 Asharia Editor 的独立开发文档，覆盖 editor host、ImGui integration、panel/action/event、
 viewport texture registry、输入路由和后续阶段拆分。全局阶段顺序仍以
 `docs/planning/next-development-plan.md` 为准；本文细化 editor 相关阶段，不改变全局阶段编号。
-Editor UI 的 C++ 主实现、脚本扩展面、transaction 和 safe point 边界见
-`docs/architecture/editor-ui-scripting.md`。
+当前 editor 架构、模块所有权和 frame flow 见 `docs/architecture/editor.md`。Editor UI 的 C++
+主实现、脚本扩展面、transaction 和 safe point 边界见 `docs/architecture/editor-ui-scripting.md`。
 
 ## 目标
 
@@ -100,6 +100,7 @@ apps/editor/src/
 | `editor_action` | action descriptors, callbacks, invocation, shortcut metadata | menu widget code |
 | `editor_event` | small typed queue for editor facts | global EventBus semantics |
 | `editor_panel` | panel descriptors, state, registry, singleton reuse | ImGui backend setup |
+| `editor_input_router` | ImGui capture snapshot, Scene View hover/focus state and derived input routing flags | raw GLFW callback ownership or camera/gizmo behavior |
 | `editor_viewport` | backend-neutral viewport request/result model | ImGui descriptor allocation or Vulkan command recording |
 | `editor_viewport_coordinator` | request collection, RenderView recording, render target lifetime, texture registry publication | panel widgets or ImGui backend setup |
 | `imgui_runtime` | ImGui context and GLFW/Vulkan backend lifecycle | panel registry or editor state |
@@ -385,7 +386,7 @@ Every sub-stage must:
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
-| 17 | 17.1-17.5 Done, 17.6 Next | In progress | Convert Scene View viewport to request/result + delayed texture registry. |
+| 17 | 17.1-17.6 Done | Done | Convert Scene View viewport to request/result + delayed texture registry and input capture snapshot. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
@@ -559,7 +560,7 @@ Validation:
   instead of Vulkan types.
 - `SceneViewPanel::draw()` submits `EditorViewportRequest` and draws the last completed texture if available, otherwise
   reserves the requested content space.
-- `EditorViewportHost` resets requests at the start of each ImGui frame and records only the current frame's submitted
+- `EditorViewportCoordinator` resets requests at the start of each ImGui frame and records only the current frame's submitted
   request.
 
 ### 17.2 Texture Registry With Delayed Retirement
@@ -578,7 +579,7 @@ Validation:
 - Descriptor pool capacity is documented and checked against expected live descriptors.
 - Implemented as `apps/editor/src/imgui_texture_registry.hpp/.cpp`; the registry wraps `ImGui_ImplVulkan_AddTexture()`
   and `ImGui_ImplVulkan_RemoveTexture()`, owns the descriptor set lifetime and keeps sampled image/view ownership in
-  `EditorViewportHost`.
+  `EditorViewportCoordinator`.
 - `acquireForDraw()` marks the active descriptor with the current frame's expected submitted epoch; replacing or retiring
   the descriptor moves it to a retired list and `beginFrame(completedFrameEpoch)` removes it only after completion.
 - `--smoke-editor-viewport` checks peak live viewport texture descriptors against the editor viewport descriptor budget.
@@ -641,7 +642,7 @@ Validation:
 
 ### 17.6 Input Capture Skeleton
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -649,11 +650,15 @@ Scope:
 - Gate viewport camera/gizmo placeholders and shortcuts using `WantCaptureMouse`, `WantCaptureKeyboard`,
   focused panel and hovered viewport.
 - Keep GLFW backend callback installation unchanged until raw input is needed.
+- Current implementation adds `apps/editor/src/editor_input_router.hpp/.cpp`, stores an input router reference in
+  `EditorFrameContext`, reports Scene View hover/focus from `SceneViewPanel`, and displays capture diagnostics in
+  `LogPanel`.
 
 Validation:
 
 - UI-focused keyboard/mouse does not trigger viewport shortcut placeholders.
 - Viewport-focused input path is visible in diagnostics/log panel.
+- `--smoke-editor-shell` validates that input frames are captured and Scene View reports input state.
 
 ## Phase 20: Scene Object And Selection Baseline
 
@@ -940,7 +945,7 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `refactor: add editor input capture skeleton`
+1. `feat: add editor shortcut routing baseline`
 
 Do not create `packages/editor-core` until at least selection or transaction gives it real backend-neutral state to own.
 

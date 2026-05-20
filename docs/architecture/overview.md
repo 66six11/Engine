@@ -21,8 +21,10 @@ runtime app、editor 和后续工具按需引入能力。
   barrier planner、transient resource 生命周期、执行器。
 - `packages/renderer-basic`：frame orchestration、和场景无关的渲染 pass、present。
 - `packages/shader-slang`：shader build product、SPIR-V 加载、validation hook、未来 reflection。
-- `apps/sample-viewer`：可执行 sample host。
-- `apps/editor`：未来编辑器 host，只组合 packages，不拥有 renderer 核心实现。
+- `apps/sample-viewer`：可执行 sample host 和 runtime smoke harness。
+- `apps/editor`：Dear ImGui editor host。它组合 `window-glfw`、`rhi-vulkan`、
+  `renderer_basic_vulkan` 和 ImGui backend，拥有 editor shell、panel/action/event state、
+  viewport request coordination 和 ImGui texture registration；它不拥有 renderer 核心实现。
 
 ## 所有权模型
 
@@ -35,15 +37,20 @@ runtime app、editor 和后续工具按需引入能力。
 - `RenderGraph` 拥有单帧 pass declaration。持久 GPU resource 由 renderer 或 resource
   manager 拥有，再 import 到 graph。
 - `CompiledGraph` 拥有单帧解析后的执行计划和 barriers。
+- `apps/editor` 拥有 editor-only UI state、ImGui context/backend lifecycle、viewport texture
+  descriptor registration 和 delayed retirement。Scene View panel 只提交 backend-neutral
+  `EditorViewportRequest`；`EditorViewportCoordinator` 才把请求转换成 Vulkan sampled target
+  recording 和 ImGui texture publication。
 
 销毁顺序：
 
-1. shutdown 时等待 GPU idle。
-2. 销毁 frame resources。
-3. 销毁 renderer 拥有的 resource 和 pipeline。
-4. 销毁 swapchain。
-5. 销毁 allocator-backed resources。
-6. 销毁 allocator、device、surface、debug messenger、instance。
+1. shutdown 时等待 GPU idle 或 queue idle，仅限 teardown、swapchain recreate 或已注释的调试路径。
+2. 销毁 editor ImGui descriptors、viewport render targets 和 panel/runtime integration state。
+3. 销毁 frame resources。
+4. 销毁 renderer 拥有的 resource 和 pipeline。
+5. 销毁 swapchain。
+6. 销毁 allocator-backed resources。
+7. 销毁 allocator、device、surface、debug messenger、instance。
 
 ## Render Graph 数据模型
 

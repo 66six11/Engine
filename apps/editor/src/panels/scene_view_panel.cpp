@@ -5,6 +5,8 @@
 #include <imgui.h>
 #include <string>
 
+#include "editor_input_router.hpp"
+
 namespace {
 
     asharia::editor::EditorExtent2D viewportExtentFromAvailableSize(ImVec2 available) {
@@ -39,8 +41,6 @@ namespace asharia::editor {
     }
 
     void SceneViewPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
-        static_cast<void>(state);
-
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();
         viewportSize.y =
             std::max(1.0F, viewportSize.y - (ImGui::GetTextLineHeightWithSpacing() * 3.0F));
@@ -60,6 +60,10 @@ namespace asharia::editor {
             ImGui::Dummy(ImVec2{static_cast<float>(viewportExtent.width),
                                 static_cast<float>(viewportExtent.height)});
         }
+        context.inputRouter.reportSceneView(EditorSceneViewInputState{
+            .hovered = ImGui::IsItemHovered(),
+            .focused = state.focused,
+        });
 
         const std::string swapchainText =
             "Swapchain: " + std::to_string(context.swapchainExtent.width) + "x" +

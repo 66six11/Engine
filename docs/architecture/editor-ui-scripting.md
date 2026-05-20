@@ -7,7 +7,8 @@
 schema-driven view model 扩展 editor，不能直接控制 ImGui frame loop、Vulkan backend 或
 viewport texture lifetime。
 
-本文是架构约束，不替代 `docs/planning/editor-development-plan.md` 的阶段拆分，也不替代
+本文是脚本扩展边界约束，不替代 `docs/architecture/editor.md` 的当前 editor 架构说明，
+不替代 `docs/planning/editor-development-plan.md` 的阶段拆分，也不替代
 `docs/systems/scripting.md` 的脚本系统 ABI 设计。
 
 ## 目标

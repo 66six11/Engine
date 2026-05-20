@@ -47,6 +47,7 @@ add_executable(asharia-editor
     src/editor_app.cpp
     src/editor_context.cpp
     src/editor_event.cpp
+    src/editor_input_router.cpp
     src/editor_panel.cpp
     src/editor_viewport.cpp
     src/editor_viewport_coordinator.cpp

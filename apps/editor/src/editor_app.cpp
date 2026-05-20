@@ -29,6 +29,7 @@
 
 #include "editor_action.hpp"
 #include "editor_context.hpp"
+#include "editor_input_router.hpp"
 #include "editor_panel.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
@@ -111,6 +112,7 @@ namespace {
         VkExtent2D viewportExtentBeforeResize{};
         VkExtent2D viewportExtentAfterResize{};
         std::uint64_t textureFramesBeforeResize{};
+        asharia::editor::EditorInputRouterStats inputStats;
     };
 
     struct EditorViewportResizeSmokeState {
@@ -188,6 +190,23 @@ namespace {
         if (viewportStats.renderTargetsRetired == 0 || viewportStats.renderTargetsDeferred == 0) {
             asharia::logError("Editor viewport resize smoke did not defer retired viewport "
                               "render target destruction.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateInputRouterSmoke(asharia::editor::EditorRunMode mode,
+                                                const EditorSmokeRunResult& runResult) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+        if (runResult.inputStats.capturedFrames <
+            static_cast<std::uint64_t>(runResult.renderedFrames)) {
+            asharia::logError("Editor input router smoke did not capture every rendered frame.");
+            return false;
+        }
+        if (runResult.inputStats.sceneViewReports == 0) {
+            asharia::logError("Editor input router smoke did not receive Scene View input state.");
             return false;
         }
         return true;
@@ -380,6 +399,7 @@ namespace {
                   asharia::editor::EditorRunMode mode) {
         const bool smokeMode = isSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
+        asharia::editor::EditorInputRouter inputRouter;
         int renderedFrames = 0;
         int attempts = 0;
         while (!window.shouldClose()) {
@@ -400,6 +420,12 @@ namespace {
             ImGui_ImplVulkan_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
+            const ImGuiIO& imguiIo = ImGui::GetIO();
+            inputRouter.beginFrame(asharia::editor::EditorInputCapture{
+                .imguiWantsMouse = imguiIo.WantCaptureMouse,
+                .imguiWantsKeyboard = imguiIo.WantCaptureKeyboard,
+                .imguiWantsTextInput = imguiIo.WantTextInput,
+            });
             viewportHost.beginImguiFrame(asharia::editor::editorViewportFrameEpochs(frameLoop));
             panelRegistry.clearLifecycleEvents();
             editorContext.eventQueue().clear();
@@ -409,9 +435,11 @@ namespace {
                 .smokeMode = smokeMode,
                 .eventQueue = editorContext.eventQueue(),
                 .diagnosticsLog = editorContext.diagnosticsLog(),
+                .inputRouter = inputRouter,
                 .viewportHost = viewportHost,
             };
             buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
+            inputRouter.finalizeFrame();
             ImGui::Render();
 
             auto rendered = renderEditorFrame(frameLoop, renderer, viewportHost);
@@ -443,6 +471,7 @@ namespace {
             .viewportExtentBeforeResize = resizeSmoke.extentBeforeResize,
             .viewportExtentAfterResize = resizeSmoke.extentAfterResize,
             .textureFramesBeforeResize = resizeSmoke.textureFramesBeforeResize,
+            .inputStats = inputRouter.stats(),
         };
     }
 
@@ -694,7 +723,8 @@ namespace asharia::editor {
             viewportHost.textureRegistryStats();
         if (!validateViewportSmokePresentation(mode, *runResult, viewportHost,
                                                textureRegistryStats) ||
-            !validateViewportResizeSmoke(mode, *runResult, viewportStats, textureRegistryStats)) {
+            !validateViewportResizeSmoke(mode, *runResult, viewportStats, textureRegistryStats) ||
+            !validateInputRouterSmoke(mode, *runResult)) {
             return EXIT_FAILURE;
         }
 
@@ -706,6 +736,8 @@ namespace asharia::editor {
         std::cout << "Editor shell frames: " << runResult->renderedFrames
                   << ", viewport frames: " << viewportHost.viewportFramesRendered()
                   << ", texture frames: " << viewportHost.textureFramesSubmitted()
+                  << ", input frames: " << runResult->inputStats.capturedFrames
+                  << ", scene input reports: " << runResult->inputStats.sceneViewReports
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         if (isViewportResizeSmokeMode(mode)) {

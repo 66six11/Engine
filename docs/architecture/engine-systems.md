@@ -32,14 +32,14 @@ MVP 的实现清单，而是避免后续 asset、material、editor、scene 和 s
 | Material/shader/pipeline | shader program、variant、material layout、material instance、pipeline key、descriptor binding model、render queue/pass tag。 | 在 Slang reflection 和 RenderGraph typed pass 稳定后，建立 material layout 与 pipeline key；pass type 仍表示执行模型，不表示业务 shader tag。 | 不提前复制 Unity ShaderLab 或 Unreal Material Graph；bindless 暂缓。 |
 | Diagnostics | CPU scope、GPU timestamp、asset trace、memory report、validation report、crash dump、structured log。 | `packages/profiling` 继续作为只读观测底座；后续 GPU timestamp 必须延迟读回。 | 不为了当前帧面板阻塞 GPU；不把 profiler 绑死到 renderer 内部对象。 |
 | Build/cook/package | source build、asset cook、runtime product、platform capability、shipping config。 | Conan/CMake 继续只管代码依赖；资产 cook 以后独立为 tool/package 流程。 | 不提交 generated product；不让 editor-only 数据进入 runtime build。 |
-| Testing/automation | smoke、benchmark、encoding、diff check、render capture、asset import regression。 | 维持 `asharia-sample-viewer.exe --smoke-*` 入口；每新增系统先有 CLI/smoke，再谈 editor UI。 | 不等完整测试框架才验证；不把人工截图当唯一回归证据。 |
+| Testing/automation | smoke、benchmark、encoding、diff check、render capture、asset import regression。 | 维持 `asharia-sample-viewer.exe --smoke-*` 和 `asharia-editor.exe --smoke-editor-*` 入口；每新增系统先有 CLI/smoke，再谈手工 editor UI 验证。 | 不等完整测试框架才验证；不把人工截图当唯一回归证据。 |
 
 ## 推荐分层
 
 ```text
 apps/
   sample-viewer        current smoke host
-  editor               future editor host
+  editor               current Dear ImGui editor host
 engine/
   core                 logging/result/path/assert/type-id/minimal containers
   platform             OS abstraction and app loop hooks

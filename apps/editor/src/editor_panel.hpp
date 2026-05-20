@@ -18,6 +18,7 @@ namespace asharia::editor {
 
     class EditorDiagnosticsLog;
     class EditorEventQueue;
+    class EditorInputRouter;
 
     struct EditorPanelDesc {
         EditorId id;
@@ -39,6 +40,7 @@ namespace asharia::editor {
         bool smokeMode{};
         EditorEventQueue& eventQueue;
         EditorDiagnosticsLog& diagnosticsLog;
+        EditorInputRouter& inputRouter;
         EditorViewportPanelHost& viewportHost;
     };
 

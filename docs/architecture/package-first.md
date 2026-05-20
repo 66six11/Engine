@@ -159,12 +159,17 @@ packages/rendergraph/
 
 ## Editor 兼容性
 
-未来 editor 不应该是 engine 的“主人”。它只是一个 host：
+当前 `apps/editor` 已经是 Dear ImGui host。它不是 engine 的“主人”，只是组合
+runtime/rendering packages 的 editor-only executable：
 
-- editor 加载 package metadata。
-- editor 读取 asset database。
-- editor 通过 renderer package 提供的 public API 预览场景。
-- editor 的 UI、inspector、importer、scene authoring 都放在 editor packages。
+- 当前 editor 负责 ImGui runtime、dockspace、main menu、panel/action/event state、Scene View
+  viewport request 和 ImGui texture descriptor registration。
+- 当前 editor 通过 `renderer_basic_vulkan` 输出 sampled RenderView，并通过 `rhi-vulkan`
+  frame loop 提交/present；panel 代码不录制 Vulkan commands。
+- 未来 editor 加载 package metadata、读取 asset database，并通过 renderer package 提供的
+  public API 预览场景。
+- 未来 editor 的 inspector、importer、scene authoring 放在 editor-only packages 或
+  `apps/editor` integration 层。
 - ImGui context、ImGui Vulkan backend 和 editor texture registration 属于 editor host/integration
   层；`editor-core` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - Editor UI 的 C++ / 脚本协作边界以 [editor-ui-scripting.md](editor-ui-scripting.md) 为准；脚本不拥有
@@ -173,12 +178,14 @@ packages/rendergraph/
 
 ## MVP 取舍
 
-第一阶段可以不实现完整 package manager，但目录和 target 边界必须提前按 package-first
-组织。也就是说，MVP 仍然只跑一个窗口和三角形，但代码位置应该已经符合未来包化方向。
+当前仍不实现完整 package manager，但目录和 target 边界已经按 package-first 组织。
+Host 可以继续扩展 smoke 和 editor integration；新增能力必须先放进正确 package 或
+app integration 层，不能为了方便把 package/private 实现直接并进 app。
 
-第一阶段必须做到：
+当前已经落地：
 
-- `apps/sample-viewer` 是唯一 executable。
+- `apps/sample-viewer` 是 sample host 和 runtime smoke harness。
+- `apps/editor` 是 editor host 和 editor smoke harness。
 - Vulkan 代码位于 `packages/rhi-vulkan`。
 - 性能数据底座位于 `packages/profiling`，不依赖 Vulkan、RenderGraph 或 editor UI。
 - render graph 位于 `packages/rendergraph`。

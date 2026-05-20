@@ -13,6 +13,7 @@
 ```mermaid
 flowchart TD
     App["apps/sample-viewer<br/>MVP host + smoke harness"]
+    EditorApp["apps/editor<br/>Dear ImGui host + editor smoke harness"]
     Core["engine/core"]
     Platform["engine/platform"]
     Window["packages/window-glfw"]
@@ -23,6 +24,7 @@ flowchart TD
     Renderer["packages/renderer-basic<br/>asharia::renderer_basic"]
     RendererVk["packages/renderer-basic<br/>asharia::renderer_basic_vulkan"]
     Shader["packages/shader-slang"]
+    ImGui["Dear ImGui<br/>Conan package + GLFW/Vulkan backends"]
 
     Platform --> Core
     Window --> Core
@@ -45,6 +47,11 @@ flowchart TD
     App -->|smoke validation only| RhiVkRG
     App -->|CPU-only benchmark schemas| Renderer
     App -->|selected sample renderer| RendererVk
+    EditorApp --> Core
+    EditorApp --> Window
+    EditorApp --> RhiVk
+    EditorApp --> RendererVk
+    EditorApp --> ImGui
 ```
 
 当前约束：
@@ -58,6 +65,11 @@ flowchart TD
   `VulkanFrameLoop`。这是当前 MVP 事实，不是目标产品边界；后续应收敛到 runtime/engine host。
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把
   Vulkan barrier/layout 细节扩散到 app 层。
+- `apps/editor` 当前承担 editor host 和 editor smoke harness。它可以直接链接 ImGui、`window-glfw`、
+  `rhi-vulkan` 和 `renderer_basic_vulkan`，因为这些都属于 host integration；未来
+  `packages/editor-core` 只能保留 backend-neutral editor state。
+- Editor panels 只通过 `EditorFrameContext`、`EditorPanelRegistry` 和 `EditorViewportPanelHost`
+  消费服务。Scene View panel 不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
 
 ## 当前架构总览
 
@@ -68,6 +80,7 @@ GPU submit 的方向。
 flowchart TB
     subgraph AppLayer["Application / host"]
         SampleViewer["sample-viewer<br/>CLI smoke / window / context wiring"]
+        EditorHost["editor<br/>ImGui shell / panel registry / viewport host"]
         FrameCallback["VulkanFrameRecordCallback<br/>per-frame recording hook"]
     end
 
@@ -87,9 +100,16 @@ flowchart TB
         RhiVk["rhi_vulkan<br/>context / frame loop / swapchain / VMA resources<br/>pipelines / descriptors / command buffers"]
     end
 
+    subgraph GuiLayer["Editor integration"]
+        ImGuiRuntime["Dear ImGui<br/>GLFW backend / Vulkan backend / texture descriptors"]
+    end
+
     SampleViewer --> FrameCallback
     SampleViewer --> Profiling
     SampleViewer --> RendererBasicVk
+    EditorHost --> ImGuiRuntime
+    EditorHost --> RendererBasicVk
+    EditorHost --> RhiVk
     RendererBasic --> RenderGraph
     RendererBasic --> ShaderSlang
     RendererBasicVk --> RendererBasic
@@ -108,6 +128,9 @@ flowchart TB
 - Vulkan layout/stage/access 翻译只在 `rhi_vulkan_rendergraph`，真实 command buffer、descriptor、pipeline、
   swapchain 和 VMA 生命周期只在 Vulkan 包或 `renderer_basic_vulkan`。
 - `sample-viewer` 是 host 和 smoke harness；它可以选择 smoke 路径，但不应该内联具体 renderer 的 Vulkan 录制细节。
+- `apps/editor` 是 editor host 和 smoke harness；它拥有 ImGui backend lifecycle、panel/action/event
+  state 和 ImGui texture descriptor lifetime。它可以在 host integration 层录制 ImGui draw data
+  到 swapchain，但 editor panel 不能录制 Vulkan commands。
 
 ## 启动与 Context 流程
 
@@ -321,6 +344,75 @@ sequenceDiagram
 - `RenderGraph` 产出后端无关计划；它不直接调用 Vulkan。
 - `rhi_vulkan_rendergraph` 把 compiled transition 翻译为 Vulkan barrier，再由调用方用真实 image binding 录制。
 
+## Editor Host 当前流程
+
+`apps/editor` 是当前 editor shell 和 editor smoke 的真实入口。它复用 `VulkanContext` /
+`VulkanFrameLoop`，通过 `BasicFullscreenTextureRenderer::recordViewFrame()` 生成 Scene View sampled
+target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Panel 只提交请求和消费 texture id，不持有
+Vulkan image、descriptor set 或 command buffer。完整 editor 架构见 `docs/architecture/editor.md`。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Main as asharia-editor runEditor
+    participant Window as GlfwWindow
+    participant Context as VulkanContext
+    participant FrameLoop as VulkanFrameLoop
+    participant ImGui as ImGuiRuntime
+    participant Input as EditorInputRouter
+    participant Panels as EditorPanelRegistry
+    participant Viewport as EditorViewportCoordinator
+    participant RendererVk as BasicFullscreenTextureRenderer
+    participant TextureRegistry as ImGuiTextureRegistry
+    participant Vulkan as Vulkan API
+
+    Main->>Window: create editor window / poll events
+    Main->>Context: VulkanContext::create(required GLFW extensions)
+    Main->>FrameLoop: VulkanFrameLoop::create(context, framebuffer extent)
+    Main->>ImGui: create ImGui context + GLFW/Vulkan backends
+    Main->>RendererVk: create fullscreen sampled-target renderer
+    Main->>Viewport: create texture registry and viewport render target state
+    loop editor frame
+        Main->>ImGui: NewFrame
+        Main->>Input: beginFrame(ImGui capture flags)
+        Main->>Viewport: beginImguiFrame(completed/submitted epochs)
+        Main->>Panels: drawPanels(EditorFrameContext)
+        Panels->>Viewport: requestViewport(Scene View extent)
+        Panels->>Input: report Scene View hover/focus
+        Main->>Input: finalizeFrame
+        Panels->>Viewport: acquireViewportTextureForDraw(panel id)
+        Viewport->>TextureRegistry: acquire latest completed ImTextureID
+        Main->>ImGui: Render
+        Main->>FrameLoop: renderFrame(record callback)
+        FrameLoop->>Viewport: recordRequestedViews(frame, renderer)
+        Viewport->>RendererVk: recordViewFrame(sampled target)
+        Viewport->>TextureRegistry: registerOrUpdate(sampled image view)
+        FrameLoop->>Vulkan: record ImGui draw data / submit / present
+        Main->>Main: append diagnostics and clear frame-local events
+    end
+```
+
+当前约束：
+
+- `EditorViewportPanelHost` 是 panel-facing API；它只暴露 `EditorViewportRequest` 和
+  `EditorViewportResult`。
+- `EditorViewportCoordinator` 是 editor-side Vulkan bridge；它拥有 pending/presented/retired
+  viewport render targets，并通过 frame-loop deferred deletion 延迟释放旧 target。
+- `ImGuiTextureRegistry` 只拥有 ImGui descriptor lifetime，不拥有 `VulkanRenderTarget`、
+  `VkImage` 或 `VkImageView`。descriptor retirement 使用 frame epoch，避免 resize 后释放仍被
+  submitted ImGui draw data 引用的 descriptor。
+- `recordEditorImguiFrame()` 当前在 `apps/editor` host integration 层录制 ImGui swapchain pass。
+  这是 editor backend integration，不是 panel 或 renderer core 逻辑；若继续增长，应抽到
+  `imgui_runtime` 或单独的 editor ImGui pass module。
+
+Editor smoke 入口：
+
+```text
+asharia-editor --smoke-editor-shell
+asharia-editor --smoke-editor-viewport
+asharia-editor --smoke-editor-viewport-resize
+```
+
 ## 当前 Frame Loop 流程
 
 ```mermaid
@@ -472,8 +564,8 @@ flowchart TD
   和 readback buffer 校验。
 - `--smoke-offscreen-viewport` 已验证 editor viewport 的核心离屏路径：通用 `VulkanRenderTarget`
   持有的 color attachment image 独立尺寸、resize 后 deferred deletion、多帧复用、`recordViewFrame()`
-  写入 sampled target、sampled image descriptor 更新、renderer 输出可供未来 editor ImGui backend
-  注册的 sampled target，以及第二个 fullscreen composite graph 写回 swapchain。
+  写入 sampled target、sampled image descriptor 更新、renderer 输出可被当前 editor ImGui backend
+  注册为 texture 的 sampled target，以及第二个 fullscreen composite graph 写回 swapchain。
 - 无参数 sample viewer 已接入交互式 triangle 循环，并已手动验证 resize/minimize 后仍可恢复持续渲染。
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
   Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、

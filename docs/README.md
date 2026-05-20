@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `workflow/` | 日常工作流、构建、仓库维护工具、审查、独立 package 构建 | [build.md](workflow/build.md)、[technical-stack.md](workflow/technical-stack.md)、[review.md](workflow/review.md)、[package-standalone-build.md](workflow/package-standalone-build.md) |
 | `standards/` | 编码、命名、文本编码等稳定规则 | [coding.md](standards/coding.md)、[encoding.md](standards/encoding.md)、[naming.md](standards/naming.md) |
-| `architecture/` | 当前架构、真实流程、package 边界和线程边界 | [overview.md](architecture/overview.md)、[flow.md](architecture/flow.md)、[package-first.md](architecture/package-first.md)、[engine-systems.md](architecture/engine-systems.md)、[frame-loop-threading.md](architecture/frame-loop-threading.md)、[editor-ui-scripting.md](architecture/editor-ui-scripting.md) |
+| `architecture/` | 当前架构、真实流程、package 边界和线程边界 | [overview.md](architecture/overview.md)、[flow.md](architecture/flow.md)、[package-first.md](architecture/package-first.md)、[editor.md](architecture/editor.md)、[engine-systems.md](architecture/engine-systems.md)、[frame-loop-threading.md](architecture/frame-loop-threading.md)、[editor-ui-scripting.md](architecture/editor-ui-scripting.md) |
 | `rendergraph/` | RenderGraph MVP、RHI 边界和专项路线图 | [mvp.md](rendergraph/mvp.md)、[rhi-boundary.md](rendergraph/rhi-boundary.md)、[roadmap.md](rendergraph/roadmap.md) |
 | `systems/` | schema/持久化、资产、场景、脚本、性能诊断等系统设计 | [reflection-serialization.md](systems/reflection-serialization.md)、[reflection-serialization-plan.md](systems/reflection-serialization-plan.md)、[asset-architecture.md](systems/asset-architecture.md)、[scene-world.md](systems/scene-world.md)、[scripting.md](systems/scripting.md)、[performance-profiling.md](systems/performance-profiling.md) |
 | `planning/` | 项目管理、阶段顺序、Definition of Done、专项开发方案 | [project-management.md](planning/project-management.md)、[next-development-plan.md](planning/next-development-plan.md)、[editor-development-plan.md](planning/editor-development-plan.md) |
@@ -24,17 +24,18 @@
 4. [architecture/overview.md](architecture/overview.md) - 模块边界、所有权、生命周期和 RenderGraph 设计。
 5. [architecture/flow.md](architecture/flow.md) - 当前包依赖、启动流程、frame loop、RenderGraph/RHI 数据流。
 6. [rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md) - RenderGraph 与 Vulkan RHI 的职责边界。
-7. [planning/editor-development-plan.md](planning/editor-development-plan.md) - Editor host、ImGui、panel/action/event、viewport texture registry、输入路由和详细阶段拆分。
-8. [architecture/editor-ui-scripting.md](architecture/editor-ui-scripting.md) - Editor UI 的 C++ 主实现、脚本扩展面、transaction 和 safe point 边界。
-9. [workflow/review.md](workflow/review.md) - 每次审查、修复和提交前必须执行的门禁。
-10. [planning/next-development-plan.md](planning/next-development-plan.md) - 下一阶段 RenderTarget、RenderView、editor viewport、RenderGraph resource、asset/material 和 scene 路线。
+7. [architecture/editor.md](architecture/editor.md) - 当前 `apps/editor` 架构、模块所有权、frame flow、viewport/texture lifetime 和验证入口。
+8. [planning/editor-development-plan.md](planning/editor-development-plan.md) - Editor host、ImGui、panel/action/event、viewport texture registry、输入路由和详细阶段拆分。
+9. [architecture/editor-ui-scripting.md](architecture/editor-ui-scripting.md) - Editor UI 的 C++ 主实现、脚本扩展面、transaction 和 safe point 边界。
+10. [workflow/review.md](workflow/review.md) - 每次审查、修复和提交前必须执行的门禁。
+11. [planning/next-development-plan.md](planning/next-development-plan.md) - 下一阶段 RenderTarget、RenderView、editor viewport、RenderGraph resource、asset/material 和 scene 路线。
 
 ## 当前门禁状态
 
 - Scope：Windows 桌面端，Vulkan 1.4，C++23，GLFW，VMA，CMake，Conan，MSVC/ClangCL。
 - Research：已有官方资料索引；涉及最新 SDK、扩展、工具行为时仍需重新核对一手资料。
 - Design：已形成 package-first、RenderGraph/RHI 边界、frame loop 和 shader pipeline 初版设计。
-- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、transient image、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、draw list、MRT、descriptor layout、fullscreen texture、offscreen viewport、compute dispatch、deferred deletion 和无参数交互式 triangle viewer。
+- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、transient image、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、draw list、MRT、descriptor layout、fullscreen texture、offscreen viewport、compute dispatch、deferred deletion、无参数交互式 triangle viewer，以及 `asharia-editor` Dear ImGui host、Scene View sampled viewport 和 editor smokes。
 - Validation：提交前按 [workflow/review.md](workflow/review.md) 运行编码检查、构建、smoke 和 Vulkan/C++ 审查脚本。
 
 ## 文档维护规则
