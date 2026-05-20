@@ -389,7 +389,7 @@ Every sub-stage must:
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.5 | Blocked | Add Scene View grid, gizmo, selection outline and debug overlay. |
+| 21 | 21.1 Done; 21.2-21.5 Next/Blocked | In progress | Add Scene View grid, gizmo, selection outline and debug overlay. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -762,20 +762,31 @@ Validation:
 
 ### 21.1 Scene View Flags
 
-Status: Blocked.
+Status: Done.
 
 Scope:
 
-- Add Scene View flags for grid, gizmo, wire, selection outline and debug overlay.
+- Add viewport flags for Scene View authoring overlays and explicit Game View debug overlays.
 - Flags become render packet or RenderView inputs.
+
+Implementation:
+
+- `EditorViewportOverlayFlags` now lives in `apps/editor/src/editor_viewport.hpp` as backend-neutral editor viewport metadata.
+- Scene View requests default grid、transform gizmo and selection-outline intent; wire、debug overlay and debug gizmo default off.
+- `EditorViewportCoordinator` computes effective flags, strips Scene-only authoring flags from Game/Preview requests and
+  allows Game View to retain explicitly requested debug overlay/debug gizmo flags for runtime diagnostics.
+- `ImGuiTextureRegistry` carries the effective flags with the presented texture result so panel-facing metadata stays aligned
+  with the sampled viewport texture.
 
 Validation:
 
-- Game View graph does not include editor-only flags.
+- `--smoke-editor-viewport` validates defaults, verifies Scene flags are retained, verifies Game clears Scene-only authoring
+  flags while retaining explicit debug overlay/debug gizmo flags, verifies Preview effective flags are empty and checks at
+  least one flagged Scene View frame was rendered.
 
 ### 21.2 Grid Pass
 
-Status: Blocked.
+Status: Next.
 
 Scope:
 
@@ -967,9 +978,10 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `feat: add editor selection model`
+1. `feat: add scene view grid pass baseline`
 
-Create `packages/editor-core` only with selection or transaction state that gives it a real backend-neutral owner.
+Use the viewport flags baseline to add the first renderer-side Scene View-only pass. The slice should remain small:
+grid pass schema/shader/recording path plus smoke proof that Game/Preview do not consume Scene-only authoring passes.
 
 ## Non-goals
 

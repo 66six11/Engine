@@ -19,10 +19,31 @@ namespace asharia::editor {
         Preview,
     };
 
+    struct EditorViewportOverlayFlags {
+        bool gridVisible{};
+        bool gizmoVisible{};
+        bool wireVisible{};
+        bool selectionOutlineVisible{};
+        bool debugOverlayVisible{};
+        bool debugGizmoVisible{};
+    };
+
+    [[nodiscard]] constexpr EditorViewportOverlayFlags defaultEditorSceneViewOverlayFlags() {
+        return EditorViewportOverlayFlags{
+            .gridVisible = true,
+            .gizmoVisible = true,
+            .wireVisible = false,
+            .selectionOutlineVisible = true,
+            .debugOverlayVisible = false,
+            .debugGizmoVisible = false,
+        };
+    }
+
     struct EditorViewportRequest {
         EditorId panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D extent;
+        EditorViewportOverlayFlags overlayFlags;
     };
 
     struct EditorViewportTexture {
@@ -35,10 +56,15 @@ namespace asharia::editor {
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D requestedExtent;
         EditorViewportTexture texture;
+        EditorViewportOverlayFlags overlayFlags;
     };
 
     [[nodiscard]] bool isRenderableEditorExtent(EditorExtent2D extent);
     [[nodiscard]] bool hasEditorViewportTexture(const EditorViewportTexture& texture);
+    [[nodiscard]] bool anyEditorViewportOverlayFlagEnabled(EditorViewportOverlayFlags flags);
+    [[nodiscard]] bool anyEditorSceneOnlyOverlayFlagEnabled(EditorViewportOverlayFlags flags);
+    [[nodiscard]] EditorViewportOverlayFlags
+    effectiveEditorViewportOverlayFlags(EditorViewportKind kind, EditorViewportOverlayFlags flags);
 
     class EditorViewportPanelHost {
     public:

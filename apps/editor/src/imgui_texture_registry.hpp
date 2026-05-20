@@ -30,6 +30,7 @@ namespace asharia::editor {
         std::string_view ownerId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D requestedExtent;
+        EditorViewportOverlayFlags overlayFlags;
         asharia::VulkanSampledTextureView texture;
         std::uint64_t submittedFrameEpoch{};
     };
@@ -61,6 +62,7 @@ namespace asharia::editor {
             std::string ownerId;
             EditorViewportKind kind{EditorViewportKind::Scene};
             EditorExtent2D requestedExtent;
+            EditorViewportOverlayFlags overlayFlags;
             VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
             VkImageView imageView{VK_NULL_HANDLE};
             VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};

@@ -77,6 +77,8 @@ namespace asharia::editor {
         if (active != active_.end() && matches(*active, registration.texture)) {
             active->kind = registration.kind;
             active->requestedExtent = registration.requestedExtent;
+            active->overlayFlags =
+                effectiveEditorViewportOverlayFlags(registration.kind, registration.overlayFlags);
             return makeResult(*active);
         }
 
@@ -91,6 +93,8 @@ namespace asharia::editor {
             .ownerId = std::string{registration.ownerId},
             .kind = registration.kind,
             .requestedExtent = registration.requestedExtent,
+            .overlayFlags =
+                effectiveEditorViewportOverlayFlags(registration.kind, registration.overlayFlags),
             .descriptorSet = descriptorSet,
             .imageView = registration.texture.imageView,
             .layout = registration.texture.sampledLayout,
@@ -197,6 +201,7 @@ namespace asharia::editor {
                     .textureId = textureId(entry.descriptorSet),
                     .extent = entry.extent,
                 },
+            .overlayFlags = entry.overlayFlags,
         };
     }
 

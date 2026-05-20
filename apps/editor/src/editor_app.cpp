@@ -85,6 +85,15 @@ namespace {
         return lhs.width != rhs.width || lhs.height != rhs.height;
     }
 
+    bool sameViewportOverlayFlags(asharia::editor::EditorViewportOverlayFlags lhs,
+                                  asharia::editor::EditorViewportOverlayFlags rhs) {
+        return lhs.gridVisible == rhs.gridVisible && lhs.gizmoVisible == rhs.gizmoVisible &&
+               lhs.wireVisible == rhs.wireVisible &&
+               lhs.selectionOutlineVisible == rhs.selectionOutlineVisible &&
+               lhs.debugOverlayVisible == rhs.debugOverlayVisible &&
+               lhs.debugGizmoVisible == rhs.debugGizmoVisible;
+    }
+
     std::uint64_t extentArea(VkExtent2D extent) {
         return static_cast<std::uint64_t>(extent.width) * static_cast<std::uint64_t>(extent.height);
     }
@@ -166,6 +175,64 @@ namespace {
         if (textureRegistryStats.peakLiveDescriptors >
             asharia::editor::kEditorViewportTextureDescriptorBudget) {
             asharia::logError("Editor viewport smoke exceeded ImGui texture descriptor budget.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateViewportFlagsSmoke(
+        asharia::editor::EditorRunMode mode,
+        const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
+        if (!isViewportSmokeMode(mode)) {
+            return true;
+        }
+
+        const asharia::editor::EditorViewportOverlayFlags defaults =
+            asharia::editor::defaultEditorSceneViewOverlayFlags();
+        if (!defaults.gridVisible || !defaults.gizmoVisible || defaults.wireVisible ||
+            !defaults.selectionOutlineVisible || defaults.debugOverlayVisible ||
+            defaults.debugGizmoVisible) {
+            asharia::logError("Editor viewport smoke found invalid default overlay flags.");
+            return false;
+        }
+
+        const asharia::editor::EditorViewportOverlayFlags allFlags{
+            .gridVisible = true,
+            .gizmoVisible = true,
+            .wireVisible = true,
+            .selectionOutlineVisible = true,
+            .debugOverlayVisible = true,
+            .debugGizmoVisible = true,
+        };
+        if (!sameViewportOverlayFlags(asharia::editor::effectiveEditorViewportOverlayFlags(
+                                          asharia::editor::EditorViewportKind::Scene, allFlags),
+                                      allFlags)) {
+            asharia::logError("Editor viewport smoke dropped Scene View overlay flags.");
+            return false;
+        }
+        const asharia::editor::EditorViewportOverlayFlags gameFlags =
+            asharia::editor::effectiveEditorViewportOverlayFlags(
+                asharia::editor::EditorViewportKind::Game, allFlags);
+        if (gameFlags.gridVisible || gameFlags.gizmoVisible || gameFlags.wireVisible ||
+            gameFlags.selectionOutlineVisible || !gameFlags.debugOverlayVisible ||
+            !gameFlags.debugGizmoVisible) {
+            asharia::logError(
+                "Editor viewport smoke filtered Game View overlay flags incorrectly.");
+            return false;
+        }
+        if (asharia::editor::anyEditorViewportOverlayFlagEnabled(
+                asharia::editor::effectiveEditorViewportOverlayFlags(
+                    asharia::editor::EditorViewportKind::Preview, allFlags))) {
+            asharia::logError("Editor viewport smoke leaked overlay flags into Preview views.");
+            return false;
+        }
+        if (viewportStats.overlayFlagFramesRendered == 0) {
+            asharia::logError("Editor viewport smoke did not render a Scene View flagged frame.");
+            return false;
+        }
+        if (viewportStats.sceneViewOnlyFlagRequestsDiscarded != 0) {
+            asharia::logError(
+                "Editor viewport smoke discarded Scene View-only flags unexpectedly.");
             return false;
         }
         return true;
@@ -795,6 +862,7 @@ namespace asharia::editor {
             viewportHost.textureRegistryStats();
         if (!validateViewportSmokePresentation(mode, *runResult, viewportHost,
                                                textureRegistryStats) ||
+            !validateViewportFlagsSmoke(mode, viewportStats) ||
             !validateViewportResizeSmoke(mode, *runResult, viewportStats, textureRegistryStats) ||
             !validateInputRouterSmoke(mode, *runResult) ||
             !validateShortcutRouterRunSmoke(mode, *runResult)) {

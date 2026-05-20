@@ -27,6 +27,8 @@ namespace asharia::editor {
     struct EditorViewportCoordinatorStats {
         std::uint64_t renderTargetsRetired{};
         std::uint64_t renderTargetsDeferred{};
+        std::uint64_t overlayFlagFramesRendered{};
+        std::uint64_t sceneViewOnlyFlagRequestsDiscarded{};
     };
 
     [[nodiscard]] EditorViewportFrameEpochs
@@ -50,6 +52,7 @@ namespace asharia::editor {
             EditorId panelId;
             EditorViewportKind kind{EditorViewportKind::Scene};
             EditorExtent2D requestedExtent;
+            EditorViewportOverlayFlags overlayFlags;
             bool rendered{false};
         };
 

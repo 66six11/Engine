@@ -57,9 +57,9 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_context` | references to current editor services passed to actions | GPU resources、long-lived document ownership |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
-| `editor_viewport` | backend-neutral viewport request/result structs and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
-| `editor_viewport_coordinator` | viewport request collection、RenderView recording bridge、pending/presented/retired viewport targets | panel widgets、ImGui backend lifecycle |
-| `imgui_texture_registry` | `ImTextureID` / descriptor registration and delayed descriptor retirement | `VulkanRenderTarget`、`VkImage`、`VkImageView` ownership |
+| `editor_viewport` | backend-neutral viewport request/result structs、Scene/debug viewport flags and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
+| `editor_viewport_coordinator` | viewport request collection、Scene-only flag filtering、explicit Game debug flag retention、RenderView recording bridge、pending/presented/retired viewport targets | panel widgets、ImGui backend lifecycle |
+| `imgui_texture_registry` | `ImTextureID` / descriptor registration、Scene View flag metadata and delayed descriptor retirement | `VulkanRenderTarget`、`VkImage`、`VkImageView` ownership |
 | `panels/*` | concrete ImGui panel controls | Vulkan commands、descriptor registration、renderer resource lifetime |
 
 ## 数据流
@@ -125,14 +125,15 @@ fences and completed frame epochs.
 ```text
 SceneViewPanel::draw()
   compute content extent
-  viewportHost.requestViewport(EditorViewportRequest)
+  viewportHost.requestViewport(EditorViewportRequest with overlay flags)
   viewportHost.acquireViewportTextureForDraw(panel id)
   ImGui::Image(ImTextureID) if a completed texture exists
 
 EditorViewportCoordinator::recordRequestedViews()
+  keep effective viewport flags as view-local render intent
   ensure or reuse VulkanRenderTarget for requested extent
   BasicFullscreenTextureRenderer::recordViewFrame()
-  ImGuiTextureRegistry::registerOrUpdate(sampled texture view)
+  ImGuiTextureRegistry::registerOrUpdate(sampled texture view + flag metadata)
   keep pending/presented/retired viewport texture state
 ```
 
@@ -221,7 +222,12 @@ registered action shortcuts 转为 ImGui key chord，并调用 `EditorActionRegi
 Add new viewport consumers through `EditorViewportKind` and the `EditorViewportPanelHost` request/result API. Scene View,
 Game View and Preview View should share renderer/RHI caches but own view-local request state.
 
-Game View 不能包含 grid、gizmo、wire overlay、selection outline 这类 Scene View-only pass，除非它们被明确标记为 debug overlay。
+`EditorViewportOverlayFlags` currently carries grid、transform gizmo、wire、selection outline、debug overlay and debug gizmo intent.
+The Scene View panel requests the default Scene authoring flags. `EditorViewportCoordinator` strips Scene-only authoring
+flags from Game/Preview requests, but Game View may retain explicitly requested debug overlay/debug gizmo flags for future
+runtime diagnostics.
+
+Game View 不能隐式包含 grid、transform gizmo、wire overlay、selection outline 这类 Scene View authoring pass；如果用户需要在 Game View 里看 runtime debug gizmo，必须通过明确的 debug overlay/debug gizmo flag 进入 graph。
 
 ### 未来 `editor-core`
 
@@ -272,10 +278,15 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
 ```
 
+`--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
+Game/Preview and verifies that Game View can retain explicit debug overlay/debug gizmo intent.
+
 ## 当前缺口
 
 - Selection, transaction, dirty state, inspector and asset browser are blocked on scene/asset/schema ownership becoming
   concrete enough.
+- Real grid、transform gizmo、wire、selection outline、debug overlay and debug gizmo passes are still pending renderer-side
+  view pass work.
 - `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
   超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。
 - There is no `packages/editor-core` yet by design.

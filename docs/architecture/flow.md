@@ -348,7 +348,8 @@ sequenceDiagram
 
 `apps/editor` 是当前 editor shell 和 editor smoke 的真实入口。它复用 `VulkanContext` /
 `VulkanFrameLoop`，通过 `BasicFullscreenTextureRenderer::recordViewFrame()` 生成 Scene View sampled
-target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Panel 只提交请求和消费 texture id，不持有
+target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Scene/debug viewport flags 随 request/result
+流动，coordinator 会清掉 Scene-only authoring flags，同时保留显式 Game debug overlay/debug gizmo intent。Panel 只提交请求和消费 texture id，不持有
 Vulkan image、descriptor set 或 command buffer。完整 editor 架构见 `docs/architecture/editor.md`。
 
 ```mermaid
@@ -378,7 +379,7 @@ sequenceDiagram
         Main->>Input: beginFrame(ImGui capture flags)
         Main->>Viewport: beginImguiFrame(completed/submitted epochs)
         Main->>Panels: drawPanels(EditorFrameContext)
-        Panels->>Viewport: requestViewport(Scene View extent)
+        Panels->>Viewport: requestViewport(Scene View extent + flags)
         Panels->>Input: report Scene View hover/focus
         Main->>Input: finalizeFrame
         Main->>Shortcuts: beginFrame(input snapshot)
@@ -401,6 +402,9 @@ sequenceDiagram
   `EditorViewportResult`。
 - `EditorViewportCoordinator` 是 editor-side Vulkan bridge；它拥有 pending/presented/retired
   viewport render targets，并通过 frame-loop deferred deletion 延迟释放旧 target。
+- `EditorViewportOverlayFlags` 是当前 viewport overlay intent。Scene View 请求保留 grid、transform gizmo、wire、
+  selection outline、debug overlay 和 debug gizmo flags；Game View 请求会清空 Scene-only authoring flags，但可保留
+  显式 debug overlay/debug gizmo flags；Preview View 当前清空全部 overlay flags。
 - `ImGuiTextureRegistry` 只拥有 ImGui descriptor lifetime，不拥有 `VulkanRenderTarget`、
   `VkImage` 或 `VkImageView`。descriptor retirement 使用 frame epoch，避免 resize 后释放仍被
   submitted ImGui draw data 引用的 descriptor。
@@ -604,8 +608,9 @@ flowchart TD
 - 当前 sample 只有一个 game view / swapchain target，但后续 editor 需要允许一帧多个 view graph。
 - Game View、Scene View、Preview View 共享 renderer、RenderGraph 和 Vulkan backend caches，但各自拥有
   view-local camera params、descriptor sets、transient resources 和 compiled graph。
-- Scene View 可以额外 record grid、gizmos、selection outline、wire overlay、debug overlay 等 editor-only
-  pass；这些 pass 不能污染 Game View graph。
+- Scene/debug viewport flags 已先作为 view-local intent 接入 editor viewport request/result；后续可以额外 record
+  grid、transform gizmos、selection outline、wire overlay、debug overlay/debug gizmo 等 pass。Scene-only authoring pass
+  不能污染 Game View graph；Game debug pass 必须显式 opt in。
 - RenderGraph handle 只在单个 view graph 内有效；跨 view 共享资源必须由 resource manager 拥有并 import。
 
 ## RenderGraph 编译与执行流程
@@ -761,7 +766,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
     Step2["之后:<br/>upstream systems<br/>scene-core / editor-core / asset-core"]
 

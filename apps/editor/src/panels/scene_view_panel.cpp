@@ -49,6 +49,7 @@ namespace asharia::editor {
             .panelId = desc_.id,
             .kind = EditorViewportKind::Scene,
             .extent = viewportExtent,
+            .overlayFlags = defaultEditorSceneViewOverlayFlags(),
         });
         if (const auto completed =
                 context.viewportHost.acquireViewportTextureForDraw(desc_.id.value);

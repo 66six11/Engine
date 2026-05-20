@@ -47,6 +47,7 @@ namespace asharia::editor {
         panelId = {};
         kind = EditorViewportKind::Scene;
         requestedExtent = {};
+        overlayFlags = {};
         rendered = false;
     }
 
@@ -69,6 +70,13 @@ namespace asharia::editor {
     }
 
     void EditorViewportCoordinator::requestViewport(EditorViewportRequest request) {
+        const EditorViewportOverlayFlags requestedFlags = request.overlayFlags;
+        request.overlayFlags =
+            effectiveEditorViewportOverlayFlags(request.kind, request.overlayFlags);
+        if (request.kind != EditorViewportKind::Scene &&
+            anyEditorSceneOnlyOverlayFlagEnabled(requestedFlags)) {
+            ++stats_.sceneViewOnlyFlagRequestsDiscarded;
+        }
         requestedViewport_ = std::move(request);
     }
 
@@ -149,6 +157,7 @@ namespace asharia::editor {
             .ownerId = request.panelId.value,
             .kind = request.kind,
             .requestedExtent = request.extent,
+            .overlayFlags = request.overlayFlags,
             .texture = texture,
             .submittedFrameEpoch = nextSubmittedFrameEpoch(frame),
         });
@@ -160,8 +169,12 @@ namespace asharia::editor {
         renderTexture.panelId = request.panelId;
         renderTexture.kind = request.kind;
         renderTexture.requestedExtent = request.extent;
+        renderTexture.overlayFlags = request.overlayFlags;
         renderTexture.format = texture.format;
         renderTexture.extent = texture.extent;
+        if (anyEditorViewportOverlayFlagEnabled(request.overlayFlags)) {
+            ++stats_.overlayFlagFramesRendered;
+        }
         ++viewportFramesRendered_;
         return *recorded;
     }
