@@ -14,12 +14,16 @@ namespace {
     constexpr std::string_view kQuatTypeName = "com.asharia.persistenceSmoke.Quat";
     constexpr std::string_view kTransformTypeName = "com.asharia.persistenceSmoke.Transform";
     constexpr std::string_view kPropertyTypeName = "com.asharia.persistenceSmoke.Property";
-    constexpr std::string_view kNestedObjectTypeName =
-        "com.asharia.persistenceSmoke.NestedObject";
-    constexpr std::string_view kObjectOwnerTypeName =
-        "com.asharia.persistenceSmoke.ObjectOwner";
+    constexpr std::string_view kNestedObjectTypeName = "com.asharia.persistenceSmoke.NestedObject";
+    constexpr std::string_view kObjectOwnerTypeName = "com.asharia.persistenceSmoke.ObjectOwner";
+    constexpr std::string_view kUnsupportedEnumOwnerTypeName =
+        "com.asharia.persistenceSmoke.UnsupportedEnumOwner";
     constexpr std::string_view kUnsupportedArrayOwnerTypeName =
         "com.asharia.persistenceSmoke.UnsupportedArrayOwner";
+    constexpr std::string_view kUnsupportedAssetReferenceOwnerTypeName =
+        "com.asharia.persistenceSmoke.UnsupportedAssetReferenceOwner";
+    constexpr std::string_view kUnsupportedEntityReferenceOwnerTypeName =
+        "com.asharia.persistenceSmoke.UnsupportedEntityReferenceOwner";
     constexpr std::string_view kMigratedTransformTypeName =
         "com.asharia.persistenceSmoke.MigratedTransform";
 
@@ -83,6 +87,36 @@ namespace {
     struct UnsupportedArrayOwner {
         float values{};
     };
+
+    struct UnsupportedStringOwner {
+        std::string value;
+    };
+
+} // namespace
+
+namespace asharia::cpp_binding {
+
+    template <> struct ReflectedType<Vec3> {
+        [[nodiscard]] static schema::TypeId typeId() {
+            return schema::makeTypeId(kVec3TypeName);
+        }
+    };
+
+    template <> struct ReflectedType<Quat> {
+        [[nodiscard]] static schema::TypeId typeId() {
+            return schema::makeTypeId(kQuatTypeName);
+        }
+    };
+
+    template <> struct ReflectedType<NestedObject> {
+        [[nodiscard]] static schema::TypeId typeId() {
+            return schema::makeTypeId(kNestedObjectTypeName);
+        }
+    };
+
+} // namespace asharia::cpp_binding
+
+namespace {
 
     [[nodiscard]] bool contains(std::string_view text, std::string_view needle) {
         return text.find(needle) != std::string_view::npos;
@@ -220,19 +254,21 @@ namespace {
         };
     }
 
-    [[nodiscard]] asharia::schema::TypeSchema makeUnsupportedArrayOwnerSchema() {
+    [[nodiscard]] asharia::schema::TypeSchema
+    makeUnsupportedOwnerSchema(std::string_view typeName, std::string_view key,
+                               asharia::schema::TypeId valueType, asharia::schema::ValueKind kind) {
         return asharia::schema::TypeSchema{
-            .id = asharia::schema::makeTypeId(kUnsupportedArrayOwnerTypeName),
-            .canonicalName = std::string{kUnsupportedArrayOwnerTypeName},
+            .id = asharia::schema::makeTypeId(typeName),
+            .canonicalName = std::string{typeName},
             .version = 1,
             .kind = asharia::schema::ValueKind::Object,
             .fields =
                 {
                     asharia::schema::FieldSchema{
                         .id = asharia::schema::makeFieldId(1),
-                        .key = "values",
-                        .valueType = asharia::schema::builtin::floatTypeId(),
-                        .valueKind = asharia::schema::ValueKind::Array,
+                        .key = std::string{key},
+                        .valueType = valueType,
+                        .valueKind = kind,
                         .metadata = {.persistence = {.stored = true}},
                     },
                 },
@@ -258,7 +294,19 @@ namespace {
         for (asharia::schema::TypeSchema schema :
              {makeVec3Schema(), makeQuatSchema(), makeTransformSchema(), makePropertySchema(),
               makeNestedObjectSchema(), makeObjectOwnerSchema(),
-              makeUnsupportedArrayOwnerSchema(), makeMigratedTransformSchema()}) {
+              makeUnsupportedOwnerSchema(kUnsupportedEnumOwnerTypeName, "value",
+                                         asharia::schema::builtin::stringTypeId(),
+                                         asharia::schema::ValueKind::Enum),
+              makeUnsupportedOwnerSchema(kUnsupportedArrayOwnerTypeName, "values",
+                                         asharia::schema::builtin::floatTypeId(),
+                                         asharia::schema::ValueKind::Array),
+              makeUnsupportedOwnerSchema(kUnsupportedAssetReferenceOwnerTypeName, "value",
+                                         asharia::schema::builtin::stringTypeId(),
+                                         asharia::schema::ValueKind::AssetReference),
+              makeUnsupportedOwnerSchema(kUnsupportedEntityReferenceOwnerTypeName, "value",
+                                         asharia::schema::builtin::stringTypeId(),
+                                         asharia::schema::ValueKind::EntityReference),
+              makeMigratedTransformSchema()}) {
             if (auto registered = schemas.registerType(std::move(schema)); !registered) {
                 std::cerr << registered.error().message << '\n';
                 return std::nullopt;
@@ -325,31 +373,50 @@ namespace {
             std::cerr << committed.error().message << '\n';
             return std::nullopt;
         }
-        if (auto committed =
-                CppBindingBuilder<NestedObject>(bindings, makeTypeId(kNestedObjectTypeName),
-                                                "NestedObject")
-                    .field(makeFieldId(1), "value", &NestedObject::value)
-                    .commit();
-            !committed) {
-            std::cerr << committed.error().message << '\n';
-            return std::nullopt;
-        }
-        if (auto committed =
-                CppBindingBuilder<ObjectOwner>(bindings, makeTypeId(kObjectOwnerTypeName),
-                                               "ObjectOwner")
-                    .field(makeFieldId(1), "child", &ObjectOwner::child)
-                    .commit();
-            !committed) {
-            std::cerr << committed.error().message << '\n';
-            return std::nullopt;
-        }
-        if (auto committed = CppBindingBuilder<UnsupportedArrayOwner>(
-                                 bindings, makeTypeId(kUnsupportedArrayOwnerTypeName),
-                                 "UnsupportedArrayOwner")
-                                 .field(makeFieldId(1), "values", &UnsupportedArrayOwner::values)
+        if (auto committed = CppBindingBuilder<NestedObject>(
+                                 bindings, makeTypeId(kNestedObjectTypeName), "NestedObject")
+                                 .field(makeFieldId(1), "value", &NestedObject::value)
                                  .commit();
             !committed) {
             std::cerr << committed.error().message << '\n';
+            return std::nullopt;
+        }
+        if (auto committed = CppBindingBuilder<ObjectOwner>(
+                                 bindings, makeTypeId(kObjectOwnerTypeName), "ObjectOwner")
+                                 .field(makeFieldId(1), "child", &ObjectOwner::child)
+                                 .commit();
+            !committed) {
+            std::cerr << committed.error().message << '\n';
+            return std::nullopt;
+        }
+        if (auto committed =
+                CppBindingBuilder<UnsupportedArrayOwner>(
+                    bindings, makeTypeId(kUnsupportedArrayOwnerTypeName), "UnsupportedArrayOwner")
+                    .field(makeFieldId(1), "values", &UnsupportedArrayOwner::values)
+                    .commit();
+            !committed) {
+            std::cerr << committed.error().message << '\n';
+            return std::nullopt;
+        }
+
+        const auto commitUnsupportedStringBinding = [&](std::string_view typeName,
+                                                        std::string_view cppTypeName) -> bool {
+            if (auto committed = CppBindingBuilder<UnsupportedStringOwner>(
+                                     bindings, makeTypeId(typeName), cppTypeName)
+                                     .field(makeFieldId(1), "value", &UnsupportedStringOwner::value)
+                                     .commit();
+                !committed) {
+                std::cerr << committed.error().message << '\n';
+                return false;
+            }
+            return true;
+        };
+        if (!commitUnsupportedStringBinding(kUnsupportedEnumOwnerTypeName,
+                                            "UnsupportedEnumOwner") ||
+            !commitUnsupportedStringBinding(kUnsupportedAssetReferenceOwnerTypeName,
+                                            "UnsupportedAssetReferenceOwner") ||
+            !commitUnsupportedStringBinding(kUnsupportedEntityReferenceOwnerTypeName,
+                                            "UnsupportedEntityReferenceOwner")) {
             return std::nullopt;
         }
         if (auto committed =
@@ -473,6 +540,56 @@ namespace {
         return {};
     }
 
+    [[nodiscard]] asharia::archive::ArchiveValue
+    makeUnsupportedOwnerArchive(std::string_view typeName, std::string_view fieldKey,
+                                const asharia::archive::ArchiveValue& fieldValue) {
+        return asharia::archive::ArchiveValue::object({
+            asharia::archive::ArchiveMember{
+                .key = "type",
+                .value = asharia::archive::ArchiveValue::string(std::string{typeName}),
+            },
+            asharia::archive::ArchiveMember{
+                .key = "version",
+                .value = asharia::archive::ArchiveValue::integer(1),
+            },
+            asharia::archive::ArchiveMember{
+                .key = "fields",
+                .value = asharia::archive::ArchiveValue::object({
+                    asharia::archive::ArchiveMember{.key = std::string{fieldKey},
+                                                    .value = fieldValue},
+                }),
+            },
+        });
+    }
+
+    template <typename ObjectT>
+    [[nodiscard]] bool
+    expectUnsupportedKindRejected(const asharia::schema::SchemaRegistry& schemas,
+                                  const asharia::cpp_binding::BindingRegistry& bindings,
+                                  std::string_view typeName, std::string_view fieldKey,
+                                  std::string_view kindName, const ObjectT& source,
+                                  const asharia::archive::ArchiveValue& fieldValue) {
+        auto saved = asharia::persistence::saveObject(
+            schemas, bindings, asharia::schema::makeTypeId(typeName), &source);
+        if (saved || !contains(saved.error().message, "not supported") ||
+            !contains(saved.error().message, kindName)) {
+            std::cerr << "Persistence accepted unsupported " << kindName << " during save.\n";
+            return false;
+        }
+
+        ObjectT loaded{};
+        const asharia::archive::ArchiveValue archive =
+            makeUnsupportedOwnerArchive(typeName, fieldKey, fieldValue);
+        auto loadedResult = asharia::persistence::loadObject(
+            schemas, bindings, asharia::schema::makeTypeId(typeName), archive, &loaded);
+        if (loadedResult || !contains(loadedResult.error().message, "not supported") ||
+            !contains(loadedResult.error().message, kindName)) {
+            std::cerr << "Persistence accepted unsupported " << kindName << " during load.\n";
+            return false;
+        }
+        return true;
+    }
+
 } // namespace
 
 int main() {
@@ -554,14 +671,28 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    const UnsupportedStringOwner unsupportedStringOwner{.value = "token"};
+    if (!expectUnsupportedKindRejected(*schemas, *bindings, kUnsupportedEnumOwnerTypeName, "value",
+                                       "enum", unsupportedStringOwner,
+                                       asharia::archive::ArchiveValue::string("Token"))) {
+        return EXIT_FAILURE;
+    }
     const UnsupportedArrayOwner unsupportedArrayOwner{.values = 1.0F};
-    auto unsupportedArrayArchive = asharia::persistence::saveObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kUnsupportedArrayOwnerTypeName),
-        &unsupportedArrayOwner);
-    if (unsupportedArrayArchive ||
-        !contains(unsupportedArrayArchive.error().message, "not supported") ||
-        !contains(unsupportedArrayArchive.error().message, "array")) {
-        std::cerr << "Persistence accepted an unsupported array field kind.\n";
+    if (!expectUnsupportedKindRejected(*schemas, *bindings, kUnsupportedArrayOwnerTypeName,
+                                       "values", "array", unsupportedArrayOwner,
+                                       asharia::archive::ArchiveValue::array(
+                                           {asharia::archive::ArchiveValue::floating(1.0)}))) {
+        return EXIT_FAILURE;
+    }
+    if (!expectUnsupportedKindRejected(*schemas, *bindings, kUnsupportedAssetReferenceOwnerTypeName,
+                                       "value", "asset reference", unsupportedStringOwner,
+                                       asharia::archive::ArchiveValue::string("asset-guid"))) {
+        return EXIT_FAILURE;
+    }
+    if (!expectUnsupportedKindRejected(*schemas, *bindings,
+                                       kUnsupportedEntityReferenceOwnerTypeName, "value",
+                                       "entity reference", unsupportedStringOwner,
+                                       asharia::archive::ArchiveValue::string("entity:1"))) {
         return EXIT_FAILURE;
     }
 
@@ -609,18 +740,6 @@ int main() {
             &droppedUnknown, dropUnknownPolicy);
         !result || droppedUnknown.position.x != source.position.x) {
         std::cerr << "Persistence did not drop an unknown field.\n";
-        return EXIT_FAILURE;
-    }
-
-    Transform preserveUnknown{};
-    const asharia::persistence::PersistencePolicy preservePolicy{
-        .unknownFields = asharia::persistence::UnknownFieldPolicy::Preserve,
-    };
-    auto preserveResult = asharia::persistence::loadObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName), unknownArchive,
-        &preserveUnknown, preservePolicy);
-    if (preserveResult || !contains(preserveResult.error().message, "unsupported")) {
-        std::cerr << "Persistence did not reject unsupported unknown-field preserve policy.\n";
         return EXIT_FAILURE;
     }
 

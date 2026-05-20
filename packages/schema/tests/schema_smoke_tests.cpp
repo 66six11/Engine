@@ -1,8 +1,12 @@
 ﻿#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
+#include "asharia/schema/schema_document.hpp"
 #include "asharia/schema/schema_registry.hpp"
 
 namespace {
@@ -14,6 +18,10 @@ namespace {
     constexpr std::string_view kAliasedStableTypeName = "com.asharia.schemaSmoke.AliasedStable";
     constexpr std::string_view kAliasedCanonicalTypeName =
         "com.asharia.schemaSmoke.AliasedCanonical";
+    constexpr std::string_view kGoldenVec3TypeName = "com.asharia.schemaGolden.Vec3";
+    constexpr std::string_view kGoldenTransformTypeName = "com.asharia.schemaGolden.Transform";
+    constexpr std::string_view kGoldenTransformCanonicalName =
+        "com.asharia.schemaGolden.TransformComponent";
 
     [[nodiscard]] bool contains(std::string_view text, std::string_view needle) {
         return text.find(needle) != std::string_view::npos;
@@ -92,9 +100,123 @@ namespace {
         };
     }
 
+    [[nodiscard]] const asharia::schema::TypeSchema*
+    findLoadedType(const std::vector<asharia::schema::TypeSchema>& types,
+                   std::string_view stableName) {
+        for (const asharia::schema::TypeSchema& type : types) {
+            if (type.id.stableName == stableName) {
+                return &type;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] bool expectGoldenSchemaDocument() {
+        const std::filesystem::path fixturePath =
+            std::filesystem::path{ASHARIA_SCHEMA_TEST_FIXTURE_DIR} / "schema_golden.json";
+        auto loaded = asharia::schema::readSchemaDocumentFile(fixturePath);
+        if (!loaded) {
+            std::cerr << loaded.error().message << '\n';
+            return false;
+        }
+        if (loaded->size() != 2U) {
+            std::cerr << "Schema document loaded an unexpected type count.\n";
+            return false;
+        }
+
+        const asharia::schema::TypeSchema* vec3 = findLoadedType(*loaded, kGoldenVec3TypeName);
+        if (vec3 == nullptr || vec3->version != 2U ||
+            vec3->kind != asharia::schema::ValueKind::InlineStruct ||
+            vec3->metadata.editor.displayName != "Vector 3" || !vec3->metadata.script.visible) {
+            std::cerr << "Schema document did not preserve Vec3 type metadata.\n";
+            return false;
+        }
+
+        const asharia::schema::FieldSchema* xField = asharia::schema::findFieldByKey(*vec3, "x");
+        if (xField == nullptr || xField->id.value != 1U || xField->aliases.size() != 1U ||
+            xField->aliases.front() != "oldX" || !xField->metadata.persistence.stored ||
+            !xField->metadata.numeric.hasMin || !xField->metadata.numeric.hasMax ||
+            xField->metadata.numeric.min != -1000.0 || xField->metadata.numeric.max != 1000.0 ||
+            xField->metadata.numeric.step != 0.01 || xField->metadata.numeric.unit != "meter") {
+            std::cerr << "Schema document did not preserve Vec3 field metadata.\n";
+            return false;
+        }
+
+        const asharia::schema::TypeSchema* transform =
+            findLoadedType(*loaded, kGoldenTransformTypeName);
+        if (transform == nullptr || transform->canonicalName != kGoldenTransformCanonicalName ||
+            transform->version != 3U || transform->reservedFieldIds.size() != 2U ||
+            transform->reservedFieldIds[0].value != 77U ||
+            transform->reservedFieldIds[1].value != 99U ||
+            transform->metadata.editor.category != "Scene") {
+            std::cerr << "Schema document did not preserve Transform type metadata.\n";
+            return false;
+        }
+
+        const asharia::schema::FieldSchema* position =
+            asharia::schema::findFieldByKeyOrAlias(*transform, "translation");
+        if (position == nullptr || position->key != "position" ||
+            position->valueType.stableName != kGoldenVec3TypeName ||
+            position->valueKind != asharia::schema::ValueKind::InlineStruct ||
+            !position->metadata.persistence.stored ||
+            position->metadata.editor.displayName != "Position" ||
+            !position->metadata.script.write) {
+            std::cerr << "Schema document did not preserve Transform field aliases.\n";
+            return false;
+        }
+
+        asharia::schema::SchemaRegistry loadedRegistry;
+        if (auto registered = asharia::schema::registerBuiltinSchemas(loadedRegistry);
+            !registered) {
+            std::cerr << registered.error().message << '\n';
+            return false;
+        }
+        for (asharia::schema::TypeSchema type : *loaded) {
+            if (auto registered = loadedRegistry.registerType(std::move(type)); !registered) {
+                std::cerr << registered.error().message << '\n';
+                return false;
+            }
+        }
+        if (auto frozen = loadedRegistry.freeze(); !frozen) {
+            std::cerr << frozen.error().message << '\n';
+            return false;
+        }
+        if (loadedRegistry.findType(kGoldenTransformCanonicalName) == nullptr) {
+            std::cerr << "Schema registry could not find loaded canonical type name.\n";
+            return false;
+        }
+
+        auto duplicateKey = asharia::schema::readSchemaDocument(
+            R"json({"schemaVersion":1,"types":[],"types":[]})json");
+        if (duplicateKey || !contains(duplicateKey.error().message, "duplicate key")) {
+            std::cerr << "Schema document accepted duplicate JSON object keys.\n";
+            return false;
+        }
+
+        auto badKind = asharia::schema::readSchemaDocument(
+            R"json({"schemaVersion":1,"types":[{"stableName":"com.asharia.Bad","canonicalName":"com.asharia.Bad","version":1,"kind":"Matrix"}]})json");
+        if (badKind || !contains(badKind.error().message, "value kind")) {
+            std::cerr << "Schema document accepted an unknown value kind.\n";
+            return false;
+        }
+
+        auto unknownMember = asharia::schema::readSchemaDocument(
+            R"json({"schemaVersion":1,"types":[{"stableName":"com.asharia.Bad","canonicalName":"com.asharia.Bad","version":1,"kind":"Object","metadata":{"editor":{"unknown":true}}}]})json");
+        if (unknownMember || !contains(unknownMember.error().message, "unknown member")) {
+            std::cerr << "Schema document accepted an unknown metadata member.\n";
+            return false;
+        }
+
+        return true;
+    }
+
 } // namespace
 
 int main() {
+    if (!expectGoldenSchemaDocument()) {
+        return EXIT_FAILURE;
+    }
+
     asharia::schema::SchemaRegistry registry;
     if (auto registered = asharia::schema::registerBuiltinSchemas(registry); !registered) {
         std::cerr << registered.error().message << '\n';

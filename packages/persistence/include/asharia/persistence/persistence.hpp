@@ -13,7 +13,6 @@ namespace asharia::persistence {
     enum class UnknownFieldPolicy {
         Error,
         Drop,
-        Preserve,
     };
 
     enum class MissingFieldPolicy {
@@ -32,6 +31,10 @@ namespace asharia::persistence {
     };
 
     [[nodiscard]] Error persistenceError(std::string message);
+
+    // MVP persistence supports Bool, Integer, Float, String, Object, and InlineStruct fields.
+    // Enum, Array, AssetReference, and EntityReference intentionally fail until their file,
+    // migration, and loading semantics are defined.
 
     [[nodiscard]] Result<archive::ArchiveValue>
     saveObject(const schema::SchemaRegistry& schemas, const cpp_binding::BindingRegistry& bindings,

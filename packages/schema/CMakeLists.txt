@@ -11,7 +11,10 @@ include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
 
+find_package(nlohmann_json CONFIG REQUIRED)
+
 add_library(asharia-schema STATIC
+    src/schema_document.cpp
     src/schema_registry.cpp
 )
 
@@ -25,6 +28,8 @@ target_include_directories(asharia-schema
 target_link_libraries(asharia-schema
     PUBLIC
         asharia::core
+    PRIVATE
+        nlohmann_json::nlohmann_json
 )
 
 asharia_configure_target(asharia-schema)
@@ -39,6 +44,11 @@ if(ASHARIA_BUILD_TESTS)
   target_link_libraries(asharia-schema-smoke-tests
       PRIVATE
           asharia::schema
+  )
+
+  target_compile_definitions(asharia-schema-smoke-tests
+      PRIVATE
+          ASHARIA_SCHEMA_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
   )
 
   asharia_configure_target(asharia-schema-smoke-tests)

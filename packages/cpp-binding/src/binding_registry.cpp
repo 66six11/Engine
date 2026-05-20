@@ -44,6 +44,11 @@ namespace asharia::cpp_binding {
             return Error{ErrorDomain::CppBinding, 0, std::move(message)};
         }
 
+        [[nodiscard]] bool requiresReflectedValueType(const schema::FieldSchema& field) noexcept {
+            return field.valueKind == schema::ValueKind::Object ||
+                   field.valueKind == schema::ValueKind::InlineStruct;
+        }
+
         [[nodiscard]] VoidResult validateFieldBinding(const schema::SchemaRegistry& schemas,
                                                       const CppTypeBinding& binding,
                                                       const FieldBinding& field) {
@@ -68,6 +73,15 @@ namespace asharia::cpp_binding {
                                       {"expected", binding.schemaType.stableName},
                                       {"actual", field.ownerSchema.stableName}})};
             }
+            if (requiresReflectedValueType(*schemaField) && !field.valueType) {
+                return std::unexpected{
+                    makeBindingError("C++ binding field value type has no reflected type id.",
+                                     {{"operation", "register"},
+                                      {"type", binding.schemaType.stableName},
+                                      {"field", schemaField->key},
+                                      {"expected", schemaField->valueType.stableName},
+                                      {"actual", "missing"}})};
+            }
             if (field.valueType && field.valueType != schemaField->valueType) {
                 return std::unexpected{
                     makeBindingError("C++ binding field value type does not match schema.",
@@ -80,13 +94,22 @@ namespace asharia::cpp_binding {
             if (field.writeDefaultValue && field.defaultValueType &&
                 field.defaultValueType != schemaField->valueType) {
                 return std::unexpected{
-                    makeBindingError(
-                        "C++ binding field default value type does not match schema.",
-                        {{"operation", "register"},
-                         {"type", binding.schemaType.stableName},
-                         {"field", schemaField->key},
-                         {"expected", schemaField->valueType.stableName},
-                         {"actual", field.defaultValueType.stableName}})};
+                    makeBindingError("C++ binding field default value type does not match schema.",
+                                     {{"operation", "register"},
+                                      {"type", binding.schemaType.stableName},
+                                      {"field", schemaField->key},
+                                      {"expected", schemaField->valueType.stableName},
+                                      {"actual", field.defaultValueType.stableName}})};
+            }
+            if (field.writeDefaultValue && requiresReflectedValueType(*schemaField) &&
+                !field.defaultValueType) {
+                return std::unexpected{makeBindingError(
+                    "C++ binding field default value type has no reflected type id.",
+                    {{"operation", "register"},
+                     {"type", binding.schemaType.stableName},
+                     {"field", schemaField->key},
+                     {"expected", schemaField->valueType.stableName},
+                     {"actual", "missing"}})};
             }
             if (field.size == 0U || field.alignment == 0U) {
                 return std::unexpected{
