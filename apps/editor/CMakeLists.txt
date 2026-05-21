@@ -52,6 +52,7 @@ add_executable(asharia-editor
     src/editor_i18n.cpp
     src/editor_input_router.cpp
     src/editor_panel.cpp
+    src/editor_settings.cpp
     src/editor_shortcut_router.cpp
     src/editor_ui.cpp
     src/editor_viewport.cpp
@@ -60,6 +61,7 @@ add_executable(asharia-editor
     src/imgui_runtime.cpp
     src/imgui_texture_registry.cpp
     src/main.cpp
+    src/panels/editor_settings_panel.cpp
     src/panels/frame_debugger_panel.cpp
     src/panels/log_panel.cpp
     src/panels/render_graph_panel.cpp

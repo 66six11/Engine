@@ -6,6 +6,7 @@
     "action.file.exit": "Exit",
     "action.file.newScene": "New Scene",
     "action.file.open": "Open...",
+    "action.view.editorSettings": "Editor Settings",
     "action.view.frameDebugger": "Frame Debugger",
     "action.view.log": "Log",
     "action.view.renderGraph": "Live RG View",
@@ -43,6 +44,7 @@
     "panel.log": "Log",
     "panel.renderGraph": "Live RG View",
     "panel.sceneView": "Scene View",
+    "panel.editorSettings": "Editor Settings",
     "panel.uiStylePreview": "UI Style Preview",
     "renderGraph.accessEdges": "Access edges",
     "renderGraph.accessEvents": "Access Events",
@@ -80,6 +82,12 @@
     "renderGraph.write": "write",
     "scene.swapchain": "Swapchain",
     "scene.viewport": "Viewport",
-    "scene.viewportFrame": "Viewport Frame"
+    "scene.viewportFrame": "Viewport Frame",
+    "settings.general": "General",
+    "settings.language": "Language",
+    "settings.language.enUs": "English (US)",
+    "settings.language.zhHans": "Chinese (Simplified)",
+    "settings.saved": "Saved",
+    "settings.saveFailed": "Save failed"
   }
 }

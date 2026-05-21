@@ -6,6 +6,7 @@
     "action.file.exit": "退出",
     "action.file.newScene": "新建场景",
     "action.file.open": "打开...",
+    "action.view.editorSettings": "编辑器设置",
     "action.view.frameDebugger": "帧调试器",
     "action.view.log": "日志",
     "action.view.renderGraph": "实时 RG 视图",
@@ -43,6 +44,7 @@
     "panel.log": "日志",
     "panel.renderGraph": "实时 RG 视图",
     "panel.sceneView": "场景视图",
+    "panel.editorSettings": "编辑器设置",
     "panel.uiStylePreview": "UI 样式预览",
     "renderGraph.accessEdges": "访问边",
     "renderGraph.accessEvents": "访问事件",
@@ -80,6 +82,12 @@
     "renderGraph.write": "写",
     "scene.swapchain": "交换链",
     "scene.viewport": "视口",
-    "scene.viewportFrame": "视口帧"
+    "scene.viewportFrame": "视口帧",
+    "settings.general": "通用",
+    "settings.language": "语言",
+    "settings.language.enUs": "英语（美国）",
+    "settings.language.zhHans": "简体中文",
+    "settings.saved": "已保存",
+    "settings.saveFailed": "保存失败"
   }
 }

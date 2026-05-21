@@ -72,6 +72,8 @@ namespace asharia::editor {
                 ImGui::Separator();
                 drawActionMenuItem(actionRegistry, editorContext, "view.ui-style-preview",
                                    editorContext.panelRegistry().isOpen("ui-style-preview"));
+                drawActionMenuItem(actionRegistry, editorContext, "view.editor-settings",
+                                   editorContext.panelRegistry().isOpen("editor-settings"));
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(debugMenu.c_str())) {

@@ -50,6 +50,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | --- | --- | --- |
 | `editor_i18n` | editor-local text catalog, locale selection and stable ImGui label formatting | runtime localization, asset text localization or renderer-facing strings |
 | `editor_ui` | small editor-local ImGui style primitives, Deep Slate theme tokens and component preview helpers used by panels | a generic UI framework or runtime-facing widget abstraction |
+| `editor_settings` | editor-local user settings persistence and runtime editor locale switching | scene data, asset import settings or runtime/game configuration |
 | `editor_app` | startup、window/context/frame-loop wiring、main editor loop、frame order、smoke modes、shutdown order | panel widget details becoming feature-specific renderer logic |
 | `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle | panel registry、editor state、viewport target ownership |
 | `imgui_editor_shell` | dockspace、main menu、action menu binding | renderer command recording、panel object ownership |
@@ -76,6 +77,7 @@ main()
     GlfwWindow::create()
     VulkanContext::create(required GLFW extensions)
     VulkanFrameLoop::create(context, framebuffer extent)
+    load editor i18n catalog and editor settings
     ImGuiRuntime::create(window, context, frameLoop)
     BasicFullscreenTextureRenderer::create()
     EditorViewportCoordinator::create(context)
@@ -189,10 +191,15 @@ Dear ImGui labels must preserve stable IDs when visible text changes. Editor UI 
 menus, actions, panel windows and other stateful controls so labels are emitted as `translated text###stable-id`. This keeps
 layout ini, docking state and widget identity stable across locale changes.
 
-Interactive locale selection currently reads `ASHARIA_EDITOR_LOCALE` (`en-US` by default, `zh-Hans` supported). When
-`zh-Hans` is active, `ImGuiRuntime` requests CJK glyph coverage from `ASHARIA_EDITOR_CJK_FONT` or a small list of common
-system font locations. This keeps the first localization path usable during development, but bundled editor font assets and
-license-reviewed packaging remain a later distribution task.
+`editor_settings` persists the interactive editor locale in a user-local `settings.json` beside the ImGui layout state.
+`ASHARIA_EDITOR_LOCALE` remains a startup fallback when no saved setting exists. The Editor Settings panel switches the
+locale at runtime through `EditorSettingsController`, updates the active `EditorI18n` service, and saves the setting
+immediately.
+
+`ImGuiRuntime` requests CJK glyph coverage during editor startup so runtime switches to `zh-Hans` do not require rebuilding
+the ImGui font atlas. It uses `ASHARIA_EDITOR_CJK_FONT` or a small list of common system font locations. This keeps the
+first localization path usable during development, but bundled editor font assets and license-reviewed packaging remain a
+later distribution task.
 
 ### 关闭
 

@@ -1,14 +1,16 @@
 ﻿#include "editor_context.hpp"
 
 #include "editor_i18n.hpp"
+#include "editor_settings.hpp"
 
 namespace asharia::editor {
 
     EditorContext::EditorContext(EditorPanelRegistry& panelRegistry, EditorEventQueue& eventQueue,
                                  EditorDiagnosticsLog& diagnosticsLog,
-                                 EditorFrameDebugger& frameDebugger, EditorI18n& i18n)
+                                 EditorFrameDebugger& frameDebugger, EditorI18n& i18n,
+                                 EditorSettingsController& settings)
         : panelRegistry_(panelRegistry), eventQueue_(eventQueue), diagnosticsLog_(diagnosticsLog),
-          frameDebugger_(frameDebugger), i18n_(i18n) {}
+          frameDebugger_(frameDebugger), i18n_(i18n), settings_(settings) {}
 
     EditorPanelRegistry& EditorContext::panelRegistry() {
         return panelRegistry_;
@@ -48,6 +50,14 @@ namespace asharia::editor {
 
     const EditorI18n& EditorContext::i18n() const {
         return i18n_;
+    }
+
+    EditorSettingsController& EditorContext::settings() {
+        return settings_;
+    }
+
+    const EditorSettingsController& EditorContext::settings() const {
+        return settings_;
     }
 
 } // namespace asharia::editor

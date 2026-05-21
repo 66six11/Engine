@@ -35,11 +35,13 @@
 #include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
 #include "editor_panel.hpp"
+#include "editor_settings.hpp"
 #include "editor_shortcut_router.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
 #include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
+#include "panels/editor_settings_panel.hpp"
 #include "panels/frame_debugger_panel.hpp"
 #include "panels/log_panel.hpp"
 #include "panels/render_graph_panel.hpp"
@@ -100,6 +102,39 @@ namespace {
             return editorSmokeLayoutIniPath();
         }
         return {};
+    }
+
+    [[nodiscard]] std::filesystem::path editorSettingsPathForRun(bool smokeMode) {
+        return smokeMode ? asharia::editor::editorSmokeSettingsPath()
+                         : asharia::editor::editorUserSettingsPath();
+    }
+
+    struct EditorSettingsRunState {
+        asharia::editor::EditorSettings settings;
+        std::filesystem::path path;
+    };
+
+    [[nodiscard]] EditorSettingsRunState
+    loadEditorSettingsForRun(bool smokeMode, asharia::editor::EditorLocale fallbackLocale) {
+        EditorSettingsRunState state{
+            .settings =
+                asharia::editor::EditorSettings{
+                    .locale = fallbackLocale,
+                },
+            .path = editorSettingsPathForRun(smokeMode),
+        };
+        if (smokeMode) {
+            std::error_code removeError;
+            std::filesystem::remove(state.path, removeError);
+        }
+
+        auto loaded = asharia::editor::loadEditorSettings(state.path, fallbackLocale);
+        if (loaded) {
+            state.settings = *loaded;
+        } else {
+            asharia::logError(loaded.error().message);
+        }
+        return state;
     }
 
     [[nodiscard]] std::string editorLocaleEnvironmentValue() {
@@ -659,6 +694,55 @@ namespace {
                validateEditorFontSmoke(mode, imgui, locale);
     }
 
+    [[nodiscard]] asharia::editor::EditorLocale
+    alternateLocale(asharia::editor::EditorLocale locale) {
+        return locale == asharia::editor::EditorLocale::ZhHans
+                   ? asharia::editor::EditorLocale::EnUs
+                   : asharia::editor::EditorLocale::ZhHans;
+    }
+
+    [[nodiscard]] bool validateEditorSettingsSmoke(asharia::editor::EditorRunMode mode,
+                                                   asharia::editor::EditorContext& editorContext) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+
+        asharia::editor::EditorSettingsController& settings = editorContext.settings();
+        const asharia::editor::EditorLocale initialLocale = settings.settings().locale;
+        const asharia::editor::EditorLocale changedLocale = alternateLocale(initialLocale);
+        if (auto changed = settings.setLocale(changedLocale); !changed) {
+            asharia::logError(changed.error().message);
+            return false;
+        }
+        if (settings.settings().locale != changedLocale ||
+            editorContext.i18n().locale() != changedLocale) {
+            asharia::logError("Editor settings smoke did not apply the selected locale.");
+            return false;
+        }
+
+        auto loaded = asharia::editor::loadEditorSettings(settings.settingsPath(), initialLocale);
+        if (!loaded) {
+            asharia::logError(loaded.error().message);
+            return false;
+        }
+        if (loaded->locale != changedLocale) {
+            asharia::logError("Editor settings smoke did not persist the selected locale.");
+            return false;
+        }
+
+        if (auto restored = settings.setLocale(initialLocale); !restored) {
+            asharia::logError(restored.error().message);
+            return false;
+        }
+        if (settings.settings().locale != initialLocale ||
+            editorContext.i18n().locale() != initialLocale) {
+            asharia::logError("Editor settings smoke did not restore the initial locale.");
+            return false;
+        }
+
+        return true;
+    }
+
     VkImageMemoryBarrier2 imageBarrier(const ImageBarrierDesc& desc) {
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -923,6 +1007,7 @@ namespace {
                 .diagnosticsLog = editorContext.diagnosticsLog(),
                 .frameDebugger = frameDebugger,
                 .i18n = editorContext.i18n(),
+                .settings = editorContext.settings(),
                 .inputRouter = inputRouter,
                 .renderGraphSnapshots = viewportHost,
                 .viewportHost = viewportHost,
@@ -1005,6 +1090,12 @@ namespace {
             [] { return std::make_unique<asharia::editor::LogPanel>(); });
         if (!log) {
             return std::unexpected{std::move(log.error())};
+        }
+
+        auto settings = panelRegistry.registerPanel(
+            [] { return std::make_unique<asharia::editor::EditorSettingsPanel>(); });
+        if (!settings) {
+            return std::unexpected{std::move(settings.error())};
         }
 
         return panelRegistry.registerPanel(
@@ -1129,6 +1220,22 @@ namespace {
             return std::unexpected{std::move(uiStylePreview.error())};
         }
 
+        auto editorSettings = actionRegistry.registerAction(
+            asharia::editor::EditorActionDesc{
+                .id = asharia::editor::EditorId{.value = "view.editor-settings"},
+                .menuPath = "View",
+                .label = "Editor Settings",
+                .labelKey = "action.view.editorSettings",
+                .shortcut = {},
+                .enabled = true,
+            },
+            [](asharia::editor::EditorContext& context) {
+                static_cast<void>(context.panelRegistry().focusPanel("editor-settings"));
+            });
+        if (!editorSettings) {
+            return std::unexpected{std::move(editorSettings.error())};
+        }
+
         auto captureFrame = actionRegistry.registerAction(
             asharia::editor::EditorActionDesc{
                 .id = asharia::editor::EditorId{.value = "debug.capture-frame"},
@@ -1161,7 +1268,7 @@ namespace {
 
     [[nodiscard]] bool
     validatePanelRegistrySmoke(asharia::editor::EditorPanelRegistry& panelRegistry) {
-        constexpr std::size_t kExpectedPanelCount = 5;
+        constexpr std::size_t kExpectedPanelCount = 6;
         constexpr std::size_t kExpectedOpenPanelCount = 4;
 
         if (!panelRegistry.closePanel("log") || !panelRegistry.focusPanel("log")) {
@@ -1170,7 +1277,8 @@ namespace {
         }
         if (panelRegistry.panelCount() != kExpectedPanelCount ||
             panelRegistry.openPanelCount() != kExpectedOpenPanelCount ||
-            !panelRegistry.isOpen("log") || panelRegistry.isOpen("ui-style-preview")) {
+            !panelRegistry.isOpen("log") || panelRegistry.isOpen("ui-style-preview") ||
+            panelRegistry.isOpen("editor-settings")) {
             asharia::logError(
                 "Editor panel registry smoke detected invalid singleton panel state.");
             return false;
@@ -1183,8 +1291,8 @@ namespace {
     validateActionRegistrySmoke(asharia::editor::EditorActionRegistry& actionRegistry,
                                 asharia::editor::EditorContext& editorContext,
                                 asharia::editor::EditorPanelRegistry& panelRegistry) {
-        constexpr std::size_t kExpectedActionCount = 10;
-        constexpr std::size_t kExpectedEnabledActionCount = 7;
+        constexpr std::size_t kExpectedActionCount = 11;
+        constexpr std::size_t kExpectedEnabledActionCount = 8;
 
         if (actionRegistry.actionCount() != kExpectedActionCount ||
             actionRegistry.enabledActionCount() != kExpectedEnabledActionCount) {
@@ -1230,6 +1338,15 @@ namespace {
             actionRegistry.invokeCount("view.ui-style-preview") != 1 ||
             !panelRegistry.closePanel("ui-style-preview")) {
             asharia::logError("Editor action registry smoke failed to route UI Style Preview.");
+            return false;
+        }
+        editorContext.eventQueue().clear();
+
+        if (!actionRegistry.invoke("view.editor-settings", editorContext) ||
+            !panelRegistry.isOpen("editor-settings") ||
+            actionRegistry.invokeCount("view.editor-settings") != 1 ||
+            !panelRegistry.closePanel("editor-settings")) {
+            asharia::logError("Editor action registry smoke failed to route Editor Settings.");
             return false;
         }
         editorContext.eventQueue().clear();
@@ -1281,6 +1398,21 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool
+    validateEditorRegistrationSmoke(asharia::editor::EditorRunMode mode,
+                                    asharia::editor::EditorActionRegistry& actionRegistry,
+                                    asharia::editor::EditorContext& editorContext,
+                                    asharia::editor::EditorPanelRegistry& panelRegistry) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+
+        return validatePanelRegistrySmoke(panelRegistry) &&
+               validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry) &&
+               validateEditorSettingsSmoke(mode, editorContext) &&
+               validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry);
+    }
+
 } // namespace
 
 namespace asharia::editor {
@@ -1328,16 +1460,20 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        const asharia::editor::EditorLocale editorLocale = editorLocaleFromEnvironment();
         if (auto loaded = asharia::editor::loadEditorI18nCatalog(editorI18nDirectory()); !loaded) {
             asharia::logError(loaded.error().message);
             return EXIT_FAILURE;
         }
 
+        const asharia::editor::EditorLocale fallbackLocale = editorLocaleFromEnvironment();
+        const EditorSettingsRunState settingsRun =
+            loadEditorSettingsForRun(smokeMode, fallbackLocale);
+        const asharia::editor::EditorLocale editorLocale = settingsRun.settings.locale;
+
         ImGuiRuntime imgui;
         const ImGuiRuntimeDesc imguiDesc{
             .layoutIniPath = editorLayoutIniPathForRun(smokeMode),
-            .enableCjkGlyphs = editorLocale == asharia::editor::EditorLocale::ZhHans,
+            .enableCjkGlyphs = true,
             .cjkFontPath = {},
             .fontPixelSize = 16.0F,
         };
@@ -1371,14 +1507,13 @@ namespace asharia::editor {
         asharia::editor::EditorEventQueue eventQueue;
         asharia::editor::EditorDiagnosticsLog diagnosticsLog;
         asharia::editor::EditorFrameDebugger frameDebugger;
-        asharia::editor::EditorI18n editorI18n{editorLocale};
+        asharia::editor::EditorI18n editorI18n{settingsRun.settings.locale};
+        asharia::editor::EditorSettingsController settingsController{settingsRun.settings,
+                                                                     settingsRun.path, editorI18n};
         asharia::editor::EditorPanelRegistry panelRegistry;
         panelRegistry.setEventQueue(&eventQueue);
         if (auto registered = registerEditorPanels(panelRegistry); !registered) {
             asharia::logError(registered.error().message);
-            return EXIT_FAILURE;
-        }
-        if (smokeMode && !validatePanelRegistrySmoke(panelRegistry)) {
             return EXIT_FAILURE;
         }
 
@@ -1389,13 +1524,8 @@ namespace asharia::editor {
         }
 
         asharia::editor::EditorContext editorContext{panelRegistry, eventQueue, diagnosticsLog,
-                                                     frameDebugger, editorI18n};
-        if (smokeMode &&
-            !validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry)) {
-            return EXIT_FAILURE;
-        }
-        if (smokeMode &&
-            !validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry)) {
+                                                     frameDebugger, editorI18n, settingsController};
+        if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, panelRegistry)) {
             return EXIT_FAILURE;
         }
 

@@ -176,11 +176,18 @@ namespace {
         }
 
         ImGuiIO& imguiIo = ImGui::GetIO();
+        const float fontSize = desc.fontPixelSize > 0.0F ? desc.fontPixelSize : 16.0F;
+        if (imguiIo.Fonts->Fonts.empty()) {
+            ImFontConfig defaultFontConfig{};
+            defaultFontConfig.SizePixels = fontSize;
+            imguiIo.Fonts->AddFontDefault(&defaultFontConfig);
+        }
+
         ImFontConfig fontConfig{};
         fontConfig.FontDataOwnedByAtlas = false;
+        fontConfig.MergeMode = true;
         fontConfig.OversampleH = 2;
         fontConfig.OversampleV = 1;
-        const float fontSize = desc.fontPixelSize > 0.0F ? desc.fontPixelSize : 16.0F;
         const ImWchar* glyphRanges = imguiIo.Fonts->GetGlyphRangesChineseSimplifiedCommon();
         ImFont* font = imguiIo.Fonts->AddFontFromMemoryTTF(
             fontData.data(), static_cast<int>(fontData.size()), fontSize, &fontConfig, glyphRanges);
@@ -190,7 +197,6 @@ namespace {
             return;
         }
 
-        imguiIo.FontDefault = font;
         status.cjkLoaded = true;
         asharia::logInfo("Loaded editor CJK font: " + pathToUtf8String(*fontPath));
     }
