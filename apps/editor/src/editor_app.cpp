@@ -49,7 +49,7 @@ namespace {
         asharia::VulkanDebugLabelMode::Required;
     constexpr int kSmokeFrameCount = 3;
     constexpr int kResizeSmokeFrameCount = 8;
-    constexpr int kFrameDebuggerSmokeFrameCount = 5;
+    constexpr int kFrameDebuggerSmokeFrameCount = 7;
     constexpr int kSmokeAttemptLimit = 120;
     constexpr int kResizeSmokeWindowWidth = 960;
     constexpr int kResizeSmokeWindowHeight = 540;
@@ -133,12 +133,15 @@ namespace {
         bool resizeRequested{};
         bool resizedViewportPresented{};
         bool frameDebugCaptureRequested{};
+        bool frameDebugPreviewRequested{};
+        bool frameDebugPreviewVisible{};
         bool frameDebugResumeRequested{};
         bool frameDebugRenderedAfterResume{};
         VkExtent2D viewportExtentBeforeResize{};
         VkExtent2D viewportExtentAfterResize{};
         std::uint64_t textureFramesBeforeResize{};
         std::uint64_t viewportFramesAtFrameDebugPause{};
+        std::uint64_t viewportFramesAtFrameDebugPreview{};
         std::uint64_t viewportFramesAfterFrameDebugResume{};
         asharia::editor::EditorInputRouterStats inputStats;
         asharia::editor::EditorShortcutRouterStats shortcutStats;
@@ -154,9 +157,12 @@ namespace {
 
     struct EditorFrameDebuggerSmokeState {
         bool captureRequested{};
+        bool previewRequested{};
+        bool previewVisible{};
         bool resumeRequested{};
         bool renderedAfterResume{};
         std::uint64_t viewportFramesAtPause{};
+        std::uint64_t viewportFramesAtPreview{};
         std::uint64_t viewportFramesAfterResume{};
     };
 
@@ -181,6 +187,30 @@ namespace {
         }
     }
 
+    std::optional<std::uint32_t>
+    chooseFrameDebugPreviewImage(const asharia::editor::EditorFrameDebugger& frameDebugger) {
+        const std::optional<asharia::editor::EditorFrameDebugCapture>& capture =
+            frameDebugger.pausedCapture();
+        if (!capture) {
+            return std::nullopt;
+        }
+
+        std::optional<std::uint32_t> fallback;
+        for (const asharia::RenderGraphDiagnosticsResourceNode& resource :
+             capture->diagnostics.renderGraph.resources) {
+            if (resource.kind != asharia::RenderGraphResourceKind::Image) {
+                continue;
+            }
+            if (!fallback) {
+                fallback = resource.resourceIndex;
+            }
+            if (resource.name == "FullscreenSource") {
+                return resource.resourceIndex;
+            }
+        }
+        return fallback;
+    }
+
     void updateFrameDebuggerSmoke(asharia::editor::EditorFrameDebugger& frameDebugger,
                                   asharia::editor::EditorActionRegistry& actionRegistry,
                                   asharia::editor::EditorContext& editorContext,
@@ -193,7 +223,29 @@ namespace {
 
         if (!state.resumeRequested &&
             frameDebugger.state() == asharia::editor::EditorFrameDebuggerState::PausedFrameDebug) {
-            state.viewportFramesAtPause = viewportHost.viewportFramesRendered();
+            if (!state.previewRequested) {
+                state.viewportFramesAtPause = viewportHost.viewportFramesRendered();
+                const std::optional<std::uint32_t> previewImage =
+                    chooseFrameDebugPreviewImage(frameDebugger);
+                if (previewImage) {
+                    state.previewRequested =
+                        frameDebugger.selectPreviewImageResource(*previewImage);
+                }
+                return;
+            }
+
+            const asharia::editor::EditorFrameDebugPreview& preview = frameDebugger.preview();
+            const asharia::editor::EditorFrameDebuggerStats stats = frameDebugger.stats();
+            if (!state.previewVisible) {
+                if (preview.status == asharia::editor::EditorFrameDebugPreviewStatus::Available &&
+                    asharia::editor::hasEditorViewportTexture(preview.texture) &&
+                    stats.previewTextureFramesDrawn > 0) {
+                    state.viewportFramesAtPreview = viewportHost.viewportFramesRendered();
+                    state.previewVisible = true;
+                }
+                return;
+            }
+
             state.resumeRequested = actionRegistry.invoke("debug.resume-frame", editorContext);
             return;
         }
@@ -362,9 +414,11 @@ namespace {
             return true;
         }
 
-        if (!runResult.frameDebugCaptureRequested || !runResult.frameDebugResumeRequested ||
+        if (!runResult.frameDebugCaptureRequested || !runResult.frameDebugPreviewRequested ||
+            !runResult.frameDebugPreviewVisible || !runResult.frameDebugResumeRequested ||
             !runResult.frameDebugRenderedAfterResume) {
-            asharia::logError("Editor frame debugger smoke did not complete capture/resume flow.");
+            asharia::logError(
+                "Editor frame debugger smoke did not complete capture/preview/resume flow.");
             return false;
         }
         if (frameDebugger.state() != asharia::editor::EditorFrameDebuggerState::Running) {
@@ -375,8 +429,16 @@ namespace {
         const asharia::editor::EditorFrameDebuggerStats stats = frameDebugger.stats();
         if (stats.captureRequests != 1 || stats.framesCaptured != 1 ||
             stats.completedCaptures != 1 || stats.resumeRequests != 1 || stats.framesResumed != 1 ||
-            stats.renderViewFramesSkipped == 0 || stats.frameDebugRenderGraphSnapshotFrames == 0) {
+            stats.renderViewFramesSkipped == 0 || stats.frameDebugRenderGraphSnapshotFrames == 0 ||
+            stats.previewRequests == 0 || stats.previewFramesRecorded == 0 ||
+            stats.previewTextureFramesPublished == 0 || stats.previewTextureFramesDrawn == 0) {
             asharia::logError("Editor frame debugger smoke recorded unexpected state counts.");
+            return false;
+        }
+        if (runResult.viewportFramesAtFrameDebugPreview !=
+            runResult.viewportFramesAtFrameDebugPause) {
+            asharia::logError(
+                "Editor frame debugger smoke recorded a normal RenderView while previewing.");
             return false;
         }
         if (runResult.viewportFramesAfterFrameDebugResume <=
@@ -619,6 +681,11 @@ namespace {
                 if (!viewport) {
                     return std::unexpected{std::move(viewport.error())};
                 }
+                auto frameDebugPreview =
+                    viewportHost.recordFrameDebugPreview(context, renderer, frameDebugger);
+                if (!frameDebugPreview) {
+                    return std::unexpected{std::move(frameDebugPreview.error())};
+                }
                 if (!recordRenderViews) {
                     frameDebugger.notifyRenderViewSkipped();
                 } else if (frameDebugger.isCapturingFrame()) {
@@ -742,12 +809,15 @@ namespace {
             .resizeRequested = resizeSmoke.requested,
             .resizedViewportPresented = resizeSmoke.presentedAfterResize,
             .frameDebugCaptureRequested = frameDebugSmoke.captureRequested,
+            .frameDebugPreviewRequested = frameDebugSmoke.previewRequested,
+            .frameDebugPreviewVisible = frameDebugSmoke.previewVisible,
             .frameDebugResumeRequested = frameDebugSmoke.resumeRequested,
             .frameDebugRenderedAfterResume = frameDebugSmoke.renderedAfterResume,
             .viewportExtentBeforeResize = resizeSmoke.extentBeforeResize,
             .viewportExtentAfterResize = resizeSmoke.extentAfterResize,
             .textureFramesBeforeResize = resizeSmoke.textureFramesBeforeResize,
             .viewportFramesAtFrameDebugPause = frameDebugSmoke.viewportFramesAtPause,
+            .viewportFramesAtFrameDebugPreview = frameDebugSmoke.viewportFramesAtPreview,
             .viewportFramesAfterFrameDebugResume = frameDebugSmoke.viewportFramesAfterResume,
             .inputStats = inputRouter.stats(),
             .shortcutStats = shortcutRouter.stats(),

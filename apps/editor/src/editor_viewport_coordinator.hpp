@@ -20,6 +20,8 @@
 
 namespace asharia::editor {
 
+    class EditorFrameDebugger;
+
     struct EditorViewportFrameEpochs {
         std::uint64_t completedFrameEpoch{};
         std::uint64_t submittedFrameEpoch{};
@@ -36,6 +38,9 @@ namespace asharia::editor {
         std::uint64_t idleSceneViewFramesSkipped{};
         std::uint64_t liveRenderGraphViewFrames{};
         std::uint64_t liveRenderGraphSnapshotFrames{};
+        std::uint64_t frameDebugPreviewFramesRecorded{};
+        std::uint64_t frameDebugPreviewUnavailableFrames{};
+        std::uint64_t frameDebugPreviewTexturesPublished{};
         std::uint64_t lastRenderViewDiagnosticsPasses{};
         std::uint64_t lastRenderViewDiagnosticsResources{};
         std::uint64_t lastRenderViewDiagnosticsAccessEdges{};
@@ -96,6 +101,10 @@ namespace asharia::editor {
                              asharia::BasicFullscreenTextureRenderer& renderer,
                              bool recordRenderViews = true,
                              EditorViewportRepaintReasons repaintReasons = {});
+        [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+        recordFrameDebugPreview(const asharia::VulkanFrameRecordContext& frame,
+                                asharia::BasicFullscreenTextureRenderer& renderer,
+                                EditorFrameDebugger& frameDebugger);
         void shutdown();
 
         [[nodiscard]] bool hasPresentedViewportTexture() const;
@@ -122,6 +131,8 @@ namespace asharia::editor {
         ImGuiTextureRegistry textureRegistry_;
         ViewportTexture presentedTexture_;
         ViewportTexture pendingTexture_;
+        ViewportTexture debugReplayTexture_;
+        ViewportTexture debugPreviewTexture_;
         std::vector<ViewportTexture> retiredTextures_;
         std::optional<EditorViewportRequest> requestedViewport_;
         std::optional<EditorRecordedRenderViewDiagnostics> latestRecordedDiagnostics_;

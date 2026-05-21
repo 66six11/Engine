@@ -3,6 +3,24 @@
 #include <utility>
 
 namespace asharia::editor {
+    namespace {
+
+        [[nodiscard]] std::optional<std::uint32_t>
+        firstCapturedImageResourceIndex(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+            for (const asharia::RenderGraphDiagnosticsResourceNode& resource :
+                 snapshot.resources) {
+                if (resource.kind == asharia::RenderGraphResourceKind::Image) {
+                    return resource.resourceIndex;
+                }
+            }
+            return std::nullopt;
+        }
+
+        void resetPreview(EditorFrameDebugPreview& preview) {
+            preview = EditorFrameDebugPreview{};
+        }
+
+    } // namespace
 
     std::string_view editorFrameDebuggerStateName(EditorFrameDebuggerState state) {
         switch (state) {
@@ -22,6 +40,20 @@ namespace asharia::editor {
         return "Unknown";
     }
 
+    std::string_view editorFrameDebugPreviewStatusName(EditorFrameDebugPreviewStatus status) {
+        switch (status) {
+        case EditorFrameDebugPreviewStatus::NotRequested:
+            return "NotRequested";
+        case EditorFrameDebugPreviewStatus::Pending:
+            return "Pending";
+        case EditorFrameDebugPreviewStatus::Available:
+            return "Available";
+        case EditorFrameDebugPreviewStatus::Unavailable:
+            return "Unavailable";
+        }
+        return "Unknown";
+    }
+
     bool EditorFrameDebugger::requestCapture() {
         if (state_ != EditorFrameDebuggerState::Running) {
             ++stats_.ignoredCaptureRequests;
@@ -30,6 +62,7 @@ namespace asharia::editor {
 
         pausedCapture_.reset();
         latestCapture_.reset();
+        resetPreview(preview_);
         ++stats_.captureRequests;
         transitionTo(EditorFrameDebuggerState::CaptureRequested);
         return true;
@@ -56,6 +89,7 @@ namespace asharia::editor {
 
         if (state_ == EditorFrameDebuggerState::Resume) {
             pausedCapture_.reset();
+            resetPreview(preview_);
             ++stats_.framesResumed;
             addEditorViewportRepaintReason(pendingRenderViewRepaintReasons_,
                                            EditorViewportRepaintReason::FrameDebugEventChanged);
@@ -75,6 +109,13 @@ namespace asharia::editor {
             .requestedExtent = desc.requestedExtent,
             .diagnostics = std::move(desc.diagnostics),
         };
+        if (const auto firstImage =
+                firstCapturedImageResourceIndex(latestCapture_->diagnostics.renderGraph)) {
+            preview_.selectedImageResourceIndex = *firstImage;
+            preview_.status = EditorFrameDebugPreviewStatus::Pending;
+            preview_.dirty = true;
+            ++stats_.previewRequests;
+        }
         pausedCapture_ = latestCapture_;
         ++stats_.framesCaptured;
         transitionTo(EditorFrameDebuggerState::WaitingGpuFence);
@@ -103,6 +144,63 @@ namespace asharia::editor {
         if (snapshotVisible) {
             ++stats_.frameDebugRenderGraphSnapshotFrames;
         }
+    }
+
+    void EditorFrameDebugger::notifyFrameDebugPreviewDrawn(bool textureVisible) {
+        if (textureVisible) {
+            ++stats_.previewTextureFramesDrawn;
+        }
+    }
+
+    bool EditorFrameDebugger::selectPreviewImageResource(std::uint32_t resourceIndex) {
+        if (!pausedCapture_ && !latestCapture_) {
+            return false;
+        }
+
+        const bool changed = !preview_.selectedImageResourceIndex ||
+                             *preview_.selectedImageResourceIndex != resourceIndex;
+        preview_.selectedImageResourceIndex = resourceIndex;
+        preview_.texture = {};
+        preview_.message.clear();
+        preview_.status = EditorFrameDebugPreviewStatus::Pending;
+        preview_.dirty = true;
+        ++stats_.previewRequests;
+        if (changed) {
+            ++stats_.previewSelections;
+        }
+        return true;
+    }
+
+    std::optional<std::uint32_t> EditorFrameDebugger::consumePreviewRequest() {
+        if (state_ != EditorFrameDebuggerState::PausedFrameDebug || !preview_.dirty ||
+            !preview_.selectedImageResourceIndex) {
+            return std::nullopt;
+        }
+
+        preview_.dirty = false;
+        return preview_.selectedImageResourceIndex;
+    }
+
+    void EditorFrameDebugger::publishPreviewTexture(std::uint32_t resourceIndex,
+                                                    EditorViewportTexture texture) {
+        preview_.selectedImageResourceIndex = resourceIndex;
+        preview_.texture = texture;
+        preview_.message.clear();
+        preview_.status = EditorFrameDebugPreviewStatus::Available;
+        preview_.dirty = false;
+        ++stats_.previewFramesRecorded;
+        ++stats_.previewTextureFramesPublished;
+    }
+
+    void EditorFrameDebugger::markPreviewUnavailable(std::uint32_t resourceIndex,
+                                                     std::string message) {
+        preview_.selectedImageResourceIndex = resourceIndex;
+        preview_.texture = {};
+        preview_.message = std::move(message);
+        preview_.status = EditorFrameDebugPreviewStatus::Unavailable;
+        preview_.dirty = false;
+        ++stats_.previewFramesRecorded;
+        ++stats_.previewUnavailableFrames;
     }
 
     EditorViewportRepaintReasons EditorFrameDebugger::consumeRenderViewRepaintReasons() {
@@ -134,6 +232,10 @@ namespace asharia::editor {
 
     const std::optional<EditorFrameDebugCapture>& EditorFrameDebugger::latestCapture() const {
         return latestCapture_;
+    }
+
+    const EditorFrameDebugPreview& EditorFrameDebugger::preview() const {
+        return preview_;
     }
 
     EditorFrameDebuggerStats EditorFrameDebugger::stats() const {

@@ -271,7 +271,7 @@ flowchart TD
   `ShaderRead(fragment)` 并由 fullscreen composite pass 采样写回 backbuffer；smoke 验证 viewport
   extent 可独立于 swapchain extent、resize 后旧 target 进入 deferred deletion、renderer 对外暴露
   sampled target handle/layout、render target 多帧复用、descriptor bind、debug label 和 timestamp readback。
-- `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译和 Vulkan adapter 字段验证入口。
+- `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译、image copy command 和 Vulkan adapter 字段验证入口。
 - `--bench-rendergraph` 是 CPU-only RenderGraph benchmark 入口；它使用 `packages/profiling`
   记录 RecordGraph/CompileGraph scope 和 graph counters，输出 JSONL，不改变 smoke 语义。
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
@@ -702,6 +702,7 @@ flowchart TD
 - `DepthAttachmentRead`
 - `DepthAttachmentWrite`
 - `DepthSampledRead(fragment/compute)`
+- `TransferSrc`
 - `TransferDst`
 - `Present`
 
@@ -711,6 +712,10 @@ flowchart TD
   无 slot API 暂时等价于 `"target"`。
 - `writeTransfer("target", image)` / `writeTransfer(image)` 会要求 image 进入 `TransferDst`；旧的
   无 slot API 暂时等价于 `"target"`。
+- `readTransfer("source", image)` / `readTransfer(image)` 会要求 image 进入 `TransferSrc`，用于显式
+  GPU-side copy/read 操作；旧的无 slot API 暂时等价于 `"source"`。
+- `copyImage("source", "target")` 只描述同一 pass 内从 `TransferRead` source 到 `TransferWrite` target 的
+  RenderGraph command；实际 Vulkan copy 仍由后端执行器基于 slot binding 录制。
 - `readTexture("source", image, shaderStage)` 会要求 image 进入 `ShaderRead(shaderStage)`；当前 smoke
   已验证 fragment shader-read，fullscreen texture 路径已执行真实 descriptor sampling。
 - `writeDepth("depth", image)` 会要求 image 进入 `DepthAttachmentWrite`。
@@ -763,6 +768,9 @@ flowchart TD
 
 - `vulkanImageTransition` 已实现。
 - `vulkanImageBarrier` 已实现。
+- `vulkanImageUsage`、`vulkanImageTransition` 和 `vulkanImageBarrier` 已覆盖 `TransferSrc`，映射到
+  `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`、`VK_PIPELINE_STAGE_2_TRANSFER_BIT` 和
+  `VK_ACCESS_2_TRANSFER_READ_BIT`。
 - `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferRead`、
   `TransferWrite`、`HostRead`、`ShaderRead(fragment/compute)` 和 `StorageReadWrite(compute)`。
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
@@ -770,6 +778,8 @@ flowchart TD
 - `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
+- `--smoke-rendergraph` 已验证 `TransferRead`/`TransferSrc` dependency、diagnostics、`copyImage` command schema、
+  missing/invalid slot 失败路径，以及 `TransferSrc -> TransferDst` copy 准备 barrier 的 Vulkan 字段。
 - `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)`、
   `ShaderRead(compute)` usage、`TransferWrite -> StorageReadWrite(compute)`、
   `StorageReadWrite(compute) -> TransferRead` 和 `TransferWrite -> HostRead` 映射到
@@ -790,7 +800,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor viewport on-demand refresh<br/>editor overlay texture metadata roundtrip<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>Frame Debug capture state<br/>Live RG View<br/>Frame Debug RG View<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor viewport on-demand refresh<br/>editor overlay texture metadata roundtrip<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>Frame Debug capture state<br/>Live RG View<br/>Frame Debug RG View<br/>Frame Debug image preview copy<br/>ShaderRead(fragment/compute)<br/>TransferSrc/TransferRead + copyImage<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
     Step2["之后:<br/>upstream systems<br/>scene-core / editor-core / asset-core"]
 
@@ -834,7 +844,7 @@ flowchart TD
 6. Scene/world、selection、asset import/cache、inspector 和 Play Mode 状态不属于 render 层。它们由
    `scene-core`、`editor-core`、`asset-core` 或 app/editor host 拥有；render 侧只消费 immutable snapshot、
    draw packet、resource handle、material/resource signature 和 RenderView target。
-7. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 grab/copy 语义进入，不放开模糊的 `readTexture + writeColor`。
+7. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 `readTransfer` + `copyImage` 语义进入，不放开模糊的 `readTexture + writeColor`。
 8. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
 9. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
 10. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续 asset-core 拥有 GUID/import/cache，
@@ -845,7 +855,10 @@ flowchart TD
     显示最近一次 RenderView compile 后已经确定的数据；`FrameDebuggerPanel` 作为 Frame Debug RG View 显示
     `EditorFrameDebugger` 捕获并冻结的一帧 snapshot。pass graph visualization 只是 snapshot 的只读节点表现，
     不能成为可编辑 RenderGraph authoring UI。editor UI 不应解析 `formatDebugTables()` 文本。
-12. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
+12. Frame Debug intermediate image preview v1 只在 paused Frame Debug 中通过 editor-controlled replay/copy 录制
+    `builtin.debug-image-copy`，把 captured snapshot 中选中的 graph-local color image copy 到 editor-owned sampled
+    preview target。normal RenderView recording 继续暂停；不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
+13. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的
     culling 策略。

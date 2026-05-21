@@ -3698,6 +3698,7 @@ namespace {
         RasterDrawList,
         ComputeDispatch,
         ComputeReadback,
+        DebugImageCopy,
     };
 
     struct BuiltinSchemaSmokeCase {
@@ -3791,66 +3792,101 @@ namespace {
         };
     }
 
+    void writeTransferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                        std::string_view omittedSlot,
+                                        std::string_view slot,
+                                        asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.writeTransfer(std::string{slot}, image);
+        }
+    }
+
+    void readTransferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                       std::string_view omittedSlot,
+                                       std::string_view slot,
+                                       asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.readTransfer(std::string{slot}, image);
+        }
+    }
+
+    void writeColorSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                     std::string_view omittedSlot,
+                                     std::string_view slot,
+                                     asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.writeColor(std::string{slot}, image);
+        }
+    }
+
+    void readTextureSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                      std::string_view omittedSlot,
+                                      std::string_view slot,
+                                      asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.readTexture(std::string{slot}, image, asharia::RenderGraphShaderStage::Fragment);
+        }
+    }
+
+    void writeDepthSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                     std::string_view omittedSlot,
+                                     std::string_view slot,
+                                     asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.writeDepth(std::string{slot}, image);
+        }
+    }
+
+    void readWriteStorageBufferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                                 std::string_view omittedSlot,
+                                                 std::string_view slot,
+                                                 asharia::RenderGraphBufferHandle buffer) {
+        if (omittedSlot != slot) {
+            pass.readWriteStorageBuffer(std::string{slot}, buffer,
+                                        asharia::RenderGraphShaderStage::Compute);
+        }
+    }
+
     void addBuiltinSchemaSmokeSlots(BuiltinSchemaSmokePass passKind,
                                     asharia::RenderGraph::PassBuilder& pass,
                                     BuiltinSchemaSmokeImages images,
                                     std::string_view omittedSlot = {}) {
         switch (passKind) {
         case BuiltinSchemaSmokePass::TransferClear:
-            if (omittedSlot != "target") {
-                pass.writeTransfer("target", images.colorTarget);
-            }
+            writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::DynamicClear:
         case BuiltinSchemaSmokePass::RasterTriangle:
-            if (omittedSlot != "target") {
-                pass.writeColor("target", images.colorTarget);
-            }
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::TransientPresent:
-            if (omittedSlot != "source") {
-                pass.readTexture("source", images.colorSource,
-                                 asharia::RenderGraphShaderStage::Fragment);
-            }
-            if (omittedSlot != "target") {
-                pass.writeTransfer("target", images.colorTarget);
-            }
+            readTextureSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
+            writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::RasterDepthTriangle:
         case BuiltinSchemaSmokePass::RasterMesh3D:
         case BuiltinSchemaSmokePass::RasterDrawList:
-            if (omittedSlot != "target") {
-                pass.writeColor("target", images.colorTarget);
-            }
-            if (omittedSlot != "depth") {
-                pass.writeDepth("depth", images.depthTarget);
-            }
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            writeDepthSlotUnlessOmitted(pass, omittedSlot, "depth", images.depthTarget);
             break;
         case BuiltinSchemaSmokePass::RasterMrt:
-            if (omittedSlot != "color0") {
-                pass.writeColor("color0", images.colorTarget);
-            }
-            if (omittedSlot != "color1") {
-                pass.writeColor("color1", images.colorTarget1);
-            }
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "color0", images.colorTarget);
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "color1", images.colorTarget1);
             break;
         case BuiltinSchemaSmokePass::RasterFullscreen:
-            if (omittedSlot != "source") {
-                pass.readTexture("source", images.colorSource,
-                                 asharia::RenderGraphShaderStage::Fragment);
-            }
-            if (omittedSlot != "target") {
-                pass.writeColor("target", images.colorTarget);
-            }
+            readTextureSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::ComputeDispatch:
-            if (omittedSlot != "target") {
-                pass.readWriteStorageBuffer("target", images.storageTarget,
-                                            asharia::RenderGraphShaderStage::Compute);
-            }
+            readWriteStorageBufferSlotUnlessOmitted(pass, omittedSlot, "target",
+                                                    images.storageTarget);
             break;
         case BuiltinSchemaSmokePass::ComputeReadback:
             addBuiltinComputeReadbackSmokeSlots(pass, images, omittedSlot);
+            break;
+        case BuiltinSchemaSmokePass::DebugImageCopy:
+            readTransferSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
+            writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         }
     }
@@ -3996,6 +4032,13 @@ namespace {
                 .paramsType = {},
                 .missingSlot = "source",
                 .context = "builtin compute readback",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::DebugImageCopy,
+                .type = asharia::kBasicDebugImageCopyPassType,
+                .paramsType = {},
+                .missingSlot = "source",
+                .context = "builtin debug image copy",
             },
         };
 
@@ -4847,6 +4890,177 @@ namespace {
                                                });
     }
 
+    bool validateSmokeRenderGraphImageCopy(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto copySource = graph.createTransientImage(asharia::RenderGraphImageDesc{
+            .name = "CopySource",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+        });
+        const auto copyTarget = graph.importImage(asharia::RenderGraphImageDesc{
+            .name = "CopyTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+
+        graph.addPass("CopyImage", "basic.image-copy")
+            .readTransfer("source", copySource)
+            .writeTransfer("target", copyTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImage("source", "target");
+            });
+        graph.addPass("WriteCopySource", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", copySource);
+
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            asharia::logError(compiled.error().message);
+            return false;
+        }
+        if (compiled->passes.size() != 2 || compiled->passes[0].name != "WriteCopySource" ||
+            compiled->passes[1].name != "CopyImage" || compiled->dependencies.size() != 1) {
+            asharia::logError("Render graph image copy smoke produced an unexpected pass plan.");
+            return false;
+        }
+
+        const asharia::RenderGraphCompiledPass& copyPass = compiled->passes[1];
+        if (copyPass.commands.size() != 1 ||
+            copyPass.commands.front().kind != asharia::RenderGraphCommandKind::CopyImage ||
+            copyPass.commands.front().name != "source" ||
+            copyPass.commands.front().secondaryName != "target" ||
+            copyPass.transferReadSlots.size() != 1 ||
+            copyPass.transferWriteSlots.size() != 1) {
+            asharia::logError("Render graph image copy smoke lost command or slot metadata.");
+            return false;
+        }
+
+        bool foundTransferSrcTransition = false;
+        for (const asharia::RenderGraphImageTransition& transition :
+             copyPass.transitionsBefore) {
+            if (transition.image == copySource &&
+                transition.oldState == asharia::RenderGraphImageState::ColorAttachment &&
+                transition.newState == asharia::RenderGraphImageState::TransferSrc) {
+                foundTransferSrcTransition = true;
+            }
+        }
+        if (!foundTransferSrcTransition) {
+            asharia::logError("Render graph image copy smoke missed the TransferSrc transition.");
+            return false;
+        }
+
+        const auto vulkanCopySourceTransition =
+            asharia::vulkanImageTransition(copyPass.transitionsBefore.front());
+        if (vulkanCopySourceTransition.newLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ||
+            vulkanCopySourceTransition.dstStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            vulkanCopySourceTransition.dstAccessMask != VK_ACCESS_2_TRANSFER_READ_BIT) {
+            asharia::logError("Render graph image copy Vulkan mapping was unexpected.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(*compiled);
+        bool foundTransferReadEdge = false;
+        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+            if (edge.passName == "CopyImage" && edge.resourceName == "CopySource" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::TransferRead) {
+                foundTransferReadEdge = true;
+            }
+        }
+        if (!foundTransferReadEdge) {
+            asharia::logError("Render graph image copy diagnostics missed TransferRead.");
+            return false;
+        }
+
+        asharia::RenderGraph missingSlotGraph;
+        const auto missingSource = missingSlotGraph.createTransientImage(asharia::RenderGraphImageDesc{
+            .name = "MissingCopySource",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+        });
+        const auto missingTarget = missingSlotGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "MissingCopyTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+        missingSlotGraph.addPass("WriteMissingCopySource", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", missingSource);
+        missingSlotGraph.addPass("CopyMissingSource", "basic.image-copy")
+            .writeTransfer("target", missingTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImage("source", "target");
+            });
+        if (!expectRenderGraphCompileFailure(missingSlotGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "is missing required slot",
+                                                 .context = "image copy missing source slot",
+                                             })) {
+            return false;
+        }
+
+        asharia::RenderGraph invalidSlotGraph;
+        const auto invalidSource = invalidSlotGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCopySource",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::TransferSrc,
+            .finalState = asharia::RenderGraphImageState::TransferSrc,
+        });
+        const auto invalidTarget = invalidSlotGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCopyTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+        invalidSlotGraph.addPass("CopyInvalidSlot", "basic.image-copy")
+            .readTransfer("unexpected", invalidSource)
+            .writeTransfer("target", invalidTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImage("source", "target");
+            });
+        if (!expectRenderGraphCompileFailure(invalidSlotGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "that is not allowed by schema",
+                                                 .context = "image copy invalid slot",
+                                             })) {
+            return false;
+        }
+
+        asharia::RenderGraph invalidCommandGraph;
+        const auto commandSource = invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCommandSource",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::TransferSrc,
+            .finalState = asharia::RenderGraphImageState::TransferSrc,
+        });
+        const auto commandTarget = invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCommandTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+        invalidCommandGraph.addPass("CopyInvalidCommand", "basic.image-copy")
+            .readTransfer("source", commandSource)
+            .writeTransfer("target", commandTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.clearColor("target", std::array{0.0F, 0.0F, 0.0F, 1.0F});
+            });
+        return expectRenderGraphCompileFailure(invalidCommandGraph.compile(schemas),
+                                               ExpectedRenderGraphCompileFailure{
+                                                   .message = "is not allowed by schema",
+                                                   .context = "image copy invalid command",
+                                               });
+    }
+
     int runSmokeRenderGraph() {
         asharia::RenderGraph graph;
         const auto backbuffer = graph.importImage(asharia::RenderGraphImageDesc{
@@ -5001,6 +5215,26 @@ namespace {
                     asharia::RenderGraphCommandKind::SetVec4,
                     asharia::RenderGraphCommandKind::DrawFullscreenTriangle,
                 },
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "basic.image-copy",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::TransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::TransferWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyImage},
         });
         schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.cycle-read-write",
@@ -5164,6 +5398,10 @@ namespace {
         }
 
         if (!validateSmokeRenderGraphBuffers(schemas)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphImageCopy(schemas)) {
             return EXIT_FAILURE;
         }
 

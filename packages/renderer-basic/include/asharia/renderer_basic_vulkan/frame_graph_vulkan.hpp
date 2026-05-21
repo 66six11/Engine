@@ -204,6 +204,12 @@ namespace asharia {
         return findVulkanRenderGraphImageSlot(pass.transferWriteSlots, slotName, pass, bindings);
     }
 
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphTransferRead(RenderGraphPassContext pass, std::string_view slotName,
+                                      std::span<const VulkanRenderGraphImageBinding> bindings) {
+        return findVulkanRenderGraphImageSlot(pass.transferReadSlots, slotName, pass, bindings);
+    }
+
     [[nodiscard]] inline Result<VulkanRenderGraphBufferBinding>
     findVulkanRenderGraphBufferTransferRead(
         RenderGraphPassContext pass, std::string_view slotName,
@@ -264,6 +270,9 @@ namespace asharia {
             break;
         case RenderGraphImageState::DepthSampledRead:
             label = "DepthSampledRead";
+            break;
+        case RenderGraphImageState::TransferSrc:
+            label = "TransferSrc";
             break;
         case RenderGraphImageState::TransferDst:
             label = "TransferDst";
@@ -368,7 +377,8 @@ namespace asharia {
         appendRenderGraphImageSlotLabels(label, "depthRead", pass.depthReadSlots, bindings);
         appendRenderGraphImageSlotLabels(label, "depthWrite", pass.depthWriteSlots, bindings);
         appendRenderGraphImageSlotLabels(label, "depthSample", pass.depthSampledReadSlots, bindings);
-        appendRenderGraphImageSlotLabels(label, "transfer", pass.transferWriteSlots, bindings);
+        appendRenderGraphImageSlotLabels(label, "transferRead", pass.transferReadSlots, bindings);
+        appendRenderGraphImageSlotLabels(label, "transferWrite", pass.transferWriteSlots, bindings);
         return label;
     }
 

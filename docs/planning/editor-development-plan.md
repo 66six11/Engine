@@ -393,7 +393,7 @@ Every sub-stage must:
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.6 Done; 21.7-21.14 Next/Blocked | In progress | Close editor debug replay loop, then add Scene View grid, gizmo, selection outline and debug overlay after render prerequisites. |
+| 21 | 21.1-21.7 Done; 21.8-21.15 Next/Blocked | In progress | Add Frame Debug image preview foundation, then close pass replay and Scene View grid/gizmo/overlay prerequisites. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -925,19 +925,53 @@ Validation:
 - `--smoke-editor-frame-debugger` verifies Frame Debug RG View consumes the frozen captured snapshot while normal RenderView
   recording remains paused.
 
-### 21.7 Frame Debug Replay Contract
+### 21.7 Frame Debug Image Preview Copy Foundation
 
-Status: Next.
+Status: Done.
 
 Scope:
 
-- Extend Frame Debug beyond capture/pause so selecting a pass/event requests a debug replay refresh.
+- Extend RenderGraph/RHI with image `TransferSrc`, image `TransferRead`, `readTransfer()` and
+  `copyImage(source, target)` so a debug pass can explicitly copy a selected image into a sampled target.
+- Map `TransferSrc` to Vulkan transfer-read layout/stage/access and infer `VK_IMAGE_USAGE_TRANSFER_SRC_BIT` for transient
+  images that are read by copy passes.
+- While Frame Debug is paused, let the Frame Debug RG View select a captured graph-local image resource index and request an
+  editor-controlled debug replay/copy into a debug-owned sampled preview texture.
+- Keep normal target view RenderView recording paused while preview requests are served. Do not call `vkDeviceWaitIdle`; do
+  not perform CPU readback/export in this slice.
+- v1 supports color images with matching mip/layer, extent and format between source and preview target. Depth, buffer,
+  shape-mismatched or unsupported format resources report `preview unavailable`.
+
+Validation:
+
+- RenderGraph smoke covers `TransferRead`/`TransferSrc` dependency sorting, diagnostics, copy command schema and missing or
+  invalid slot failures.
+- Vulkan/renderer smoke covers transfer-src layout/access mapping, transient usage flags and debug copy pass recording into a
+  sampled preview target.
+- Editor frame-debugger smoke verifies capture -> pause -> select image -> preview texture visible while normal RenderView
+  recording remains paused, then resume restores normal rendering.
+
+### 21.8 Frame Debug Replay Contract
+
+Status: Next.
+
+Depends on:
+
+- 21.7 Frame Debug Image Preview Copy Foundation.
+
+Scope:
+
+- Extend Frame Debug beyond graph-local image preview so the primary Frame Debug UI can inspect a pass/draw-call event list and
+  selecting a pass/event requests a debug replay refresh. RG View remains a switchable diagnostics view, not the primary
+  pass/draw-call debugger.
 - Freeze frame time, view params, camera params, RenderGraph diagnostics snapshot and the future draw/command packet inputs
   needed to reproduce the selected frame.
 - Use compiled pass/event ids from the frozen diagnostics snapshot for selection. Replay adds execution-state preview data on
   top of that compiled graph; it is not the source of RG View topology.
-- First implementation is pass-level replay only: select a compiled pass index and re-record a debug preview target through a
-  controlled renderer path up to that pass.
+- First replay implementation is pass-level replay: select a compiled pass index and re-record a debug preview target through
+  a controlled renderer path up to that pass.
+- Draw-call rows come after the pass-level contract has stable draw/command packet ids; do not infer draw calls from RenderGraph
+  access edges.
 - Keep normal target view rendering paused while replay requests are served through editor-controlled debug refreshes.
 
 Validation:
@@ -947,7 +981,7 @@ Validation:
 - Replay must not call `vkDeviceWaitIdle`, must not expose backend handles to panels and must be driven by captured CPU-side
   frame inputs.
 
-### 21.8 Render View Overlay Prerequisites
+### 21.9 Render View Overlay Prerequisites
 
 Status: Next.
 
@@ -963,13 +997,13 @@ Validation:
 - Renderer smoke verifies view params reach `BasicRenderViewDesc` without editor-only types.
 - Editor viewport smoke continues to prove Game/Preview filtering of Scene-only authoring flags.
 
-### 21.9 Camera-Aware Scene Grid
+### 21.10 Camera-Aware Scene Grid
 
 Status: Blocked.
 
 Depends on:
 
-- 21.8 Render View Overlay Prerequisites.
+- 21.9 Render View Overlay Prerequisites.
 
 Scope:
 
@@ -982,7 +1016,7 @@ Validation:
 - Scene View graph contains the grid pass when the grid flag is enabled.
 - Game View graph does not contain the grid pass unless a future explicit debug mode allows it.
 
-### 21.10 Pass Graph Node View
+### 21.11 Pass Graph Node View
 
 Status: Next.
 
@@ -990,6 +1024,7 @@ Scope:
 
 - Add a read-only node canvas derived from the same `RenderGraphDiagnosticsSnapshot` consumed by Live RG View or Frame Debug
   RG View.
+- Let RG View switch between the stacked table/timeline view and the read-only node view once the node canvas exists.
 - Show pass/resource dependency nodes and allow selection to drive the table details and Frame Debug selected pass/event.
 - Build the node graph from the compiled diagnostics snapshot immediately after RenderGraph compile; paused Frame Debug only
   supplies a frozen snapshot and selected event state.
@@ -999,44 +1034,47 @@ Validation:
 
 - Smoke or panel-level diagnostics verify the node view consumes the captured snapshot and reports selected pass/resource ids.
 
-### 21.11 Intermediate Texture Preview
+### 21.12 Pass/Event Texture Preview Upgrade
 
 Status: Deferred.
 
 Depends on:
 
-- 21.7 Frame Debug Replay Contract.
-- 21.8 Render View Overlay Prerequisites.
-- A renderer/RHI debug preservation or copy path with explicit resource lifetime.
+- 21.7 Frame Debug Image Preview Copy Foundation.
+- 21.8 Frame Debug Replay Contract.
+- Stable pass/event or draw-packet ids.
 
 Scope:
 
-- Preview pass outputs or selected intermediate resources in the editor after an explicit debug preserve/copy operation.
-- Prefer GPU-side copy into a debug-owned sampled image first, then optional readback only for pixel inspection/export.
+- Upgrade graph-local image resource preview to pass/event-selected output preview once replay and draw-packet identity are
+  stable.
+- Add explicit debug preservation policy for resources that cannot be reconstructed by the v1 replay/copy path.
+- Optional readback remains a later pixel inspection/export feature; it must not replace the GPU-side sampled texture preview
+  path.
 - Treat transient resources as unavailable after graph execution unless a pass/resource was explicitly marked for debug
   preservation before recording.
 
 Non-goals:
 
-- Do not read transient images after normal execution without declaring preservation.
+- Do not read transient images after normal execution without declaring preservation or controlled debug replay/copy.
 - Do not expose raw `VkImage`/`VkImageView` handles to editor panels.
 - Do not force all RenderGraph resources to become persistent just for debugging.
 
 Validation:
 
-- Smoke captures a selected pass output into a debug sampled texture, displays it through `ImGuiTextureRegistry`, and retires
-  it through the existing frame-epoch lifetime path.
+- Smoke captures a selected pass/event output into a debug sampled texture, displays it through `ImGuiTextureRegistry`, and
+  retires it through the existing frame-epoch lifetime path.
 - Negative smoke verifies attempting to preview an unpreserved transient resource reports an explicit diagnostic instead of
   reading invalid GPU memory.
 
-### 21.12 Gizmo Interaction
+### 21.13 Gizmo Interaction
 
 Status: Blocked.
 
 Depends on:
 
 - Selection model and transaction path.
-- 21.8 Render View Overlay Prerequisites for visual gizmo rendering.
+- 21.9 Render View Overlay Prerequisites for visual gizmo rendering.
 
 Scope:
 
@@ -1047,14 +1085,14 @@ Validation:
 
 - Mouse capture respects ImGui capture flags and hovered Scene View.
 
-### 21.13 Selection Outline
+### 21.14 Selection Outline
 
 Status: Blocked.
 
 Depends on:
 
 - Selection model.
-- 21.8 Render View Overlay Prerequisites.
+- 21.9 Render View Overlay Prerequisites.
 
 Scope:
 
@@ -1065,13 +1103,13 @@ Validation:
 
 - Selected state affects Scene View only.
 
-### 21.14 Debug Draw Overlay
+### 21.15 Debug Draw Overlay
 
 Status: Blocked.
 
 Depends on:
 
-- 21.8 Render View Overlay Prerequisites.
+- 21.9 Render View Overlay Prerequisites.
 
 Scope:
 
@@ -1246,22 +1284,27 @@ Current completed slices:
   diagnostics through `EditorRenderGraphSnapshotProvider`; `FrameDebuggerPanel` owns the Frame Debug RG View and reads frozen
   frame-debug captures. Both reuse `RenderGraphSnapshotView`.
 
-1. `feat: add frame debug replay contract`
+1. `feat: add frame debug image preview foundation`
+
+Add RenderGraph/RHI transfer-read and image-copy primitives, then let paused Frame Debug select a captured image resource and
+copy it into an editor-owned sampled preview target without resuming normal target view rendering.
+
+2. `feat: add frame debug replay contract`
 
 Freeze enough CPU-side frame inputs for pass-level replay and let selecting a pass/event request a debug refresh without
-resuming normal target view rendering. Keep intermediate texture preview out until explicit debug preservation/copy exists.
+resuming normal target view rendering.
 
-2. `feat: add render view overlay prerequisites`
+3. `feat: add render view overlay prerequisites`
 
 Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, explicit overlay pass
 load/store behavior, blend state support or an equivalent overlay composition path, and a narrow debug/world-line draw route.
 Then add a camera-aware world grid as the first Scene View-only render pass; no gizmo interaction, picking or selection outline
 in that slice.
 
-3. `feat: add intermediate texture preview`
+4. `feat: add pass/event texture preview upgrade`
 
-After replay and overlay contracts are stable, add debug-preserved pass output preview through a debug-owned sampled texture.
-Unpreserved transient resources must produce diagnostics instead of being read after graph execution.
+After replay identity is stable, upgrade image-resource preview to pass/event-selected output preview and optional explicit
+debug preservation for resources that cannot be replayed.
 
 ## Non-goals
 

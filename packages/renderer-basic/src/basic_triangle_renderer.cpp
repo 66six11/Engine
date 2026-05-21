@@ -812,6 +812,29 @@ namespace asharia {
                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColor, 1, &clearRange);
         }
 
+        void recordImageCopy(const VulkanFrameRecordContext& frame,
+                             const VulkanRenderGraphImageBinding& source,
+                             const VulkanRenderGraphImageBinding& target, VkExtent2D extent) {
+            VkImageCopy copyRegion{};
+            copyRegion.srcSubresource.aspectMask = source.aspectMask;
+            copyRegion.srcSubresource.mipLevel = 0;
+            copyRegion.srcSubresource.baseArrayLayer = 0;
+            copyRegion.srcSubresource.layerCount = 1;
+            copyRegion.dstSubresource.aspectMask = target.aspectMask;
+            copyRegion.dstSubresource.mipLevel = 0;
+            copyRegion.dstSubresource.baseArrayLayer = 0;
+            copyRegion.dstSubresource.layerCount = 1;
+            copyRegion.extent = VkExtent3D{
+                .width = extent.width,
+                .height = extent.height,
+                .depth = 1,
+            };
+
+            vkCmdCopyImage(frame.commandBuffer, source.vulkanImage,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target.vulkanImage,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+        }
+
         [[nodiscard]] std::array<VkVertexInputBindingDescription, 1> basicVertexInputBindings() {
             return std::array{
                 VkVertexInputBindingDescription{
@@ -1536,6 +1559,42 @@ namespace asharia {
             return {};
         }
 
+        [[nodiscard]] Result<void> executeBasicDebugImageCopyPass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> bindings, VkExtent2D copyExtent,
+            BasicDebugPreviewResult* previewResult) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
+                frame, renderGraphPassDebugLabel(pass, bindings));
+
+            auto transitions = recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+            if (pass.commands.size() != 1 ||
+                pass.commands.front().kind != RenderGraphCommandKind::CopyImage ||
+                pass.commands.front().name != "source" ||
+                pass.commands.front().secondaryName != "target") {
+                return std::unexpected{renderGraphError(
+                    "Debug image copy pass expected one copyImage(source, target) command")};
+            }
+
+            auto source = findVulkanRenderGraphTransferRead(pass, "source", bindings);
+            if (!source) {
+                return std::unexpected{std::move(source.error())};
+            }
+            auto target = findVulkanRenderGraphTransferWrite(pass, "target", bindings);
+            if (!target) {
+                return std::unexpected{std::move(target.error())};
+            }
+
+            recordImageCopy(frame, *source, *target, copyExtent);
+            if (previewResult != nullptr) {
+                ++previewResult->copiesRecorded;
+            }
+            return {};
+        }
+
         [[nodiscard]] bool usesImage(std::span<const RenderGraphImageHandle> images,
                                      RenderGraphImageHandle image) {
             return std::ranges::any_of(
@@ -1549,6 +1608,9 @@ namespace asharia {
             for (const RenderGraphCompiledPass& pass : compiled.passes) {
                 if (usesImage(pass.transferWrites, image)) {
                     usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                }
+                if (usesImage(pass.transferReads, image)) {
+                    usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
                 }
                 if (usesImage(pass.colorWrites, image)) {
                     usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -1719,6 +1781,114 @@ namespace asharia {
                 .aspectMask = target.aspectMask,
                 .debugName = {},
             };
+        }
+
+        struct BasicRenderViewImageCandidate {
+            RenderGraphImageHandle image{};
+            std::string_view name;
+            RenderGraphImageFormat format{RenderGraphImageFormat::Undefined};
+            RenderGraphExtent2D extent{};
+            VkImageAspectFlags aspectMask{VK_IMAGE_ASPECT_COLOR_BIT};
+        };
+
+        [[nodiscard]] const BasicRenderViewImageCandidate*
+        findBasicRenderViewImageCandidate(
+            std::span<const BasicRenderViewImageCandidate> candidates,
+            std::uint32_t sourceImageResourceIndex) {
+            for (const BasicRenderViewImageCandidate& candidate : candidates) {
+                if (candidate.image.index == sourceImageResourceIndex) {
+                    return &candidate;
+                }
+            }
+            return nullptr;
+        }
+
+        [[nodiscard]] bool sameRenderGraphExtent(RenderGraphExtent2D lhs,
+                                                 RenderGraphExtent2D rhs) {
+            return lhs.width == rhs.width && lhs.height == rhs.height;
+        }
+
+        void setBasicDebugPreviewResult(BasicDebugPreviewRequest* request,
+                                        BasicDebugPreviewStatus status,
+                                        std::string message = {}) {
+            if (request == nullptr || request->result == nullptr) {
+                return;
+            }
+
+            *request->result = BasicDebugPreviewResult{
+                .status = status,
+                .sourceImageResourceIndex = request->sourceImageResourceIndex,
+                .message = std::move(message),
+                .copiesRecorded = {},
+            };
+        }
+
+        [[nodiscard]] Result<bool> tryAddBasicDebugPreviewPass(
+            RenderGraph& graph, BasicDebugPreviewRequest* request,
+            std::span<const BasicRenderViewImageCandidate> candidates,
+            std::vector<VulkanRenderGraphImageBinding>& bindings,
+            const VulkanFrameRecordContext& frame) {
+            if (request == nullptr) {
+                return false;
+            }
+
+            setBasicDebugPreviewResult(request, BasicDebugPreviewStatus::Unavailable);
+            auto previewTarget =
+                validateBasicRenderViewTarget(request->target, "Debug preview target");
+            if (!previewTarget) {
+                return std::unexpected{std::move(previewTarget.error())};
+            }
+            if (request->target.finalUsage != BasicRenderViewTargetFinalUsage::SampledTexture) {
+                return std::unexpected{renderGraphError(
+                    "Debug preview target must declare SampledTexture final usage")};
+            }
+
+            const BasicRenderViewImageCandidate* source = findBasicRenderViewImageCandidate(
+                candidates, request->sourceImageResourceIndex);
+            if (source == nullptr) {
+                setBasicDebugPreviewResult(
+                    request, BasicDebugPreviewStatus::Unavailable,
+                    "Selected image resource is not in the replay graph.");
+                return false;
+            }
+            if (source->format != RenderGraphImageFormat::B8G8R8A8Srgb ||
+                source->aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+                setBasicDebugPreviewResult(
+                    request, BasicDebugPreviewStatus::Unavailable,
+                    "Selected image is not a supported color image.");
+                return false;
+            }
+
+            const RenderGraphImageFormat targetFormat =
+                basicRenderGraphImageFormat(request->target.format);
+            const RenderGraphExtent2D targetExtent = basicRenderGraphExtent(request->target.extent);
+            if (targetFormat != source->format ||
+                !sameRenderGraphExtent(targetExtent, source->extent) ||
+                request->target.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+                setBasicDebugPreviewResult(
+                    request, BasicDebugPreviewStatus::Unavailable,
+                    "Selected image and preview target do not have matching color shape.");
+                return false;
+            }
+
+            const auto previewTargetImage = graph.importImage(basicRenderViewTargetDesc(
+                request->target, RenderGraphImageState::Undefined, "DebugPreviewTarget"));
+            bindings.push_back(basicRenderViewTargetBinding(previewTargetImage, request->target));
+
+            setBasicDebugPreviewResult(request, BasicDebugPreviewStatus::Available);
+            graph.addPass("DebugImageCopy", kBasicDebugImageCopyPassType)
+                .readTransfer("source", source->image)
+                .writeTransfer("target", previewTargetImage)
+                .recordCommands([](RenderGraphCommandList& commands) {
+                    commands.copyImage("source", "target");
+                })
+                .execute([&frame, &bindings, request](RenderGraphPassContext pass)
+                             -> Result<void> {
+                    return executeBasicDebugImageCopyPass(
+                        frame, pass, bindings, request->target.extent,
+                        request == nullptr ? nullptr : request->result);
+                });
+            return true;
         }
 
         [[nodiscard]] Result<void>
@@ -2252,14 +2422,15 @@ namespace asharia {
         RenderGraph graph;
         const auto renderTarget = graph.importImage(basicRenderViewTargetDesc(
             viewTarget, RenderGraphImageState::Undefined, "RenderViewTarget"));
-        const auto source = graph.createTransientImage(RenderGraphImageDesc{
+        const RenderGraphImageDesc sourceDesc{
             .name = "FullscreenSource",
             .format = basicRenderGraphImageFormat(viewTarget.format),
             .extent = basicRenderGraphExtent(viewTarget.extent),
-        });
+        };
+        const auto source = graph.createTransientImage(sourceDesc);
 
         std::vector<VulkanRenderGraphImageBinding> bindings;
-        bindings.reserve(2);
+        bindings.reserve(3);
         bindings.push_back(basicRenderViewTargetBinding(renderTarget, viewTarget));
 
         constexpr BasicTransferClearParams kClearParams{
@@ -2300,6 +2471,29 @@ namespace asharia {
                             "Fullscreen pipeline key references an unknown texture slot",
                     });
             });
+
+        const std::array debugPreviewCandidates{
+            BasicRenderViewImageCandidate{
+                .image = renderTarget,
+                .name = "RenderViewTarget",
+                .format = basicRenderGraphImageFormat(viewTarget.format),
+                .extent = basicRenderGraphExtent(viewTarget.extent),
+                .aspectMask = viewTarget.aspectMask,
+            },
+            BasicRenderViewImageCandidate{
+                .image = source,
+                .name = sourceDesc.name,
+                .format = sourceDesc.format,
+                .extent = sourceDesc.extent,
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            },
+        };
+        auto debugPreviewAdded =
+            tryAddBasicDebugPreviewPass(graph, view.debugPreview, debugPreviewCandidates,
+                                        bindings, frame);
+        if (!debugPreviewAdded) {
+            return std::unexpected{std::move(debugPreviewAdded.error())};
+        }
 
         const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
         auto compiled = graph.compile(schemas);

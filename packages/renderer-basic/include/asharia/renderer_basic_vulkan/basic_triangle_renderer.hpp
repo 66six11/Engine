@@ -107,10 +107,30 @@ namespace asharia {
         RenderGraphDiagnosticsSnapshot renderGraph;
     };
 
+    enum class BasicDebugPreviewStatus {
+        NotRequested,
+        Available,
+        Unavailable,
+    };
+
+    struct BasicDebugPreviewResult {
+        BasicDebugPreviewStatus status{BasicDebugPreviewStatus::NotRequested};
+        std::uint32_t sourceImageResourceIndex{};
+        std::string message;
+        std::uint64_t copiesRecorded{};
+    };
+
+    struct BasicDebugPreviewRequest {
+        std::uint32_t sourceImageResourceIndex{};
+        BasicRenderViewTarget target{};
+        BasicDebugPreviewResult* result{};
+    };
+
     struct BasicRenderViewDesc {
         BasicRenderViewTarget target{};
         std::string_view viewName{"RenderView"};
         BasicRenderViewDiagnostics* diagnostics{};
+        BasicDebugPreviewRequest* debugPreview{};
     };
 
     [[nodiscard]] Result<void>

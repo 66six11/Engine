@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 
 #include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
@@ -30,6 +31,27 @@ namespace asharia::editor {
         std::uint64_t renderViewFramesSkipped{};
         std::uint64_t frameDebugRenderGraphViewFrames{};
         std::uint64_t frameDebugRenderGraphSnapshotFrames{};
+        std::uint64_t previewSelections{};
+        std::uint64_t previewRequests{};
+        std::uint64_t previewFramesRecorded{};
+        std::uint64_t previewUnavailableFrames{};
+        std::uint64_t previewTextureFramesPublished{};
+        std::uint64_t previewTextureFramesDrawn{};
+    };
+
+    enum class EditorFrameDebugPreviewStatus {
+        NotRequested,
+        Pending,
+        Available,
+        Unavailable,
+    };
+
+    struct EditorFrameDebugPreview {
+        EditorFrameDebugPreviewStatus status{EditorFrameDebugPreviewStatus::NotRequested};
+        std::optional<std::uint32_t> selectedImageResourceIndex;
+        EditorViewportTexture texture;
+        std::string message;
+        bool dirty{};
     };
 
     struct EditorFrameDebugCapture {
@@ -58,6 +80,11 @@ namespace asharia::editor {
         void endSubmittedFrame(std::uint64_t completedFrameEpoch);
         void notifyRenderViewSkipped();
         void notifyFrameDebugRenderGraphViewDrawn(bool snapshotVisible);
+        void notifyFrameDebugPreviewDrawn(bool textureVisible);
+        [[nodiscard]] bool selectPreviewImageResource(std::uint32_t resourceIndex);
+        [[nodiscard]] std::optional<std::uint32_t> consumePreviewRequest();
+        void publishPreviewTexture(std::uint32_t resourceIndex, EditorViewportTexture texture);
+        void markPreviewUnavailable(std::uint32_t resourceIndex, std::string message);
 
         [[nodiscard]] EditorViewportRepaintReasons consumeRenderViewRepaintReasons();
         [[nodiscard]] bool shouldRecordRenderViews() const;
@@ -66,6 +93,7 @@ namespace asharia::editor {
         [[nodiscard]] std::string_view stateName() const;
         [[nodiscard]] const std::optional<EditorFrameDebugCapture>& pausedCapture() const;
         [[nodiscard]] const std::optional<EditorFrameDebugCapture>& latestCapture() const;
+        [[nodiscard]] const EditorFrameDebugPreview& preview() const;
         [[nodiscard]] EditorFrameDebuggerStats stats() const;
 
     private:
@@ -74,10 +102,13 @@ namespace asharia::editor {
         EditorFrameDebuggerState state_{EditorFrameDebuggerState::Running};
         std::optional<EditorFrameDebugCapture> pausedCapture_;
         std::optional<EditorFrameDebugCapture> latestCapture_;
+        EditorFrameDebugPreview preview_;
         EditorViewportRepaintReasons pendingRenderViewRepaintReasons_{};
         EditorFrameDebuggerStats stats_;
     };
 
     [[nodiscard]] std::string_view editorFrameDebuggerStateName(EditorFrameDebuggerState state);
+    [[nodiscard]] std::string_view
+    editorFrameDebugPreviewStatusName(EditorFrameDebugPreviewStatus status);
 
 } // namespace asharia::editor

@@ -30,6 +30,7 @@ namespace asharia {
     inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
     inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
     inline constexpr char kBasicComputeReadbackPassType[] = "builtin.compute-readback";
+    inline constexpr char kBasicDebugImageCopyPassType[] = "builtin.debug-image-copy";
 
     struct BasicTransferClearParams {
         std::array<float, 4> color{};
@@ -288,6 +289,29 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicDebugImageCopySchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicDebugImageCopyPassType,
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = RenderGraphSlotAccess::TransferRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::TransferWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {RenderGraphCommandKind::CopyImage},
+        });
+    }
+
     [[nodiscard]] inline RenderGraphSchemaRegistry basicRenderGraphSchemaRegistry() {
         RenderGraphSchemaRegistry schemas;
         registerBasicTransferClearSchema(schemas);
@@ -301,6 +325,7 @@ namespace asharia {
         registerBasicRasterDrawListSchema(schemas);
         registerBasicComputeDispatchSchema(schemas);
         registerBasicComputeReadbackSchema(schemas);
+        registerBasicDebugImageCopySchema(schemas);
         return schemas;
     }
 
