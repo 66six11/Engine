@@ -283,11 +283,12 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debug
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
 Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent, verifies that a flagged Scene View
 texture is rendered and acquired back through the panel-facing texture result, and checks that the recorded RenderView exposes
-a view-local diagnostics snapshot.
+a view-local diagnostics snapshot. It also verifies idle Scene View on-demand reuse by checking that UI frames can reuse the
+last completed texture without incrementing `viewportFramesRendered` every frame.
 `--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
 WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
 but skips RenderView recording, so the captured diagnostics snapshot stays frozen until Resume. The same smoke also verifies
-that the read-only Render Graph panel consumes the captured snapshot.
+that the Frame Debug RG View consumes the captured snapshot.
 
 ## 当前缺口
 
@@ -298,14 +299,25 @@ that the read-only Render Graph panel consumes the captured snapshot.
 - Renderer prerequisites for those passes are: view/camera params in render view data, explicit overlay pass load/store
   semantics, blend state or a dedicated composition path, and a debug/world-line draw route.
 - `EditorFrameDebugger` now owns capture/pause/resume state and freezes the captured `BasicRenderViewDiagnostics` snapshot.
-  `RenderGraphPanel` is a read-only RG View that browses the captured or latest snapshot as pass/resource/access/dependency/
-  transition data.
-- Frame Debug, RG View and pass graph visualization are separate editor concepts:
+- `RenderGraphPanel` is the Live RG View: it browses the latest compiled RenderView diagnostics snapshot as
+  pass/resource/access/dependency/transition data without requiring Frame Debug capture.
+- `FrameDebuggerPanel` owns the Frame Debug RG View: it browses the frozen captured snapshot and is the future owner for
+  pass/event selection, replay and intermediate texture preview.
+- Scene View uses an editor-owned on-demand refresh policy. The panel still submits a viewport request every UI frame, but
+  `EditorViewportCoordinator` only records a new RenderView when it derives a repaint reason such as initial texture,
+  resize, overlay flag change, frame-debug event or `AlwaysRefresh`; otherwise ImGui redraws the previous texture.
+- Frame Debug, Live RG View, Frame Debug RG View and pass graph visualization are separate editor concepts:
   - Frame Debug owns capture, pause/resume and fixed-frame inspection. It does not use `vkDeviceWaitIdle` for normal capture
     and does not read transient GPU resources in the current slice.
-  - RG View displays the compiled RenderGraph snapshot as pass/resource/dependency/lifetime data and does not record Vulkan
-    commands from panel `draw()`.
-  - Pass graph visualization is a read-only node view derived from the same snapshot, not an editable graph authoring system.
+  - Live RG View displays the latest diagnostics snapshot derived after RenderGraph compile. The graph topology, dependency
+    order, culling result, transition plan and resource lifetime are known at compile time; panel `draw()` does not record
+    Vulkan commands or infer graph structure from GPU execution.
+  - Frame Debug RG View displays the frozen diagnostics snapshot owned by Frame Debug.
+  - Pass graph visualization is a read-only node view derived from one of those snapshots, not an editable graph authoring
+    system.
+- Intermediate texture preview is intentionally deferred. It must use an explicit debug preservation/copy path into
+  debug-owned sampled images or readback buffers; editor panels must not read transient RenderGraph images after normal graph
+  execution.
 - `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
   超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。
 - There is no `packages/editor-core` yet by design.

@@ -38,6 +38,7 @@
 #include "editor_viewport_coordinator.hpp"
 #include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
+#include "panels/frame_debugger_panel.hpp"
 #include "panels/log_panel.hpp"
 #include "panels/render_graph_panel.hpp"
 #include "panels/scene_view_panel.hpp"
@@ -231,7 +232,7 @@ namespace {
     }
 
     [[nodiscard]] bool validateViewportFlagsSmoke(
-        asharia::editor::EditorRunMode mode,
+        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
         const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
         if (!isViewportSmokeMode(mode)) {
             return true;
@@ -294,6 +295,27 @@ namespace {
             asharia::logError("Editor viewport smoke did not record render view diagnostics.");
             return false;
         }
+        if (viewportStats.liveRenderGraphSnapshotFrames == 0) {
+            asharia::logError("Editor viewport smoke did not draw a live RG View snapshot.");
+            return false;
+        }
+        if (mode == asharia::editor::EditorRunMode::SmokeViewport) {
+            if (viewportStats.idleSceneViewFramesSkipped == 0) {
+                asharia::logError("Editor viewport smoke did not skip idle Scene View recording.");
+                return false;
+            }
+            if (viewportStats.renderViewDiagnosticsFramesRecorded >=
+                static_cast<std::uint64_t>(runResult.renderedFrames)) {
+                asharia::logError(
+                    "Editor viewport smoke did not reuse the idle Scene View texture.");
+                return false;
+            }
+            if (viewportStats.repaintReasonFramesRecorded == 0) {
+                asharia::logError(
+                    "Editor viewport smoke did not record a repaint-reason RenderView.");
+                return false;
+            }
+        }
         if (viewportStats.lastRenderViewDiagnosticsPasses != 2 ||
             viewportStats.lastRenderViewDiagnosticsResources != 2 ||
             viewportStats.lastRenderViewDiagnosticsAccessEdges != 3 ||
@@ -353,7 +375,7 @@ namespace {
         const asharia::editor::EditorFrameDebuggerStats stats = frameDebugger.stats();
         if (stats.captureRequests != 1 || stats.framesCaptured != 1 ||
             stats.completedCaptures != 1 || stats.resumeRequests != 1 || stats.framesResumed != 1 ||
-            stats.renderViewFramesSkipped == 0 || stats.renderGraphPanelSnapshotFrames == 0) {
+            stats.renderViewFramesSkipped == 0 || stats.frameDebugRenderGraphSnapshotFrames == 0) {
             asharia::logError("Editor frame debugger smoke recorded unexpected state counts.");
             return false;
         }
@@ -585,8 +607,15 @@ namespace {
                                    frameIndex](const asharia::VulkanFrameRecordContext& context)
                                       -> asharia::Result<asharia::VulkanFrameRecordResult> {
                 const bool recordRenderViews = frameDebugger.shouldRecordRenderViews();
-                auto viewport =
-                    viewportHost.recordRequestedViews(context, renderer, recordRenderViews);
+                asharia::editor::EditorViewportRepaintReasons repaintReasons =
+                    frameDebugger.consumeRenderViewRepaintReasons();
+                if (frameDebugger.isCapturingFrame()) {
+                    asharia::editor::addEditorViewportRepaintReason(
+                        repaintReasons,
+                        asharia::editor::EditorViewportRepaintReason::FrameDebugEventChanged);
+                }
+                auto viewport = viewportHost.recordRequestedViews(
+                    context, renderer, recordRenderViews, repaintReasons);
                 if (!viewport) {
                     return std::unexpected{std::move(viewport.error())};
                 }
@@ -671,6 +700,7 @@ namespace {
                 .diagnosticsLog = editorContext.diagnosticsLog(),
                 .frameDebugger = frameDebugger,
                 .inputRouter = inputRouter,
+                .renderGraphSnapshots = viewportHost,
                 .viewportHost = viewportHost,
             };
             buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
@@ -738,6 +768,12 @@ namespace {
             return std::unexpected{std::move(renderGraph.error())};
         }
 
+        auto frameDebugger = panelRegistry.registerPanel(
+            [] { return std::make_unique<asharia::editor::FrameDebuggerPanel>(); });
+        if (!frameDebugger) {
+            return std::unexpected{std::move(frameDebugger.error())};
+        }
+
         return panelRegistry.registerPanel(
             [] { return std::make_unique<asharia::editor::LogPanel>(); });
     }
@@ -796,7 +832,7 @@ namespace {
             asharia::editor::EditorActionDesc{
                 .id = asharia::editor::EditorId{.value = "view.render-graph"},
                 .menuPath = "View",
-                .label = "Render Graph",
+                .label = "Live RG View",
                 .shortcut = "Ctrl+3",
                 .enabled = true,
             },
@@ -805,6 +841,21 @@ namespace {
             });
         if (!renderGraph) {
             return std::unexpected{std::move(renderGraph.error())};
+        }
+
+        auto frameDebugger = actionRegistry.registerAction(
+            asharia::editor::EditorActionDesc{
+                .id = asharia::editor::EditorId{.value = "view.frame-debugger"},
+                .menuPath = "View",
+                .label = "Frame Debugger",
+                .shortcut = "Ctrl+4",
+                .enabled = true,
+            },
+            [](asharia::editor::EditorContext& context) {
+                static_cast<void>(context.panelRegistry().focusPanel("frame-debugger"));
+            });
+        if (!frameDebugger) {
+            return std::unexpected{std::move(frameDebugger.error())};
         }
 
         auto log = actionRegistry.registerAction(
@@ -852,7 +903,7 @@ namespace {
 
     [[nodiscard]] bool
     validatePanelRegistrySmoke(asharia::editor::EditorPanelRegistry& panelRegistry) {
-        constexpr std::size_t kExpectedPanelCount = 3;
+        constexpr std::size_t kExpectedPanelCount = 4;
 
         if (!panelRegistry.closePanel("log") || !panelRegistry.focusPanel("log")) {
             asharia::logError("Editor panel registry smoke could not close and reopen Log panel.");
@@ -872,8 +923,8 @@ namespace {
     validateActionRegistrySmoke(asharia::editor::EditorActionRegistry& actionRegistry,
                                 asharia::editor::EditorContext& editorContext,
                                 asharia::editor::EditorPanelRegistry& panelRegistry) {
-        constexpr std::size_t kExpectedActionCount = 8;
-        constexpr std::size_t kExpectedEnabledActionCount = 5;
+        constexpr std::size_t kExpectedActionCount = 9;
+        constexpr std::size_t kExpectedEnabledActionCount = 6;
 
         if (actionRegistry.actionCount() != kExpectedActionCount ||
             actionRegistry.enabledActionCount() != kExpectedEnabledActionCount) {
@@ -1073,7 +1124,7 @@ namespace asharia::editor {
             viewportHost.textureRegistryStats();
         if (!validateViewportSmokePresentation(mode, *runResult, viewportHost,
                                                textureRegistryStats) ||
-            !validateViewportFlagsSmoke(mode, viewportStats) ||
+            !validateViewportFlagsSmoke(mode, *runResult, viewportStats) ||
             !validateViewportResizeSmoke(mode, *runResult, viewportStats, textureRegistryStats) ||
             !validateFrameDebuggerSmoke(mode, *runResult, frameDebugger) ||
             !validateInputRouterSmoke(mode, *runResult) ||
@@ -1096,6 +1147,7 @@ namespace asharia::editor {
                   << ", overlay texture frames: " << viewportStats.overlayFlagTextureFramesAcquired
                   << ", render view diagnostics frames: "
                   << viewportStats.renderViewDiagnosticsFramesRecorded
+                  << ", idle scene skips: " << viewportStats.idleSceneViewFramesSkipped
                   << ", frame debugger: " << frameDebugger.stateName()
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';

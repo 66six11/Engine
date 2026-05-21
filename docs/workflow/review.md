@@ -101,7 +101,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
-涉及 editor viewport rendering、sampled texture registration、descriptor lifetime、Frame Debug capture state、Render Graph panel 或 resize flow 时，还必须跑：
+涉及 editor viewport rendering、sampled texture registration、descriptor lifetime、Frame Debug capture state、Live RG View、Frame Debug RG View 或 resize flow 时，还必须跑：
 
 ```powershell
 foreach ($preset in @("clangcl-debug", "msvc-debug")) {

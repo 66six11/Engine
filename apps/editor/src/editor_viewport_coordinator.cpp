@@ -61,6 +61,7 @@ namespace asharia::editor {
         requestedExtent = {};
         overlayFlags = {};
         diagnostics = {};
+        frameIndex = {};
         rendered = false;
     }
 
@@ -113,13 +114,11 @@ namespace asharia::editor {
     asharia::Result<asharia::VulkanFrameRecordResult>
     EditorViewportCoordinator::recordRequestedViews(
         const asharia::VulkanFrameRecordContext& frame,
-        asharia::BasicFullscreenTextureRenderer& renderer, bool recordRenderViews) {
+        asharia::BasicFullscreenTextureRenderer& renderer, bool recordRenderViews,
+        EditorViewportRepaintReasons additionalRepaintReasons) {
         auto retired = processRetiredTextures(frame);
         if (!retired) {
             return std::unexpected{std::move(retired.error())};
-        }
-        if (recordRenderViews) {
-            latestRecordedDiagnostics_.reset();
         }
 
         if (!recordRenderViews || !requestedViewport_ ||
@@ -133,6 +132,38 @@ namespace asharia::editor {
         const EditorViewportRequest& request = *requestedViewport_;
         const VkExtent2D requestedExtent = vkExtentFromEditor(request.extent);
         const VkFormat requestedFormat = frame.format;
+        EditorViewportRepaintReasons repaintReasons =
+            request.refresh.repaintReasons | additionalRepaintReasons;
+        const bool presentedTextureMatchesRequest =
+            presentedTexture_.ready() && presentedTexture_.panelId.value == request.panelId.value &&
+            presentedTexture_.kind == request.kind;
+        if (!presentedTextureMatchesRequest) {
+            addEditorViewportRepaintReason(repaintReasons,
+                                           EditorViewportRepaintReason::InitialTextureMissing);
+        } else {
+            if (!sameExtent(presentedTexture_.extent, requestedExtent) ||
+                presentedTexture_.format != requestedFormat) {
+                addEditorViewportRepaintReason(repaintReasons, EditorViewportRepaintReason::Resize);
+            }
+            if (!sameEditorViewportOverlayFlags(presentedTexture_.overlayFlags,
+                                                request.overlayFlags)) {
+                addEditorViewportRepaintReason(repaintReasons,
+                                               EditorViewportRepaintReason::OverlayFlagsChanged);
+            }
+        }
+        if (request.refresh.policy == EditorViewportRefreshPolicy::Continuous) {
+            addEditorViewportRepaintReason(repaintReasons,
+                                           EditorViewportRepaintReason::AlwaysRefresh);
+        }
+        if (repaintReasons == 0U) {
+            if (request.kind == EditorViewportKind::Scene) {
+                ++stats_.idleSceneViewFramesSkipped;
+            }
+            return asharia::VulkanFrameRecordResult{
+                .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            };
+        }
+
         const bool renderPresentedTexture =
             presentedTexture_.ready() && presentedTexture_.panelId.value == request.panelId.value &&
             presentedTexture_.kind == request.kind &&
@@ -156,6 +187,7 @@ namespace asharia::editor {
 
         const asharia::VulkanSampledTextureView texture = renderTexture.target.sampledTextureView();
         asharia::BasicRenderViewDiagnostics diagnostics;
+        const std::uint64_t viewportFrameIndex = viewportFramesRendered_ + 1U;
 
         auto recorded = renderer.recordViewFrame(
             frame,
@@ -182,6 +214,7 @@ namespace asharia::editor {
             .requestedExtent = request.extent,
             .overlayFlags = request.overlayFlags,
             .texture = texture,
+            .frameIndex = viewportFrameIndex,
             .submittedFrameEpoch = nextSubmittedFrameEpoch(frame),
         });
         if (!published) {
@@ -194,6 +227,7 @@ namespace asharia::editor {
         renderTexture.requestedExtent = request.extent;
         renderTexture.overlayFlags = request.overlayFlags;
         renderTexture.diagnostics = std::move(diagnostics);
+        renderTexture.frameIndex = viewportFrameIndex;
         renderTexture.format = texture.format;
         renderTexture.extent = texture.extent;
         latestRecordedDiagnostics_ = EditorRecordedRenderViewDiagnostics{
@@ -203,6 +237,7 @@ namespace asharia::editor {
             .diagnostics = renderTexture.diagnostics,
         };
         ++stats_.renderViewDiagnosticsFramesRecorded;
+        ++stats_.repaintReasonFramesRecorded;
         stats_.lastRenderViewDiagnosticsPasses =
             renderTexture.diagnostics.renderGraph.passes.size();
         stats_.lastRenderViewDiagnosticsResources =
@@ -270,6 +305,27 @@ namespace asharia::editor {
     const std::optional<EditorRecordedRenderViewDiagnostics>&
     EditorViewportCoordinator::latestRecordedRenderViewDiagnostics() const {
         return latestRecordedDiagnostics_;
+    }
+
+    std::optional<EditorRenderGraphSnapshot>
+    EditorViewportCoordinator::latestLiveRenderGraphSnapshot() const {
+        if (!latestRecordedDiagnostics_) {
+            return std::nullopt;
+        }
+
+        return EditorRenderGraphSnapshot{
+            .viewKind = latestRecordedDiagnostics_->kind,
+            .requestedExtent = latestRecordedDiagnostics_->requestedExtent,
+            .submittedFrameEpoch = latestRecordedDiagnostics_->submittedFrameEpoch,
+            .snapshot = &latestRecordedDiagnostics_->diagnostics.renderGraph,
+        };
+    }
+
+    void EditorViewportCoordinator::notifyLiveRenderGraphViewDrawn(bool snapshotVisible) {
+        ++stats_.liveRenderGraphViewFrames;
+        if (snapshotVisible) {
+            ++stats_.liveRenderGraphSnapshotFrames;
+        }
     }
 
     void EditorViewportCoordinator::promotePendingTexture() {

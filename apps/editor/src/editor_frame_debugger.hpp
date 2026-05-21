@@ -28,8 +28,8 @@ namespace asharia::editor {
         std::uint64_t ignoredResumeRequests{};
         std::uint64_t framesResumed{};
         std::uint64_t renderViewFramesSkipped{};
-        std::uint64_t renderGraphPanelFrames{};
-        std::uint64_t renderGraphPanelSnapshotFrames{};
+        std::uint64_t frameDebugRenderGraphViewFrames{};
+        std::uint64_t frameDebugRenderGraphSnapshotFrames{};
     };
 
     struct EditorFrameDebugCapture {
@@ -57,8 +57,9 @@ namespace asharia::editor {
         void captureRecordedView(EditorFrameDebugCaptureDesc desc);
         void endSubmittedFrame(std::uint64_t completedFrameEpoch);
         void notifyRenderViewSkipped();
-        void notifyRenderGraphPanelDrawn(bool snapshotVisible);
+        void notifyFrameDebugRenderGraphViewDrawn(bool snapshotVisible);
 
+        [[nodiscard]] EditorViewportRepaintReasons consumeRenderViewRepaintReasons();
         [[nodiscard]] bool shouldRecordRenderViews() const;
         [[nodiscard]] bool isCapturingFrame() const;
         [[nodiscard]] EditorFrameDebuggerState state() const;
@@ -73,6 +74,7 @@ namespace asharia::editor {
         EditorFrameDebuggerState state_{EditorFrameDebuggerState::Running};
         std::optional<EditorFrameDebugCapture> pausedCapture_;
         std::optional<EditorFrameDebugCapture> latestCapture_;
+        EditorViewportRepaintReasons pendingRenderViewRepaintReasons_{};
         EditorFrameDebuggerStats stats_;
     };
 

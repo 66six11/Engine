@@ -57,8 +57,10 @@ add_executable(asharia-editor
     src/imgui_runtime.cpp
     src/imgui_texture_registry.cpp
     src/main.cpp
+    src/panels/frame_debugger_panel.cpp
     src/panels/log_panel.cpp
     src/panels/render_graph_panel.cpp
+    src/panels/render_graph_snapshot_view.cpp
     src/panels/scene_view_panel.cpp
     ${ASHARIA_IMGUI_BACKEND_SOURCES}
     ${ASHARIA_EDITOR_RESOURCE_SOURCES}

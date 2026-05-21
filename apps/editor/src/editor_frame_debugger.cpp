@@ -57,6 +57,8 @@ namespace asharia::editor {
         if (state_ == EditorFrameDebuggerState::Resume) {
             pausedCapture_.reset();
             ++stats_.framesResumed;
+            addEditorViewportRepaintReason(pendingRenderViewRepaintReasons_,
+                                           EditorViewportRepaintReason::FrameDebugEventChanged);
             transitionTo(EditorFrameDebuggerState::Running);
         }
     }
@@ -96,11 +98,17 @@ namespace asharia::editor {
         }
     }
 
-    void EditorFrameDebugger::notifyRenderGraphPanelDrawn(bool snapshotVisible) {
-        ++stats_.renderGraphPanelFrames;
+    void EditorFrameDebugger::notifyFrameDebugRenderGraphViewDrawn(bool snapshotVisible) {
+        ++stats_.frameDebugRenderGraphViewFrames;
         if (snapshotVisible) {
-            ++stats_.renderGraphPanelSnapshotFrames;
+            ++stats_.frameDebugRenderGraphSnapshotFrames;
         }
+    }
+
+    EditorViewportRepaintReasons EditorFrameDebugger::consumeRenderViewRepaintReasons() {
+        const EditorViewportRepaintReasons reasons = pendingRenderViewRepaintReasons_;
+        pendingRenderViewRepaintReasons_ = {};
+        return reasons;
     }
 
     bool EditorFrameDebugger::shouldRecordRenderViews() const {

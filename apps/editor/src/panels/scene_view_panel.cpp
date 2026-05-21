@@ -50,10 +50,16 @@ namespace asharia::editor {
             .kind = EditorViewportKind::Scene,
             .extent = viewportExtent,
             .overlayFlags = defaultEditorSceneViewOverlayFlags(),
+            .refresh =
+                EditorViewportRefreshRequest{
+                    .policy = EditorViewportRefreshPolicy::OnDemand,
+                },
         });
+        std::uint64_t viewportFrameIndex{};
         if (const auto completed =
                 context.viewportHost.acquireViewportTextureForDraw(desc_.id.value);
             completed && hasEditorViewportTexture(completed->texture)) {
+            viewportFrameIndex = completed->texture.frameIndex;
             ImGui::Image(static_cast<ImTextureID>(completed->texture.textureId),
                          ImVec2{static_cast<float>(viewportExtent.width),
                                 static_cast<float>(viewportExtent.height)});
@@ -71,7 +77,7 @@ namespace asharia::editor {
             std::to_string(context.swapchainExtent.height);
         const std::string viewportText = "Viewport: " + std::to_string(viewportExtent.width) + "x" +
                                          std::to_string(viewportExtent.height);
-        const std::string frameText = "Frame: " + std::to_string(context.frameIndex);
+        const std::string frameText = "Viewport Frame: " + std::to_string(viewportFrameIndex);
         ImGui::TextUnformatted(swapchainText.c_str());
         ImGui::TextUnformatted(viewportText.c_str());
         ImGui::TextUnformatted(frameText.c_str());

@@ -4,7 +4,7 @@
 
 namespace asharia::editor {
 
-    class RenderGraphPanel final : public ImGuiEditorPanel {
+    class FrameDebuggerPanel final : public ImGuiEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
         void prepareWindow(EditorFrameContext& context, EditorPanelState& state) override;
@@ -12,8 +12,8 @@ namespace asharia::editor {
 
     private:
         EditorPanelDesc desc_{
-            .id = EditorId{.value = "render-graph"},
-            .title = "Live RG View",
+            .id = EditorId{.value = "frame-debugger"},
+            .title = "Frame Debugger",
             .defaultOpen = true,
             .singleton = true,
         };

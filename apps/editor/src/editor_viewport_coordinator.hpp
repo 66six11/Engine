@@ -14,6 +14,7 @@
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vulkan_image.hpp"
 
+#include "editor_render_graph_snapshot.hpp"
 #include "editor_viewport.hpp"
 #include "imgui_texture_registry.hpp"
 
@@ -31,6 +32,10 @@ namespace asharia::editor {
         std::uint64_t overlayFlagTextureFramesAcquired{};
         std::uint64_t sceneViewOnlyFlagRequestsDiscarded{};
         std::uint64_t renderViewDiagnosticsFramesRecorded{};
+        std::uint64_t repaintReasonFramesRecorded{};
+        std::uint64_t idleSceneViewFramesSkipped{};
+        std::uint64_t liveRenderGraphViewFrames{};
+        std::uint64_t liveRenderGraphSnapshotFrames{};
         std::uint64_t lastRenderViewDiagnosticsPasses{};
         std::uint64_t lastRenderViewDiagnosticsResources{};
         std::uint64_t lastRenderViewDiagnosticsAccessEdges{};
@@ -48,7 +53,8 @@ namespace asharia::editor {
     [[nodiscard]] EditorViewportFrameEpochs
     editorViewportFrameEpochs(const asharia::VulkanFrameLoop& frameLoop);
 
-    class EditorViewportCoordinator final : public EditorViewportPanelHost {
+    class EditorViewportCoordinator final : public EditorViewportPanelHost,
+                                            public EditorRenderGraphSnapshotProvider {
         struct ViewportTexture {
             ViewportTexture() = default;
             ViewportTexture(const ViewportTexture&) = delete;
@@ -68,6 +74,7 @@ namespace asharia::editor {
             EditorExtent2D requestedExtent;
             EditorViewportOverlayFlags overlayFlags;
             asharia::BasicRenderViewDiagnostics diagnostics;
+            std::uint64_t frameIndex{};
             bool rendered{false};
         };
 
@@ -87,7 +94,8 @@ namespace asharia::editor {
         [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
         recordRequestedViews(const asharia::VulkanFrameRecordContext& frame,
                              asharia::BasicFullscreenTextureRenderer& renderer,
-                             bool recordRenderViews = true);
+                             bool recordRenderViews = true,
+                             EditorViewportRepaintReasons repaintReasons = {});
         void shutdown();
 
         [[nodiscard]] bool hasPresentedViewportTexture() const;
@@ -98,6 +106,9 @@ namespace asharia::editor {
         [[nodiscard]] ImGuiTextureRegistryStats textureRegistryStats() const;
         [[nodiscard]] const std::optional<EditorRecordedRenderViewDiagnostics>&
         latestRecordedRenderViewDiagnostics() const;
+        [[nodiscard]] std::optional<EditorRenderGraphSnapshot>
+        latestLiveRenderGraphSnapshot() const override;
+        void notifyLiveRenderGraphViewDrawn(bool snapshotVisible) override;
 
     private:
         void promotePendingTexture();

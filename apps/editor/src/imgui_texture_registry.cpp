@@ -79,6 +79,7 @@ namespace asharia::editor {
             active->requestedExtent = registration.requestedExtent;
             active->overlayFlags =
                 effectiveEditorViewportOverlayFlags(registration.kind, registration.overlayFlags);
+            active->frameIndex = registration.frameIndex;
             return makeResult(*active);
         }
 
@@ -100,6 +101,7 @@ namespace asharia::editor {
             .layout = registration.texture.sampledLayout,
             .format = registration.texture.format,
             .extent = editorExtentFromVk(registration.texture.extent),
+            .frameIndex = registration.frameIndex,
         };
         ++stats_.descriptorsCreated;
 
@@ -200,6 +202,7 @@ namespace asharia::editor {
                 EditorViewportTexture{
                     .textureId = textureId(entry.descriptorSet),
                     .extent = entry.extent,
+                    .frameIndex = entry.frameIndex,
                 },
             .overlayFlags = entry.overlayFlags,
         };

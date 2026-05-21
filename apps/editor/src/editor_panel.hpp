@@ -12,6 +12,7 @@
 #include "asharia/core/result.hpp"
 
 #include "editor_id.hpp"
+#include "editor_render_graph_snapshot.hpp"
 #include "editor_viewport.hpp"
 
 namespace asharia::editor {
@@ -43,6 +44,7 @@ namespace asharia::editor {
         EditorDiagnosticsLog& diagnosticsLog;
         EditorFrameDebugger& frameDebugger;
         EditorInputRouter& inputRouter;
+        EditorRenderGraphSnapshotProvider& renderGraphSnapshots;
         EditorViewportPanelHost& viewportHost;
     };
 

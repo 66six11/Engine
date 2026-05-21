@@ -21,6 +21,15 @@ namespace asharia::editor {
                flags.selectionOutlineVisible;
     }
 
+    bool sameEditorViewportOverlayFlags(EditorViewportOverlayFlags lhs,
+                                        EditorViewportOverlayFlags rhs) {
+        return lhs.gridVisible == rhs.gridVisible && lhs.gizmoVisible == rhs.gizmoVisible &&
+               lhs.wireVisible == rhs.wireVisible &&
+               lhs.selectionOutlineVisible == rhs.selectionOutlineVisible &&
+               lhs.debugOverlayVisible == rhs.debugOverlayVisible &&
+               lhs.debugGizmoVisible == rhs.debugGizmoVisible;
+    }
+
     EditorViewportOverlayFlags
     effectiveEditorViewportOverlayFlags(EditorViewportKind kind, EditorViewportOverlayFlags flags) {
         if (kind == EditorViewportKind::Scene) {

@@ -348,8 +348,9 @@ sequenceDiagram
 
 `apps/editor` 是当前 editor shell 和 editor smoke 的真实入口。它复用 `VulkanContext` /
 `VulkanFrameLoop`，通过 `BasicFullscreenTextureRenderer::recordViewFrame()` 生成 Scene View sampled
-target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Scene/debug viewport flags 随 request/result
-流动，coordinator 会清掉 Scene-only authoring flags，同时保留显式 Game debug overlay/debug gizmo intent。Panel 只提交请求和消费 texture id，不持有
+target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Scene/debug viewport flags 和 refresh intent 随 request/result
+流动；Scene View 默认 on-demand，coordinator 只有在初始纹理、resize、overlay/debug event 或 `AlwaysRefresh`
+等 repaint reason 存在时才录制新的 RenderView。coordinator 会清掉 Scene-only authoring flags，同时保留显式 Game debug overlay/debug gizmo intent。Panel 只提交请求和消费 texture id，不持有
 Vulkan image、descriptor set 或 command buffer。完整 editor 架构见 `docs/architecture/editor.md`。
 
 ```mermaid
@@ -381,7 +382,7 @@ sequenceDiagram
         Main->>Viewport: beginImguiFrame(completed/submitted epochs)
         Main->>FrameDebug: beginFrame / optional capture or resume action
         Main->>Panels: drawPanels(EditorFrameContext)
-        Panels->>Viewport: requestViewport(Scene View extent + flags)
+        Panels->>Viewport: requestViewport(Scene View extent + flags + refresh intent)
         Panels->>Input: report Scene View hover/focus
         Main->>Input: finalizeFrame
         Main->>Shortcuts: beginFrame(input snapshot)
@@ -390,11 +391,13 @@ sequenceDiagram
         Viewport->>TextureRegistry: acquire latest completed ImTextureID
         Main->>ImGui: Render
         Main->>FrameLoop: renderFrame(record callback)
-        alt Frame Debug running or capturing
-            FrameLoop->>Viewport: recordRequestedViews(frame, renderer)
+        alt repaint reason present and Frame Debug allows recording
+            FrameLoop->>Viewport: recordRequestedViews(frame, renderer, repaint reasons)
             Viewport->>RendererVk: recordViewFrame(sampled target)
             Viewport->>TextureRegistry: registerOrUpdate(sampled image view)
             Viewport->>FrameDebug: capture view-local diagnostics snapshot
+        else idle on-demand Scene View
+            FrameLoop->>Viewport: process retired viewport textures and reuse presented texture
         else Frame Debug waiting or paused
             FrameLoop->>Viewport: process retired viewport textures only
             FrameLoop->>FrameDebug: skip RenderView recording
@@ -414,6 +417,9 @@ sequenceDiagram
 - `EditorViewportOverlayFlags` 是当前 viewport overlay intent。Scene View 请求保留 grid、transform gizmo、wire、
   selection outline、debug overlay 和 debug gizmo flags；Game View 请求会清空 Scene-only authoring flags，但可保留
   显式 debug overlay/debug gizmo flags；Preview View 当前清空全部 overlay flags。
+- `EditorViewportRefreshPolicy` / `EditorViewportRepaintReason` 是当前 viewport refresh intent。Scene View 默认
+  `OnDemand`，没有 repaint reason 时复用上一张 presented texture；Game View 和未来 Play Session 仍可用
+  `Continuous`/`AlwaysRefresh` 维持持续渲染。
 - Scene View 的 grid、gizmo、wire 和 selection outline flag 当前只作为 editor view-local intent 保存在 request/result
   metadata 中；它们尚未映射为 renderer pass。Game View 只允许显式 debug overlay/debug gizmo intent 进入后续 graph。
 - `ImGuiTextureRegistry` 只拥有 ImGui descriptor lifetime，不拥有 `VulkanRenderTarget`、
@@ -423,7 +429,8 @@ sequenceDiagram
   这是 editor backend integration，不是 panel 或 renderer core 逻辑；若继续增长，应抽到
   `imgui_runtime` 或单独的 editor ImGui pass module。
 - `EditorFrameDebugger` 属于 editor-side transient tooling state。CaptureRequested 只影响下一次 successful
-  RenderView recording；WaitingGpuFence/PausedFrameDebug 会跳过新的 RenderView recording，但继续允许 ImGui
+  RenderView recording；capture/resume 会向 viewport coordinator 提供 `FrameDebugEventChanged` repaint reason。
+  WaitingGpuFence/PausedFrameDebug 会跳过新的 RenderView recording，但继续允许 ImGui
   host frame 提交，以便 UI 可以显示或恢复。它只保存 `BasicRenderViewDiagnostics` 的 CPU snapshot，不保存 Vulkan
   handles，不使用 `vkDeviceWaitIdle` 作为普通 capture 机制。
 
@@ -783,7 +790,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor overlay texture metadata roundtrip<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>Frame Debug capture state<br/>read-only Render Graph panel<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor viewport on-demand refresh<br/>editor overlay texture metadata roundtrip<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>Frame Debug capture state<br/>Live RG View<br/>Frame Debug RG View<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
     Step2["之后:<br/>upstream systems<br/>scene-core / editor-core / asset-core"]
 
@@ -833,11 +840,11 @@ flowchart TD
 10. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续 asset-core 拥有 GUID/import/cache，
     renderer/RHI 只消费 resource handle、product data 和 upload request，不提前暴露逐 object 脚本 draw loop。
 11. RenderGraph diagnostics snapshot 已提供结构化、后端无关的 pass/resource/access edge/dependency/transition/lifetime
-    数据，并已挂到 `BasicRenderViewDesc` 的可选 `BasicRenderViewDiagnostics` 输出槽。RG View、Frame Debug 和 pass
-    graph visualization 都应消费同一份 view-local snapshot：`RenderGraphPanel` 作为只读 RG View 显示编译阶段已经确定的数据；Frame Debug 已有
-    `EditorFrameDebugger` 状态机来 capture、等待已提交 frame fence、pause/resume 和固定某一帧 snapshot；pass graph
-    visualization 只是 snapshot 的只读节点表现，不能成为可编辑 RenderGraph authoring UI。editor UI 不应解析
-    `formatDebugTables()` 文本。
+    数据，并已挂到 `BasicRenderViewDesc` 的可选 `BasicRenderViewDiagnostics` 输出槽。Live RG View 和 Frame Debug
+    RG View 是两个 editor surface，但复用同一个 snapshot table renderer：`RenderGraphPanel` 作为 Live RG View
+    显示最近一次 RenderView compile 后已经确定的数据；`FrameDebuggerPanel` 作为 Frame Debug RG View 显示
+    `EditorFrameDebugger` 捕获并冻结的一帧 snapshot。pass graph visualization 只是 snapshot 的只读节点表现，
+    不能成为可编辑 RenderGraph authoring UI。editor UI 不应解析 `formatDebugTables()` 文本。
 12. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的

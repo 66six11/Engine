@@ -396,9 +396,11 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 editor UI，也不是可编辑 RenderGraph。
 
 当前状态：第一版已由 `RenderGraph::diagnosticsSnapshot()` 提供。`BasicRenderViewDesc` 已能通过可选的
-`BasicRenderViewDiagnostics` 输出槽把 snapshot 挂到一次成功的 view recording 上。`EditorFrameDebugger` 已能捕获
-并冻结这份 view-local snapshot，在 WaitingGpuFence/PausedFrameDebug 阶段暂停新的 RenderView recording。`RenderGraphPanel`
-已作为只读 RG View 消费捕获或最近一次 snapshot，显示 pass、resource、access edge、dependency、transition 和图列表。
+`BasicRenderViewDiagnostics` 输出槽把 snapshot 挂到一次成功的 view recording 上。`EditorViewportCoordinator` 已能把
+最近一次成功 recording 的 snapshot 作为 Live RG View 数据源发布。`EditorFrameDebugger` 已能捕获并冻结这份
+view-local snapshot，在 WaitingGpuFence/PausedFrameDebug 阶段暂停新的 RenderView recording。`RenderGraphPanel` 作为
+Live RG View 消费最新编译 snapshot；`FrameDebuggerPanel` 作为 Frame Debug RG View 消费冻结捕获 snapshot。两个视图复用
+同一个只读 snapshot renderer，显示 pass、resource、access edge、dependency、transition 和图列表。
 `formatDebugTables()` 仍保留为文本诊断输出；editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格。
 
 第一版数据：
@@ -417,9 +419,18 @@ Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 edi
 - `packages/rendergraph` 只输出抽象 handle、state、stage、slot 和 pass metadata，不输出 Vulkan handle、layout、
   access mask 或 pipeline stage。
 - snapshot 必须能从 `RenderGraphCompileResult` 和 graph 声明数据派生，不能回调 Vulkan backend 或 editor。
-- Frame Debug 可以冻结某一帧的 snapshot；Live Diagnostics 只读取最近完成帧或上一帧 snapshot。
+- Live RG View 的结构数据在 RenderGraph compile 后即可确定：pass/resource 拓扑、依赖顺序、culling 结果、transition
+  plan 和 resource lifetime 都来自 compile result 派生的 diagnostics snapshot。
+- Live RG View 不等待 GPU execute 才推断图结构；execute 后才可能补充 GPU timing、实际中间纹理内容、readback 或
+  pass preview 等执行态数据。
+- Frame Debug RG View 只读取 Frame Debug 冻结捕获；Live Diagnostics / Live RG View 只读取最近完成帧或上一帧
+  snapshot。
 - Frame Debug capture 不使用 `vkDeviceWaitIdle` 作为普通机制，不读取 transient GPU resource；当前只冻结 CPU-side
   diagnostics snapshot。
+- Frame Debug replay 第一阶段只选择 pass/event 并触发受控 debug refresh；中间纹理预览必须等显式 debug
+  preservation/copy 路径存在后再接入。
+- transient resource 在普通 graph 执行完成后视为不可读取；若要预览，必须在 recording 前标记 preserve/copy，并把结果放入
+  debug-owned sampled image 或后续 readback buffer。
 - pass node graph 只是 snapshot 的可视化表现，不是 graph authoring。
 
 验收：
@@ -428,9 +439,10 @@ Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 edi
 - Done: package-local rendergraph compile test 验证 snapshot 的 declared counts、compiled pass order、resource nodes、
   access edge、dependency edge 和 final transition。
 - Done: `--smoke-editor-viewport` 验证 recorded RenderView diagnostics 的 pass/resource/access/dependency/transition
-  数量。
-- Done: `--smoke-editor-frame-debugger` 验证 capture、fence wait、paused RenderView recording、Render Graph panel snapshot
-  consumption 和 resume。
+  数量，验证 idle Scene View 复用上一张 texture 时 diagnostics snapshot 仍可作为最近一次 view-local 结果保留，并验证
+  Live RG View 无需 Frame Debug capture 也能消费 compile snapshot。
+- Done: `--smoke-editor-frame-debugger` 验证 capture、fence wait、paused RenderView recording、Frame Debug RG View frozen
+  snapshot consumption 和 resume。
 - Done: `formatDebugTables()` 继续可用，便于 issue/PR 文本诊断。
 
 ## P4：Backend lifetime and caches

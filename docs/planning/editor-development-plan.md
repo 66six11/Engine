@@ -363,8 +363,9 @@ recording or descriptor lifetime, also run the relevant editor smoke commands:
 ```
 
 `--smoke-editor-shell` covers shell/menu/panel/action/event state. `--smoke-editor-viewport` is the stricter sampled
-viewport texture smoke. `--smoke-editor-viewport-resize` performs a real window resize and verifies resized viewport
-texture presentation plus old descriptor/render-target retirement. `--smoke-editor-frame-debugger` covers capture,
+viewport texture smoke and verifies idle Scene View on-demand reuse. `--smoke-editor-viewport-resize` performs a real
+window resize and verifies resized viewport texture presentation plus old descriptor/render-target retirement.
+`--smoke-editor-frame-debugger` covers capture,
 fence-wait pause, skipped RenderView recording and resume.
 
 ## Stage Status Rules
@@ -392,7 +393,7 @@ Every sub-stage must:
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.4 Done; 21.5-21.7 Next/Blocked | In progress | Close editor overlay intent loop, then add Scene View grid, gizmo, selection outline and debug overlay after render prerequisites. |
+| 21 | 21.1-21.6 Done; 21.7-21.14 Next/Blocked | In progress | Close editor debug replay loop, then add Scene View grid, gizmo, selection outline and debug overlay after render prerequisites. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -843,28 +844,199 @@ Status: Done.
 
 Scope:
 
-- Add a read-only `RenderGraphPanel` that consumes `EditorFrameDebugger` captured snapshots first and falls back to the latest
-  recorded snapshot.
+- Add the first read-only `RenderGraphPanel` for RenderGraph diagnostics. This initial slice used
+  `EditorFrameDebugger` captured snapshots first and fell back to the latest recorded snapshot.
 - Display compiled RenderGraph pass, resource, access edge, dependency, transition and graph-list data without parsing
   `formatDebugTables()` text.
+- Treat the post-compile diagnostics snapshot as the RG View source of truth. Pass/resource topology, dependency order,
+  culling result, transition plan and resource lifetime are known after RenderGraph compile for that view graph.
+- Use Frame Debug capture only to freeze a stable snapshot for inspection; it does not discover graph topology from GPU
+  execution.
 - Keep pass graph visualization read-only; this is not a node authoring UI and it does not edit RenderGraph topology.
 
 Implementation:
 
 - `RenderGraphPanel` is registered as the `render-graph` singleton panel and exposed through `view.render-graph`.
-- `EditorFrameContext` passes the frame debugger to panels so the RG View can read the frozen or latest
-  `BasicRenderViewDiagnostics` snapshot.
-- `EditorFrameDebugger` tracks panel snapshot consumption for smoke validation.
+- This first version still used `EditorFrameDebugger` as the practical snapshot source; 21.6 split that ownership into live
+  diagnostics and Frame Debug RG View.
 
 Validation:
 
-- `--smoke-editor-frame-debugger` now verifies capture, paused RenderView recording, Render Graph panel snapshot consumption
-  and resume.
+- `--smoke-editor-frame-debugger` verified capture, paused RenderView recording, Render Graph snapshot consumption and
+  resume.
 - The panel does not record Vulkan commands and does not expose backend handles.
 
-### 21.5 Gizmo Interaction
+### 21.5 Editor View Refresh Policy
+
+Status: Done.
+
+Scope:
+
+- Add an editor-owned refresh policy so Scene View defaults to on-demand RenderView recording instead of continuous recording.
+- Track explicit repaint reasons: initial texture missing, viewport resize, Scene View camera/input change, overlay/debug flag
+  change, selection or gizmo dirty state, asset/material dirty state, Frame Debug event change and `AlwaysRefresh`.
+- Keep the editor ImGui shell rendering every UI frame while allowing individual RenderViews to reuse their last completed
+  texture when no repaint reason is present.
+- Keep Game View and future Play Session eligible for continuous rendering through a separate policy; do not make Scene View
+  behavior the global default for all views.
+
+Implementation:
+
+- `apps/editor/src/editor_viewport.hpp` now defines `EditorViewportRefreshPolicy`,
+  `EditorViewportRefreshRequest` and `EditorViewportRepaintReason`.
+- `SceneViewPanel` submits `OnDemand` refresh intent with the normal Scene View request.
+- `EditorViewportCoordinator` derives repaint reasons from missing texture, resize, overlay flag changes,
+  `AlwaysRefresh` and frame-debug supplied reasons, then either records a RenderView or reuses the presented texture.
+- The coordinator tracks skipped idle Scene View records and reason-triggered records.
+- `EditorFrameDebugger` supplies `FrameDebugEventChanged` repaint intent so capture/resume can refresh the frozen view
+  without making Scene View continuous again.
+
+Validation:
+
+- `--smoke-editor-viewport` now proves an idle Scene View reuses the last texture without incrementing
+  `viewportFramesRendered` every UI frame.
+- `--smoke-editor-viewport-resize` continues to prove resize records and publishes a fresh texture.
+- `--smoke-editor-frame-debugger` continues to prove capture/resume can force the required debug repaint.
+
+### 21.6 Live and Frame Debug RG Views
+
+Status: Done.
+
+Scope:
+
+- Split RG View ownership into two editor surfaces:
+  - Live RG View belongs to viewport/render diagnostics and displays the latest compiled RenderView diagnostics snapshot.
+  - Frame Debug RG View belongs to Frame Debug and displays a frozen captured diagnostics snapshot.
+- Reuse one lower-level RenderGraph snapshot viewer for passes, resources, edges, transitions and graph-list tables.
+- Keep Live RG View independent from Frame Debug capture; it must show once a RenderView has compiled, even if no frame
+  debug capture has occurred.
+
+Implementation:
+
+- `RenderGraphPanel` is now the Live RG View and reads `EditorRenderGraphSnapshotProvider` from `EditorFrameContext`.
+- `FrameDebuggerPanel` owns the Frame Debug RG View and reads `EditorFrameDebugger` captures.
+- `panels/render_graph_snapshot_view.*` contains the shared read-only table renderer.
+- `EditorViewportCoordinator` publishes the latest live RenderGraph snapshot and tracks Live RG View snapshot consumption.
+- `EditorFrameDebugger` tracks Frame Debug RG View snapshot consumption separately.
+
+Validation:
+
+- `--smoke-editor-viewport` verifies Live RG View can consume a compile-time snapshot without Frame Debug capture.
+- `--smoke-editor-frame-debugger` verifies Frame Debug RG View consumes the frozen captured snapshot while normal RenderView
+  recording remains paused.
+
+### 21.7 Frame Debug Replay Contract
+
+Status: Next.
+
+Scope:
+
+- Extend Frame Debug beyond capture/pause so selecting a pass/event requests a debug replay refresh.
+- Freeze frame time, view params, camera params, RenderGraph diagnostics snapshot and the future draw/command packet inputs
+  needed to reproduce the selected frame.
+- Use compiled pass/event ids from the frozen diagnostics snapshot for selection. Replay adds execution-state preview data on
+  top of that compiled graph; it is not the source of RG View topology.
+- First implementation is pass-level replay only: select a compiled pass index and re-record a debug preview target through a
+  controlled renderer path up to that pass.
+- Keep normal target view rendering paused while replay requests are served through editor-controlled debug refreshes.
+
+Validation:
+
+- Smoke verifies selecting a different pass/event changes Frame Debug replay state without resuming normal RenderView
+  recording.
+- Replay must not call `vkDeviceWaitIdle`, must not expose backend handles to panels and must be driven by captured CPU-side
+  frame inputs.
+
+### 21.8 Render View Overlay Prerequisites
+
+Status: Next.
+
+Scope:
+
+- Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, per-view frame params,
+  explicit overlay pass load/store behavior, blend state support or an equivalent overlay composition path, and a narrow
+  debug/world-line draw route.
+- Keep Scene/debug overlay passes view-local and opt-in; Game View cannot receive Scene View authoring passes implicitly.
+
+Validation:
+
+- Renderer smoke verifies view params reach `BasicRenderViewDesc` without editor-only types.
+- Editor viewport smoke continues to prove Game/Preview filtering of Scene-only authoring flags.
+
+### 21.9 Camera-Aware Scene Grid
 
 Status: Blocked.
+
+Depends on:
+
+- 21.8 Render View Overlay Prerequisites.
+
+Scope:
+
+- Add the first real Scene View-only overlay pass: a camera-aware world grid.
+- Use RenderView camera/view params; do not draw a tiled screen-space texture.
+- Keep Game View free of implicit grid rendering.
+
+Validation:
+
+- Scene View graph contains the grid pass when the grid flag is enabled.
+- Game View graph does not contain the grid pass unless a future explicit debug mode allows it.
+
+### 21.10 Pass Graph Node View
+
+Status: Next.
+
+Scope:
+
+- Add a read-only node canvas derived from the same `RenderGraphDiagnosticsSnapshot` consumed by Live RG View or Frame Debug
+  RG View.
+- Show pass/resource dependency nodes and allow selection to drive the table details and Frame Debug selected pass/event.
+- Build the node graph from the compiled diagnostics snapshot immediately after RenderGraph compile; paused Frame Debug only
+  supplies a frozen snapshot and selected event state.
+- Keep this as a viewer only; no RenderGraph authoring, node editing or topology mutation.
+
+Validation:
+
+- Smoke or panel-level diagnostics verify the node view consumes the captured snapshot and reports selected pass/resource ids.
+
+### 21.11 Intermediate Texture Preview
+
+Status: Deferred.
+
+Depends on:
+
+- 21.7 Frame Debug Replay Contract.
+- 21.8 Render View Overlay Prerequisites.
+- A renderer/RHI debug preservation or copy path with explicit resource lifetime.
+
+Scope:
+
+- Preview pass outputs or selected intermediate resources in the editor after an explicit debug preserve/copy operation.
+- Prefer GPU-side copy into a debug-owned sampled image first, then optional readback only for pixel inspection/export.
+- Treat transient resources as unavailable after graph execution unless a pass/resource was explicitly marked for debug
+  preservation before recording.
+
+Non-goals:
+
+- Do not read transient images after normal execution without declaring preservation.
+- Do not expose raw `VkImage`/`VkImageView` handles to editor panels.
+- Do not force all RenderGraph resources to become persistent just for debugging.
+
+Validation:
+
+- Smoke captures a selected pass output into a debug sampled texture, displays it through `ImGuiTextureRegistry`, and retires
+  it through the existing frame-epoch lifetime path.
+- Negative smoke verifies attempting to preview an unpreserved transient resource reports an explicit diagnostic instead of
+  reading invalid GPU memory.
+
+### 21.12 Gizmo Interaction
+
+Status: Blocked.
+
+Depends on:
+
+- Selection model and transaction path.
+- 21.8 Render View Overlay Prerequisites for visual gizmo rendering.
 
 Scope:
 
@@ -875,9 +1047,14 @@ Validation:
 
 - Mouse capture respects ImGui capture flags and hovered Scene View.
 
-### 21.6 Selection Outline
+### 21.13 Selection Outline
 
 Status: Blocked.
+
+Depends on:
+
+- Selection model.
+- 21.8 Render View Overlay Prerequisites.
 
 Scope:
 
@@ -888,9 +1065,13 @@ Validation:
 
 - Selected state affects Scene View only.
 
-### 21.7 Debug Draw Overlay
+### 21.14 Debug Draw Overlay
 
 Status: Blocked.
+
+Depends on:
+
+- 21.8 Render View Overlay Prerequisites.
 
 Scope:
 
@@ -1056,16 +1237,31 @@ Current completed slices:
   CapturingFrame -> WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` workflow. It freezes a captured
   `BasicRenderViewDiagnostics` snapshot, skips new RenderView recording while waiting/paused, and
   `--smoke-editor-frame-debugger` verifies capture, paused recording and resume.
-- `feat: add render graph viewer panel`: `RenderGraphPanel` is a read-only RG View that consumes captured or latest
-  `BasicRenderViewDiagnostics` snapshots and displays compiled pass/resource/access/dependency/transition data. The frame
-  debugger smoke verifies panel snapshot consumption.
+- `feat: add render graph viewer panel`: `RenderGraphPanel` introduced the read-only pass/resource/access/dependency/
+  transition tables for compiled RenderGraph diagnostics.
+- `feat: add editor viewport refresh policy`: `EditorViewportRefreshPolicy` and `EditorViewportRepaintReason` allow
+  `SceneViewPanel` to request on-demand rendering. `EditorViewportCoordinator` reuses the previous texture when there is no
+  repaint reason, while Frame Debug capture/resume still supplies explicit repaint intent.
+- `feat: split live and frame debug RG views`: `RenderGraphPanel` now owns the Live RG View and reads latest viewport
+  diagnostics through `EditorRenderGraphSnapshotProvider`; `FrameDebuggerPanel` owns the Frame Debug RG View and reads frozen
+  frame-debug captures. Both reuse `RenderGraphSnapshotView`.
 
-1. `feat: add render view overlay prerequisites`
+1. `feat: add frame debug replay contract`
+
+Freeze enough CPU-side frame inputs for pass-level replay and let selecting a pass/event request a debug refresh without
+resuming normal target view rendering. Keep intermediate texture preview out until explicit debug preservation/copy exists.
+
+2. `feat: add render view overlay prerequisites`
 
 Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, explicit overlay pass
 load/store behavior, blend state support or an equivalent overlay composition path, and a narrow debug/world-line draw route.
 Then add a camera-aware world grid as the first Scene View-only render pass; no gizmo interaction, picking or selection outline
 in that slice.
+
+3. `feat: add intermediate texture preview`
+
+After replay and overlay contracts are stable, add debug-preserved pass output preview through a debug-owned sampled texture.
+Unpreserved transient resources must produce diagnostics instead of being read after graph execution.
 
 ## Non-goals
 

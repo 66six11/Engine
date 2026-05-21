@@ -35,7 +35,7 @@
 - Scope：Windows 桌面端，Vulkan 1.4，C++23，GLFW，VMA，CMake，Conan，MSVC/ClangCL。
 - Research：已有官方资料索引；涉及最新 SDK、扩展、工具行为时仍需重新核对一手资料。
 - Design：已形成 package-first、RenderGraph/RHI 边界、frame loop 和 shader pipeline 初版设计。
-- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、transient image、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、draw list、MRT、descriptor layout、fullscreen texture、offscreen viewport、compute dispatch、deferred deletion、asset-core identity/metadata model、无参数交互式 triangle viewer，以及 `asharia-editor` Dear ImGui host、Scene View sampled viewport、viewport overlay flags、overlay texture metadata 闭环、RenderView diagnostics snapshot、Frame Debug capture state、只读 Render Graph panel 和 editor smokes。
+- Implementation：已接入窗口、Vulkan context、swapchain frame loop、RenderGraph clear、transient image、dynamic rendering clear、resize/recreate、triangle、depth triangle、indexed mesh、mesh 3D、draw list、MRT、descriptor layout、fullscreen texture、offscreen viewport、compute dispatch、deferred deletion、asset-core identity/metadata model、无参数交互式 triangle viewer，以及 `asharia-editor` Dear ImGui host、Scene View sampled viewport、viewport overlay flags、overlay texture metadata 闭环、RenderView diagnostics snapshot、Frame Debug capture state、Live RG View、Frame Debug RG View 和 editor smokes。
 - Validation：提交前按 [workflow/review.md](workflow/review.md) 运行编码检查、构建、smoke 和 Vulkan/C++ 审查脚本。
 
 ## 文档维护规则

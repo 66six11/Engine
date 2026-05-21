@@ -32,6 +32,7 @@ namespace asharia::editor {
         EditorExtent2D requestedExtent;
         EditorViewportOverlayFlags overlayFlags;
         asharia::VulkanSampledTextureView texture;
+        std::uint64_t frameIndex{};
         std::uint64_t submittedFrameEpoch{};
     };
 
@@ -68,6 +69,7 @@ namespace asharia::editor {
             VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
             VkFormat format{VK_FORMAT_UNDEFINED};
             EditorExtent2D extent;
+            std::uint64_t frameIndex{};
             std::uint64_t lastUsedFrameEpoch{};
             std::uint64_t retireFrameEpoch{};
         };
