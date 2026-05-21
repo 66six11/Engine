@@ -188,9 +188,10 @@ Dear ImGui labels must preserve stable IDs when visible text changes. Editor UI 
 menus, actions, panel windows and other stateful controls so labels are emitted as `translated text###stable-id`. This keeps
 layout ini, docking state and widget identity stable across locale changes.
 
-Interactive locale selection currently reads `ASHARIA_EDITOR_LOCALE` (`en-US` by default, `zh-Hans` supported). CJK font
-asset packaging is not part of this slice; Chinese text requires an ImGui font source with the needed glyph coverage before
-it will render correctly in a distributed editor.
+Interactive locale selection currently reads `ASHARIA_EDITOR_LOCALE` (`en-US` by default, `zh-Hans` supported). When
+`zh-Hans` is active, `ImGuiRuntime` requests CJK glyph coverage from `ASHARIA_EDITOR_CJK_FONT` or a small list of common
+system font locations. This keeps the first localization path usable during development, but bundled editor font assets and
+license-reviewed packaging remain a later distribution task.
 
 ### 关闭
 

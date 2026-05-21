@@ -610,9 +610,36 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool validateEditorFontSmoke(asharia::editor::EditorRunMode mode,
+                                               const asharia::editor::ImGuiRuntime& imgui,
+                                               asharia::editor::EditorLocale locale) {
+        if (!isSmokeMode(mode) || locale != asharia::editor::EditorLocale::ZhHans) {
+            return true;
+        }
+
+        const asharia::editor::ImGuiRuntimeFontStatus& status = imgui.fontStatus();
+        if (!status.cjkRequested) {
+            asharia::logError("Editor zh-Hans smoke did not request CJK glyph coverage.");
+            return false;
+        }
+        if (status.cjkFontPathExplicit && !status.cjkLoaded) {
+            asharia::logError("Editor zh-Hans smoke failed to load the explicit CJK font path.");
+            return false;
+        }
+        if (status.cjkCandidateFound && !status.cjkLoaded) {
+            asharia::logError(
+                "Editor zh-Hans smoke found a CJK font candidate but did not load it.");
+            return false;
+        }
+
+        return true;
+    }
+
     [[nodiscard]] bool validateEditorStartupSmoke(asharia::editor::EditorRunMode mode,
-                                                  const asharia::editor::ImGuiRuntime& imgui) {
-        return validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode);
+                                                  const asharia::editor::ImGuiRuntime& imgui,
+                                                  asharia::editor::EditorLocale locale) {
+        return validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode) &&
+               validateEditorFontSmoke(mode, imgui, locale);
     }
 
     VkImageMemoryBarrier2 imageBarrier(const ImageBarrierDesc& desc) {
@@ -1284,16 +1311,20 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
+        const asharia::editor::EditorLocale editorLocale = editorLocaleFromEnvironment();
         ImGuiRuntime imgui;
         const ImGuiRuntimeDesc imguiDesc{
             .layoutIniPath = smokeMode ? editorSmokeLayoutIniPath() : std::filesystem::path{},
+            .enableCjkGlyphs = editorLocale == asharia::editor::EditorLocale::ZhHans,
+            .cjkFontPath = {},
+            .fontPixelSize = 16.0F,
         };
         if (auto created = imgui.create(window->nativeHandle(), *context, *frameLoop, imguiDesc);
             !created) {
             asharia::logError(created.error().message);
             return EXIT_FAILURE;
         }
-        if (!validateEditorStartupSmoke(mode, imgui)) {
+        if (!validateEditorStartupSmoke(mode, imgui, editorLocale)) {
             return EXIT_FAILURE;
         }
 
@@ -1318,7 +1349,7 @@ namespace asharia::editor {
         asharia::editor::EditorEventQueue eventQueue;
         asharia::editor::EditorDiagnosticsLog diagnosticsLog;
         asharia::editor::EditorFrameDebugger frameDebugger;
-        asharia::editor::EditorI18n editorI18n{editorLocaleFromEnvironment()};
+        asharia::editor::EditorI18n editorI18n{editorLocale};
         asharia::editor::EditorPanelRegistry panelRegistry;
         panelRegistry.setEventQueue(&eventQueue);
         if (auto registered = registerEditorPanels(panelRegistry); !registered) {
