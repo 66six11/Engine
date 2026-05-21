@@ -390,6 +390,40 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - RenderGraph compile result 已暴露 declared image count，benchmark 输出 pass/image/dependency/transition/culled/transient counters。
 - GPU timestamp query pool、editor panel、capture orchestration 和 profiler UI 仍保持暂缓。
 
+## P3.6：RenderGraph diagnostics snapshot
+
+目标：把现有 `formatDebugTables()` 的文本诊断提升为结构化、后端无关的数据源。该数据源用于 smoke、Live
+Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 editor UI，也不是可编辑 RenderGraph。
+
+当前状态：第一版已由 `RenderGraph::diagnosticsSnapshot()` 提供。`formatDebugTables()` 仍保留为文本诊断输出；
+editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格。
+
+第一版数据：
+
+- pass nodes：compiled order、declaration index、name、type、params type、culling flags、side-effect flag、command count
+  和 transition count。
+- resource nodes：image/buffer、imported/transient lifetime、format/bytes、extent、initial/final access。
+- access edges：pass/resource 双向依赖，标注 `ColorWrite`、`ShaderRead`、`DepthAttachmentWrite`、
+  `BufferStorageReadWrite` 等 RenderGraph access。
+- dependency edges：producer declaration index、consumer declaration index、resource 和 reason。
+- transitions：before/final image 与 buffer transition 的 old/new access。
+- culled passes and transient lifetime summary。
+
+约束：
+
+- `packages/rendergraph` 只输出抽象 handle、state、stage、slot 和 pass metadata，不输出 Vulkan handle、layout、
+  access mask 或 pipeline stage。
+- snapshot 必须能从 `RenderGraphCompileResult` 和 graph 声明数据派生，不能回调 Vulkan backend 或 editor。
+- Frame Debug 可以冻结某一帧的 snapshot；Live Diagnostics 只读取最近完成帧或上一帧 snapshot。
+- pass node graph 只是 snapshot 的可视化表现，不是 graph authoring。
+
+验收：
+
+- Done: `--smoke-rendergraph` 验证 snapshot 的 pass/resource/access edge/dependency/transition 数量和关键名称。
+- Done: package-local rendergraph compile test 验证 snapshot 的 declared counts、compiled pass order、resource nodes、
+  access edge、dependency edge 和 final transition。
+- Done: `formatDebugTables()` 继续可用，便于 issue/PR 文本诊断。
+
 ## P4：Backend lifetime and caches
 
 目标：从“每帧现建 MVP 对象”过渡到可持续的后端资源生命周期。

@@ -3363,6 +3363,76 @@ namespace {
         return true;
     }
 
+    bool validateSmokeRenderGraphDiagnostics(const asharia::RenderGraph& graph,
+                                             const asharia::RenderGraphCompileResult& compiled) {
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(compiled);
+        if (snapshot.declaredPassCount != 6 || snapshot.declaredImageCount != 3 ||
+            snapshot.declaredBufferCount != 0 || snapshot.passes.size() != 6 ||
+            snapshot.resources.size() != 3 || snapshot.accessEdges.size() != 6 ||
+            snapshot.dependencyEdges.size() != 3 || snapshot.transitions.size() != 7 ||
+            snapshot.transientImages.size() != 1 || !snapshot.transientBuffers.empty() ||
+            !snapshot.culledPasses.empty()) {
+            asharia::logError("Render graph diagnostics snapshot produced unexpected counts.");
+            return false;
+        }
+        if (snapshot.passes[4].name != "WriteTransientColor" ||
+            snapshot.passes[4].declarationIndex != 5 ||
+            snapshot.passes[5].name != "SampleTransientColor" ||
+            snapshot.passes[5].declarationIndex != 4) {
+            asharia::logError(
+                "Render graph diagnostics snapshot did not preserve compiled pass order.");
+            return false;
+        }
+
+        bool foundTransientReadEdge = false;
+        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+            if (edge.passName == "SampleTransientColor" && edge.resourceName == "TransientColor" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::ShaderRead &&
+                edge.shaderStage == asharia::RenderGraphShaderStage::Fragment) {
+                foundTransientReadEdge = true;
+            }
+        }
+        if (!foundTransientReadEdge) {
+            asharia::logError("Render graph diagnostics snapshot missed a transient read edge.");
+            return false;
+        }
+
+        bool foundTransientDependency = false;
+        for (const asharia::RenderGraphDiagnosticsDependencyEdge& edge : snapshot.dependencyEdges) {
+            if (edge.fromPassIndex == 4 && edge.toPassIndex == 5 &&
+                edge.fromDeclarationIndex == 5 && edge.toDeclarationIndex == 4 &&
+                edge.resourceName == "TransientColor" && edge.reason == "producer read") {
+                foundTransientDependency = true;
+            }
+        }
+        if (!foundTransientDependency) {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the transient dependency edge.");
+            return false;
+        }
+
+        bool foundFinalBackbufferTransition = false;
+        for (const asharia::RenderGraphDiagnosticsTransition& transition : snapshot.transitions) {
+            if (transition.phase == asharia::RenderGraphDiagnosticsTransitionPhase::Final &&
+                transition.resourceName == "Backbuffer" &&
+                transition.oldImageAccess.state == asharia::RenderGraphImageState::ShaderRead &&
+                transition.oldImageAccess.shaderStage ==
+                    asharia::RenderGraphShaderStage::Fragment &&
+                transition.newImageAccess.state == asharia::RenderGraphImageState::Present) {
+                foundFinalBackbufferTransition = true;
+            }
+        }
+        if (!foundFinalBackbufferTransition) {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the final backbuffer transition.");
+            return false;
+        }
+
+        return true;
+    }
+
     bool validateSmokeRenderGraphCommands(const asharia::RenderGraphCompileResult& compiled) {
         if (compiled.passes.size() != 6) {
             asharia::logError("Render graph command smoke received an unexpected pass count.");
@@ -5066,6 +5136,10 @@ namespace {
         std::cout << graph.formatDebugTables(*compiled) << '\n';
 
         if (!validateSmokeRenderGraphTransientPlan(*compiled)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphDiagnostics(graph, *compiled)) {
             return EXIT_FAILURE;
         }
 

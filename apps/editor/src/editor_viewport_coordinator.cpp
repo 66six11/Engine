@@ -90,6 +90,9 @@ namespace asharia::editor {
         if (!result) {
             return std::nullopt;
         }
+        if (anyEditorViewportOverlayFlagEnabled(result->overlayFlags)) {
+            ++stats_.overlayFlagTextureFramesAcquired;
+        }
         ++textureFramesSubmitted_;
         return result;
     }

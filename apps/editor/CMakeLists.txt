@@ -64,6 +64,8 @@ add_executable(asharia-editor
 
 add_executable(asharia::editor ALIAS asharia-editor)
 
+add_dependencies(asharia-editor asharia-renderer-basic-shaders)
+
 set_source_files_properties(${ASHARIA_IMGUI_BACKEND_SOURCES}
     PROPERTIES
         SKIP_LINTING ON

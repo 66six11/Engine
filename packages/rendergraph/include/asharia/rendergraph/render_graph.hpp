@@ -388,6 +388,91 @@ namespace asharia {
         std::vector<RenderGraphBufferTransition> finalBufferTransitions;
     };
 
+    enum class RenderGraphDiagnosticsTransitionPhase {
+        BeforePass,
+        Final,
+    };
+
+    struct RenderGraphDiagnosticsPassNode {
+        std::size_t passIndex{};
+        std::size_t declarationIndex{};
+        std::string name;
+        std::string type;
+        std::string paramsType;
+        bool allowCulling{};
+        bool hasSideEffects{};
+        std::size_t commandCount{};
+        std::size_t imageTransitionCount{};
+        std::size_t bufferTransitionCount{};
+    };
+
+    struct RenderGraphDiagnosticsResourceNode {
+        RenderGraphResourceKind kind{RenderGraphResourceKind::Image};
+        std::uint32_t resourceIndex{};
+        std::string name;
+        RenderGraphImageLifetime imageLifetime{RenderGraphImageLifetime::Imported};
+        RenderGraphImageFormat imageFormat{RenderGraphImageFormat::Undefined};
+        RenderGraphExtent2D imageExtent{};
+        RenderGraphImageAccess imageInitialAccess{};
+        RenderGraphImageAccess imageFinalAccess{};
+        RenderGraphBufferLifetime bufferLifetime{RenderGraphBufferLifetime::Imported};
+        std::uint64_t bufferByteSize{};
+        RenderGraphBufferAccess bufferInitialAccess{};
+        RenderGraphBufferAccess bufferFinalAccess{};
+    };
+
+    struct RenderGraphDiagnosticsAccessEdge {
+        std::size_t passIndex{};
+        std::size_t declarationIndex{};
+        std::string passName;
+        RenderGraphResourceKind resourceKind{RenderGraphResourceKind::Image};
+        std::uint32_t resourceIndex{};
+        std::string resourceName;
+        std::string slotName;
+        RenderGraphSlotAccess access{RenderGraphSlotAccess::ColorWrite};
+        RenderGraphShaderStage shaderStage{RenderGraphShaderStage::None};
+    };
+
+    struct RenderGraphDiagnosticsDependencyEdge {
+        std::size_t fromPassIndex{};
+        std::size_t toPassIndex{};
+        std::size_t fromDeclarationIndex{};
+        std::size_t toDeclarationIndex{};
+        RenderGraphResourceKind resourceKind{RenderGraphResourceKind::Image};
+        std::uint32_t resourceIndex{};
+        std::string resourceName;
+        std::string reason;
+    };
+
+    struct RenderGraphDiagnosticsTransition {
+        RenderGraphDiagnosticsTransitionPhase phase{
+            RenderGraphDiagnosticsTransitionPhase::BeforePass};
+        std::size_t passIndex{};
+        std::size_t declarationIndex{};
+        std::string passName;
+        RenderGraphResourceKind resourceKind{RenderGraphResourceKind::Image};
+        std::uint32_t resourceIndex{};
+        std::string resourceName;
+        RenderGraphImageAccess oldImageAccess{};
+        RenderGraphImageAccess newImageAccess{};
+        RenderGraphBufferAccess oldBufferAccess{};
+        RenderGraphBufferAccess newBufferAccess{};
+    };
+
+    struct RenderGraphDiagnosticsSnapshot {
+        std::size_t declaredPassCount{};
+        std::size_t declaredImageCount{};
+        std::size_t declaredBufferCount{};
+        std::vector<RenderGraphDiagnosticsPassNode> passes;
+        std::vector<RenderGraphDiagnosticsResourceNode> resources;
+        std::vector<RenderGraphDiagnosticsAccessEdge> accessEdges;
+        std::vector<RenderGraphDiagnosticsDependencyEdge> dependencyEdges;
+        std::vector<RenderGraphDiagnosticsTransition> transitions;
+        std::vector<RenderGraphCulledPass> culledPasses;
+        std::vector<RenderGraphTransientImageAllocation> transientImages;
+        std::vector<RenderGraphTransientBufferAllocation> transientBuffers;
+    };
+
     struct RenderGraphPassContext {
         std::string_view name;
         std::string_view type;
@@ -1185,6 +1270,265 @@ namespace asharia {
         }
 
     public:
+        [[nodiscard]] RenderGraphDiagnosticsSnapshot
+        diagnosticsSnapshot(const RenderGraphCompileResult& compiled) const {
+            RenderGraphDiagnosticsSnapshot snapshot;
+            snapshot.declaredPassCount = compiled.declaredPassCount;
+            snapshot.declaredImageCount = compiled.declaredImageCount;
+            snapshot.declaredBufferCount = compiled.declaredBufferCount;
+            snapshot.passes.reserve(compiled.passes.size());
+            snapshot.resources.reserve(images_.size() + buffers_.size());
+            snapshot.dependencyEdges.reserve(compiled.dependencies.size());
+            snapshot.transitions.reserve(compiled.finalTransitions.size() +
+                                         compiled.finalBufferTransitions.size());
+            snapshot.culledPasses = compiled.culledPasses;
+            snapshot.transientImages = compiled.transientImages;
+            snapshot.transientBuffers = compiled.transientBuffers;
+
+            for (std::size_t imageIndex = 0; imageIndex < images_.size(); ++imageIndex) {
+                const RenderGraphImageDesc& image = images_[imageIndex];
+                snapshot.resources.push_back(RenderGraphDiagnosticsResourceNode{
+                    .kind = RenderGraphResourceKind::Image,
+                    .resourceIndex = static_cast<std::uint32_t>(imageIndex),
+                    .name = image.name,
+                    .imageLifetime = image.lifetime,
+                    .imageFormat = image.format,
+                    .imageExtent = image.extent,
+                    .imageInitialAccess =
+                        RenderGraphImageAccess{
+                            .state = image.initialState,
+                            .shaderStage = image.initialShaderStage,
+                        },
+                    .imageFinalAccess =
+                        RenderGraphImageAccess{
+                            .state = image.finalState,
+                            .shaderStage = image.finalShaderStage,
+                        },
+                });
+            }
+
+            for (std::size_t bufferIndex = 0; bufferIndex < buffers_.size(); ++bufferIndex) {
+                const RenderGraphBufferDesc& buffer = buffers_[bufferIndex];
+                snapshot.resources.push_back(RenderGraphDiagnosticsResourceNode{
+                    .kind = RenderGraphResourceKind::Buffer,
+                    .resourceIndex = static_cast<std::uint32_t>(bufferIndex),
+                    .name = buffer.name,
+                    .bufferLifetime = buffer.lifetime,
+                    .bufferByteSize = buffer.byteSize,
+                    .bufferInitialAccess =
+                        RenderGraphBufferAccess{
+                            .state = buffer.initialState,
+                            .shaderStage = buffer.initialShaderStage,
+                        },
+                    .bufferFinalAccess =
+                        RenderGraphBufferAccess{
+                            .state = buffer.finalState,
+                            .shaderStage = buffer.finalShaderStage,
+                        },
+                });
+            }
+
+            const auto imageName = [this](RenderGraphImageHandle image) -> std::string {
+                if (image.index < images_.size()) {
+                    return images_[image.index].name;
+                }
+                return {};
+            };
+            const auto bufferName = [this](RenderGraphBufferHandle buffer) -> std::string {
+                if (buffer.index < buffers_.size()) {
+                    return buffers_[buffer.index].name;
+                }
+                return {};
+            };
+            const auto compiledPassIndex =
+                [&compiled](std::size_t declarationIndex) -> std::size_t {
+                for (std::size_t passIndex = 0; passIndex < compiled.passes.size(); ++passIndex) {
+                    if (compiled.passes[passIndex].declarationIndex == declarationIndex) {
+                        return passIndex;
+                    }
+                }
+                return compiled.passes.size();
+            };
+            const auto appendImageEdges =
+                [&imageName, &snapshot](std::size_t passIndex, const RenderGraphCompiledPass& pass,
+                                        RenderGraphSlotAccess access,
+                                        std::span<const RenderGraphImageSlot> slots) {
+                    for (const RenderGraphImageSlot& slot : slots) {
+                        snapshot.accessEdges.push_back(RenderGraphDiagnosticsAccessEdge{
+                            .passIndex = passIndex,
+                            .declarationIndex = pass.declarationIndex,
+                            .passName = pass.name,
+                            .resourceKind = RenderGraphResourceKind::Image,
+                            .resourceIndex = slot.image.index,
+                            .resourceName = imageName(slot.image),
+                            .slotName = slot.name,
+                            .access = access,
+                            .shaderStage = slot.shaderStage,
+                        });
+                    }
+                };
+            const auto appendBufferEdges =
+                [&bufferName, &snapshot](std::size_t passIndex, const RenderGraphCompiledPass& pass,
+                                         RenderGraphSlotAccess access,
+                                         std::span<const RenderGraphBufferSlot> slots) {
+                    for (const RenderGraphBufferSlot& slot : slots) {
+                        snapshot.accessEdges.push_back(RenderGraphDiagnosticsAccessEdge{
+                            .passIndex = passIndex,
+                            .declarationIndex = pass.declarationIndex,
+                            .passName = pass.name,
+                            .resourceKind = RenderGraphResourceKind::Buffer,
+                            .resourceIndex = slot.buffer.index,
+                            .resourceName = bufferName(slot.buffer),
+                            .slotName = slot.name,
+                            .access = access,
+                            .shaderStage = slot.shaderStage,
+                        });
+                    }
+                };
+
+            for (std::size_t passIndex = 0; passIndex < compiled.passes.size(); ++passIndex) {
+                const RenderGraphCompiledPass& pass = compiled.passes[passIndex];
+                snapshot.passes.push_back(RenderGraphDiagnosticsPassNode{
+                    .passIndex = passIndex,
+                    .declarationIndex = pass.declarationIndex,
+                    .name = pass.name,
+                    .type = pass.type,
+                    .paramsType = pass.paramsType,
+                    .allowCulling = pass.allowCulling,
+                    .hasSideEffects = pass.hasSideEffects,
+                    .commandCount = pass.commands.size(),
+                    .imageTransitionCount = pass.transitionsBefore.size(),
+                    .bufferTransitionCount = pass.bufferTransitionsBefore.size(),
+                });
+
+                appendImageEdges(passIndex, pass, RenderGraphSlotAccess::ColorWrite,
+                                 pass.colorWriteSlots);
+                appendImageEdges(passIndex, pass, RenderGraphSlotAccess::ShaderRead,
+                                 pass.shaderReadSlots);
+                appendImageEdges(passIndex, pass, RenderGraphSlotAccess::DepthAttachmentRead,
+                                 pass.depthReadSlots);
+                appendImageEdges(passIndex, pass, RenderGraphSlotAccess::DepthAttachmentWrite,
+                                 pass.depthWriteSlots);
+                appendImageEdges(passIndex, pass, RenderGraphSlotAccess::DepthSampledRead,
+                                 pass.depthSampledReadSlots);
+                appendImageEdges(passIndex, pass, RenderGraphSlotAccess::TransferWrite,
+                                 pass.transferWriteSlots);
+                appendBufferEdges(passIndex, pass, RenderGraphSlotAccess::BufferShaderRead,
+                                  pass.bufferReadSlots);
+                appendBufferEdges(passIndex, pass, RenderGraphSlotAccess::BufferTransferRead,
+                                  pass.bufferTransferReadSlots);
+                appendBufferEdges(passIndex, pass, RenderGraphSlotAccess::BufferTransferWrite,
+                                  pass.bufferWriteSlots);
+                appendBufferEdges(passIndex, pass, RenderGraphSlotAccess::BufferStorageReadWrite,
+                                  pass.bufferStorageReadWriteSlots);
+
+                for (const RenderGraphImageTransition& transition : pass.transitionsBefore) {
+                    snapshot.transitions.push_back(RenderGraphDiagnosticsTransition{
+                        .phase = RenderGraphDiagnosticsTransitionPhase::BeforePass,
+                        .passIndex = passIndex,
+                        .declarationIndex = pass.declarationIndex,
+                        .passName = pass.name,
+                        .resourceKind = RenderGraphResourceKind::Image,
+                        .resourceIndex = transition.image.index,
+                        .resourceName = transition.imageName,
+                        .oldImageAccess =
+                            RenderGraphImageAccess{
+                                .state = transition.oldState,
+                                .shaderStage = transition.oldShaderStage,
+                            },
+                        .newImageAccess =
+                            RenderGraphImageAccess{
+                                .state = transition.newState,
+                                .shaderStage = transition.newShaderStage,
+                            },
+                    });
+                }
+                for (const RenderGraphBufferTransition& transition : pass.bufferTransitionsBefore) {
+                    snapshot.transitions.push_back(RenderGraphDiagnosticsTransition{
+                        .phase = RenderGraphDiagnosticsTransitionPhase::BeforePass,
+                        .passIndex = passIndex,
+                        .declarationIndex = pass.declarationIndex,
+                        .passName = pass.name,
+                        .resourceKind = RenderGraphResourceKind::Buffer,
+                        .resourceIndex = transition.buffer.index,
+                        .resourceName = transition.bufferName,
+                        .oldBufferAccess =
+                            RenderGraphBufferAccess{
+                                .state = transition.oldState,
+                                .shaderStage = transition.oldShaderStage,
+                            },
+                        .newBufferAccess =
+                            RenderGraphBufferAccess{
+                                .state = transition.newState,
+                                .shaderStage = transition.newShaderStage,
+                            },
+                    });
+                }
+            }
+
+            for (const RenderGraphPassDependency& dependency : compiled.dependencies) {
+                snapshot.dependencyEdges.push_back(RenderGraphDiagnosticsDependencyEdge{
+                    .fromPassIndex = compiledPassIndex(dependency.fromDeclarationIndex),
+                    .toPassIndex = compiledPassIndex(dependency.toDeclarationIndex),
+                    .fromDeclarationIndex = dependency.fromDeclarationIndex,
+                    .toDeclarationIndex = dependency.toDeclarationIndex,
+                    .resourceKind = dependency.resourceKind,
+                    .resourceIndex = dependency.resourceKind == RenderGraphResourceKind::Buffer
+                                         ? dependency.buffer.index
+                                         : dependency.image.index,
+                    .resourceName = dependency.resourceKind == RenderGraphResourceKind::Buffer
+                                        ? dependency.bufferName
+                                        : dependency.imageName,
+                    .reason = dependency.reason,
+                });
+            }
+
+            for (const RenderGraphImageTransition& transition : compiled.finalTransitions) {
+                snapshot.transitions.push_back(RenderGraphDiagnosticsTransition{
+                    .phase = RenderGraphDiagnosticsTransitionPhase::Final,
+                    .passIndex = compiled.passes.size(),
+                    .declarationIndex = compiled.declaredPassCount,
+                    .passName = {},
+                    .resourceKind = RenderGraphResourceKind::Image,
+                    .resourceIndex = transition.image.index,
+                    .resourceName = transition.imageName,
+                    .oldImageAccess =
+                        RenderGraphImageAccess{
+                            .state = transition.oldState,
+                            .shaderStage = transition.oldShaderStage,
+                        },
+                    .newImageAccess =
+                        RenderGraphImageAccess{
+                            .state = transition.newState,
+                            .shaderStage = transition.newShaderStage,
+                        },
+                });
+            }
+            for (const RenderGraphBufferTransition& transition : compiled.finalBufferTransitions) {
+                snapshot.transitions.push_back(RenderGraphDiagnosticsTransition{
+                    .phase = RenderGraphDiagnosticsTransitionPhase::Final,
+                    .passIndex = compiled.passes.size(),
+                    .declarationIndex = compiled.declaredPassCount,
+                    .passName = {},
+                    .resourceKind = RenderGraphResourceKind::Buffer,
+                    .resourceIndex = transition.buffer.index,
+                    .resourceName = transition.bufferName,
+                    .oldBufferAccess =
+                        RenderGraphBufferAccess{
+                            .state = transition.oldState,
+                            .shaderStage = transition.oldShaderStage,
+                        },
+                    .newBufferAccess =
+                        RenderGraphBufferAccess{
+                            .state = transition.newState,
+                            .shaderStage = transition.newShaderStage,
+                        },
+                });
+            }
+
+            return snapshot;
+        }
+
         [[nodiscard]] std::string
         formatDebugTables(const RenderGraphCompileResult& compiled) const {
             std::string output;

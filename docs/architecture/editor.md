@@ -279,14 +279,21 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-re
 ```
 
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
-Game/Preview and verifies that Game View can retain explicit debug overlay/debug gizmo intent.
+Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent and verifies that a flagged
+Scene View texture is rendered and acquired back through the panel-facing texture result.
 
 ## 当前缺口
 
 - Selection, transaction, dirty state, inspector and asset browser are blocked on scene/asset/schema ownership becoming
   concrete enough.
-- Real grid、transform gizmo、wire、selection outline、debug overlay and debug gizmo passes are still pending renderer-side
-  view pass work.
+- World-space grid, transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
+  renderer-side view pass work. The editor currently owns only the view-local overlay intent and texture metadata loop.
+- Renderer prerequisites for those passes are: view/camera params in render view data, explicit overlay pass load/store
+  semantics, blend state or a dedicated composition path, and a debug/world-line draw route.
+- Frame Debug, RG View and pass graph visualization are separate editor concepts:
+  - Frame Debug owns capture, pause/resume and fixed-frame inspection.
+  - RG View displays the compiled RenderGraph snapshot as pass/resource/dependency/lifetime data.
+  - Pass graph visualization is a read-only node view derived from the same snapshot, not an editable graph authoring system.
 - `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
   超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。
 - There is no `packages/editor-core` yet by design.

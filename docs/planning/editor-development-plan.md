@@ -389,7 +389,7 @@ Every sub-stage must:
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1 Done; 21.2-21.5 Next/Blocked | In progress | Add Scene View grid, gizmo, selection outline and debug overlay. |
+| 21 | 21.1-21.2 Done; 21.3-21.5 Next/Blocked | In progress | Close editor overlay intent loop, then add Scene View grid, gizmo, selection outline and debug overlay after render prerequisites. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -784,18 +784,30 @@ Validation:
   flags while retaining explicit debug overlay/debug gizmo flags, verifies Preview effective flags are empty and checks at
   least one flagged Scene View frame was rendered.
 
-### 21.2 Grid Pass
+### 21.2 Viewport Overlay Metadata Loop
 
-Status: Next.
+Status: Done.
 
 Scope:
 
-- Add Scene View-only grid rendering path.
-- Express resources and final state through RenderGraph.
+- Keep Scene/Game/Preview overlay intent backend-neutral in editor code.
+- Prove the request/result path carries effective overlay metadata back to panel-facing texture results.
+- Do not connect Scene View grid rendering until render view prerequisites are explicit.
+
+Implementation:
+
+- `EditorViewportCoordinator` now counts both flagged render submissions and flagged texture acquisitions, so the editor smoke
+  covers the full panel request -> viewport render -> ImGui texture result loop.
+- `asharia-editor` now depends on `asharia-renderer-basic-shaders`, so editor-only builds regenerate the renderer shader
+  artifacts required by `BasicFullscreenTextureRenderer`.
+- Renderer-basic still receives only `BasicRenderViewDesc::target` for this slice; Scene View grid intent remains editor
+  metadata until render-side camera, blending and pass semantics are ready.
 
 Validation:
 
-- Scene View smoke shows grid path; Game View smoke remains unchanged.
+- `--smoke-editor-viewport` verifies Scene View defaults, Scene/Game/Preview filtering, at least one flagged Scene View render
+  and at least one flagged texture acquisition by the panel-facing result path.
+- `--smoke-editor-viewport-resize` continues to cover descriptor retirement and render-target deferred destruction.
 
 ### 21.3 Gizmo Interaction
 
@@ -978,10 +990,35 @@ Validation:
 
 ## Recommended Next Commits
 
-1. `feat: add scene view grid pass baseline`
+Current completed slice: `feat: add render graph diagnostics snapshot`. `RenderGraph::diagnosticsSnapshot()` now creates a
+structured, backend-neutral snapshot from `RenderGraphCompileResult`: pass nodes, image/buffer resource nodes, pass-resource
+access edges, dependency edges, transitions, culled passes, command counts and transient lifetime data. It is validated by
+`--smoke-rendergraph` and package-local rendergraph compile tests.
 
-Use the viewport flags baseline to add the first renderer-side Scene View-only pass. The slice should remain small:
-grid pass schema/shader/recording path plus smoke proof that Game/Preview do not consume Scene-only authoring passes.
+1. `feat: add render view diagnostics snapshot`
+
+Attach one diagnostics snapshot to each recorded RenderView. This establishes the Scene/Game/Preview boundary needed before
+adding editor-only grid, gizmo, wire or selection-outline passes. The snapshot must be view-local and must not expose Vulkan
+handles to editor UI.
+
+2. `feat: add frame debugger capture state`
+
+Add an editor-controlled capture workflow: `Running -> CaptureRequested -> CapturingFrame -> WaitingGpuFence ->
+PausedFrameDebug -> Resume`. Paused frame debug freezes snapshot inspection and frame progression; it does not use
+`vkDeviceWaitIdle` as the normal mechanism and does not read transient GPU resources unless a later explicit preview/readback
+path is added.
+
+3. `feat: add render graph viewer panel`
+
+Add a read-only editor panel with an RG View matrix first: views, compiled passes, resources, dependencies, transitions and
+details for the selected pass/resource. The pass node graph can appear as a second tab derived from the same snapshot.
+
+4. `feat: add render view overlay prerequisites`
+
+Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, explicit overlay pass
+load/store behavior, blend state support or an equivalent overlay composition path, and a narrow debug/world-line draw route.
+Then add a camera-aware world grid as the first Scene View-only render pass; no gizmo interaction, picking or selection outline
+in that slice.
 
 ## Non-goals
 
@@ -990,4 +1027,6 @@ grid pass schema/shader/recording path plus smoke proof that Game/Preview do not
 - No inspector, asset browser, material editor or Play Mode before their owning systems exist.
 - No direct Vulkan command recording in panel `draw()`.
 - No editor-only pass in Game View graph.
+- No editable RenderGraph/node authoring UI in Frame Debug or RG View.
+- No pass intermediate texture preview before explicit debug preservation or copy/readback is designed.
 - No script-owned editor shell or raw ImGui scripting before action, transaction, schema and script diagnostics are stable.

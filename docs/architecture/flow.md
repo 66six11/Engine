@@ -405,6 +405,8 @@ sequenceDiagram
 - `EditorViewportOverlayFlags` 是当前 viewport overlay intent。Scene View 请求保留 grid、transform gizmo、wire、
   selection outline、debug overlay 和 debug gizmo flags；Game View 请求会清空 Scene-only authoring flags，但可保留
   显式 debug overlay/debug gizmo flags；Preview View 当前清空全部 overlay flags。
+- Scene View 的 grid、gizmo、wire 和 selection outline flag 当前只作为 editor view-local intent 保存在 request/result
+  metadata 中；它们尚未映射为 renderer pass。Game View 只允许显式 debug overlay/debug gizmo intent 进入后续 graph。
 - `ImGuiTextureRegistry` 只拥有 ImGui descriptor lifetime，不拥有 `VulkanRenderTarget`、
   `VkImage` 或 `VkImageView`。descriptor retirement 使用 frame epoch，避免 resize 后释放仍被
   submitted ImGui draw data 引用的 descriptor。
@@ -608,9 +610,10 @@ flowchart TD
 - 当前 sample 只有一个 game view / swapchain target，但后续 editor 需要允许一帧多个 view graph。
 - Game View、Scene View、Preview View 共享 renderer、RenderGraph 和 Vulkan backend caches，但各自拥有
   view-local camera params、descriptor sets、transient resources 和 compiled graph。
-- Scene/debug viewport flags 已先作为 view-local intent 接入 editor viewport request/result；后续可以额外 record
-  grid、transform gizmos、selection outline、wire overlay、debug overlay/debug gizmo 等 pass。Scene-only authoring pass
-  不能污染 Game View graph；Game debug pass 必须显式 opt in。
+- Scene/debug viewport flags 已先作为 view-local intent 接入 editor viewport request/result，并完成 flagged texture
+  metadata 的 acquire roundtrip。后续 grid、transform gizmos、selection outline、wire overlay、debug overlay/debug gizmo
+  等 pass 继续沿用该 view-local intent。Scene-only authoring pass 不能污染 Game View graph；Game debug pass 必须显式
+  opt in。
 - RenderGraph handle 只在单个 view graph 内有效；跨 view 共享资源必须由 resource manager 拥有并 import。
 
 ## RenderGraph 编译与执行流程
@@ -766,7 +769,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor overlay texture metadata roundtrip<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
     Step2["之后:<br/>upstream systems<br/>scene-core / editor-core / asset-core"]
 
@@ -815,7 +818,12 @@ flowchart TD
 9. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
 10. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续 asset-core 拥有 GUID/import/cache，
     renderer/RHI 只消费 resource handle、product data 和 upload request，不提前暴露逐 object 脚本 draw loop。
-11. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
+11. RenderGraph diagnostics snapshot 已提供结构化、后端无关的 pass/resource/access edge/dependency/transition/lifetime
+    数据。RG View、Frame Debug 和 pass graph visualization 都应消费同一份 snapshot：RG View 显示编译阶段已经确定
+    的数据；Frame Debug 负责 capture、pause/resume 和固定某一帧 snapshot；pass graph visualization 只是 snapshot
+    的只读节点表现，不能成为可编辑 RenderGraph authoring UI。下一步是把 snapshot 挂到 view/frame capture，而不是让
+    editor UI 解析 `formatDebugTables()` 文本。
+12. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的
     culling 策略。

@@ -379,6 +379,92 @@ namespace {
                       "RenderGraph did not protect an imported initial read before overwrite.");
     }
 
+    [[nodiscard]] bool
+    buildsDiagnosticsSnapshot(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto backbuffer = graph.importImage(importedColorDesc("Backbuffer"));
+        const auto transient = graph.createTransientImage(transientColorDesc("TransientColor"));
+
+        graph.addPass("SampleTransient", std::string{kSamplePresentPass})
+            .readTexture("source", transient, asharia::RenderGraphShaderStage::Fragment)
+            .writeTransfer("target", backbuffer);
+        graph.addPass("WriteTransient", std::string{kColorWritePass})
+            .writeColor("target", transient);
+
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            std::cerr << compiled.error().message << '\n';
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(*compiled);
+        if (!expect(snapshot.declaredPassCount == 2 && snapshot.declaredImageCount == 2 &&
+                        snapshot.declaredBufferCount == 0,
+                    "RenderGraph diagnostics snapshot did not preserve declared counts.")) {
+            return false;
+        }
+        if (!expect(snapshot.passes.size() == 2 && snapshot.resources.size() == 2 &&
+                        snapshot.accessEdges.size() == 3 && snapshot.dependencyEdges.size() == 1 &&
+                        snapshot.transitions.size() == 4,
+                    "RenderGraph diagnostics snapshot produced unexpected summary counts.")) {
+            return false;
+        }
+        if (!expect(snapshot.passes[0].name == "WriteTransient" &&
+                        snapshot.passes[0].declarationIndex == 1 &&
+                        snapshot.passes[1].name == "SampleTransient" &&
+                        snapshot.passes[1].declarationIndex == 0,
+                    "RenderGraph diagnostics snapshot did not preserve compiled pass order.")) {
+            return false;
+        }
+        if (!expect(snapshot.resources[0].name == "Backbuffer" &&
+                        snapshot.resources[0].kind == asharia::RenderGraphResourceKind::Image &&
+                        snapshot.resources[1].name == "TransientColor" &&
+                        snapshot.resources[1].imageLifetime ==
+                            asharia::RenderGraphImageLifetime::Transient,
+                    "RenderGraph diagnostics snapshot resource nodes were unexpected.")) {
+            return false;
+        }
+
+        bool foundTransientReadEdge = false;
+        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+            if (edge.passName == "SampleTransient" && edge.resourceName == "TransientColor" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::ShaderRead &&
+                edge.shaderStage == asharia::RenderGraphShaderStage::Fragment) {
+                foundTransientReadEdge = true;
+            }
+        }
+        if (!expect(foundTransientReadEdge,
+                    "RenderGraph diagnostics snapshot missed the transient read edge.")) {
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsDependencyEdge& dependency =
+            snapshot.dependencyEdges.front();
+        if (!expect(dependency.fromPassIndex == 0 && dependency.toPassIndex == 1 &&
+                        dependency.fromDeclarationIndex == 1 &&
+                        dependency.toDeclarationIndex == 0 &&
+                        dependency.resourceName == "TransientColor" &&
+                        dependency.reason == "producer read",
+                    "RenderGraph diagnostics snapshot dependency edge was unexpected.")) {
+            return false;
+        }
+
+        bool foundFinalBackbufferTransition = false;
+        for (const asharia::RenderGraphDiagnosticsTransition& transition : snapshot.transitions) {
+            if (transition.phase == asharia::RenderGraphDiagnosticsTransitionPhase::Final &&
+                transition.resourceName == "Backbuffer" &&
+                transition.oldImageAccess.state == asharia::RenderGraphImageState::TransferDst &&
+                transition.newImageAccess.state == asharia::RenderGraphImageState::Present) {
+                foundFinalBackbufferTransition = true;
+            }
+        }
+
+        return expect(foundFinalBackbufferTransition,
+                      "RenderGraph diagnostics snapshot missed the final transition.");
+    }
+
     [[nodiscard]] bool rejectsMissingProducers(
         const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph imageGraph;
@@ -439,6 +525,7 @@ int main() {
                         keepsSideEffectPassAndExecutesIt(schemas) &&
                         reordersFutureProducerBeforeConsumer(schemas) &&
                         keepsImportedInitialReadBeforeOverwrite(schemas) &&
+                        buildsDiagnosticsSnapshot(schemas) &&
                         rejectsMissingProducers(schemas) &&
                         rejectsImportedResourcesWithoutFinalState(schemas);
 

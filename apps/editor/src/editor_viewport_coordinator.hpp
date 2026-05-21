@@ -28,6 +28,7 @@ namespace asharia::editor {
         std::uint64_t renderTargetsRetired{};
         std::uint64_t renderTargetsDeferred{};
         std::uint64_t overlayFlagFramesRendered{};
+        std::uint64_t overlayFlagTextureFramesAcquired{};
         std::uint64_t sceneViewOnlyFlagRequestsDiscarded{};
     };
 

@@ -230,6 +230,11 @@ namespace {
             asharia::logError("Editor viewport smoke did not render a Scene View flagged frame.");
             return false;
         }
+        if (viewportStats.overlayFlagTextureFramesAcquired == 0) {
+            asharia::logError(
+                "Editor viewport smoke did not acquire a Scene View flagged texture.");
+            return false;
+        }
         if (viewportStats.sceneViewOnlyFlagRequestsDiscarded != 0) {
             asharia::logError(
                 "Editor viewport smoke discarded Scene View-only flags unexpectedly.");
@@ -881,6 +886,8 @@ namespace asharia::editor {
                   << ", scene input reports: " << runResult->inputStats.sceneViewReports
                   << ", shortcut frames: " << runResult->shortcutStats.evaluatedFrames
                   << ", shortcut invocations: " << runResult->shortcutStats.shortcutInvocations
+                  << ", overlay texture frames: "
+                  << viewportStats.overlayFlagTextureFramesAcquired
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         if (isViewportResizeSmokeMode(mode)) {
