@@ -3,8 +3,10 @@
 namespace asharia::editor {
 
     EditorContext::EditorContext(EditorPanelRegistry& panelRegistry, EditorEventQueue& eventQueue,
-                                 EditorDiagnosticsLog& diagnosticsLog)
-        : panelRegistry_(panelRegistry), eventQueue_(eventQueue), diagnosticsLog_(diagnosticsLog) {}
+                                 EditorDiagnosticsLog& diagnosticsLog,
+                                 EditorFrameDebugger& frameDebugger)
+        : panelRegistry_(panelRegistry), eventQueue_(eventQueue), diagnosticsLog_(diagnosticsLog),
+          frameDebugger_(frameDebugger) {}
 
     EditorPanelRegistry& EditorContext::panelRegistry() {
         return panelRegistry_;
@@ -28,6 +30,14 @@ namespace asharia::editor {
 
     const EditorDiagnosticsLog& EditorContext::diagnosticsLog() const {
         return diagnosticsLog_;
+    }
+
+    EditorFrameDebugger& EditorContext::frameDebugger() {
+        return frameDebugger_;
+    }
+
+    const EditorFrameDebugger& EditorContext::frameDebugger() const {
+        return frameDebugger_;
     }
 
 } // namespace asharia::editor

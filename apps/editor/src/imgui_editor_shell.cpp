@@ -38,8 +38,15 @@ namespace asharia::editor {
             if (ImGui::BeginMenu("View")) {
                 drawActionMenuItem(actionRegistry, editorContext, "view.scene-view",
                                    editorContext.panelRegistry().isOpen("scene-view"));
+                drawActionMenuItem(actionRegistry, editorContext, "view.render-graph",
+                                   editorContext.panelRegistry().isOpen("render-graph"));
                 drawActionMenuItem(actionRegistry, editorContext, "view.log",
                                    editorContext.panelRegistry().isOpen("log"));
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Debug")) {
+                drawActionMenuItem(actionRegistry, editorContext, "debug.capture-frame");
+                drawActionMenuItem(actionRegistry, editorContext, "debug.resume-frame");
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();

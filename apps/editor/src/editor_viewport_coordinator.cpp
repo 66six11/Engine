@@ -113,13 +113,17 @@ namespace asharia::editor {
     asharia::Result<asharia::VulkanFrameRecordResult>
     EditorViewportCoordinator::recordRequestedViews(
         const asharia::VulkanFrameRecordContext& frame,
-        asharia::BasicFullscreenTextureRenderer& renderer) {
+        asharia::BasicFullscreenTextureRenderer& renderer, bool recordRenderViews) {
         auto retired = processRetiredTextures(frame);
         if (!retired) {
             return std::unexpected{std::move(retired.error())};
         }
+        if (recordRenderViews) {
+            latestRecordedDiagnostics_.reset();
+        }
 
-        if (!requestedViewport_ || !isRenderableEditorExtent(requestedViewport_->extent) ||
+        if (!recordRenderViews || !requestedViewport_ ||
+            !isRenderableEditorExtent(requestedViewport_->extent) ||
             frame.format == VK_FORMAT_UNDEFINED) {
             return asharia::VulkanFrameRecordResult{
                 .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -192,6 +196,12 @@ namespace asharia::editor {
         renderTexture.diagnostics = std::move(diagnostics);
         renderTexture.format = texture.format;
         renderTexture.extent = texture.extent;
+        latestRecordedDiagnostics_ = EditorRecordedRenderViewDiagnostics{
+            .kind = request.kind,
+            .requestedExtent = request.extent,
+            .submittedFrameEpoch = nextSubmittedFrameEpoch(frame),
+            .diagnostics = renderTexture.diagnostics,
+        };
         ++stats_.renderViewDiagnosticsFramesRecorded;
         stats_.lastRenderViewDiagnosticsPasses =
             renderTexture.diagnostics.renderGraph.passes.size();
@@ -255,6 +265,11 @@ namespace asharia::editor {
 
     ImGuiTextureRegistryStats EditorViewportCoordinator::textureRegistryStats() const {
         return textureRegistry_.stats();
+    }
+
+    const std::optional<EditorRecordedRenderViewDiagnostics>&
+    EditorViewportCoordinator::latestRecordedRenderViewDiagnostics() const {
+        return latestRecordedDiagnostics_;
     }
 
     void EditorViewportCoordinator::promotePendingTexture() {

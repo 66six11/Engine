@@ -274,14 +274,20 @@ Viewport、descriptor lifetime 或 resize 相关改动还必须运行：
 ```powershell
 build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 ```
 
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
 Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent, verifies that a flagged Scene View
 texture is rendered and acquired back through the panel-facing texture result, and checks that the recorded RenderView exposes
 a view-local diagnostics snapshot.
+`--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
+WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
+but skips RenderView recording, so the captured diagnostics snapshot stays frozen until Resume. The same smoke also verifies
+that the read-only Render Graph panel consumes the captured snapshot.
 
 ## 当前缺口
 
@@ -291,11 +297,14 @@ a view-local diagnostics snapshot.
   renderer-side view pass work. The editor currently owns only the view-local overlay intent and texture metadata loop.
 - Renderer prerequisites for those passes are: view/camera params in render view data, explicit overlay pass load/store
   semantics, blend state or a dedicated composition path, and a debug/world-line draw route.
-- `BasicRenderViewDiagnostics` is now available per recorded view, but the editor does not yet have a Frame Debug state
-  machine or RG View panel to browse that snapshot interactively.
+- `EditorFrameDebugger` now owns capture/pause/resume state and freezes the captured `BasicRenderViewDiagnostics` snapshot.
+  `RenderGraphPanel` is a read-only RG View that browses the captured or latest snapshot as pass/resource/access/dependency/
+  transition data.
 - Frame Debug, RG View and pass graph visualization are separate editor concepts:
-  - Frame Debug owns capture, pause/resume and fixed-frame inspection.
-  - RG View displays the compiled RenderGraph snapshot as pass/resource/dependency/lifetime data.
+  - Frame Debug owns capture, pause/resume and fixed-frame inspection. It does not use `vkDeviceWaitIdle` for normal capture
+    and does not read transient GPU resources in the current slice.
+  - RG View displays the compiled RenderGraph snapshot as pass/resource/dependency/lifetime data and does not record Vulkan
+    commands from panel `draw()`.
   - Pass graph visualization is a read-only node view derived from the same snapshot, not an editable graph authoring system.
 - `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
   超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。

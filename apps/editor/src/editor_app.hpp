@@ -7,6 +7,7 @@ namespace asharia::editor {
         SmokeShell,
         SmokeViewport,
         SmokeViewportResize,
+        SmokeFrameDebugger,
     };
 
     int runEditor(EditorRunMode mode);

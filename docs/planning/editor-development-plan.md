@@ -90,6 +90,7 @@ apps/editor/src/
   imgui_texture_registry.hpp/.cpp
   panels/
     scene_view_panel.hpp/.cpp
+    render_graph_panel.hpp/.cpp
     log_panel.hpp/.cpp
 ```
 
@@ -358,11 +359,13 @@ recording or descriptor lifetime, also run the relevant editor smoke commands:
 --smoke-editor-shell
 --smoke-editor-viewport
 --smoke-editor-viewport-resize
+--smoke-editor-frame-debugger
 ```
 
 `--smoke-editor-shell` covers shell/menu/panel/action/event state. `--smoke-editor-viewport` is the stricter sampled
 viewport texture smoke. `--smoke-editor-viewport-resize` performs a real window resize and verifies resized viewport
-texture presentation plus old descriptor/render-target retirement.
+texture presentation plus old descriptor/render-target retirement. `--smoke-editor-frame-debugger` covers capture,
+fence-wait pause, skipped RenderView recording and resume.
 
 ## Stage Status Rules
 
@@ -389,7 +392,7 @@ Every sub-stage must:
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.2 Done; 21.3-21.5 Next/Blocked | In progress | Close editor overlay intent loop, then add Scene View grid, gizmo, selection outline and debug overlay after render prerequisites. |
+| 21 | 21.1-21.4 Done; 21.5-21.7 Next/Blocked | In progress | Close editor overlay intent loop, then add Scene View grid, gizmo, selection outline and debug overlay after render prerequisites. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -809,7 +812,57 @@ Validation:
   and at least one flagged texture acquisition by the panel-facing result path.
 - `--smoke-editor-viewport-resize` continues to cover descriptor retirement and render-target deferred destruction.
 
-### 21.3 Gizmo Interaction
+### 21.3 Frame Debug Capture State
+
+Status: Done.
+
+Scope:
+
+- Add an editor-owned frame debug state machine for capture, fence wait, pause and resume.
+- Freeze the captured `BasicRenderViewDiagnostics` snapshot without exposing Vulkan handles to editor UI.
+- Pause new RenderView recording while WaitingGpuFence or PausedFrameDebug; keep the ImGui host frame alive so the editor can
+  show UI and resume.
+
+Implementation:
+
+- `EditorFrameDebugger` stores `Running -> CaptureRequested -> CapturingFrame -> WaitingGpuFence -> PausedFrameDebug ->
+  Resume -> Running` state, stats and the latest captured diagnostics snapshot.
+- Debug menu actions `debug.capture-frame` and `debug.resume-frame` route through `EditorContext` to the frame debugger.
+- `EditorViewportCoordinator::recordRequestedViews()` can process retired viewport targets while skipping new RenderView
+  recording, which is the pause behavior used by frame debug.
+
+Validation:
+
+- `--smoke-editor-frame-debugger` verifies capture request, successful diagnostics capture, waiting for the submitted frame
+  epoch to complete, at least one skipped RenderView recording frame, resume, and a subsequent resumed RenderView recording.
+- The slice does not use `vkDeviceWaitIdle` and does not preview or read back transient GPU resources.
+
+### 21.4 Render Graph Viewer Panel
+
+Status: Done.
+
+Scope:
+
+- Add a read-only `RenderGraphPanel` that consumes `EditorFrameDebugger` captured snapshots first and falls back to the latest
+  recorded snapshot.
+- Display compiled RenderGraph pass, resource, access edge, dependency, transition and graph-list data without parsing
+  `formatDebugTables()` text.
+- Keep pass graph visualization read-only; this is not a node authoring UI and it does not edit RenderGraph topology.
+
+Implementation:
+
+- `RenderGraphPanel` is registered as the `render-graph` singleton panel and exposed through `view.render-graph`.
+- `EditorFrameContext` passes the frame debugger to panels so the RG View can read the frozen or latest
+  `BasicRenderViewDiagnostics` snapshot.
+- `EditorFrameDebugger` tracks panel snapshot consumption for smoke validation.
+
+Validation:
+
+- `--smoke-editor-frame-debugger` now verifies capture, paused RenderView recording, Render Graph panel snapshot consumption
+  and resume.
+- The panel does not record Vulkan commands and does not expose backend handles.
+
+### 21.5 Gizmo Interaction
 
 Status: Blocked.
 
@@ -822,7 +875,7 @@ Validation:
 
 - Mouse capture respects ImGui capture flags and hovered Scene View.
 
-### 21.4 Selection Outline
+### 21.6 Selection Outline
 
 Status: Blocked.
 
@@ -835,7 +888,7 @@ Validation:
 
 - Selected state affects Scene View only.
 
-### 21.5 Debug Draw Overlay
+### 21.7 Debug Draw Overlay
 
 Status: Blocked.
 
@@ -999,20 +1052,15 @@ Current completed slices:
 - `feat: add render view diagnostics snapshot`: `BasicRenderViewDesc` can collect a `BasicRenderViewDiagnostics` snapshot from
   each successful `recordViewFrame()` call. `EditorViewportCoordinator` stores the latest view-local diagnostics and
   `--smoke-editor-viewport` verifies the expected pass/resource/access/dependency/transition counts.
+- `feat: add frame debugger capture state`: `EditorFrameDebugger` owns the editor-side `Running -> CaptureRequested ->
+  CapturingFrame -> WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` workflow. It freezes a captured
+  `BasicRenderViewDiagnostics` snapshot, skips new RenderView recording while waiting/paused, and
+  `--smoke-editor-frame-debugger` verifies capture, paused recording and resume.
+- `feat: add render graph viewer panel`: `RenderGraphPanel` is a read-only RG View that consumes captured or latest
+  `BasicRenderViewDiagnostics` snapshots and displays compiled pass/resource/access/dependency/transition data. The frame
+  debugger smoke verifies panel snapshot consumption.
 
-1. `feat: add frame debugger capture state`
-
-Add an editor-controlled capture workflow: `Running -> CaptureRequested -> CapturingFrame -> WaitingGpuFence ->
-PausedFrameDebug -> Resume`. Paused frame debug freezes snapshot inspection and frame progression; it does not use
-`vkDeviceWaitIdle` as the normal mechanism and does not read transient GPU resources unless a later explicit preview/readback
-path is added.
-
-2. `feat: add render graph viewer panel`
-
-Add a read-only editor panel with an RG View matrix first: views, compiled passes, resources, dependencies, transitions and
-details for the selected pass/resource. The pass node graph can appear as a second tab derived from the same snapshot.
-
-3. `feat: add render view overlay prerequisites`
+1. `feat: add render view overlay prerequisites`
 
 Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, explicit overlay pass
 load/store behavior, blend state support or an equivalent overlay composition path, and a narrow debug/world-line draw route.

@@ -38,6 +38,13 @@ namespace asharia::editor {
         std::uint64_t lastRenderViewDiagnosticsTransitions{};
     };
 
+    struct EditorRecordedRenderViewDiagnostics {
+        EditorViewportKind kind{EditorViewportKind::Scene};
+        EditorExtent2D requestedExtent;
+        std::uint64_t submittedFrameEpoch{};
+        asharia::BasicRenderViewDiagnostics diagnostics;
+    };
+
     [[nodiscard]] EditorViewportFrameEpochs
     editorViewportFrameEpochs(const asharia::VulkanFrameLoop& frameLoop);
 
@@ -79,7 +86,8 @@ namespace asharia::editor {
         acquireViewportTextureForDraw(std::string_view panelId) override;
         [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
         recordRequestedViews(const asharia::VulkanFrameRecordContext& frame,
-                             asharia::BasicFullscreenTextureRenderer& renderer);
+                             asharia::BasicFullscreenTextureRenderer& renderer,
+                             bool recordRenderViews = true);
         void shutdown();
 
         [[nodiscard]] bool hasPresentedViewportTexture() const;
@@ -88,6 +96,8 @@ namespace asharia::editor {
         [[nodiscard]] std::uint64_t textureFramesSubmitted() const;
         [[nodiscard]] EditorViewportCoordinatorStats stats() const;
         [[nodiscard]] ImGuiTextureRegistryStats textureRegistryStats() const;
+        [[nodiscard]] const std::optional<EditorRecordedRenderViewDiagnostics>&
+        latestRecordedRenderViewDiagnostics() const;
 
     private:
         void promotePendingTexture();
@@ -103,6 +113,7 @@ namespace asharia::editor {
         ViewportTexture pendingTexture_;
         std::vector<ViewportTexture> retiredTextures_;
         std::optional<EditorViewportRequest> requestedViewport_;
+        std::optional<EditorRecordedRenderViewDiagnostics> latestRecordedDiagnostics_;
         EditorViewportCoordinatorStats stats_;
         std::uint64_t currentFrameSubmittedEpoch_{};
         std::uint64_t viewportFramesRendered_{0};

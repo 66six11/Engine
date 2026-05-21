@@ -101,7 +101,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
-涉及 editor viewport rendering、sampled texture registration、descriptor lifetime 或 resize flow 时，还必须跑：
+涉及 editor viewport rendering、sampled texture registration、descriptor lifetime、Frame Debug capture state、Render Graph panel 或 resize flow 时，还必须跑：
 
 ```powershell
 foreach ($preset in @("clangcl-debug", "msvc-debug")) {
@@ -113,6 +113,10 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
     & $exe --smoke-editor-viewport-resize
     if ($LASTEXITCODE -ne 0) {
         throw "$preset --smoke-editor-viewport-resize failed with exit code $LASTEXITCODE"
+    }
+    & $exe --smoke-editor-frame-debugger
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-frame-debugger failed with exit code $LASTEXITCODE"
     }
 }
 ```

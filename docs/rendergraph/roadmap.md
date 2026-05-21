@@ -396,8 +396,10 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 editor UI，也不是可编辑 RenderGraph。
 
 当前状态：第一版已由 `RenderGraph::diagnosticsSnapshot()` 提供。`BasicRenderViewDesc` 已能通过可选的
-`BasicRenderViewDiagnostics` 输出槽把 snapshot 挂到一次成功的 view recording 上。`formatDebugTables()` 仍保留为
-文本诊断输出；editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格。
+`BasicRenderViewDiagnostics` 输出槽把 snapshot 挂到一次成功的 view recording 上。`EditorFrameDebugger` 已能捕获
+并冻结这份 view-local snapshot，在 WaitingGpuFence/PausedFrameDebug 阶段暂停新的 RenderView recording。`RenderGraphPanel`
+已作为只读 RG View 消费捕获或最近一次 snapshot，显示 pass、resource、access edge、dependency、transition 和图列表。
+`formatDebugTables()` 仍保留为文本诊断输出；editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格。
 
 第一版数据：
 
@@ -416,6 +418,8 @@ Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 edi
   access mask 或 pipeline stage。
 - snapshot 必须能从 `RenderGraphCompileResult` 和 graph 声明数据派生，不能回调 Vulkan backend 或 editor。
 - Frame Debug 可以冻结某一帧的 snapshot；Live Diagnostics 只读取最近完成帧或上一帧 snapshot。
+- Frame Debug capture 不使用 `vkDeviceWaitIdle` 作为普通机制，不读取 transient GPU resource；当前只冻结 CPU-side
+  diagnostics snapshot。
 - pass node graph 只是 snapshot 的可视化表现，不是 graph authoring。
 
 验收：
@@ -425,6 +429,8 @@ Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 edi
   access edge、dependency edge 和 final transition。
 - Done: `--smoke-editor-viewport` 验证 recorded RenderView diagnostics 的 pass/resource/access/dependency/transition
   数量。
+- Done: `--smoke-editor-frame-debugger` 验证 capture、fence wait、paused RenderView recording、Render Graph panel snapshot
+  consumption 和 resume。
 - Done: `formatDebugTables()` 继续可用，便于 issue/PR 文本诊断。
 
 ## P4：Backend lifetime and caches

@@ -47,6 +47,7 @@ add_executable(asharia-editor
     src/editor_app.cpp
     src/editor_context.cpp
     src/editor_event.cpp
+    src/editor_frame_debugger.cpp
     src/editor_input_router.cpp
     src/editor_panel.cpp
     src/editor_shortcut_router.cpp
@@ -57,6 +58,7 @@ add_executable(asharia-editor
     src/imgui_texture_registry.cpp
     src/main.cpp
     src/panels/log_panel.cpp
+    src/panels/render_graph_panel.cpp
     src/panels/scene_view_panel.cpp
     ${ASHARIA_IMGUI_BACKEND_SOURCES}
     ${ASHARIA_EDITOR_RESOURCE_SOURCES}
