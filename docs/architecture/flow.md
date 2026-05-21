@@ -769,7 +769,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor overlay texture metadata roundtrip<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor overlay texture metadata roundtrip<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
     Step2["之后:<br/>upstream systems<br/>scene-core / editor-core / asset-core"]
 
@@ -819,10 +819,10 @@ flowchart TD
 10. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续 asset-core 拥有 GUID/import/cache，
     renderer/RHI 只消费 resource handle、product data 和 upload request，不提前暴露逐 object 脚本 draw loop。
 11. RenderGraph diagnostics snapshot 已提供结构化、后端无关的 pass/resource/access edge/dependency/transition/lifetime
-    数据。RG View、Frame Debug 和 pass graph visualization 都应消费同一份 snapshot：RG View 显示编译阶段已经确定
-    的数据；Frame Debug 负责 capture、pause/resume 和固定某一帧 snapshot；pass graph visualization 只是 snapshot
-    的只读节点表现，不能成为可编辑 RenderGraph authoring UI。下一步是把 snapshot 挂到 view/frame capture，而不是让
-    editor UI 解析 `formatDebugTables()` 文本。
+    数据，并已挂到 `BasicRenderViewDesc` 的可选 `BasicRenderViewDiagnostics` 输出槽。RG View、Frame Debug 和 pass
+    graph visualization 都应消费同一份 view-local snapshot：RG View 显示编译阶段已经确定的数据；Frame Debug 负责
+    capture、pause/resume 和固定某一帧 snapshot；pass graph visualization 只是 snapshot 的只读节点表现，不能成为
+    可编辑 RenderGraph authoring UI。editor UI 不应解析 `formatDebugTables()` 文本。
 12. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的

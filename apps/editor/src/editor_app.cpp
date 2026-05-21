@@ -240,6 +240,19 @@ namespace {
                 "Editor viewport smoke discarded Scene View-only flags unexpectedly.");
             return false;
         }
+        if (viewportStats.renderViewDiagnosticsFramesRecorded == 0) {
+            asharia::logError("Editor viewport smoke did not record render view diagnostics.");
+            return false;
+        }
+        if (viewportStats.lastRenderViewDiagnosticsPasses != 2 ||
+            viewportStats.lastRenderViewDiagnosticsResources != 2 ||
+            viewportStats.lastRenderViewDiagnosticsAccessEdges != 3 ||
+            viewportStats.lastRenderViewDiagnosticsDependencyEdges != 1 ||
+            viewportStats.lastRenderViewDiagnosticsTransitions != 4) {
+            asharia::logError(
+                "Editor viewport smoke recorded unexpected render view diagnostics counts.");
+            return false;
+        }
         return true;
     }
 
@@ -888,6 +901,8 @@ namespace asharia::editor {
                   << ", shortcut invocations: " << runResult->shortcutStats.shortcutInvocations
                   << ", overlay texture frames: "
                   << viewportStats.overlayFlagTextureFramesAcquired
+                  << ", render view diagnostics frames: "
+                  << viewportStats.renderViewDiagnosticsFramesRecorded
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         if (isViewportResizeSmokeMode(mode)) {

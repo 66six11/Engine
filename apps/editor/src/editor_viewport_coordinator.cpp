@@ -26,6 +26,18 @@ namespace {
         return frame.frameLoop->submittedFrameEpoch() + 1U;
     }
 
+    std::string_view editorViewportKindName(asharia::editor::EditorViewportKind kind) {
+        switch (kind) {
+        case asharia::editor::EditorViewportKind::Scene:
+            return "Scene View";
+        case asharia::editor::EditorViewportKind::Game:
+            return "Game View";
+        case asharia::editor::EditorViewportKind::Preview:
+            return "Preview View";
+        }
+        return "Viewport";
+    }
+
 } // namespace
 
 namespace asharia::editor {
@@ -48,6 +60,7 @@ namespace asharia::editor {
         kind = EditorViewportKind::Scene;
         requestedExtent = {};
         overlayFlags = {};
+        diagnostics = {};
         rendered = false;
     }
 
@@ -138,6 +151,7 @@ namespace asharia::editor {
         }
 
         const asharia::VulkanSampledTextureView texture = renderTexture.target.sampledTextureView();
+        asharia::BasicRenderViewDiagnostics diagnostics;
 
         auto recorded = renderer.recordViewFrame(
             frame,
@@ -151,6 +165,8 @@ namespace asharia::editor {
                         .aspectMask = texture.aspectMask,
                         .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
                     },
+                .viewName = editorViewportKindName(request.kind),
+                .diagnostics = &diagnostics,
             });
         if (!recorded) {
             return std::unexpected{std::move(recorded.error())};
@@ -173,8 +189,20 @@ namespace asharia::editor {
         renderTexture.kind = request.kind;
         renderTexture.requestedExtent = request.extent;
         renderTexture.overlayFlags = request.overlayFlags;
+        renderTexture.diagnostics = std::move(diagnostics);
         renderTexture.format = texture.format;
         renderTexture.extent = texture.extent;
+        ++stats_.renderViewDiagnosticsFramesRecorded;
+        stats_.lastRenderViewDiagnosticsPasses =
+            renderTexture.diagnostics.renderGraph.passes.size();
+        stats_.lastRenderViewDiagnosticsResources =
+            renderTexture.diagnostics.renderGraph.resources.size();
+        stats_.lastRenderViewDiagnosticsAccessEdges =
+            renderTexture.diagnostics.renderGraph.accessEdges.size();
+        stats_.lastRenderViewDiagnosticsDependencyEdges =
+            renderTexture.diagnostics.renderGraph.dependencyEdges.size();
+        stats_.lastRenderViewDiagnosticsTransitions =
+            renderTexture.diagnostics.renderGraph.transitions.size();
         if (anyEditorViewportOverlayFlagEnabled(request.overlayFlags)) {
             ++stats_.overlayFlagFramesRendered;
         }

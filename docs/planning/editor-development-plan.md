@@ -990,30 +990,29 @@ Validation:
 
 ## Recommended Next Commits
 
-Current completed slice: `feat: add render graph diagnostics snapshot`. `RenderGraph::diagnosticsSnapshot()` now creates a
-structured, backend-neutral snapshot from `RenderGraphCompileResult`: pass nodes, image/buffer resource nodes, pass-resource
-access edges, dependency edges, transitions, culled passes, command counts and transient lifetime data. It is validated by
-`--smoke-rendergraph` and package-local rendergraph compile tests.
+Current completed slices:
 
-1. `feat: add render view diagnostics snapshot`
+- `feat: add render graph diagnostics snapshot`: `RenderGraph::diagnosticsSnapshot()` creates a structured, backend-neutral
+  snapshot from `RenderGraphCompileResult`: pass nodes, image/buffer resource nodes, pass-resource access edges, dependency
+  edges, transitions, culled passes, command counts and transient lifetime data. It is validated by `--smoke-rendergraph` and
+  package-local rendergraph compile tests.
+- `feat: add render view diagnostics snapshot`: `BasicRenderViewDesc` can collect a `BasicRenderViewDiagnostics` snapshot from
+  each successful `recordViewFrame()` call. `EditorViewportCoordinator` stores the latest view-local diagnostics and
+  `--smoke-editor-viewport` verifies the expected pass/resource/access/dependency/transition counts.
 
-Attach one diagnostics snapshot to each recorded RenderView. This establishes the Scene/Game/Preview boundary needed before
-adding editor-only grid, gizmo, wire or selection-outline passes. The snapshot must be view-local and must not expose Vulkan
-handles to editor UI.
-
-2. `feat: add frame debugger capture state`
+1. `feat: add frame debugger capture state`
 
 Add an editor-controlled capture workflow: `Running -> CaptureRequested -> CapturingFrame -> WaitingGpuFence ->
 PausedFrameDebug -> Resume`. Paused frame debug freezes snapshot inspection and frame progression; it does not use
 `vkDeviceWaitIdle` as the normal mechanism and does not read transient GPU resources unless a later explicit preview/readback
 path is added.
 
-3. `feat: add render graph viewer panel`
+2. `feat: add render graph viewer panel`
 
 Add a read-only editor panel with an RG View matrix first: views, compiled passes, resources, dependencies, transitions and
 details for the selected pass/resource. The pass node graph can appear as a second tab derived from the same snapshot.
 
-4. `feat: add render view overlay prerequisites`
+3. `feat: add render view overlay prerequisites`
 
 Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, explicit overlay pass
 load/store behavior, blend state support or an equivalent overlay composition path, and a narrow debug/world-line draw route.

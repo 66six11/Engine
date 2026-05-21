@@ -30,6 +30,12 @@ namespace asharia::editor {
         std::uint64_t overlayFlagFramesRendered{};
         std::uint64_t overlayFlagTextureFramesAcquired{};
         std::uint64_t sceneViewOnlyFlagRequestsDiscarded{};
+        std::uint64_t renderViewDiagnosticsFramesRecorded{};
+        std::uint64_t lastRenderViewDiagnosticsPasses{};
+        std::uint64_t lastRenderViewDiagnosticsResources{};
+        std::uint64_t lastRenderViewDiagnosticsAccessEdges{};
+        std::uint64_t lastRenderViewDiagnosticsDependencyEdges{};
+        std::uint64_t lastRenderViewDiagnosticsTransitions{};
     };
 
     [[nodiscard]] EditorViewportFrameEpochs
@@ -54,6 +60,7 @@ namespace asharia::editor {
             EditorViewportKind kind{EditorViewportKind::Scene};
             EditorExtent2D requestedExtent;
             EditorViewportOverlayFlags overlayFlags;
+            asharia::BasicRenderViewDiagnostics diagnostics;
             bool rendered{false};
         };
 

@@ -279,8 +279,9 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-re
 ```
 
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
-Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent and verifies that a flagged
-Scene View texture is rendered and acquired back through the panel-facing texture result.
+Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent, verifies that a flagged Scene View
+texture is rendered and acquired back through the panel-facing texture result, and checks that the recorded RenderView exposes
+a view-local diagnostics snapshot.
 
 ## 当前缺口
 
@@ -290,6 +291,8 @@ Scene View texture is rendered and acquired back through the panel-facing textur
   renderer-side view pass work. The editor currently owns only the view-local overlay intent and texture metadata loop.
 - Renderer prerequisites for those passes are: view/camera params in render view data, explicit overlay pass load/store
   semantics, blend state or a dedicated composition path, and a debug/world-line draw route.
+- `BasicRenderViewDiagnostics` is now available per recorded view, but the editor does not yet have a Frame Debug state
+  machine or RG View panel to browse that snapshot interactively.
 - Frame Debug, RG View and pass graph visualization are separate editor concepts:
   - Frame Debug owns capture, pause/resume and fixed-frame inspection.
   - RG View displays the compiled RenderGraph snapshot as pass/resource/dependency/lifetime data.

@@ -395,8 +395,9 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 目标：把现有 `formatDebugTables()` 的文本诊断提升为结构化、后端无关的数据源。该数据源用于 smoke、Live
 Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 editor UI，也不是可编辑 RenderGraph。
 
-当前状态：第一版已由 `RenderGraph::diagnosticsSnapshot()` 提供。`formatDebugTables()` 仍保留为文本诊断输出；
-editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格。
+当前状态：第一版已由 `RenderGraph::diagnosticsSnapshot()` 提供。`BasicRenderViewDesc` 已能通过可选的
+`BasicRenderViewDiagnostics` 输出槽把 snapshot 挂到一次成功的 view recording 上。`formatDebugTables()` 仍保留为
+文本诊断输出；editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格。
 
 第一版数据：
 
@@ -422,6 +423,8 @@ editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格
 - Done: `--smoke-rendergraph` 验证 snapshot 的 pass/resource/access edge/dependency/transition 数量和关键名称。
 - Done: package-local rendergraph compile test 验证 snapshot 的 declared counts、compiled pass order、resource nodes、
   access edge、dependency edge 和 final transition。
+- Done: `--smoke-editor-viewport` 验证 recorded RenderView diagnostics 的 pass/resource/access/dependency/transition
+  数量。
 - Done: `formatDebugTables()` 继续可用，便于 issue/PR 文本诊断。
 
 ## P4：Backend lifetime and caches

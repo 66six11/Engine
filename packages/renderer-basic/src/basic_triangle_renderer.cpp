@@ -2324,6 +2324,13 @@ namespace asharia {
             return std::unexpected{std::move(finalTransitions.error())};
         }
 
+        if (view.diagnostics != nullptr) {
+            *view.diagnostics = BasicRenderViewDiagnostics{
+                .viewName = std::string{view.viewName},
+                .renderGraph = graph.diagnosticsSnapshot(*compiled),
+            };
+        }
+
         return VulkanFrameRecordResult{
             .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         };

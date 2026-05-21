@@ -6,10 +6,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "asharia/core/result.hpp"
 #include "asharia/renderer_basic/draw_item.hpp"
+#include "asharia/rendergraph/render_graph.hpp"
 #include "asharia/rhi_vulkan/vulkan_buffer.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vulkan_image.hpp"
@@ -99,8 +102,15 @@ namespace asharia {
         BasicRenderViewTargetFinalUsage finalUsage{BasicRenderViewTargetFinalUsage::Present};
     };
 
+    struct BasicRenderViewDiagnostics {
+        std::string viewName;
+        RenderGraphDiagnosticsSnapshot renderGraph;
+    };
+
     struct BasicRenderViewDesc {
         BasicRenderViewTarget target{};
+        std::string_view viewName{"RenderView"};
+        BasicRenderViewDiagnostics* diagnostics{};
     };
 
     [[nodiscard]] Result<void>
