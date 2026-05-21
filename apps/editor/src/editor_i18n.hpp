@@ -1,9 +1,12 @@
 ﻿#pragma once
 
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+
+#include "asharia/core/result.hpp"
 
 namespace asharia::editor {
 
@@ -13,9 +16,9 @@ namespace asharia::editor {
     };
 
     struct EditorI18nTextEntry {
-        std::string_view key;
-        std::string_view enUs;
-        std::string_view zhHans;
+        std::string key;
+        std::string enUs;
+        std::string zhHans;
     };
 
     struct EditorI18nTextQuery {
@@ -31,6 +34,7 @@ namespace asharia::editor {
 
     [[nodiscard]] std::string_view editorLocaleName(EditorLocale locale);
     [[nodiscard]] std::optional<EditorLocale> editorLocaleFromName(std::string_view name);
+    [[nodiscard]] asharia::VoidResult loadEditorI18nCatalog(const std::filesystem::path& directory);
     [[nodiscard]] std::span<const EditorI18nTextEntry> editorI18nCatalog();
 
     class EditorI18n {

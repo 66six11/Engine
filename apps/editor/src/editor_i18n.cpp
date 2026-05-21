@@ -1,161 +1,86 @@
 ﻿#include "editor_i18n.hpp"
 
-#include <array>
+#include <map>
 #include <ranges>
+#include <utility>
+#include <vector>
+
+#include "asharia/archive/archive_value.hpp"
+#include "asharia/archive/json_archive.hpp"
+#include "asharia/core/error.hpp"
 
 namespace asharia::editor {
 
     namespace {
 
-        constexpr std::array kCatalog{
-            EditorI18nTextEntry{.key = "menu.file", .enUs = "File", .zhHans = "文件"},
-            EditorI18nTextEntry{.key = "menu.view", .enUs = "View", .zhHans = "视图"},
-            EditorI18nTextEntry{.key = "menu.debug", .enUs = "Debug", .zhHans = "调试"},
-            EditorI18nTextEntry{
-                .key = "action.file.newScene", .enUs = "New Scene", .zhHans = "新建场景"},
-            EditorI18nTextEntry{.key = "action.file.open", .enUs = "Open...", .zhHans = "打开..."},
-            EditorI18nTextEntry{.key = "action.file.exit", .enUs = "Exit", .zhHans = "退出"},
-            EditorI18nTextEntry{
-                .key = "action.view.sceneView", .enUs = "Scene View", .zhHans = "场景视图"},
-            EditorI18nTextEntry{.key = "action.view.log", .enUs = "Log", .zhHans = "日志"},
-            EditorI18nTextEntry{
-                .key = "action.view.renderGraph", .enUs = "Live RG View", .zhHans = "实时 RG 视图"},
-            EditorI18nTextEntry{
-                .key = "action.view.frameDebugger", .enUs = "Frame Debugger", .zhHans = "帧调试器"},
-            EditorI18nTextEntry{.key = "action.view.uiStylePreview",
-                                .enUs = "UI Style Preview",
-                                .zhHans = "UI 样式预览"},
-            EditorI18nTextEntry{
-                .key = "action.debug.captureFrame", .enUs = "Capture Frame", .zhHans = "捕获帧"},
-            EditorI18nTextEntry{
-                .key = "action.debug.resumeFrame", .enUs = "Resume", .zhHans = "继续"},
-            EditorI18nTextEntry{
-                .key = "panel.sceneView", .enUs = "Scene View", .zhHans = "场景视图"},
-            EditorI18nTextEntry{
-                .key = "panel.renderGraph", .enUs = "Live RG View", .zhHans = "实时 RG 视图"},
-            EditorI18nTextEntry{
-                .key = "panel.frameDebugger", .enUs = "Frame Debugger", .zhHans = "帧调试器"},
-            EditorI18nTextEntry{.key = "panel.log", .enUs = "Log", .zhHans = "日志"},
-            EditorI18nTextEntry{
-                .key = "panel.uiStylePreview", .enUs = "UI Style Preview", .zhHans = "UI 样式预览"},
-            EditorI18nTextEntry{.key = "common.yes", .enUs = "yes", .zhHans = "是"},
-            EditorI18nTextEntry{.key = "common.no", .enUs = "no", .zhHans = "否"},
-            EditorI18nTextEntry{.key = "scene.swapchain", .enUs = "Swapchain", .zhHans = "交换链"},
-            EditorI18nTextEntry{.key = "scene.viewport", .enUs = "Viewport", .zhHans = "视口"},
-            EditorI18nTextEntry{
-                .key = "scene.viewportFrame", .enUs = "Viewport Frame", .zhHans = "视口帧"},
-            EditorI18nTextEntry{.key = "log.initialized",
-                                .enUs = "Editor shell initialized with GLFW + Vulkan + Dear ImGui.",
-                                .zhHans =
-                                    "编辑器 shell 已通过 GLFW + Vulkan + Dear ImGui 初始化。"},
-            EditorI18nTextEntry{.key = "log.mode", .enUs = "Mode", .zhHans = "模式"},
-            EditorI18nTextEntry{.key = "log.mode.smoke", .enUs = "smoke", .zhHans = "smoke"},
-            EditorI18nTextEntry{
-                .key = "log.mode.interactive", .enUs = "interactive", .zhHans = "交互"},
-            EditorI18nTextEntry{
-                .key = "log.inputCapture", .enUs = "Input capture", .zhHans = "输入捕获"},
-            EditorI18nTextEntry{
-                .key = "log.sceneViewInput", .enUs = "Scene View input", .zhHans = "场景视图输入"},
-            EditorI18nTextEntry{.key = "log.mouse", .enUs = "mouse", .zhHans = "鼠标"},
-            EditorI18nTextEntry{.key = "log.keyboard", .enUs = "keyboard", .zhHans = "键盘"},
-            EditorI18nTextEntry{.key = "log.text", .enUs = "text", .zhHans = "文本"},
-            EditorI18nTextEntry{.key = "log.hovered", .enUs = "hovered", .zhHans = "悬停"},
-            EditorI18nTextEntry{.key = "log.focused", .enUs = "focused", .zhHans = "聚焦"},
-            EditorI18nTextEntry{
-                .key = "log.acceptsMouse", .enUs = "accepts mouse", .zhHans = "接受鼠标"},
-            EditorI18nTextEntry{.key = "log.shortcuts", .enUs = "shortcuts", .zhHans = "快捷键"},
-            EditorI18nTextEntry{.key = "log.recentEvents",
-                                .enUs = "Recent editor events:",
-                                .zhHans = "最近编辑器事件："},
-            EditorI18nTextEntry{.key = "log.noEvents",
-                                .enUs = "No editor events this session.",
-                                .zhHans = "本次会话没有编辑器事件。"},
-            EditorI18nTextEntry{.key = "frameDebug.noCapture",
-                                .enUs = "No frame debug capture.",
-                                .zhHans = "没有帧调试捕获。"},
-            EditorI18nTextEntry{
-                .key = "frameDebug.imageEmpty", .enUs = "Image: -", .zhHans = "图像：-"},
-            EditorI18nTextEntry{.key = "frameDebug.image", .enUs = "Image", .zhHans = "图像"},
-            EditorI18nTextEntry{
-                .key = "frameDebug.noImage", .enUs = "No image", .zhHans = "无图像"},
-            EditorI18nTextEntry{.key = "frameDebug.preview", .enUs = "Preview", .zhHans = "预览"},
-            EditorI18nTextEntry{.key = "frameDebug.status.frozen",
-                                .enUs = "frozen captured frame",
-                                .zhHans = "冻结的已捕获帧"},
-            EditorI18nTextEntry{.key = "frameDebug.status.latestNotPaused",
-                                .enUs = "latest captured frame, not paused",
-                                .zhHans = "最新捕获帧，未暂停"},
-            EditorI18nTextEntry{.key = "frameDebug.rgSource",
-                                .enUs = "Frame Debug RG View",
-                                .zhHans = "帧调试 RG 视图"},
-            EditorI18nTextEntry{.key = "renderGraph.noLiveSnapshot",
-                                .enUs = "No live RenderGraph snapshot yet.",
-                                .zhHans = "暂无实时 RenderGraph 快照。"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.liveSource", .enUs = "Live RG View", .zhHans = "实时 RG 视图"},
-            EditorI18nTextEntry{.key = "renderGraph.status.latestCompiled",
-                                .enUs = "latest compiled RenderView",
-                                .zhHans = "最新编译的 RenderView"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.snapshot", .enUs = "Snapshot", .zhHans = "快照"},
-            EditorI18nTextEntry{.key = "renderGraph.submittedEpoch",
-                                .enUs = "submitted epoch",
-                                .zhHans = "提交帧序号"},
-            EditorI18nTextEntry{.key = "renderGraph.passes", .enUs = "Passes", .zhHans = "Pass"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.resources", .enUs = "Resources", .zhHans = "资源"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.accessEdges", .enUs = "Access edges", .zhHans = "访问边"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.dependencies", .enUs = "Dependencies", .zhHans = "依赖"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.transitions", .enUs = "Transitions", .zhHans = "转换"},
-            EditorI18nTextEntry{.key = "renderGraph.colors", .enUs = "Colors:", .zhHans = "颜色："},
-            EditorI18nTextEntry{.key = "renderGraph.read", .enUs = "read", .zhHans = "读"},
-            EditorI18nTextEntry{.key = "renderGraph.write", .enUs = "write", .zhHans = "写"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.readWrite", .enUs = "read/write", .zhHans = "读/写"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.resource", .enUs = "Resource", .zhHans = "资源"},
-            EditorI18nTextEntry{.key = "renderGraph.noTimeline",
-                                .enUs = "No pass/resource timeline.",
-                                .zhHans = "没有 pass/resource 时间线。"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.accessEvents", .enUs = "Access Events", .zhHans = "访问事件"},
-            EditorI18nTextEntry{.key = "renderGraph.noAccessEvents",
-                                .enUs = "No resource access events.",
-                                .zhHans = "没有资源访问事件。"},
-            EditorI18nTextEntry{.key = "renderGraph.pass", .enUs = "Pass", .zhHans = "Pass"},
-            EditorI18nTextEntry{.key = "renderGraph.slot", .enUs = "Slot", .zhHans = "槽位"},
-            EditorI18nTextEntry{.key = "renderGraph.use", .enUs = "Use", .zhHans = "用途"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.direction", .enUs = "Direction", .zhHans = "方向"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.resourceList", .enUs = "Resource List", .zhHans = "资源列表"},
-            EditorI18nTextEntry{.key = "renderGraph.name", .enUs = "Name", .zhHans = "名称"},
-            EditorI18nTextEntry{.key = "renderGraph.type", .enUs = "Type", .zhHans = "类型"},
-            EditorI18nTextEntry{.key = "renderGraph.shape", .enUs = "Shape", .zhHans = "形状"},
-            EditorI18nTextEntry{.key = "renderGraph.lifetimeState",
-                                .enUs = "Lifetime / State",
-                                .zhHans = "生命周期 / 状态"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.passList", .enUs = "Pass List", .zhHans = "Pass 列表"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.commands", .enUs = "Commands", .zhHans = "命令"},
-            EditorI18nTextEntry{
-                .key = "renderGraph.cullable", .enUs = "Cullable", .zhHans = "可剔除"},
-            EditorI18nTextEntry{.key = "renderGraph.noDependencies",
-                                .enUs = "No dependency edges.",
-                                .zhHans = "没有依赖边。"},
-            EditorI18nTextEntry{.key = "renderGraph.from", .enUs = "From", .zhHans = "从"},
-            EditorI18nTextEntry{.key = "renderGraph.to", .enUs = "To", .zhHans = "到"},
-            EditorI18nTextEntry{.key = "renderGraph.reason", .enUs = "Reason", .zhHans = "原因"},
-        };
+        [[nodiscard]] asharia::Error editorI18nError(std::string message) {
+            return asharia::Error{asharia::ErrorDomain::Core, 0, std::move(message)};
+        }
+
+        [[nodiscard]] std::vector<EditorI18nTextEntry>& mutableCatalog() {
+            static std::vector<EditorI18nTextEntry> catalog;
+            return catalog;
+        }
 
         [[nodiscard]] const EditorI18nTextEntry* findEntry(std::string_view key) {
+            const std::vector<EditorI18nTextEntry>& catalog = mutableCatalog();
             const auto found = std::ranges::find_if(
-                kCatalog, [key](const EditorI18nTextEntry& entry) { return entry.key == key; });
-            return found == kCatalog.end() ? nullptr : &(*found);
+                catalog, [key](const EditorI18nTextEntry& entry) { return entry.key == key; });
+            return found == catalog.end() ? nullptr : &(*found);
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        readLocaleTexts(const std::filesystem::path& directory, EditorLocale locale,
+                        std::map<std::string, EditorI18nTextEntry>& entriesByKey) {
+            const std::string localeName{editorLocaleName(locale)};
+            const std::filesystem::path path = directory / (localeName + ".json");
+            auto archive = asharia::archive::readJsonArchiveFile(path);
+            if (!archive) {
+                return std::unexpected{editorI18nError("Failed to read editor i18n catalog '" +
+                                                       path.string() +
+                                                       "': " + archive.error().message)};
+            }
+            if (archive->kind != asharia::archive::ArchiveValueKind::Object) {
+                return std::unexpected{editorI18nError(
+                    "Editor i18n catalog root must be an object: " + path.string())};
+            }
+
+            const asharia::archive::ArchiveValue* localeValue = archive->findMemberValue("locale");
+            if (localeValue == nullptr ||
+                localeValue->kind != asharia::archive::ArchiveValueKind::String ||
+                localeValue->stringValue != localeName) {
+                return std::unexpected{editorI18nError(
+                    "Editor i18n catalog has an invalid locale field: " + path.string())};
+            }
+
+            const asharia::archive::ArchiveValue* textsValue = archive->findMemberValue("texts");
+            if (textsValue == nullptr ||
+                textsValue->kind != asharia::archive::ArchiveValueKind::Object) {
+                return std::unexpected{editorI18nError(
+                    "Editor i18n catalog must contain a texts object: " + path.string())};
+            }
+
+            for (const asharia::archive::ArchiveMember& member : textsValue->objectValue) {
+                if (member.key.empty()) {
+                    return std::unexpected{editorI18nError(
+                        "Editor i18n catalog contains an empty key: " + path.string())};
+                }
+                if (member.value.kind != asharia::archive::ArchiveValueKind::String) {
+                    return std::unexpected{
+                        editorI18nError("Editor i18n text value must be a string for key '" +
+                                        member.key + "': " + path.string())};
+                }
+
+                EditorI18nTextEntry& entry = entriesByKey[member.key];
+                entry.key = member.key;
+                if (locale == EditorLocale::EnUs) {
+                    entry.enUs = member.value.stringValue;
+                } else {
+                    entry.zhHans = member.value.stringValue;
+                }
+            }
+
+            return {};
         }
 
     } // namespace
@@ -180,8 +105,32 @@ namespace asharia::editor {
         return std::nullopt;
     }
 
+    asharia::VoidResult loadEditorI18nCatalog(const std::filesystem::path& directory) {
+        std::map<std::string, EditorI18nTextEntry> entriesByKey;
+        if (auto loaded = readLocaleTexts(directory, EditorLocale::EnUs, entriesByKey); !loaded) {
+            return std::unexpected{std::move(loaded.error())};
+        }
+        if (auto loaded = readLocaleTexts(directory, EditorLocale::ZhHans, entriesByKey); !loaded) {
+            return std::unexpected{std::move(loaded.error())};
+        }
+
+        std::vector<EditorI18nTextEntry> loadedCatalog;
+        loadedCatalog.reserve(entriesByKey.size());
+        for (auto& [key, entry] : entriesByKey) {
+            static_cast<void>(key);
+            if (entry.enUs.empty()) {
+                return std::unexpected{editorI18nError(
+                    "Editor i18n catalog is missing en-US text for key '" + entry.key + "'.")};
+            }
+            loadedCatalog.push_back(std::move(entry));
+        }
+
+        mutableCatalog() = std::move(loadedCatalog);
+        return {};
+    }
+
     std::span<const EditorI18nTextEntry> editorI18nCatalog() {
-        return kCatalog;
+        return mutableCatalog();
     }
 
     EditorI18n::EditorI18n(EditorLocale locale) : locale_(locale) {}

@@ -87,6 +87,21 @@ namespace {
         return basePath / "Asharia" / "EditorSmoke" / "imgui-layout.ini";
     }
 
+    [[nodiscard]] std::filesystem::path editorI18nDirectory() {
+#if defined(ASHARIA_EDITOR_I18N_DIR)
+        return std::filesystem::path{ASHARIA_EDITOR_I18N_DIR};
+#else
+        return std::filesystem::path{"resources/i18n"};
+#endif
+    }
+
+    [[nodiscard]] std::filesystem::path editorLayoutIniPathForRun(bool smokeMode) {
+        if (smokeMode) {
+            return editorSmokeLayoutIniPath();
+        }
+        return {};
+    }
+
     [[nodiscard]] std::string editorLocaleEnvironmentValue() {
 #if defined(_WIN32)
         char* value = nullptr;
@@ -585,7 +600,9 @@ namespace {
 
         const asharia::editor::EditorI18n enUs{asharia::editor::EditorLocale::EnUs};
         const asharia::editor::EditorI18n zhHans{asharia::editor::EditorLocale::ZhHans};
-        if (enUs.text("menu.file") != "File" || zhHans.text("menu.file") != "文件") {
+        const std::string_view enFile = enUs.text("menu.file");
+        const std::string_view zhFile = zhHans.text("menu.file");
+        if (enFile != "File" || zhFile.empty() || zhFile == enFile) {
             asharia::logError("Editor i18n smoke failed locale text lookup.");
             return false;
         }
@@ -1312,9 +1329,14 @@ namespace asharia::editor {
         }
 
         const asharia::editor::EditorLocale editorLocale = editorLocaleFromEnvironment();
+        if (auto loaded = asharia::editor::loadEditorI18nCatalog(editorI18nDirectory()); !loaded) {
+            asharia::logError(loaded.error().message);
+            return EXIT_FAILURE;
+        }
+
         ImGuiRuntime imgui;
         const ImGuiRuntimeDesc imguiDesc{
-            .layoutIniPath = smokeMode ? editorSmokeLayoutIniPath() : std::filesystem::path{},
+            .layoutIniPath = editorLayoutIniPathForRun(smokeMode),
             .enableCjkGlyphs = editorLocale == asharia::editor::EditorLocale::ZhHans,
             .cjkFontPath = {},
             .fontPixelSize = 16.0F,

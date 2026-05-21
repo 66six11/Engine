@@ -9,6 +9,7 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
 asharia_require_package_target(asharia::window_glfw packages/window-glfw)
@@ -91,11 +92,17 @@ target_include_directories(asharia-editor
 
 target_link_libraries(asharia-editor
     PRIVATE
+        asharia::archive
         asharia::core
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan
         asharia::window_glfw
         imgui::imgui
+)
+
+target_compile_definitions(asharia-editor
+    PRIVATE
+        ASHARIA_EDITOR_I18N_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n"
 )
 
 asharia_configure_target(asharia-editor)

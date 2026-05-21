@@ -180,9 +180,10 @@ theme colors, rounding values or component preview helpers.
 
 ### Editor i18n
 
-`editor_i18n` owns the first editor-local text catalog. The catalog is key-based and currently covers `en-US` and
-`zh-Hans` for menus, panel titles and the core Scene View / Log / RG View / Frame Debug labels. It is deliberately scoped to
-`apps/editor`; runtime, renderer and asset text localization are separate future concerns.
+`editor_i18n` owns the first editor-local text catalog. The catalog is key-based, loaded from
+`apps/editor/resources/i18n/*.json`, and currently covers `en-US` and `zh-Hans` for menus, panel titles and the core Scene
+View / Log / RG View / Frame Debug labels. It is deliberately scoped to `apps/editor`; runtime, renderer and asset text
+localization are separate future concerns.
 
 Dear ImGui labels must preserve stable IDs when visible text changes. Editor UI code should use `EditorI18n::label()` for
 menus, actions, panel windows and other stateful controls so labels are emitted as `translated text###stable-id`. This keeps
