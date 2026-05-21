@@ -48,6 +48,8 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 
 | 模块 | 拥有 | 不能拥有 |
 | --- | --- | --- |
+| `editor_i18n` | editor-local text catalog, locale selection and stable ImGui label formatting | runtime localization, asset text localization or renderer-facing strings |
+| `editor_ui` | small editor-local ImGui style primitives, Deep Slate theme tokens and component preview helpers used by panels | a generic UI framework or runtime-facing widget abstraction |
 | `editor_app` | startup、window/context/frame-loop wiring、main editor loop、frame order、smoke modes、shutdown order | panel widget details becoming feature-specific renderer logic |
 | `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle | panel registry、editor state、viewport target ownership |
 | `imgui_editor_shell` | dockspace、main menu、action menu binding | renderer command recording、panel object ownership |
@@ -164,6 +166,32 @@ same-frame presentation is required and measured.
 
 The registry does not own the underlying image or image view. It only owns ImGui's descriptor handle and retirement state.
 
+### ImGui layout persistence
+
+`ImGuiRuntime` owns Dear ImGui layout persistence. It resolves a user-local `imgui-layout.ini` path under the editor app
+state directory, assigns `ImGuiIO::IniFilename` during ImGui context creation and flushes the layout before ImGui shutdown.
+This state stores editor window/docking layout only; it is not scene data, asset data or runtime configuration.
+
+### ImGui theme
+
+`editor_ui` owns the editor-local Dear ImGui style tokens and applies the Unreal-Like Deep Slate palette during
+`ImGuiRuntime::create()`. This is editor shell presentation state only; renderer, RHI and runtime packages do not depend on
+theme colors, rounding values or component preview helpers.
+
+### Editor i18n
+
+`editor_i18n` owns the first editor-local text catalog. The catalog is key-based and currently covers `en-US` and
+`zh-Hans` for menus, panel titles and the core Scene View / Log / RG View / Frame Debug labels. It is deliberately scoped to
+`apps/editor`; runtime, renderer and asset text localization are separate future concerns.
+
+Dear ImGui labels must preserve stable IDs when visible text changes. Editor UI code should use `EditorI18n::label()` for
+menus, actions, panel windows and other stateful controls so labels are emitted as `translated text###stable-id`. This keeps
+layout ini, docking state and widget identity stable across locale changes.
+
+Interactive locale selection currently reads `ASHARIA_EDITOR_LOCALE` (`en-US` by default, `zh-Hans` supported). CJK font
+asset packaging is not part of this slice; Chinese text requires an ImGui font source with the needed glyph coverage before
+it will render correctly in a distributed editor.
+
 ### 关闭
 
 关闭顺序必须显式：
@@ -192,6 +220,9 @@ Panel rules:
 - Do not allocate ImGui Vulkan textures directly.
 - Do not record Vulkan commands.
 - Report hover/focus state to `EditorInputRouter` instead of making global input routing decisions locally.
+- Reuse `editor_ui` helpers for repeated editor styling primitives, but do not hide raw ImGui behind a broad widget clone.
+- Use `editor_i18n` keys for user-facing labels and keep technical names such as pass, resource and shader identifiers
+  untranslated.
 
 ### Actions 扩展
 

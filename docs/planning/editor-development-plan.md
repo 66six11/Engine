@@ -1308,7 +1308,8 @@ debug preservation for resources that cannot be replayed.
 
 ## Non-goals
 
-- No generic UI abstraction layer.
+- No generic UI abstraction layer; small `apps/editor` ImGui style helpers and editor-local i18n catalog helpers are
+  allowed for repeated panel primitives and user-facing labels.
 - No editor package extraction before action/event/panel/selection/transaction state has real consumers.
 - No inspector, asset browser, material editor or Play Mode before their owning systems exist.
 - No direct Vulkan command recording in panel `draw()`.

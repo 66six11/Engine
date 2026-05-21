@@ -14,6 +14,7 @@ namespace asharia::editor {
         EditorPanelDesc desc_{
             .id = EditorId{.value = "render-graph"},
             .title = "Live RG View",
+            .titleKey = "panel.renderGraph",
             .defaultOpen = true,
             .singleton = true,
         };

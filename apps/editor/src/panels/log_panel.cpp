@@ -5,12 +5,13 @@
 #include <string>
 
 #include "editor_event.hpp"
+#include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
 
 namespace {
 
-    const char* yesNo(bool value) {
-        return value ? "yes" : "no";
+    std::string yesNo(const asharia::editor::EditorI18n& i18n, bool value) {
+        return std::string{i18n.text(value ? "common.yes" : "common.no")};
     }
 
 } // namespace
@@ -24,28 +25,41 @@ namespace asharia::editor {
     void LogPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
+        const EditorI18n& i18n = context.i18n;
         const std::string modeText =
-            std::string{"Mode: "} + (context.smokeMode ? "smoke" : "interactive");
+            std::string{i18n.text("log.mode")} + ": " +
+            std::string{i18n.text(context.smokeMode ? "log.mode.smoke" : "log.mode.interactive")};
         const EditorInputSnapshot& input = context.inputRouter.snapshot();
         const std::string inputCaptureText =
-            "Input capture: mouse=" + std::string{yesNo(input.imguiWantsMouse)} +
-            ", keyboard=" + yesNo(input.imguiWantsKeyboard) +
-            ", text=" + yesNo(input.imguiWantsTextInput);
+            std::string{i18n.text("log.inputCapture")} + ": " +
+            std::string{i18n.text("log.mouse")} + "=" + yesNo(i18n, input.imguiWantsMouse) + ", " +
+            std::string{i18n.text("log.keyboard")} + "=" + yesNo(i18n, input.imguiWantsKeyboard) +
+            ", " + std::string{i18n.text("log.text")} + "=" +
+            yesNo(i18n, input.imguiWantsTextInput);
         const std::string sceneViewInputText =
-            "Scene View input: hovered=" + std::string{yesNo(input.sceneViewHovered)} +
-            ", focused=" + yesNo(input.sceneViewFocused) +
-            ", accepts mouse=" + yesNo(input.sceneViewCanReceiveMouse) +
-            ", shortcuts=" + yesNo(input.shortcutsEnabled);
-        ImGui::TextUnformatted("Editor shell initialized with GLFW + Vulkan + Dear ImGui.");
+            std::string{i18n.text("log.sceneViewInput")} + ": " +
+            std::string{i18n.text("log.hovered")} + "=" + yesNo(i18n, input.sceneViewHovered) +
+            ", " + std::string{i18n.text("log.focused")} + "=" +
+            yesNo(i18n, input.sceneViewFocused) + ", " +
+            std::string{i18n.text("log.acceptsMouse")} + "=" +
+            yesNo(i18n, input.sceneViewCanReceiveMouse) + ", " +
+            std::string{i18n.text("log.shortcuts")} + "=" + yesNo(i18n, input.shortcutsEnabled);
+        ImGui::TextUnformatted(i18n.text("log.initialized").data(),
+                               i18n.text("log.initialized").data() +
+                                   i18n.text("log.initialized").size());
         ImGui::TextUnformatted(modeText.c_str());
         ImGui::TextUnformatted(inputCaptureText.c_str());
         ImGui::TextUnformatted(sceneViewInputText.c_str());
         ImGui::Separator();
-        ImGui::TextUnformatted("Recent editor events:");
+        ImGui::TextUnformatted(i18n.text("log.recentEvents").data(),
+                               i18n.text("log.recentEvents").data() +
+                                   i18n.text("log.recentEvents").size());
         const std::span<const EditorDiagnosticEvent> recentEvents =
             context.diagnosticsLog.recentEvents();
         if (recentEvents.empty()) {
-            ImGui::TextUnformatted("No editor events this session.");
+            ImGui::TextUnformatted(i18n.text("log.noEvents").data(),
+                                   i18n.text("log.noEvents").data() +
+                                       i18n.text("log.noEvents").size());
             return;
         }
         for (const EditorDiagnosticEvent& diagnostic : recentEvents) {

@@ -16,6 +16,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -31,6 +32,7 @@
 #include "editor_action.hpp"
 #include "editor_context.hpp"
 #include "editor_frame_debugger.hpp"
+#include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
 #include "editor_panel.hpp"
 #include "editor_shortcut_router.hpp"
@@ -42,6 +44,7 @@
 #include "panels/log_panel.hpp"
 #include "panels/render_graph_panel.hpp"
 #include "panels/scene_view_panel.hpp"
+#include "panels/ui_style_preview_panel.hpp"
 
 namespace {
 
@@ -70,6 +73,48 @@ namespace {
 
     bool isFrameDebuggerSmokeMode(asharia::editor::EditorRunMode mode) {
         return mode == asharia::editor::EditorRunMode::SmokeFrameDebugger;
+    }
+
+    [[nodiscard]] std::filesystem::path editorSmokeLayoutIniPath() {
+        std::error_code error;
+        std::filesystem::path basePath = std::filesystem::temp_directory_path(error);
+        if (error) {
+            basePath = std::filesystem::current_path(error);
+        }
+        if (basePath.empty()) {
+            basePath = ".";
+        }
+        return basePath / "Asharia" / "EditorSmoke" / "imgui-layout.ini";
+    }
+
+    [[nodiscard]] std::string editorLocaleEnvironmentValue() {
+#if defined(_WIN32)
+        char* value = nullptr;
+        std::size_t valueSize = 0;
+        if (_dupenv_s(&value, &valueSize, "ASHARIA_EDITOR_LOCALE") != 0 || value == nullptr) {
+            return {};
+        }
+        const std::unique_ptr<char, decltype(&std::free)> ownedValue{value, &std::free};
+        return std::string{ownedValue.get()};
+#else
+        const char* value = std::getenv("ASHARIA_EDITOR_LOCALE");
+        return value == nullptr ? std::string{} : std::string{value};
+#endif
+    }
+
+    [[nodiscard]] asharia::editor::EditorLocale editorLocaleFromEnvironment() {
+        const std::string value = editorLocaleEnvironmentValue();
+        if (value.empty()) {
+            return asharia::editor::EditorLocale::EnUs;
+        }
+        const std::optional<asharia::editor::EditorLocale> locale =
+            asharia::editor::editorLocaleFromName(value);
+        if (locale) {
+            return *locale;
+        }
+
+        asharia::logError("Unsupported ASHARIA_EDITOR_LOCALE value: " + value);
+        return asharia::editor::EditorLocale::EnUs;
     }
 
     int smokeFrameCount(asharia::editor::EditorRunMode mode) {
@@ -503,6 +548,73 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool
+    validateImguiLayoutPersistenceSmoke(asharia::editor::EditorRunMode mode,
+                                        const asharia::editor::ImGuiRuntime& imgui) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+        if (!imgui.layoutPersistenceEnabled()) {
+            asharia::logError("Editor ImGui layout persistence is disabled.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateImguiLayoutSavedSmoke(asharia::editor::EditorRunMode mode,
+                                                     const asharia::editor::ImGuiRuntime& imgui) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+        if (!std::filesystem::exists(imgui.layoutIniPath())) {
+            asharia::logError("Editor ImGui layout smoke did not write the layout ini file.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateI18nSmoke(asharia::editor::EditorRunMode mode) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+
+        if (asharia::editor::editorI18nCatalog().empty()) {
+            asharia::logError("Editor i18n catalog is empty.");
+            return false;
+        }
+
+        const asharia::editor::EditorI18n enUs{asharia::editor::EditorLocale::EnUs};
+        const asharia::editor::EditorI18n zhHans{asharia::editor::EditorLocale::ZhHans};
+        if (enUs.text("menu.file") != "File" || zhHans.text("menu.file") != "文件") {
+            asharia::logError("Editor i18n smoke failed locale text lookup.");
+            return false;
+        }
+        if (zhHans.text(asharia::editor::EditorI18nTextQuery{
+                .key = "missing.editor.key",
+                .fallback = "Fallback",
+            }) != "Fallback") {
+            asharia::logError("Editor i18n smoke failed missing-key fallback.");
+            return false;
+        }
+
+        const std::string captureLabel = zhHans.label(asharia::editor::EditorI18nLabelDesc{
+            .key = "action.debug.captureFrame",
+            .stableId = "debug.capture-frame",
+            .fallback = "Capture Frame",
+        });
+        if (!captureLabel.ends_with("###debug.capture-frame")) {
+            asharia::logError("Editor i18n smoke failed stable ImGui label id generation.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool validateEditorStartupSmoke(asharia::editor::EditorRunMode mode,
+                                                  const asharia::editor::ImGuiRuntime& imgui) {
+        return validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode);
+    }
+
     VkImageMemoryBarrier2 imageBarrier(const ImageBarrierDesc& desc) {
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -766,6 +878,7 @@ namespace {
                 .eventQueue = editorContext.eventQueue(),
                 .diagnosticsLog = editorContext.diagnosticsLog(),
                 .frameDebugger = frameDebugger,
+                .i18n = editorContext.i18n(),
                 .inputRouter = inputRouter,
                 .renderGraphSnapshots = viewportHost,
                 .viewportHost = viewportHost,
@@ -844,8 +957,14 @@ namespace {
             return std::unexpected{std::move(frameDebugger.error())};
         }
 
-        return panelRegistry.registerPanel(
+        auto log = panelRegistry.registerPanel(
             [] { return std::make_unique<asharia::editor::LogPanel>(); });
+        if (!log) {
+            return std::unexpected{std::move(log.error())};
+        }
+
+        return panelRegistry.registerPanel(
+            [] { return std::make_unique<asharia::editor::UiStylePreviewPanel>(); });
     }
 
     [[nodiscard]] asharia::VoidResult
@@ -854,6 +973,7 @@ namespace {
             .id = asharia::editor::EditorId{.value = "file.new-scene"},
             .menuPath = "File",
             .label = "New Scene",
+            .labelKey = "action.file.newScene",
             .shortcut = "Ctrl+N",
             .enabled = false,
         });
@@ -865,6 +985,7 @@ namespace {
             .id = asharia::editor::EditorId{.value = "file.open"},
             .menuPath = "File",
             .label = "Open...",
+            .labelKey = "action.file.open",
             .shortcut = "Ctrl+O",
             .enabled = false,
         });
@@ -876,6 +997,7 @@ namespace {
             .id = asharia::editor::EditorId{.value = "file.exit"},
             .menuPath = "File",
             .label = "Exit",
+            .labelKey = "action.file.exit",
             .shortcut = "Alt+F4",
             .enabled = false,
         });
@@ -888,6 +1010,7 @@ namespace {
                 .id = asharia::editor::EditorId{.value = "view.scene-view"},
                 .menuPath = "View",
                 .label = "Scene View",
+                .labelKey = "action.view.sceneView",
                 .shortcut = "Ctrl+1",
                 .enabled = true,
             },
@@ -903,6 +1026,7 @@ namespace {
                 .id = asharia::editor::EditorId{.value = "view.render-graph"},
                 .menuPath = "View",
                 .label = "Live RG View",
+                .labelKey = "action.view.renderGraph",
                 .shortcut = "Ctrl+3",
                 .enabled = true,
             },
@@ -918,6 +1042,7 @@ namespace {
                 .id = asharia::editor::EditorId{.value = "view.frame-debugger"},
                 .menuPath = "View",
                 .label = "Frame Debugger",
+                .labelKey = "action.view.frameDebugger",
                 .shortcut = "Ctrl+4",
                 .enabled = true,
             },
@@ -933,6 +1058,7 @@ namespace {
                 .id = asharia::editor::EditorId{.value = "view.log"},
                 .menuPath = "View",
                 .label = "Log",
+                .labelKey = "action.view.log",
                 .shortcut = "Ctrl+2",
                 .enabled = true,
             },
@@ -943,11 +1069,28 @@ namespace {
             return std::unexpected{std::move(log.error())};
         }
 
+        auto uiStylePreview = actionRegistry.registerAction(
+            asharia::editor::EditorActionDesc{
+                .id = asharia::editor::EditorId{.value = "view.ui-style-preview"},
+                .menuPath = "View",
+                .label = "UI Style Preview",
+                .labelKey = "action.view.uiStylePreview",
+                .shortcut = "Ctrl+5",
+                .enabled = true,
+            },
+            [](asharia::editor::EditorContext& context) {
+                static_cast<void>(context.panelRegistry().focusPanel("ui-style-preview"));
+            });
+        if (!uiStylePreview) {
+            return std::unexpected{std::move(uiStylePreview.error())};
+        }
+
         auto captureFrame = actionRegistry.registerAction(
             asharia::editor::EditorActionDesc{
                 .id = asharia::editor::EditorId{.value = "debug.capture-frame"},
                 .menuPath = "Debug",
                 .label = "Capture Frame",
+                .labelKey = "action.debug.captureFrame",
                 .shortcut = "F8",
                 .enabled = true,
             },
@@ -963,6 +1106,7 @@ namespace {
                 .id = asharia::editor::EditorId{.value = "debug.resume-frame"},
                 .menuPath = "Debug",
                 .label = "Resume",
+                .labelKey = "action.debug.resumeFrame",
                 .shortcut = "Shift+F8",
                 .enabled = true,
             },
@@ -973,14 +1117,16 @@ namespace {
 
     [[nodiscard]] bool
     validatePanelRegistrySmoke(asharia::editor::EditorPanelRegistry& panelRegistry) {
-        constexpr std::size_t kExpectedPanelCount = 4;
+        constexpr std::size_t kExpectedPanelCount = 5;
+        constexpr std::size_t kExpectedOpenPanelCount = 4;
 
         if (!panelRegistry.closePanel("log") || !panelRegistry.focusPanel("log")) {
             asharia::logError("Editor panel registry smoke could not close and reopen Log panel.");
             return false;
         }
         if (panelRegistry.panelCount() != kExpectedPanelCount ||
-            panelRegistry.openPanelCount() != kExpectedPanelCount || !panelRegistry.isOpen("log")) {
+            panelRegistry.openPanelCount() != kExpectedOpenPanelCount ||
+            !panelRegistry.isOpen("log") || panelRegistry.isOpen("ui-style-preview")) {
             asharia::logError(
                 "Editor panel registry smoke detected invalid singleton panel state.");
             return false;
@@ -993,8 +1139,8 @@ namespace {
     validateActionRegistrySmoke(asharia::editor::EditorActionRegistry& actionRegistry,
                                 asharia::editor::EditorContext& editorContext,
                                 asharia::editor::EditorPanelRegistry& panelRegistry) {
-        constexpr std::size_t kExpectedActionCount = 9;
-        constexpr std::size_t kExpectedEnabledActionCount = 6;
+        constexpr std::size_t kExpectedActionCount = 10;
+        constexpr std::size_t kExpectedEnabledActionCount = 7;
 
         if (actionRegistry.actionCount() != kExpectedActionCount ||
             actionRegistry.enabledActionCount() != kExpectedEnabledActionCount) {
@@ -1031,6 +1177,15 @@ namespace {
             });
         if (!closedLog || !invokedLogAction || !openedLog) {
             asharia::logError("Editor event queue smoke missed action or panel lifecycle events.");
+            return false;
+        }
+        editorContext.eventQueue().clear();
+
+        if (!actionRegistry.invoke("view.ui-style-preview", editorContext) ||
+            !panelRegistry.isOpen("ui-style-preview") ||
+            actionRegistry.invokeCount("view.ui-style-preview") != 1 ||
+            !panelRegistry.closePanel("ui-style-preview")) {
+            asharia::logError("Editor action registry smoke failed to route UI Style Preview.");
             return false;
         }
         editorContext.eventQueue().clear();
@@ -1130,8 +1285,15 @@ namespace asharia::editor {
         }
 
         ImGuiRuntime imgui;
-        if (auto created = imgui.create(window->nativeHandle(), *context, *frameLoop); !created) {
+        const ImGuiRuntimeDesc imguiDesc{
+            .layoutIniPath = smokeMode ? editorSmokeLayoutIniPath() : std::filesystem::path{},
+        };
+        if (auto created = imgui.create(window->nativeHandle(), *context, *frameLoop, imguiDesc);
+            !created) {
             asharia::logError(created.error().message);
+            return EXIT_FAILURE;
+        }
+        if (!validateEditorStartupSmoke(mode, imgui)) {
             return EXIT_FAILURE;
         }
 
@@ -1156,6 +1318,7 @@ namespace asharia::editor {
         asharia::editor::EditorEventQueue eventQueue;
         asharia::editor::EditorDiagnosticsLog diagnosticsLog;
         asharia::editor::EditorFrameDebugger frameDebugger;
+        asharia::editor::EditorI18n editorI18n{editorLocaleFromEnvironment()};
         asharia::editor::EditorPanelRegistry panelRegistry;
         panelRegistry.setEventQueue(&eventQueue);
         if (auto registered = registerEditorPanels(panelRegistry); !registered) {
@@ -1173,7 +1336,7 @@ namespace asharia::editor {
         }
 
         asharia::editor::EditorContext editorContext{panelRegistry, eventQueue, diagnosticsLog,
-                                                     frameDebugger};
+                                                     frameDebugger, editorI18n};
         if (smokeMode &&
             !validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry)) {
             return EXIT_FAILURE;
@@ -1199,6 +1362,10 @@ namespace asharia::editor {
             !validateFrameDebuggerSmoke(mode, *runResult, frameDebugger) ||
             !validateInputRouterSmoke(mode, *runResult) ||
             !validateShortcutRouterRunSmoke(mode, *runResult)) {
+            return EXIT_FAILURE;
+        }
+        imgui.saveLayoutNow();
+        if (!validateImguiLayoutSavedSmoke(mode, imgui)) {
             return EXIT_FAILURE;
         }
 

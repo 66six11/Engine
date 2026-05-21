@@ -5,6 +5,7 @@
 #include <imgui.h>
 #include <string>
 
+#include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
 
 namespace {
@@ -72,12 +73,15 @@ namespace asharia::editor {
             .focused = state.focused,
         });
 
-        const std::string swapchainText =
-            "Swapchain: " + std::to_string(context.swapchainExtent.width) + "x" +
-            std::to_string(context.swapchainExtent.height);
-        const std::string viewportText = "Viewport: " + std::to_string(viewportExtent.width) + "x" +
+        const EditorI18n& i18n = context.i18n;
+        const std::string swapchainText = std::string{i18n.text("scene.swapchain")} + ": " +
+                                          std::to_string(context.swapchainExtent.width) + "x" +
+                                          std::to_string(context.swapchainExtent.height);
+        const std::string viewportText = std::string{i18n.text("scene.viewport")} + ": " +
+                                         std::to_string(viewportExtent.width) + "x" +
                                          std::to_string(viewportExtent.height);
-        const std::string frameText = "Viewport Frame: " + std::to_string(viewportFrameIndex);
+        const std::string frameText = std::string{i18n.text("scene.viewportFrame")} + ": " +
+                                      std::to_string(viewportFrameIndex);
         ImGui::TextUnformatted(swapchainText.c_str());
         ImGui::TextUnformatted(viewportText.c_str());
         ImGui::TextUnformatted(frameText.c_str());

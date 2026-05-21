@@ -8,6 +8,7 @@
 #include "asharia/core/error.hpp"
 
 #include "editor_event.hpp"
+#include "editor_i18n.hpp"
 
 namespace asharia::editor {
 
@@ -143,7 +144,11 @@ namespace asharia::editor {
             }
 
             bool open = entry.state.open;
-            const bool visible = ImGui::Begin(entry.desc.title.c_str(), &open);
+            const std::string windowTitle =
+                context.i18n.label(EditorI18nLabelDesc{.key = entry.desc.titleKey,
+                                                       .stableId = entry.desc.id.value,
+                                                       .fallback = entry.desc.title});
+            const bool visible = ImGui::Begin(windowTitle.c_str(), &open);
             const bool wasOpen = entry.state.open;
             entry.state.open = open;
             if (wasOpen && !entry.state.open) {

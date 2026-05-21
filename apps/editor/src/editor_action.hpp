@@ -19,6 +19,7 @@ namespace asharia::editor {
         EditorId id;
         std::string menuPath;
         std::string label;
+        std::string labelKey;
         std::string shortcut;
         bool enabled{true};
     };

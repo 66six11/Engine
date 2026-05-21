@@ -1,12 +1,14 @@
 ﻿#include "panels/render_graph_snapshot_view.hpp"
 
 #include <algorithm>
-#include <imgui.h>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <imgui.h>
 #include <string>
 #include <string_view>
+
+#include "editor_i18n.hpp"
 
 namespace {
 
@@ -279,8 +281,7 @@ namespace {
         return label;
     }
 
-    [[nodiscard]] std::string passHeaderLabel(
-        const asharia::RenderGraphDiagnosticsPassNode& pass) {
+    [[nodiscard]] std::string passHeaderLabel(const asharia::RenderGraphDiagnosticsPassNode& pass) {
         std::string label = "#" + std::to_string(pass.passIndex);
         if (!pass.name.empty()) {
             label += " ";
@@ -369,10 +370,10 @@ namespace {
         return false;
     }
 
-    [[nodiscard]] AccessCell accessCellFor(
-        const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
-        const asharia::RenderGraphDiagnosticsResourceNode& resource,
-        const asharia::RenderGraphDiagnosticsPassNode& pass) {
+    [[nodiscard]] AccessCell
+    accessCellFor(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                  const asharia::RenderGraphDiagnosticsResourceNode& resource,
+                  const asharia::RenderGraphDiagnosticsPassNode& pass) {
         AccessCell cell;
         for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
             if (edge.passIndex != pass.passIndex || edge.resourceKind != resource.kind ||
@@ -430,8 +431,8 @@ namespace {
         return IM_COL32(50, 50, 50, 70);
     }
 
-    [[nodiscard]] std::string resourceShape(
-        const asharia::RenderGraphDiagnosticsResourceNode& resource) {
+    [[nodiscard]] std::string
+    resourceShape(const asharia::RenderGraphDiagnosticsResourceNode& resource) {
         if (resource.kind == asharia::RenderGraphResourceKind::Image) {
             return std::string{imageFormatName(resource.imageFormat)} + " " +
                    std::to_string(resource.imageExtent.width) + "x" +
@@ -440,15 +441,15 @@ namespace {
         return std::to_string(resource.bufferByteSize) + " bytes";
     }
 
-    [[nodiscard]] std::string resourceLifetime(
-        const asharia::RenderGraphDiagnosticsResourceNode& resource) {
+    [[nodiscard]] std::string
+    resourceLifetime(const asharia::RenderGraphDiagnosticsResourceNode& resource) {
         return resource.kind == asharia::RenderGraphResourceKind::Image
                    ? imageLifetimeName(resource.imageLifetime)
                    : bufferLifetimeName(resource.bufferLifetime);
     }
 
-    [[nodiscard]] std::string resourceAccessRange(
-        const asharia::RenderGraphDiagnosticsResourceNode& resource) {
+    [[nodiscard]] std::string
+    resourceAccessRange(const asharia::RenderGraphDiagnosticsResourceNode& resource) {
         if (resource.kind == asharia::RenderGraphResourceKind::Image) {
             return imageAccessName(resource.imageInitialAccess) + " -> " +
                    imageAccessName(resource.imageFinalAccess);
@@ -457,8 +458,8 @@ namespace {
                bufferAccessName(resource.bufferFinalAccess);
     }
 
-    [[nodiscard]] std::string unityResourcePrefix(
-        const asharia::RenderGraphDiagnosticsResourceNode& resource) {
+    [[nodiscard]] std::string
+    unityResourcePrefix(const asharia::RenderGraphDiagnosticsResourceNode& resource) {
         std::string prefix = resource.kind == asharia::RenderGraphResourceKind::Image ? "T " : "B ";
         if ((resource.kind == asharia::RenderGraphResourceKind::Image &&
              resource.imageLifetime == asharia::RenderGraphImageLifetime::Imported) ||
@@ -492,38 +493,44 @@ namespace {
                                   std::to_string(desc.requestedExtent.width) + "x" +
                                   std::to_string(desc.requestedExtent.height);
         ImGui::TextUnformatted(title.c_str());
-        const std::string state = "Snapshot: " + fallbackText(desc.statusLabel) +
-                                  ", submitted epoch " + std::to_string(desc.submittedFrameEpoch);
+        const std::string state = std::string{desc.i18n.text("renderGraph.snapshot")} + ": " +
+                                  fallbackText(desc.statusLabel) + ", " +
+                                  std::string{desc.i18n.text("renderGraph.submittedEpoch")} + " " +
+                                  std::to_string(desc.submittedFrameEpoch);
         ImGui::TextUnformatted(state.c_str());
-        const std::string counts =
-            "Passes " + std::to_string(snapshot.passes.size()) + " / Resources " +
-            std::to_string(snapshot.resources.size()) + " / Access edges " +
-            std::to_string(snapshot.accessEdges.size()) + " / Dependencies " +
-            std::to_string(snapshot.dependencyEdges.size()) + " / Transitions " +
-            std::to_string(snapshot.transitions.size());
+        const std::string counts = std::string{desc.i18n.text("renderGraph.passes")} + " " +
+                                   std::to_string(snapshot.passes.size()) + " / " +
+                                   std::string{desc.i18n.text("renderGraph.resources")} + " " +
+                                   std::to_string(snapshot.resources.size()) + " / " +
+                                   std::string{desc.i18n.text("renderGraph.accessEdges")} + " " +
+                                   std::to_string(snapshot.accessEdges.size()) + " / " +
+                                   std::string{desc.i18n.text("renderGraph.dependencies")} + " " +
+                                   std::to_string(snapshot.dependencyEdges.size()) + " / " +
+                                   std::string{desc.i18n.text("renderGraph.transitions")} + " " +
+                                   std::to_string(snapshot.transitions.size());
         ImGui::TextUnformatted(counts.c_str());
     }
 
-    void drawAccessLegend() {
-        ImGui::TextUnformatted("Colors:");
+    void drawAccessLegend(const asharia::editor::EditorI18n& i18n) {
+        tableText(i18n.text("renderGraph.colors"));
         ImGui::SameLine();
         coloredText(ImVec4{0.38F, 0.90F, 0.50F, 1.0F}, "r");
         ImGui::SameLine();
-        ImGui::TextUnformatted("read");
+        tableText(i18n.text("renderGraph.read"));
         ImGui::SameLine();
         coloredText(ImVec4{1.0F, 0.42F, 0.36F, 1.0F}, "w");
         ImGui::SameLine();
-        ImGui::TextUnformatted("write");
+        tableText(i18n.text("renderGraph.write"));
         ImGui::SameLine();
         coloredText(ImVec4{1.0F, 0.72F, 0.34F, 1.0F}, "rw");
         ImGui::SameLine();
-        ImGui::TextUnformatted("read/write");
+        tableText(i18n.text("renderGraph.readWrite"));
         ImGui::SameLine();
         disabledText("hover cells for slot/use details; T texture, B buffer, <- imported");
     }
 
-    [[nodiscard]] float timelineHeaderHeight(
-        const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+    [[nodiscard]] float
+    timelineHeaderHeight(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
         float maxLabelWidth = 0.0F;
         for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
             const std::string label = passHeaderLabel(pass);
@@ -535,8 +542,8 @@ namespace {
                           kTimelineHeaderMinHeight, kTimelineHeaderMaxHeight);
     }
 
-    [[nodiscard]] float timelineHeaderOverhang(
-        const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+    [[nodiscard]] float
+    timelineHeaderOverhang(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
         float maxLabelWidth = 0.0F;
         for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
             const std::string label = passHeaderLabel(pass);
@@ -555,10 +562,9 @@ namespace {
         tooltipText(tooltip);
     }
 
-    void drawAccessCellTooltip(
-        const asharia::RenderGraphDiagnosticsResourceNode& resource,
-        const asharia::RenderGraphDiagnosticsPassNode& pass,
-        const AccessCell& cell) {
+    void drawAccessCellTooltip(const asharia::RenderGraphDiagnosticsResourceNode& resource,
+                               const asharia::RenderGraphDiagnosticsPassNode& pass,
+                               const AccessCell& cell) {
         const std::string passLabel = passHeaderLabel(pass);
         const std::string resourceName =
             resourceLabel(resource.kind, resource.resourceIndex, resource.name);
@@ -571,30 +577,29 @@ namespace {
         tooltipText(tooltip);
     }
 
-    [[nodiscard]] bool pointInRect(const ImVec2& point, const ImVec2& min,
-                                   const ImVec2& max) {
+    [[nodiscard]] bool pointInRect(const ImVec2& point, const ImVec2& min, const ImVec2& max) {
         return point.x >= min.x && point.x < max.x && point.y >= min.y && point.y < max.y;
     }
 
     [[nodiscard]] int hoveredTimelineIndex(const TimelineHitAxis& axis) {
         const int index =
-            static_cast<int>(std::floor((axis.position - axis.origin + axis.scroll) /
-                                        axis.extent));
+            static_cast<int>(std::floor((axis.position - axis.origin + axis.scroll) / axis.extent));
         return index >= 0 && index < axis.count ? index : -1;
     }
 
-    void drawTimelineHeader(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+    void drawTimelineHeader(const asharia::editor::EditorI18n& i18n,
+                            const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                             const TimelineCanvas& canvas) {
         const ImVec2 headerMax{canvas.clipMax.x, canvas.origin.y + canvas.headerHeight};
         canvas.drawList->AddRectFilled(canvas.origin, headerMax, canvas.headerColor);
-        canvas.drawList->AddRectFilled(
-            canvas.origin,
-            ImVec2{canvas.origin.x + kTimelineResourceColumnWidth,
-                   canvas.origin.y + canvas.headerHeight},
-            canvas.headerColor);
+        canvas.drawList->AddRectFilled(canvas.origin,
+                                       ImVec2{canvas.origin.x + kTimelineResourceColumnWidth,
+                                              canvas.origin.y + canvas.headerHeight},
+                                       canvas.headerColor);
+        const std::string resourceText{i18n.text("renderGraph.resource")};
         canvas.drawList->AddText(
             ImVec2{canvas.origin.x + 6.0F, canvas.origin.y + canvas.headerHeight - 24.0F},
-            canvas.textColor, "Resource");
+            canvas.textColor, resourceText.c_str());
 
         canvas.drawList->PushClipRect(
             ImVec2{canvas.origin.x + kTimelineResourceColumnWidth, canvas.origin.y},
@@ -603,53 +608,45 @@ namespace {
             const asharia::RenderGraphDiagnosticsPassNode& pass =
                 snapshot.passes[static_cast<std::size_t>(passPosition)];
             const float headerX = canvas.origin.x + kTimelineResourceColumnWidth +
-                                  (static_cast<float>(passPosition) *
-                                   kTimelinePassColumnWidth) -
+                                  (static_cast<float>(passPosition) * kTimelinePassColumnWidth) -
                                   canvas.scrollX;
             const std::string label = passHeaderLabel(pass);
             drawRotatedText(label,
-                            ImVec2{headerX + 3.0F,
-                                   canvas.origin.y + canvas.headerHeight - 6.0F},
+                            ImVec2{headerX + 3.0F, canvas.origin.y + canvas.headerHeight - 6.0F},
                             canvas.textColor);
         }
         canvas.drawList->PopClipRect();
-        canvas.drawList->AddLine(
-            ImVec2{canvas.origin.x, canvas.origin.y + canvas.headerHeight},
-            ImVec2{canvas.clipMax.x, canvas.origin.y + canvas.headerHeight},
-            canvas.borderColor);
+        canvas.drawList->AddLine(ImVec2{canvas.origin.x, canvas.origin.y + canvas.headerHeight},
+                                 ImVec2{canvas.clipMax.x, canvas.origin.y + canvas.headerHeight},
+                                 canvas.borderColor);
     }
 
-    void drawTimelineResourceLabel(
-        const TimelineCanvas& canvas,
-        const asharia::RenderGraphDiagnosticsResourceNode& resource,
-        float rowY) {
+    void drawTimelineResourceLabel(const TimelineCanvas& canvas,
+                                   const asharia::RenderGraphDiagnosticsResourceNode& resource,
+                                   float rowY) {
         const std::string label =
             unityResourcePrefix(resource) +
             resourceLabel(resource.kind, resource.resourceIndex, resource.name);
         canvas.drawList->PushClipRect(
             ImVec2{canvas.origin.x, canvas.origin.y + canvas.headerHeight},
-            ImVec2{canvas.origin.x + kTimelineResourceColumnWidth, canvas.clipMax.y},
-            true);
-        canvas.drawList->AddText(ImVec2{canvas.origin.x + 6.0F, rowY + 3.0F},
-                                 canvas.textColor, label.c_str());
+            ImVec2{canvas.origin.x + kTimelineResourceColumnWidth, canvas.clipMax.y}, true);
+        canvas.drawList->AddText(ImVec2{canvas.origin.x + 6.0F, rowY + 3.0F}, canvas.textColor,
+                                 label.c_str());
         canvas.drawList->PopClipRect();
     }
 
-    void drawTimelineCellsForResource(
-        const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
-        const TimelineCanvas& canvas,
-        const asharia::RenderGraphDiagnosticsResourceNode& resource,
-        float rowY) {
-        canvas.drawList->PushClipRect(
-            ImVec2{canvas.origin.x + kTimelineResourceColumnWidth,
-                   canvas.origin.y + canvas.headerHeight},
-            canvas.clipMax, true);
+    void drawTimelineCellsForResource(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                      const TimelineCanvas& canvas,
+                                      const asharia::RenderGraphDiagnosticsResourceNode& resource,
+                                      float rowY) {
+        canvas.drawList->PushClipRect(ImVec2{canvas.origin.x + kTimelineResourceColumnWidth,
+                                             canvas.origin.y + canvas.headerHeight},
+                                      canvas.clipMax, true);
         for (int passPosition = 0; passPosition < canvas.passCount; ++passPosition) {
             const asharia::RenderGraphDiagnosticsPassNode& pass =
                 snapshot.passes[static_cast<std::size_t>(passPosition)];
             const float cellX = canvas.origin.x + kTimelineResourceColumnWidth +
-                                (static_cast<float>(passPosition) *
-                                 kTimelinePassColumnWidth) -
+                                (static_cast<float>(passPosition) * kTimelinePassColumnWidth) -
                                 canvas.scrollX;
             const ImVec2 cellMin{cellX + 1.0F, rowY + 1.0F};
             const ImVec2 cellMax{cellX + kTimelinePassColumnWidth - 1.0F,
@@ -676,19 +673,16 @@ namespace {
     void drawTimelineRows(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                           const TimelineCanvas& canvas) {
         canvas.drawList->PushClipRect(
-            ImVec2{canvas.origin.x, canvas.origin.y + canvas.headerHeight},
-            canvas.clipMax, true);
+            ImVec2{canvas.origin.x, canvas.origin.y + canvas.headerHeight}, canvas.clipMax, true);
         for (int resourceIndex = 0; resourceIndex < canvas.resourceCount; ++resourceIndex) {
             const asharia::RenderGraphDiagnosticsResourceNode& resource =
                 snapshot.resources[static_cast<std::size_t>(resourceIndex)];
             const float rowY = canvas.origin.y + canvas.headerHeight +
-                               (static_cast<float>(resourceIndex) *
-                                kTimelineRowHeight) -
+                               (static_cast<float>(resourceIndex) * kTimelineRowHeight) -
                                canvas.scrollY;
             const ImVec2 rowMin{canvas.origin.x, rowY};
             const ImVec2 rowMax{canvas.clipMax.x, rowY + kTimelineRowHeight};
-            if (rowMax.y < canvas.origin.y + canvas.headerHeight ||
-                rowMin.y > canvas.clipMax.y) {
+            if (rowMax.y < canvas.origin.y + canvas.headerHeight || rowMin.y > canvas.clipMax.y) {
                 continue;
             }
             if ((resourceIndex % 2) != 0) {
@@ -704,14 +698,12 @@ namespace {
     void drawTimelineGrid(const TimelineCanvas& canvas) {
         for (int passPosition = 0; passPosition <= canvas.passCount; ++passPosition) {
             const float lineX = canvas.origin.x + kTimelineResourceColumnWidth +
-                                (static_cast<float>(passPosition) *
-                                 kTimelinePassColumnWidth) -
+                                (static_cast<float>(passPosition) * kTimelinePassColumnWidth) -
                                 canvas.scrollX;
             if (lineX >= canvas.origin.x + kTimelineResourceColumnWidth &&
                 lineX <= canvas.clipMax.x) {
-                canvas.drawList->AddLine(
-                    ImVec2{lineX, canvas.origin.y + canvas.headerHeight},
-                    ImVec2{lineX, canvas.clipMax.y}, canvas.borderColor);
+                canvas.drawList->AddLine(ImVec2{lineX, canvas.origin.y + canvas.headerHeight},
+                                         ImVec2{lineX, canvas.clipMax.y}, canvas.borderColor);
             }
         }
         canvas.drawList->AddLine(
@@ -721,9 +713,8 @@ namespace {
             canvas.borderColor);
     }
 
-    void drawTimelineHoverTooltips(
-        const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
-        const TimelineCanvas& canvas) {
+    void drawTimelineHoverTooltips(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                   const TimelineCanvas& canvas) {
         if (!ImGui::IsWindowHovered()) {
             return;
         }
@@ -731,33 +722,31 @@ namespace {
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         const float matrixX = canvas.origin.x + kTimelineResourceColumnWidth;
         if (pointInRect(mouse, ImVec2{matrixX, canvas.origin.y},
-                        ImVec2{canvas.clipMax.x,
-                               canvas.origin.y + canvas.headerHeight})) {
-            const int passPosition = hoveredTimelineIndex(
-                TimelineHitAxis{.position = mouse.x,
-                                .scroll = canvas.scrollX,
-                                .origin = matrixX,
-                                .extent = kTimelinePassColumnWidth,
-                                .count = canvas.passCount});
+                        ImVec2{canvas.clipMax.x, canvas.origin.y + canvas.headerHeight})) {
+            const int passPosition =
+                hoveredTimelineIndex(TimelineHitAxis{.position = mouse.x,
+                                                     .scroll = canvas.scrollX,
+                                                     .origin = matrixX,
+                                                     .extent = kTimelinePassColumnWidth,
+                                                     .count = canvas.passCount});
             if (passPosition >= 0) {
-                tooltipText(passHeaderLabel(
-                    snapshot.passes[static_cast<std::size_t>(passPosition)]));
+                tooltipText(
+                    passHeaderLabel(snapshot.passes[static_cast<std::size_t>(passPosition)]));
             }
             return;
         }
 
-        if (!pointInRect(mouse, ImVec2{canvas.origin.x,
-                                      canvas.origin.y + canvas.headerHeight},
+        if (!pointInRect(mouse, ImVec2{canvas.origin.x, canvas.origin.y + canvas.headerHeight},
                          canvas.clipMax)) {
             return;
         }
 
-        const int resourcePosition = hoveredTimelineIndex(
-            TimelineHitAxis{.position = mouse.y,
-                            .scroll = canvas.scrollY,
-                            .origin = canvas.origin.y + canvas.headerHeight,
-                            .extent = kTimelineRowHeight,
-                            .count = canvas.resourceCount});
+        const int resourcePosition =
+            hoveredTimelineIndex(TimelineHitAxis{.position = mouse.y,
+                                                 .scroll = canvas.scrollY,
+                                                 .origin = canvas.origin.y + canvas.headerHeight,
+                                                 .extent = kTimelineRowHeight,
+                                                 .count = canvas.resourceCount});
         if (resourcePosition < 0) {
             return;
         }
@@ -769,12 +758,12 @@ namespace {
             return;
         }
 
-        const int passPosition = hoveredTimelineIndex(
-            TimelineHitAxis{.position = mouse.x,
-                            .scroll = canvas.scrollX,
-                            .origin = matrixX,
-                            .extent = kTimelinePassColumnWidth,
-                            .count = canvas.passCount});
+        const int passPosition =
+            hoveredTimelineIndex(TimelineHitAxis{.position = mouse.x,
+                                                 .scroll = canvas.scrollX,
+                                                 .origin = matrixX,
+                                                 .extent = kTimelinePassColumnWidth,
+                                                 .count = canvas.passCount});
         if (passPosition < 0) {
             return;
         }
@@ -784,11 +773,12 @@ namespace {
         drawAccessCellTooltip(resource, pass, accessCellFor(snapshot, resource, pass));
     }
 
-    void drawAccessTimeline(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
-        drawAccessLegend();
+    void drawAccessTimeline(const asharia::editor::EditorI18n& i18n,
+                            const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+        drawAccessLegend(i18n);
 
         if (snapshot.resources.empty() || snapshot.passes.empty()) {
-            disabledText("No pass/resource timeline.");
+            disabledText(i18n.text("renderGraph.noTimeline"));
             return;
         }
 
@@ -827,30 +817,35 @@ namespace {
         };
         drawTimelineRows(snapshot, canvas);
         drawTimelineGrid(canvas);
-        drawTimelineHeader(snapshot, canvas);
+        drawTimelineHeader(i18n, snapshot, canvas);
         drawTimelineHoverTooltips(snapshot, canvas);
 
         ImGui::Dummy(ImVec2{canvasWidth, canvasHeight});
         ImGui::EndChild();
     }
 
-    void drawAccessEventsList(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+    void drawAccessEventsList(const asharia::editor::EditorI18n& i18n,
+                              const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                               float height) {
-        ImGui::TextUnformatted("Access Events");
+        tableText(i18n.text("renderGraph.accessEvents"));
         if (snapshot.accessEdges.empty()) {
-            disabledText("No resource access events.");
+            disabledText(i18n.text("renderGraph.noAccessEvents"));
             return;
         }
 
-        if (!ImGui::BeginTable("rg-access-events", 5, kDetailTableFlags,
-                               ImVec2{0.0F, height})) {
+        if (!ImGui::BeginTable("rg-access-events", 5, kDetailTableFlags, ImVec2{0.0F, height})) {
             return;
         }
-        ImGui::TableSetupColumn("Pass");
-        ImGui::TableSetupColumn("Resource");
-        ImGui::TableSetupColumn("Slot");
-        ImGui::TableSetupColumn("Use");
-        ImGui::TableSetupColumn("Direction");
+        const std::string passColumn{i18n.text("renderGraph.pass")};
+        const std::string resourceColumn{i18n.text("renderGraph.resource")};
+        const std::string slotColumn{i18n.text("renderGraph.slot")};
+        const std::string useColumn{i18n.text("renderGraph.use")};
+        const std::string directionColumn{i18n.text("renderGraph.direction")};
+        ImGui::TableSetupColumn(passColumn.c_str());
+        ImGui::TableSetupColumn(resourceColumn.c_str());
+        ImGui::TableSetupColumn(slotColumn.c_str());
+        ImGui::TableSetupColumn(useColumn.c_str());
+        ImGui::TableSetupColumn(directionColumn.c_str());
         ImGui::TableHeadersRow();
         for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
             ImGui::TableNextRow();
@@ -868,18 +863,21 @@ namespace {
         ImGui::EndTable();
     }
 
-    void drawResourceList(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
-                          float height) {
-        ImGui::TextUnformatted("Resource List");
-        if (!ImGui::BeginTable("rg-resource-list", 5, kDetailTableFlags,
-                               ImVec2{0.0F, height})) {
+    void drawResourceList(const asharia::editor::EditorI18n& i18n,
+                          const asharia::RenderGraphDiagnosticsSnapshot& snapshot, float height) {
+        tableText(i18n.text("renderGraph.resourceList"));
+        if (!ImGui::BeginTable("rg-resource-list", 5, kDetailTableFlags, ImVec2{0.0F, height})) {
             return;
         }
         ImGui::TableSetupColumn("#");
-        ImGui::TableSetupColumn("Name");
-        ImGui::TableSetupColumn("Type");
-        ImGui::TableSetupColumn("Shape");
-        ImGui::TableSetupColumn("Lifetime / State");
+        const std::string nameColumn{i18n.text("renderGraph.name")};
+        const std::string typeColumn{i18n.text("renderGraph.type")};
+        const std::string shapeColumn{i18n.text("renderGraph.shape")};
+        const std::string lifetimeStateColumn{i18n.text("renderGraph.lifetimeState")};
+        ImGui::TableSetupColumn(nameColumn.c_str());
+        ImGui::TableSetupColumn(typeColumn.c_str());
+        ImGui::TableSetupColumn(shapeColumn.c_str());
+        ImGui::TableSetupColumn(lifetimeStateColumn.c_str());
         ImGui::TableHeadersRow();
         for (const asharia::RenderGraphDiagnosticsResourceNode& resource : snapshot.resources) {
             ImGui::TableNextRow();
@@ -897,17 +895,23 @@ namespace {
         ImGui::EndTable();
     }
 
-    void drawPassList(const asharia::RenderGraphDiagnosticsSnapshot& snapshot, float height) {
-        ImGui::TextUnformatted("Pass List");
+    void drawPassList(const asharia::editor::EditorI18n& i18n,
+                      const asharia::RenderGraphDiagnosticsSnapshot& snapshot, float height) {
+        tableText(i18n.text("renderGraph.passList"));
         if (!ImGui::BeginTable("rg-pass-list", 6, kDetailTableFlags, ImVec2{0.0F, height})) {
             return;
         }
         ImGui::TableSetupColumn("#");
-        ImGui::TableSetupColumn("Name");
-        ImGui::TableSetupColumn("Type");
-        ImGui::TableSetupColumn("Commands");
-        ImGui::TableSetupColumn("Transitions");
-        ImGui::TableSetupColumn("Cullable");
+        const std::string nameColumn{i18n.text("renderGraph.name")};
+        const std::string typeColumn{i18n.text("renderGraph.type")};
+        const std::string commandsColumn{i18n.text("renderGraph.commands")};
+        const std::string transitionsColumn{i18n.text("renderGraph.transitions")};
+        const std::string cullableColumn{i18n.text("renderGraph.cullable")};
+        ImGui::TableSetupColumn(nameColumn.c_str());
+        ImGui::TableSetupColumn(typeColumn.c_str());
+        ImGui::TableSetupColumn(commandsColumn.c_str());
+        ImGui::TableSetupColumn(transitionsColumn.c_str());
+        ImGui::TableSetupColumn(cullableColumn.c_str());
         ImGui::TableHeadersRow();
         for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
             ImGui::TableNextRow();
@@ -927,22 +931,25 @@ namespace {
         ImGui::EndTable();
     }
 
-    void drawDependencyList(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
-                            float height) {
-        ImGui::TextUnformatted("Dependencies");
+    void drawDependencyList(const asharia::editor::EditorI18n& i18n,
+                            const asharia::RenderGraphDiagnosticsSnapshot& snapshot, float height) {
+        tableText(i18n.text("renderGraph.dependencies"));
         if (snapshot.dependencyEdges.empty()) {
-            disabledText("No dependency edges.");
+            disabledText(i18n.text("renderGraph.noDependencies"));
             return;
         }
 
-        if (!ImGui::BeginTable("rg-dependency-list", 4, kDetailTableFlags,
-                               ImVec2{0.0F, height})) {
+        if (!ImGui::BeginTable("rg-dependency-list", 4, kDetailTableFlags, ImVec2{0.0F, height})) {
             return;
         }
-        ImGui::TableSetupColumn("From");
-        ImGui::TableSetupColumn("To");
-        ImGui::TableSetupColumn("Resource");
-        ImGui::TableSetupColumn("Reason");
+        const std::string fromColumn{i18n.text("renderGraph.from")};
+        const std::string toColumn{i18n.text("renderGraph.to")};
+        const std::string resourceColumn{i18n.text("renderGraph.resource")};
+        const std::string reasonColumn{i18n.text("renderGraph.reason")};
+        ImGui::TableSetupColumn(fromColumn.c_str());
+        ImGui::TableSetupColumn(toColumn.c_str());
+        ImGui::TableSetupColumn(resourceColumn.c_str());
+        ImGui::TableSetupColumn(reasonColumn.c_str());
         ImGui::TableHeadersRow();
         for (const asharia::RenderGraphDiagnosticsDependencyEdge& dependency :
              snapshot.dependencyEdges) {
@@ -960,12 +967,13 @@ namespace {
         ImGui::EndTable();
     }
 
-    void drawDetails(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+    void drawDetails(const asharia::editor::EditorI18n& i18n,
+                     const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
         const float height = detailHeight();
-        drawAccessEventsList(snapshot, height);
-        drawResourceList(snapshot, height);
-        drawPassList(snapshot, height);
-        drawDependencyList(snapshot, kDetailMinHeight);
+        drawAccessEventsList(i18n, snapshot, height);
+        drawResourceList(i18n, snapshot, height);
+        drawPassList(i18n, snapshot, height);
+        drawDependencyList(i18n, snapshot, kDetailMinHeight);
     }
 
 } // namespace
@@ -976,9 +984,9 @@ namespace asharia::editor {
                                      const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
         drawSummary(desc, snapshot);
         ImGui::Separator();
-        drawAccessTimeline(snapshot);
+        drawAccessTimeline(desc.i18n, snapshot);
         ImGui::Separator();
-        drawDetails(snapshot);
+        drawDetails(desc.i18n, snapshot);
     }
 
 } // namespace asharia::editor

@@ -14,6 +14,7 @@ namespace asharia::editor {
         EditorPanelDesc desc_{
             .id = EditorId{.value = "scene-view"},
             .title = "Scene View",
+            .titleKey = "panel.sceneView",
             .defaultOpen = true,
             .singleton = true,
         };

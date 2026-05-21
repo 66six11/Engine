@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <optional>
 
+#include "editor_i18n.hpp"
 #include "editor_render_graph_snapshot.hpp"
 #include "panels/render_graph_snapshot_view.hpp"
 
@@ -27,17 +28,19 @@ namespace asharia::editor {
         const bool snapshotVisible = liveSnapshot && liveSnapshot->snapshot != nullptr;
         context.renderGraphSnapshots.notifyLiveRenderGraphViewDrawn(snapshotVisible);
         if (!snapshotVisible) {
-            ImGui::TextUnformatted("No live RenderGraph snapshot yet.");
+            const std::string_view text = context.i18n.text("renderGraph.noLiveSnapshot");
+            ImGui::TextUnformatted(text.data(), text.data() + text.size());
             return;
         }
 
         drawRenderGraphSnapshotView(
             RenderGraphSnapshotViewDesc{
-                .sourceLabel = "Live RG View",
-                .statusLabel = "latest compiled RenderView",
+                .sourceLabel = context.i18n.text("renderGraph.liveSource"),
+                .statusLabel = context.i18n.text("renderGraph.status.latestCompiled"),
                 .viewKind = liveSnapshot->viewKind,
                 .requestedExtent = liveSnapshot->requestedExtent,
                 .submittedFrameEpoch = liveSnapshot->submittedFrameEpoch,
+                .i18n = context.i18n,
             },
             *liveSnapshot->snapshot);
     }

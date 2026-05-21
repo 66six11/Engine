@@ -9,12 +9,15 @@
 
 namespace asharia::editor {
 
+    class EditorI18n;
+
     struct RenderGraphSnapshotViewDesc {
         std::string_view sourceLabel;
         std::string_view statusLabel;
         EditorViewportKind viewKind{EditorViewportKind::Scene};
         EditorExtent2D requestedExtent;
         std::uint64_t submittedFrameEpoch{};
+        const EditorI18n& i18n;
     };
 
     void drawRenderGraphSnapshotView(const RenderGraphSnapshotViewDesc& desc,

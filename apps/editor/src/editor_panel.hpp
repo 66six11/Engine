@@ -20,11 +20,13 @@ namespace asharia::editor {
     class EditorDiagnosticsLog;
     class EditorEventQueue;
     class EditorFrameDebugger;
+    class EditorI18n;
     class EditorInputRouter;
 
     struct EditorPanelDesc {
         EditorId id;
         std::string title;
+        std::string titleKey;
         bool defaultOpen{true};
         bool singleton{true};
     };
@@ -43,6 +45,7 @@ namespace asharia::editor {
         EditorEventQueue& eventQueue;
         EditorDiagnosticsLog& diagnosticsLog;
         EditorFrameDebugger& frameDebugger;
+        EditorI18n& i18n;
         EditorInputRouter& inputRouter;
         EditorRenderGraphSnapshotProvider& renderGraphSnapshots;
         EditorViewportPanelHost& viewportHost;

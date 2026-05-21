@@ -13,6 +13,7 @@ namespace asharia::editor {
         EditorPanelDesc desc_{
             .id = EditorId{.value = "log"},
             .title = "Log",
+            .titleKey = "panel.log",
             .defaultOpen = true,
             .singleton = true,
         };

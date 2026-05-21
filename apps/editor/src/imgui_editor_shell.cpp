@@ -1,7 +1,10 @@
 ﻿#include "imgui_editor_shell.hpp"
 
 #include <imgui.h>
+#include <string>
 #include <string_view>
+
+#include "editor_i18n.hpp"
 
 namespace asharia::editor {
 
@@ -18,8 +21,13 @@ namespace asharia::editor {
                 return;
             }
 
+            const std::string label = editorContext.i18n().label(EditorI18nLabelDesc{
+                .key = action->labelKey,
+                .stableId = action->id.value,
+                .fallback = action->label,
+            });
             const char* shortcut = action->shortcut.empty() ? nullptr : action->shortcut.c_str();
-            if (ImGui::MenuItem(action->label.c_str(), shortcut, selected, action->enabled)) {
+            if (ImGui::MenuItem(label.c_str(), shortcut, selected, action->enabled)) {
                 static_cast<void>(actionRegistry.invoke(action->id.value, editorContext));
             }
         }
@@ -28,23 +36,45 @@ namespace asharia::editor {
 
     void drawEditorMainMenu(EditorActionRegistry& actionRegistry, EditorContext& editorContext) {
         if (ImGui::BeginMainMenuBar()) {
-            if (ImGui::BeginMenu("File")) {
+            const EditorI18n& i18n = editorContext.i18n();
+            const std::string fileMenu = i18n.label(EditorI18nLabelDesc{
+                .key = "menu.file",
+                .stableId = "menu.file",
+                .fallback = "File",
+            });
+            const std::string viewMenu = i18n.label(EditorI18nLabelDesc{
+                .key = "menu.view",
+                .stableId = "menu.view",
+                .fallback = "View",
+            });
+            const std::string debugMenu = i18n.label(EditorI18nLabelDesc{
+                .key = "menu.debug",
+                .stableId = "menu.debug",
+                .fallback = "Debug",
+            });
+
+            if (ImGui::BeginMenu(fileMenu.c_str())) {
                 drawActionMenuItem(actionRegistry, editorContext, "file.new-scene");
                 drawActionMenuItem(actionRegistry, editorContext, "file.open");
                 ImGui::Separator();
                 drawActionMenuItem(actionRegistry, editorContext, "file.exit");
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("View")) {
+            if (ImGui::BeginMenu(viewMenu.c_str())) {
                 drawActionMenuItem(actionRegistry, editorContext, "view.scene-view",
                                    editorContext.panelRegistry().isOpen("scene-view"));
-                drawActionMenuItem(actionRegistry, editorContext, "view.render-graph",
-                                   editorContext.panelRegistry().isOpen("render-graph"));
                 drawActionMenuItem(actionRegistry, editorContext, "view.log",
                                    editorContext.panelRegistry().isOpen("log"));
+                drawActionMenuItem(actionRegistry, editorContext, "view.render-graph",
+                                   editorContext.panelRegistry().isOpen("render-graph"));
+                drawActionMenuItem(actionRegistry, editorContext, "view.frame-debugger",
+                                   editorContext.panelRegistry().isOpen("frame-debugger"));
+                ImGui::Separator();
+                drawActionMenuItem(actionRegistry, editorContext, "view.ui-style-preview",
+                                   editorContext.panelRegistry().isOpen("ui-style-preview"));
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Debug")) {
+            if (ImGui::BeginMenu(debugMenu.c_str())) {
                 drawActionMenuItem(actionRegistry, editorContext, "debug.capture-frame");
                 drawActionMenuItem(actionRegistry, editorContext, "debug.resume-frame");
                 ImGui::EndMenu();
