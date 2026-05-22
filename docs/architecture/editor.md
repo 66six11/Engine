@@ -1,6 +1,6 @@
 # Editor 架构
 
-更新日期：2026-05-20
+更新日期：2026-05-22
 
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
 integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
@@ -55,7 +55,9 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_settings` | editor-local user settings persistence plus runtime editor locale/theme switching | scene data, asset import settings or runtime/game configuration |
 | `editor_app` | startup、window/context/frame-loop wiring、main editor loop、frame order、smoke modes、shutdown order | panel widget details becoming feature-specific renderer logic |
 | `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle and the editor ImGui fragment shader contract | panel registry、editor state、viewport target ownership |
-| `imgui_editor_shell` | dockspace、main menu、action menu binding | renderer command recording、panel object ownership |
+| `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
+| `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
+| `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids | command transaction semantics before transaction exists |
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
@@ -177,11 +179,17 @@ contract in later slices instead of reading editor panel state directly.
 
 The registry does not own the underlying image or image view. It only owns ImGui's descriptor handle and retirement state.
 
-### ImGui layout persistence
+### ImGui workspace and layout persistence
 
 `ImGuiRuntime` owns Dear ImGui layout persistence. It resolves a user-local `imgui-layout.ini` path under the editor app
 state directory, assigns `ImGuiIO::IniFilename` during ImGui context creation and flushes the layout before ImGui shutdown.
 This state stores editor window/docking layout only; it is not scene data, asset data or runtime configuration.
+
+`EditorWorkspaceController` owns the current editor workspace preset and transient layout reset requests. The default
+workspace describes the dock slots for Scene View, Live RG View, Frame Debugger, UI Style Preview, Editor Settings and Log.
+`editor_dock_layout` is the only editor module that calls ImGui DockBuilder APIs; the shell asks it to apply the active
+workspace when no dock node exists or when `View > Reset Layout` requests a reset. This keeps future layout presets and tool
+contributions out of panel widget code.
 
 ### ImGui theme
 
@@ -253,6 +261,8 @@ Add built-in panels by implementing `ImGuiEditorPanel` under `apps/editor/src/pa
 Panel rules:
 
 - Use `EditorFrameContext` services.
+- Declare category and preferred dock metadata in `EditorPanelDesc`; workspace presets can use that metadata or explicitly
+  list panel ids for default layouts.
 - Keep persistent scene/asset edits out of `draw()` until transactions exist.
 - Do not allocate ImGui Vulkan textures directly.
 - Do not record Vulkan commands.

@@ -17,6 +17,8 @@ namespace asharia::editor {
             .titleKey = "panel.sceneView",
             .defaultOpen = true,
             .singleton = true,
+            .category = EditorPanelCategory::Viewport,
+            .preferredDock = EditorDockSlot::Center,
         };
     };
 

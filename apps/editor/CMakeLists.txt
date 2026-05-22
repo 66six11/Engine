@@ -72,6 +72,7 @@ add_executable(asharia-editor
     src/editor_action.cpp
     src/editor_app.cpp
     src/editor_context.cpp
+    src/editor_dock_layout.cpp
     src/editor_event.cpp
     src/editor_frame_debugger.cpp
     src/editor_i18n.cpp
@@ -82,6 +83,7 @@ add_executable(asharia-editor
     src/editor_ui.cpp
     src/editor_viewport.cpp
     src/editor_viewport_coordinator.cpp
+    src/editor_workspace.cpp
     src/imgui_editor_shell.cpp
     src/imgui_runtime.cpp
     src/imgui_texture_registry.cpp

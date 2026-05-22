@@ -17,6 +17,20 @@
 
 namespace asharia::editor {
 
+    enum class EditorPanelCategory {
+        Viewport,
+        Diagnostics,
+        Tools,
+        Settings,
+    };
+
+    enum class EditorDockSlot {
+        Center,
+        RightTop,
+        RightBottom,
+        Bottom,
+    };
+
     class EditorDiagnosticsLog;
     class EditorEventQueue;
     class EditorFrameDebugger;
@@ -30,6 +44,8 @@ namespace asharia::editor {
         std::string titleKey;
         bool defaultOpen{true};
         bool singleton{true};
+        EditorPanelCategory category{EditorPanelCategory::Tools};
+        EditorDockSlot preferredDock{EditorDockSlot::Center};
     };
 
     struct EditorPanelState {

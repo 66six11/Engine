@@ -17,6 +17,8 @@ namespace asharia::editor {
             .titleKey = "panel.frameDebugger",
             .defaultOpen = true,
             .singleton = true,
+            .category = EditorPanelCategory::Diagnostics,
+            .preferredDock = EditorDockSlot::RightTop,
         };
     };
 

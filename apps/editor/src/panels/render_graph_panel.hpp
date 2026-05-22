@@ -17,6 +17,8 @@ namespace asharia::editor {
             .titleKey = "panel.renderGraph",
             .defaultOpen = true,
             .singleton = true,
+            .category = EditorPanelCategory::Diagnostics,
+            .preferredDock = EditorDockSlot::Center,
         };
     };
 

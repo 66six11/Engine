@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "editor_dock_layout.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
 #include "editor_ui.hpp"
@@ -27,46 +28,6 @@ namespace asharia::editor {
                 .stableId = action.id.value,
                 .fallback = action.label,
             });
-        }
-
-        void dockPanelWindow(const EditorPanelRegistry& panelRegistry, const EditorI18n& i18n,
-                             std::string_view panelId, ImGuiID dockId) {
-            const std::string windowTitle = panelRegistry.panelWindowTitle(panelId, i18n);
-            ImGui::DockBuilderDockWindow(windowTitle.c_str(), dockId);
-        }
-
-        void buildDefaultDockspaceLayout(const EditorContext& editorContext,
-                                         const ImGuiViewport& viewport, ImGuiID dockspaceId) {
-            ImGui::DockBuilderRemoveNode(dockspaceId);
-            ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
-            ImGui::DockBuilderSetNodePos(dockspaceId, viewport.WorkPos);
-            ImGui::DockBuilderSetNodeSize(dockspaceId, viewport.WorkSize);
-
-            ImGuiID mainDockId = dockspaceId;
-            ImGuiID bottomDockId = 0;
-            ImGui::DockBuilderSplitNode(mainDockId, ImGuiDir_Down, 0.24F, &bottomDockId,
-                                        &mainDockId);
-
-            ImGuiID rightDockId = 0;
-            ImGuiID centerDockId = mainDockId;
-            ImGui::DockBuilderSplitNode(centerDockId, ImGuiDir_Right, 0.32F, &rightDockId,
-                                        &centerDockId);
-
-            ImGuiID rightBottomDockId = 0;
-            ImGuiID rightTopDockId = rightDockId;
-            ImGui::DockBuilderSplitNode(rightTopDockId, ImGuiDir_Down, 0.48F, &rightBottomDockId,
-                                        &rightTopDockId);
-
-            const EditorPanelRegistry& panelRegistry = editorContext.panelRegistry();
-            const EditorI18n& i18n = editorContext.i18n();
-            dockPanelWindow(panelRegistry, i18n, "scene-view", centerDockId);
-            dockPanelWindow(panelRegistry, i18n, "render-graph", centerDockId);
-            dockPanelWindow(panelRegistry, i18n, "frame-debugger", rightTopDockId);
-            dockPanelWindow(panelRegistry, i18n, "editor-settings", rightTopDockId);
-            dockPanelWindow(panelRegistry, i18n, "ui-style-preview", rightBottomDockId);
-            dockPanelWindow(panelRegistry, i18n, "log", bottomDockId);
-
-            ImGui::DockBuilderFinish(dockspaceId);
         }
 
         void drawActionMenuItem(EditorActionRegistry& actionRegistry, EditorContext& editorContext,
@@ -116,15 +77,23 @@ namespace asharia::editor {
 
     } // namespace
 
-    void drawEditorDockspace(const EditorContext& editorContext) {
+    void drawEditorDockspace(EditorContext& editorContext) {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         if (viewport == nullptr) {
             return;
         }
 
         const ImGuiID dockspaceId = editorDockspaceId();
-        if (ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
-            buildDefaultDockspaceLayout(editorContext, *viewport, dockspaceId);
+        const bool resetRequested = editorContext.workspace().consumeLayoutResetRequest();
+        if (!editorDockLayoutExists(dockspaceId) || resetRequested) {
+            buildEditorDockLayout(EditorDockLayoutBuildDesc{
+                .panelRegistry = editorContext.panelRegistry(),
+                .i18n = editorContext.i18n(),
+                .viewport = *viewport,
+                .dockspaceId = dockspaceId,
+                .preset = editorContext.workspace().activePreset(),
+            });
+            editorContext.workspace().notifyLayoutApplied();
         }
 
         ImGui::DockSpaceOverViewport(dockspaceId, viewport);
@@ -170,6 +139,8 @@ namespace asharia::editor {
                                    editorContext.panelRegistry().isOpen("ui-style-preview"));
                 drawActionMenuItem(actionRegistry, editorContext, "view.editor-settings",
                                    editorContext.panelRegistry().isOpen("editor-settings"));
+                ImGui::Separator();
+                drawActionMenuItem(actionRegistry, editorContext, "view.reset-layout");
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(debugMenu.c_str())) {

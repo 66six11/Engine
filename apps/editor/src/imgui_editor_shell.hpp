@@ -6,7 +6,7 @@
 
 namespace asharia::editor {
 
-    void drawEditorDockspace(const EditorContext& editorContext);
+    void drawEditorDockspace(EditorContext& editorContext);
     void drawEditorMainMenu(EditorActionRegistry& actionRegistry, EditorContext& editorContext);
     void drawEditorCommandBar(EditorActionRegistry& actionRegistry, EditorContext& editorContext);
     void drawEditorStatusBar(const EditorFrameContext& frameContext,

@@ -17,6 +17,8 @@ namespace asharia::editor {
             .titleKey = "panel.editorSettings",
             .defaultOpen = false,
             .singleton = true,
+            .category = EditorPanelCategory::Settings,
+            .preferredDock = EditorDockSlot::RightTop,
         };
     };
 

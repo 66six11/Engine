@@ -20,6 +20,8 @@ namespace asharia::editor {
             .titleKey = "panel.uiStylePreview",
             .defaultOpen = false,
             .singleton = true,
+            .category = EditorPanelCategory::Tools,
+            .preferredDock = EditorDockSlot::RightBottom,
         };
         std::array<char, 64> textBuffer_{{'A', 's', 'h', 'a', 'r', 'i', 'a', '\0'}};
         bool checkboxValue_{true};

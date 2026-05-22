@@ -8,12 +8,14 @@ namespace asharia::editor {
     class EditorFrameDebugger;
     class EditorI18n;
     class EditorSettingsController;
+    class EditorWorkspaceController;
 
     class EditorContext {
     public:
         EditorContext(EditorPanelRegistry& panelRegistry, EditorEventQueue& eventQueue,
                       EditorDiagnosticsLog& diagnosticsLog, EditorFrameDebugger& frameDebugger,
-                      EditorI18n& i18n, EditorSettingsController& settings);
+                      EditorI18n& i18n, EditorSettingsController& settings,
+                      EditorWorkspaceController& workspace);
 
         [[nodiscard]] EditorPanelRegistry& panelRegistry();
         [[nodiscard]] const EditorPanelRegistry& panelRegistry() const;
@@ -27,6 +29,8 @@ namespace asharia::editor {
         [[nodiscard]] const EditorI18n& i18n() const;
         [[nodiscard]] EditorSettingsController& settings();
         [[nodiscard]] const EditorSettingsController& settings() const;
+        [[nodiscard]] EditorWorkspaceController& workspace();
+        [[nodiscard]] const EditorWorkspaceController& workspace() const;
 
     private:
         EditorPanelRegistry& panelRegistry_;
@@ -35,6 +39,7 @@ namespace asharia::editor {
         EditorFrameDebugger& frameDebugger_;
         EditorI18n& i18n_;
         EditorSettingsController& settings_;
+        EditorWorkspaceController& workspace_;
     };
 
 } // namespace asharia::editor

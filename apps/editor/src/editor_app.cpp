@@ -39,6 +39,7 @@
 #include "editor_shortcut_router.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
+#include "editor_workspace.hpp"
 #include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
 #include "panels/editor_settings_panel.hpp"
@@ -1359,6 +1360,22 @@ namespace {
             return std::unexpected{std::move(editorSettings.error())};
         }
 
+        auto resetLayout = actionRegistry.registerAction(
+            asharia::editor::EditorActionDesc{
+                .id = asharia::editor::EditorId{.value = "view.reset-layout"},
+                .menuPath = "View",
+                .label = "Reset Layout",
+                .labelKey = "action.view.resetLayout",
+                .shortcut = {},
+                .enabled = true,
+            },
+            [](asharia::editor::EditorContext& context) {
+                context.workspace().requestLayoutReset();
+            });
+        if (!resetLayout) {
+            return std::unexpected{std::move(resetLayout.error())};
+        }
+
         auto captureFrame = actionRegistry.registerAction(
             asharia::editor::EditorActionDesc{
                 .id = asharia::editor::EditorId{.value = "debug.capture-frame"},
@@ -1414,8 +1431,8 @@ namespace {
     validateActionRegistrySmoke(asharia::editor::EditorActionRegistry& actionRegistry,
                                 asharia::editor::EditorContext& editorContext,
                                 asharia::editor::EditorPanelRegistry& panelRegistry) {
-        constexpr std::size_t kExpectedActionCount = 11;
-        constexpr std::size_t kExpectedEnabledActionCount = 8;
+        constexpr std::size_t kExpectedActionCount = 12;
+        constexpr std::size_t kExpectedEnabledActionCount = 9;
 
         if (actionRegistry.actionCount() != kExpectedActionCount ||
             actionRegistry.enabledActionCount() != kExpectedEnabledActionCount) {
@@ -1470,6 +1487,14 @@ namespace {
             actionRegistry.invokeCount("view.editor-settings") != 1 ||
             !panelRegistry.closePanel("editor-settings")) {
             asharia::logError("Editor action registry smoke failed to route Editor Settings.");
+            return false;
+        }
+        editorContext.eventQueue().clear();
+
+        if (!actionRegistry.invoke("view.reset-layout", editorContext) ||
+            actionRegistry.invokeCount("view.reset-layout") != 1 ||
+            editorContext.workspace().layoutResetRequestCount() != 1) {
+            asharia::logError("Editor action registry smoke failed to request layout reset.");
             return false;
         }
         editorContext.eventQueue().clear();
@@ -1634,6 +1659,7 @@ namespace asharia::editor {
         asharia::editor::EditorI18n editorI18n{settingsRun.settings.locale};
         asharia::editor::EditorSettingsController settingsController{settingsRun.settings,
                                                                      settingsRun.path, editorI18n};
+        asharia::editor::EditorWorkspaceController workspaceController;
         asharia::editor::EditorPanelRegistry panelRegistry;
         panelRegistry.setEventQueue(&eventQueue);
         if (auto registered = registerEditorPanels(panelRegistry); !registered) {
@@ -1648,7 +1674,8 @@ namespace asharia::editor {
         }
 
         asharia::editor::EditorContext editorContext{panelRegistry, eventQueue, diagnosticsLog,
-                                                     frameDebugger, editorI18n, settingsController};
+                                                     frameDebugger, editorI18n, settingsController,
+                                                     workspaceController};
         if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, panelRegistry)) {
             return EXIT_FAILURE;
         }
@@ -1657,6 +1684,10 @@ namespace asharia::editor {
                                        actionRegistry, editorContext, panelRegistry, mode);
         if (!runResult) {
             asharia::logError(runResult.error().message);
+            return EXIT_FAILURE;
+        }
+        if (smokeMode && workspaceController.layoutApplyCount() == 0) {
+            asharia::logError("Editor workspace smoke did not apply a dock layout preset.");
             return EXIT_FAILURE;
         }
         const asharia::editor::EditorViewportCoordinatorStats viewportStats = viewportHost.stats();

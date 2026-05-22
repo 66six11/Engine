@@ -10,6 +10,7 @@
     "action.view.frameDebugger": "Frame Debugger",
     "action.view.log": "Log",
     "action.view.renderGraph": "Live RG View",
+    "action.view.resetLayout": "Reset Layout",
     "action.view.sceneView": "Scene View",
     "action.view.uiStylePreview": "UI Style Preview",
     "common.no": "no",

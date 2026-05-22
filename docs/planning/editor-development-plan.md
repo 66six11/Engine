@@ -390,7 +390,7 @@ Every sub-stage must:
 | Global stage | Editor sub-stage | Status | Goal |
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
-| 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
+| 16 | 16.1-16.8 Done | Done | Split editor shell from one file into host/runtime/panel/action/event/workspace layout modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.9 Done; 21.10-21.15 Next/Blocked | In progress | Add Frame Debug image preview/replay foundation, then connect Scene View grid/gizmo/debug overlays. |
@@ -544,6 +544,29 @@ Validation:
   `EditorRunMode::SmokeShell`; shell smoke validates startup, ImGui frame construction, dockspace/menu/panel registry,
   action registry and event queue without requiring viewport sampled texture presentation.
 - `--smoke-editor-viewport` remains the stricter viewport texture smoke for Stage 17 work.
+
+### 16.8 Workspace Layout Presets
+
+Status: Done.
+
+Scope:
+
+- Move default dock layout policy out of `imgui_editor_shell`.
+- Add a small editor workspace preset model that can grow into multiple tool layouts without changing panel widgets.
+- Keep Dear ImGui DockBuilder usage isolated to one adapter module because DockBuilder is an ImGui internal API.
+- Add a reset-layout action; do not build a visual layout editor or scriptable workspace system in this slice.
+
+Implementation:
+
+- `editor_workspace` owns the active preset, dock-slot panel list and transient layout reset request counters.
+- `editor_dock_layout` translates a workspace preset into DockBuilder nodes and window docking.
+- `EditorPanelDesc` now records panel category and preferred dock metadata for future layout tooling.
+- `View > Reset Layout` routes through the action registry and asks the shell to rebuild the active workspace layout.
+
+Validation:
+
+- Editor shell smoke validates the reset-layout action and verifies a workspace dock layout preset is applied.
+- `editor_dock_layout` is the only module that calls DockBuilder APIs; panel code remains focused on panel content.
 
 ## Phase 17: Editor Viewport Host
 

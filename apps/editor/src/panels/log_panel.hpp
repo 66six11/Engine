@@ -16,6 +16,8 @@ namespace asharia::editor {
             .titleKey = "panel.log",
             .defaultOpen = true,
             .singleton = true,
+            .category = EditorPanelCategory::Diagnostics,
+            .preferredDock = EditorDockSlot::Bottom,
         };
     };
 

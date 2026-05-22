@@ -10,6 +10,7 @@
     "action.view.frameDebugger": "帧调试器",
     "action.view.log": "日志",
     "action.view.renderGraph": "实时 RG 视图",
+    "action.view.resetLayout": "重置布局",
     "action.view.sceneView": "场景视图",
     "action.view.uiStylePreview": "UI 样式预览",
     "common.no": "否",
