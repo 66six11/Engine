@@ -57,6 +57,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle and the editor ImGui fragment shader contract | panel registry、editor state、viewport target ownership |
 | `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
+| `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
 | `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids | command transaction semantics before transaction exists |
@@ -191,6 +192,11 @@ workspace describes the dock slots for Scene View, Live RG View, Frame Debugger,
 workspace when no dock node exists or when `View > Reset Layout` requests a reset. This keeps future layout presets and tool
 contributions out of panel widget code.
 
+`EditorToolRegistry` records which tools contribute panels, actions, toolbar buttons and viewport overlay intents. It does
+not own panel factories or invoke commands; those remain in `EditorPanelRegistry` and `EditorActionRegistry`. The command bar
+is generated from tool toolbar contributions, so future tools can shape the editor chrome without adding more hard-coded
+button lists to `imgui_editor_shell`.
+
 ### ImGui theme
 
 `editor_ui` owns the editor-local Dear ImGui style tokens and the built-in editor theme catalog. The default theme is
@@ -268,6 +274,18 @@ Panel rules:
 - Do not record Vulkan commands.
 - Report hover/focus state to `EditorInputRouter` instead of making global input routing decisions locally.
 - Reuse `editor_ui` helpers for repeated editor styling primitives, but do not hide raw ImGui behind a broad widget clone.
+
+### Tool 扩展
+
+Add built-in tool metadata through `EditorToolRegistry` after registering the tool's panels and actions. A tool may
+contribute panel ids, action ids, toolbar slots and viewport overlay ids. Contribution ids must point at existing panel and
+action registries; overlay ids are editor-facing intent until a concrete viewport overlay renderer consumes them.
+
+Tool rules:
+
+- Do not execute actions or draw panel contents from the tool registry.
+- Keep toolbar placement as metadata; the shell decides how toolbar slots are presented.
+- Keep viewport overlay ids backend-neutral and map them to RenderView/debug draw inputs through the viewport coordinator.
 - Use `editor_i18n` keys for user-facing labels and keep technical names such as pass, resource and shader identifiers
   untranslated.
 

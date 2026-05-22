@@ -10,10 +10,10 @@ namespace asharia::editor {
                                  EditorDiagnosticsLog& diagnosticsLog,
                                  EditorFrameDebugger& frameDebugger, EditorI18n& i18n,
                                  EditorSettingsController& settings,
-                                 EditorWorkspaceController& workspace)
+                                 EditorWorkspaceController& workspace, EditorToolRegistry& tools)
         : panelRegistry_(panelRegistry), eventQueue_(eventQueue), diagnosticsLog_(diagnosticsLog),
           frameDebugger_(frameDebugger), i18n_(i18n), settings_(settings),
-          workspace_(workspace) {}
+          workspace_(workspace), tools_(tools) {}
 
     EditorPanelRegistry& EditorContext::panelRegistry() {
         return panelRegistry_;
@@ -69,6 +69,14 @@ namespace asharia::editor {
 
     const EditorWorkspaceController& EditorContext::workspace() const {
         return workspace_;
+    }
+
+    EditorToolRegistry& EditorContext::tools() {
+        return tools_;
+    }
+
+    const EditorToolRegistry& EditorContext::tools() const {
+        return tools_;
     }
 
 } // namespace asharia::editor

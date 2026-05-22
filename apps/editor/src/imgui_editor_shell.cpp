@@ -59,6 +59,36 @@ namespace asharia::editor {
             ImGui::EndDisabled();
         }
 
+        [[nodiscard]] bool drawToolbarSlot(EditorActionRegistry& actionRegistry,
+                                           EditorContext& editorContext,
+                                           EditorToolbarSlot slot) {
+            bool drewAction = false;
+            editorContext.tools().visitToolbarActions(
+                slot,
+                [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
+                    static_cast<void>(tool);
+                    if (drewAction) {
+                        ImGui::SameLine();
+                    }
+                    drawActionButton(actionRegistry, editorContext, action.actionId);
+                    drewAction = true;
+                });
+            return drewAction;
+        }
+
+        [[nodiscard]] bool hasToolbarSlot(const EditorContext& editorContext,
+                                          EditorToolbarSlot slot) {
+            bool hasAction = false;
+            editorContext.tools().visitToolbarActions(
+                slot,
+                [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
+                    static_cast<void>(tool);
+                    static_cast<void>(action);
+                    hasAction = true;
+                });
+            return hasAction;
+        }
+
         void text(std::string_view value) {
             ImGui::TextUnformatted(value.data(), value.data() + value.size());
         }
@@ -168,21 +198,27 @@ namespace asharia::editor {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{5.0F, 4.0F});
         if (ImGui::BeginViewportSideBar("##asharia-editor-command-bar", viewport, ImGuiDir_Up,
                                         kCommandBarHeight, kWindowFlags)) {
-            drawActionButton(actionRegistry, editorContext, "debug.capture-frame");
-            ImGui::SameLine();
-            drawActionButton(actionRegistry, editorContext, "debug.resume-frame");
-            sameLineSeparator();
-            drawActionButton(actionRegistry, editorContext, "view.scene-view");
-            ImGui::SameLine();
-            drawActionButton(actionRegistry, editorContext, "view.render-graph");
-            ImGui::SameLine();
-            drawActionButton(actionRegistry, editorContext, "view.frame-debugger");
-            ImGui::SameLine();
-            drawActionButton(actionRegistry, editorContext, "view.log");
-            sameLineSeparator();
-            drawActionButton(actionRegistry, editorContext, "view.ui-style-preview");
-            ImGui::SameLine();
-            drawActionButton(actionRegistry, editorContext, "view.editor-settings");
+            const bool hasDebug = hasToolbarSlot(editorContext, EditorToolbarSlot::Debug);
+            const bool hasView = hasToolbarSlot(editorContext, EditorToolbarSlot::View);
+            const bool hasUtility = hasToolbarSlot(editorContext, EditorToolbarSlot::Utility);
+            if (hasDebug) {
+                static_cast<void>(
+                    drawToolbarSlot(actionRegistry, editorContext, EditorToolbarSlot::Debug));
+            }
+            if (hasDebug && hasView) {
+                sameLineSeparator();
+            }
+            if (hasView) {
+                static_cast<void>(
+                    drawToolbarSlot(actionRegistry, editorContext, EditorToolbarSlot::View));
+            }
+            if ((hasDebug || hasView) && hasUtility) {
+                sameLineSeparator();
+            }
+            if (hasUtility) {
+                static_cast<void>(
+                    drawToolbarSlot(actionRegistry, editorContext, EditorToolbarSlot::Utility));
+            }
 
             const std::string themeLabel = std::string{"Theme: "} + std::string{theme.name};
             const float labelWidth = ImGui::CalcTextSize(themeLabel.c_str()).x;

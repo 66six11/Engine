@@ -390,7 +390,7 @@ Every sub-stage must:
 | Global stage | Editor sub-stage | Status | Goal |
 | --- | --- | --- | --- |
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
-| 16 | 16.1-16.8 Done | Done | Split editor shell from one file into host/runtime/panel/action/event/workspace layout modules. |
+| 16 | 16.1-16.9 Done | Done | Split editor shell from one file into host/runtime/panel/action/event/tool/workspace layout modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.9 Done; 21.10-21.15 Next/Blocked | In progress | Add Frame Debug image preview/replay foundation, then connect Scene View grid/gizmo/debug overlays. |
@@ -567,6 +567,33 @@ Validation:
 
 - Editor shell smoke validates the reset-layout action and verifies a workspace dock layout preset is applied.
 - `editor_dock_layout` is the only module that calls DockBuilder APIs; panel code remains focused on panel content.
+
+### 16.9 Tool Registry Baseline
+
+Status: Done.
+
+Scope:
+
+- Add a small tool registry so tools can describe the panels, actions, toolbar buttons and viewport overlay intents they
+  contribute.
+- Keep the registry declarative; it must not replace `EditorPanelRegistry`, `EditorActionRegistry` or viewport rendering.
+- Let editor chrome consume toolbar contributions instead of keeping another hard-coded button list in the shell.
+
+Implementation:
+
+- `editor_tool` defines tool category, toolbar slot, panel/action contribution and viewport overlay contribution metadata.
+- Built-in tools now register Scene View, RenderGraph diagnostics, Frame Debugger, Log, UI Style Preview, Editor Settings
+  and Workspace Layout contributions.
+- The command bar is populated from `EditorToolRegistry` toolbar slots while menu actions still route through the action
+  registry.
+- The first viewport overlay ids are declared as Scene View tool intent; actual grid/gizmo drawing remains in later Scene
+  View overlay slices.
+
+Validation:
+
+- Editor shell smoke validates tool, panel, action, toolbar and viewport overlay contribution counts.
+- Smoke verifies tool contribution targets point at registered panels/actions and that debug/view/utility toolbar slots are
+  populated.
 
 ## Phase 17: Editor Viewport Host
 

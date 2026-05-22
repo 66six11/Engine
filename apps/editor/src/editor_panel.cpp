@@ -118,6 +118,14 @@ namespace asharia::editor {
         return entry != nullptr && entry->state.open;
     }
 
+    const EditorPanelDesc* EditorPanelRegistry::findPanelDesc(std::string_view panelId) const {
+        const PanelEntry* entry = findPanel(panelId);
+        if (entry == nullptr) {
+            return nullptr;
+        }
+        return &entry->desc;
+    }
+
     std::size_t EditorPanelRegistry::panelCount() const {
         return panels_.size();
     }

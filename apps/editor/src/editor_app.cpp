@@ -37,6 +37,7 @@
 #include "editor_panel.hpp"
 #include "editor_settings.hpp"
 #include "editor_shortcut_router.hpp"
+#include "editor_tool.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
 #include "editor_workspace.hpp"
@@ -1406,6 +1407,143 @@ namespace {
             });
     }
 
+    [[nodiscard]] asharia::VoidResult
+    registerEditorTools(asharia::editor::EditorToolRegistry& toolRegistry) {
+        auto sceneView = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
+            .id = asharia::editor::EditorId{.value = "tool.scene-view"},
+            .title = "Scene View",
+            .titleKey = "tool.sceneView",
+            .category = asharia::editor::EditorToolCategory::Viewport,
+            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "scene-view"}},
+            .actions = {asharia::editor::EditorToolActionContribution{
+                .actionId = "view.scene-view",
+                .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
+            }},
+            .viewportOverlays =
+                {
+                    asharia::editor::EditorToolViewportOverlayContribution{
+                        .overlayId = "scene.grid",
+                        .viewportId = "scene-view",
+                    },
+                    asharia::editor::EditorToolViewportOverlayContribution{
+                        .overlayId = "scene.transform-gizmo",
+                        .viewportId = "scene-view",
+                    },
+                    asharia::editor::EditorToolViewportOverlayContribution{
+                        .overlayId = "scene.selection-outline",
+                        .viewportId = "scene-view",
+                    },
+                },
+        });
+        if (!sceneView) {
+            return std::unexpected{std::move(sceneView.error())};
+        }
+
+        auto renderGraph = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
+            .id = asharia::editor::EditorId{.value = "tool.render-graph"},
+            .title = "RenderGraph Diagnostics",
+            .titleKey = "tool.renderGraph",
+            .category = asharia::editor::EditorToolCategory::Diagnostics,
+            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "render-graph"}},
+            .actions = {asharia::editor::EditorToolActionContribution{
+                .actionId = "view.render-graph",
+                .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
+            }},
+            .viewportOverlays = {},
+        });
+        if (!renderGraph) {
+            return std::unexpected{std::move(renderGraph.error())};
+        }
+
+        auto frameDebugger = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
+            .id = asharia::editor::EditorId{.value = "tool.frame-debugger"},
+            .title = "Frame Debugger",
+            .titleKey = "tool.frameDebugger",
+            .category = asharia::editor::EditorToolCategory::Diagnostics,
+            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "frame-debugger"}},
+            .actions =
+                {
+                    asharia::editor::EditorToolActionContribution{
+                        .actionId = "debug.capture-frame",
+                        .toolbarSlot = asharia::editor::EditorToolbarSlot::Debug,
+                    },
+                    asharia::editor::EditorToolActionContribution{
+                        .actionId = "debug.resume-frame",
+                        .toolbarSlot = asharia::editor::EditorToolbarSlot::Debug,
+                    },
+                    asharia::editor::EditorToolActionContribution{
+                        .actionId = "view.frame-debugger",
+                        .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
+                    },
+                },
+            .viewportOverlays = {},
+        });
+        if (!frameDebugger) {
+            return std::unexpected{std::move(frameDebugger.error())};
+        }
+
+        auto log = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
+            .id = asharia::editor::EditorId{.value = "tool.log"},
+            .title = "Log",
+            .titleKey = "tool.log",
+            .category = asharia::editor::EditorToolCategory::Diagnostics,
+            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "log"}},
+            .actions = {asharia::editor::EditorToolActionContribution{
+                .actionId = "view.log",
+                .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
+            }},
+            .viewportOverlays = {},
+        });
+        if (!log) {
+            return std::unexpected{std::move(log.error())};
+        }
+
+        auto style = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
+            .id = asharia::editor::EditorId{.value = "tool.ui-style-preview"},
+            .title = "UI Style Preview",
+            .titleKey = "tool.uiStylePreview",
+            .category = asharia::editor::EditorToolCategory::Styling,
+            .panels =
+                {asharia::editor::EditorToolPanelContribution{.panelId = "ui-style-preview"}},
+            .actions = {asharia::editor::EditorToolActionContribution{
+                .actionId = "view.ui-style-preview",
+                .toolbarSlot = asharia::editor::EditorToolbarSlot::Utility,
+            }},
+            .viewportOverlays = {},
+        });
+        if (!style) {
+            return std::unexpected{std::move(style.error())};
+        }
+
+        auto settings = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
+            .id = asharia::editor::EditorId{.value = "tool.editor-settings"},
+            .title = "Editor Settings",
+            .titleKey = "tool.editorSettings",
+            .category = asharia::editor::EditorToolCategory::Settings,
+            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "editor-settings"}},
+            .actions = {asharia::editor::EditorToolActionContribution{
+                .actionId = "view.editor-settings",
+                .toolbarSlot = asharia::editor::EditorToolbarSlot::Utility,
+            }},
+            .viewportOverlays = {},
+        });
+        if (!settings) {
+            return std::unexpected{std::move(settings.error())};
+        }
+
+        return toolRegistry.registerTool(asharia::editor::EditorToolDesc{
+            .id = asharia::editor::EditorId{.value = "tool.workspace-layout"},
+            .title = "Workspace Layout",
+            .titleKey = "tool.workspaceLayout",
+            .category = asharia::editor::EditorToolCategory::Core,
+            .panels = {},
+            .actions = {asharia::editor::EditorToolActionContribution{
+                .actionId = "view.reset-layout",
+            }},
+            .viewportOverlays = {},
+        });
+    }
+
     [[nodiscard]] bool
     validatePanelRegistrySmoke(asharia::editor::EditorPanelRegistry& panelRegistry) {
         constexpr std::size_t kExpectedPanelCount = 6;
@@ -1503,6 +1641,80 @@ namespace {
     }
 
     [[nodiscard]] bool
+    validateToolRegistrySmoke(const asharia::editor::EditorToolRegistry& toolRegistry,
+                              const asharia::editor::EditorActionRegistry& actionRegistry,
+                              const asharia::editor::EditorPanelRegistry& panelRegistry) {
+        constexpr std::size_t kExpectedToolCount = 7;
+        constexpr std::size_t kExpectedPanelContributions = 6;
+        constexpr std::size_t kExpectedActionContributions = 9;
+        constexpr std::size_t kExpectedToolbarActionContributions = 8;
+        constexpr std::size_t kExpectedViewportOverlayContributions = 3;
+
+        if (toolRegistry.toolCount() != kExpectedToolCount ||
+            toolRegistry.panelContributionCount() != kExpectedPanelContributions ||
+            toolRegistry.actionContributionCount() != kExpectedActionContributions ||
+            toolRegistry.toolbarActionContributionCount() != kExpectedToolbarActionContributions ||
+            toolRegistry.viewportOverlayContributionCount() !=
+                kExpectedViewportOverlayContributions) {
+            asharia::logError("Editor tool registry smoke detected invalid contribution counts.");
+            return false;
+        }
+
+        bool referencesValid = true;
+        toolRegistry.visitTools([&](const asharia::editor::EditorToolDesc& tool) {
+            for (const asharia::editor::EditorToolPanelContribution& panel : tool.panels) {
+                referencesValid = referencesValid &&
+                                  panelRegistry.findPanelDesc(panel.panelId) != nullptr;
+            }
+            for (const asharia::editor::EditorToolActionContribution& action : tool.actions) {
+                referencesValid = referencesValid &&
+                                  actionRegistry.findAction(action.actionId) != nullptr;
+            }
+            for (const asharia::editor::EditorToolViewportOverlayContribution& overlay :
+                 tool.viewportOverlays) {
+                referencesValid = referencesValid && overlay.viewportId == "scene-view";
+            }
+        });
+        if (!referencesValid) {
+            asharia::logError("Editor tool registry smoke found an invalid contribution target.");
+            return false;
+        }
+
+        bool sawDebugToolbarAction = false;
+        bool sawViewToolbarAction = false;
+        bool sawUtilityToolbarAction = false;
+        toolRegistry.visitToolbarActions(
+            asharia::editor::EditorToolbarSlot::Debug,
+            [&](const asharia::editor::EditorToolDesc& tool,
+                const asharia::editor::EditorToolActionContribution& action) {
+                static_cast<void>(tool);
+                sawDebugToolbarAction =
+                    sawDebugToolbarAction || action.actionId == "debug.capture-frame";
+            });
+        toolRegistry.visitToolbarActions(
+            asharia::editor::EditorToolbarSlot::View,
+            [&](const asharia::editor::EditorToolDesc& tool,
+                const asharia::editor::EditorToolActionContribution& action) {
+                static_cast<void>(tool);
+                sawViewToolbarAction = sawViewToolbarAction || action.actionId == "view.scene-view";
+            });
+        toolRegistry.visitToolbarActions(
+            asharia::editor::EditorToolbarSlot::Utility,
+            [&](const asharia::editor::EditorToolDesc& tool,
+                const asharia::editor::EditorToolActionContribution& action) {
+                static_cast<void>(tool);
+                sawUtilityToolbarAction =
+                    sawUtilityToolbarAction || action.actionId == "view.editor-settings";
+            });
+        if (!sawDebugToolbarAction || !sawViewToolbarAction || !sawUtilityToolbarAction) {
+            asharia::logError("Editor tool registry smoke missed a toolbar contribution slot.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool
     validateShortcutRouterSmoke(asharia::editor::EditorActionRegistry& actionRegistry,
                                 asharia::editor::EditorContext& editorContext,
                                 asharia::editor::EditorPanelRegistry& panelRegistry) {
@@ -1550,13 +1762,15 @@ namespace {
     validateEditorRegistrationSmoke(asharia::editor::EditorRunMode mode,
                                     asharia::editor::EditorActionRegistry& actionRegistry,
                                     asharia::editor::EditorContext& editorContext,
-                                    asharia::editor::EditorPanelRegistry& panelRegistry) {
+                                    asharia::editor::EditorPanelRegistry& panelRegistry,
+                                    const asharia::editor::EditorToolRegistry& toolRegistry) {
         if (!isSmokeMode(mode)) {
             return true;
         }
 
         return validatePanelRegistrySmoke(panelRegistry) &&
                validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry) &&
+               validateToolRegistrySmoke(toolRegistry, actionRegistry, panelRegistry) &&
                validateEditorSettingsSmoke(mode, editorContext) &&
                validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry);
     }
@@ -1673,10 +1887,17 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
+        asharia::editor::EditorToolRegistry toolRegistry;
+        if (auto registered = registerEditorTools(toolRegistry); !registered) {
+            asharia::logError(registered.error().message);
+            return EXIT_FAILURE;
+        }
+
         asharia::editor::EditorContext editorContext{panelRegistry, eventQueue, diagnosticsLog,
                                                      frameDebugger, editorI18n, settingsController,
-                                                     workspaceController};
-        if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, panelRegistry)) {
+                                                     workspaceController, toolRegistry};
+        if (!validateEditorRegistrationSmoke(
+                mode, actionRegistry, editorContext, panelRegistry, toolRegistry)) {
             return EXIT_FAILURE;
         }
 

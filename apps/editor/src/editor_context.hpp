@@ -2,6 +2,7 @@
 
 #include "editor_event.hpp"
 #include "editor_panel.hpp"
+#include "editor_tool.hpp"
 
 namespace asharia::editor {
 
@@ -15,7 +16,7 @@ namespace asharia::editor {
         EditorContext(EditorPanelRegistry& panelRegistry, EditorEventQueue& eventQueue,
                       EditorDiagnosticsLog& diagnosticsLog, EditorFrameDebugger& frameDebugger,
                       EditorI18n& i18n, EditorSettingsController& settings,
-                      EditorWorkspaceController& workspace);
+                      EditorWorkspaceController& workspace, EditorToolRegistry& tools);
 
         [[nodiscard]] EditorPanelRegistry& panelRegistry();
         [[nodiscard]] const EditorPanelRegistry& panelRegistry() const;
@@ -31,6 +32,8 @@ namespace asharia::editor {
         [[nodiscard]] const EditorSettingsController& settings() const;
         [[nodiscard]] EditorWorkspaceController& workspace();
         [[nodiscard]] const EditorWorkspaceController& workspace() const;
+        [[nodiscard]] EditorToolRegistry& tools();
+        [[nodiscard]] const EditorToolRegistry& tools() const;
 
     private:
         EditorPanelRegistry& panelRegistry_;
@@ -40,6 +43,7 @@ namespace asharia::editor {
         EditorI18n& i18n_;
         EditorSettingsController& settings_;
         EditorWorkspaceController& workspace_;
+        EditorToolRegistry& tools_;
     };
 
 } // namespace asharia::editor
