@@ -19,7 +19,6 @@ namespace {
     constexpr float kTimelineHeaderMaxHeight = 180.0F;
     constexpr float kTimelineRowHeight = 22.0F;
     constexpr float kTimelineMinHeight = 180.0F;
-    constexpr float kTimelineMaxHeight = 360.0F;
     constexpr float kDetailMinHeight = 120.0F;
     constexpr float kDetailMaxHeight = 180.0F;
 
@@ -470,14 +469,6 @@ namespace {
         return prefix;
     }
 
-    [[nodiscard]] float timelineHeight() {
-        const float availableHeight = ImGui::GetContentRegionAvail().y;
-        if (availableHeight <= 0.0F) {
-            return 260.0F;
-        }
-        return std::clamp(availableHeight * 0.56F, kTimelineMinHeight, kTimelineMaxHeight);
-    }
-
     [[nodiscard]] float detailHeight() {
         const float availableHeight = ImGui::GetContentRegionAvail().y;
         if (availableHeight <= 0.0F) {
@@ -790,9 +781,16 @@ namespace {
                                   timelineHeaderOverhang(snapshot);
         const float canvasHeight =
             headerHeight + (static_cast<float>(resourceCount) * kTimelineRowHeight);
-        const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_HorizontalScrollbar;
+        const float visibleWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
+        const bool needsHorizontalScrollbar = canvasWidth > visibleWidth;
+        const float scrollbarAllowance =
+            needsHorizontalScrollbar ? ImGui::GetStyle().ScrollbarSize : 0.0F;
+        const float childHeight =
+            std::max(canvasHeight + scrollbarAllowance, kTimelineMinHeight);
+        const ImGuiWindowFlags windowFlags =
+            ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
-        if (!ImGui::BeginChild("rg-access-matrix-canvas", ImVec2{0.0F, timelineHeight()},
+        if (!ImGui::BeginChild("rg-access-matrix-canvas", ImVec2{0.0F, childHeight},
                                ImGuiChildFlags_None, windowFlags)) {
             ImGui::EndChild();
             return;
@@ -805,7 +803,7 @@ namespace {
             .origin = origin,
             .clipMax = ImVec2{origin.x + visibleSize.x, origin.y + visibleSize.y},
             .scrollX = ImGui::GetScrollX(),
-            .scrollY = ImGui::GetScrollY(),
+            .scrollY = 0.0F,
             .headerHeight = headerHeight,
             .passCount = passCount,
             .resourceCount = resourceCount,
