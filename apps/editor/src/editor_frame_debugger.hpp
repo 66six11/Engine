@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -37,6 +38,9 @@ namespace asharia::editor {
         std::uint64_t previewUnavailableFrames{};
         std::uint64_t previewTextureFramesPublished{};
         std::uint64_t previewTextureFramesDrawn{};
+        std::uint64_t replayPassSelections{};
+        std::uint64_t replayPassRequests{};
+        std::uint64_t replayPassUnavailableRequests{};
     };
 
     enum class EditorFrameDebugPreviewStatus {
@@ -48,6 +52,7 @@ namespace asharia::editor {
 
     struct EditorFrameDebugPreview {
         EditorFrameDebugPreviewStatus status{EditorFrameDebugPreviewStatus::NotRequested};
+        std::optional<std::size_t> selectedPassIndex;
         std::optional<std::uint32_t> selectedImageResourceIndex;
         EditorViewportTexture texture;
         std::string message;
@@ -81,6 +86,7 @@ namespace asharia::editor {
         void notifyRenderViewSkipped();
         void notifyFrameDebugRenderGraphViewDrawn(bool snapshotVisible);
         void notifyFrameDebugPreviewDrawn(bool textureVisible);
+        [[nodiscard]] bool selectReplayPass(std::size_t passIndex);
         [[nodiscard]] bool selectPreviewImageResource(std::uint32_t resourceIndex);
         [[nodiscard]] std::optional<std::uint32_t> consumePreviewRequest();
         void publishPreviewTexture(std::uint32_t resourceIndex, EditorViewportTexture texture);

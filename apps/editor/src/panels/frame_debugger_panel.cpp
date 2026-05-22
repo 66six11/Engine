@@ -45,6 +45,20 @@ namespace asharia::editor {
                    std::to_string(resource.imageExtent.height);
         }
 
+        [[nodiscard]] std::string
+        passEventLabel(const asharia::RenderGraphDiagnosticsPassNode& pass) {
+            std::string label = "#" + std::to_string(pass.passIndex);
+            if (!pass.name.empty()) {
+                label += " ";
+                label += pass.name;
+            }
+            if (!pass.type.empty()) {
+                label += " / ";
+                label += pass.type;
+            }
+            return label;
+        }
+
         [[nodiscard]] std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>
         capturedImageResources(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
             std::vector<const asharia::RenderGraphDiagnosticsResourceNode*> images;
@@ -54,6 +68,60 @@ namespace asharia::editor {
                 }
             }
             return images;
+        }
+
+        [[nodiscard]] std::string selectedPassLabel(
+            const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+            const EditorFrameDebugPreview& preview, const EditorI18n& i18n) {
+            if (!preview.selectedPassIndex) {
+                return std::string{i18n.text(EditorI18nTextQuery{
+                    .key = "frameDebug.noPass",
+                    .fallback = "No pass",
+                })};
+            }
+
+            for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
+                if (pass.passIndex == *preview.selectedPassIndex) {
+                    return passEventLabel(pass);
+                }
+            }
+            return "#" + std::to_string(*preview.selectedPassIndex);
+        }
+
+        void drawReplayPassSelector(EditorFrameContext& context,
+                                    const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                    const EditorFrameDebugPreview& preview) {
+            const EditorI18n& i18n = context.i18n;
+            if (snapshot.passes.empty()) {
+                textUnformatted(i18n.text(EditorI18nTextQuery{
+                    .key = "frameDebug.passEmpty",
+                    .fallback = "Pass: -",
+                }));
+                return;
+            }
+
+            const std::string selectedLabel = selectedPassLabel(snapshot, preview, i18n);
+            ImGui::SetNextItemWidth(std::max(1.0F, ImGui::GetContentRegionAvail().x));
+            const std::string passComboLabel = i18n.label(EditorI18nLabelDesc{
+                .key = "frameDebug.pass",
+                .stableId = "frame-debug-pass",
+                .fallback = "Pass/Event",
+            });
+            if (ImGui::BeginCombo(passComboLabel.c_str(), selectedLabel.c_str())) {
+                for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
+                    const bool selected =
+                        preview.selectedPassIndex &&
+                        *preview.selectedPassIndex == pass.passIndex;
+                    const std::string label = passEventLabel(pass);
+                    if (ImGui::Selectable(label.c_str(), selected)) {
+                        static_cast<void>(context.frameDebugger.selectReplayPass(pass.passIndex));
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
         }
 
         void drawImageSelector(
@@ -129,9 +197,10 @@ namespace asharia::editor {
         }
 
         void drawPreviewPane(
-            EditorFrameContext& context,
+            EditorFrameContext& context, const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
             const std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>& imageResources,
             const EditorFrameDebugPreview& preview) {
+            drawReplayPassSelector(context, snapshot, preview);
             drawImageSelector(context, imageResources, preview);
 
             const bool previewVisible =
@@ -180,7 +249,7 @@ namespace asharia::editor {
 
             ImGui::BeginChild("frame-debug-preview-pane", ImVec2{previewWidth, 0.0F},
                               ImGuiChildFlags_Borders);
-            drawPreviewPane(context, imageResources, preview);
+            drawPreviewPane(context, snapshot, imageResources, preview);
             ImGui::EndChild();
             ImGui::SameLine();
             ImGui::BeginChild("frame-debug-rg-pane", ImVec2{0.0F, 0.0F}, ImGuiChildFlags_None);

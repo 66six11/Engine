@@ -380,8 +380,10 @@ the debug replay/copy path, and displays the resulting sampled preview texture.
     system.
 - Intermediate texture preview v1 is GPU-side only: Frame Debug records a controlled replay/copy into a debug-owned sampled
   image and registers that image through the existing `ImGuiTextureRegistry`. It supports color images with matching
-  extent/format/mip/layer shape and reports `preview unavailable` for depth, buffer or unsupported resources. CPU readback,
-  export and pass/event-precise replay remain deferred.
+  extent/format/mip/layer shape and reports `preview unavailable` for depth, buffer or unsupported resources. The primary
+  Frame Debug panel now selects a compiled pass/event first, resolves that pass to a previewable image output from the frozen
+  diagnostics snapshot, and serves the refresh without resuming normal RenderView recording. CPU readback, export and
+  draw-call precise replay remain deferred.
 - `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
   超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。
 - There is no `packages/editor-core` yet by design.

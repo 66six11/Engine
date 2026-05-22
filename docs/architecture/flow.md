@@ -857,7 +857,9 @@ flowchart TD
     不能成为可编辑 RenderGraph authoring UI。editor UI 不应解析 `formatDebugTables()` 文本。
 12. Frame Debug intermediate image preview v1 只在 paused Frame Debug 中通过 editor-controlled replay/copy 录制
     `builtin.debug-image-copy`，把 captured snapshot 中选中的 graph-local color image copy 到 editor-owned sampled
-    preview target。normal RenderView recording 继续暂停；不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
+    preview target。Frame Debug 主面板现在先选择 compiled pass/event，并从冻结 diagnostics snapshot 中解析该 pass
+    的 previewable color 输出；graph-local image 选择仍作为 resource override。normal RenderView recording 继续暂停；
+    不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
 13. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的

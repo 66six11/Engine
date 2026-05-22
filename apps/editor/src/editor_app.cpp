@@ -229,6 +229,7 @@ namespace {
         bool resizeRequested{};
         bool resizedViewportPresented{};
         bool frameDebugCaptureRequested{};
+        bool frameDebugReplayPassRequested{};
         bool frameDebugPreviewRequested{};
         bool frameDebugPreviewVisible{};
         bool frameDebugResumeRequested{};
@@ -253,6 +254,7 @@ namespace {
 
     struct EditorFrameDebuggerSmokeState {
         bool captureRequested{};
+        bool replayPassRequested{};
         bool previewRequested{};
         bool previewVisible{};
         bool resumeRequested{};
@@ -283,25 +285,22 @@ namespace {
         }
     }
 
-    std::optional<std::uint32_t>
-    chooseFrameDebugPreviewImage(const asharia::editor::EditorFrameDebugger& frameDebugger) {
+    std::optional<std::size_t>
+    chooseFrameDebugReplayPass(const asharia::editor::EditorFrameDebugger& frameDebugger) {
         const std::optional<asharia::editor::EditorFrameDebugCapture>& capture =
             frameDebugger.pausedCapture();
         if (!capture) {
             return std::nullopt;
         }
 
-        std::optional<std::uint32_t> fallback;
-        for (const asharia::RenderGraphDiagnosticsResourceNode& resource :
-             capture->diagnostics.renderGraph.resources) {
-            if (resource.kind != asharia::RenderGraphResourceKind::Image) {
-                continue;
-            }
+        std::optional<std::size_t> fallback;
+        for (const asharia::RenderGraphDiagnosticsPassNode& pass :
+             capture->diagnostics.renderGraph.passes) {
             if (!fallback) {
-                fallback = resource.resourceIndex;
+                fallback = pass.passIndex;
             }
-            if (resource.name == "FullscreenSource") {
-                return resource.resourceIndex;
+            if (pass.name == "ClearFullscreenSource") {
+                return pass.passIndex;
             }
         }
         return fallback;
@@ -319,14 +318,18 @@ namespace {
 
         if (!state.resumeRequested &&
             frameDebugger.state() == asharia::editor::EditorFrameDebuggerState::PausedFrameDebug) {
-            if (!state.previewRequested) {
+            if (!state.replayPassRequested) {
                 state.viewportFramesAtPause = viewportHost.viewportFramesRendered();
-                const std::optional<std::uint32_t> previewImage =
-                    chooseFrameDebugPreviewImage(frameDebugger);
-                if (previewImage) {
-                    state.previewRequested =
-                        frameDebugger.selectPreviewImageResource(*previewImage);
+                const std::optional<std::size_t> replayPass =
+                    chooseFrameDebugReplayPass(frameDebugger);
+                if (replayPass) {
+                    state.replayPassRequested = frameDebugger.selectReplayPass(*replayPass);
+                    state.previewRequested = state.replayPassRequested;
                 }
+                return;
+            }
+
+            if (!state.previewRequested) {
                 return;
             }
 
@@ -510,9 +513,10 @@ namespace {
             return true;
         }
 
-        if (!runResult.frameDebugCaptureRequested || !runResult.frameDebugPreviewRequested ||
-            !runResult.frameDebugPreviewVisible || !runResult.frameDebugResumeRequested ||
-            !runResult.frameDebugRenderedAfterResume) {
+        if (!runResult.frameDebugCaptureRequested ||
+            !runResult.frameDebugReplayPassRequested ||
+            !runResult.frameDebugPreviewRequested || !runResult.frameDebugPreviewVisible ||
+            !runResult.frameDebugResumeRequested || !runResult.frameDebugRenderedAfterResume) {
             asharia::logError(
                 "Editor frame debugger smoke did not complete capture/preview/resume flow.");
             return false;
@@ -527,7 +531,8 @@ namespace {
             stats.completedCaptures != 1 || stats.resumeRequests != 1 || stats.framesResumed != 1 ||
             stats.renderViewFramesSkipped == 0 || stats.frameDebugRenderGraphSnapshotFrames == 0 ||
             stats.previewRequests == 0 || stats.previewFramesRecorded == 0 ||
-            stats.previewTextureFramesPublished == 0 || stats.previewTextureFramesDrawn == 0) {
+            stats.previewTextureFramesPublished == 0 || stats.previewTextureFramesDrawn == 0 ||
+            stats.replayPassRequests == 0 || stats.replayPassSelections == 0) {
             asharia::logError("Editor frame debugger smoke recorded unexpected state counts.");
             return false;
         }
@@ -1160,6 +1165,7 @@ namespace {
             .resizeRequested = resizeSmoke.requested,
             .resizedViewportPresented = resizeSmoke.presentedAfterResize,
             .frameDebugCaptureRequested = frameDebugSmoke.captureRequested,
+            .frameDebugReplayPassRequested = frameDebugSmoke.replayPassRequested,
             .frameDebugPreviewRequested = frameDebugSmoke.previewRequested,
             .frameDebugPreviewVisible = frameDebugSmoke.previewVisible,
             .frameDebugResumeRequested = frameDebugSmoke.resumeRequested,

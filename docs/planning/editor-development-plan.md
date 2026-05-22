@@ -393,7 +393,7 @@ Every sub-stage must:
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.7 Done; 21.8-21.15 Next/Blocked | In progress | Add Frame Debug image preview foundation, then close pass replay and Scene View grid/gizmo/overlay prerequisites. |
+| 21 | 21.1-21.8 Done; 21.9-21.15 Next/Blocked | In progress | Add Frame Debug image preview/replay foundation, then close Scene View grid/gizmo/overlay prerequisites. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -953,7 +953,7 @@ Validation:
 
 ### 21.8 Frame Debug Replay Contract
 
-Status: Next.
+Status: Done.
 
 Depends on:
 
@@ -974,10 +974,20 @@ Scope:
   access edges.
 - Keep normal target view rendering paused while replay requests are served through editor-controlled debug refreshes.
 
+Implementation:
+
+- `EditorFrameDebugger` now tracks a selected compiled pass index and resolves it to a previewable color image output from the
+  frozen diagnostics snapshot.
+- `FrameDebuggerPanel` exposes pass/event selection as the primary replay control while keeping graph-local image selection as
+  a resource override.
+- Selecting a pass marks the debug preview dirty and reuses the existing editor-controlled replay/copy path, so normal
+  RenderView recording remains paused during preview refresh.
+- Draw-call identity remains deferred until draw/command packet ids exist.
+
 Validation:
 
-- Smoke verifies selecting a different pass/event changes Frame Debug replay state without resuming normal RenderView
-  recording.
+- `--smoke-editor-frame-debugger` verifies selecting a different pass changes Frame Debug replay state without resuming normal
+  RenderView recording.
 - Replay must not call `vkDeviceWaitIdle`, must not expose backend handles to panels and must be driven by captured CPU-side
   frame inputs.
 
@@ -1283,25 +1293,20 @@ Current completed slices:
 - `feat: split live and frame debug RG views`: `RenderGraphPanel` now owns the Live RG View and reads latest viewport
   diagnostics through `EditorRenderGraphSnapshotProvider`; `FrameDebuggerPanel` owns the Frame Debug RG View and reads frozen
   frame-debug captures. Both reuse `RenderGraphSnapshotView`.
+- `feat: add frame debug image preview foundation`: RenderGraph/RHI transfer-read and image-copy primitives allow paused Frame
+  Debug to copy a captured image resource into an editor-owned sampled preview target without resuming normal target view
+  rendering.
+- `feat: add frame debug replay contract`: Frame Debug now has pass/event selection in the primary panel. Selecting a compiled
+  pass requests a debug preview refresh through the existing replay/copy path while normal RenderView recording stays paused.
 
-1. `feat: add frame debug image preview foundation`
-
-Add RenderGraph/RHI transfer-read and image-copy primitives, then let paused Frame Debug select a captured image resource and
-copy it into an editor-owned sampled preview target without resuming normal target view rendering.
-
-2. `feat: add frame debug replay contract`
-
-Freeze enough CPU-side frame inputs for pass-level replay and let selecting a pass/event request a debug refresh without
-resuming normal target view rendering.
-
-3. `feat: add render view overlay prerequisites`
+1. `feat: add render view overlay prerequisites`
 
 Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, explicit overlay pass
 load/store behavior, blend state support or an equivalent overlay composition path, and a narrow debug/world-line draw route.
 Then add a camera-aware world grid as the first Scene View-only render pass; no gizmo interaction, picking or selection outline
 in that slice.
 
-4. `feat: add pass/event texture preview upgrade`
+2. `feat: add pass/event texture preview upgrade`
 
 After replay identity is stable, upgrade image-resource preview to pass/event-selected output preview and optional explicit
 debug preservation for resources that cannot be replayed.
