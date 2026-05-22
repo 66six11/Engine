@@ -48,6 +48,10 @@ namespace asharia::editor {
             return std::string{editorLocaleName(locale)};
         }
 
+        [[nodiscard]] std::string currentThemeLabel(EditorUiThemeId themeId) {
+            return std::string{editorUiTheme(themeId).name};
+        }
+
         void drawSettingsStatus(const EditorI18n& i18n, const EditorSettingsController& settings) {
             if (!settings.lastSaveAttempted()) {
                 return;
@@ -64,26 +68,7 @@ namespace asharia::editor {
             }
         }
 
-    } // namespace
-
-    const EditorPanelDesc& EditorSettingsPanel::desc() const {
-        return desc_;
-    }
-
-    void EditorSettingsPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
-        static_cast<void>(state);
-        const ImGuiCond condition = context.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
-        ImGui::SetNextWindowSize(ImVec2{440.0F, 180.0F}, condition);
-    }
-
-    void EditorSettingsPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
-        static_cast<void>(state);
-
-        EditorSettingsController& settings = context.settings;
-        const EditorI18n& i18n = context.i18n;
-
-        drawEditorUiSectionHeader(i18n.text("settings.general"));
-        if (beginEditorUiPropertyTable("editor-settings-general", 128.0F)) {
+        void drawLanguageSetting(EditorSettingsController& settings, const EditorI18n& i18n) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             text(i18n.text("settings.language"));
@@ -112,6 +97,64 @@ namespace asharia::editor {
                 }
                 ImGui::EndCombo();
             }
+        }
+
+        void drawThemeSetting(EditorSettingsController& settings, const EditorI18n& i18n) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            text(i18n.text(EditorI18nTextQuery{
+                .key = "settings.theme",
+                .fallback = "Theme",
+            }));
+            ImGui::TableSetColumnIndex(1);
+
+            const EditorUiThemeId currentTheme = settings.settings().theme;
+            const std::string selectedThemeLabel = currentThemeLabel(currentTheme);
+            ImGui::SetNextItemWidth(-1.0F);
+            const std::string themeComboLabel = i18n.label(EditorI18nLabelDesc{
+                .key = "settings.theme",
+                .stableId = "editor-settings-theme",
+                .fallback = "Theme",
+            });
+            if (ImGui::BeginCombo(themeComboLabel.c_str(), selectedThemeLabel.c_str())) {
+                for (const EditorUiTheme& theme : editorUiThemes()) {
+                    const std::string themeLabel{theme.name};
+                    const bool selected = theme.id == currentTheme;
+                    if (ImGui::Selectable(themeLabel.c_str(), selected)) {
+                        if (auto changed = settings.setTheme(theme.id); !changed) {
+                            static_cast<void>(changed.error());
+                        }
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+    } // namespace
+
+    const EditorPanelDesc& EditorSettingsPanel::desc() const {
+        return desc_;
+    }
+
+    void EditorSettingsPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
+        static_cast<void>(state);
+        const ImGuiCond condition = context.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+        ImGui::SetNextWindowSize(ImVec2{440.0F, 180.0F}, condition);
+    }
+
+    void EditorSettingsPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
+        static_cast<void>(state);
+
+        EditorSettingsController& settings = context.settings;
+        const EditorI18n& i18n = context.i18n;
+
+        drawEditorUiSectionHeader(i18n.text("settings.general"));
+        if (beginEditorUiPropertyTable("editor-settings-general", 128.0F)) {
+            drawLanguageSetting(settings, i18n);
+            drawThemeSetting(settings, i18n);
             endEditorUiPropertyTable();
         }
 

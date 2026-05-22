@@ -49,8 +49,9 @@ namespace {
         return "Viewport";
     }
 
-    const asharia::RenderGraphDiagnosticsResourceNode* findImageResource(
-        const asharia::RenderGraphDiagnosticsSnapshot& snapshot, std::uint32_t resourceIndex) {
+    const asharia::RenderGraphDiagnosticsResourceNode*
+    findImageResource(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                      std::uint32_t resourceIndex) {
         for (const asharia::RenderGraphDiagnosticsResourceNode& resource : snapshot.resources) {
             if (resource.kind == asharia::RenderGraphResourceKind::Image &&
                 resource.resourceIndex == resourceIndex) {
@@ -248,6 +249,7 @@ namespace asharia::editor {
             .requestedExtent = request.extent,
             .overlayFlags = request.overlayFlags,
             .texture = texture,
+            .colorSpace = editorUiTextureColorSpaceFromVkFormat(texture.format),
             .frameIndex = viewportFrameIndex,
             .submittedFrameEpoch = nextSubmittedFrameEpoch(frame),
         });
@@ -292,10 +294,8 @@ namespace asharia::editor {
     asharia::Result<asharia::VulkanFrameRecordResult>
     EditorViewportCoordinator::recordFrameDebugPreview(
         const asharia::VulkanFrameRecordContext& frame,
-        asharia::BasicFullscreenTextureRenderer& renderer,
-        EditorFrameDebugger& frameDebugger) {
-        const std::optional<std::uint32_t> requestedImage =
-            frameDebugger.consumePreviewRequest();
+        asharia::BasicFullscreenTextureRenderer& renderer, EditorFrameDebugger& frameDebugger) {
+        const std::optional<std::uint32_t> requestedImage = frameDebugger.consumePreviewRequest();
         if (!requestedImage) {
             return asharia::VulkanFrameRecordResult{
                 .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -304,8 +304,7 @@ namespace asharia::editor {
 
         const std::optional<EditorFrameDebugCapture>& capture = frameDebugger.pausedCapture();
         if (!capture) {
-            frameDebugger.markPreviewUnavailable(*requestedImage,
-                                                 "No paused frame debug capture.");
+            frameDebugger.markPreviewUnavailable(*requestedImage, "No paused frame debug capture.");
             ++stats_.frameDebugPreviewUnavailableFrames;
             return asharia::VulkanFrameRecordResult{
                 .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -354,8 +353,7 @@ namespace asharia::editor {
                        .allocator = allocator_,
                        .format = frame.format,
                        .extent = replayExtent,
-                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                VK_IMAGE_USAGE_SAMPLED_BIT |
+                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                    });
@@ -416,10 +414,10 @@ namespace asharia::editor {
 
         if (previewResult.status != asharia::BasicDebugPreviewStatus::Available ||
             previewResult.copiesRecorded == 0) {
-            frameDebugger.markPreviewUnavailable(
-                *requestedImage,
-                previewResult.message.empty() ? "Preview unavailable for selected image."
-                                              : previewResult.message);
+            frameDebugger.markPreviewUnavailable(*requestedImage,
+                                                 previewResult.message.empty()
+                                                     ? "Preview unavailable for selected image."
+                                                     : previewResult.message);
             ++stats_.frameDebugPreviewUnavailableFrames;
             return *recorded;
         }
@@ -430,6 +428,7 @@ namespace asharia::editor {
             .requestedExtent = editorExtentFromVk(previewTexture.extent),
             .overlayFlags = {},
             .texture = previewTexture,
+            .colorSpace = editorUiTextureColorSpaceFromVkFormat(previewTexture.format),
             .frameIndex = stats_.frameDebugPreviewFramesRecorded + 1U,
             .submittedFrameEpoch = nextSubmittedFrameEpoch(frame),
         });
@@ -444,7 +443,8 @@ namespace asharia::editor {
         debugReplayTexture_.format = replayTexture.format;
         debugReplayTexture_.extent = replayTexture.extent;
         debugPreviewTexture_.rendered = true;
-        debugPreviewTexture_.panelId = EditorId{.value = std::string{kFrameDebugPreviewTextureOwnerId}};
+        debugPreviewTexture_.panelId =
+            EditorId{.value = std::string{kFrameDebugPreviewTextureOwnerId}};
         debugPreviewTexture_.kind = EditorViewportKind::Preview;
         debugPreviewTexture_.requestedExtent = editorExtentFromVk(previewTexture.extent);
         debugPreviewTexture_.format = previewTexture.format;

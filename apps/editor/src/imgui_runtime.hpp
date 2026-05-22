@@ -12,6 +12,8 @@
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 
+#include "editor_ui.hpp"
+
 struct GLFWwindow;
 
 namespace asharia::editor {
@@ -28,6 +30,7 @@ namespace asharia::editor {
 
     struct ImGuiRuntimeDesc {
         std::filesystem::path layoutIniPath;
+        EditorUiThemeId theme{EditorUiThemeId::ClassicBlueGray};
         bool enableCjkGlyphs{false};
         std::filesystem::path cjkFontPath;
         float fontPixelSize{16.0F};
@@ -57,6 +60,7 @@ namespace asharia::editor {
         std::filesystem::path layoutIniPath_;
         std::string layoutIniPathUtf8_;
         std::vector<char> cjkFontData_;
+        std::vector<std::uint32_t> imguiFragmentShaderSpv_;
         ImGuiRuntimeFontStatus fontStatus_;
         VkQueue queue_{VK_NULL_HANDLE};
         bool contextCreated_{false};

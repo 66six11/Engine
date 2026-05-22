@@ -12,6 +12,7 @@ asharia_package_init()
 asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
+asharia_require_package_target(asharia::shader_slang packages/shader-slang)
 asharia_require_package_target(asharia::window_glfw packages/window-glfw)
 
 find_package(imgui CONFIG REQUIRED)
@@ -28,6 +29,30 @@ set(ASHARIA_IMGUI_BACKENDS_DIR "${ASHARIA_IMGUI_PACKAGE_FOLDER}/res/bindings")
 set(ASHARIA_IMGUI_BACKEND_SOURCES
     "${ASHARIA_IMGUI_BACKENDS_DIR}/imgui_impl_glfw.cpp"
     "${ASHARIA_IMGUI_BACKENDS_DIR}/imgui_impl_vulkan.cpp"
+)
+
+set(ASHARIA_EDITOR_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(ASHARIA_EDITOR_IMGUI_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/imgui_srgb_color.slang"
+)
+set(ASHARIA_EDITOR_IMGUI_FRAGMENT_SPV
+    "${ASHARIA_EDITOR_SHADER_OUTPUT_DIR}/imgui_srgb_color.frag.spv"
+)
+set(ASHARIA_EDITOR_IMGUI_FRAGMENT_METADATA
+    "${ASHARIA_EDITOR_SHADER_OUTPUT_DIR}/imgui_srgb_color.frag.metadata.json"
+)
+
+asharia_add_slang_shader(asharia-editor-imgui-frag
+    SOURCE "${ASHARIA_EDITOR_IMGUI_SHADER_SOURCE}"
+    ENTRY imguiFragmentMain
+    STAGE fragment
+    OUTPUT "${ASHARIA_EDITOR_IMGUI_FRAGMENT_SPV}"
+    METADATA_OUTPUT "${ASHARIA_EDITOR_IMGUI_FRAGMENT_METADATA}"
+)
+
+add_custom_target(asharia-editor-imgui-shaders
+    DEPENDS
+        asharia-editor-imgui-frag
 )
 
 set(ASHARIA_EDITOR_RESOURCE_SOURCES)
@@ -74,7 +99,7 @@ add_executable(asharia-editor
 
 add_executable(asharia::editor ALIAS asharia-editor)
 
-add_dependencies(asharia-editor asharia-renderer-basic-shaders)
+add_dependencies(asharia-editor asharia-renderer-basic-shaders asharia-editor-imgui-shaders)
 
 set_source_files_properties(${ASHARIA_IMGUI_BACKEND_SOURCES}
     PROPERTIES
@@ -105,6 +130,7 @@ target_link_libraries(asharia-editor
 target_compile_definitions(asharia-editor
     PRIVATE
         ASHARIA_EDITOR_I18N_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n"
+        ASHARIA_EDITOR_IMGUI_FRAGMENT_SHADER_SPV="${ASHARIA_EDITOR_IMGUI_FRAGMENT_SPV}"
 )
 
 asharia_configure_target(asharia-editor)

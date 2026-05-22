@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "editor_settings.hpp"
 #include "editor_ui.hpp"
 
 namespace asharia::editor {
@@ -25,26 +26,19 @@ namespace asharia::editor {
             std::string_view token;
         };
 
-        [[nodiscard]] int colorByte(const float value) {
-            return std::clamp(static_cast<int>(std::clamp(value, 0.0F, 1.0F) * 255.0F), 0, 255);
-        }
-
-        [[nodiscard]] std::string hexColor(ImVec4 color) {
+        [[nodiscard]] std::string hexColor(ColorSrgba8 color) {
             static constexpr std::array<char, 16> kHexDigits{
                 '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
             const auto hexByte = [](const int value, const bool high) {
                 return kHexDigits.at(static_cast<std::size_t>((value >> (high ? 4 : 0)) & 0xF));
             };
-            const int red = colorByte(color.x);
-            const int green = colorByte(color.y);
-            const int blue = colorByte(color.z);
             return std::string{'#',
-                               hexByte(red, true),
-                               hexByte(red, false),
-                               hexByte(green, true),
-                               hexByte(green, false),
-                               hexByte(blue, true),
-                               hexByte(blue, false)};
+                               hexByte(color.r, true),
+                               hexByte(color.r, false),
+                               hexByte(color.g, true),
+                               hexByte(color.g, false),
+                               hexByte(color.b, true),
+                               hexByte(color.b, false)};
         }
 
         void text(std::string_view value) {
@@ -71,18 +65,19 @@ namespace asharia::editor {
             ImGui::PopID();
         }
 
-        void drawColorChip(ImVec4 color) {
+        void drawColorChip(ColorSrgba8 color) {
             const ImVec2 min = ImGui::GetCursorScreenPos();
             const float side = ImGui::GetTextLineHeight();
             const ImVec2 max{min.x + (side * 1.6F), min.y + side};
             ImDrawList* drawList = ImGui::GetWindowDrawList();
-            drawList->AddRectFilled(min, max, ImGui::GetColorU32(color), 2.0F);
+            drawList->AddRectFilled(min, max, toImGuiEncodedSrgbU32(color), 2.0F);
             drawList->AddRect(min, max, ImGui::GetColorU32(ImGuiCol_Border), 2.0F);
             ImGui::Dummy(ImVec2{side * 1.6F, side});
         }
 
         void drawTokenPalette() {
-            drawEditorUiSectionHeader("Deep Slate Tokens");
+            const std::string title = std::string{editorUiTheme().name} + " Tokens";
+            drawEditorUiSectionHeader(title);
             if (!ImGui::BeginTable("ui-style-token-table", 4, kTokenTableFlags)) {
                 return;
             }
@@ -107,6 +102,28 @@ namespace asharia::editor {
             }
 
             ImGui::EndTable();
+        }
+
+        void drawThemeSelector(EditorSettingsController& settings) {
+            const EditorUiThemeId currentTheme = settings.settings().theme;
+            const EditorUiTheme& selectedTheme = editorUiTheme(currentTheme);
+            const std::string selectedThemeLabel{selectedTheme.name};
+            ImGui::SetNextItemWidth(260.0F);
+            if (ImGui::BeginCombo("Theme###ui-style-theme", selectedThemeLabel.c_str())) {
+                for (const EditorUiTheme& theme : editorUiThemes()) {
+                    const std::string themeLabel{theme.name};
+                    const bool selected = theme.id == currentTheme;
+                    if (ImGui::Selectable(themeLabel.c_str(), selected)) {
+                        if (auto changed = settings.setTheme(theme.id); !changed) {
+                            static_cast<void>(changed.error());
+                        }
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
         }
 
         void drawStateList() {
@@ -138,6 +155,8 @@ namespace asharia::editor {
             drawEditorUiColorSwatch("Surface", theme.surface);
             ImGui::SameLine();
             drawEditorUiColorSwatch("Accent", theme.accent);
+            ImGui::SameLine();
+            drawEditorUiColorSwatch("Viewport", theme.viewportBackground);
         }
 
     } // namespace
@@ -153,13 +172,14 @@ namespace asharia::editor {
     }
 
     void UiStylePreviewPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
-        static_cast<void>(context);
         static_cast<void>(state);
 
         const EditorUiTheme& theme = editorUiTheme();
         drawEditorUiSectionHeader("Theme");
+        drawThemeSelector(context.settings);
         if (beginEditorUiPropertyTable("ui-style-summary", 128.0F)) {
             drawEditorUiProperty(EditorUiProperty{.label = "Palette", .value = theme.name});
+            drawEditorUiProperty(EditorUiProperty{.label = "Storage", .value = theme.storageName});
             drawEditorUiProperty(
                 EditorUiProperty{.label = "Density", .value = "compact editor tooling"});
             drawEditorUiProperty(EditorUiProperty{.label = "Rounding", .value = "2 / 2 / 3 / 4"});

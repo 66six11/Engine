@@ -35,6 +35,8 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 - `asharia::window_glfw`
 - `asharia::rhi_vulkan`
 - `asharia::renderer_basic_vulkan`
+- `asharia::archive`
+- `asharia::shader_slang`
 - `imgui::imgui`
 - ImGui GLFW/Vulkan backend source files from the Conan ImGui package
 
@@ -49,10 +51,10 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | 模块 | 拥有 | 不能拥有 |
 | --- | --- | --- |
 | `editor_i18n` | editor-local text catalog, locale selection and stable ImGui label formatting | runtime localization, asset text localization or renderer-facing strings |
-| `editor_ui` | small editor-local ImGui style primitives, Deep Slate theme tokens and component preview helpers used by panels | a generic UI framework or runtime-facing widget abstraction |
-| `editor_settings` | editor-local user settings persistence and runtime editor locale switching | scene data, asset import settings or runtime/game configuration |
+| `editor_ui` | small editor-local ImGui style primitives, built-in editor theme tokens and component preview helpers used by panels | a generic UI framework or runtime-facing widget abstraction |
+| `editor_settings` | editor-local user settings persistence plus runtime editor locale/theme switching | scene data, asset import settings or runtime/game configuration |
 | `editor_app` | startup、window/context/frame-loop wiring、main editor loop、frame order、smoke modes、shutdown order | panel widget details becoming feature-specific renderer logic |
-| `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle | panel registry、editor state、viewport target ownership |
+| `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle and the editor ImGui fragment shader contract | panel registry、editor state、viewport target ownership |
 | `imgui_editor_shell` | dockspace、main menu、action menu binding | renderer command recording、panel object ownership |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids | command transaction semantics before transaction exists |
@@ -176,9 +178,28 @@ This state stores editor window/docking layout only; it is not scene data, asset
 
 ### ImGui theme
 
-`editor_ui` owns the editor-local Dear ImGui style tokens and applies the Unreal-Like Deep Slate palette during
-`ImGuiRuntime::create()`. This is editor shell presentation state only; renderer, RHI and runtime packages do not depend on
-theme colors, rounding values or component preview helpers.
+`editor_ui` owns the editor-local Dear ImGui style tokens and the built-in editor theme catalog. The default theme is
+`classic-blue-gray-2` (Classic Blue Gray 2.0 / Night Slate); the legacy `classic-blue-gray` settings value is still accepted
+as an alias. Alternate themes include warm graphite amber, forest green slate, purple electric, carbon copper, cool gray
+teal and light graphite orange. `ImGuiRuntime::create()` applies the startup theme from editor settings, and runtime theme
+changes are applied through `EditorSettingsController`. This is editor shell presentation state only; renderer, RHI and
+runtime packages do not depend on theme colors, rounding values or component preview helpers.
+
+Theme colors are authored as display-referred sRGB bytes. `EditorUiTheme` stores `ColorSrgba8` values such as `#171D24`;
+it does not store `ImVec4` or linear floats. `editor_ui` converts those bytes to encoded sRGB `ImVec4` / `ImU32` values only
+at the Dear ImGui adapter boundary. Helper names use `EncodedSrgb` to make this transport contract explicit.
+
+The editor ImGui Vulkan pass always expects linear shader output. ImGui vertex colors are transported as encoded sRGB
+8-bit values, and `apps/editor/shaders/imgui_srgb_color.slang` decodes vertex `rgb` to linear in the fragment shader before
+writing to the swapchain or an LDR editor target. The final encode is handled by an `_SRGB` color attachment or a later
+presentation pass; the decode switch is therefore tied to the UI pass output contract, not just to the current target
+format.
+
+Texture color space is tracked separately from vertex color. `ImGuiTextureRegistry` records `EditorUiTextureColorSpace`
+metadata for registered editor viewport and preview textures. Color images that are authored/stored as sRGB must be exposed
+through `_SRGB` image views so Vulkan sampling linearizes `rgb`; linear render textures, alpha coverage textures, masks,
+data and debug textures must keep linear/UNORM/FLOAT semantics. The ImGui fragment shader assumes sampled `texel.rgb` is
+already in the pass working space.
 
 ### Editor i18n
 
@@ -191,10 +212,10 @@ Dear ImGui labels must preserve stable IDs when visible text changes. Editor UI 
 menus, actions, panel windows and other stateful controls so labels are emitted as `translated text###stable-id`. This keeps
 layout ini, docking state and widget identity stable across locale changes.
 
-`editor_settings` persists the interactive editor locale in a user-local `settings.json` beside the ImGui layout state.
-`ASHARIA_EDITOR_LOCALE` remains a startup fallback when no saved setting exists. The Editor Settings panel switches the
-locale at runtime through `EditorSettingsController`, updates the active `EditorI18n` service, and saves the setting
-immediately.
+`editor_settings` persists the interactive editor locale and UI theme in a user-local `settings.json` beside the ImGui
+layout state. `ASHARIA_EDITOR_LOCALE` remains a startup fallback when no saved setting exists. The Editor Settings panel
+switches locale and theme at runtime through `EditorSettingsController`, updates the active `EditorI18n` service or ImGui
+style, and saves the setting immediately.
 
 `ImGuiRuntime` requests CJK glyph coverage during editor startup so runtime switches to `zh-Hans` do not require rebuilding
 the ImGui font atlas. It uses `ASHARIA_EDITOR_CJK_FONT` or a small list of common system font locations. This keeps the

@@ -76,6 +76,24 @@ namespace asharia::editor {
             return locale;
         }
 
+        [[nodiscard]] std::optional<EditorUiThemeId>
+        readTheme(const asharia::archive::ArchiveValue& root) {
+            const asharia::archive::ArchiveValue* themeValue = nullptr;
+            const asharia::archive::ArchiveValue* uiValue = root.findMemberValue("ui");
+            if (uiValue != nullptr && uiValue->kind == asharia::archive::ArchiveValueKind::Object) {
+                themeValue = uiValue->findMemberValue("theme");
+            }
+            if (themeValue == nullptr) {
+                themeValue = root.findMemberValue("theme");
+            }
+            if (themeValue == nullptr ||
+                themeValue->kind != asharia::archive::ArchiveValueKind::String) {
+                return std::nullopt;
+            }
+
+            return editorUiThemeIdFromName(themeValue->stringValue);
+        }
+
     } // namespace
 
     std::filesystem::path editorUserSettingsPath() {
@@ -90,6 +108,7 @@ namespace asharia::editor {
                                                        EditorLocale fallbackLocale) {
         EditorSettings settings{
             .locale = fallbackLocale,
+            .theme = defaultEditorUiThemeId(),
         };
         if (path.empty()) {
             return settings;
@@ -120,6 +139,10 @@ namespace asharia::editor {
         if (locale) {
             settings.locale = *locale;
         }
+        const std::optional<EditorUiThemeId> theme = readTheme(*archive);
+        if (theme) {
+            settings.theme = *theme;
+        }
         return settings;
     }
 
@@ -142,9 +165,23 @@ namespace asharia::editor {
 
         const asharia::archive::ArchiveValue archive = asharia::archive::ArchiveValue::object({
             asharia::archive::ArchiveMember{
+                .key = "version",
+                .value = asharia::archive::ArchiveValue::integer(1),
+            },
+            asharia::archive::ArchiveMember{
                 .key = "locale",
                 .value = asharia::archive::ArchiveValue::string(
                     std::string{editorLocaleName(settings.locale)}),
+            },
+            asharia::archive::ArchiveMember{
+                .key = "ui",
+                .value = asharia::archive::ArchiveValue::object({
+                    asharia::archive::ArchiveMember{
+                        .key = "theme",
+                        .value = asharia::archive::ArchiveValue::string(
+                            std::string{editorUiThemeName(settings.theme)}),
+                    },
+                }),
             },
         });
         auto written = asharia::archive::writeJsonArchiveFile(path, archive);
@@ -186,6 +223,23 @@ namespace asharia::editor {
     asharia::VoidResult EditorSettingsController::setLocale(EditorLocale locale) {
         settings_.locale = locale;
         i18n_.setLocale(locale);
+
+        auto saved = saveEditorSettings(settingsPath_, settings_);
+        lastSaveAttempted_ = true;
+        if (!saved) {
+            lastSaveFailed_ = true;
+            lastSaveError_ = saved.error().message;
+            return std::unexpected{std::move(saved.error())};
+        }
+
+        lastSaveFailed_ = false;
+        lastSaveError_.clear();
+        return {};
+    }
+
+    asharia::VoidResult EditorSettingsController::setTheme(EditorUiThemeId theme) {
+        settings_.theme = theme;
+        applyEditorUiTheme(theme);
 
         auto saved = saveEditorSettings(settingsPath_, settings_);
         lastSaveAttempted_ = true;

@@ -7,11 +7,13 @@
 #include "asharia/core/result.hpp"
 
 #include "editor_i18n.hpp"
+#include "editor_ui.hpp"
 
 namespace asharia::editor {
 
     struct EditorSettings {
         EditorLocale locale{EditorLocale::EnUs};
+        EditorUiThemeId theme{EditorUiThemeId::ClassicBlueGray};
     };
 
     [[nodiscard]] std::filesystem::path editorUserSettingsPath();
@@ -32,6 +34,7 @@ namespace asharia::editor {
         [[nodiscard]] bool lastSaveAttempted() const;
         [[nodiscard]] bool lastSaveFailed() const;
         [[nodiscard]] asharia::VoidResult setLocale(EditorLocale locale);
+        [[nodiscard]] asharia::VoidResult setTheme(EditorUiThemeId theme);
 
     private:
         EditorSettings settings_;

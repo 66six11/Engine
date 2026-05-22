@@ -1,6 +1,7 @@
 ﻿#include "imgui_runtime.hpp"
 
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <imgui.h>
@@ -149,6 +150,31 @@ namespace {
         return file.good();
     }
 
+    [[nodiscard]] asharia::VoidResult readSpirvFile(const std::filesystem::path& path,
+                                                    std::vector<std::uint32_t>& words) {
+        std::vector<char> bytes;
+        if (!readBinaryFile(path, bytes)) {
+            return std::unexpected{asharia::vulkanError(
+                "Failed to read editor ImGui fragment shader: " + pathToUtf8String(path),
+                VK_ERROR_INITIALIZATION_FAILED)};
+        }
+        if (bytes.empty()) {
+            return std::unexpected{asharia::vulkanError("Editor ImGui fragment shader is empty: " +
+                                                            pathToUtf8String(path),
+                                                        VK_ERROR_INITIALIZATION_FAILED)};
+        }
+        if (bytes.size() % sizeof(std::uint32_t) != 0U) {
+            return std::unexpected{
+                asharia::vulkanError("Editor ImGui fragment shader has invalid SPIR-V byte size: " +
+                                         pathToUtf8String(path),
+                                     VK_ERROR_INITIALIZATION_FAILED)};
+        }
+
+        words.resize(bytes.size() / sizeof(std::uint32_t));
+        std::memcpy(words.data(), bytes.data(), bytes.size());
+        return {};
+    }
+
     void configureEditorFonts(const asharia::editor::ImGuiRuntimeDesc& desc,
                               asharia::editor::ImGuiRuntimeFontStatus& status,
                               std::vector<char>& fontData) {
@@ -222,7 +248,7 @@ namespace asharia::editor {
         ImGuiIO& imguiIo = ImGui::GetIO();
         imguiIo.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         imguiIo.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        applyEditorUiTheme();
+        applyEditorUiTheme(desc.theme);
         configureEditorFonts(desc, fontStatus_, cjkFontData_);
 
         layoutIniPath_ = desc.layoutIniPath.empty() ? editorLayoutIniPath() : desc.layoutIniPath;
@@ -246,6 +272,18 @@ namespace asharia::editor {
         glfwInitialized_ = true;
 
         VkFormat colorFormat = frameLoop.format();
+        auto imguiFragmentShader =
+            readSpirvFile(std::filesystem::path{ASHARIA_EDITOR_IMGUI_FRAGMENT_SHADER_SPV},
+                          imguiFragmentShaderSpv_);
+        if (!imguiFragmentShader) {
+            return std::unexpected{std::move(imguiFragmentShader.error())};
+        }
+
+        VkShaderModuleCreateInfo imguiFragmentShaderInfo{};
+        imguiFragmentShaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        imguiFragmentShaderInfo.codeSize = imguiFragmentShaderSpv_.size() * sizeof(std::uint32_t);
+        imguiFragmentShaderInfo.pCode = imguiFragmentShaderSpv_.data();
+
         VkPipelineRenderingCreateInfo pipelineRenderingInfo{};
         pipelineRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
         pipelineRenderingInfo.colorAttachmentCount = 1;
@@ -264,6 +302,7 @@ namespace asharia::editor {
         initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = pipelineRenderingInfo;
         initInfo.UseDynamicRendering = true;
+        initInfo.CustomShaderFragCreateInfo = imguiFragmentShaderInfo;
         initInfo.CheckVkResultFn = checkImguiVkResult;
         initInfo.MinAllocationSize = static_cast<VkDeviceSize>(1024ULL * 1024ULL);
 
@@ -307,6 +346,7 @@ namespace asharia::editor {
         }
 
         cjkFontData_.clear();
+        imguiFragmentShaderSpv_.clear();
         queue_ = VK_NULL_HANDLE;
         layoutPersistenceEnabled_ = false;
     }

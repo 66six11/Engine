@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -10,15 +11,290 @@ namespace asharia::editor {
 
     namespace {
 
-        [[nodiscard]] ImVec4 rgb(const int red, const int green, const int blue,
-                                 const float alpha = 1.0F) {
-            return ImVec4{static_cast<float>(red) / 255.0F, static_cast<float>(green) / 255.0F,
-                          static_cast<float>(blue) / 255.0F, alpha};
+        [[nodiscard]] ColorSrgba8 rgb(const int red, const int green, const int blue,
+                                      const int alpha = 255) {
+            const auto byte = [](const int value) {
+                return static_cast<std::uint8_t>(std::clamp(value, 0, 255));
+            };
+            return ColorSrgba8{
+                .r = byte(red),
+                .g = byte(green),
+                .b = byte(blue),
+                .a = byte(alpha),
+            };
         }
 
-        [[nodiscard]] ImVec4 withAlpha(ImVec4 color, const float alpha) {
-            color.w = alpha;
-            return color;
+        [[nodiscard]] ImVec4 withAlpha(ColorSrgba8 color, const float alpha) {
+            ImVec4 converted = toImGuiEncodedSrgbVec4(color);
+            converted.w = alpha;
+            return converted;
+        }
+
+        [[nodiscard]] const std::array<EditorUiTheme, 7>& themes() {
+            static const std::array<EditorUiTheme, 7> kThemes{
+                EditorUiTheme{
+                    .id = EditorUiThemeId::ClassicBlueGray,
+                    .storageName = "classic-blue-gray-2",
+                    .name = "Classic Blue Gray 2.0",
+                    .appBackground = rgb(23, 29, 36),
+                    .panelBackground = rgb(32, 40, 51),
+                    .floatingBackground = rgb(38, 49, 64),
+                    .panelBackgroundAlt = rgb(36, 48, 59),
+                    .titleBackground = rgb(28, 56, 84),
+                    .menuBackground = rgb(21, 27, 34),
+                    .inputBackground = rgb(24, 33, 43),
+                    .surface = rgb(32, 42, 53),
+                    .surfaceHover = rgb(43, 55, 69),
+                    .surfaceActive = rgb(49, 95, 134),
+                    .border = rgb(58, 71, 86),
+                    .borderStrong = rgb(58, 71, 86),
+                    .divider = rgb(45, 55, 67),
+                    .text = rgb(232, 238, 245),
+                    .textSecondary = rgb(181, 192, 204),
+                    .textMuted = rgb(134, 147, 160),
+                    .textDisabled = rgb(94, 107, 120),
+                    .accent = rgb(114, 183, 232),
+                    .accentHover = rgb(114, 183, 232),
+                    .accentActive = rgb(114, 183, 232),
+                    .selection = rgb(49, 95, 134),
+                    .viewportBackground = rgb(62, 105, 156),
+                    .info = rgb(142, 205, 241),
+                    .success = rgb(114, 216, 138),
+                    .warning = rgb(233, 201, 106),
+                    .danger = rgb(242, 124, 133),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
+                EditorUiTheme{
+                    .id = EditorUiThemeId::WarmGraphiteAmber,
+                    .storageName = "warm-graphite-amber",
+                    .name = "Warm Graphite Amber",
+                    .appBackground = rgb(32, 31, 28),
+                    .panelBackground = rgb(42, 41, 37),
+                    .floatingBackground = rgb(52, 50, 45),
+                    .panelBackgroundAlt = rgb(52, 50, 45),
+                    .titleBackground = rgb(27, 26, 24),
+                    .menuBackground = rgb(27, 26, 24),
+                    .inputBackground = rgb(27, 26, 24),
+                    .surface = rgb(27, 26, 24),
+                    .surfaceHover = rgb(52, 50, 45),
+                    .surfaceActive = rgb(111, 75, 31),
+                    .border = rgb(74, 70, 62),
+                    .borderStrong = rgb(74, 70, 62),
+                    .divider = rgb(74, 70, 62),
+                    .text = rgb(239, 233, 221),
+                    .textSecondary = rgb(185, 176, 162),
+                    .textMuted = rgb(129, 121, 109),
+                    .textDisabled = rgb(129, 121, 109),
+                    .accent = rgb(216, 154, 58),
+                    .accentHover = rgb(216, 154, 58),
+                    .accentActive = rgb(216, 154, 58),
+                    .selection = rgb(111, 75, 31),
+                    .viewportBackground = rgb(74, 59, 43),
+                    .info = rgb(216, 154, 58),
+                    .success = rgb(127, 176, 105),
+                    .warning = rgb(224, 177, 90),
+                    .danger = rgb(214, 106, 94),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
+                EditorUiTheme{
+                    .id = EditorUiThemeId::ForestGreen,
+                    .storageName = "forest-green-slate",
+                    .name = "Forest Green Slate",
+                    .appBackground = rgb(24, 32, 28),
+                    .panelBackground = rgb(34, 43, 38),
+                    .floatingBackground = rgb(43, 54, 48),
+                    .panelBackgroundAlt = rgb(43, 54, 48),
+                    .titleBackground = rgb(21, 27, 24),
+                    .menuBackground = rgb(21, 27, 24),
+                    .inputBackground = rgb(21, 27, 24),
+                    .surface = rgb(21, 27, 24),
+                    .surfaceHover = rgb(43, 54, 48),
+                    .surfaceActive = rgb(53, 102, 74),
+                    .border = rgb(62, 75, 67),
+                    .borderStrong = rgb(62, 75, 67),
+                    .divider = rgb(62, 75, 67),
+                    .text = rgb(229, 236, 231),
+                    .textSecondary = rgb(170, 184, 175),
+                    .textMuted = rgb(116, 128, 120),
+                    .textDisabled = rgb(116, 128, 120),
+                    .accent = rgb(111, 191, 138),
+                    .accentHover = rgb(111, 191, 138),
+                    .accentActive = rgb(111, 191, 138),
+                    .selection = rgb(53, 102, 74),
+                    .viewportBackground = rgb(48, 68, 55),
+                    .info = rgb(111, 191, 138),
+                    .success = rgb(111, 207, 151),
+                    .warning = rgb(215, 182, 92),
+                    .danger = rgb(212, 106, 106),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
+                EditorUiTheme{
+                    .id = EditorUiThemeId::PurpleElectric,
+                    .storageName = "purple-electric",
+                    .name = "Purple Electric",
+                    .appBackground = rgb(30, 27, 36),
+                    .panelBackground = rgb(41, 37, 50),
+                    .floatingBackground = rgb(51, 46, 62),
+                    .panelBackgroundAlt = rgb(51, 46, 62),
+                    .titleBackground = rgb(26, 23, 32),
+                    .menuBackground = rgb(26, 23, 32),
+                    .inputBackground = rgb(26, 23, 32),
+                    .surface = rgb(26, 23, 32),
+                    .surfaceHover = rgb(51, 46, 62),
+                    .surfaceActive = rgb(90, 62, 138),
+                    .border = rgb(74, 67, 88),
+                    .borderStrong = rgb(74, 67, 88),
+                    .divider = rgb(74, 67, 88),
+                    .text = rgb(238, 234, 246),
+                    .textSecondary = rgb(185, 176, 200),
+                    .textMuted = rgb(129, 119, 143),
+                    .textDisabled = rgb(129, 119, 143),
+                    .accent = rgb(167, 139, 250),
+                    .accentHover = rgb(167, 139, 250),
+                    .accentActive = rgb(167, 139, 250),
+                    .selection = rgb(90, 62, 138),
+                    .viewportBackground = rgb(58, 48, 77),
+                    .info = rgb(167, 139, 250),
+                    .success = rgb(119, 201, 141),
+                    .warning = rgb(227, 182, 90),
+                    .danger = rgb(224, 108, 117),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
+                EditorUiTheme{
+                    .id = EditorUiThemeId::CarbonCopper,
+                    .storageName = "carbon-copper",
+                    .name = "Carbon Copper",
+                    .appBackground = rgb(23, 23, 23),
+                    .panelBackground = rgb(36, 35, 34),
+                    .floatingBackground = rgb(46, 44, 42),
+                    .panelBackgroundAlt = rgb(46, 44, 42),
+                    .titleBackground = rgb(20, 20, 20),
+                    .menuBackground = rgb(20, 20, 20),
+                    .inputBackground = rgb(20, 20, 20),
+                    .surface = rgb(20, 20, 20),
+                    .surfaceHover = rgb(46, 44, 42),
+                    .surfaceActive = rgb(112, 69, 31),
+                    .border = rgb(68, 64, 58),
+                    .borderStrong = rgb(68, 64, 58),
+                    .divider = rgb(68, 64, 58),
+                    .text = rgb(240, 236, 230),
+                    .textSecondary = rgb(183, 175, 163),
+                    .textMuted = rgb(123, 116, 107),
+                    .textDisabled = rgb(123, 116, 107),
+                    .accent = rgb(201, 130, 59),
+                    .accentHover = rgb(201, 130, 59),
+                    .accentActive = rgb(201, 130, 59),
+                    .selection = rgb(112, 69, 31),
+                    .viewportBackground = rgb(61, 52, 44),
+                    .info = rgb(201, 130, 59),
+                    .success = rgb(117, 166, 106),
+                    .warning = rgb(213, 166, 76),
+                    .danger = rgb(201, 95, 95),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
+                EditorUiTheme{
+                    .id = EditorUiThemeId::CoolGrayTeal,
+                    .storageName = "cool-gray-teal",
+                    .name = "Cool Gray Teal",
+                    .appBackground = rgb(27, 32, 32),
+                    .panelBackground = rgb(37, 44, 44),
+                    .floatingBackground = rgb(48, 56, 56),
+                    .panelBackgroundAlt = rgb(48, 56, 56),
+                    .titleBackground = rgb(23, 28, 28),
+                    .menuBackground = rgb(23, 28, 28),
+                    .inputBackground = rgb(23, 28, 28),
+                    .surface = rgb(23, 28, 28),
+                    .surfaceHover = rgb(48, 56, 56),
+                    .surfaceActive = rgb(46, 111, 105),
+                    .border = rgb(67, 80, 80),
+                    .borderStrong = rgb(67, 80, 80),
+                    .divider = rgb(67, 80, 80),
+                    .text = rgb(231, 238, 238),
+                    .textSecondary = rgb(174, 186, 186),
+                    .textMuted = rgb(117, 128, 128),
+                    .textDisabled = rgb(117, 128, 128),
+                    .accent = rgb(77, 182, 172),
+                    .accentHover = rgb(77, 182, 172),
+                    .accentActive = rgb(77, 182, 172),
+                    .selection = rgb(46, 111, 105),
+                    .viewportBackground = rgb(46, 74, 72),
+                    .info = rgb(77, 182, 172),
+                    .success = rgb(118, 200, 147),
+                    .warning = rgb(221, 185, 103),
+                    .danger = rgb(217, 112, 112),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
+                EditorUiTheme{
+                    .id = EditorUiThemeId::LightGraphiteOrange,
+                    .storageName = "light-graphite-orange",
+                    .name = "Light Graphite Orange",
+                    .appBackground = rgb(231, 227, 220),
+                    .panelBackground = rgb(243, 240, 234),
+                    .floatingBackground = rgb(255, 255, 255),
+                    .panelBackgroundAlt = rgb(255, 255, 255),
+                    .titleBackground = rgb(236, 232, 225),
+                    .menuBackground = rgb(236, 232, 225),
+                    .inputBackground = rgb(236, 232, 225),
+                    .surface = rgb(236, 232, 225),
+                    .surfaceHover = rgb(255, 255, 255),
+                    .surfaceActive = rgb(240, 216, 188),
+                    .border = rgb(201, 193, 183),
+                    .borderStrong = rgb(201, 193, 183),
+                    .divider = rgb(201, 193, 183),
+                    .text = rgb(36, 33, 29),
+                    .textSecondary = rgb(95, 87, 78),
+                    .textMuted = rgb(139, 129, 118),
+                    .textDisabled = rgb(139, 129, 118),
+                    .accent = rgb(200, 121, 42),
+                    .accentHover = rgb(200, 121, 42),
+                    .accentActive = rgb(200, 121, 42),
+                    .selection = rgb(240, 216, 188),
+                    .viewportBackground = rgb(200, 183, 159),
+                    .info = rgb(200, 121, 42),
+                    .success = rgb(77, 154, 100),
+                    .warning = rgb(185, 130, 46),
+                    .danger = rgb(185, 91, 85),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
+            };
+            return kThemes;
+        }
+
+        [[nodiscard]] EditorUiThemeId& currentThemeIdStorage() {
+            static EditorUiThemeId currentThemeId = EditorUiThemeId::ClassicBlueGray;
+            return currentThemeId;
+        }
+
+        [[nodiscard]] const EditorUiTheme& fallbackTheme() {
+            return themes().front();
         }
 
         struct EditorUiToneColors {
@@ -29,36 +305,46 @@ namespace asharia::editor {
 
         [[nodiscard]] EditorUiToneColors toneColors(EditorUiTone tone) {
             const EditorUiTheme& theme = editorUiTheme();
+            const bool isClassicBlueGray = theme.id == EditorUiThemeId::ClassicBlueGray;
             switch (tone) {
             case EditorUiTone::Info:
                 return EditorUiToneColors{
-                    .background = ImGui::GetColorU32(withAlpha(theme.info, 0.26F)),
-                    .border = ImGui::GetColorU32(withAlpha(theme.info, 0.92F)),
-                    .text = ImGui::GetColorU32(theme.text),
+                    .background = ImGui::GetColorU32(isClassicBlueGray
+                                                         ? toImGuiEncodedSrgbVec4(rgb(33, 58, 75))
+                                                         : withAlpha(theme.info, 0.26F)),
+                    .border = toImGuiEncodedSrgbU32(theme.info),
+                    .text = toImGuiEncodedSrgbU32(theme.info),
                 };
             case EditorUiTone::Success:
                 return EditorUiToneColors{
-                    .background = ImGui::GetColorU32(withAlpha(theme.success, 0.22F)),
-                    .border = ImGui::GetColorU32(withAlpha(theme.success, 0.88F)),
-                    .text = ImGui::GetColorU32(theme.text),
+                    .background = ImGui::GetColorU32(isClassicBlueGray
+                                                         ? toImGuiEncodedSrgbVec4(rgb(31, 69, 50))
+                                                         : withAlpha(theme.success, 0.22F)),
+                    .border = toImGuiEncodedSrgbU32(theme.success),
+                    .text = toImGuiEncodedSrgbU32(theme.success),
                 };
             case EditorUiTone::Warning:
                 return EditorUiToneColors{
-                    .background = ImGui::GetColorU32(withAlpha(theme.warning, 0.24F)),
-                    .border = ImGui::GetColorU32(withAlpha(theme.warning, 0.92F)),
-                    .text = ImGui::GetColorU32(theme.text),
+                    .background = ImGui::GetColorU32(isClassicBlueGray
+                                                         ? toImGuiEncodedSrgbVec4(rgb(74, 61, 34))
+                                                         : withAlpha(theme.warning, 0.24F)),
+                    .border = toImGuiEncodedSrgbU32(theme.warning),
+                    .text = toImGuiEncodedSrgbU32(theme.warning),
                 };
             case EditorUiTone::Danger:
                 return EditorUiToneColors{
-                    .background = ImGui::GetColorU32(withAlpha(theme.danger, 0.24F)),
-                    .border = ImGui::GetColorU32(withAlpha(theme.danger, 0.92F)),
-                    .text = ImGui::GetColorU32(theme.text),
+                    .background = ImGui::GetColorU32(isClassicBlueGray
+                                                         ? toImGuiEncodedSrgbVec4(rgb(77, 37, 45))
+                                                         : withAlpha(theme.danger, 0.24F)),
+                    .border = toImGuiEncodedSrgbU32(theme.danger),
+                    .text = toImGuiEncodedSrgbU32(theme.danger),
                 };
             case EditorUiTone::Muted:
                 return EditorUiToneColors{
-                    .background = ImGui::GetColorU32(ImGuiCol_FrameBg),
-                    .border = ImGui::GetColorU32(ImGuiCol_Border),
-                    .text = ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                    .background = toImGuiEncodedSrgbU32(isClassicBlueGray ? rgb(43, 55, 69)
+                                                                          : theme.surfaceHover),
+                    .border = toImGuiEncodedSrgbU32(theme.textSecondary),
+                    .text = toImGuiEncodedSrgbU32(theme.textSecondary),
                 };
             case EditorUiTone::Neutral:
             default:
@@ -82,68 +368,121 @@ namespace asharia::editor {
 
     } // namespace
 
+    EditorUiThemeId defaultEditorUiThemeId() {
+        return EditorUiThemeId::ClassicBlueGray;
+    }
+
+    EditorUiThemeId currentEditorUiThemeId() {
+        return currentThemeIdStorage();
+    }
+
+    std::string_view editorUiThemeName(EditorUiThemeId themeId) {
+        return editorUiTheme(themeId).storageName;
+    }
+
+    std::optional<EditorUiThemeId> editorUiThemeIdFromName(std::string_view name) {
+        if (name == "classic-blue-gray" || name == "Classic Blue Gray" || name == "night-slate" ||
+            name == "Night Slate") {
+            return EditorUiThemeId::ClassicBlueGray;
+        }
+        for (const EditorUiTheme& theme : themes()) {
+            if (theme.storageName == name || theme.name == name) {
+                return theme.id;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::span<const EditorUiTheme> editorUiThemes() {
+        return themes();
+    }
+
+    const EditorUiTheme& editorUiTheme(EditorUiThemeId themeId) {
+        for (const EditorUiTheme& theme : themes()) {
+            if (theme.id == themeId) {
+                return theme;
+            }
+        }
+        return fallbackTheme();
+    }
+
     const EditorUiTheme& editorUiTheme() {
-        static const EditorUiTheme kTheme{
-            .name = "Unreal-Like Deep Slate",
-            .appBackground = rgb(21, 24, 28),
-            .panelBackground = rgb(29, 33, 39),
-            .panelBackgroundAlt = rgb(32, 36, 42),
-            .surface = rgb(36, 42, 49),
-            .surfaceHover = rgb(45, 53, 64),
-            .surfaceActive = rgb(51, 64, 77),
-            .border = rgb(52, 59, 69),
-            .borderStrong = rgb(74, 84, 97),
-            .text = rgb(215, 222, 232),
-            .textMuted = rgb(141, 153, 168),
-            .accent = rgb(45, 125, 210),
-            .accentHover = rgb(61, 141, 227),
-            .accentActive = rgb(86, 160, 242),
-            .info = rgb(80, 145, 220),
-            .success = rgb(79, 163, 117),
-            .warning = rgb(216, 166, 87),
-            .danger = rgb(211, 95, 95),
-            .windowRounding = 2.0F,
-            .childRounding = 2.0F,
-            .frameRounding = 3.0F,
-            .popupRounding = 4.0F,
-            .tabRounding = 3.0F,
-        };
-        return kTheme;
+        return editorUiTheme(currentEditorUiThemeId());
     }
 
     std::span<const EditorUiColorToken> editorUiColorTokens() {
         const EditorUiTheme& theme = editorUiTheme();
-        static const std::array<EditorUiColorToken, 12> kTokens{
+        static std::array<EditorUiColorToken, 22> tokens{};
+        tokens = std::array<EditorUiColorToken, 22>{
             EditorUiColorToken{.name = "App BG",
                                .color = theme.appBackground,
                                .usage = "root window and dockspace"},
             EditorUiColorToken{
                 .name = "Panel BG", .color = theme.panelBackground, .usage = "tool panels"},
+            EditorUiColorToken{.name = "Floating BG",
+                               .color = theme.floatingBackground,
+                               .usage = "popups and floating surfaces"},
             EditorUiColorToken{.name = "Panel Alt",
                                .color = theme.panelBackgroundAlt,
                                .usage = "headers and alternating rows"},
-            EditorUiColorToken{.name = "Surface",
-                               .color = theme.surface,
-                               .usage = "inputs and low-emphasis buttons"},
+            EditorUiColorToken{
+                .name = "Title BG", .color = theme.titleBackground, .usage = "window titles"},
+            EditorUiColorToken{
+                .name = "Menu BG", .color = theme.menuBackground, .usage = "main menu"},
+            EditorUiColorToken{
+                .name = "Input BG", .color = theme.inputBackground, .usage = "input fields"},
+            EditorUiColorToken{
+                .name = "Surface", .color = theme.surface, .usage = "low-emphasis buttons"},
             EditorUiColorToken{
                 .name = "Surface Hover", .color = theme.surfaceHover, .usage = "hovered controls"},
             EditorUiColorToken{
                 .name = "Surface Active", .color = theme.surfaceActive, .usage = "active controls"},
             EditorUiColorToken{.name = "Border", .color = theme.border, .usage = "thin dividers"},
-            EditorUiColorToken{.name = "Text", .color = theme.text, .usage = "primary text"},
             EditorUiColorToken{
-                .name = "Muted Text", .color = theme.textMuted, .usage = "secondary metadata"},
+                .name = "Divider", .color = theme.divider, .usage = "weak separators"},
+            EditorUiColorToken{.name = "Text", .color = theme.text, .usage = "primary text"},
+            EditorUiColorToken{.name = "Secondary Text",
+                               .color = theme.textSecondary,
+                               .usage = "secondary labels"},
+            EditorUiColorToken{
+                .name = "Weak Text", .color = theme.textMuted, .usage = "low-priority metadata"},
+            EditorUiColorToken{
+                .name = "Disabled Text", .color = theme.textDisabled, .usage = "disabled controls"},
             EditorUiColorToken{.name = "Accent", .color = theme.accent, .usage = "focus/select"},
+            EditorUiColorToken{
+                .name = "Selection", .color = theme.selection, .usage = "selected rows"},
+            EditorUiColorToken{.name = "Viewport",
+                               .color = theme.viewportBackground,
+                               .usage = "viewport placeholder"},
+            EditorUiColorToken{.name = "Success", .color = theme.success, .usage = "ready state"},
             EditorUiColorToken{
                 .name = "Warning", .color = theme.warning, .usage = "recoverable issues"},
             EditorUiColorToken{
                 .name = "Danger", .color = theme.danger, .usage = "blocking or destructive state"},
         };
-        return kTokens;
+        return tokens;
     }
 
-    void applyEditorUiTheme() {
-        const EditorUiTheme& theme = editorUiTheme();
+    ImVec4 toImGuiEncodedSrgbVec4(ColorSrgba8 color) {
+        constexpr float kByteToFloat = 1.0F / 255.0F;
+        return ImVec4{
+            static_cast<float>(color.r) * kByteToFloat, static_cast<float>(color.g) * kByteToFloat,
+            static_cast<float>(color.b) * kByteToFloat, static_cast<float>(color.a) * kByteToFloat};
+    }
+
+    ImU32 toImGuiEncodedSrgbU32(ColorSrgba8 color) {
+        return IM_COL32(color.r, color.g, color.b, color.a);
+    }
+
+    void applyEditorUiTheme(EditorUiThemeId themeId) {
+        const EditorUiTheme& theme = editorUiTheme(themeId);
+        currentThemeIdStorage() = theme.id;
+        const bool isClassicBlueGray = theme.id == EditorUiThemeId::ClassicBlueGray;
+        const ColorSrgba8 inputHoverBackground =
+            isClassicBlueGray ? theme.surface : theme.surfaceHover;
+        const ColorSrgba8 inputFocusBackground =
+            isClassicBlueGray ? rgb(29, 43, 55) : theme.surfaceActive;
+        const ColorSrgba8 caret = isClassicBlueGray ? rgb(158, 220, 255) : theme.accent;
         ImGuiStyle& style = ImGui::GetStyle();
         style.WindowPadding = ImVec2{8.0F, 8.0F};
         style.FramePadding = ImVec2{7.0F, 3.0F};
@@ -171,63 +510,71 @@ namespace asharia::editor {
         const auto setColor = [&colors](const ImGuiCol color, const ImVec4 value) {
             colors[static_cast<std::size_t>(color)] = value;
         };
-        setColor(ImGuiCol_Text, theme.text);
-        setColor(ImGuiCol_TextDisabled, theme.textMuted);
-        setColor(ImGuiCol_WindowBg, theme.panelBackground);
-        setColor(ImGuiCol_ChildBg, theme.appBackground);
-        setColor(ImGuiCol_PopupBg, rgb(24, 28, 34));
-        setColor(ImGuiCol_Border, theme.border);
+        const auto setThemeColor = [&setColor](const ImGuiCol color, const ColorSrgba8 value) {
+            setColor(color, toImGuiEncodedSrgbVec4(value));
+        };
+        setThemeColor(ImGuiCol_Text, theme.text);
+        setThemeColor(ImGuiCol_TextDisabled, theme.textDisabled);
+        setThemeColor(ImGuiCol_WindowBg, theme.panelBackground);
+        setThemeColor(ImGuiCol_ChildBg, theme.appBackground);
+        setThemeColor(ImGuiCol_PopupBg, theme.floatingBackground);
+        setThemeColor(ImGuiCol_Border, theme.border);
         setColor(ImGuiCol_BorderShadow, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
-        setColor(ImGuiCol_FrameBg, theme.surface);
-        setColor(ImGuiCol_FrameBgHovered, theme.surfaceHover);
-        setColor(ImGuiCol_FrameBgActive, theme.surfaceActive);
-        setColor(ImGuiCol_TitleBg, rgb(19, 22, 27));
-        setColor(ImGuiCol_TitleBgActive, rgb(25, 30, 36));
-        setColor(ImGuiCol_TitleBgCollapsed, rgb(19, 22, 27));
-        setColor(ImGuiCol_MenuBarBg, rgb(24, 28, 34));
-        setColor(ImGuiCol_ScrollbarBg, rgb(18, 21, 25));
-        setColor(ImGuiCol_ScrollbarGrab, rgb(57, 65, 76));
-        setColor(ImGuiCol_ScrollbarGrabHovered, rgb(71, 82, 96));
-        setColor(ImGuiCol_ScrollbarGrabActive, rgb(90, 103, 120));
-        setColor(ImGuiCol_CheckMark, theme.accentActive);
-        setColor(ImGuiCol_SliderGrab, theme.accent);
-        setColor(ImGuiCol_SliderGrabActive, theme.accentActive);
-        setColor(ImGuiCol_Button, rgb(39, 46, 55));
-        setColor(ImGuiCol_ButtonHovered, rgb(49, 61, 73));
-        setColor(ImGuiCol_ButtonActive, rgb(58, 76, 92));
-        setColor(ImGuiCol_Header, withAlpha(theme.accent, 0.32F));
-        setColor(ImGuiCol_HeaderHovered, withAlpha(theme.accentHover, 0.42F));
-        setColor(ImGuiCol_HeaderActive, withAlpha(theme.accentActive, 0.52F));
-        setColor(ImGuiCol_Separator, theme.border);
-        setColor(ImGuiCol_SeparatorHovered, theme.borderStrong);
-        setColor(ImGuiCol_SeparatorActive, theme.accent);
+        setThemeColor(ImGuiCol_FrameBg, theme.inputBackground);
+        setThemeColor(ImGuiCol_FrameBgHovered, inputHoverBackground);
+        setThemeColor(ImGuiCol_FrameBgActive, inputFocusBackground);
+        setThemeColor(ImGuiCol_TitleBg, theme.titleBackground);
+        setThemeColor(ImGuiCol_TitleBgActive, theme.titleBackground);
+        setThemeColor(ImGuiCol_TitleBgCollapsed, theme.menuBackground);
+        setThemeColor(ImGuiCol_MenuBarBg, theme.menuBackground);
+        setThemeColor(ImGuiCol_ScrollbarBg, theme.inputBackground);
+        setThemeColor(ImGuiCol_ScrollbarGrab, theme.border);
+        setThemeColor(ImGuiCol_ScrollbarGrabHovered, theme.borderStrong);
+        setThemeColor(ImGuiCol_ScrollbarGrabActive, theme.accentActive);
+        setThemeColor(ImGuiCol_CheckMark, theme.accentActive);
+        setThemeColor(ImGuiCol_SliderGrab, theme.accent);
+        setThemeColor(ImGuiCol_SliderGrabActive, theme.accentActive);
+        setThemeColor(ImGuiCol_Button, theme.surface);
+        setThemeColor(ImGuiCol_ButtonHovered, theme.surfaceHover);
+        setThemeColor(ImGuiCol_ButtonActive, theme.surfaceActive);
+        setThemeColor(ImGuiCol_Header, theme.selection);
+        setThemeColor(ImGuiCol_HeaderHovered, theme.surfaceHover);
+        setThemeColor(ImGuiCol_HeaderActive, theme.surfaceActive);
+        setThemeColor(ImGuiCol_Separator, theme.divider);
+        setThemeColor(ImGuiCol_SeparatorHovered, theme.borderStrong);
+        setThemeColor(ImGuiCol_SeparatorActive, theme.accent);
         setColor(ImGuiCol_ResizeGrip, withAlpha(theme.accent, 0.28F));
         setColor(ImGuiCol_ResizeGripHovered, withAlpha(theme.accentHover, 0.48F));
         setColor(ImGuiCol_ResizeGripActive, withAlpha(theme.accentActive, 0.68F));
-        setColor(ImGuiCol_Tab, rgb(28, 33, 39));
-        setColor(ImGuiCol_TabHovered, withAlpha(theme.accentHover, 0.42F));
-        setColor(ImGuiCol_TabSelected, rgb(39, 49, 60));
-        setColor(ImGuiCol_TabSelectedOverline, theme.accent);
-        setColor(ImGuiCol_TabDimmed, rgb(23, 27, 32));
-        setColor(ImGuiCol_TabDimmedSelected, rgb(31, 38, 46));
+        setThemeColor(ImGuiCol_Tab, theme.panelBackgroundAlt);
+        setThemeColor(ImGuiCol_TabHovered, theme.surfaceHover);
+        setThemeColor(ImGuiCol_TabSelected, theme.titleBackground);
+        setThemeColor(ImGuiCol_TabSelectedOverline, theme.accent);
+        setThemeColor(ImGuiCol_TabDimmed, theme.panelBackground);
+        setThemeColor(ImGuiCol_TabDimmedSelected, theme.surface);
         setColor(ImGuiCol_TabDimmedSelectedOverline, withAlpha(theme.accent, 0.56F));
         setColor(ImGuiCol_DockingPreview, withAlpha(theme.accentActive, 0.55F));
-        setColor(ImGuiCol_DockingEmptyBg, theme.appBackground);
-        setColor(ImGuiCol_PlotLines, theme.accentHover);
-        setColor(ImGuiCol_PlotLinesHovered, theme.accentActive);
-        setColor(ImGuiCol_PlotHistogram, theme.warning);
-        setColor(ImGuiCol_PlotHistogramHovered, rgb(235, 186, 104));
-        setColor(ImGuiCol_TableHeaderBg, theme.panelBackgroundAlt);
-        setColor(ImGuiCol_TableBorderStrong, theme.borderStrong);
-        setColor(ImGuiCol_TableBorderLight, theme.border);
-        setColor(ImGuiCol_TableRowBg, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
-        setColor(ImGuiCol_TableRowBgAlt, withAlpha(theme.panelBackgroundAlt, 0.62F));
-        setColor(ImGuiCol_TextSelectedBg, withAlpha(theme.accent, 0.38F));
-        setColor(ImGuiCol_DragDropTarget, theme.accentActive);
-        setColor(ImGuiCol_NavCursor, theme.accentActive);
+        setThemeColor(ImGuiCol_DockingEmptyBg, theme.appBackground);
+        setThemeColor(ImGuiCol_PlotLines, theme.accentHover);
+        setThemeColor(ImGuiCol_PlotLinesHovered, theme.accentActive);
+        setThemeColor(ImGuiCol_PlotHistogram, theme.warning);
+        setThemeColor(ImGuiCol_PlotHistogramHovered, theme.accentHover);
+        setThemeColor(ImGuiCol_TableHeaderBg, theme.panelBackgroundAlt);
+        setThemeColor(ImGuiCol_TableBorderStrong, theme.borderStrong);
+        setThemeColor(ImGuiCol_TableBorderLight, theme.divider);
+        setThemeColor(ImGuiCol_TableRowBg, theme.panelBackground);
+        setThemeColor(ImGuiCol_TableRowBgAlt, theme.panelBackgroundAlt);
+        setColor(ImGuiCol_TextSelectedBg, withAlpha(theme.selection, 0.72F));
+        setThemeColor(ImGuiCol_InputTextCursor, caret);
+        setThemeColor(ImGuiCol_DragDropTarget, theme.accentActive);
+        setThemeColor(ImGuiCol_NavCursor, theme.accentActive);
         setColor(ImGuiCol_NavWindowingHighlight, withAlpha(theme.accentActive, 0.72F));
         setColor(ImGuiCol_NavWindowingDimBg, ImVec4{0.0F, 0.0F, 0.0F, 0.42F});
         setColor(ImGuiCol_ModalWindowDimBg, ImVec4{0.0F, 0.0F, 0.0F, 0.48F});
+    }
+
+    void applyEditorUiTheme() {
+        applyEditorUiTheme(currentEditorUiThemeId());
     }
 
     void drawEditorUiSectionHeader(std::string_view label) {
@@ -276,13 +623,13 @@ namespace asharia::editor {
         ImGui::Dummy(size);
     }
 
-    void drawEditorUiColorSwatch(std::string_view label, ImVec4 color) {
+    void drawEditorUiColorSwatch(std::string_view label, ColorSrgba8 color) {
         const std::string text{label};
         const ImVec2 min = ImGui::GetCursorScreenPos();
         const float side = ImGui::GetTextLineHeight();
         const ImVec2 max{min.x + side, min.y + side};
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-        drawList->AddRectFilled(min, max, ImGui::GetColorU32(color), 2.0F);
+        drawList->AddRectFilled(min, max, toImGuiEncodedSrgbU32(color), 2.0F);
         drawList->AddRect(min, max, ImGui::GetColorU32(ImGuiCol_Border), 2.0F);
         ImGui::Dummy(ImVec2{side, side});
         ImGui::SameLine();

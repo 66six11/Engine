@@ -19,6 +19,13 @@ namespace asharia::editor {
         Preview,
     };
 
+    enum class EditorUiTextureColorSpace {
+        LinearColor,
+        SrgbColor,
+        AlphaCoverage,
+        Data,
+    };
+
     enum class EditorViewportRefreshPolicy {
         OnDemand,
         Continuous,
@@ -90,6 +97,7 @@ namespace asharia::editor {
     struct EditorViewportTexture {
         std::uintptr_t textureId{};
         EditorExtent2D extent;
+        EditorUiTextureColorSpace colorSpace{EditorUiTextureColorSpace::LinearColor};
         std::uint64_t frameIndex{};
     };
 

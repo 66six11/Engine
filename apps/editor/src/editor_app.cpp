@@ -120,6 +120,7 @@ namespace {
             .settings =
                 asharia::editor::EditorSettings{
                     .locale = fallbackLocale,
+                    .theme = asharia::editor::defaultEditorUiThemeId(),
                 },
             .path = editorSettingsPathForRun(smokeMode),
         };
@@ -687,11 +688,79 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool validateEditorThemeSmoke(asharia::editor::EditorRunMode mode,
+                                                asharia::editor::EditorUiThemeId expectedTheme) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+
+        const std::span<const asharia::editor::EditorUiTheme> themes =
+            asharia::editor::editorUiThemes();
+        if (themes.size() != 7U) {
+            asharia::logError("Editor theme smoke found an unexpected theme count.");
+            return false;
+        }
+        if (asharia::editor::defaultEditorUiThemeId() !=
+                asharia::editor::EditorUiThemeId::ClassicBlueGray ||
+            asharia::editor::editorUiThemeName(asharia::editor::defaultEditorUiThemeId()) !=
+                "classic-blue-gray-2") {
+            asharia::logError("Editor theme smoke found an invalid default theme.");
+            return false;
+        }
+        const asharia::editor::EditorUiTheme& classicTheme =
+            asharia::editor::editorUiTheme(asharia::editor::EditorUiThemeId::ClassicBlueGray);
+        const bool classicAppBgMatches =
+            classicTheme.appBackground.r == 0x17U && classicTheme.appBackground.g == 0x1DU &&
+            classicTheme.appBackground.b == 0x24U && classicTheme.appBackground.a == 0xFFU;
+        const bool classicAccentMatches =
+            classicTheme.accent.r == 0x72U && classicTheme.accent.g == 0xB7U &&
+            classicTheme.accent.b == 0xE8U && classicTheme.accent.a == 0xFFU;
+        if (!classicAppBgMatches || !classicAccentMatches ||
+            asharia::editor::toImGuiEncodedSrgbU32(classicTheme.appBackground) !=
+                IM_COL32(0x17U, 0x1DU, 0x24U, 0xFFU)) {
+            asharia::logError("Editor theme smoke found an invalid encoded sRGB theme byte.");
+            return false;
+        }
+        for (std::size_t index = 0; index < themes.size(); ++index) {
+            if (themes[index].storageName.empty() || themes[index].name.empty()) {
+                asharia::logError("Editor theme smoke found an unnamed theme.");
+                return false;
+            }
+            for (std::size_t otherIndex = index + 1U; otherIndex < themes.size(); ++otherIndex) {
+                if (themes[index].storageName == themes[otherIndex].storageName) {
+                    asharia::logError("Editor theme smoke found duplicate theme storage names.");
+                    return false;
+                }
+            }
+        }
+        const std::optional<asharia::editor::EditorUiThemeId> defaultTheme =
+            asharia::editor::editorUiThemeIdFromName("classic-blue-gray-2");
+        if (!defaultTheme || *defaultTheme != asharia::editor::EditorUiThemeId::ClassicBlueGray) {
+            asharia::logError("Editor theme smoke could not resolve the default theme name.");
+            return false;
+        }
+        const std::optional<asharia::editor::EditorUiThemeId> legacyDefaultTheme =
+            asharia::editor::editorUiThemeIdFromName("classic-blue-gray");
+        if (!legacyDefaultTheme ||
+            *legacyDefaultTheme != asharia::editor::EditorUiThemeId::ClassicBlueGray) {
+            asharia::logError(
+                "Editor theme smoke could not resolve the legacy default theme name.");
+            return false;
+        }
+        if (asharia::editor::currentEditorUiThemeId() != expectedTheme) {
+            asharia::logError("Editor theme smoke did not apply the startup theme.");
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool validateEditorStartupSmoke(asharia::editor::EditorRunMode mode,
                                                   const asharia::editor::ImGuiRuntime& imgui,
-                                                  asharia::editor::EditorLocale locale) {
+                                                  asharia::editor::EditorLocale locale,
+                                                  asharia::editor::EditorUiThemeId theme) {
         return validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode) &&
-               validateEditorFontSmoke(mode, imgui, locale);
+               validateEditorFontSmoke(mode, imgui, locale) &&
+               validateEditorThemeSmoke(mode, theme);
     }
 
     [[nodiscard]] asharia::editor::EditorLocale
@@ -699,6 +768,13 @@ namespace {
         return locale == asharia::editor::EditorLocale::ZhHans
                    ? asharia::editor::EditorLocale::EnUs
                    : asharia::editor::EditorLocale::ZhHans;
+    }
+
+    [[nodiscard]] asharia::editor::EditorUiThemeId
+    alternateTheme(asharia::editor::EditorUiThemeId theme) {
+        return theme == asharia::editor::EditorUiThemeId::WarmGraphiteAmber
+                   ? asharia::editor::EditorUiThemeId::ClassicBlueGray
+                   : asharia::editor::EditorUiThemeId::WarmGraphiteAmber;
     }
 
     [[nodiscard]] bool validateEditorSettingsSmoke(asharia::editor::EditorRunMode mode,
@@ -709,6 +785,7 @@ namespace {
 
         asharia::editor::EditorSettingsController& settings = editorContext.settings();
         const asharia::editor::EditorLocale initialLocale = settings.settings().locale;
+        const asharia::editor::EditorUiThemeId initialTheme = settings.settings().theme;
         const asharia::editor::EditorLocale changedLocale = alternateLocale(initialLocale);
         if (auto changed = settings.setLocale(changedLocale); !changed) {
             asharia::logError(changed.error().message);
@@ -730,6 +807,27 @@ namespace {
             return false;
         }
 
+        const asharia::editor::EditorUiThemeId changedTheme = alternateTheme(initialTheme);
+        if (auto changed = settings.setTheme(changedTheme); !changed) {
+            asharia::logError(changed.error().message);
+            return false;
+        }
+        if (settings.settings().theme != changedTheme ||
+            asharia::editor::currentEditorUiThemeId() != changedTheme) {
+            asharia::logError("Editor settings smoke did not apply the selected theme.");
+            return false;
+        }
+
+        loaded = asharia::editor::loadEditorSettings(settings.settingsPath(), initialLocale);
+        if (!loaded) {
+            asharia::logError(loaded.error().message);
+            return false;
+        }
+        if (loaded->theme != changedTheme) {
+            asharia::logError("Editor settings smoke did not persist the selected theme.");
+            return false;
+        }
+
         if (auto restored = settings.setLocale(initialLocale); !restored) {
             asharia::logError(restored.error().message);
             return false;
@@ -737,6 +835,15 @@ namespace {
         if (settings.settings().locale != initialLocale ||
             editorContext.i18n().locale() != initialLocale) {
             asharia::logError("Editor settings smoke did not restore the initial locale.");
+            return false;
+        }
+        if (auto restored = settings.setTheme(initialTheme); !restored) {
+            asharia::logError(restored.error().message);
+            return false;
+        }
+        if (settings.settings().theme != initialTheme ||
+            asharia::editor::currentEditorUiThemeId() != initialTheme) {
+            asharia::logError("Editor settings smoke did not restore the initial theme.");
             return false;
         }
 
@@ -1473,6 +1580,7 @@ namespace asharia::editor {
         ImGuiRuntime imgui;
         const ImGuiRuntimeDesc imguiDesc{
             .layoutIniPath = editorLayoutIniPathForRun(smokeMode),
+            .theme = settingsRun.settings.theme,
             .enableCjkGlyphs = true,
             .cjkFontPath = {},
             .fontPixelSize = 16.0F,
@@ -1482,7 +1590,7 @@ namespace asharia::editor {
             asharia::logError(created.error().message);
             return EXIT_FAILURE;
         }
-        if (!validateEditorStartupSmoke(mode, imgui, editorLocale)) {
+        if (!validateEditorStartupSmoke(mode, imgui, editorLocale, settingsRun.settings.theme)) {
             return EXIT_FAILURE;
         }
 
