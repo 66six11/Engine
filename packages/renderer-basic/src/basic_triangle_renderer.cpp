@@ -2400,9 +2400,9 @@ namespace asharia {
 
     Result<VulkanFrameRecordResult>
     BasicFullscreenTextureRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
-        return recordViewFrame(frame, BasicRenderViewDesc{
-                                          .target = basicSwapchainRenderViewTarget(frame),
-                                      });
+        BasicRenderViewDesc view;
+        view.target = basicSwapchainRenderViewTarget(frame);
+        return recordViewFrame(frame, view);
     }
 
     Result<VulkanFrameRecordResult>
@@ -2521,6 +2521,18 @@ namespace asharia {
         if (view.diagnostics != nullptr) {
             *view.diagnostics = BasicRenderViewDiagnostics{
                 .viewName = std::string{view.viewName},
+                .viewKind = view.viewKind,
+                .camera = view.camera,
+                .frameParams = view.frameParams,
+                .overlay =
+                    BasicRenderViewOverlayDiagnostics{
+                        .enabled = view.overlay.enabled,
+                        .colorLoadOp = view.overlay.colorLoadOp,
+                        .colorStoreOp = view.overlay.colorStoreOp,
+                        .blendMode = view.overlay.blendMode,
+                        .debugWorldLineCount =
+                            static_cast<std::uint64_t>(view.overlay.debugWorldLines.size()),
+                    },
                 .renderGraph = graph.diagnosticsSnapshot(*compiled),
             };
         }
@@ -2547,10 +2559,9 @@ namespace asharia {
         const VulkanSampledTextureView sampledViewportTarget =
             offscreenViewportTarget_.sampledTextureView();
 
-        auto view = recordViewFrame(frame, BasicRenderViewDesc{
-                                               .target = basicSampledRenderViewTarget(
-                                                   sampledViewportTarget),
-                                           });
+        BasicRenderViewDesc renderView;
+        renderView.target = basicSampledRenderViewTarget(sampledViewportTarget);
+        auto view = recordViewFrame(frame, renderView);
         if (!view) {
             return std::unexpected{std::move(view.error())};
         }

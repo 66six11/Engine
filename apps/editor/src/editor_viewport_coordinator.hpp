@@ -46,6 +46,11 @@ namespace asharia::editor {
         std::uint64_t lastRenderViewDiagnosticsAccessEdges{};
         std::uint64_t lastRenderViewDiagnosticsDependencyEdges{};
         std::uint64_t lastRenderViewDiagnosticsTransitions{};
+        asharia::BasicRenderViewKind lastRenderViewDiagnosticsKind{
+            asharia::BasicRenderViewKind::Scene};
+        std::uint64_t lastRenderViewDiagnosticsFrameIndex{};
+        bool lastRenderViewDiagnosticsOverlayEnabled{};
+        std::uint64_t lastRenderViewDiagnosticsDebugWorldLines{};
     };
 
     struct EditorRecordedRenderViewDiagnostics {

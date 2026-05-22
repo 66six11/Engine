@@ -138,6 +138,7 @@ SceneViewPanel::draw()
 EditorViewportCoordinator::recordRequestedViews()
   keep effective viewport flags as view-local render intent
   ensure or reuse VulkanRenderTarget for requested extent
+  map editor flags to BasicRenderViewDesc view/camera/frame/overlay contract
   BasicFullscreenTextureRenderer::recordViewFrame()
   ImGuiTextureRegistry::registerOrUpdate(sampled texture view + flag metadata)
   keep pending/presented/retired viewport texture state
@@ -145,6 +146,12 @@ EditorViewportCoordinator::recordRequestedViews()
 
 The display is intentionally one frame delayed. This keeps panel drawing simple and avoids two-phase panel rendering until
 same-frame presentation is required and measured.
+
+Scene View overlay state remains editor-owned until the coordinator translates it into renderer-owned data. Renderer-facing
+`BasicRenderViewDesc` uses `BasicRenderViewKind`, camera matrices, per-view frame params, explicit overlay color load/store
+and blend policy, plus a data-only debug world-line span. It does not use `EditorViewportKind`,
+`EditorViewportOverlayFlags`, ImGui ids or Vulkan handles from panels. Grid, gizmo and debug draw passes must consume this
+contract in later slices instead of reading editor panel state directly.
 
 ## 生命周期
 

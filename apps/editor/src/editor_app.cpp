@@ -476,6 +476,14 @@ namespace {
                 "Editor viewport smoke recorded unexpected render view diagnostics counts.");
             return false;
         }
+        if (viewportStats.lastRenderViewDiagnosticsKind != asharia::BasicRenderViewKind::Scene ||
+            viewportStats.lastRenderViewDiagnosticsFrameIndex == 0 ||
+            !viewportStats.lastRenderViewDiagnosticsOverlayEnabled ||
+            viewportStats.lastRenderViewDiagnosticsDebugWorldLines != 0) {
+            asharia::logError(
+                "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
+            return false;
+        }
         return true;
     }
 

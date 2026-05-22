@@ -102,8 +102,86 @@ namespace asharia {
         BasicRenderViewTargetFinalUsage finalUsage{BasicRenderViewTargetFinalUsage::Present};
     };
 
+    enum class BasicRenderViewKind {
+        Game,
+        Scene,
+        Preview,
+    };
+
+    using BasicRenderViewMatrix4x4 = std::array<float, 16>;
+
+    [[nodiscard]] constexpr BasicRenderViewMatrix4x4 basicRenderViewIdentityMatrix() {
+        return BasicRenderViewMatrix4x4{
+            1.0F, 0.0F, 0.0F, 0.0F,
+            0.0F, 1.0F, 0.0F, 0.0F,
+            0.0F, 0.0F, 1.0F, 0.0F,
+            0.0F, 0.0F, 0.0F, 1.0F,
+        };
+    }
+
+    struct BasicRenderViewCamera {
+        BasicRenderViewMatrix4x4 view{basicRenderViewIdentityMatrix()};
+        BasicRenderViewMatrix4x4 projection{basicRenderViewIdentityMatrix()};
+        BasicRenderViewMatrix4x4 viewProjection{basicRenderViewIdentityMatrix()};
+        std::array<float, 3> position{};
+        float nearPlane{0.1F};
+        float farPlane{1000.0F};
+    };
+
+    struct BasicRenderViewFrameParams {
+        std::uint64_t frameIndex{};
+        float timeSeconds{};
+        float deltaSeconds{};
+        float renderScale{1.0F};
+    };
+
+    struct BasicDebugWorldLine {
+        std::array<float, 3> start{};
+        std::array<float, 3> end{};
+        std::array<float, 4> color{1.0F, 1.0F, 1.0F, 1.0F};
+    };
+
+    enum class BasicRenderViewOverlayColorLoadOp {
+        LoadSceneColor,
+        Clear,
+    };
+
+    enum class BasicRenderViewOverlayColorStoreOp {
+        Store,
+        Discard,
+    };
+
+    enum class BasicRenderViewOverlayBlendMode {
+        AlphaBlend,
+        Additive,
+    };
+
+    struct BasicRenderViewOverlayDesc {
+        bool enabled{};
+        BasicRenderViewOverlayColorLoadOp colorLoadOp{
+            BasicRenderViewOverlayColorLoadOp::LoadSceneColor};
+        BasicRenderViewOverlayColorStoreOp colorStoreOp{
+            BasicRenderViewOverlayColorStoreOp::Store};
+        BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
+        std::span<const BasicDebugWorldLine> debugWorldLines{};
+    };
+
+    struct BasicRenderViewOverlayDiagnostics {
+        bool enabled{};
+        BasicRenderViewOverlayColorLoadOp colorLoadOp{
+            BasicRenderViewOverlayColorLoadOp::LoadSceneColor};
+        BasicRenderViewOverlayColorStoreOp colorStoreOp{
+            BasicRenderViewOverlayColorStoreOp::Store};
+        BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
+        std::uint64_t debugWorldLineCount{};
+    };
+
     struct BasicRenderViewDiagnostics {
         std::string viewName;
+        BasicRenderViewKind viewKind{BasicRenderViewKind::Game};
+        BasicRenderViewCamera camera;
+        BasicRenderViewFrameParams frameParams;
+        BasicRenderViewOverlayDiagnostics overlay;
         RenderGraphDiagnosticsSnapshot renderGraph;
     };
 
@@ -128,6 +206,10 @@ namespace asharia {
 
     struct BasicRenderViewDesc {
         BasicRenderViewTarget target{};
+        BasicRenderViewKind viewKind{BasicRenderViewKind::Game};
+        BasicRenderViewCamera camera;
+        BasicRenderViewFrameParams frameParams;
+        BasicRenderViewOverlayDesc overlay;
         std::string_view viewName{"RenderView"};
         BasicRenderViewDiagnostics* diagnostics{};
         BasicDebugPreviewRequest* debugPreview{};

@@ -49,6 +49,45 @@ namespace {
         return "Viewport";
     }
 
+    asharia::BasicRenderViewKind
+    basicRenderViewKind(asharia::editor::EditorViewportKind kind) {
+        switch (kind) {
+        case asharia::editor::EditorViewportKind::Scene:
+            return asharia::BasicRenderViewKind::Scene;
+        case asharia::editor::EditorViewportKind::Game:
+            return asharia::BasicRenderViewKind::Game;
+        case asharia::editor::EditorViewportKind::Preview:
+            return asharia::BasicRenderViewKind::Preview;
+        }
+        return asharia::BasicRenderViewKind::Scene;
+    }
+
+    asharia::BasicRenderViewCamera basicEditorSceneCamera() {
+        asharia::BasicRenderViewCamera camera;
+        camera.position = {0.0F, 0.0F, 5.0F};
+        return camera;
+    }
+
+    asharia::BasicRenderViewFrameParams basicRenderViewFrameParams(std::uint64_t frameIndex) {
+        return asharia::BasicRenderViewFrameParams{
+            .frameIndex = frameIndex,
+            .timeSeconds = 0.0F,
+            .deltaSeconds = 0.0F,
+            .renderScale = 1.0F,
+        };
+    }
+
+    asharia::BasicRenderViewOverlayDesc
+    basicRenderViewOverlay(asharia::editor::EditorViewportOverlayFlags flags) {
+        return asharia::BasicRenderViewOverlayDesc{
+            .enabled = asharia::editor::anyEditorViewportOverlayFlagEnabled(flags),
+            .colorLoadOp = asharia::BasicRenderViewOverlayColorLoadOp::LoadSceneColor,
+            .colorStoreOp = asharia::BasicRenderViewOverlayColorStoreOp::Store,
+            .blendMode = asharia::BasicRenderViewOverlayBlendMode::AlphaBlend,
+            .debugWorldLines = {},
+        };
+    }
+
     const asharia::RenderGraphDiagnosticsResourceNode*
     findImageResource(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                       std::uint32_t resourceIndex) {
@@ -236,6 +275,10 @@ namespace asharia::editor {
                         .aspectMask = texture.aspectMask,
                         .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
                     },
+                .viewKind = basicRenderViewKind(request.kind),
+                .camera = basicEditorSceneCamera(),
+                .frameParams = basicRenderViewFrameParams(viewportFrameIndex),
+                .overlay = basicRenderViewOverlay(request.overlayFlags),
                 .viewName = editorViewportKindName(request.kind),
                 .diagnostics = &diagnostics,
             });
@@ -284,6 +327,13 @@ namespace asharia::editor {
             renderTexture.diagnostics.renderGraph.dependencyEdges.size();
         stats_.lastRenderViewDiagnosticsTransitions =
             renderTexture.diagnostics.renderGraph.transitions.size();
+        stats_.lastRenderViewDiagnosticsKind = renderTexture.diagnostics.viewKind;
+        stats_.lastRenderViewDiagnosticsFrameIndex =
+            renderTexture.diagnostics.frameParams.frameIndex;
+        stats_.lastRenderViewDiagnosticsOverlayEnabled =
+            renderTexture.diagnostics.overlay.enabled;
+        stats_.lastRenderViewDiagnosticsDebugWorldLines =
+            renderTexture.diagnostics.overlay.debugWorldLineCount;
         if (anyEditorViewportOverlayFlagEnabled(request.overlayFlags)) {
             ++stats_.overlayFlagFramesRendered;
         }
@@ -392,22 +442,20 @@ namespace asharia::editor {
             .result = &previewResult,
         };
 
-        auto recorded = renderer.recordViewFrame(
-            frame,
-            asharia::BasicRenderViewDesc{
-                .target =
-                    asharia::BasicRenderViewTarget{
-                        .image = replayTexture.image,
-                        .imageView = replayTexture.imageView,
-                        .format = replayTexture.format,
-                        .extent = replayTexture.extent,
-                        .aspectMask = replayTexture.aspectMask,
-                        .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
-                    },
-                .viewName = "Frame Debug Replay",
-                .diagnostics = nullptr,
-                .debugPreview = &previewRequest,
-            });
+        asharia::BasicRenderViewDesc replayView;
+        replayView.target = asharia::BasicRenderViewTarget{
+            .image = replayTexture.image,
+            .imageView = replayTexture.imageView,
+            .format = replayTexture.format,
+            .extent = replayTexture.extent,
+            .aspectMask = replayTexture.aspectMask,
+            .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
+        };
+        replayView.viewKind = asharia::BasicRenderViewKind::Preview;
+        replayView.viewName = "Frame Debug Replay";
+        replayView.debugPreview = &previewRequest;
+
+        auto recorded = renderer.recordViewFrame(frame, replayView);
         if (!recorded) {
             return std::unexpected{std::move(recorded.error())};
         }

@@ -393,7 +393,7 @@ Every sub-stage must:
 | 16 | 16.1-16.7 Done | Done | Split editor shell from one file into host/runtime/panel/action/event modules. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.8 Done; 21.9-21.15 Next/Blocked | In progress | Add Frame Debug image preview/replay foundation, then close Scene View grid/gizmo/overlay prerequisites. |
+| 21 | 21.1-21.9 Done; 21.10-21.15 Next/Blocked | In progress | Add Frame Debug image preview/replay foundation, then connect Scene View grid/gizmo/debug overlays. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -993,7 +993,7 @@ Validation:
 
 ### 21.9 Render View Overlay Prerequisites
 
-Status: Next.
+Status: Done.
 
 Scope:
 
@@ -1002,9 +1002,19 @@ Scope:
   debug/world-line draw route.
 - Keep Scene/debug overlay passes view-local and opt-in; Game View cannot receive Scene View authoring passes implicitly.
 
+Implementation:
+
+- `BasicRenderViewDesc` now carries renderer-owned view kind, camera matrices, per-view frame params and overlay composite
+  policy without using editor-only types.
+- `BasicRenderViewOverlayDesc` defines explicit color load/store behavior, blend mode and a narrow data-only
+  `BasicDebugWorldLine` route for future grid/debug-line packets.
+- `BasicRenderViewDiagnostics` echoes the view and overlay contract so smokes can verify the data reached the renderer.
+- `EditorViewportCoordinator` maps effective Scene/Game/Preview overlay flags into that renderer contract while preserving
+  the existing Game/Preview filtering rules.
+
 Validation:
 
-- Renderer smoke verifies view params reach `BasicRenderViewDesc` without editor-only types.
+- Editor viewport smoke verifies view params and overlay contract reach `BasicRenderViewDesc` without editor-only types.
 - Editor viewport smoke continues to prove Game/Preview filtering of Scene-only authoring flags.
 
 ### 21.10 Camera-Aware Scene Grid
@@ -1299,12 +1309,10 @@ Current completed slices:
 - `feat: add frame debug replay contract`: Frame Debug now has pass/event selection in the primary panel. Selecting a compiled
   pass requests a debug preview refresh through the existing replay/copy path while normal RenderView recording stays paused.
 
-1. `feat: add render view overlay prerequisites`
+1. `feat: add camera-aware scene grid`
 
-Prepare renderer-owned view data before connecting Scene View grid: camera/view/projection params, explicit overlay pass
-load/store behavior, blend state support or an equivalent overlay composition path, and a narrow debug/world-line draw route.
-Then add a camera-aware world grid as the first Scene View-only render pass; no gizmo interaction, picking or selection outline
-in that slice.
+Add the first Scene View-only overlay pass using the RenderView camera params and debug/world-line route introduced in 21.9.
+No gizmo interaction, picking or selection outline in that slice.
 
 2. `feat: add pass/event texture preview upgrade`
 
