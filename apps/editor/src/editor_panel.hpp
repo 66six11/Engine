@@ -89,6 +89,8 @@ namespace asharia::editor {
         [[nodiscard]] bool isOpen(std::string_view panelId) const;
         [[nodiscard]] std::size_t panelCount() const;
         [[nodiscard]] std::size_t openPanelCount() const;
+        [[nodiscard]] std::string panelWindowTitle(std::string_view panelId,
+                                                   const EditorI18n& i18n) const;
 
         void setEventQueue(EditorEventQueue* eventQueue);
         void drawPanels(EditorFrameContext& context);

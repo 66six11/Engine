@@ -127,6 +127,17 @@ namespace asharia::editor {
             panels_, [](const PanelEntry& entry) { return entry.state.open; }));
     }
 
+    std::string EditorPanelRegistry::panelWindowTitle(std::string_view panelId,
+                                                      const EditorI18n& i18n) const {
+        const PanelEntry* entry = findPanel(panelId);
+        if (entry == nullptr) {
+            return std::string{panelId};
+        }
+        return i18n.label(EditorI18nLabelDesc{.key = entry->desc.titleKey,
+                                              .stableId = entry->desc.id.value,
+                                              .fallback = entry->desc.title});
+    }
+
     void EditorPanelRegistry::setEventQueue(EditorEventQueue* eventQueue) {
         eventQueue_ = eventQueue;
     }
@@ -144,10 +155,7 @@ namespace asharia::editor {
             }
 
             bool open = entry.state.open;
-            const std::string windowTitle =
-                context.i18n.label(EditorI18nLabelDesc{.key = entry.desc.titleKey,
-                                                       .stableId = entry.desc.id.value,
-                                                       .fallback = entry.desc.title});
+            const std::string windowTitle = panelWindowTitle(entry.desc.id.value, context.i18n);
             const bool visible = ImGui::Begin(windowTitle.c_str(), &open);
             const bool wasOpen = entry.state.open;
             entry.state.open = open;

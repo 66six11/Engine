@@ -882,8 +882,10 @@ namespace {
                           asharia::editor::EditorContext& editorContext,
                           asharia::editor::EditorPanelRegistry& panelRegistry,
                           asharia::editor::EditorFrameContext& frameContext) {
-        asharia::editor::drawEditorDockspace();
         asharia::editor::drawEditorMainMenu(actionRegistry, editorContext);
+        asharia::editor::drawEditorCommandBar(actionRegistry, editorContext);
+        asharia::editor::drawEditorStatusBar(frameContext, editorContext);
+        asharia::editor::drawEditorDockspace(editorContext);
         panelRegistry.drawPanels(frameContext);
     }
 

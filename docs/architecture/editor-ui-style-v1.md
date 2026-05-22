@@ -492,11 +492,14 @@ Implemented:
 - encoded sRGB ImGui adapter.
 - custom ImGui fragment shader with vertex color sRGB decode.
 - UI texture color-space metadata propagation for editor viewport textures.
+- Editor shell command bar and status bar using the current editor theme tokens.
+- Default docking layout that places Scene/RG/debug panels around the center viewport area.
+- Theme Workbench three-column Tokens / Component Preview / Inspector layout with viewport and texture viewer mocks.
 
 Planned:
 
 - Theme JSON externalization.
 - Viewport-specific tokens.
-- Theme Workbench.
+- Theme Workbench contrast checks and richer usage diagnostics.
 - Viewport header, grid fade, selection outline and gizmo styling.
 - Texture Viewer style and pixel inspect UI.

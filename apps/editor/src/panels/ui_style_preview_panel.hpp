@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <array>
+#include <cstddef>
 
 #include "editor_panel.hpp"
 
@@ -24,6 +25,7 @@ namespace asharia::editor {
         bool checkboxValue_{true};
         float sliderValue_{0.42F};
         int comboIndex_{0};
+        std::size_t selectedTokenIndex_{0};
     };
 
 } // namespace asharia::editor
