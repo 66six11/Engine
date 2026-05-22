@@ -1,6 +1,9 @@
 {
   "locale": "en-US",
   "texts": {
+    "scene.overlay.gizmo": "Gizmo",
+    "scene.overlay.grid": "Grid",
+    "scene.overlay.selection": "Select",
     "action.debug.captureFrame": "Capture Frame",
     "action.debug.resumeFrame": "Resume",
     "action.file.exit": "Exit",

@@ -11,6 +11,8 @@ namespace asharia::editor {
         void draw(EditorFrameContext& context, EditorPanelState& state) override;
 
     private:
+        EditorViewportOverlayFlags overlayFlags_{defaultEditorSceneViewOverlayFlags()};
+
         EditorPanelDesc desc_{
             .id = EditorId{.value = "scene-view"},
             .title = "Scene View",

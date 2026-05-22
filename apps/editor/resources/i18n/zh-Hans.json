@@ -1,6 +1,9 @@
 {
   "locale": "zh-Hans",
   "texts": {
+    "scene.overlay.gizmo": "变换",
+    "scene.overlay.grid": "网格",
+    "scene.overlay.selection": "选择",
     "action.debug.captureFrame": "捕获帧",
     "action.debug.resumeFrame": "继续",
     "action.file.exit": "退出",

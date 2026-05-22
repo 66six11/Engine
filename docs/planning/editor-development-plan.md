@@ -588,12 +588,18 @@ Implementation:
   registry.
 - The first viewport overlay ids are declared as Scene View tool intent; actual grid/gizmo drawing remains in later Scene
   View overlay slices.
+- `EditorToolRegistry::visitViewportOverlays()` now exposes viewport overlay contributions by viewport id, and Scene View
+  uses those contributions to build its compact overlay strip instead of duplicating tool-owned ids.
+- `SceneViewPanel` owns panel-local grid, gizmo and selection-outline toggle state, draws the controls over the sampled
+  viewport, and submits the current flags through the existing on-demand viewport request path.
 
 Validation:
 
 - Editor shell smoke validates tool, panel, action, toolbar and viewport overlay contribution counts.
 - Smoke verifies tool contribution targets point at registered panels/actions and that debug/view/utility toolbar slots are
   populated.
+- Smoke verifies the Scene View overlay contribution query returns grid, gizmo and selection-outline ids while unrelated
+  viewport ids return no controls.
 
 ## Phase 17: Editor Viewport Host
 

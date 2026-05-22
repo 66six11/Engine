@@ -196,6 +196,8 @@ contributions out of panel widget code.
 not own panel factories or invoke commands; those remain in `EditorPanelRegistry` and `EditorActionRegistry`. The command bar
 is generated from tool toolbar contributions, so future tools can shape the editor chrome without adding more hard-coded
 button lists to `imgui_editor_shell`.
+Viewport overlay contributions are queried by viewport id through `visitViewportOverlays()`. Scene View uses that query to
+draw its compact grid/gizmo/selection-outline strip over the sampled viewport while keeping overlay ids tool-owned.
 
 ### ImGui theme
 
@@ -286,6 +288,8 @@ Tool rules:
 - Do not execute actions or draw panel contents from the tool registry.
 - Keep toolbar placement as metadata; the shell decides how toolbar slots are presented.
 - Keep viewport overlay ids backend-neutral and map them to RenderView/debug draw inputs through the viewport coordinator.
+- Query viewport overlays by viewport id when panel chrome needs controls; do not duplicate another tool's overlay list in a
+  panel.
 - Use `editor_i18n` keys for user-facing labels and keep technical names such as pass, resource and shader identifiers
   untranslated.
 
@@ -319,9 +323,10 @@ Add new viewport consumers through `EditorViewportKind` and the `EditorViewportP
 Game View and Preview View should share renderer/RHI caches but own view-local request state.
 
 `EditorViewportOverlayFlags` currently carries grid、transform gizmo、wire、selection outline、debug overlay and debug gizmo intent.
-The Scene View panel requests the default Scene authoring flags. `EditorViewportCoordinator` strips Scene-only authoring
-flags from Game/Preview requests, but Game View may retain explicitly requested debug overlay/debug gizmo flags for future
-runtime diagnostics.
+The Scene View panel owns the current grid, transform gizmo and selection-outline toggle state through its viewport overlay
+strip and submits those flags with each on-demand request. `EditorViewportCoordinator` strips Scene-only authoring flags from
+Game/Preview requests, but Game View may retain explicitly requested debug overlay/debug gizmo flags for future runtime
+diagnostics.
 
 Game View 不能隐式包含 grid、transform gizmo、wire overlay、selection outline 这类 Scene View authoring pass；如果用户需要在 Game View 里看 runtime debug gizmo，必须通过明确的 debug overlay/debug gizmo flag 进入 graph。
 

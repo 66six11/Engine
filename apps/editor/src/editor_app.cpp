@@ -523,8 +523,7 @@ namespace {
             return true;
         }
 
-        if (!runResult.frameDebugCaptureRequested ||
-            !runResult.frameDebugReplayPassRequested ||
+        if (!runResult.frameDebugCaptureRequested || !runResult.frameDebugReplayPassRequested ||
             !runResult.frameDebugPreviewRequested || !runResult.frameDebugPreviewVisible ||
             !runResult.frameDebugResumeRequested || !runResult.frameDebugRenderedAfterResume) {
             asharia::logError(
@@ -1132,6 +1131,7 @@ namespace {
                 .frameDebugger = frameDebugger,
                 .i18n = editorContext.i18n(),
                 .settings = editorContext.settings(),
+                .tools = editorContext.tools(),
                 .inputRouter = inputRouter,
                 .renderGraphSnapshots = viewportHost,
                 .viewportHost = viewportHost,
@@ -1503,8 +1503,7 @@ namespace {
             .title = "UI Style Preview",
             .titleKey = "tool.uiStylePreview",
             .category = asharia::editor::EditorToolCategory::Styling,
-            .panels =
-                {asharia::editor::EditorToolPanelContribution{.panelId = "ui-style-preview"}},
+            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "ui-style-preview"}},
             .actions = {asharia::editor::EditorToolActionContribution{
                 .actionId = "view.ui-style-preview",
                 .toolbarSlot = asharia::editor::EditorToolbarSlot::Utility,
@@ -1663,12 +1662,12 @@ namespace {
         bool referencesValid = true;
         toolRegistry.visitTools([&](const asharia::editor::EditorToolDesc& tool) {
             for (const asharia::editor::EditorToolPanelContribution& panel : tool.panels) {
-                referencesValid = referencesValid &&
-                                  panelRegistry.findPanelDesc(panel.panelId) != nullptr;
+                referencesValid =
+                    referencesValid && panelRegistry.findPanelDesc(panel.panelId) != nullptr;
             }
             for (const asharia::editor::EditorToolActionContribution& action : tool.actions) {
-                referencesValid = referencesValid &&
-                                  actionRegistry.findAction(action.actionId) != nullptr;
+                referencesValid =
+                    referencesValid && actionRegistry.findAction(action.actionId) != nullptr;
             }
             for (const asharia::editor::EditorToolViewportOverlayContribution& overlay :
                  tool.viewportOverlays) {
@@ -1708,6 +1707,36 @@ namespace {
             });
         if (!sawDebugToolbarAction || !sawViewToolbarAction || !sawUtilityToolbarAction) {
             asharia::logError("Editor tool registry smoke missed a toolbar contribution slot.");
+            return false;
+        }
+
+        std::size_t sceneOverlayCount = 0;
+        bool sawSceneGrid = false;
+        bool sawSceneGizmo = false;
+        bool sawSceneSelectionOutline = false;
+        toolRegistry.visitViewportOverlays(
+            "scene-view",
+            [&](const asharia::editor::EditorToolDesc& tool,
+                const asharia::editor::EditorToolViewportOverlayContribution& overlay) {
+                static_cast<void>(tool);
+                ++sceneOverlayCount;
+                sawSceneGrid = sawSceneGrid || overlay.overlayId == "scene.grid";
+                sawSceneGizmo = sawSceneGizmo || overlay.overlayId == "scene.transform-gizmo";
+                sawSceneSelectionOutline =
+                    sawSceneSelectionOutline || overlay.overlayId == "scene.selection-outline";
+            });
+        std::size_t gameOverlayCount = 0;
+        toolRegistry.visitViewportOverlays(
+            "game-view",
+            [&](const asharia::editor::EditorToolDesc& tool,
+                const asharia::editor::EditorToolViewportOverlayContribution& overlay) {
+                static_cast<void>(tool);
+                static_cast<void>(overlay);
+                ++gameOverlayCount;
+            });
+        if (sceneOverlayCount != kExpectedViewportOverlayContributions || gameOverlayCount != 0 ||
+            !sawSceneGrid || !sawSceneGizmo || !sawSceneSelectionOutline) {
+            asharia::logError("Editor tool registry smoke missed a viewport overlay query.");
             return false;
         }
 
@@ -1893,11 +1922,11 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        asharia::editor::EditorContext editorContext{panelRegistry, eventQueue, diagnosticsLog,
-                                                     frameDebugger, editorI18n, settingsController,
-                                                     workspaceController, toolRegistry};
-        if (!validateEditorRegistrationSmoke(
-                mode, actionRegistry, editorContext, panelRegistry, toolRegistry)) {
+        asharia::editor::EditorContext editorContext{
+            panelRegistry, eventQueue,         diagnosticsLog,      frameDebugger,
+            editorI18n,    settingsController, workspaceController, toolRegistry};
+        if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, panelRegistry,
+                                             toolRegistry)) {
             return EXIT_FAILURE;
         }
 

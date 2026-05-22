@@ -126,6 +126,20 @@ namespace asharia::editor {
         }
     }
 
+    void EditorToolRegistry::visitViewportOverlays(
+        std::string_view viewportId, const EditorToolViewportOverlayVisitor& visitor) const {
+        if (!visitor || viewportId.empty()) {
+            return;
+        }
+        for (const EditorToolDesc& tool : tools_) {
+            for (const EditorToolViewportOverlayContribution& overlay : tool.viewportOverlays) {
+                if (overlay.viewportId == viewportId) {
+                    visitor(tool, overlay);
+                }
+            }
+        }
+    }
+
     EditorToolDesc* EditorToolRegistry::findToolEntry(std::string_view toolId) {
         const auto found = std::ranges::find_if(
             tools_, [toolId](const EditorToolDesc& tool) { return tool.id.value == toolId; });

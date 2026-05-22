@@ -55,6 +55,8 @@ namespace asharia::editor {
     using EditorToolVisitor = std::function<void(const EditorToolDesc&)>;
     using EditorToolActionVisitor =
         std::function<void(const EditorToolDesc&, const EditorToolActionContribution&)>;
+    using EditorToolViewportOverlayVisitor =
+        std::function<void(const EditorToolDesc&, const EditorToolViewportOverlayContribution&)>;
 
     class EditorToolRegistry {
     public:
@@ -68,6 +70,8 @@ namespace asharia::editor {
         void visitTools(const EditorToolVisitor& visitor) const;
         void visitToolbarActions(EditorToolbarSlot slot,
                                  const EditorToolActionVisitor& visitor) const;
+        void visitViewportOverlays(std::string_view viewportId,
+                                   const EditorToolViewportOverlayVisitor& visitor) const;
 
     private:
         [[nodiscard]] EditorToolDesc* findToolEntry(std::string_view toolId);
