@@ -867,9 +867,10 @@ flowchart TD
     state，Scene View request 携带 camera context，并在 `EditorViewportCoordinator` 边界 bridge 到
     `BasicRenderViewCamera`；renderer/basic 不消费 `EditorViewportOverlayFlags`、ImGui state 或 editor camera
     state。`editorViewportCameraForExtent()` 负责 resize 后重算投影，`unprojectEditorViewportPoint()` 提供
-    viewport pixel 到 world ray 的后端无关语义。`EditorViewportOverlayProvider` v0 可以收到 camera context，但
-    当前仍只生成固定原点 XZ grid packet。orbit/pan/dolly 输入、camera-aware grid policy 和可见 debug line pass
-    后续再通过这条 route 接入。
+    viewport-local pixel（左上角原点，Y down）到 world ray 的后端无关语义；该 ray 用 inverse view-projection
+    计算，`origin`/`nearPoint` 位于 near clipping plane，`farPoint` 位于 far clipping plane。
+    `EditorViewportOverlayProvider` v0 可以收到 camera context，但当前仍只生成固定原点 XZ grid packet。
+    orbit/pan/dolly 输入、camera-aware grid policy 和可见 debug line pass 后续再通过这条 route 接入。
 14. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的

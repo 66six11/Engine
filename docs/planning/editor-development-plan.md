@@ -1287,11 +1287,13 @@ Current implementation:
   enabled.
 - Provider context receives the editor-only Scene View camera data, but the fixed grid sample does not use it yet.
 - `SceneViewPanel` owns transient editor camera state. `editorViewportCameraForExtent()` recomputes projection data on
-  viewport resize, and `unprojectEditorViewportPoint()` maps viewport pixels to world rays for later picking/grid policy.
+  viewport resize, and `unprojectEditorViewportPoint()` maps viewport-local pixels to near/far world rays for later
+  picking/grid policy.
 - `EditorViewportCoordinator` maps provider packets into `BasicRenderViewOverlayDesc`.
 - `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
-  packet, camera diagnostics to match the Scene View request, center unproject ray stability, resize aspect handling, and
-  RenderView diagnostics debug-world-line count to be nonzero for a flagged Scene View render.
+  packet, camera diagnostics to match the Scene View request, center unproject ray stability, near-plane origin, viewport
+  corner orientation, invalid matrix rejection, resize aspect handling, and RenderView diagnostics debug-world-line count to
+  be nonzero for a flagged Scene View render.
 - This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
   complete orbit/pan/dolly input, renderer-owned debug line pass, graph pass node, or visible GPU line rendering yet.
 
@@ -1312,19 +1314,23 @@ Scope:
 - Keep camera state editor-only and panel-owned; do not add a runtime Camera component or scene serialization.
 - Preserve the `EditorViewportRequest` camera bridge into `BasicRenderViewCamera`.
 - Recompute view/projection/viewProjection when the viewport extent changes.
-- Provide a backend-neutral viewport pixel to world ray helper for future picking, gizmos and camera-aware grid policy.
+- Provide a backend-neutral viewport-local pixel to near/far world ray helper for future picking, gizmos and camera-aware
+  grid policy.
 - Defer full orbit/pan/dolly input behavior to a separate interaction slice.
 
 Implementation:
 
 - `SceneViewPanel` now stores transient `EditorViewportCamera` state and reuses it across frames.
 - `editorViewportCameraForExtent()` updates aspect/projection data while preserving position/target/up/fov/clip values.
-- `unprojectEditorViewportPoint()` maps viewport-local pixels through the editor camera basis into a normalized world ray.
+- `unprojectEditorViewportPoint()` maps viewport-local pixels through inverse view-projection into a near-plane origin,
+  far-plane point and normalized world ray. GLM is an `apps/editor` implementation detail and is not exposed in the public
+  viewport API.
 
 Validation:
 
-- `--smoke-editor-viewport` validates the default center unproject ray, normalized direction, zero-extent rejection and
-  resize aspect handling alongside RenderView camera diagnostics.
+- `--smoke-editor-viewport` validates the default center unproject ray, near-plane origin, normalized direction, corner
+  orientation, zero-extent rejection, invalid matrix rejection and resize aspect handling alongside RenderView camera
+  diagnostics.
 
 ### 21.12 Pass Graph Node View
 
@@ -1604,8 +1610,8 @@ Current completed slices:
   a renderer event requests a debug preview refresh through the existing replay/copy path while normal RenderView recording
   stays paused.
 - `feat: add scene view unproject foundation`: `SceneViewPanel` owns transient editor camera state, viewport resize
-  recomputes camera projection data, and `unprojectEditorViewportPoint()` maps viewport-local pixels to normalized world
-  rays for later picking, gizmos and camera-aware grid policy.
+  recomputes camera projection data, and `unprojectEditorViewportPoint()` maps viewport-local pixels through inverse
+  view-projection to near/far world rays for later picking, gizmos and camera-aware grid policy.
 
 1. `feat: add camera-aware scene grid`
 

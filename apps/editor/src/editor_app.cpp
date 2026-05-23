@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -203,6 +204,13 @@ namespace {
         return std::fabs(lhs - rhs) < 0.0001F;
     }
 
+    float editorVec3Distance(std::array<float, 3> lhs, std::array<float, 3> rhs) {
+        const float deltaX = lhs[0] - rhs[0];
+        const float deltaY = lhs[1] - rhs[1];
+        const float deltaZ = lhs[2] - rhs[2];
+        return std::sqrt((deltaX * deltaX) + (deltaY * deltaY) + (deltaZ * deltaZ));
+    }
+
     bool sameViewportOverlayFlags(asharia::editor::EditorViewportOverlayFlags lhs,
                                   asharia::editor::EditorViewportOverlayFlags rhs) {
         return lhs.gridVisible == rhs.gridVisible && lhs.gizmoVisible == rhs.gizmoVisible &&
@@ -236,11 +244,32 @@ namespace {
         const std::optional<asharia::editor::EditorViewportWorldRay> ray =
             asharia::editor::unprojectEditorViewportPoint(
                 camera, extent, asharia::editor::EditorViewportPoint{.x = 160.0F, .y = 120.0F});
-        if (!ray || !closeFloat(ray->origin[0], 0.0F) || !closeFloat(ray->origin[1], 2.0F) ||
-            !closeFloat(ray->origin[2], -6.0F) || !closeFloat(ray->direction[0], 0.0F) ||
-            !closeFloat(ray->direction[1], -0.31622776F) ||
+        if (!ray || !closeFloat(ray->origin[0], ray->nearPoint[0]) ||
+            !closeFloat(ray->origin[1], ray->nearPoint[1]) ||
+            !closeFloat(ray->origin[2], ray->nearPoint[2]) ||
+            !closeFloat(ray->nearPoint[0], 0.0F) || !closeFloat(ray->nearPoint[1], 1.96837723F) ||
+            !closeFloat(ray->nearPoint[2], -5.90513182F) ||
+            !closeFloat(editorVec3Distance(camera.position, ray->nearPoint), camera.nearPlane) ||
+            !closeFloat(ray->direction[0], 0.0F) || !closeFloat(ray->direction[1], -0.31622776F) ||
             !closeFloat(ray->direction[2], 0.94868332F)) {
             asharia::logError("Editor viewport smoke calculated an invalid center unproject ray.");
+            return false;
+        }
+
+        const std::optional<asharia::editor::EditorViewportWorldRay> topLeftRay =
+            asharia::editor::unprojectEditorViewportPoint(
+                camera, extent, asharia::editor::EditorViewportPoint{.x = 0.0F, .y = 0.0F});
+        const std::optional<asharia::editor::EditorViewportWorldRay> bottomRightRay =
+            asharia::editor::unprojectEditorViewportPoint(
+                camera, extent,
+                asharia::editor::EditorViewportPoint{
+                    .x = static_cast<float>(extent.width),
+                    .y = static_cast<float>(extent.height),
+                });
+        if (!topLeftRay || !bottomRightRay || topLeftRay->direction[0] >= 0.0F ||
+            topLeftRay->direction[1] <= 0.0F || bottomRightRay->direction[0] <= 0.0F ||
+            bottomRightRay->direction[1] >= 0.0F) {
+            asharia::logError("Editor viewport smoke found invalid viewport point orientation.");
             return false;
         }
 
@@ -250,14 +279,23 @@ namespace {
         const asharia::editor::EditorViewportCamera resizedCamera =
             asharia::editor::editorViewportCameraForExtent(
                 camera, asharia::editor::EditorExtent2D{.width = 640, .height = 320});
+        const std::optional<asharia::editor::EditorViewportWorldRay> resizedTopLeftRay =
+            asharia::editor::unprojectEditorViewportPoint(
+                resizedCamera, asharia::editor::EditorExtent2D{.width = 640, .height = 320},
+                asharia::editor::EditorViewportPoint{.x = 0.0F, .y = 0.0F});
+        asharia::editor::EditorViewportCamera invalidCamera = camera;
+        invalidCamera.viewProjection = {};
         if (!closeFloat(rayLength, 1.0F) || !closeFloat(resizedCamera.aspectRatio, 2.0F) ||
             !closeFloat(resizedCamera.position[0], camera.position[0]) ||
             !closeFloat(resizedCamera.position[1], camera.position[1]) ||
             !closeFloat(resizedCamera.position[2], camera.position[2]) ||
-            resizedCamera.projection[0] >= resizedCamera.projection[5] ||
+            resizedCamera.projection[0] >= resizedCamera.projection[5] || !resizedTopLeftRay ||
+            std::fabs(resizedTopLeftRay->direction[0]) <= std::fabs(topLeftRay->direction[0]) ||
             asharia::editor::unprojectEditorViewportPoint(
                 camera, asharia::editor::EditorExtent2D{.width = 0, .height = 240},
-                asharia::editor::EditorViewportPoint{}) != std::nullopt) {
+                asharia::editor::EditorViewportPoint{}) != std::nullopt ||
+            asharia::editor::unprojectEditorViewportPoint(
+                invalidCamera, extent, asharia::editor::EditorViewportPoint{}) != std::nullopt) {
             asharia::logError("Editor viewport smoke found invalid camera extent handling.");
             return false;
         }
@@ -491,6 +529,28 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool validateIdleSceneViewReuseSmoke(
+        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
+        if (mode != asharia::editor::EditorRunMode::SmokeViewport) {
+            return true;
+        }
+        if (viewportStats.idleSceneViewFramesSkipped == 0) {
+            asharia::logError("Editor viewport smoke did not skip idle Scene View recording.");
+            return false;
+        }
+        if (viewportStats.renderViewDiagnosticsFramesRecorded >=
+            static_cast<std::uint64_t>(runResult.renderedFrames)) {
+            asharia::logError("Editor viewport smoke did not reuse the idle Scene View texture.");
+            return false;
+        }
+        if (viewportStats.repaintReasonFramesRecorded == 0) {
+            asharia::logError("Editor viewport smoke did not record a repaint-reason RenderView.");
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool validateViewportFlagsSmoke(
         asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
         const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
@@ -583,22 +643,8 @@ namespace {
             asharia::logError("Editor viewport smoke did not draw a live RG View snapshot.");
             return false;
         }
-        if (mode == asharia::editor::EditorRunMode::SmokeViewport) {
-            if (viewportStats.idleSceneViewFramesSkipped == 0) {
-                asharia::logError("Editor viewport smoke did not skip idle Scene View recording.");
-                return false;
-            }
-            if (viewportStats.renderViewDiagnosticsFramesRecorded >=
-                static_cast<std::uint64_t>(runResult.renderedFrames)) {
-                asharia::logError(
-                    "Editor viewport smoke did not reuse the idle Scene View texture.");
-                return false;
-            }
-            if (viewportStats.repaintReasonFramesRecorded == 0) {
-                asharia::logError(
-                    "Editor viewport smoke did not record a repaint-reason RenderView.");
-                return false;
-            }
+        if (!validateIdleSceneViewReuseSmoke(mode, runResult, viewportStats)) {
+            return false;
         }
         if (viewportStats.lastRenderViewDiagnosticsPasses != 2 ||
             viewportStats.lastRenderViewDiagnosticsResources != 2 ||
@@ -618,7 +664,10 @@ namespace {
                 "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
             return false;
         }
-        return validateEditorViewportCameraSmoke() && validateRenderViewCameraSmoke(viewportStats);
+        if (!validateEditorViewportCameraSmoke()) {
+            return false;
+        }
+        return validateRenderViewCameraSmoke(viewportStats);
     }
 
     [[nodiscard]] bool validateViewportResizeSmoke(

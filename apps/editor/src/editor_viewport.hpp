@@ -14,6 +14,7 @@ namespace asharia::editor {
         std::uint32_t height{1};
     };
 
+    // Viewport-local pixel coordinate: origin at the viewport top-left, x right, y down.
     struct EditorViewportPoint {
         float x{};
         float y{};
@@ -42,7 +43,10 @@ namespace asharia::editor {
     };
 
     struct EditorViewportWorldRay {
+        // Picking origin on the camera near clipping plane.
         std::array<float, 3> origin{};
+        std::array<float, 3> nearPoint{};
+        std::array<float, 3> farPoint{};
         std::array<float, 3> direction{};
     };
 

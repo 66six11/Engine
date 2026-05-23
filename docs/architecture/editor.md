@@ -385,9 +385,10 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debug
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
 Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent, verifies that a flagged Scene View
 texture is rendered and acquired back through the panel-facing texture result, and checks that the recorded RenderView exposes
-a view-local diagnostics snapshot. It also validates the editor-only Scene View camera bridge, center viewport unproject ray
-and resize aspect handling. It also verifies idle Scene View on-demand reuse by checking that UI frames can reuse the last
-completed texture without incrementing `viewportFramesRendered` every frame.
+a view-local diagnostics snapshot. It also validates the editor-only Scene View camera bridge, center viewport unproject ray,
+near-plane origin, viewport corner orientation, invalid matrix rejection and resize aspect handling. It also verifies idle
+Scene View on-demand reuse by checking that UI frames can reuse the last completed texture without incrementing
+`viewportFramesRendered` every frame.
 `--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
 WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
 but skips normal RenderView recording, so the captured render inputs and diagnostics snapshot stay frozen until Resume. The

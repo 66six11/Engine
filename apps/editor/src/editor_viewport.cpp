@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <glm/glm.hpp>
 #include <numbers>
 
 namespace asharia::editor {
@@ -23,6 +24,10 @@ namespace asharia::editor {
             float nearPlane{0.1F};
             float farPlane{1000.0F};
         };
+
+        constexpr float kEditorViewportClipNearZ = 0.0F;
+        constexpr float kEditorViewportClipFarZ = 1.0F;
+        constexpr float kEditorViewportUnprojectEpsilon = 0.000001F;
 
         [[nodiscard]] constexpr float editorViewportMatrixAt(const EditorViewportMatrix4x4& matrix,
                                                              std::size_t row, std::size_t column) {
@@ -54,22 +59,6 @@ namespace asharia::editor {
             };
         }
 
-        [[nodiscard]] constexpr EditorVec3 addEditorVec3(EditorVec3 lhs, EditorVec3 rhs) {
-            return EditorVec3{
-                lhs[0] + rhs[0],
-                lhs[1] + rhs[1],
-                lhs[2] + rhs[2],
-            };
-        }
-
-        [[nodiscard]] constexpr EditorVec3 scaleEditorVec3(EditorVec3 value, float scale) {
-            return EditorVec3{
-                value[0] * scale,
-                value[1] * scale,
-                value[2] * scale,
-            };
-        }
-
         [[nodiscard]] constexpr float dotEditorVec3(EditorVec3 lhs, EditorVec3 rhs) {
             return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
         }
@@ -90,8 +79,41 @@ namespace asharia::editor {
             return EditorVec3{value[0] / length, value[1] / length, value[2] / length};
         }
 
-        [[nodiscard]] constexpr bool hasEditorVec3Direction(EditorVec3 value) {
-            return dotEditorVec3(value, value) > 0.0F;
+        [[nodiscard]] glm::mat4 editorViewportMatrixToGlm(const EditorViewportMatrix4x4& matrix) {
+            glm::mat4 result{1.0F};
+            for (std::size_t row = 0; row < 4U; ++row) {
+                for (std::size_t column = 0; column < 4U; ++column) {
+                    result[static_cast<glm::mat4::length_type>(column)]
+                          [static_cast<glm::mat4::length_type>(row)] =
+                              editorViewportMatrixAt(matrix, row, column);
+                }
+            }
+            return result;
+        }
+
+        [[nodiscard]] bool finiteGlmVec3(glm::vec3 value) {
+            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        }
+
+        [[nodiscard]] std::array<float, 3> editorVec3FromGlm(glm::vec3 value) {
+            return std::array<float, 3>{value.x, value.y, value.z};
+        }
+
+        [[nodiscard]] std::optional<glm::vec3>
+        editorViewportClipPointToWorld(const glm::mat4& inverseViewProjection,
+                                       glm::vec4 clipPoint) {
+            const glm::vec4 worldPoint = inverseViewProjection * clipPoint;
+            if (!std::isfinite(worldPoint.w) ||
+                std::fabs(worldPoint.w) <= kEditorViewportUnprojectEpsilon) {
+                return std::nullopt;
+            }
+
+            const glm::vec3 dividedPoint =
+                glm::vec3{worldPoint.x, worldPoint.y, worldPoint.z} / worldPoint.w;
+            if (!finiteGlmVec3(dividedPoint)) {
+                return std::nullopt;
+            }
+            return dividedPoint;
         }
 
         [[nodiscard]] EditorViewportMatrix4x4
@@ -180,34 +202,47 @@ namespace asharia::editor {
     std::optional<EditorViewportWorldRay>
     unprojectEditorViewportPoint(const EditorViewportCamera& camera, EditorExtent2D extent,
                                  EditorViewportPoint point) {
-        if (!isRenderableEditorExtent(extent) || camera.verticalFovRadians <= 0.0F ||
-            camera.aspectRatio <= 0.0F || camera.farPlane <= camera.nearPlane) {
+        if (!isRenderableEditorExtent(extent) || camera.farPlane <= camera.nearPlane) {
             return std::nullopt;
         }
 
-        const EditorVec3 forward =
-            normalizeEditorVec3(subtractEditorVec3(camera.target, camera.position));
-        const EditorVec3 right = normalizeEditorVec3(crossEditorVec3(camera.up, forward));
-        if (!hasEditorVec3Direction(forward) || !hasEditorVec3Direction(right)) {
+        const glm::mat4 viewProjection = editorViewportMatrixToGlm(camera.viewProjection);
+        const float determinant = glm::determinant(viewProjection);
+        if (!std::isfinite(determinant) ||
+            std::fabs(determinant) <= kEditorViewportUnprojectEpsilon) {
             return std::nullopt;
         }
-        const EditorVec3 cameraUp = crossEditorVec3(forward, right);
 
-        const float width = static_cast<float>(extent.width);
-        const float height = static_cast<float>(extent.height);
+        const auto width = static_cast<float>(extent.width);
+        const auto height = static_cast<float>(extent.height);
         const float ndcX = (2.0F * point.x / width) - 1.0F;
         const float ndcY = 1.0F - (2.0F * point.y / height);
-        const float tanHalfFov = std::tan(camera.verticalFovRadians * 0.5F);
-        const EditorVec3 direction = normalizeEditorVec3(addEditorVec3(
-            addEditorVec3(forward, scaleEditorVec3(right, ndcX * camera.aspectRatio * tanHalfFov)),
-            scaleEditorVec3(cameraUp, ndcY * tanHalfFov)));
-        if (!hasEditorVec3Direction(direction)) {
+
+        const glm::mat4 inverseViewProjection = glm::inverse(viewProjection);
+        const std::optional<glm::vec3> nearPoint = editorViewportClipPointToWorld(
+            inverseViewProjection, glm::vec4{ndcX, ndcY, kEditorViewportClipNearZ, 1.0F});
+        const std::optional<glm::vec3> farPoint = editorViewportClipPointToWorld(
+            inverseViewProjection, glm::vec4{ndcX, ndcY, kEditorViewportClipFarZ, 1.0F});
+        if (!nearPoint || !farPoint) {
+            return std::nullopt;
+        }
+
+        const glm::vec3 rayDelta = *farPoint - *nearPoint;
+        const float rayLengthSquared = glm::dot(rayDelta, rayDelta);
+        if (!std::isfinite(rayLengthSquared) ||
+            rayLengthSquared <= kEditorViewportUnprojectEpsilon) {
+            return std::nullopt;
+        }
+        const glm::vec3 direction = glm::normalize(rayDelta);
+        if (!finiteGlmVec3(direction)) {
             return std::nullopt;
         }
 
         return EditorViewportWorldRay{
-            .origin = camera.position,
-            .direction = direction,
+            .origin = editorVec3FromGlm(*nearPoint),
+            .nearPoint = editorVec3FromGlm(*nearPoint),
+            .farPoint = editorVec3FromGlm(*farPoint),
+            .direction = editorVec3FromGlm(direction),
         };
     }
 
