@@ -34,6 +34,7 @@
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
+#include "editor_inspected_world.hpp"
 #include "editor_panel.hpp"
 #include "editor_settings.hpp"
 #include "editor_shortcut_router.hpp"
@@ -242,6 +243,10 @@ namespace {
         std::uint64_t viewportFramesAtFrameDebugPause{};
         std::uint64_t viewportFramesAtFrameDebugPreview{};
         std::uint64_t viewportFramesAfterFrameDebugResume{};
+        std::uint64_t inspectedWorldFramesAtFrameDebugPause{};
+        std::uint64_t inspectedWorldFramesAtFrameDebugPreview{};
+        std::uint64_t inspectedWorldFramesAfterFrameDebugResume{};
+        asharia::editor::EditorInspectedWorldSchedulerStats inspectedWorldStats;
         asharia::editor::EditorInputRouterStats inputStats;
         asharia::editor::EditorShortcutRouterStats shortcutStats;
     };
@@ -264,6 +269,9 @@ namespace {
         std::uint64_t viewportFramesAtPause{};
         std::uint64_t viewportFramesAtPreview{};
         std::uint64_t viewportFramesAfterResume{};
+        std::uint64_t inspectedWorldFramesAtPause{};
+        std::uint64_t inspectedWorldFramesAtPreview{};
+        std::uint64_t inspectedWorldFramesAfterResume{};
     };
 
     void updateViewportResizeSmoke(asharia::GlfwWindow& window,
@@ -334,11 +342,13 @@ namespace {
         return fallback;
     }
 
-    void updateFrameDebuggerSmoke(asharia::editor::EditorFrameDebugger& frameDebugger,
-                                  asharia::editor::EditorActionRegistry& actionRegistry,
-                                  asharia::editor::EditorContext& editorContext,
-                                  const asharia::editor::EditorViewportCoordinator& viewportHost,
-                                  EditorFrameDebuggerSmokeState& state) {
+    void updateFrameDebuggerSmoke(
+        asharia::editor::EditorFrameDebugger& frameDebugger,
+        asharia::editor::EditorActionRegistry& actionRegistry,
+        asharia::editor::EditorContext& editorContext,
+        const asharia::editor::EditorViewportCoordinator& viewportHost,
+        const asharia::editor::EditorInspectedWorldScheduler& inspectedWorldScheduler,
+        EditorFrameDebuggerSmokeState& state) {
         if (!state.captureRequested) {
             state.captureRequested = actionRegistry.invoke("debug.capture-frame", editorContext);
             return;
@@ -348,6 +358,8 @@ namespace {
             frameDebugger.state() == asharia::editor::EditorFrameDebuggerState::PausedFrameDebug) {
             if (!state.replayPassRequested) {
                 state.viewportFramesAtPause = viewportHost.viewportFramesRendered();
+                state.inspectedWorldFramesAtPause =
+                    inspectedWorldScheduler.stats().frameAdvanceSafePoints;
                 const std::optional<asharia::BasicRenderViewExecutionEventId> replayEvent =
                     chooseFrameDebugReplayEvent(frameDebugger);
                 if (replayEvent) {
@@ -375,6 +387,8 @@ namespace {
                     asharia::editor::hasEditorViewportTexture(preview.texture) &&
                     stats.previewTextureFramesDrawn > 0) {
                     state.viewportFramesAtPreview = viewportHost.viewportFramesRendered();
+                    state.inspectedWorldFramesAtPreview =
+                        inspectedWorldScheduler.stats().frameAdvanceSafePoints;
                     state.previewVisible = true;
                 }
                 return;
@@ -388,6 +402,8 @@ namespace {
             frameDebugger.state() == asharia::editor::EditorFrameDebuggerState::Running &&
             viewportHost.viewportFramesRendered() > state.viewportFramesAtPause) {
             state.viewportFramesAfterResume = viewportHost.viewportFramesRendered();
+            state.inspectedWorldFramesAfterResume =
+                inspectedWorldScheduler.stats().frameAdvanceSafePoints;
             state.renderedAfterResume = true;
         }
     }
@@ -587,9 +603,37 @@ namespace {
                 "Editor frame debugger smoke recorded a normal RenderView while previewing.");
             return false;
         }
+        if (runResult.inspectedWorldFramesAtFrameDebugPreview !=
+            runResult.inspectedWorldFramesAtFrameDebugPause) {
+            asharia::logError("Editor frame debugger smoke advanced inspected-world safe points "
+                              "while previewing.");
+            return false;
+        }
         if (runResult.viewportFramesAfterFrameDebugResume <=
             runResult.viewportFramesAtFrameDebugPause) {
             asharia::logError("Editor frame debugger smoke did not resume RenderView recording.");
+            return false;
+        }
+        if (runResult.inspectedWorldFramesAfterFrameDebugResume <=
+            runResult.inspectedWorldFramesAtFrameDebugPause) {
+            asharia::logError(
+                "Editor frame debugger smoke did not resume inspected-world safe points.");
+            return false;
+        }
+        const asharia::editor::EditorInspectedWorldSchedulerStats& inspectedWorldStats =
+            runResult.inspectedWorldStats;
+        if (inspectedWorldStats.frameAdvanceSafePoints == 0 ||
+            inspectedWorldStats.gameUpdateSafePoints !=
+                inspectedWorldStats.frameAdvanceSafePoints ||
+            inspectedWorldStats.scriptUpdateSafePoints !=
+                inspectedWorldStats.frameAdvanceSafePoints ||
+            inspectedWorldStats.skippedFrameAdvanceSafePoints == 0 ||
+            inspectedWorldStats.skippedGameUpdateSafePoints !=
+                inspectedWorldStats.skippedFrameAdvanceSafePoints ||
+            inspectedWorldStats.skippedScriptUpdateSafePoints !=
+                inspectedWorldStats.skippedFrameAdvanceSafePoints) {
+            asharia::logError(
+                "Editor frame debugger smoke recorded invalid inspected-world safe-point counts.");
             return false;
         }
         const std::optional<asharia::editor::EditorFrameDebugCapture>& capture =
@@ -1126,6 +1170,7 @@ namespace {
         const bool smokeMode = isSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
         EditorFrameDebuggerSmokeState frameDebugSmoke;
+        asharia::editor::EditorInspectedWorldScheduler inspectedWorldScheduler;
         asharia::editor::EditorInputRouter inputRouter;
         asharia::editor::EditorShortcutRouter shortcutRouter;
         int renderedFrames = 0;
@@ -1147,9 +1192,11 @@ namespace {
 
             if (isFrameDebuggerSmokeMode(mode)) {
                 updateFrameDebuggerSmoke(frameDebugger, actionRegistry, editorContext, viewportHost,
-                                         frameDebugSmoke);
+                                         inspectedWorldScheduler, frameDebugSmoke);
             }
             frameDebugger.beginFrame(renderedFrames);
+            inspectedWorldScheduler.runFrameSafePoints(
+                frameDebugger.shouldRunInspectedWorldSafePoints());
             ImGui_ImplVulkan_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
@@ -1196,7 +1243,7 @@ namespace {
             }
             if (isFrameDebuggerSmokeMode(mode)) {
                 updateFrameDebuggerSmoke(frameDebugger, actionRegistry, editorContext, viewportHost,
-                                         frameDebugSmoke);
+                                         inspectedWorldScheduler, frameDebugSmoke);
             }
             editorContext.diagnosticsLog().appendEvents(editorContext.eventQueue().events());
             editorContext.eventQueue().clear();
@@ -1226,6 +1273,12 @@ namespace {
             .viewportFramesAtFrameDebugPause = frameDebugSmoke.viewportFramesAtPause,
             .viewportFramesAtFrameDebugPreview = frameDebugSmoke.viewportFramesAtPreview,
             .viewportFramesAfterFrameDebugResume = frameDebugSmoke.viewportFramesAfterResume,
+            .inspectedWorldFramesAtFrameDebugPause = frameDebugSmoke.inspectedWorldFramesAtPause,
+            .inspectedWorldFramesAtFrameDebugPreview =
+                frameDebugSmoke.inspectedWorldFramesAtPreview,
+            .inspectedWorldFramesAfterFrameDebugResume =
+                frameDebugSmoke.inspectedWorldFramesAfterResume,
+            .inspectedWorldStats = inspectedWorldScheduler.stats(),
             .inputStats = inputRouter.stats(),
             .shortcutStats = shortcutRouter.stats(),
         };

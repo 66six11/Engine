@@ -398,9 +398,9 @@ Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 edi
 当前状态：第一版已由 `RenderGraph::diagnosticsSnapshot()` 提供。`BasicRenderViewDesc` 已能通过可选的
 `BasicRenderViewDiagnostics` 输出槽把 snapshot 挂到一次成功的 view recording 上。`EditorViewportCoordinator` 已能把
 最近一次成功 recording 的 snapshot 作为 Live RG View 数据源发布。`EditorFrameDebugger` 已能捕获并冻结这份
-view-local snapshot，并在 WaitingGpuFence/PausedFrameDebug 阶段暂停新的 RenderView recording；被检查 world 后续
-game/script update safe points 的 gate 是已记录的后续 scheduler seam。`RenderGraphPanel` 作为 Live RG View 消费最新编译
-snapshot；
+view-local snapshot，并在 WaitingGpuFence/PausedFrameDebug 阶段暂停新的 RenderView recording；
+`EditorInspectedWorldScheduler` 作为当前 counter-based scheduler seam，验证被检查 world 后续 frame advance、
+game update 和 script update safe points 在 paused capture 期间不会推进。`RenderGraphPanel` 作为 Live RG View 消费最新编译 snapshot；
 `FrameDebuggerPanel` 在同一面板内提供 Frame 和 RenderGraph 两个切换视图，Frame 视图按左 pass/execution event、
 右详情/预览组织，RenderGraph 视图消费冻结捕获 snapshot。两个 RenderGraph 入口复用同一个只读 snapshot renderer，
 显示 pass、command summary、resource、access edge、dependency、transition 和图列表。Frame Debug 的主选择 id 来自
@@ -434,8 +434,8 @@ renderer execution event stream，RenderGraph command summary 只作为来源说
 - Frame Debugger 的 RenderGraph view 只读取 Frame Debug 冻结捕获；Live Diagnostics / Live RG View 只读取最近完成帧
   或上一帧 snapshot。
 - Frame Debug capture 不使用 `vkDeviceWaitIdle` 作为普通机制，不读取 transient GPU resource。Capture 本身不序列化
-  脚本 VM 对象；当前代码只验证 normal RenderView recording gate，paused Frame Debug 暂停被检查 world 的
-  game/script update safe points 仍是后续 scheduler/test seam。
+  脚本 VM 对象；当前代码通过 `EditorInspectedWorldScheduler` 的 counter-based seam 验证 normal RenderView recording、
+  frame advance、game update 和 script update safe points 在 paused Frame Debug 期间都被 gate。
 - Frame Debug replay 第一阶段只选择 pass/event 并触发受控 debug refresh；中间纹理预览必须等显式 debug
   preservation/copy 路径存在后再接入。
 - transient resource 在普通 graph 执行完成后视为不可读取；若要预览，必须在 recording 前标记 preserve/copy，并把结果放入
@@ -450,8 +450,8 @@ renderer execution event stream，RenderGraph command summary 只作为来源说
 - Done: `--smoke-editor-viewport` 验证 recorded RenderView diagnostics 的 pass/resource/access/dependency/transition
   数量，验证 idle Scene View 复用上一张 texture 时 diagnostics snapshot 仍可作为最近一次 view-local 结果保留，并验证
   Live RG View 无需 Frame Debug capture 也能消费 compile snapshot。
-- Done: `--smoke-editor-frame-debugger` 验证 capture、fence wait、paused RenderView recording、Frame Debugger
-  RenderGraph view frozen snapshot consumption 和 resume。
+- Done: `--smoke-editor-frame-debugger` 验证 capture、fence wait、paused RenderView recording、inspected-world safe-point
+  gate、Frame Debugger RenderGraph view frozen snapshot consumption 和 resume。
 - Done: `formatDebugTables()` 继续可用，便于 issue/PR 文本诊断。
 
 ## P4：Backend lifetime and caches

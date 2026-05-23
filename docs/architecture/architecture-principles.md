@@ -85,8 +85,8 @@ present 和 editor diagnostics consumption 必须有清楚顺序。
 
 - Frame Debug pause 不只是冻结 renderer diagnostics；它也必须 gate 被检查 world 的后续 game/script update safe
   point。
-- 当前 editor 实现只验证 normal RenderView recording gate；game/script update safe point gate 是必须保留的合同和待补
-  scheduler seam。
+- 当前 editor 实现用 `EditorInspectedWorldScheduler` 的 counter-based seam 验证 frame advance、game update 和
+  script update safe point 在 paused capture 期间不会推进；真正 runtime/script owner 接入时必须复用这个 gate。
 - Editor UI 可以继续绘制 frozen diagnostics，但 normal RenderView recording 必须按 Frame Debug 状态暂停或走
   debug replay/copy path。
 - 跨线程或跨帧数据通过 snapshot、command queue、frame packet 或 deferred destruction 传递。
@@ -239,8 +239,8 @@ flowchart LR
 
 规则：
 
-- Frozen capture 不序列化 script VM object。当前 smoke 验证 RenderView recording 暂停；pause state 还必须在后续
-  runtime/script scheduler seam 中阻止被检查 world 继续 simulation/script update。
+- Frozen capture 不序列化 script VM object。当前 smoke 验证 RenderView recording 暂停，并用 counter-based
+  scheduler seam 验证被检查 world 的 frame/game/script safe point 不推进；后续真实 runtime/script scheduler 必须接到同一 gate。
 - Frame Debug 和 Frame Debug RG View 是同一面板的两个 tab，不是两个独立数据源。
 - Frame view 以 pass / execution event 列表驱动右侧详情和图形预览。
 

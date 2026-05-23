@@ -989,8 +989,8 @@ Scope:
 - Add an editor-owned frame debug state machine for capture, fence wait, pause and resume.
 - Freeze the captured `BasicRenderViewDiagnostics` snapshot without exposing Vulkan handles to editor UI.
 - Pause new RenderView recording while WaitingGpuFence or PausedFrameDebug; keep the ImGui host frame alive so the editor can
-  show UI, diagnostics and resume controls. Inspected-world frame advance/game/script update safe-point gating is the required
-  follow-up scheduler seam before runtime/script integration.
+  show UI, diagnostics and resume controls. `EditorInspectedWorldScheduler` provides the current counter-based seam for
+  inspected-world frame advance/game/script update safe-point gating before real runtime/script integration.
 
 Implementation:
 
@@ -999,6 +999,8 @@ Implementation:
 - Debug menu actions `debug.capture-frame` and `debug.resume-frame` route through `EditorContext` to the frame debugger.
 - `EditorViewportCoordinator::recordRequestedViews()` can process retired viewport targets while skipping new RenderView
   recording, which is the pause behavior used by frame debug.
+- `EditorInspectedWorldScheduler` runs frame advance、game update 和 script update safe-point counters while Frame Debug
+  allows inspected-world updates, and records skipped counters while WaitingGpuFence/PausedFrameDebug gates them.
 
 Validation:
 
@@ -1179,8 +1181,8 @@ Scope:
 
 - Define the paused-frame contract:
   - Capture freezes renderer diagnostics, frame time, view params, camera params and replayable render inputs.
-  - Paused Frame Debug currently gates normal RenderView recording and must gate future inspected-world frame advance, game
-    update and script update safe points when those scheduler seams exist.
+  - Paused Frame Debug gates normal RenderView recording and the current counter-based inspected-world frame advance, game
+    update and script update safe-point seam.
   - Capture does not serialize script VM objects; it only prevents the debugged world from advancing while paused.
 - Define stable selection ids:
   - v1 Frame Debug selection is `BasicRenderViewExecutionEventId`.
@@ -1210,8 +1212,8 @@ Implementation tasks:
   RenderView recording.
 - Keep command-summary diagnostics available for RG View and pass detail context, but do not make them the primary Frame Debug
   event model.
-- Add a future-facing scheduler/test seam for paused game/script safe points. If script VM is still absent, record this as a
-  pending invariant with a counter-based world-update placeholder rather than claiming full script pause is implemented.
+- Add a future-facing scheduler/test seam for paused game/script safe points. Because the script VM is still absent, this is
+  implemented as a counter-based inspected-world update placeholder rather than a full script pause implementation.
 
 Validation:
 

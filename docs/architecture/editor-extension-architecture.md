@@ -238,7 +238,8 @@ Frame Debugger 和 RG View 不是可选后补 UI。它们是 overlay/render arch
 - 每个 renderer-owned overlay pass 在 diagnostics snapshot 中有稳定 pass name/type。
 - Debug packet count、source overlay id、view kind 应进入 diagnostics。
 - Frame Debug pause 必须暂停被调试 world 的 frame advance、game/script update 和新 RenderView recording；只有
-  editor shell、Frame Debug UI、Frame Debug replay/copy 和必要的 diagnostics UI 继续运行。脚本 VM 不能在 paused
+  editor shell、Frame Debug UI、Frame Debug replay/copy 和必要的 diagnostics UI 继续运行。当前通过
+  `EditorInspectedWorldScheduler` 的 counter-based seam 验证 safe point gate；真实脚本 VM 接入后不能在 paused
   capture 上继续推进被调试世界。
 - Live RG View 是独立 diagnostics panel，读取最新 compiled snapshot，不需要 Frame Debug capture。
 - Frame Debug 的 Frame view 和 RenderGraph view 是 `FrameDebuggerPanel` 里的两个切换视图，不是两个并排 panel。

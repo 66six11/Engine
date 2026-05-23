@@ -98,6 +98,7 @@ namespace asharia::editor {
 
         [[nodiscard]] EditorViewportRepaintReasons consumeRenderViewRepaintReasons();
         [[nodiscard]] bool shouldRecordRenderViews() const;
+        [[nodiscard]] bool shouldRunInspectedWorldSafePoints() const;
         [[nodiscard]] bool isCapturingFrame() const;
         [[nodiscard]] EditorFrameDebuggerState state() const;
         [[nodiscard]] std::string_view stateName() const;

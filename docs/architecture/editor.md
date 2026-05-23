@@ -390,10 +390,10 @@ last completed texture without incrementing `viewportFramesRendered` every frame
 `--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
 WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
 but skips normal RenderView recording, so the captured render inputs and diagnostics snapshot stay frozen until Resume. The
-paused-state owner is also the required gate for future inspected-world frame advance, game update and script update safe
-points once those scheduler seams exist. The same smoke also verifies that the Frame Debugger panel's RenderGraph view
-consumes the captured snapshot, requests a selected image resource preview, records only the debug replay/copy path, and
-displays the resulting sampled preview texture.
+paused-state owner also gates the editor-owned inspected-world scheduler seam: frame advance, game update and script update
+safe-point counters do not advance while the capture is waiting/paused, then resume afterward. The same smoke also verifies
+that the Frame Debugger panel's RenderGraph view consumes the captured snapshot, requests a selected image resource preview,
+records only the debug replay/copy path, and displays the resulting sampled preview texture.
 
 ## 当前缺口
 
@@ -405,9 +405,10 @@ displays the resulting sampled preview texture.
 - Renderer prerequisites for those passes are: view/camera params in render view data, explicit overlay pass load/store
   semantics, blend state or a dedicated composition path, and a debug/world-line draw route. The current debug-world-line
   route is data/diagnostics only; renderer-side drawing is still pending.
-- `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects. The current
-  implementation gates normal RenderView recording; the inspected-world frame advance/game/script update gate remains a
-  required scheduler seam before runtime script integration.
+- `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects.
+  `EditorInspectedWorldScheduler` is the current counter-based seam for future runtime/script integration: it runs frame
+  advance、game update 和 script update safe-point counters while allowed, and records skipped counters while Frame Debug is
+  waiting/paused.
 - `RenderGraphPanel` is the Live RG View: it browses the latest compiled RenderView diagnostics snapshot as
   pass/resource/access/dependency/transition data without requiring Frame Debug capture.
 - `FrameDebuggerPanel` owns Frame Debug inspection. It exposes a Unity-style Frame view and a RenderGraph view as switchable

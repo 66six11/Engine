@@ -390,6 +390,11 @@ namespace asharia::editor {
                state_ != EditorFrameDebuggerState::PausedFrameDebug;
     }
 
+    bool EditorFrameDebugger::shouldRunInspectedWorldSafePoints() const {
+        return state_ != EditorFrameDebuggerState::WaitingGpuFence &&
+               state_ != EditorFrameDebuggerState::PausedFrameDebug;
+    }
+
     bool EditorFrameDebugger::isCapturingFrame() const {
         return state_ == EditorFrameDebuggerState::CapturingFrame;
     }
