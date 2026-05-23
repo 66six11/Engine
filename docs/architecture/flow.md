@@ -18,6 +18,14 @@ flowchart TD
     Platform["engine/platform"]
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
+    Schema["packages/schema"]
+    Archive["packages/archive"]
+    CppBinding["packages/cpp-binding"]
+    Persistence["packages/persistence"]
+    Reflection["packages/reflection"]
+    Serialization["packages/serialization"]
+    SceneCore["packages/scene-core"]
+    AssetCore["packages/asset-core"]
     RG["packages/rendergraph"]
     RhiVk["packages/rhi-vulkan<br/>asharia::rhi_vulkan"]
     RhiVkRG["packages/rhi-vulkan<br/>asharia::rhi_vulkan_rendergraph"]
@@ -29,6 +37,19 @@ flowchart TD
     Platform --> Core
     Window --> Core
     Window --> Platform
+    Schema --> Core
+    Archive --> Core
+    CppBinding --> Core
+    CppBinding --> Schema
+    Persistence --> Core
+    Persistence --> Schema
+    Persistence --> Archive
+    Persistence --> CppBinding
+    Reflection --> Core
+    Serialization --> Core
+    Serialization --> Reflection
+    SceneCore --> Core
+    AssetCore --> Core
     RG --> Core
     RhiVk --> Core
     RhiVkRG --> RhiVk
@@ -41,6 +62,8 @@ flowchart TD
     RendererVk --> RhiVkRG
     App --> Core
     App --> Profiling
+    App --> Reflection
+    App --> Serialization
     App --> Window
     App --> RG
     App -->|current MVP/smoke wiring| RhiVk
@@ -48,19 +71,26 @@ flowchart TD
     App -->|CPU-only benchmark schemas| Renderer
     App -->|selected sample renderer| RendererVk
     EditorApp --> Core
+    EditorApp --> Archive
     EditorApp --> Window
     EditorApp --> RhiVk
     EditorApp --> RendererVk
+    EditorApp -->|shader build helper| Shader
     EditorApp --> ImGui
 ```
 
 当前约束：
 
+- 这张图按 CMake target 事实和已落地 package manifests 的 `targetDependencies` 校准；`dependencies`
+  是 package-level 粗粒度边界，不能替代 target-level 依赖审查。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
 - `renderer-basic-vulkan` 组合 RenderGraph、Vulkan frame callback 和 Vulkan adapter，承载当前 clear frame orchestration。
 - `profiling` 提供后端无关 CPU scope、frame profile 和 JSONL 输出；当前只由 sample-viewer benchmark 使用。
+- `schema`、`archive`、`cpp-binding` 和 `persistence` 是新的 schema-first persistence 路线；
+  `reflection` / `serialization` 仍作为过渡兼容路径由 sample-viewer smoke 覆盖。
+- `scene-core` 和 `asset-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor。
 - `sample-viewer` 当前同时承担 app host 和 smoke harness，所以会直接创建 `VulkanContext` /
   `VulkanFrameLoop`。这是当前 MVP 事实，不是目标产品边界；后续应收敛到 runtime/engine host。
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把
@@ -154,6 +184,7 @@ flowchart TD
     DescriptorSmoke["--smoke-descriptor-layout"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
     ComputeDispatchSmoke["--smoke-compute-dispatch"]
+    FormatContractSmoke["--smoke-renderer-format-contract"]
     DeferredDeletionSmoke["--smoke-deferred-deletion"]
     GLFW["GlfwInstance / GlfwWindow"]
     Ext["glfwRequiredVulkanInstanceExtensions"]
@@ -180,6 +211,7 @@ flowchart TD
     Args --> DescriptorSmoke
     Args --> FullscreenTextureSmoke
     Args --> ComputeDispatchSmoke
+    Args --> FormatContractSmoke
     Args --> DeferredDeletionSmoke
     WindowSmoke --> GLFW
     VulkanSmoke --> GLFW
@@ -271,6 +303,9 @@ flowchart TD
   `ShaderRead(fragment)` 并由 fullscreen composite pass 采样写回 backbuffer；smoke 验证 viewport
   extent 可独立于 swapchain extent、resize 后旧 target 进入 deferred deletion、renderer 对外暴露
   sampled target handle/layout、render target 多帧复用、descriptor bind、debug label 和 timestamp readback。
+- `--smoke-renderer-format-contract` 是 CPU-only renderer/RG format contract 负向入口：验证
+  `VK_FORMAT_B8G8R8A8_SRGB` 能映射到 `RenderGraphImageFormat::B8G8R8A8Srgb`，unsupported format 会在
+  backbuffer / RenderView graph import 前返回带 format 上下文的错误。
 - `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译、image copy command 和 Vulkan adapter 字段验证入口。
 - `--bench-rendergraph` 是 CPU-only RenderGraph benchmark 入口；它使用 `packages/profiling`
   记录 RecordGraph/CompileGraph scope 和 graph counters，输出 JSONL，不改变 smoke 语义。
@@ -631,7 +666,10 @@ flowchart TD
 
 - 当前 sample 只有一个 game view / swapchain target，但后续 editor 需要允许一帧多个 view graph。
 - Game View、Scene View、Preview View 共享 renderer、RenderGraph 和 Vulkan backend caches，但各自拥有
-  view-local camera params、descriptor sets、transient resources 和 compiled graph。
+  view-local camera constants、render target、view flags、culling/layer mask、descriptor sets、transient resources
+  和 compiled graph。Scene View camera state 可以由 editor viewport 拥有，但进入 renderer 后必须变成普通
+  RenderView camera/per-view constants；差异只落在 view kind、overlay/debug/show flags、filtering 和 refresh
+  intent 上。
 - Scene/debug viewport flags 已先作为 view-local intent 接入 editor viewport request/result，并完成 flagged texture
   metadata 的 acquire roundtrip。后续 grid、transform gizmos、selection outline、wire overlay、debug overlay/debug gizmo
   等 pass 继续沿用该 view-local intent。Scene-only authoring pass 不能污染 Game View graph；Game debug pass 必须显式
@@ -683,6 +721,10 @@ flowchart TD
 
 - `RecordGraph` 可以每帧运行，并允许普通 C++ 控制流决定哪些动态 feature 进入当前帧 graph。未来脚本
   VM 也只应运行在这一段。
+- `Frame input` 中的 camera/view/projection、render target、culling/filtering、show/debug flags、visible draw
+  packets 和 model/material 数据必须在 `RecordGraph` 前归约成 renderer-owned 数据合同；需要这些数据的 pass
+  通过 typed params、buffer/descriptor、push constants 或等价 binding 显式消费。diagnostics 只能记录结果，
+  不能作为下一段渲染输入。
 - `compile()` 负责校验 pass/resource 声明、构建 read/write dependency、根据 `allowCulling` /
   `hasSideEffects` 计算 active pass、稳定拓扑排序、resource lifetime、final transitions、
   barrier/layout plan、transient allocation plan 和调试表信息。
@@ -863,14 +905,16 @@ flowchart TD
     该 event 所属 pass 的 previewable color 输出；graph-local image 选择仍作为 resource override。normal RenderView recording 继续暂停；
     不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
 13. RenderView 现在携带 renderer-owned view kind、camera/view/projection params、per-view frame params、overlay
-    color load/store、blend mode 和 data-only debug world-line route。Scene View panel 现在持有 editor-only camera
-    state，Scene View request 携带 camera context，并在 `EditorViewportCoordinator` 边界 bridge 到
-    `BasicRenderViewCamera`；renderer/basic 不消费 `EditorViewportOverlayFlags`、ImGui state 或 editor camera
-    state。`editorViewportCameraForExtent()` 负责 resize 后重算投影，`unprojectEditorViewportPoint()` 提供
-    viewport-local pixel（左上角原点，Y down）到 world ray 的后端无关语义；该 ray 用 inverse view-projection
-    计算，`origin`/`nearPoint` 位于 near clipping plane，`farPoint` 位于 far clipping plane。
-    `EditorViewportOverlayProvider` v0 可以收到 camera context，但当前仍只生成固定原点 XZ grid packet。
-    orbit/pan/dolly 输入、camera-aware grid policy 和可见 debug line pass 后续再通过这条 route 接入。
+    color load/store、blend mode 和 data-only debug world-line route。Scene View panel 现在持有 editor-owned
+    navigation/camera state；这是输入所有权，不是 renderer 矩阵旁路。Scene View request 携带 camera context，
+    并在 `EditorViewportCoordinator` 边界 bridge 到 `BasicRenderViewCamera`；renderer/basic 不消费
+    `EditorViewportOverlayFlags`、ImGui state 或 editor navigation state。`editorViewportCameraForExtent()`
+    负责 resize 后重算投影，`unprojectEditorViewportPoint()` 提供 viewport-local pixel（左上角原点，Y down）
+    到 world ray 的后端无关语义；该 ray 用 inverse view-projection 计算，`origin`/`nearPoint` 位于
+    near clipping plane，`farPoint` 位于 far clipping plane。当前 `recordViewFrame()` 只把 camera 回显到
+    `BasicRenderViewDiagnostics`，mesh/draw-list smoke 仍在 renderer 内部构造 MVP；这是已知缺口。后续
+    orbit/pan/dolly、camera-aware grid、scene mesh、selection/gizmo 和可见 debug line pass 必须先补
+    renderer-owned per-view constants / pass input 合同，再沿这条 RenderView route 接入。
 14. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的

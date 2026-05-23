@@ -1,10 +1,97 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-05-15
+最近核对日期：2026-05-23
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
+
+## Current architecture audit
+
+本次核对日期：2026-05-23
+
+一手资料：
+
+- CMake `target_link_libraries`：https://cmake.org/cmake/help/latest/command/target_link_libraries.html
+- CMake presets manual：https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
+- Conan 2 lockfiles：https://docs.conan.io/2/tutorial/versioning/lockfiles.html
+- Vulkan Guide threading：https://docs.vulkan.org/guide/latest/threading.html
+- Khronos command buffer usage sample：https://docs.vulkan.org/samples/latest/samples/performance/command_buffer_usage/README.html
+- Vulkan dynamic rendering sample：https://docs.vulkan.org/samples/latest/samples/extensions/dynamic_rendering/README.html
+- Vulkan Guide push constants：https://docs.vulkan.org/guide/latest/push_constants.html
+- Vulkan descriptor sets：https://docs.vulkan.org/spec/latest/chapters/descriptors.html
+
+仓库事实依据：
+
+- 根 `CMakeLists.txt` 和各 package `CMakeLists.txt`。
+- 各 `asharia.package.json` 的 `dependencies` / `targetDependencies`。
+- `packages/rendergraph/include/asharia/rendergraph/render_graph.hpp`。
+- `packages/rhi-vulkan/include/asharia/rhi_vulkan/*` 与
+  `packages/rhi-vulkan/include-rendergraph/asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp`。
+- `packages/renderer-basic/include/asharia/renderer_basic/*` 与
+  `packages/renderer-basic/include/asharia/renderer_basic_vulkan/*`。
+- `apps/editor/src/editor_viewport*.{hpp,cpp}`、`apps/editor/src/panels/scene_view_panel.cpp`。
+
+结论：
+
+- CMake target usage requirements 是当前构建边界的事实来源；manifest 作为 package registry 前置数据时，
+  必须用 `targetDependencies` 表达多 target package 的真实边界，不能只看 package-level `dependencies`。
+- Conan lockfile 固定依赖解析；`build/conan/` 和 CMake generated presets/toolchain 是生成物，不是架构 source
+  of truth。
+- Vulkan threading / command buffer samples 支持当前“frame loop 拥有 submit/present，未来多线程 command
+  recording 必须有 per-thread command/descriptor pool 所有权”的边界。
+- Vulkan dynamic rendering 支持当前不引入传统 render pass/framebuffer 抽象的主路径；RenderGraph 仍只描述
+  abstract attachment/resource state，Vulkan adapter 再翻译 layout/stage/access。
+- Vulkan descriptor sets / push constants 资料支持把 camera、model、material 和 frame data 作为显式 shader
+  input 合同；diagnostics snapshot 只能观测，不能成为后续 pass 的数据来源。
+- 本次本地审查未发现 `packages/rendergraph` 或 `asharia::renderer_basic` public API 暴露 Vulkan type，也未发现
+  base `asharia::rhi_vulkan` target 公开链接 RenderGraph；已知缺口是 `renderer_basic_vulkan` 的 RenderView
+  camera 仍停留在 diagnostics，per-view constants / pass input 合同尚未落地。
+
+## Internal code design audit adjustment
+
+本次核对日期：2026-05-23
+
+一手资料：
+
+- Unity Render Graph fundamentals：https://docs.unity.cn/Packages/com.unity.render-pipelines.core%4017.0/manual/render-graph-fundamentals.html
+- Unreal Render Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine
+- O3DE Atom RPI overview：https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/rpi/
+- Vulkan formats：https://docs.vulkan.org/spec/latest/chapters/formats.html
+- Vulkan synchronization：https://github.khronos.org/Vulkan-Site/spec/latest/chapters/synchronization.html
+- Vulkan descriptor sets：https://docs.vulkan.org/spec/latest/chapters/descriptors.html
+
+仓库事实依据：
+
+- `packages/rhi-vulkan/src/vulkan_frame_loop.cpp` 的 surface format 选择仍可 fallback 到 surface 首项；
+  `packages/renderer-basic/include/asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp` 已把
+  `basicRenderGraphImageFormat()` 收敛为 `Result<RenderGraphImageFormat>`，unsupported format 会在
+  renderer/RG import 前 fail early。`--smoke-renderer-format-contract` 覆盖当前负向路径。
+- `apps/editor/src/editor_viewport_coordinator.*` 仍以单个 `requestedViewport_` 表达 viewport request，
+  会覆盖同帧多 view / 多 panel 需求。
+- `apps/editor/src/editor_viewport_overlay_provider.cpp`、`apps/editor/src/panels/scene_view_panel.cpp` 和
+  renderer diagnostics 路径已经传递 camera / overlay / debug line intent，但 `debugWorldLines` 当前只进入
+  diagnostics count，尚未形成真实 renderer pass。
+- `packages/renderer-basic/src/basic_renderers/compute_dispatch_renderer.inl` 在 graph 录制前使用
+  `vkCmdFillBuffer` 做外部 GPU work；该路径需要进入 RenderGraph command/pass 或 named external pre-pass
+  diagnostics。
+- `apps/editor/src/editor_context.hpp`、`apps/editor/src/editor_panel.hpp` 和 `apps/editor/src/editor_app.cpp`
+  显示 editor 仍有宽 context 与 app glue 聚合风险，后续 asset/material/script/editor persistence 前需要
+  command/transaction 与 capability-scoped context。
+- `packages/rendergraph/include/asharia/rendergraph/render_graph.hpp` 仍是大型 public header，后续继续扩展
+  cache、alias、multi-queue 或 unsafe/native pass 前需要 API / implementation split 计划。
+
+结论：
+
+- Unity / Unreal RenderGraph 资料支持把 pass data、resource access 和执行函数分开审查；Asharia Engine
+  不能只因为 package 边界正确就接受 hidden pre-pass 或 diagnostics-only data path。
+- O3DE RPI 的 Scene / Render Pipeline / View 分离支持把 Scene View、Game View 和 Preview View 统一建模为
+  RenderView 输入；单 optional viewport request 是过渡实现，不能作为多视图架构基础。
+- Vulkan format、descriptor 和 synchronization 资料支持把 format/capability、layout/stage/access、descriptor
+  signature 作为 fail-early 合同；fallback format、undefined RenderGraph format 或 descriptor mismatch 不能留到
+  GPU recording 时才失败。
+- 因此 `docs/workflow/review.md` 必须把内部代码设计审查列为架构审查必选项，`docs/planning/next-development-plan.md`
+  必须在继续推进 gizmo、selection、asset preview、material editor、multi-view diagnostics 前加入内部设计门禁。
 
 ## 引擎系统架构与线程设计
 
@@ -61,6 +148,48 @@
   `apps/editor`；panel/action/event、selection 和 transaction 才是未来 `editor-core` 的候选职责。
 - Unity、Unreal 和 Godot 的 editor window/dock 模型都支持按 id/type 注册和复用 panel，而不是让菜单直接
   创建任意 UI 实例。
+
+## Viewport / camera / RenderView / shader input
+
+本次核对日期：2026-05-23
+
+一手资料：
+
+- Unity SceneView：https://docs.unity3d.com/ScriptReference/SceneView.html
+- Unity Camera.cameraType：https://docs.unity3d.com/ScriptReference/Camera-cameraType.html
+- Unity Camera.targetTexture：https://docs.unity3d.com/ScriptReference/Camera-targetTexture.html
+- Unity Camera.cullingMask：https://docs.unity3d.com/ScriptReference/Camera-cullingMask.html
+- Unity shader built-in variables：https://docs.unity.cn/2023.3/Documentation/Manual/SL-UnityShaderVariables.html
+- Unity Render Graph fundamentals：https://docs.unity.cn/Packages/com.unity.render-pipelines.core%4017.0/manual/render-graph-fundamentals.html
+- Unreal FEditorViewportClient::CalcSceneView：https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/FEditorViewportClient/CalcSceneView
+- Unreal FSceneView：https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSceneView
+- Unreal Render Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine
+- Godot EditorInterface：https://docs.godotengine.org/en/latest/classes/class_editorinterface.html
+- Godot Viewport：https://docs.godotengine.org/en/latest/classes/class_viewport.html
+- Godot Camera3D：https://docs.godotengine.org/en/latest/classes/class_camera3d.html
+- Godot Viewports：https://docs.godotengine.org/en/stable/tutorials/rendering/viewports.html
+- Godot spatial shader built-ins：https://docs.godotengine.org/en/latest/tutorials/shaders/shader_reference/spatial_shader.html
+- Vulkan Guide push constants：https://docs.vulkan.org/guide/latest/push_constants.html
+- Vulkan descriptor sets：https://docs.vulkan.org/spec/latest/chapters/descriptors.html
+- Vulkan dynamic rendering sample：https://docs.vulkan.org/samples/latest/samples/extensions/dynamic_rendering/README.html
+- Filament FrameGraph：https://google.github.io/filament/notes/framegraph.html
+
+结论：
+
+- Unity、Unreal 和 Godot 都把编辑器视窗视为一种 view/camera 输入，而不是 renderer 的特殊旁路。
+  Scene View / editor viewport 可以拥有自己的 pivot、orbit state、grid/gizmo/debug 状态，但进入渲染时仍应
+  转换成统一的 view camera、render target、culling/filtering 和 pass 参数。
+- Unity `Camera.cameraType`、Godot `Camera3D.cull_mask` 和 Unreal editor viewport show flags 都说明：
+  Scene/Game/Preview 的差异应落在 view kind / camera type、culling 或 layer mask、show/debug flags、
+  overlay intent、render target 和 refresh policy 上，而不是另开矩阵更新通道。
+- Unity 和 Godot shader built-ins 都把 model、view、projection、view-projection、camera position 等作为
+  标准 shader input；Vulkan 侧可通过 descriptor/uniform buffer、push constants 或等价绑定传递。
+  因此需要相机或物体矩阵的 RenderGraph pass 必须显式消费 per-view / per-draw 数据合同。
+- Unreal RDG、Unity Render Graph 和 Filament FrameGraph 都强调 pass 显式声明资源读写和参数。
+  RenderGraph diagnostics 是检查结果，不应成为 renderer 反向读取 camera、model 或 resource state 的输入。
+- Asharia Engine 后续应把 `RenderView` 定义为统一视图合同：per-view camera constants、view flags、
+  culling/filtering mask、render target、frame params、overlay/debug policy 与 per-draw model/material/mesh
+  数据分层进入 renderer / RenderGraph。
 
 ## Schema / Persistence / C# metadata
 

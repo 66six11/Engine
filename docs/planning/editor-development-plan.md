@@ -1,6 +1,6 @@
 # Editor 开发方案
 
-更新日期：2026-05-19
+更新日期：2026-05-23
 
 本文是 Asharia Editor 的独立开发文档，覆盖 editor host、ImGui integration、panel/action/event、
 viewport texture registry、输入路由和后续阶段拆分。全局阶段顺序仍以
@@ -30,6 +30,19 @@ Frame Debug 的主选择 id 必须来自 renderer 在实际录制路径产生的
 
 当前不要继续横向推进 Grid、Frame Debug 视觉细节、RG node view、脚本热更新或复杂 overlay provider。下一步主线先收敛
 Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证合同。
+
+2026-05-23 内部设计审查补充：底层合同先行也包括 editor 内部对象设计，不只是 package 边界。
+
+- `EditorViewportCoordinator` 的单 `requestedViewport_` 只能支撑当前单 Scene View 过渡；进入 Scene/Game/Preview
+  同帧、多面板 viewport、asset preview 或 multi-view diagnostics 前，必须改为 keyed request / result / diagnostics
+  collection。
+- Scene View camera、overlay 和 debug line intent 已能进入 `RenderView` diagnostics，但 visible grid / gizmo /
+  selection outline 继续推进前，必须先补 renderer-owned per-view constants / pass input 与 debug-line graph pass。
+- `EditorContext` / `EditorFrameContext` 不能成为长期 service locator 或持久 mutation surface；会被保存、undo/redo、
+  script 或 collaboration 消费的状态，必须走 command/transaction 或明确 owner。
+- `editor_app.cpp` 仍承担 startup、registration、smoke、frame loop 和 ImGui/Vulkan glue 等多种职责；新增 asset browser、
+  material editor、script hot reload 或 persistent layout 前，先拆 app bootstrap/registration、smoke checks 和
+  ImGui Vulkan frame renderer。
 
 推荐顺序：
 
@@ -1285,7 +1298,9 @@ Current implementation:
 
 - `EditorViewportOverlayProvider` v0 emits a fixed XZ `EditorViewportOverlayPacket` when effective Scene View grid intent is
   enabled.
-- Provider context receives the editor-only Scene View camera data, but the fixed grid sample does not use it yet.
+- Provider context receives editor-owned Scene View navigation/camera data, but the fixed grid sample does not use it yet.
+  This ownership does not create a renderer matrix side channel; rendering-facing consumers must use the RenderView
+  camera/per-view constants contract.
 - `SceneViewPanel` owns transient editor camera state. `editorViewportCameraForExtent()` recomputes projection data on
   viewport resize, and `unprojectEditorViewportPoint()` maps viewport-local pixels to near/far world rays for later
   picking/grid policy.
@@ -1294,8 +1309,9 @@ Current implementation:
   packet, camera diagnostics to match the Scene View request, center unproject ray stability, near-plane origin, viewport
   corner orientation, invalid matrix rejection, resize aspect handling, and RenderView diagnostics debug-world-line count to
   be nonzero for a flagged Scene View render.
-- This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
-  complete orbit/pan/dolly input, renderer-owned debug line pass, graph pass node, or visible GPU line rendering yet.
+- This is not the final provider architecture: there is no manifest-backed provider, renderer-owned per-view constants /
+  pass input contract, camera-aware range/fade policy, complete orbit/pan/dolly input, renderer-owned debug line pass,
+  graph pass node, or visible GPU line rendering yet.
 
 Validation:
 

@@ -11,6 +11,18 @@
 - `asharia::renderer_basic_vulkan` 负责 basic renderer 的 graph 构建、Vulkan pass callback、debug execution event 和 offscreen viewport 路径。它可以依赖 `renderer_basic`、`rendergraph`、`rhi_vulkan` 和 `rhi_vulkan_rendergraph`，但不能反向污染这些底层 package。
 - `apps/editor` 只消费 renderer 输出、diagnostics 和 sampled texture；panel 不直接创建 Vulkan pipeline、graph pass 或 barrier。
 
+2026-05-23 审查结论：
+
+- `packages/rendergraph/include` 和 `packages/renderer-basic/include/asharia/renderer_basic` 当前未出现
+  Vulkan type；`rhi_vulkan/include` 和 `rhi_vulkan/src` 当前未 include RenderGraph，RenderGraph 只出现在
+  `include-rendergraph` adapter target、CMake adapter target 和 package manifest 的 target-level metadata 中。
+- `render_view.hpp` 位于 `renderer_basic_vulkan` public API，当前仍带有 `VkImage` / `VkImageView` /
+  `VkFormat` / `VkExtent2D`，所以它是 Vulkan RenderView contract，不是 backend-neutral `renderer_basic`
+  contract。
+- `recordViewFrame()` 当前会构建 RenderGraph、记录 diagnostics 和 execution events；camera/per-view 数据
+  只进入 diagnostics，尚未作为 shader/pass input 绑定。后续 scene mesh、grid、selection、gizmo 或 debug
+  line pass 必须先补 renderer-owned per-view constants / pass input 合同。
+
 ## Public Header 布局
 
 - `basic_renderers.hpp` 是兼容聚合头，保留旧调用方的单入口。
