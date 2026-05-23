@@ -211,15 +211,15 @@ flowchart LR
     Diagnostics --> DebugUI["Live RG View / Frame Debug"]
 ```
 
-当前状态：Grid 已有 `EditorViewportOverlayProvider` v0。provider 在 Scene View grid intent enabled 时生成原点附近固定
-XZ `EditorViewportOverlayPacket`，`EditorViewportCoordinator` 只负责把 packet bridge 到 `BasicRenderViewOverlayDesc`。
-smoke 验证 provider metadata、Game View 不接收 Scene-only packet，以及 RenderView diagnostics debug-world-line count。
-这不是 camera-aware grid，也不是可见 GPU grid pass。
+当前状态：Grid 已有 `EditorViewportOverlayProvider` v0。Scene View 请求携带 editor-only camera context，provider
+context 和 RenderView diagnostics 都能收到 camera/view/projection 数据；provider 仍只在 Scene View grid intent
+enabled 时生成原点附近固定 XZ `EditorViewportOverlayPacket`。`EditorViewportCoordinator` 只负责把 packet bridge 到
+`BasicRenderViewOverlayDesc`。这不是 runtime camera system、camera-aware grid，也不是可见 GPU grid pass。
 
 下一步顺序：
 
 1. 让 provider 参数来自 manifest/settings-ready 数据。
-2. 等相机 transform/projection 或 viewport unproject 数据进入 provider context 后，再实现 camera-aware range/fade policy。
+2. 补 camera controls / viewport unproject 语义后，再实现 camera-aware range/fade policy。
 3. 增加 renderer-owned debug line graph pass。
 4. 让 Frame Debug / RG View 显示 pass、packet count、view kind 和 selected event。
 

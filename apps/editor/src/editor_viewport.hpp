@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -11,6 +12,28 @@ namespace asharia::editor {
     struct EditorExtent2D {
         std::uint32_t width{1};
         std::uint32_t height{1};
+    };
+
+    using EditorViewportMatrix4x4 = std::array<float, 16>;
+
+    [[nodiscard]] constexpr EditorViewportMatrix4x4 editorViewportIdentityMatrix() {
+        return EditorViewportMatrix4x4{
+            1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
+            0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F,
+        };
+    }
+
+    struct EditorViewportCamera {
+        EditorViewportMatrix4x4 view{editorViewportIdentityMatrix()};
+        EditorViewportMatrix4x4 projection{editorViewportIdentityMatrix()};
+        EditorViewportMatrix4x4 viewProjection{editorViewportIdentityMatrix()};
+        std::array<float, 3> position{};
+        std::array<float, 3> target{};
+        std::array<float, 3> up{0.0F, 1.0F, 0.0F};
+        float verticalFovRadians{1.04719758F};
+        float aspectRatio{1.0F};
+        float nearPlane{0.1F};
+        float farPlane{1000.0F};
     };
 
     enum class EditorViewportKind {
@@ -90,6 +113,7 @@ namespace asharia::editor {
         EditorId panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D extent;
+        EditorViewportCamera camera;
         EditorViewportOverlayFlags overlayFlags;
         EditorViewportRefreshRequest refresh;
     };
@@ -110,6 +134,7 @@ namespace asharia::editor {
     };
 
     [[nodiscard]] bool isRenderableEditorExtent(EditorExtent2D extent);
+    [[nodiscard]] EditorViewportCamera defaultEditorSceneViewCamera(EditorExtent2D extent);
     [[nodiscard]] bool hasEditorViewportTexture(const EditorViewportTexture& texture);
     [[nodiscard]] bool anyEditorViewportOverlayFlagEnabled(EditorViewportOverlayFlags flags);
     [[nodiscard]] bool anyEditorSceneOnlyOverlayFlagEnabled(EditorViewportOverlayFlags flags);

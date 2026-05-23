@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -198,6 +199,10 @@ namespace {
         return lhs.width != rhs.width || lhs.height != rhs.height;
     }
 
+    bool closeFloat(float lhs, float rhs) {
+        return std::fabs(lhs - rhs) < 0.0001F;
+    }
+
     bool sameViewportOverlayFlags(asharia::editor::EditorViewportOverlayFlags lhs,
                                   asharia::editor::EditorViewportOverlayFlags rhs) {
         return lhs.gridVisible == rhs.gridVisible && lhs.gizmoVisible == rhs.gizmoVisible &&
@@ -205,6 +210,23 @@ namespace {
                lhs.selectionOutlineVisible == rhs.selectionOutlineVisible &&
                lhs.debugOverlayVisible == rhs.debugOverlayVisible &&
                lhs.debugGizmoVisible == rhs.debugGizmoVisible;
+    }
+
+    [[nodiscard]] bool validateRenderViewCameraSmoke(
+        const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
+        if (!closeFloat(viewportStats.lastRenderViewDiagnosticsCameraPosition[0], 0.0F) ||
+            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraPosition[1], 2.0F) ||
+            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraPosition[2], -6.0F) ||
+            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraNearPlane, 0.1F) ||
+            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraFarPlane, 1000.0F) ||
+            viewportStats.lastRenderViewDiagnosticsCameraProjectionXScale <= 0.0F ||
+            viewportStats.lastRenderViewDiagnosticsCameraProjectionYScale <= 1.0F ||
+            viewportStats.lastRenderViewDiagnosticsCameraViewProjectionDepthScale == 0.0F) {
+            asharia::logError(
+                "Editor viewport smoke recorded invalid RenderView camera diagnostics.");
+            return false;
+        }
+        return true;
     }
 
     std::uint64_t extentArea(VkExtent2D extent) {
@@ -484,12 +506,16 @@ namespace {
             asharia::editor::collectBuiltInEditorViewportOverlayPackets(
                 asharia::editor::EditorViewportOverlayProviderContext{
                     .viewportKind = asharia::editor::EditorViewportKind::Scene,
+                    .camera = asharia::editor::defaultEditorSceneViewCamera(
+                        asharia::editor::EditorExtent2D{.width = 320, .height = 240}),
                     .overlayFlags = defaults,
                 });
         const asharia::editor::EditorViewportOverlayPacketList gamePackets =
             asharia::editor::collectBuiltInEditorViewportOverlayPackets(
                 asharia::editor::EditorViewportOverlayProviderContext{
                     .viewportKind = asharia::editor::EditorViewportKind::Game,
+                    .camera = asharia::editor::defaultEditorSceneViewCamera(
+                        asharia::editor::EditorExtent2D{.width = 320, .height = 240}),
                     .overlayFlags = gameFlags,
                 });
         if (scenePackets.packets.size() != 1U ||
@@ -557,7 +583,7 @@ namespace {
                 "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
             return false;
         }
-        return true;
+        return validateRenderViewCameraSmoke(viewportStats);
     }
 
     [[nodiscard]] bool validateViewportResizeSmoke(

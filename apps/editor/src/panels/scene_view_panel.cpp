@@ -226,6 +226,7 @@ namespace asharia::editor {
             .panelId = desc_.id,
             .kind = EditorViewportKind::Scene,
             .extent = viewportExtent,
+            .camera = defaultEditorSceneViewCamera(viewportExtent),
             .overlayFlags = overlayFlags_,
             .refresh = refresh,
         });

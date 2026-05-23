@@ -1243,6 +1243,8 @@ Implementation:
 
 - `BasicRenderViewDesc` now carries renderer-owned view kind, camera matrices, per-view frame params and overlay composite
   policy without using editor-only types.
+- `EditorViewportRequest` now carries an editor-only Scene View camera context. `EditorViewportCoordinator` bridges it to
+  `BasicRenderViewCamera`; this is not a runtime camera component or a serialized scene camera.
 - `BasicRenderViewOverlayDesc` defines explicit color load/store behavior, blend mode and a narrow data-only
   `BasicDebugWorldLine` route for future grid/debug-line packets.
 - `BasicRenderViewDiagnostics` echoes the view and overlay contract so smokes can verify the data reached the renderer.
@@ -1251,13 +1253,15 @@ Implementation:
 
 Validation:
 
-- Editor viewport smoke verifies view params and overlay contract reach `BasicRenderViewDesc` without editor-only types.
+- Editor viewport smoke verifies view params, camera diagnostics and overlay contract reach `BasicRenderViewDesc` without
+  editor-only renderer dependencies.
 - Editor viewport smoke continues to prove Game/Preview filtering of Scene-only authoring flags.
 
 ### 21.10 Viewport Overlay Provider Contract / Fixed Grid Sample
 
-Status: Provider contract sample landed. The current slice only proves the fixed-origin provider packet bridge into RenderView
-diagnostics; camera-aware coordinates and the visible renderer grid pass remain deferred.
+Status: Provider contract sample and editor-only Scene View camera context landed. The current slice proves the fixed-origin
+provider packet bridge and camera diagnostics reach RenderView; camera-aware coordinates, camera controls and the visible
+renderer grid pass remain deferred.
 
 Depends on:
 
@@ -1271,7 +1275,7 @@ Scope:
 
 - Add the first Scene View-only overlay provider contract sample with a fixed-origin world grid.
 - Generate backend-neutral grid line packets from an overlay provider before renderer-specific recording.
-- Do not infer camera-aware coordinates until camera transform/projection or viewport unproject data exists.
+- Do not infer camera-aware coordinates until camera controls / viewport unproject semantics exist.
 - Keep Game View free of implicit grid rendering.
 - Keep Grid parameters in manifest/settings-ready state so spacing, major interval, range, fade and color can later be hot
   reloaded without exposing GPU objects to scripts.
@@ -1280,9 +1284,11 @@ Current implementation:
 
 - `EditorViewportOverlayProvider` v0 emits a fixed XZ `EditorViewportOverlayPacket` when effective Scene View grid intent is
   enabled.
+- Provider context receives the editor-only Scene View camera data, but the fixed grid sample does not use it yet.
 - `EditorViewportCoordinator` maps provider packets into `BasicRenderViewOverlayDesc`.
 - `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
-  packet, and RenderView diagnostics debug-world-line count to be nonzero for a flagged Scene View render.
+  packet, camera diagnostics to match the Scene View request, and RenderView diagnostics debug-world-line count to be
+  nonzero for a flagged Scene View render.
 - This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
   renderer-owned debug line pass, graph pass node, or visible GPU line rendering yet.
 

@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -52,6 +53,12 @@ namespace asharia::editor {
         std::uint64_t lastRenderViewDiagnosticsFrameIndex{};
         bool lastRenderViewDiagnosticsOverlayEnabled{};
         std::uint64_t lastRenderViewDiagnosticsDebugWorldLines{};
+        std::array<float, 3> lastRenderViewDiagnosticsCameraPosition{};
+        float lastRenderViewDiagnosticsCameraNearPlane{};
+        float lastRenderViewDiagnosticsCameraFarPlane{};
+        float lastRenderViewDiagnosticsCameraProjectionXScale{};
+        float lastRenderViewDiagnosticsCameraProjectionYScale{};
+        float lastRenderViewDiagnosticsCameraViewProjectionDepthScale{};
     };
 
     struct EditorRecordedRenderViewDiagnostics {

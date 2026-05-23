@@ -64,10 +64,16 @@ namespace {
         return asharia::BasicRenderViewKind::Scene;
     }
 
-    asharia::BasicRenderViewCamera basicEditorSceneCamera() {
-        asharia::BasicRenderViewCamera camera;
-        camera.position = {0.0F, 0.0F, 5.0F};
-        return camera;
+    asharia::BasicRenderViewCamera
+    basicRenderViewCamera(const asharia::editor::EditorViewportCamera& camera) {
+        return asharia::BasicRenderViewCamera{
+            .view = camera.view,
+            .projection = camera.projection,
+            .viewProjection = camera.viewProjection,
+            .position = camera.position,
+            .nearPlane = camera.nearPlane,
+            .farPlane = camera.farPlane,
+        };
     }
 
     asharia::BasicRenderViewFrameParams basicRenderViewFrameParams(std::uint64_t frameIndex) {
@@ -288,6 +294,7 @@ namespace asharia::editor {
         const EditorViewportOverlayPacketList overlayPackets =
             collectBuiltInEditorViewportOverlayPackets(EditorViewportOverlayProviderContext{
                 .viewportKind = request.kind,
+                .camera = request.camera,
                 .overlayFlags = request.overlayFlags,
             });
         const std::vector<asharia::BasicDebugWorldLine> debugWorldLines =
@@ -306,7 +313,7 @@ namespace asharia::editor {
                         .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
                     },
                 .viewKind = basicRenderViewKind(request.kind),
-                .camera = basicEditorSceneCamera(),
+                .camera = basicRenderViewCamera(request.camera),
                 .frameParams = basicRenderViewFrameParams(viewportFrameIndex),
                 .overlay = basicRenderViewOverlay(request.overlayFlags, debugWorldLines),
                 .viewName = editorViewportKindName(request.kind),
@@ -365,6 +372,16 @@ namespace asharia::editor {
         stats_.lastRenderViewDiagnosticsOverlayEnabled = renderTexture.diagnostics.overlay.enabled;
         stats_.lastRenderViewDiagnosticsDebugWorldLines =
             renderTexture.diagnostics.overlay.debugWorldLineCount;
+        stats_.lastRenderViewDiagnosticsCameraPosition = renderTexture.diagnostics.camera.position;
+        stats_.lastRenderViewDiagnosticsCameraNearPlane =
+            renderTexture.diagnostics.camera.nearPlane;
+        stats_.lastRenderViewDiagnosticsCameraFarPlane = renderTexture.diagnostics.camera.farPlane;
+        stats_.lastRenderViewDiagnosticsCameraProjectionXScale =
+            renderTexture.diagnostics.camera.projection[0];
+        stats_.lastRenderViewDiagnosticsCameraProjectionYScale =
+            renderTexture.diagnostics.camera.projection[5];
+        stats_.lastRenderViewDiagnosticsCameraViewProjectionDepthScale =
+            renderTexture.diagnostics.camera.viewProjection[10];
         if (anyEditorViewportOverlayFlagEnabled(request.overlayFlags)) {
             ++stats_.overlayFlagFramesRendered;
         }

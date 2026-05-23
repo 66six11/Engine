@@ -17,6 +17,7 @@ namespace asharia::editor {
 
     struct EditorViewportOverlayProviderContext {
         EditorViewportKind viewportKind{EditorViewportKind::Scene};
+        EditorViewportCamera camera;
         EditorViewportOverlayFlags overlayFlags;
     };
 
