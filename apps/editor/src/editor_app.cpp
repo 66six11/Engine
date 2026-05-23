@@ -41,6 +41,7 @@
 #include "editor_tool.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
+#include "editor_viewport_overlay_provider.hpp"
 #include "editor_workspace.hpp"
 #include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
@@ -477,6 +478,26 @@ namespace {
                 asharia::editor::effectiveEditorViewportOverlayFlags(
                     asharia::editor::EditorViewportKind::Preview, allFlags))) {
             asharia::logError("Editor viewport smoke leaked overlay flags into Preview views.");
+            return false;
+        }
+        const asharia::editor::EditorViewportOverlayPacketList scenePackets =
+            asharia::editor::collectBuiltInEditorViewportOverlayPackets(
+                asharia::editor::EditorViewportOverlayProviderContext{
+                    .viewportKind = asharia::editor::EditorViewportKind::Scene,
+                    .overlayFlags = defaults,
+                });
+        const asharia::editor::EditorViewportOverlayPacketList gamePackets =
+            asharia::editor::collectBuiltInEditorViewportOverlayPackets(
+                asharia::editor::EditorViewportOverlayProviderContext{
+                    .viewportKind = asharia::editor::EditorViewportKind::Game,
+                    .overlayFlags = gameFlags,
+                });
+        if (scenePackets.packets.size() != 1U ||
+            scenePackets.packets.front().overlayId != "scene.grid" ||
+            scenePackets.packets.front().viewportKind !=
+                asharia::editor::EditorViewportKind::Scene ||
+            scenePackets.debugWorldLineCount() == 0 || !gamePackets.packets.empty()) {
+            asharia::logError("Editor viewport smoke detected invalid overlay provider packets.");
             return false;
         }
         if (viewportStats.overlayFlagFramesRendered == 0) {

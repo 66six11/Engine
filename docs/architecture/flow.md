@@ -863,9 +863,11 @@ flowchart TD
     该 event 所属 pass 的 previewable color 输出；graph-local image 选择仍作为 resource override。normal RenderView recording 继续暂停；
     不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
 13. RenderView 现在携带 renderer-owned view kind、camera/view/projection params、per-view frame params、overlay
-    color load/store、blend mode 和 data-only debug world-line route。`apps/editor` 只在
-    `EditorViewportCoordinator` 边界把 Scene/Game/Preview flags 映射到该 contract；renderer/basic 不消费
-    `EditorViewportOverlayFlags` 或 ImGui state。camera-aware grid 和 debug draw 后续通过这条 route 接入。
+    color load/store、blend mode 和 data-only debug world-line route。`apps/editor` 通过
+    `EditorViewportOverlayProvider` v0 生成固定原点 XZ grid packet，并在 `EditorViewportCoordinator` 边界把
+    provider packet bridge 到 RenderView contract；renderer/basic 不消费 `EditorViewportOverlayFlags` 或 ImGui
+    state。camera-aware grid 需要真实 camera transform/projection 或 viewport unproject 数据，后续再通过这条
+    route 接入。
 14. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的

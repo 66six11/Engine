@@ -1,7 +1,6 @@
 ﻿#include "editor_viewport_coordinator.hpp"
 
 #include <algorithm>
-#include <array>
 #include <span>
 #include <utility>
 #include <vector>
@@ -10,6 +9,7 @@
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 #include "editor_frame_debugger.hpp"
+#include "editor_viewport_overlay_provider.hpp"
 
 namespace {
 
@@ -80,39 +80,28 @@ namespace {
     }
 
     std::vector<asharia::BasicDebugWorldLine>
-    basicEditorDebugWorldLines(asharia::editor::EditorViewportOverlayFlags flags) {
+    basicDebugWorldLines(std::span<const asharia::editor::EditorViewportOverlayPacket> packets) {
         std::vector<asharia::BasicDebugWorldLine> lines;
-        if (!flags.gridVisible) {
-            return lines;
+        std::size_t lineCount = 0;
+        for (const asharia::editor::EditorViewportOverlayPacket& packet : packets) {
+            lineCount += packet.debugWorldLines.size();
         }
-
-        constexpr int kGridHalfExtent = 5;
-        constexpr auto kGridExtent = static_cast<float>(kGridHalfExtent);
-        constexpr std::size_t kGridLineCount = 22U;
-        constexpr std::array<float, 4> kMinorLineColor{0.36F, 0.39F, 0.44F, 0.62F};
-        constexpr std::array<float, 4> kXAxisColor{0.84F, 0.22F, 0.18F, 1.0F};
-        constexpr std::array<float, 4> kZAxisColor{0.22F, 0.42F, 0.92F, 1.0F};
-
-        lines.reserve(kGridLineCount);
-        for (int index = -kGridHalfExtent; index <= kGridHalfExtent; ++index) {
-            const auto offset = static_cast<float>(index);
-            lines.push_back(asharia::BasicDebugWorldLine{
-                .start = {-kGridExtent, 0.0F, offset},
-                .end = {kGridExtent, 0.0F, offset},
-                .color = index == 0 ? kXAxisColor : kMinorLineColor,
-            });
-            lines.push_back(asharia::BasicDebugWorldLine{
-                .start = {offset, 0.0F, -kGridExtent},
-                .end = {offset, 0.0F, kGridExtent},
-                .color = index == 0 ? kZAxisColor : kMinorLineColor,
-            });
+        lines.reserve(lineCount);
+        for (const asharia::editor::EditorViewportOverlayPacket& packet : packets) {
+            for (const asharia::editor::EditorDebugWorldLine& line : packet.debugWorldLines) {
+                lines.push_back(asharia::BasicDebugWorldLine{
+                    .start = line.start,
+                    .end = line.end,
+                    .color = line.color,
+                });
+            }
         }
         return lines;
     }
 
-    asharia::BasicRenderViewOverlayDesc basicRenderViewOverlay(
-        asharia::editor::EditorViewportOverlayFlags flags,
-        std::span<const asharia::BasicDebugWorldLine> debugWorldLines) {
+    asharia::BasicRenderViewOverlayDesc
+    basicRenderViewOverlay(asharia::editor::EditorViewportOverlayFlags flags,
+                           std::span<const asharia::BasicDebugWorldLine> debugWorldLines) {
         return asharia::BasicRenderViewOverlayDesc{
             .enabled = asharia::editor::anyEditorViewportOverlayFlagEnabled(flags),
             .colorLoadOp = asharia::BasicRenderViewOverlayColorLoadOp::LoadSceneColor,
@@ -296,8 +285,13 @@ namespace asharia::editor {
         const asharia::VulkanSampledTextureView texture = renderTexture.target.sampledTextureView();
         asharia::BasicRenderViewDiagnostics diagnostics;
         const std::uint64_t viewportFrameIndex = viewportFramesRendered_ + 1U;
+        const EditorViewportOverlayPacketList overlayPackets =
+            collectBuiltInEditorViewportOverlayPackets(EditorViewportOverlayProviderContext{
+                .viewportKind = request.kind,
+                .overlayFlags = request.overlayFlags,
+            });
         const std::vector<asharia::BasicDebugWorldLine> debugWorldLines =
-            basicEditorDebugWorldLines(request.overlayFlags);
+            basicDebugWorldLines(overlayPackets.packets);
 
         auto recorded = renderer.recordViewFrame(
             frame,

@@ -259,18 +259,20 @@ Grid 的验收条件不是“看起来有线”，而是：
 
 Grid 从 “next renderer feature” 调整为 “extension architecture sample”：
 
-1. `EditorViewportOverlayProvider` v0 先落地。
+1. `EditorViewportOverlayProvider` v0 已落地。
 2. Grid provider 读取 manifest/default settings，生成 backend-neutral line packet。
 3. Renderer bridge 把 packet 交给 renderer-owned debug line overlay path。
 4. Frame Debugger Frame/RenderGraph views 验证 pass 和 packet count。
 5. Scene View chrome overlay 只控制 provider enabled state，不直接操作 renderer flags。
 
-当前 interim 状态：
+当前状态：
 
-- `EditorViewportCoordinator` 已经能在 Scene View grid intent enabled 时生成固定 XZ
-  `BasicDebugWorldLine` packets，并交给 `BasicRenderViewOverlayDesc`。
-- 这一步只证明 editor-to-RenderView 数据桥和 diagnostics count；它还不是 manifest-backed provider、camera-aware
-  grid policy，也没有 renderer-owned debug line graph pass 或可见 GPU 线框绘制。
+- `EditorViewportOverlayProvider` v0 已经能在 Scene View grid intent enabled 时生成原点附近固定 XZ
+  `EditorViewportOverlayPacket`。
+- `EditorViewportCoordinator` 只负责把 provider packet bridge 成 `BasicDebugWorldLine` 并交给
+  `BasicRenderViewOverlayDesc`。
+- 这一步只证明 provider contract、editor-to-RenderView 数据桥和 diagnostics count；它还不是 manifest-backed
+  provider、camera-aware grid policy，也没有 renderer-owned debug line graph pass 或可见 GPU 线框绘制。
 
 ## 迁移计划
 
@@ -300,21 +302,24 @@ Status: current.
 
 ### Step 4: Viewport Overlay Provider v0
 
-- 拆分 chrome overlay descriptor 和 world overlay provider。
-- Scene View grid/gizmo/selection-outline toggles 改成 provider enabled state。
-- provider 输出 empty packet，renderer 不变。
+Status: current.
+
+- 已拆出 `EditorViewportOverlayProvider` v0。
+- Scene View grid toggle 通过 `EditorViewportOverlayFlags` 控制 provider enabled state；gizmo/selection-outline 仍是
+  后续 provider/tool intent。
+- provider 当前输出固定原点 `scene.grid` packet，renderer 仍只消费已有 RenderView overlay data route。
 
 ### Step 5: Debug Line Renderer Bridge
 
-- renderer-basic 增加 debug line overlay pass。
-- `EditorViewportCoordinator` 从 overlay packets 构造 renderer overlay desc。
-- RG View / Frame Debug 验证 pass。
+- Current bridge: `EditorViewportCoordinator` 从 overlay packets 构造 `BasicRenderViewOverlayDesc`。
+- Deferred: renderer-basic 增加可见 debug line overlay graph pass。
+- Deferred: RG View / Frame Debug 验证 pass、packet count 和 source overlay id。
 
 ### Step 6: Grid Sample
 
-- Grid provider 生成 camera-aware XZ grid line packets。
+- 相机系统落地后，Grid provider 再生成 camera-aware XZ grid line packets。
 - Grid 参数来自 built-in manifest/settings，后续可热更新。
-- 现有固定 grid packet bridge 必须被收敛进 provider contract 后，才能继续做可见 renderer pass。
+- 当前固定 grid packet 已收敛进 provider contract；可见 renderer pass 仍需等 debug line renderer bridge。
 
 ## 非目标
 

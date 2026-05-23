@@ -85,6 +85,7 @@ add_executable(asharia-editor
     src/editor_ui.cpp
     src/editor_viewport.cpp
     src/editor_viewport_coordinator.cpp
+    src/editor_viewport_overlay_provider.cpp
     src/editor_workspace.cpp
     src/imgui_editor_shell.cpp
     src/imgui_runtime.cpp

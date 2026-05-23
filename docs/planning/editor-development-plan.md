@@ -422,7 +422,7 @@ Every sub-stage must:
 | 16 | 16.1-16.10 Done; 16.11-16.13 Deferred | In progress | Split editor shell from one file into host/runtime/panel/action/event/tool/workspace layout modules; defer tool/overlay extension contracts until Frame Debug diagnostics contract is frozen. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.9 Done; 21.10 data bridge started; 21.10 visual pass and 21.11-21.15 Deferred/Blocked | In progress | Freeze Frame Debug / diagnostics bottom-layer contracts first; then advance Grid through backend-neutral packets before adding visible renderer passes. |
+| 21 | 21.1-21.10 provider contract sample Done; 21.10 visual pass and 21.11-21.15 Deferred/Blocked | In progress | Freeze Frame Debug / diagnostics bottom-layer contracts first; then advance Grid through backend-neutral packets before adding visible renderer passes. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -1254,10 +1254,10 @@ Validation:
 - Editor viewport smoke verifies view params and overlay contract reach `BasicRenderViewDesc` without editor-only types.
 - Editor viewport smoke continues to prove Game/Preview filtering of Scene-only authoring flags.
 
-### 21.10 Camera-Aware Scene Grid
+### 21.10 Viewport Overlay Provider Contract / Fixed Grid Sample
 
-Status: Partially started. The current slice only proves the backend-neutral grid packet bridge into RenderView diagnostics;
-the visible renderer grid pass remains deferred.
+Status: Provider contract sample landed. The current slice only proves the fixed-origin provider packet bridge into RenderView
+diagnostics; camera-aware coordinates and the visible renderer grid pass remain deferred.
 
 Depends on:
 
@@ -1269,28 +1269,30 @@ Depends on:
 
 Scope:
 
-- Add the first real Scene View-only overlay provider sample: a camera-aware world grid.
+- Add the first Scene View-only overlay provider contract sample with a fixed-origin world grid.
 - Generate backend-neutral grid line packets from an overlay provider before renderer-specific recording.
-- Use RenderView camera/view params; do not draw a tiled screen-space texture.
+- Do not infer camera-aware coordinates until camera transform/projection or viewport unproject data exists.
 - Keep Game View free of implicit grid rendering.
 - Keep Grid parameters in manifest/settings-ready state so spacing, major interval, range, fade and color can later be hot
   reloaded without exposing GPU objects to scripts.
 
-Interim implementation:
+Current implementation:
 
-- `EditorViewportCoordinator` emits a fixed XZ `BasicDebugWorldLine` packet set when effective Scene View grid intent is
-  enabled, then maps those packets into `BasicRenderViewOverlayDesc`.
-- `--smoke-editor-viewport` now requires the RenderView diagnostics debug-world-line count to be nonzero for a flagged Scene
-  View render.
+- `EditorViewportOverlayProvider` v0 emits a fixed XZ `EditorViewportOverlayPacket` when effective Scene View grid intent is
+  enabled.
+- `EditorViewportCoordinator` maps provider packets into `BasicRenderViewOverlayDesc`.
+- `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
+  packet, and RenderView diagnostics debug-world-line count to be nonzero for a flagged Scene View render.
 - This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
   renderer-owned debug line pass, graph pass node, or visible GPU line rendering yet.
 
 Validation:
 
-- Current interim validation is limited to the editor-to-RenderView packet path and diagnostics count.
-- Scene View graph contains the grid pass when the grid flag is enabled.
-- Game View graph does not contain the grid pass unless a future explicit debug mode allows it.
-- Frame Debug/RG View diagnostics expose the grid overlay pass, packet count and view kind.
+- Current validation is limited to the provider contract, editor-to-RenderView packet bridge and diagnostics count.
+- Future renderer-pass validation must prove Scene View graph contains the grid pass when the grid flag is enabled.
+- Future renderer-pass validation must prove Game View graph does not contain the grid pass unless an explicit debug mode
+  allows it.
+- Future Frame Debug/RG View diagnostics must expose the grid overlay pass, packet count and view kind.
 
 ### 21.11 Pass Graph Node View
 
@@ -1572,8 +1574,8 @@ Current completed slices:
 
 1. `feat: add camera-aware scene grid`
 
-Add the first Scene View-only overlay pass using the RenderView camera params and debug/world-line route introduced in 21.9.
-No gizmo interaction, picking or selection outline in that slice.
+After a real camera context exists, add the Scene View-only overlay pass using RenderView camera params and the debug/world-line
+route. No gizmo interaction, picking or selection outline in that slice.
 
 2. `feat: add pass/event texture preview upgrade`
 
