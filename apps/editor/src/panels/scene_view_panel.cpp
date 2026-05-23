@@ -188,11 +188,27 @@ namespace asharia::editor {
             sceneWindowCond);
     }
 
+    void SceneViewPanel::updateCameraForViewportExtent(EditorExtent2D viewportExtent) {
+        if (!cameraInitialized_) {
+            camera_ = defaultEditorSceneViewCamera(viewportExtent);
+            cameraExtent_ = viewportExtent;
+            cameraInitialized_ = true;
+            return;
+        }
+        if (cameraExtent_.width == viewportExtent.width &&
+            cameraExtent_.height == viewportExtent.height) {
+            return;
+        }
+        camera_ = editorViewportCameraForExtent(camera_, viewportExtent);
+        cameraExtent_ = viewportExtent;
+    }
+
     void SceneViewPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();
         viewportSize.y =
             std::max(1.0F, viewportSize.y - (ImGui::GetTextLineHeightWithSpacing() * 3.0F));
         const EditorExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
+        updateCameraForViewportExtent(viewportExtent);
         std::uint64_t viewportFrameIndex{};
         if (const auto completed =
                 context.viewportHost.acquireViewportTextureForDraw(desc_.id.value);
@@ -226,7 +242,7 @@ namespace asharia::editor {
             .panelId = desc_.id,
             .kind = EditorViewportKind::Scene,
             .extent = viewportExtent,
-            .camera = defaultEditorSceneViewCamera(viewportExtent),
+            .camera = camera_,
             .overlayFlags = overlayFlags_,
             .refresh = refresh,
         });

@@ -54,6 +54,22 @@ namespace asharia::editor {
             };
         }
 
+        [[nodiscard]] constexpr EditorVec3 addEditorVec3(EditorVec3 lhs, EditorVec3 rhs) {
+            return EditorVec3{
+                lhs[0] + rhs[0],
+                lhs[1] + rhs[1],
+                lhs[2] + rhs[2],
+            };
+        }
+
+        [[nodiscard]] constexpr EditorVec3 scaleEditorVec3(EditorVec3 value, float scale) {
+            return EditorVec3{
+                value[0] * scale,
+                value[1] * scale,
+                value[2] * scale,
+            };
+        }
+
         [[nodiscard]] constexpr float dotEditorVec3(EditorVec3 lhs, EditorVec3 rhs) {
             return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
         }
@@ -72,6 +88,10 @@ namespace asharia::editor {
                 return EditorVec3{};
             }
             return EditorVec3{value[0] / length, value[1] / length, value[2] / length};
+        }
+
+        [[nodiscard]] constexpr bool hasEditorVec3Direction(EditorVec3 value) {
+            return dotEditorVec3(value, value) > 0.0F;
         }
 
         [[nodiscard]] EditorViewportMatrix4x4
@@ -121,8 +141,6 @@ namespace asharia::editor {
 
     EditorViewportCamera defaultEditorSceneViewCamera(EditorExtent2D extent) {
         constexpr float kDegreesToRadians = std::numbers::pi_v<float> / 180.0F;
-        const float width = static_cast<float>(std::max(extent.width, 1U));
-        const float height = static_cast<float>(std::max(extent.height, 1U));
         EditorViewportCamera camera{
             .view = editorViewportIdentityMatrix(),
             .projection = editorViewportIdentityMatrix(),
@@ -131,23 +149,66 @@ namespace asharia::editor {
             .target = {0.0F, 0.0F, 0.0F},
             .up = {0.0F, 1.0F, 0.0F},
             .verticalFovRadians = 60.0F * kDegreesToRadians,
-            .aspectRatio = width / height,
+            .aspectRatio = 1.0F,
             .nearPlane = 0.1F,
             .farPlane = 1000.0F,
         };
-        camera.view = editorViewportLookAtMatrix(EditorViewportLookAtDesc{
-            .position = camera.position,
-            .target = camera.target,
-            .cameraUpHint = camera.up,
+        return editorViewportCameraForExtent(camera, extent);
+    }
+
+    EditorViewportCamera editorViewportCameraForExtent(const EditorViewportCamera& camera,
+                                                       EditorExtent2D extent) {
+        const float width = static_cast<float>(std::max(extent.width, 1U));
+        const float height = static_cast<float>(std::max(extent.height, 1U));
+        EditorViewportCamera updated = camera;
+        updated.aspectRatio = width / height;
+        updated.view = editorViewportLookAtMatrix(EditorViewportLookAtDesc{
+            .position = updated.position,
+            .target = updated.target,
+            .cameraUpHint = updated.up,
         });
-        camera.projection = editorViewportPerspectiveMatrix(EditorViewportPerspectiveDesc{
-            .verticalFovRadians = camera.verticalFovRadians,
-            .aspectRatio = camera.aspectRatio,
-            .nearPlane = camera.nearPlane,
-            .farPlane = camera.farPlane,
+        updated.projection = editorViewportPerspectiveMatrix(EditorViewportPerspectiveDesc{
+            .verticalFovRadians = updated.verticalFovRadians,
+            .aspectRatio = updated.aspectRatio,
+            .nearPlane = updated.nearPlane,
+            .farPlane = updated.farPlane,
         });
-        camera.viewProjection = multiplyEditorViewportMatrices(camera.projection, camera.view);
-        return camera;
+        updated.viewProjection = multiplyEditorViewportMatrices(updated.projection, updated.view);
+        return updated;
+    }
+
+    std::optional<EditorViewportWorldRay>
+    unprojectEditorViewportPoint(const EditorViewportCamera& camera, EditorExtent2D extent,
+                                 EditorViewportPoint point) {
+        if (!isRenderableEditorExtent(extent) || camera.verticalFovRadians <= 0.0F ||
+            camera.aspectRatio <= 0.0F || camera.farPlane <= camera.nearPlane) {
+            return std::nullopt;
+        }
+
+        const EditorVec3 forward =
+            normalizeEditorVec3(subtractEditorVec3(camera.target, camera.position));
+        const EditorVec3 right = normalizeEditorVec3(crossEditorVec3(camera.up, forward));
+        if (!hasEditorVec3Direction(forward) || !hasEditorVec3Direction(right)) {
+            return std::nullopt;
+        }
+        const EditorVec3 cameraUp = crossEditorVec3(forward, right);
+
+        const float width = static_cast<float>(extent.width);
+        const float height = static_cast<float>(extent.height);
+        const float ndcX = (2.0F * point.x / width) - 1.0F;
+        const float ndcY = 1.0F - (2.0F * point.y / height);
+        const float tanHalfFov = std::tan(camera.verticalFovRadians * 0.5F);
+        const EditorVec3 direction = normalizeEditorVec3(addEditorVec3(
+            addEditorVec3(forward, scaleEditorVec3(right, ndcX * camera.aspectRatio * tanHalfFov)),
+            scaleEditorVec3(cameraUp, ndcY * tanHalfFov)));
+        if (!hasEditorVec3Direction(direction)) {
+            return std::nullopt;
+        }
+
+        return EditorViewportWorldRay{
+            .origin = camera.position,
+            .direction = direction,
+        };
     }
 
     bool hasEditorViewportTexture(const EditorViewportTexture& texture) {

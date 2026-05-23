@@ -422,7 +422,7 @@ Every sub-stage must:
 | 16 | 16.1-16.10 Done; 16.11-16.13 Deferred | In progress | Split editor shell from one file into host/runtime/panel/action/event/tool/workspace layout modules; defer tool/overlay extension contracts until Frame Debug diagnostics contract is frozen. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
-| 21 | 21.1-21.10 provider contract sample Done; 21.10 visual pass and 21.11-21.15 Deferred/Blocked | In progress | Freeze Frame Debug / diagnostics bottom-layer contracts first; then advance Grid through backend-neutral packets before adding visible renderer passes. |
+| 21 | 21.1-21.11 camera/unproject foundation Done; visible grid pass and later interaction slices Deferred/Blocked | In progress | Freeze Frame Debug / diagnostics bottom-layer contracts first; then advance Grid through backend-neutral packets before adding visible renderer passes. |
 | 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
@@ -1260,8 +1260,9 @@ Validation:
 ### 21.10 Viewport Overlay Provider Contract / Fixed Grid Sample
 
 Status: Provider contract sample and editor-only Scene View camera context landed. The current slice proves the fixed-origin
-provider packet bridge and camera diagnostics reach RenderView; camera-aware coordinates, camera controls and the visible
-renderer grid pass remain deferred.
+provider packet bridge and camera diagnostics reach RenderView; Scene View now also has panel-owned camera state and
+viewport unproject v0. Camera-aware coordinates, interactive camera controls and the visible renderer grid pass remain
+deferred.
 
 Depends on:
 
@@ -1275,7 +1276,7 @@ Scope:
 
 - Add the first Scene View-only overlay provider contract sample with a fixed-origin world grid.
 - Generate backend-neutral grid line packets from an overlay provider before renderer-specific recording.
-- Do not infer camera-aware coordinates until camera controls / viewport unproject semantics exist.
+- Do not infer camera-aware coordinates until viewport unproject and minimum camera interaction semantics exist.
 - Keep Game View free of implicit grid rendering.
 - Keep Grid parameters in manifest/settings-ready state so spacing, major interval, range, fade and color can later be hot
   reloaded without exposing GPU objects to scripts.
@@ -1285,12 +1286,14 @@ Current implementation:
 - `EditorViewportOverlayProvider` v0 emits a fixed XZ `EditorViewportOverlayPacket` when effective Scene View grid intent is
   enabled.
 - Provider context receives the editor-only Scene View camera data, but the fixed grid sample does not use it yet.
+- `SceneViewPanel` owns transient editor camera state. `editorViewportCameraForExtent()` recomputes projection data on
+  viewport resize, and `unprojectEditorViewportPoint()` maps viewport pixels to world rays for later picking/grid policy.
 - `EditorViewportCoordinator` maps provider packets into `BasicRenderViewOverlayDesc`.
 - `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
-  packet, camera diagnostics to match the Scene View request, and RenderView diagnostics debug-world-line count to be
-  nonzero for a flagged Scene View render.
+  packet, camera diagnostics to match the Scene View request, center unproject ray stability, resize aspect handling, and
+  RenderView diagnostics debug-world-line count to be nonzero for a flagged Scene View render.
 - This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
-  renderer-owned debug line pass, graph pass node, or visible GPU line rendering yet.
+  complete orbit/pan/dolly input, renderer-owned debug line pass, graph pass node, or visible GPU line rendering yet.
 
 Validation:
 
@@ -1300,7 +1303,30 @@ Validation:
   allows it.
 - Future Frame Debug/RG View diagnostics must expose the grid overlay pass, packet count and view kind.
 
-### 21.11 Pass Graph Node View
+### 21.11 Scene View Camera State / Viewport Unproject v0
+
+Status: Done.
+
+Scope:
+
+- Keep camera state editor-only and panel-owned; do not add a runtime Camera component or scene serialization.
+- Preserve the `EditorViewportRequest` camera bridge into `BasicRenderViewCamera`.
+- Recompute view/projection/viewProjection when the viewport extent changes.
+- Provide a backend-neutral viewport pixel to world ray helper for future picking, gizmos and camera-aware grid policy.
+- Defer full orbit/pan/dolly input behavior to a separate interaction slice.
+
+Implementation:
+
+- `SceneViewPanel` now stores transient `EditorViewportCamera` state and reuses it across frames.
+- `editorViewportCameraForExtent()` updates aspect/projection data while preserving position/target/up/fov/clip values.
+- `unprojectEditorViewportPoint()` maps viewport-local pixels through the editor camera basis into a normalized world ray.
+
+Validation:
+
+- `--smoke-editor-viewport` validates the default center unproject ray, normalized direction, zero-extent rejection and
+  resize aspect handling alongside RenderView camera diagnostics.
+
+### 21.12 Pass Graph Node View
 
 Status: Deferred.
 
@@ -1577,11 +1603,14 @@ Current completed slices:
 - `feat: add frame debug replay contract`: Frame Debug now has pass/execution-event selection in the primary panel. Selecting
   a renderer event requests a debug preview refresh through the existing replay/copy path while normal RenderView recording
   stays paused.
+- `feat: add scene view unproject foundation`: `SceneViewPanel` owns transient editor camera state, viewport resize
+  recomputes camera projection data, and `unprojectEditorViewportPoint()` maps viewport-local pixels to normalized world
+  rays for later picking, gizmos and camera-aware grid policy.
 
 1. `feat: add camera-aware scene grid`
 
-After a real camera context exists, add the Scene View-only overlay pass using RenderView camera params and the debug/world-line
-route. No gizmo interaction, picking or selection outline in that slice.
+After minimum camera interaction semantics exist, add the Scene View-only overlay policy using RenderView camera params and
+the debug/world-line route. No gizmo interaction, picking or selection outline in that slice.
 
 2. `feat: add pass/event texture preview upgrade`
 
