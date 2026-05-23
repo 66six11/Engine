@@ -70,8 +70,10 @@
 - `apps/editor/src/editor_viewport_coordinator.*` 仍以单个 `requestedViewport_` 表达 viewport request，
   会覆盖同帧多 view / 多 panel 需求。
 - `apps/editor/src/editor_viewport_overlay_provider.cpp`、`apps/editor/src/panels/scene_view_panel.cpp` 和
-  renderer diagnostics 路径已经传递 camera / overlay / debug line intent，但 `debugWorldLines` 当前只进入
-  diagnostics count，尚未形成真实 renderer pass。
+  renderer diagnostics 路径已经传递 camera / overlay / debug line intent。B.1 后，
+  `packages/renderer-basic/src/basic_renderers/fullscreen_texture_renderer.inl` 会在 overlay enabled 时记录
+  `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 纳入 typed params 与 command summary；
+  当前仍未形成可见 debug-line/grid draw pass。
 - `packages/renderer-basic/src/basic_renderers/compute_dispatch_renderer.inl` 在 graph 录制前使用
   `vkCmdFillBuffer` 做外部 GPU work；该路径需要进入 RenderGraph command/pass 或 named external pre-pass
   diagnostics。

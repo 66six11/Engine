@@ -330,6 +330,7 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     constexpr BasicFullscreenParams kFullscreenParams{
         .tint = {1.0F, 1.0F, 1.0F, 1.0F},
     };
+    const BasicRenderViewOverlayParams overlayParams = basicRenderViewOverlayParams(view);
 
     graph.addPass("ClearFullscreenSource", kBasicTransferClearPassType)
         .setParams(kBasicTransferClearParamsType, kClearParams)
@@ -363,6 +364,26 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
                 },
                 &eventRecorder);
         });
+
+    if (view.overlay.enabled) {
+        graph.addPass("RenderViewOverlayInputs", kBasicRenderViewOverlayPassType)
+            .setParams(kBasicRenderViewOverlayParamsType, overlayParams)
+            .writeColor("target", renderTarget)
+            .recordCommands([overlayParams](RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/RenderViewOverlay", "Inputs")
+                    .setVec4("CameraPositionNear", overlayParams.cameraPositionNear)
+                    .setVec4("FrameTimeScale", overlayParams.frameTimeScale)
+                    .setInt("DebugWorldLineCount",
+                            static_cast<int>(overlayParams.debugWorldLineCount));
+            })
+            .execute([&frame, &bindings, viewTarget, colorLoadOp = view.overlay.colorLoadOp,
+                      colorStoreOp = view.overlay.colorStoreOp,
+                      &eventRecorder](RenderGraphPassContext pass) -> Result<void> {
+                return executeBasicRenderViewOverlayPass(frame, pass, bindings,
+                                                         viewTarget.extent, colorLoadOp,
+                                                         colorStoreOp, &eventRecorder);
+            });
+    }
 
     const std::array debugPreviewCandidates{
         BasicRenderViewImageCandidate{

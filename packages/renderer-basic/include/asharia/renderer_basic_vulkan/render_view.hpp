@@ -115,6 +115,7 @@ namespace asharia {
         DrawFullscreenTriangle,
         Dispatch,
         CopyImage,
+        RenderViewInput,
     };
 
     struct BasicRenderViewExecutionEventId {

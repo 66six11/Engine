@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "asharia/core/log.hpp"
+#include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 #include "editor_frame_debugger.hpp"
@@ -139,6 +140,25 @@ namespace {
         default:
             return VK_FORMAT_UNDEFINED;
         }
+    }
+
+    [[nodiscard]] std::uint64_t renderViewOverlayPassCount(
+        const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+        return static_cast<std::uint64_t>(std::ranges::count_if(
+            snapshot.passes, [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                return pass.type == asharia::kBasicRenderViewOverlayPassType;
+            }));
+    }
+
+    [[nodiscard]] std::uint64_t renderViewOverlayCommandCount(
+        const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+        std::uint64_t commandCount = 0;
+        for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
+            if (pass.type == asharia::kBasicRenderViewOverlayPassType) {
+                commandCount += static_cast<std::uint64_t>(pass.commandCount);
+            }
+        }
+        return commandCount;
     }
 
 } // namespace
@@ -366,6 +386,10 @@ namespace asharia::editor {
             renderTexture.diagnostics.renderGraph.transitions.size();
         stats_.lastRenderViewDiagnosticsExecutionEvents =
             renderTexture.diagnostics.executionEvents.size();
+        stats_.lastRenderViewDiagnosticsOverlayPasses =
+            renderViewOverlayPassCount(renderTexture.diagnostics.renderGraph);
+        stats_.lastRenderViewDiagnosticsOverlayCommands =
+            renderViewOverlayCommandCount(renderTexture.diagnostics.renderGraph);
         stats_.lastRenderViewDiagnosticsKind = renderTexture.diagnostics.viewKind;
         stats_.lastRenderViewDiagnosticsFrameIndex =
             renderTexture.diagnostics.frameParams.frameIndex;

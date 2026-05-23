@@ -36,8 +36,10 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - `EditorViewportCoordinator` 的单 `requestedViewport_` 只能支撑当前单 Scene View 过渡；进入 Scene/Game/Preview
   同帧、多面板 viewport、asset preview 或 multi-view diagnostics 前，必须改为 keyed request / result / diagnostics
   collection。
-- Scene View camera、overlay 和 debug line intent 已能进入 `RenderView` diagnostics，但 visible grid / gizmo /
-  selection outline 继续推进前，必须先补 renderer-owned per-view constants / pass input 与 debug-line graph pass。
+- Scene View camera、overlay 和 debug line intent 已能进入 `RenderView` diagnostics；overlay enabled 的
+  RenderView 现在还会记录 `builtin.render-view-overlay` 输入 pass，把 camera/frame/line-count 作为 typed params
+  与 command summary 纳入 RenderGraph。visible grid / gizmo / selection outline 继续推进前，仍必须补真正的
+  renderer-owned debug-line/grid graph pass。
 - `EditorContext` / `EditorFrameContext` 不能成为长期 service locator 或持久 mutation surface；会被保存、undo/redo、
   script 或 collaboration 消费的状态，必须走 command/transaction 或明确 owner。
 - `editor_app.cpp` 仍承担 startup、registration、smoke、frame loop 和 ImGui/Vulkan glue 等多种职责；新增 asset browser、
@@ -1305,17 +1307,21 @@ Current implementation:
   viewport resize, and `unprojectEditorViewportPoint()` maps viewport-local pixels to near/far world rays for later
   picking/grid policy.
 - `EditorViewportCoordinator` maps provider packets into `BasicRenderViewOverlayDesc`.
+- `BasicFullscreenTextureRenderer::recordViewFrame()` now records a graph-visible
+  `builtin.render-view-overlay` pass for overlay-enabled RenderViews. The pass carries camera position / near plane,
+  frame timing / render scale and debug-world-line count as typed params and command summary, then touches the target
+  attachment through dynamic-rendering load/store. It intentionally does not draw visible lines yet.
 - `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
   packet, camera diagnostics to match the Scene View request, center unproject ray stability, near-plane origin, viewport
-  corner orientation, invalid matrix rejection, resize aspect handling, and RenderView diagnostics debug-world-line count to
-  be nonzero for a flagged Scene View render.
-- This is not the final provider architecture: there is no manifest-backed provider, renderer-owned per-view constants /
-  pass input contract, camera-aware range/fade policy, complete orbit/pan/dolly input, renderer-owned debug line pass,
-  graph pass node, or visible GPU line rendering yet.
+  corner orientation, invalid matrix rejection, resize aspect handling, RenderView diagnostics debug-world-line count and
+  the graph-visible overlay input pass to exist for a flagged Scene View render.
+- This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
+  complete orbit/pan/dolly input, renderer-owned debug line draw pass, or visible GPU line rendering yet.
 
 Validation:
 
-- Current validation is limited to the provider contract, editor-to-RenderView packet bridge and diagnostics count.
+- Current validation covers the provider contract, editor-to-RenderView packet bridge, diagnostics count and graph-visible
+  overlay input pass.
 - Future renderer-pass validation must prove Scene View graph contains the grid pass when the grid flag is enabled.
 - Future renderer-pass validation must prove Game View graph does not contain the grid pass unless an explicit debug mode
   allows it.
@@ -1629,12 +1635,17 @@ Current completed slices:
   recomputes camera projection data, and `unprojectEditorViewportPoint()` maps viewport-local pixels through inverse
   view-projection to near/far world rays for later picking, gizmos and camera-aware grid policy.
 
-1. `feat: add camera-aware scene grid`
+1. `feat: add scene view camera input repaint`
+
+Add the minimum orbit/pan/dolly input semantics needed to mutate panel-owned Scene View camera state and emit
+`CameraInputChanged` repaint reason. No gizmo, picking or selection mutation in that slice.
+
+2. `feat: add camera-aware scene grid`
 
 After minimum camera interaction semantics exist, add the Scene View-only overlay policy using RenderView camera params and
 the debug/world-line route. No gizmo interaction, picking or selection outline in that slice.
 
-2. `feat: add pass/event texture preview upgrade`
+3. `feat: add pass/event texture preview upgrade`
 
 After replay identity is stable, upgrade image-resource preview to pass/event-selected output preview and optional explicit
 debug preservation for resources that cannot be replayed.

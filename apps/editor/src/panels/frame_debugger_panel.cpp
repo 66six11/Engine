@@ -131,6 +131,8 @@ namespace asharia::editor {
                 return "Dispatch";
             case asharia::BasicRenderViewExecutionEventKind::CopyImage:
                 return "CopyImage";
+            case asharia::BasicRenderViewExecutionEventKind::RenderViewInput:
+                return "RenderViewInput";
             }
             return "Unknown";
         }

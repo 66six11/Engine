@@ -646,14 +646,30 @@ namespace {
         if (!validateIdleSceneViewReuseSmoke(mode, runResult, viewportStats)) {
             return false;
         }
-        if (viewportStats.lastRenderViewDiagnosticsPasses != 2 ||
+        if (viewportStats.lastRenderViewDiagnosticsPasses != 3 ||
             viewportStats.lastRenderViewDiagnosticsResources != 2 ||
-            viewportStats.lastRenderViewDiagnosticsAccessEdges != 3 ||
-            viewportStats.lastRenderViewDiagnosticsDependencyEdges != 1 ||
+            viewportStats.lastRenderViewDiagnosticsAccessEdges != 4 ||
+            viewportStats.lastRenderViewDiagnosticsDependencyEdges != 2 ||
             viewportStats.lastRenderViewDiagnosticsTransitions != 4 ||
             viewportStats.lastRenderViewDiagnosticsExecutionEvents == 0) {
             asharia::logError(
-                "Editor viewport smoke recorded unexpected render view diagnostics counts.");
+                "Editor viewport smoke recorded unexpected render view diagnostics counts: passes " +
+                std::to_string(viewportStats.lastRenderViewDiagnosticsPasses) + ", resources " +
+                std::to_string(viewportStats.lastRenderViewDiagnosticsResources) +
+                ", access edges " +
+                std::to_string(viewportStats.lastRenderViewDiagnosticsAccessEdges) +
+                ", dependency edges " +
+                std::to_string(viewportStats.lastRenderViewDiagnosticsDependencyEdges) +
+                ", transitions " +
+                std::to_string(viewportStats.lastRenderViewDiagnosticsTransitions) +
+                ", execution events " +
+                std::to_string(viewportStats.lastRenderViewDiagnosticsExecutionEvents) + ".");
+            return false;
+        }
+        if (viewportStats.lastRenderViewDiagnosticsOverlayPasses != 1 ||
+            viewportStats.lastRenderViewDiagnosticsOverlayCommands != 4) {
+            asharia::logError(
+                "Editor viewport smoke did not record graph-visible RenderView overlay inputs.");
             return false;
         }
         if (viewportStats.lastRenderViewDiagnosticsKind != asharia::BasicRenderViewKind::Scene ||
@@ -773,13 +789,22 @@ namespace {
             asharia::logError("Editor frame debugger smoke did not keep a captured snapshot.");
             return false;
         }
-        if (capture->diagnostics.renderGraph.passes.size() != 2 ||
+        if (capture->diagnostics.renderGraph.passes.size() != 3 ||
             capture->diagnostics.renderGraph.resources.size() != 2 ||
-            capture->diagnostics.renderGraph.accessEdges.size() != 3 ||
-            capture->diagnostics.renderGraph.dependencyEdges.size() != 1 ||
+            capture->diagnostics.renderGraph.accessEdges.size() != 4 ||
+            capture->diagnostics.renderGraph.dependencyEdges.size() != 2 ||
             capture->diagnostics.renderGraph.transitions.size() != 4) {
             asharia::logError(
-                "Editor frame debugger smoke captured unexpected RenderGraph diagnostics.");
+                "Editor frame debugger smoke captured unexpected RenderGraph diagnostics: passes " +
+                std::to_string(capture->diagnostics.renderGraph.passes.size()) +
+                ", resources " +
+                std::to_string(capture->diagnostics.renderGraph.resources.size()) +
+                ", access edges " +
+                std::to_string(capture->diagnostics.renderGraph.accessEdges.size()) +
+                ", dependency edges " +
+                std::to_string(capture->diagnostics.renderGraph.dependencyEdges.size()) +
+                ", transitions " +
+                std::to_string(capture->diagnostics.renderGraph.transitions.size()) + ".");
             return false;
         }
         if (capture->diagnostics.executionEvents.empty()) {

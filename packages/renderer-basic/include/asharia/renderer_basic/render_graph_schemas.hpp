@@ -25,6 +25,9 @@ namespace asharia {
     inline constexpr char kBasicRasterMrtParamsType[] = "builtin.raster-mrt.params";
     inline constexpr char kBasicRasterFullscreenPassType[] = "builtin.raster-fullscreen";
     inline constexpr char kBasicRasterFullscreenParamsType[] = "builtin.raster-fullscreen.params";
+    inline constexpr char kBasicRenderViewOverlayPassType[] = "builtin.render-view-overlay";
+    inline constexpr char kBasicRenderViewOverlayParamsType[] =
+        "builtin.render-view-overlay.params";
     inline constexpr char kBasicRasterDrawListPassType[] = "builtin.raster-draw-list";
     inline constexpr char kBasicRasterDrawListParamsType[] = "builtin.raster-draw-list.params";
     inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
@@ -38,6 +41,15 @@ namespace asharia {
 
     struct BasicFullscreenParams {
         std::array<float, 4> tint{};
+    };
+
+    struct BasicRenderViewOverlayParams {
+        std::array<float, 4> cameraPositionNear{};
+        std::array<float, 4> frameTimeScale{};
+        std::uint32_t debugWorldLineCount{};
+        std::uint32_t viewKind{};
+        std::uint32_t overlayEnabled{};
+        std::uint32_t reserved{};
     };
 
     struct BasicDrawListParams {
@@ -222,6 +234,28 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicRenderViewOverlaySchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewOverlayPassType,
+            .paramsType = kBasicRenderViewOverlayParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::SetVec4,
+                    RenderGraphCommandKind::SetInt,
+                },
+        });
+    }
+
     inline void registerBasicRasterDrawListSchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicRasterDrawListPassType,
@@ -322,6 +356,7 @@ namespace asharia {
         registerBasicRasterMesh3DSchema(schemas);
         registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
+        registerBasicRenderViewOverlaySchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
         registerBasicComputeDispatchSchema(schemas);
         registerBasicComputeReadbackSchema(schemas);

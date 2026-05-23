@@ -31,8 +31,9 @@ RenderGraph 资料。
 - `apps/editor` 当前是 host integration 和 smoke harness；panel 通过 backend-neutral request/result
   消费 viewport 服务，不直接创建 pipeline、descriptor 或 command buffer。
 - 当前仍有临时实现形状：`renderer_basic_vulkan` 同时承载 sample renderer、RenderView/offscreen viewport、
-  debug preview 和 execution event；`recordViewFrame()` 仍只把 camera 回写到 diagnostics，真正 per-view
-  constants / pass input contract 尚未完成。
+  debug preview 和 execution event；`recordViewFrame()` 已为 overlay enabled view 增加
+  `builtin.render-view-overlay` 输入 pass，把 camera/frame/debug-line count 纳入 graph-visible typed params，但
+  真正可见 debug-line/grid renderer pass 尚未完成。
 
 ## 模块边界
 

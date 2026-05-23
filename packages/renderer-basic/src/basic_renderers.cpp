@@ -106,6 +106,43 @@ namespace asharia {
             }};
         }
 
+        [[nodiscard]] std::uint32_t basicRenderViewKindValue(BasicRenderViewKind kind) {
+            switch (kind) {
+            case BasicRenderViewKind::Game:
+                return 0;
+            case BasicRenderViewKind::Scene:
+                return 1;
+            case BasicRenderViewKind::Preview:
+                return 2;
+            }
+            return 0;
+        }
+
+        [[nodiscard]] BasicRenderViewOverlayParams
+        basicRenderViewOverlayParams(const BasicRenderViewDesc& view) {
+            return BasicRenderViewOverlayParams{
+                .cameraPositionNear =
+                    {
+                        view.camera.position[0],
+                        view.camera.position[1],
+                        view.camera.position[2],
+                        view.camera.nearPlane,
+                    },
+                .frameTimeScale =
+                    {
+                        view.frameParams.timeSeconds,
+                        view.frameParams.deltaSeconds,
+                        view.frameParams.renderScale,
+                        view.camera.farPlane,
+                    },
+                .debugWorldLineCount =
+                    static_cast<std::uint32_t>(view.overlay.debugWorldLines.size()),
+                .viewKind = basicRenderViewKindValue(view.viewKind),
+                .overlayEnabled = view.overlay.enabled ? 1U : 0U,
+                .reserved = 0,
+            };
+        }
+
         void accumulateBufferStats(VulkanBufferStats& total, const VulkanBuffer& buffer) {
             const VulkanBufferStats stats = buffer.stats();
             total.created += stats.created;
@@ -175,6 +212,65 @@ namespace asharia {
                 .textureBinding = texture.name,
                 .textureSlot = texture.secondaryName,
             };
+        }
+
+        [[nodiscard]] Result<void>
+        validateBasicRenderViewOverlayCommands(RenderGraphPassContext pass,
+                                               BasicRenderViewOverlayParams params) {
+            if (pass.commands.size() != 4) {
+                return std::unexpected{
+                    renderGraphError("RenderView overlay pass expected exactly four commands")};
+            }
+
+            const RenderGraphCommand& shader = pass.commands[0];
+            const RenderGraphCommand& camera = pass.commands[1];
+            const RenderGraphCommand& frameParams = pass.commands[2];
+            const RenderGraphCommand& lineCount = pass.commands[3];
+
+            auto shaderKind = expectCommandKind(shader, RenderGraphCommandKind::SetShader,
+                                                "RenderView overlay shader");
+            if (!shaderKind) {
+                return std::unexpected{std::move(shaderKind.error())};
+            }
+            auto cameraKind = expectCommandKind(camera, RenderGraphCommandKind::SetVec4,
+                                                "RenderView overlay camera constants");
+            if (!cameraKind) {
+                return std::unexpected{std::move(cameraKind.error())};
+            }
+            auto frameKind = expectCommandKind(frameParams, RenderGraphCommandKind::SetVec4,
+                                               "RenderView overlay frame constants");
+            if (!frameKind) {
+                return std::unexpected{std::move(frameKind.error())};
+            }
+            auto lineKind = expectCommandKind(lineCount, RenderGraphCommandKind::SetInt,
+                                              "RenderView overlay line count");
+            if (!lineKind) {
+                return std::unexpected{std::move(lineKind.error())};
+            }
+
+            if (shader.name != "Hidden/RenderViewOverlay" || shader.secondaryName != "Inputs") {
+                return std::unexpected{
+                    renderGraphError("RenderView overlay pass shader command does not match the "
+                                     "current input contract")};
+            }
+            if (camera.name != "CameraPositionNear" ||
+                camera.floatValues != params.cameraPositionNear) {
+                return std::unexpected{
+                    renderGraphError("RenderView overlay camera command does not match params")};
+            }
+            if (frameParams.name != "FrameTimeScale" ||
+                frameParams.floatValues != params.frameTimeScale) {
+                return std::unexpected{
+                    renderGraphError("RenderView overlay frame command does not match params")};
+            }
+            if (lineCount.name != "DebugWorldLineCount" ||
+                lineCount.intValue != static_cast<int>(params.debugWorldLineCount)) {
+                return std::unexpected{
+                    renderGraphError("RenderView overlay line count command does not match "
+                                     "params")};
+            }
+
+            return {};
         }
 
         [[nodiscard]] Result<void>
@@ -725,6 +821,57 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
+        [[nodiscard]] VkAttachmentLoadOp
+        basicRenderViewOverlayLoadOp(BasicRenderViewOverlayColorLoadOp colorLoadOp) {
+            switch (colorLoadOp) {
+            case BasicRenderViewOverlayColorLoadOp::LoadSceneColor:
+                return VK_ATTACHMENT_LOAD_OP_LOAD;
+            case BasicRenderViewOverlayColorLoadOp::Clear:
+                return VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+            return VK_ATTACHMENT_LOAD_OP_LOAD;
+        }
+
+        [[nodiscard]] VkAttachmentStoreOp
+        basicRenderViewOverlayStoreOp(BasicRenderViewOverlayColorStoreOp colorStoreOp) {
+            switch (colorStoreOp) {
+            case BasicRenderViewOverlayColorStoreOp::Store:
+                return VK_ATTACHMENT_STORE_OP_STORE;
+            case BasicRenderViewOverlayColorStoreOp::Discard:
+                return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            }
+            return VK_ATTACHMENT_STORE_OP_STORE;
+        }
+
+        void recordBasicRenderViewOverlayTouch(const VulkanFrameRecordContext& frame,
+                                               VkImageView targetImageView,
+                                               VkExtent2D targetExtent,
+                                               BasicRenderViewOverlayColorLoadOp loadOp,
+                                               BasicRenderViewOverlayColorStoreOp storeOp) {
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = targetImageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = basicRenderViewOverlayLoadOp(loadOp);
+            colorAttachment.storeOp = basicRenderViewOverlayStoreOp(storeOp);
+            colorAttachment.clearValue = VkClearValue{
+                .color = VkClearColorValue{{0.0F, 0.0F, 0.0F, 0.0F}},
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = targetExtent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachments = &colorAttachment;
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
         [[nodiscard]] Result<void>
         updateBasicFullscreenSourceDescriptor(VkDevice device, VkDescriptorSet descriptorSet,
                                               VkImageView sourceImageView) {
@@ -860,6 +1007,51 @@ namespace asharia {
                         .instanceCount = 1,
                     },
                     {}, sourceBinding->image.index, targetBinding->image.index);
+                eventRecorder->endPass(pass);
+            }
+            return {};
+        }
+
+        [[nodiscard]] Result<void> executeBasicRenderViewOverlayPass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> bindings, VkExtent2D targetExtent,
+            BasicRenderViewOverlayColorLoadOp colorLoadOp,
+            BasicRenderViewOverlayColorStoreOp colorStoreOp,
+            BasicRenderViewExecutionEventRecorder* eventRecorder) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(frame, pass.name);
+            if (eventRecorder != nullptr) {
+                eventRecorder->beginPass(pass);
+            }
+            auto transitions =
+                recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+
+            auto overlayParams = readPassParams<BasicRenderViewOverlayParams>(
+                pass, kBasicRenderViewOverlayParamsType, "RenderView overlay pass");
+            if (!overlayParams) {
+                return std::unexpected{std::move(overlayParams.error())};
+            }
+            auto commands = validateBasicRenderViewOverlayCommands(pass, *overlayParams);
+            if (!commands) {
+                return std::unexpected{std::move(commands.error())};
+            }
+
+            auto targetBinding = findVulkanRenderGraphColorWrite(pass, "target", bindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
+
+            recordBasicRenderViewOverlayTouch(frame, targetBinding->vulkanImageView,
+                                              targetExtent, colorLoadOp, colorStoreOp);
+            if (eventRecorder != nullptr) {
+                eventRecorder->append(
+                    pass, BasicRenderViewExecutionEventKind::RenderViewInput,
+                    "BindRenderViewInputs",
+                    firstCommandIndex(pass, RenderGraphCommandKind::SetShader), {}, {},
+                    std::nullopt, targetBinding->image.index);
                 eventRecorder->endPass(pass);
             }
             return {};

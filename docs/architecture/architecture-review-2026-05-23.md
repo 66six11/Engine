@@ -57,9 +57,14 @@
 
 在继续做 multi-view diagnostics 或 asset preview viewport 前，把 coordinator 改为 keyed request / result / diagnostics collection。结果、texture、diagnostics、execution events 和 failure context 必须按 panel/view id 分离。
 
-### P2. RenderView camera / overlay 目前主要是 diagnostics-only
+### P2. RenderView camera / overlay 原始 diagnostics-only 路径
 
-本地证据：
+状态：B.1 已部分修复。`renderer_basic_vulkan` 现在会为 overlay enabled 的 RenderView 插入
+`builtin.render-view-overlay` pass，把 camera position / near plane、frame params 和 debug-world-line count 作为
+typed params 与 command summary 记录，并通过 dynamic-rendering load/store 触碰目标 attachment。该修复证明
+RenderView 输入已经进入真实 recording/diagnostics/event 路径，但仍未绘制可见 debug line 或 grid。
+
+原始本地证据：
 
 - `apps/editor/src/panels/scene_view_panel.cpp:241` 提交 `EditorViewportRequest`。
 - `apps/editor/src/editor_viewport_overlay_provider.cpp:50` 到 `:56` 在 Scene View grid flag 下生成 `EditorViewportOverlayPacket`。
@@ -70,9 +75,11 @@
 
 这证明 editor -> RenderView 的桥已经存在，但不能证明 renderer 真的使用了 camera / overlay / debug line 数据。继续做 grid/gizmo/selection outline 时，如果仍停留在 diagnostics count，会形成“UI 看起来有状态，GPU 输出不受状态影响”的半合同。
 
-调整：
+后续调整：
 
-先补 renderer-owned per-view constants / pass input，再补 debug-line/grid graph pass。smoke 至少验证 pass/binding 真实存在；更理想是验证 camera 或 overlay 状态变化能改变输出或 execution event。
+继续补 camera-aware grid policy 和可见 debug-line/grid graph pass。后续 smoke 至少验证 Scene View graph 包含可见
+overlay pass，Game/Preview 不接收 Scene-only pass；更理想是验证 camera 或 overlay 状态变化能改变输出或
+execution event。
 
 ### P3. Compute dispatch 有 graph 外 GPU work
 

@@ -3771,6 +3771,7 @@ namespace {
         RasterMesh3D,
         RasterMrt,
         RasterFullscreen,
+        RenderViewOverlay,
         RasterDrawList,
         ComputeDispatch,
         ComputeReadback,
@@ -3928,6 +3929,7 @@ namespace {
             break;
         case BuiltinSchemaSmokePass::DynamicClear:
         case BuiltinSchemaSmokePass::RasterTriangle:
+        case BuiltinSchemaSmokePass::RenderViewOverlay:
             writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::TransientPresent:
@@ -4082,6 +4084,13 @@ namespace {
                 .paramsType = asharia::kBasicRasterFullscreenParamsType,
                 .missingSlot = "source",
                 .context = "builtin raster fullscreen",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RenderViewOverlay,
+                .type = asharia::kBasicRenderViewOverlayPassType,
+                .paramsType = asharia::kBasicRenderViewOverlayParamsType,
+                .missingSlot = "target",
+                .context = "builtin render view overlay",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterDrawList,

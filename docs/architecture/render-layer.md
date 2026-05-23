@@ -19,9 +19,11 @@
 - `render_view.hpp` 位于 `renderer_basic_vulkan` public API，当前仍带有 `VkImage` / `VkImageView` /
   `VkFormat` / `VkExtent2D`，所以它是 Vulkan RenderView contract，不是 backend-neutral `renderer_basic`
   contract。
-- `recordViewFrame()` 当前会构建 RenderGraph、记录 diagnostics 和 execution events；camera/per-view 数据
-  只进入 diagnostics，尚未作为 shader/pass input 绑定。后续 scene mesh、grid、selection、gizmo 或 debug
-  line pass 必须先补 renderer-owned per-view constants / pass input 合同。
+- `recordViewFrame()` 当前会构建 RenderGraph、记录 diagnostics 和 execution events。overlay enabled 的
+  RenderView 会插入 `builtin.render-view-overlay` pass，把 camera / frame / debug-world-line count 作为 typed
+  params 与 command summary 进入 graph，并通过 dynamic-rendering load/store 触碰目标 attachment。它仍不是可见
+  line/grid renderer；后续 scene mesh、grid、selection、gizmo 或 debug line pass 必须继续把 per-view 数据作为
+  renderer-owned pass input，而不是从 diagnostics 读取。
 
 ## Public Header 布局
 
