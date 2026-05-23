@@ -1,7 +1,10 @@
 ﻿#include "editor_viewport_coordinator.hpp"
 
 #include <algorithm>
+#include <array>
+#include <span>
 #include <utility>
+#include <vector>
 
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
@@ -49,8 +52,7 @@ namespace {
         return "Viewport";
     }
 
-    asharia::BasicRenderViewKind
-    basicRenderViewKind(asharia::editor::EditorViewportKind kind) {
+    asharia::BasicRenderViewKind basicRenderViewKind(asharia::editor::EditorViewportKind kind) {
         switch (kind) {
         case asharia::editor::EditorViewportKind::Scene:
             return asharia::BasicRenderViewKind::Scene;
@@ -77,14 +79,46 @@ namespace {
         };
     }
 
-    asharia::BasicRenderViewOverlayDesc
-    basicRenderViewOverlay(asharia::editor::EditorViewportOverlayFlags flags) {
+    std::vector<asharia::BasicDebugWorldLine>
+    basicEditorDebugWorldLines(asharia::editor::EditorViewportOverlayFlags flags) {
+        std::vector<asharia::BasicDebugWorldLine> lines;
+        if (!flags.gridVisible) {
+            return lines;
+        }
+
+        constexpr int kGridHalfExtent = 5;
+        constexpr auto kGridExtent = static_cast<float>(kGridHalfExtent);
+        constexpr std::size_t kGridLineCount = 22U;
+        constexpr std::array<float, 4> kMinorLineColor{0.36F, 0.39F, 0.44F, 0.62F};
+        constexpr std::array<float, 4> kXAxisColor{0.84F, 0.22F, 0.18F, 1.0F};
+        constexpr std::array<float, 4> kZAxisColor{0.22F, 0.42F, 0.92F, 1.0F};
+
+        lines.reserve(kGridLineCount);
+        for (int index = -kGridHalfExtent; index <= kGridHalfExtent; ++index) {
+            const auto offset = static_cast<float>(index);
+            lines.push_back(asharia::BasicDebugWorldLine{
+                .start = {-kGridExtent, 0.0F, offset},
+                .end = {kGridExtent, 0.0F, offset},
+                .color = index == 0 ? kXAxisColor : kMinorLineColor,
+            });
+            lines.push_back(asharia::BasicDebugWorldLine{
+                .start = {offset, 0.0F, -kGridExtent},
+                .end = {offset, 0.0F, kGridExtent},
+                .color = index == 0 ? kZAxisColor : kMinorLineColor,
+            });
+        }
+        return lines;
+    }
+
+    asharia::BasicRenderViewOverlayDesc basicRenderViewOverlay(
+        asharia::editor::EditorViewportOverlayFlags flags,
+        std::span<const asharia::BasicDebugWorldLine> debugWorldLines) {
         return asharia::BasicRenderViewOverlayDesc{
             .enabled = asharia::editor::anyEditorViewportOverlayFlagEnabled(flags),
             .colorLoadOp = asharia::BasicRenderViewOverlayColorLoadOp::LoadSceneColor,
             .colorStoreOp = asharia::BasicRenderViewOverlayColorStoreOp::Store,
             .blendMode = asharia::BasicRenderViewOverlayBlendMode::AlphaBlend,
-            .debugWorldLines = {},
+            .debugWorldLines = debugWorldLines,
         };
     }
 
@@ -262,6 +296,8 @@ namespace asharia::editor {
         const asharia::VulkanSampledTextureView texture = renderTexture.target.sampledTextureView();
         asharia::BasicRenderViewDiagnostics diagnostics;
         const std::uint64_t viewportFrameIndex = viewportFramesRendered_ + 1U;
+        const std::vector<asharia::BasicDebugWorldLine> debugWorldLines =
+            basicEditorDebugWorldLines(request.overlayFlags);
 
         auto recorded = renderer.recordViewFrame(
             frame,
@@ -278,7 +314,7 @@ namespace asharia::editor {
                 .viewKind = basicRenderViewKind(request.kind),
                 .camera = basicEditorSceneCamera(),
                 .frameParams = basicRenderViewFrameParams(viewportFrameIndex),
-                .overlay = basicRenderViewOverlay(request.overlayFlags),
+                .overlay = basicRenderViewOverlay(request.overlayFlags, debugWorldLines),
                 .viewName = editorViewportKindName(request.kind),
                 .diagnostics = &diagnostics,
             });
@@ -327,11 +363,12 @@ namespace asharia::editor {
             renderTexture.diagnostics.renderGraph.dependencyEdges.size();
         stats_.lastRenderViewDiagnosticsTransitions =
             renderTexture.diagnostics.renderGraph.transitions.size();
+        stats_.lastRenderViewDiagnosticsExecutionEvents =
+            renderTexture.diagnostics.executionEvents.size();
         stats_.lastRenderViewDiagnosticsKind = renderTexture.diagnostics.viewKind;
         stats_.lastRenderViewDiagnosticsFrameIndex =
             renderTexture.diagnostics.frameParams.frameIndex;
-        stats_.lastRenderViewDiagnosticsOverlayEnabled =
-            renderTexture.diagnostics.overlay.enabled;
+        stats_.lastRenderViewDiagnosticsOverlayEnabled = renderTexture.diagnostics.overlay.enabled;
         stats_.lastRenderViewDiagnosticsDebugWorldLines =
             renderTexture.diagnostics.overlay.debugWorldLineCount;
         if (anyEditorViewportOverlayFlagEnabled(request.overlayFlags)) {

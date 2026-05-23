@@ -543,6 +543,20 @@ namespace {
 
         const asharia::RenderGraphDiagnosticsSnapshot snapshot =
             graph.diagnosticsSnapshot(*compiled);
+        if (!expect(snapshot.commands.size() == 1,
+                    "RenderGraph diagnostics snapshot missed image copy command nodes.")) {
+            return false;
+        }
+        const asharia::RenderGraphDiagnosticsCommandNode& copyCommand =
+            snapshot.commands.front();
+        if (!expect(copyCommand.passIndex == 1 && copyCommand.declarationIndex == 1 &&
+                        copyCommand.commandIndex == 0 && copyCommand.passName == "CopyImage" &&
+                        copyCommand.kind == asharia::RenderGraphCommandKind::CopyImage &&
+                        copyCommand.detail == "source -> target",
+                    "RenderGraph diagnostics snapshot image copy command node was unexpected.")) {
+            return false;
+        }
+
         bool foundTransferReadEdge = false;
         for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
             if (edge.passName == "CopyImage" && edge.resourceName == "CopySource" &&

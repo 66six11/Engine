@@ -5,7 +5,8 @@
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
 integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
 阶段拆分见 `docs/planning/editor-development-plan.md`；脚本扩展和 C++/脚本协作边界见
-`docs/architecture/editor-ui-scripting.md`。
+`docs/architecture/editor-ui-scripting.md`；工具、插件、viewport overlay 和 hot reload 的后续 contract 见
+`docs/architecture/editor-extension-architecture.md`。
 
 ## 目的
 
@@ -388,42 +389,49 @@ a view-local diagnostics snapshot. It also verifies idle Scene View on-demand re
 last completed texture without incrementing `viewportFramesRendered` every frame.
 `--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
 WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
-but skips normal RenderView recording, so the captured diagnostics snapshot stays frozen until Resume. The same smoke also
-verifies that the Frame Debug RG View consumes the captured snapshot, requests a selected image resource preview, records only
-the debug replay/copy path, and displays the resulting sampled preview texture.
+but skips normal RenderView recording, so the captured render inputs and diagnostics snapshot stay frozen until Resume. The
+paused-state owner is also the required gate for future inspected-world frame advance, game update and script update safe
+points once those scheduler seams exist. The same smoke also verifies that the Frame Debugger panel's RenderGraph view
+consumes the captured snapshot, requests a selected image resource preview, records only the debug replay/copy path, and
+displays the resulting sampled preview texture.
 
 ## 当前缺口
 
 - Selection, transaction, dirty state, inspector and asset browser are blocked on scene/asset/schema ownership becoming
   concrete enough.
-- World-space grid, transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
-  renderer-side view pass work. The editor currently owns only the view-local overlay intent and texture metadata loop.
+- World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
+  renderer-side view pass work. Grid now has an interim editor-owned fixed XZ debug-line packet bridge into RenderView
+  diagnostics, but no provider contract, graph pass or visible GPU line rendering yet.
 - Renderer prerequisites for those passes are: view/camera params in render view data, explicit overlay pass load/store
-  semantics, blend state or a dedicated composition path, and a debug/world-line draw route.
-- `EditorFrameDebugger` now owns capture/pause/resume state and freezes the captured `BasicRenderViewDiagnostics` snapshot.
+  semantics, blend state or a dedicated composition path, and a debug/world-line draw route. The current debug-world-line
+  route is data/diagnostics only; renderer-side drawing is still pending.
+- `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects. The current
+  implementation gates normal RenderView recording; the inspected-world frame advance/game/script update gate remains a
+  required scheduler seam before runtime script integration.
 - `RenderGraphPanel` is the Live RG View: it browses the latest compiled RenderView diagnostics snapshot as
   pass/resource/access/dependency/transition data without requiring Frame Debug capture.
-- `FrameDebuggerPanel` owns the Frame Debug RG View: it browses the frozen captured snapshot, selects a graph-local image
-  resource for v1 preview, and remains the future owner for pass/event replay selection.
+- `FrameDebuggerPanel` owns Frame Debug inspection. It exposes a Unity-style Frame view and a RenderGraph view as switchable
+  tabs in the same panel; the RenderGraph view browses the frozen captured snapshot, while the Frame view selects
+  pass/execution-event rows and displays selected-event details plus preview imagery. RenderGraph command-summary rows remain
+  supporting context, not draw-call identity.
 - Scene View uses an editor-owned on-demand refresh policy. The panel still submits a viewport request every UI frame, but
   `EditorViewportCoordinator` only records a new RenderView when it derives a repaint reason such as initial texture,
   resize, overlay flag change, frame-debug event or `AlwaysRefresh`; otherwise ImGui redraws the previous texture.
-- Frame Debug, Live RG View, Frame Debug RG View and pass graph visualization are separate editor concepts:
+- Frame Debug, Live RG View and pass graph visualization are separate editor concepts:
   - Frame Debug owns capture, pause/resume and fixed-frame inspection. It does not use `vkDeviceWaitIdle` for normal capture
-    and does not read transient GPU resources after normal execution.
+    and does not read transient GPU resources after normal execution. Its primary view uses a left pass/command list and a
+    right details/preview pane; its RenderGraph diagnostics are a tab inside the same `FrameDebuggerPanel`.
   - Live RG View displays the latest diagnostics snapshot derived after RenderGraph compile. The graph topology, dependency
     order, culling result, transition plan and resource lifetime are known at compile time; panel `draw()` does not record
     Vulkan commands or infer graph structure from GPU execution.
-  - Frame Debug RG View displays the frozen diagnostics snapshot owned by Frame Debug and can request a debug-owned sampled
-    preview texture for a selected image resource through `EditorViewportCoordinator`.
   - Pass graph visualization is a read-only node view derived from one of those snapshots, not an editable graph authoring
     system.
 - Intermediate texture preview v1 is GPU-side only: Frame Debug records a controlled replay/copy into a debug-owned sampled
   image and registers that image through the existing `ImGuiTextureRegistry`. It supports color images with matching
   extent/format/mip/layer shape and reports `preview unavailable` for depth, buffer or unsupported resources. The primary
-  Frame Debug panel now selects a compiled pass/event first, resolves that pass to a previewable image output from the frozen
-  diagnostics snapshot, and serves the refresh without resuming normal RenderView recording. CPU readback, export and
-  draw-call precise replay remain deferred.
+  Frame Debug panel now selects a renderer execution event first, resolves that event's pass to a previewable image output
+  from the frozen diagnostics snapshot, and serves the refresh without resuming normal RenderView recording. CPU readback,
+  export and draw-call precise replay remain deferred.
 - `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
   超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。
 - There is no `packages/editor-core` yet by design.

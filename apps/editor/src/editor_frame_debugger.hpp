@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 
 #include "editor_viewport.hpp"
 
@@ -41,6 +41,8 @@ namespace asharia::editor {
         std::uint64_t replayPassSelections{};
         std::uint64_t replayPassRequests{};
         std::uint64_t replayPassUnavailableRequests{};
+        std::uint64_t replayEventSelections{};
+        std::uint64_t replayEventRequests{};
     };
 
     enum class EditorFrameDebugPreviewStatus {
@@ -53,6 +55,7 @@ namespace asharia::editor {
     struct EditorFrameDebugPreview {
         EditorFrameDebugPreviewStatus status{EditorFrameDebugPreviewStatus::NotRequested};
         std::optional<std::size_t> selectedPassIndex;
+        std::optional<asharia::BasicRenderViewExecutionEventId> selectedExecutionEventId;
         std::optional<std::uint32_t> selectedImageResourceIndex;
         EditorViewportTexture texture;
         std::string message;
@@ -87,6 +90,7 @@ namespace asharia::editor {
         void notifyFrameDebugRenderGraphViewDrawn(bool snapshotVisible);
         void notifyFrameDebugPreviewDrawn(bool textureVisible);
         [[nodiscard]] bool selectReplayPass(std::size_t passIndex);
+        [[nodiscard]] bool selectReplayEvent(asharia::BasicRenderViewExecutionEventId eventId);
         [[nodiscard]] bool selectPreviewImageResource(std::uint32_t resourceIndex);
         [[nodiscard]] std::optional<std::uint32_t> consumePreviewRequest();
         void publishPreviewTexture(std::uint32_t resourceIndex, EditorViewportTexture texture);

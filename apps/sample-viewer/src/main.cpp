@@ -28,7 +28,7 @@
 #include "asharia/reflection/context_view.hpp"
 #include "asharia/reflection/type_builder.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
-#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/renderer_basic_vulkan/clear_frame.hpp"
 #include "asharia/rendergraph/render_graph.hpp"
 #include "asharia/rhi_vulkan/deferred_deletion_queue.hpp"
@@ -3369,10 +3369,10 @@ namespace {
             graph.diagnosticsSnapshot(compiled);
         if (snapshot.declaredPassCount != 6 || snapshot.declaredImageCount != 3 ||
             snapshot.declaredBufferCount != 0 || snapshot.passes.size() != 6 ||
-            snapshot.resources.size() != 3 || snapshot.accessEdges.size() != 6 ||
-            snapshot.dependencyEdges.size() != 3 || snapshot.transitions.size() != 7 ||
-            snapshot.transientImages.size() != 1 || !snapshot.transientBuffers.empty() ||
-            !snapshot.culledPasses.empty()) {
+            snapshot.commands.size() != 9 || snapshot.resources.size() != 3 ||
+            snapshot.accessEdges.size() != 6 || snapshot.dependencyEdges.size() != 3 ||
+            snapshot.transitions.size() != 7 || snapshot.transientImages.size() != 1 ||
+            !snapshot.transientBuffers.empty() || !snapshot.culledPasses.empty()) {
             asharia::logError("Render graph diagnostics snapshot produced unexpected counts.");
             return false;
         }
@@ -3382,6 +3382,41 @@ namespace {
             snapshot.passes[5].declarationIndex != 4) {
             asharia::logError(
                 "Render graph diagnostics snapshot did not preserve compiled pass order.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsCommandNode& clearCommand =
+            snapshot.commands.front();
+        if (clearCommand.passIndex != 0 || clearCommand.declarationIndex != 0 ||
+            clearCommand.commandIndex != 0 || clearCommand.passName != "ClearColor" ||
+            clearCommand.kind != asharia::RenderGraphCommandKind::ClearColor ||
+            clearCommand.detail.find("target") == std::string::npos) {
+            asharia::logError("Render graph diagnostics snapshot missed the clear command node.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsCommandNode& sampleShaderCommand =
+            snapshot.commands[1];
+        if (sampleShaderCommand.passIndex != 1 || sampleShaderCommand.declarationIndex != 1 ||
+            sampleShaderCommand.commandIndex != 0 ||
+            sampleShaderCommand.passName != "SampleColor" ||
+            sampleShaderCommand.kind != asharia::RenderGraphCommandKind::SetShader ||
+            sampleShaderCommand.detail != "Hidden/SmokeSample -> Fragment") {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the sample shader command node.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsCommandNode& transientDrawCommand =
+            snapshot.commands.back();
+        if (transientDrawCommand.passIndex != 5 || transientDrawCommand.declarationIndex != 4 ||
+            transientDrawCommand.commandIndex != 3 ||
+            transientDrawCommand.passName != "SampleTransientColor" ||
+            transientDrawCommand.kind !=
+                asharia::RenderGraphCommandKind::DrawFullscreenTriangle ||
+            transientDrawCommand.detail != "-") {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the transient draw command node.");
             return false;
         }
 

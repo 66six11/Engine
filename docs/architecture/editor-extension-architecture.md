@@ -1,0 +1,348 @@
+# Editor Extension Architecture
+
+更新日期：2026-05-22
+
+本文定义 Asharia Editor 的工具、插件、viewport overlay 和脚本热更新边界。它补充
+`docs/architecture/editor.md` 和 `docs/architecture/editor-ui-scripting.md`：前者描述当前 `apps/editor`
+事实，后者描述脚本不能直接拥有 ImGui/Vulkan 生命周期；本文描述后续 editor 工具架构应该如何演进。
+
+## 背景
+
+当前 editor 已经有 `EditorToolRegistry`、action/panel/workspace registry、Scene View overlay strip、
+Live RG View 和 FrameDebuggerPanel 内的 Frame/RenderGraph views。问题是这些能力仍然偏硬编码：
+
+- 工具贡献目前主要是 C++ struct，缺少 manifest / extension point 层。
+- Scene View overlay strip 直接把 tool overlay id 映射到 `EditorViewportOverlayFlags`。
+- Grid、gizmo、selection outline 还没有统一的 provider / render bridge。
+- Frame Debugger 和 RG View 还在补 pass/event 选择、graph view、preview/replay 体验。
+- 脚本热更新边界还没有和工具、overlay、layout、renderer pass 明确分离。
+
+因此现在不应先实现 Grid pass。Grid 应该作为 extension/overlay 架构稳定后的第一个验证案例，而不是继续把
+当前临时路径固化到 renderer。
+
+当前推进顺序进一步收紧为：
+
+1. 先冻结 Frame Debug / diagnostics 底层合同：paused-frame、renderer execution event id、RenderGraph
+   command-summary 辅助诊断、RenderGraph tab consumption accounting 和未来脚本 safe-point gate。
+2. `FrameDebuggerPanel` 只做这些底层合同的最小消费验证，不继续扩展复杂 UI。
+3. 完成后再恢复 extension registry、tool lifecycle、viewport overlay provider。
+4. Grid 仍然是 provider + renderer bridge 的第一个验证案例，但不是下一步。
+
+## 参考模型
+
+成熟编辑器的共同点不是“所有东西都脚本化”，而是把声明、生命周期、UI、命令、渲染桥分开：
+
+- Unreal Interactive Tools Framework 把 tool、tool builder、tool manager、properties、input behavior 和
+  viewport drawing 分开。参考：
+  https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/InteractiveToolsFramework/UInteractiveTool
+- Unity 把 `EditorTool`、Scene View `Overlay`、`Gizmos` / `Handles` 分开。Overlay 是 editor window 的 UI
+  表面，Gizmos/Handles 是 viewport 可视化和交互表面。参考：
+  https://docs.unity3d.com/ScriptReference/EditorTools.EditorTool.html
+  https://docs.unity3d.com/Manual/overlays.html
+  https://docs.unity3d.com/Manual/gizmos-and-handles.html
+- Godot 的 `EditorPlugin` / `@tool` 允许插件和脚本扩展 editor，但底层 editor host、viewport 和 renderer
+  生命周期仍由引擎控制。参考：
+  https://docs.godotengine.org/en/stable/tutorials/plugins/editor/making_plugins.html
+  https://docs.godotengine.org/en/stable/classes/class_editornode3dgizmoplugin.html
+- VS Code / IntelliJ 使用 contribution points / extension points / action system。插件先声明能力，宿主再在安全点
+  加载、路由和卸载。参考：
+  https://code.visualstudio.com/api/references/contribution-points
+  https://plugins.jetbrains.com/docs/intellij/plugin-extensions.html
+
+Asharia 不直接复制任何一个模型。当前阶段只采纳几个原则：声明先于执行，工具生命周期集中管理，viewport
+overlay 分层，脚本只能影响 backend-neutral 数据，renderer/RHI 继续拥有 GPU 生命周期。
+
+## 决策
+
+下一阶段先建立 `Editor Extension / Tool / Viewport Overlay Contract v0`，再做 Grid。
+
+```mermaid
+flowchart TD
+    Manifest["EditorExtensionManifest<br/>tools / commands / panels / overlays / settings"]
+    ExtensionRegistry["EditorExtensionRegistry"]
+    ToolManager["EditorToolManager"]
+    OverlaySystem["ViewportOverlaySystem"]
+    ScriptBridge["Script / Hot Reload Bridge"]
+    Panels["ImGui Panels / Shell"]
+    Viewport["Scene/Game/Preview Viewports"]
+    RenderBridge["Renderer Bridge"]
+    Renderer["renderer-basic / RenderGraph / RHI"]
+    FrameDebug["Frame Debugger<br/>Frame / RenderGraph views"]
+
+    Manifest --> ExtensionRegistry
+    ScriptBridge --> ExtensionRegistry
+    ExtensionRegistry --> ToolManager
+    ExtensionRegistry --> Panels
+    ExtensionRegistry --> OverlaySystem
+    ToolManager --> OverlaySystem
+    Panels --> Viewport
+    OverlaySystem --> Viewport
+    OverlaySystem --> RenderBridge
+    RenderBridge --> Renderer
+    Renderer --> FrameDebug
+```
+
+## 所有权
+
+| 模块 | 拥有 | 不拥有 |
+| --- | --- | --- |
+| `EditorExtensionRegistry` | extension manifest、贡献项版本、启用/禁用状态、reload 诊断 | ImGui draw、Vulkan handle、工具行为实现 |
+| `EditorToolManager` | active tool、tool lifecycle、tool property state、input behavior routing | renderer pass、GPU resource、panel window |
+| `ViewportOverlaySystem` | overlay 描述、viewport chrome、world overlay provider、render-mode provider | Vulkan command recording、descriptor、transient image |
+| `EditorCommand` / transaction | 持久 scene/asset 修改、undo/redo、dirty state | hover、临时 overlay toggle、layout window state |
+| Script bridge | manifest reload、脚本 action 调度、数据模型生成、权限检查 | ImGui context、RenderGraph execution、GPU object lifetime |
+| Renderer bridge | backend-neutral debug packets 到 renderer-owned RenderView desc 的转换 | editor panel state、脚本 VM、工具 UI |
+| `renderer-basic-vulkan` | RenderGraph pass、pipeline、shader、descriptor、Vulkan command recording | editor id、ImGui id、脚本对象 |
+
+## Extension Manifest v0
+
+Manifest 是声明，不是执行代码。第一版可以由 C++ built-in 表达，后续再允许 JSON / script package reload。
+
+```cpp
+struct EditorExtensionManifest {
+    EditorId extensionId;
+    std::string displayName;
+    std::vector<EditorCommandContribution> commands;
+    std::vector<EditorPanelContribution> panels;
+    std::vector<EditorToolContribution> tools;
+    std::vector<EditorViewportOverlayContribution> overlays;
+    std::vector<EditorWorkspaceContribution> workspaces;
+};
+```
+
+Rules:
+
+- Contribution id 必须稳定，reload 使用 id 更新或删除贡献项。
+- Manifest 只能声明工具、命令、面板、overlay、layout、默认设置。
+- Manifest 不包含 raw callback、lambda、ImGui draw 函数或 Vulkan command callback。
+- C++ built-in tools 和未来脚本 tools 都通过同一 registry 查询路径暴露给 shell 和 panels。
+
+## Tool Lifecycle v0
+
+工具不应只是 toolbar button。工具需要明确生命周期，以便未来支持 camera navigation、selection、gizmo、
+paint/terrain/mesh edit 等交互。
+
+```text
+Registered
+  -> Available
+  -> Activating
+  -> Active
+  -> Suspending
+  -> Inactive
+  -> Unregistered
+```
+
+每个 tool 定义：
+
+- `toolId`
+- label / icon / category
+- supported viewport kinds
+- input behavior ids
+- property model id
+- contributed commands
+- contributed viewport overlays
+- activation policy: persistent, modal, one-shot
+
+Rules:
+
+- 同一 viewport 一次只有一个 primary active tool，但可以有多个 passive overlay provider。
+- 工具 property 是 editor state，不是 scene serialization。
+- 工具对 scene/asset 的持久修改必须通过 command/transaction。
+- 工具 input 从 `EditorInputRouter` 的 snapshot 消费，不直接读 GLFW/ImGui global state。
+
+## Viewport Overlay 分层
+
+Overlay 必须拆成三类，避免 UI 按钮、world debug draw 和 render mode 混在一个 flag 里。
+
+| 类型 | 例子 | 所属 | 输出 |
+| --- | --- | --- | --- |
+| Chrome overlay | Scene View 顶部 Grid/Gizmo/Select 按钮、camera mode dropdown | editor panel / overlay system | ImGui widgets |
+| World overlay | grid lines、gizmo axes、selection outline、debug labels | overlay provider / tool manager | backend-neutral draw packets |
+| Render mode overlay | wireframe、overdraw、normal view、lighting debug | renderer view policy | RenderView / RenderGraph options |
+
+Rules:
+
+- Chrome overlay 可以热更新 layout、label、默认开关，但不直接决定 renderer pass。
+- World overlay provider 输出数据包，例如 lines、points、text、bounds、selection ids。
+- Render mode overlay 是 renderer policy，不应由 panel 直接拼 Vulkan 或 shader state。
+- Game View 不隐式接收 Scene View authoring overlay；Game View debug overlay 必须显式 opt-in。
+
+## Backend-Neutral Draw Packets
+
+World overlay provider 不提交 Vulkan command。它只产生数据：
+
+```cpp
+struct EditorDebugLine {
+    Vec3 start;
+    Vec3 end;
+    ColorSrgba8 color;
+    float width;
+};
+
+struct EditorViewportOverlayPacket {
+    EditorId overlayId;
+    EditorViewportKind viewportKind;
+    std::vector<EditorDebugLine> lines;
+    // future: points, text labels, bounds, selection ids
+};
+```
+
+Renderer bridge 负责把 packet 转成 renderer-owned `BasicRenderViewOverlayDesc` 或后续更稳定的
+`RenderViewDebugOverlayDesc`。这个转换层是编辑器和 renderer 的唯一接触点。
+
+## Hot Reload Boundary
+
+可以热更新：
+
+- extension manifest
+- command/menu/toolbar/overlay 声明
+- layout preset
+- tool property defaults
+- overlay style 参数，例如 grid spacing、major interval、range、fade、颜色
+- 生成 backend-neutral debug packets 的脚本逻辑
+- declarative panel model
+
+不可以热更新或脚本直接拥有：
+
+- ImGui context、dockspace、draw list、`ImTextureID`
+- GLFW callback
+- Vulkan image/view/sampler/descriptor/pipeline/command buffer
+- RenderGraph pass execution callback
+- transient resource allocation / aliasing / barrier planning
+- Frame Debug replay/copy 的 GPU resource access
+- 持久 scene/asset mutation，除非通过 command/transaction
+
+Reload 流程：
+
+```text
+freeze new script actions
+finish or rollback active transactions
+load and validate new manifests
+diff contribution ids
+disable removed contributions
+update changed descriptors
+preserve C++ panel/tool state where ids still match
+publish diagnostics
+resume actions
+```
+
+Reload 失败时保留上一版有效 manifest，并显示 diagnostics。失败不能重建 ImGui/Vulkan backend，也不能丢失
+viewport texture lifetime 状态。
+
+## Frame Debugger Views / Live RG View 集成
+
+Frame Debugger 和 RG View 不是可选后补 UI。它们是 overlay/render architecture 的验证工具。
+
+要求：
+
+- 每个 renderer-owned overlay pass 在 diagnostics snapshot 中有稳定 pass name/type。
+- Debug packet count、source overlay id、view kind 应进入 diagnostics。
+- Frame Debug pause 必须暂停被调试 world 的 frame advance、game/script update 和新 RenderView recording；只有
+  editor shell、Frame Debug UI、Frame Debug replay/copy 和必要的 diagnostics UI 继续运行。脚本 VM 不能在 paused
+  capture 上继续推进被调试世界。
+- Live RG View 是独立 diagnostics panel，读取最新 compiled snapshot，不需要 Frame Debug capture。
+- Frame Debug 的 Frame view 和 RenderGraph view 是 `FrameDebuggerPanel` 里的两个切换视图，不是两个并排 panel。
+- Frame Debug 默认视图采用 Unity Frame Debugger 风格：左侧 pass/execution-event 列表，右侧显示选中 event 的
+  resource access、状态、预览图像和后续 draw-call 详情。RenderGraph command summary 只作为来源说明和 RG View
+  辅助诊断。
+- RenderGraph view 作为同一个面板里的 tab/view，读取 frozen capture snapshot。
+- Pass graph node view 完成前，不应引入大量新 overlay pass 类型。
+
+Grid 的验收条件不是“看起来有线”，而是：
+
+- Scene View grid enabled 时 diagnostics 里出现 grid/debug-line overlay pass。
+- Grid disabled 时 pass 不进入 graph，或者 active predicate 为 false 且 diagnostics 可解释。
+- Game View / Preview 不隐式出现 Scene View grid pass。
+
+## Grid 的新位置
+
+Grid 从 “next renderer feature” 调整为 “extension architecture sample”：
+
+1. `EditorViewportOverlayProvider` v0 先落地。
+2. Grid provider 读取 manifest/default settings，生成 backend-neutral line packet。
+3. Renderer bridge 把 packet 交给 renderer-owned debug line overlay path。
+4. Frame Debugger Frame/RenderGraph views 验证 pass 和 packet count。
+5. Scene View chrome overlay 只控制 provider enabled state，不直接操作 renderer flags。
+
+当前 interim 状态：
+
+- `EditorViewportCoordinator` 已经能在 Scene View grid intent enabled 时生成固定 XZ
+  `BasicDebugWorldLine` packets，并交给 `BasicRenderViewOverlayDesc`。
+- 这一步只证明 editor-to-RenderView 数据桥和 diagnostics count；它还不是 manifest-backed provider、camera-aware
+  grid policy，也没有 renderer-owned debug line graph pass 或可见 GPU 线框绘制。
+
+## 迁移计划
+
+### Step 1: Contract Documentation
+
+Status: current.
+
+- 添加本文。
+- 把 Grid 从立即实现改为 extension architecture sample。
+- 明确脚本热更新边界。
+
+### Step 2: Built-in Extension Registry
+
+把现有 `EditorToolRegistry` 演进成 built-in extension contribution reader：
+
+- 新增 `EditorExtensionRegistry`。
+- built-in tools 通过 manifest-like descriptors 注册。
+- `EditorToolRegistry` 可以保留为 query facade，或并入 extension registry 的 tool view。
+- smoke 验证贡献项数量、id 稳定、reload-style replace 行为。
+
+### Step 3: Tool Manager v0
+
+- 新增 active tool state。
+- 支持 activate/deactivate/suspend。
+- Scene View overlay strip 读取 active/passive tool state。
+- 不做 selection/gizmo mutation。
+
+### Step 4: Viewport Overlay Provider v0
+
+- 拆分 chrome overlay descriptor 和 world overlay provider。
+- Scene View grid/gizmo/selection-outline toggles 改成 provider enabled state。
+- provider 输出 empty packet，renderer 不变。
+
+### Step 5: Debug Line Renderer Bridge
+
+- renderer-basic 增加 debug line overlay pass。
+- `EditorViewportCoordinator` 从 overlay packets 构造 renderer overlay desc。
+- RG View / Frame Debug 验证 pass。
+
+### Step 6: Grid Sample
+
+- Grid provider 生成 camera-aware XZ grid line packets。
+- Grid 参数来自 built-in manifest/settings，后续可热更新。
+- 现有固定 grid packet bridge 必须被收敛进 provider contract 后，才能继续做可见 renderer pass。
+
+## 非目标
+
+- 不在当前阶段做完整 C# / Lua editor plugin ABI。
+- 不让脚本直接画 ImGui immediate-mode UI。
+- 不让脚本直接创建 RenderGraph pass 或 Vulkan pipeline。
+- 不做完整 asset browser、inspector、transaction editor。
+- 不把 `apps/editor` 立刻拆成多个 editor packages。
+- 不因为 Grid 需要线条就直接把 line renderer 做成全局 debug system。
+
+## 验证
+
+文档和架构阶段：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
+powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
+git diff --check
+```
+
+后续代码阶段：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
+```

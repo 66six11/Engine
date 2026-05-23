@@ -23,7 +23,7 @@
 
 #include "asharia/core/log.hpp"
 #include "asharia/core/result.hpp"
-#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
@@ -308,6 +308,32 @@ namespace {
         return fallback;
     }
 
+    std::optional<asharia::BasicRenderViewExecutionEventId>
+    chooseFrameDebugReplayEvent(const asharia::editor::EditorFrameDebugger& frameDebugger) {
+        const std::optional<asharia::editor::EditorFrameDebugCapture>& capture =
+            frameDebugger.pausedCapture();
+        if (!capture) {
+            return std::nullopt;
+        }
+
+        std::optional<asharia::BasicRenderViewExecutionEventId> fallback;
+        for (const asharia::BasicRenderViewExecutionEvent& event :
+             capture->diagnostics.executionEvents) {
+            if (event.kind == asharia::BasicRenderViewExecutionEventKind::BeginPass ||
+                event.kind == asharia::BasicRenderViewExecutionEventKind::EndPass) {
+                continue;
+            }
+            if (!fallback) {
+                fallback = event.id;
+            }
+            if (event.passName == "ClearFullscreenSource" &&
+                event.kind == asharia::BasicRenderViewExecutionEventKind::ClearColor) {
+                return event.id;
+            }
+        }
+        return fallback;
+    }
+
     void updateFrameDebuggerSmoke(asharia::editor::EditorFrameDebugger& frameDebugger,
                                   asharia::editor::EditorActionRegistry& actionRegistry,
                                   asharia::editor::EditorContext& editorContext,
@@ -322,11 +348,18 @@ namespace {
             frameDebugger.state() == asharia::editor::EditorFrameDebuggerState::PausedFrameDebug) {
             if (!state.replayPassRequested) {
                 state.viewportFramesAtPause = viewportHost.viewportFramesRendered();
-                const std::optional<std::size_t> replayPass =
-                    chooseFrameDebugReplayPass(frameDebugger);
-                if (replayPass) {
-                    state.replayPassRequested = frameDebugger.selectReplayPass(*replayPass);
+                const std::optional<asharia::BasicRenderViewExecutionEventId> replayEvent =
+                    chooseFrameDebugReplayEvent(frameDebugger);
+                if (replayEvent) {
+                    state.replayPassRequested = frameDebugger.selectReplayEvent(*replayEvent);
                     state.previewRequested = state.replayPassRequested;
+                } else {
+                    const std::optional<std::size_t> replayPass =
+                        chooseFrameDebugReplayPass(frameDebugger);
+                    if (replayPass) {
+                        state.replayPassRequested = frameDebugger.selectReplayPass(*replayPass);
+                        state.previewRequested = state.replayPassRequested;
+                    }
                 }
                 return;
             }
@@ -473,7 +506,8 @@ namespace {
             viewportStats.lastRenderViewDiagnosticsResources != 2 ||
             viewportStats.lastRenderViewDiagnosticsAccessEdges != 3 ||
             viewportStats.lastRenderViewDiagnosticsDependencyEdges != 1 ||
-            viewportStats.lastRenderViewDiagnosticsTransitions != 4) {
+            viewportStats.lastRenderViewDiagnosticsTransitions != 4 ||
+            viewportStats.lastRenderViewDiagnosticsExecutionEvents == 0) {
             asharia::logError(
                 "Editor viewport smoke recorded unexpected render view diagnostics counts.");
             return false;
@@ -481,7 +515,7 @@ namespace {
         if (viewportStats.lastRenderViewDiagnosticsKind != asharia::BasicRenderViewKind::Scene ||
             viewportStats.lastRenderViewDiagnosticsFrameIndex == 0 ||
             !viewportStats.lastRenderViewDiagnosticsOverlayEnabled ||
-            viewportStats.lastRenderViewDiagnosticsDebugWorldLines != 0) {
+            viewportStats.lastRenderViewDiagnosticsDebugWorldLines == 0) {
             asharia::logError(
                 "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
             return false;
@@ -538,10 +572,12 @@ namespace {
         const asharia::editor::EditorFrameDebuggerStats stats = frameDebugger.stats();
         if (stats.captureRequests != 1 || stats.framesCaptured != 1 ||
             stats.completedCaptures != 1 || stats.resumeRequests != 1 || stats.framesResumed != 1 ||
-            stats.renderViewFramesSkipped == 0 || stats.frameDebugRenderGraphSnapshotFrames == 0 ||
-            stats.previewRequests == 0 || stats.previewFramesRecorded == 0 ||
-            stats.previewTextureFramesPublished == 0 || stats.previewTextureFramesDrawn == 0 ||
-            stats.replayPassRequests == 0 || stats.replayPassSelections == 0) {
+            stats.renderViewFramesSkipped == 0 || stats.previewRequests == 0 ||
+            stats.previewFramesRecorded == 0 || stats.previewTextureFramesPublished == 0 ||
+            stats.previewTextureFramesDrawn == 0 || stats.replayPassRequests == 0 ||
+            stats.replayPassSelections == 0 || stats.replayEventRequests == 0 ||
+            stats.replayEventSelections == 0 || stats.frameDebugRenderGraphViewFrames == 0 ||
+            stats.frameDebugRenderGraphSnapshotFrames == 0) {
             asharia::logError("Editor frame debugger smoke recorded unexpected state counts.");
             return false;
         }
@@ -569,6 +605,10 @@ namespace {
             capture->diagnostics.renderGraph.transitions.size() != 4) {
             asharia::logError(
                 "Editor frame debugger smoke captured unexpected RenderGraph diagnostics.");
+            return false;
+        }
+        if (capture->diagnostics.executionEvents.empty()) {
+            asharia::logError("Editor frame debugger smoke captured no renderer execution events.");
             return false;
         }
         if (frameDebugger.pausedCapture()) {

@@ -7,8 +7,8 @@
 namespace asharia::editor {
     namespace {
 
-        [[nodiscard]] bool previewableImageResource(
-            const asharia::RenderGraphDiagnosticsResourceNode& resource) {
+        [[nodiscard]] bool
+        previewableImageResource(const asharia::RenderGraphDiagnosticsResourceNode& resource) {
             return resource.kind == asharia::RenderGraphResourceKind::Image &&
                    resource.imageFormat == asharia::RenderGraphImageFormat::B8G8R8A8Srgb;
         }
@@ -16,8 +16,7 @@ namespace asharia::editor {
         [[nodiscard]] const asharia::RenderGraphDiagnosticsResourceNode*
         findCapturedImageResource(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                                   std::uint32_t resourceIndex) {
-            for (const asharia::RenderGraphDiagnosticsResourceNode& resource :
-                 snapshot.resources) {
+            for (const asharia::RenderGraphDiagnosticsResourceNode& resource : snapshot.resources) {
                 if (resource.kind == asharia::RenderGraphResourceKind::Image &&
                     resource.resourceIndex == resourceIndex) {
                     return &resource;
@@ -26,11 +25,22 @@ namespace asharia::editor {
             return nullptr;
         }
 
+        [[nodiscard]] const asharia::BasicRenderViewExecutionEvent*
+        findCapturedExecutionEvent(const asharia::BasicRenderViewDiagnostics& diagnostics,
+                                   asharia::BasicRenderViewExecutionEventId eventId) {
+            for (const asharia::BasicRenderViewExecutionEvent& event :
+                 diagnostics.executionEvents) {
+                if (event.id == eventId) {
+                    return &event;
+                }
+            }
+            return nullptr;
+        }
+
         [[nodiscard]] bool passExists(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                                       std::size_t passIndex) {
             return std::ranges::any_of(
-                snapshot.passes,
-                [passIndex](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                snapshot.passes, [passIndex](const asharia::RenderGraphDiagnosticsPassNode& pass) {
                     return pass.passIndex == passIndex;
                 });
         }
@@ -42,9 +52,9 @@ namespace asharia::editor {
                     access == asharia::RenderGraphSlotAccess::TransferWrite);
         }
 
-        [[nodiscard]] std::optional<std::uint32_t> previewableImageOutputForPass(
-            const asharia::RenderGraphDiagnosticsSnapshot& snapshot, std::size_t passIndex,
-            std::string& message) {
+        [[nodiscard]] std::optional<std::uint32_t>
+        previewableImageOutputForPass(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                      std::size_t passIndex, std::string& message) {
             if (!passExists(snapshot, passIndex)) {
                 message = "Selected pass was not captured.";
                 return std::nullopt;
@@ -56,8 +66,7 @@ namespace asharia::editor {
                 asharia::RenderGraphSlotAccess::TransferWrite,
             };
             for (const asharia::RenderGraphSlotAccess preferredAccess : kPreferredOutputAccess) {
-                for (const asharia::RenderGraphDiagnosticsAccessEdge& edge :
-                     snapshot.accessEdges) {
+                for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
                     if (edge.passIndex != passIndex ||
                         edge.resourceKind != asharia::RenderGraphResourceKind::Image ||
                         !replayOutputAccess(edge.access, preferredAccess)) {
@@ -234,9 +243,10 @@ namespace asharia::editor {
             return false;
         }
 
-        const bool changed = !preview_.selectedPassIndex ||
-                             *preview_.selectedPassIndex != passIndex;
+        const bool changed =
+            !preview_.selectedPassIndex || *preview_.selectedPassIndex != passIndex;
         preview_.selectedPassIndex = passIndex;
+        preview_.selectedExecutionEventId.reset();
         preview_.selectedImageResourceIndex.reset();
         preview_.texture = {};
         preview_.message.clear();
@@ -266,6 +276,56 @@ namespace asharia::editor {
         return true;
     }
 
+    bool EditorFrameDebugger::selectReplayEvent(asharia::BasicRenderViewExecutionEventId eventId) {
+        const EditorFrameDebugCapture* capture = nullptr;
+        if (pausedCapture_) {
+            capture = &(*pausedCapture_);
+        } else if (latestCapture_) {
+            capture = &(*latestCapture_);
+        }
+        if (capture == nullptr) {
+            return false;
+        }
+
+        const asharia::BasicRenderViewExecutionEvent* event =
+            findCapturedExecutionEvent(capture->diagnostics, eventId);
+        if (event == nullptr) {
+            return false;
+        }
+
+        const bool changed =
+            !preview_.selectedExecutionEventId || *preview_.selectedExecutionEventId != eventId;
+        preview_.selectedExecutionEventId = eventId;
+        preview_.selectedPassIndex = event->passIndex;
+        preview_.selectedImageResourceIndex.reset();
+        preview_.texture = {};
+        preview_.message.clear();
+        ++stats_.replayEventRequests;
+
+        std::string message;
+        const std::optional<std::uint32_t> previewImage = previewableImageOutputForPass(
+            capture->diagnostics.renderGraph, event->passIndex, message);
+        if (!previewImage) {
+            preview_.status = EditorFrameDebugPreviewStatus::Unavailable;
+            preview_.message = std::move(message);
+            preview_.dirty = false;
+            ++stats_.replayPassUnavailableRequests;
+            if (changed) {
+                ++stats_.replayEventSelections;
+            }
+            return true;
+        }
+
+        preview_.selectedImageResourceIndex = *previewImage;
+        preview_.status = EditorFrameDebugPreviewStatus::Pending;
+        preview_.dirty = true;
+        ++stats_.previewRequests;
+        if (changed) {
+            ++stats_.replayEventSelections;
+        }
+        return true;
+    }
+
     bool EditorFrameDebugger::selectPreviewImageResource(std::uint32_t resourceIndex) {
         if (!pausedCapture_ && !latestCapture_) {
             return false;
@@ -274,6 +334,7 @@ namespace asharia::editor {
         const bool changed = !preview_.selectedImageResourceIndex ||
                              *preview_.selectedImageResourceIndex != resourceIndex;
         preview_.selectedPassIndex.reset();
+        preview_.selectedExecutionEventId.reset();
         preview_.selectedImageResourceIndex = resourceIndex;
         preview_.texture = {};
         preview_.message.clear();

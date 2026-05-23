@@ -9,6 +9,10 @@
 monolithic application；它应该提供一个小核心和一组可组合 package，让 sample app、
 runtime app、editor 和后续工具按需引入能力。
 
+跨系统开发的通用架构思想、分层规范、数据合同和功能进入前检查见
+[architecture-principles.md](architecture-principles.md)。当某个功能同时碰到 runtime、editor、
+renderer、asset、script 或 tooling 时，先按该文档判断所有权和依赖方向，再进入具体实现计划。
+
 ## 模块边界
 
 - `engine/core`：日志、错误类型、文件系统辅助、断言、构建配置。

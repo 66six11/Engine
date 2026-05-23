@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "asharia/core/result.hpp"
-#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/rhi_vulkan/vma_fwd.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
@@ -46,6 +46,7 @@ namespace asharia::editor {
         std::uint64_t lastRenderViewDiagnosticsAccessEdges{};
         std::uint64_t lastRenderViewDiagnosticsDependencyEdges{};
         std::uint64_t lastRenderViewDiagnosticsTransitions{};
+        std::uint64_t lastRenderViewDiagnosticsExecutionEvents{};
         asharia::BasicRenderViewKind lastRenderViewDiagnosticsKind{
             asharia::BasicRenderViewKind::Scene};
         std::uint64_t lastRenderViewDiagnosticsFrameIndex{};

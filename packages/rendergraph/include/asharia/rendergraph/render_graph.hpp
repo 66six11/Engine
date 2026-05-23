@@ -276,8 +276,7 @@ namespace asharia {
             return *this;
         }
 
-        RenderGraphCommandList& copyImage(std::string sourceSlotName,
-                                          std::string targetSlotName) {
+        RenderGraphCommandList& copyImage(std::string sourceSlotName, std::string targetSlotName) {
             commands_.push_back(RenderGraphCommand{
                 .kind = RenderGraphCommandKind::CopyImage,
                 .name = std::move(sourceSlotName),
@@ -424,6 +423,15 @@ namespace asharia {
         std::size_t bufferTransitionCount{};
     };
 
+    struct RenderGraphDiagnosticsCommandNode {
+        std::size_t passIndex{};
+        std::size_t declarationIndex{};
+        std::size_t commandIndex{};
+        std::string passName;
+        RenderGraphCommandKind kind{RenderGraphCommandKind::SetShader};
+        std::string detail;
+    };
+
     struct RenderGraphDiagnosticsResourceNode {
         RenderGraphResourceKind kind{RenderGraphResourceKind::Image};
         std::uint32_t resourceIndex{};
@@ -482,6 +490,7 @@ namespace asharia {
         std::size_t declaredImageCount{};
         std::size_t declaredBufferCount{};
         std::vector<RenderGraphDiagnosticsPassNode> passes;
+        std::vector<RenderGraphDiagnosticsCommandNode> commands;
         std::vector<RenderGraphDiagnosticsResourceNode> resources;
         std::vector<RenderGraphDiagnosticsAccessEdge> accessEdges;
         std::vector<RenderGraphDiagnosticsDependencyEdge> dependencyEdges;
@@ -492,6 +501,8 @@ namespace asharia {
     };
 
     struct RenderGraphPassContext {
+        std::size_t passIndex{};
+        std::size_t declarationIndex{};
         std::string_view name;
         std::string_view type;
         std::string_view paramsType;
@@ -701,13 +712,11 @@ namespace asharia {
                 return *this;
             }
 
-            PassBuilder& readTransferBuffer(std::string slotName,
-                                            RenderGraphBufferHandle buffer) {
-                graph_->passes_[passIndex_].bufferTransferReadSlots.push_back(
-                    RenderGraphBufferSlot{
-                        .name = std::move(slotName),
-                        .buffer = buffer,
-                    });
+            PassBuilder& readTransferBuffer(std::string slotName, RenderGraphBufferHandle buffer) {
+                graph_->passes_[passIndex_].bufferTransferReadSlots.push_back(RenderGraphBufferSlot{
+                    .name = std::move(slotName),
+                    .buffer = buffer,
+                });
                 return *this;
             }
 
@@ -1097,8 +1106,7 @@ namespace asharia {
                                       },
                                       currentBufferAccesses, compiledPass);
                 if (!bufferTransferReadTransitions) {
-                    return std::unexpected{
-                        std::move(bufferTransferReadTransitions.error())};
+                    return std::unexpected{std::move(bufferTransferReadTransitions.error())};
                 }
 
                 auto bufferReadTransitions =
@@ -1279,6 +1287,8 @@ namespace asharia {
                 }
 
                 auto executed = (*callback)(RenderGraphPassContext{
+                    .passIndex = index,
+                    .declarationIndex = pass.declarationIndex,
                     .name = pass.name,
                     .type = pass.type,
                     .paramsType = pass.paramsType,
@@ -1450,6 +1460,19 @@ namespace asharia {
                     .imageTransitionCount = pass.transitionsBefore.size(),
                     .bufferTransitionCount = pass.bufferTransitionsBefore.size(),
                 });
+
+                for (std::size_t commandIndex = 0; commandIndex < pass.commands.size();
+                     ++commandIndex) {
+                    const RenderGraphCommand& command = pass.commands[commandIndex];
+                    snapshot.commands.push_back(RenderGraphDiagnosticsCommandNode{
+                        .passIndex = passIndex,
+                        .declarationIndex = pass.declarationIndex,
+                        .commandIndex = commandIndex,
+                        .passName = pass.name,
+                        .kind = command.kind,
+                        .detail = commandDetail(command),
+                    });
+                }
 
                 appendImageEdges(passIndex, pass, RenderGraphSlotAccess::ColorWrite,
                                  pass.colorWriteSlots);
@@ -1634,7 +1657,8 @@ namespace asharia {
                       "Depth Reads | Depth Writes | Depth Sampled Reads | Transfer Reads | "
                       "Transfer Writes | Buffer Reads | Buffer Transfer Reads | Buffer Writes | "
                       "Buffer Storage Read/Writes |\n";
-            output += "|---:|---:|---|---|---|---|---|---:|---:|---|---|---|---|---|---|---|---|---|---|\n";
+            output += "|---:|---:|---|---|---|---|---|---:|---:|---|---|---|---|---|---|---|---|---"
+                      "|---|\n";
             for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
                 const RenderGraphCompiledPass& pass = compiled.passes[index];
                 output += "| ";
@@ -2602,8 +2626,8 @@ namespace asharia {
             }
 
             const std::array<std::span<const RenderGraphImageSlot>, 7> slotGroups{
-                pass.colorWriteSlots, pass.shaderReadSlots,       pass.depthReadSlots,
-                pass.depthWriteSlots, pass.depthSampledReadSlots, pass.transferReadSlots,
+                pass.colorWriteSlots,    pass.shaderReadSlots,       pass.depthReadSlots,
+                pass.depthWriteSlots,    pass.depthSampledReadSlots, pass.transferReadSlots,
                 pass.transferWriteSlots,
             };
             auto duplicateSlots = validateUniqueResourceSlotNames(pass);

@@ -16,8 +16,28 @@ asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
 
 add_library(asharia-renderer-basic INTERFACE)
 add_library(asharia::renderer_basic ALIAS asharia-renderer-basic)
+set(ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS
+    src/basic_renderers/compute_dispatch_renderer.inl
+    src/basic_renderers/debug_preview.inl
+    src/basic_renderers/descriptor_layout_smoke.inl
+    src/basic_renderers/draw_list_renderer.inl
+    src/basic_renderers/fullscreen_texture_renderer.inl
+    src/basic_renderers/graph_recording.inl
+    src/basic_renderers/mesh3d_renderer.inl
+    src/basic_renderers/mrt_renderer.inl
+    src/basic_renderers/pipeline_layouts.inl
+    src/basic_renderers/render_view_diagnostics.inl
+    src/basic_renderers/render_view_targets.inl
+    src/basic_renderers/shader_contracts.inl
+    src/basic_renderers/triangle_renderer.inl
+)
+set_source_files_properties(
+    ${ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS}
+    PROPERTIES HEADER_FILE_ONLY TRUE
+)
 add_library(asharia-renderer-basic-vulkan
-    src/basic_triangle_renderer.cpp
+    src/basic_renderers.cpp
+    ${ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS}
 )
 add_library(asharia::renderer_basic_vulkan ALIAS asharia-renderer-basic-vulkan)
 

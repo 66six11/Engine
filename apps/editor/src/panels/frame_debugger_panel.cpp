@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <imgui.h>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -14,11 +15,11 @@
 namespace asharia::editor {
     namespace {
 
-        constexpr float kPreviewPaneMinWidth = 240.0F;
-        constexpr float kPreviewPaneMaxWidth = 360.0F;
-        constexpr float kPreviewPaneNarrowWidth = 160.0F;
-        constexpr float kPreviewPaneWidthRatio = 0.34F;
-        constexpr float kRenderGraphPaneMinWidth = 260.0F;
+        constexpr float kEventListMinWidth = 220.0F;
+        constexpr float kEventListMaxWidth = 360.0F;
+        constexpr float kEventListNarrowWidth = 160.0F;
+        constexpr float kEventListWidthRatio = 0.36F;
+        constexpr float kDetailsPaneMinWidth = 260.0F;
         constexpr float kPreviewImageMaxHeight = 220.0F;
 
         void textUnformatted(std::string_view text) {
@@ -59,6 +60,121 @@ namespace asharia::editor {
             return label;
         }
 
+        [[nodiscard]] const char* slotAccessName(asharia::RenderGraphSlotAccess access) {
+            switch (access) {
+            case asharia::RenderGraphSlotAccess::ColorWrite:
+                return "ColorWrite";
+            case asharia::RenderGraphSlotAccess::ShaderRead:
+                return "ShaderRead";
+            case asharia::RenderGraphSlotAccess::DepthAttachmentRead:
+                return "DepthAttachmentRead";
+            case asharia::RenderGraphSlotAccess::DepthAttachmentWrite:
+                return "DepthAttachmentWrite";
+            case asharia::RenderGraphSlotAccess::DepthSampledRead:
+                return "DepthSampledRead";
+            case asharia::RenderGraphSlotAccess::TransferRead:
+                return "TransferRead";
+            case asharia::RenderGraphSlotAccess::TransferWrite:
+                return "TransferWrite";
+            case asharia::RenderGraphSlotAccess::BufferShaderRead:
+                return "BufferShaderRead";
+            case asharia::RenderGraphSlotAccess::BufferTransferRead:
+                return "BufferTransferRead";
+            case asharia::RenderGraphSlotAccess::BufferTransferWrite:
+                return "BufferTransferWrite";
+            case asharia::RenderGraphSlotAccess::BufferStorageReadWrite:
+                return "BufferStorageReadWrite";
+            }
+            return "Unknown";
+        }
+
+        [[nodiscard]] const char* commandKindName(asharia::RenderGraphCommandKind kind) {
+            switch (kind) {
+            case asharia::RenderGraphCommandKind::SetShader:
+                return "SetShader";
+            case asharia::RenderGraphCommandKind::SetTexture:
+                return "SetTexture";
+            case asharia::RenderGraphCommandKind::SetFloat:
+                return "SetFloat";
+            case asharia::RenderGraphCommandKind::SetInt:
+                return "SetInt";
+            case asharia::RenderGraphCommandKind::SetVec4:
+                return "SetVec4";
+            case asharia::RenderGraphCommandKind::DrawFullscreenTriangle:
+                return "DrawFullscreenTriangle";
+            case asharia::RenderGraphCommandKind::ClearColor:
+                return "ClearColor";
+            case asharia::RenderGraphCommandKind::CopyImage:
+                return "CopyImage";
+            case asharia::RenderGraphCommandKind::Dispatch:
+                return "Dispatch";
+            }
+            return "Unknown";
+        }
+
+        [[nodiscard]] const char*
+        executionEventKindName(asharia::BasicRenderViewExecutionEventKind kind) {
+            switch (kind) {
+            case asharia::BasicRenderViewExecutionEventKind::BeginPass:
+                return "BeginPass";
+            case asharia::BasicRenderViewExecutionEventKind::EndPass:
+                return "EndPass";
+            case asharia::BasicRenderViewExecutionEventKind::ClearColor:
+                return "ClearColor";
+            case asharia::BasicRenderViewExecutionEventKind::Draw:
+                return "Draw";
+            case asharia::BasicRenderViewExecutionEventKind::DrawIndexed:
+                return "DrawIndexed";
+            case asharia::BasicRenderViewExecutionEventKind::DrawFullscreenTriangle:
+                return "DrawFullscreenTriangle";
+            case asharia::BasicRenderViewExecutionEventKind::Dispatch:
+                return "Dispatch";
+            case asharia::BasicRenderViewExecutionEventKind::CopyImage:
+                return "CopyImage";
+            }
+            return "Unknown";
+        }
+
+        [[nodiscard]] std::string
+        executionEventLabel(const asharia::BasicRenderViewExecutionEvent& event) {
+            std::string label =
+                "#" + std::to_string(event.id.value) + " " + executionEventKindName(event.kind);
+            if (!event.label.empty()) {
+                label += " / ";
+                label += event.label;
+            }
+            return label;
+        }
+
+        [[nodiscard]] const asharia::RenderGraphDiagnosticsPassNode*
+        selectedPassNode(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                         const EditorFrameDebugPreview& preview) {
+            if (!preview.selectedPassIndex) {
+                return nullptr;
+            }
+            for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
+                if (pass.passIndex == *preview.selectedPassIndex) {
+                    return &pass;
+                }
+            }
+            return nullptr;
+        }
+
+        [[nodiscard]] const asharia::BasicRenderViewExecutionEvent*
+        selectedExecutionEvent(const asharia::BasicRenderViewDiagnostics& diagnostics,
+                               const EditorFrameDebugPreview& preview) {
+            if (!preview.selectedExecutionEventId) {
+                return nullptr;
+            }
+            for (const asharia::BasicRenderViewExecutionEvent& event :
+                 diagnostics.executionEvents) {
+                if (event.id == *preview.selectedExecutionEventId) {
+                    return &event;
+                }
+            }
+            return nullptr;
+        }
+
         [[nodiscard]] std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>
         capturedImageResources(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
             std::vector<const asharia::RenderGraphDiagnosticsResourceNode*> images;
@@ -70,57 +186,82 @@ namespace asharia::editor {
             return images;
         }
 
-        [[nodiscard]] std::string selectedPassLabel(
-            const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
-            const EditorFrameDebugPreview& preview, const EditorI18n& i18n) {
-            if (!preview.selectedPassIndex) {
-                return std::string{i18n.text(EditorI18nTextQuery{
-                    .key = "frameDebug.noPass",
-                    .fallback = "No pass",
-                })};
+        void drawPassSelectable(EditorFrameContext& context,
+                                const asharia::RenderGraphDiagnosticsPassNode& pass,
+                                const EditorFrameDebugPreview& preview) {
+            const bool selected = preview.selectedPassIndex &&
+                                  *preview.selectedPassIndex == pass.passIndex &&
+                                  !preview.selectedExecutionEventId;
+            const std::string label = passEventLabel(pass);
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                static_cast<void>(context.frameDebugger.selectReplayPass(pass.passIndex));
             }
-
-            for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
-                if (pass.passIndex == *preview.selectedPassIndex) {
-                    return passEventLabel(pass);
-                }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
             }
-            return "#" + std::to_string(*preview.selectedPassIndex);
         }
 
-        void drawReplayPassSelector(EditorFrameContext& context,
-                                    const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
-                                    const EditorFrameDebugPreview& preview) {
-            const EditorI18n& i18n = context.i18n;
+        [[nodiscard]] bool
+        drawExecutionEventsForPass(EditorFrameContext& context,
+                                   std::span<const asharia::BasicRenderViewExecutionEvent> events,
+                                   const asharia::RenderGraphDiagnosticsPassNode& pass,
+                                   const EditorFrameDebugPreview& preview) {
+            bool listed = false;
+            for (const asharia::BasicRenderViewExecutionEvent& event : events) {
+                if (event.passIndex != pass.passIndex) {
+                    continue;
+                }
+                listed = true;
+                const bool selected = preview.selectedExecutionEventId &&
+                                      *preview.selectedExecutionEventId == event.id;
+                const std::string label = executionEventLabel(event);
+                if (ImGui::Selectable(label.c_str(), selected)) {
+                    static_cast<void>(context.frameDebugger.selectReplayEvent(event.id));
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            return listed;
+        }
+
+        void drawCommandSummariesForPass(
+            EditorFrameContext& context,
+            std::span<const asharia::RenderGraphDiagnosticsCommandNode> commands,
+            const asharia::RenderGraphDiagnosticsPassNode& pass) {
+            for (const asharia::RenderGraphDiagnosticsCommandNode& command : commands) {
+                if (command.passIndex != pass.passIndex) {
+                    continue;
+                }
+                const std::string label =
+                    std::to_string(command.commandIndex) + " " + commandKindName(command.kind);
+                if (ImGui::Selectable(label.c_str(), false)) {
+                    static_cast<void>(context.frameDebugger.selectReplayPass(pass.passIndex));
+                }
+            }
+        }
+
+        void drawPassEventList(EditorFrameContext& context,
+                               const asharia::BasicRenderViewDiagnostics& diagnostics,
+                               const EditorFrameDebugPreview& preview) {
+            const asharia::RenderGraphDiagnosticsSnapshot& snapshot = diagnostics.renderGraph;
             if (snapshot.passes.empty()) {
-                textUnformatted(i18n.text(EditorI18nTextQuery{
+                textUnformatted(context.i18n.text(EditorI18nTextQuery{
                     .key = "frameDebug.passEmpty",
                     .fallback = "Pass: -",
                 }));
                 return;
             }
 
-            const std::string selectedLabel = selectedPassLabel(snapshot, preview, i18n);
-            ImGui::SetNextItemWidth(std::max(1.0F, ImGui::GetContentRegionAvail().x));
-            const std::string passComboLabel = i18n.label(EditorI18nLabelDesc{
-                .key = "frameDebug.pass",
-                .stableId = "frame-debug-pass",
-                .fallback = "Pass/Event",
-            });
-            if (ImGui::BeginCombo(passComboLabel.c_str(), selectedLabel.c_str())) {
-                for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
-                    const bool selected =
-                        preview.selectedPassIndex &&
-                        *preview.selectedPassIndex == pass.passIndex;
-                    const std::string label = passEventLabel(pass);
-                    if (ImGui::Selectable(label.c_str(), selected)) {
-                        static_cast<void>(context.frameDebugger.selectReplayPass(pass.passIndex));
-                    }
-                    if (selected) {
-                        ImGui::SetItemDefaultFocus();
-                    }
+            for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
+                drawPassSelectable(context, pass, preview);
+                ImGui::Indent(14.0F);
+                const bool listedEvents =
+                    drawExecutionEventsForPass(context, diagnostics.executionEvents, pass, preview);
+                if (!listedEvents) {
+                    drawCommandSummariesForPass(context, snapshot.commands, pass);
                 }
-                ImGui::EndCombo();
+                ImGui::Unindent(14.0F);
             }
         }
 
@@ -132,11 +273,6 @@ namespace asharia::editor {
             if (imageResources.empty()) {
                 textUnformatted(i18n.text("frameDebug.imageEmpty"));
                 return;
-            }
-
-            if (!preview.selectedImageResourceIndex) {
-                static_cast<void>(context.frameDebugger.selectPreviewImageResource(
-                    imageResources.front()->resourceIndex));
             }
 
             std::string selectedLabel{i18n.text("frameDebug.noImage")};
@@ -196,11 +332,147 @@ namespace asharia::editor {
             ImGui::Dummy(ImVec2{ImGui::GetContentRegionAvail().x, std::min(120.0F, maxHeight)});
         }
 
-        void drawPreviewPane(
-            EditorFrameContext& context, const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+        [[nodiscard]] std::string optionalResourceIndexText(std::optional<std::uint32_t> index) {
+            return index ? std::to_string(*index) : std::string{"-"};
+        }
+
+        void
+        drawSelectedExecutionEventDetails(const EditorI18n& i18n,
+                                          const asharia::BasicRenderViewExecutionEvent& event) {
+            textUnformatted(executionEventLabel(event));
+            const std::string passText =
+                std::string{i18n.text("renderGraph.pass")} + ": " + event.passName;
+            ImGui::TextUnformatted(passText.c_str());
+            if (event.commandIndex) {
+                const std::string commandText = std::string{i18n.text("renderGraph.commands")} +
+                                                ": " + std::to_string(*event.commandIndex);
+                ImGui::TextUnformatted(commandText.c_str());
+            }
+            if (event.draw.vertexCount != 0 || event.draw.indexCount != 0) {
+                const std::string drawText =
+                    "Draw: vertices " + std::to_string(event.draw.vertexCount) + ", indices " +
+                    std::to_string(event.draw.indexCount) + ", instances " +
+                    std::to_string(event.draw.instanceCount);
+                ImGui::TextUnformatted(drawText.c_str());
+            }
+            if (event.sourceImageResourceIndex || event.targetImageResourceIndex) {
+                const std::string resourceText =
+                    "Resources: source " +
+                    optionalResourceIndexText(event.sourceImageResourceIndex) + ", target " +
+                    optionalResourceIndexText(event.targetImageResourceIndex);
+                ImGui::TextUnformatted(resourceText.c_str());
+            }
+        }
+
+        void drawPassSummaryDetails(const EditorI18n& i18n,
+                                    const asharia::RenderGraphDiagnosticsPassNode& pass) {
+            textUnformatted(passEventLabel(pass));
+            const std::string typeText = std::string{i18n.text("renderGraph.type")} + ": " +
+                                         (pass.type.empty() ? "-" : pass.type);
+            const std::string commandText = std::string{i18n.text("renderGraph.commands")} + ": " +
+                                            std::to_string(pass.commandCount);
+            const std::string transitionText =
+                std::string{i18n.text("renderGraph.transitions")} + ": " +
+                std::to_string(pass.imageTransitionCount + pass.bufferTransitionCount);
+            ImGui::TextUnformatted(typeText.c_str());
+            ImGui::TextUnformatted(commandText.c_str());
+            ImGui::TextUnformatted(transitionText.c_str());
+        }
+
+        void drawPassCommandSummaryTable(const EditorI18n& i18n,
+                                         const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                         const asharia::RenderGraphDiagnosticsPassNode& pass) {
+            if (!ImGui::BeginTable("frame-debug-pass-commands", 3,
+                                   ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg |
+                                       ImGuiTableFlags_SizingStretchProp)) {
+                return;
+            }
+
+            const std::string commandIndexColumn{"#"};
+            const std::string commandsColumn{i18n.text("renderGraph.commands")};
+            const std::string detailColumn{i18n.text("frameDebug.detail")};
+            ImGui::TableSetupColumn(commandIndexColumn.c_str());
+            ImGui::TableSetupColumn(commandsColumn.c_str());
+            ImGui::TableSetupColumn(detailColumn.c_str());
+            ImGui::TableHeadersRow();
+            for (const asharia::RenderGraphDiagnosticsCommandNode& command : snapshot.commands) {
+                if (command.passIndex != pass.passIndex) {
+                    continue;
+                }
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                const std::string commandIndexText = std::to_string(command.commandIndex);
+                ImGui::TextUnformatted(commandIndexText.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(commandKindName(command.kind));
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(command.detail.c_str());
+            }
+            ImGui::EndTable();
+        }
+
+        void drawPassAccessTable(const EditorI18n& i18n,
+                                 const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                 const asharia::RenderGraphDiagnosticsPassNode& pass) {
+            if (!ImGui::BeginTable("frame-debug-pass-access", 3,
+                                   ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg |
+                                       ImGuiTableFlags_SizingStretchProp)) {
+                return;
+            }
+
+            const std::string slotColumn{i18n.text("renderGraph.slot")};
+            const std::string resourceColumn{i18n.text("renderGraph.resource")};
+            const std::string useColumn{i18n.text("renderGraph.use")};
+            ImGui::TableSetupColumn(slotColumn.c_str());
+            ImGui::TableSetupColumn(resourceColumn.c_str());
+            ImGui::TableSetupColumn(useColumn.c_str());
+            ImGui::TableHeadersRow();
+            for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+                if (edge.passIndex != pass.passIndex) {
+                    continue;
+                }
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(edge.slotName.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(edge.resourceName.c_str());
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(slotAccessName(edge.access));
+            }
+            ImGui::EndTable();
+        }
+
+        void drawSelectedPassDetails(const EditorI18n& i18n,
+                                     const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                     const EditorFrameDebugPreview& preview) {
+            const asharia::RenderGraphDiagnosticsPassNode* pass =
+                selectedPassNode(snapshot, preview);
+            if (pass == nullptr) {
+                textUnformatted(i18n.text(EditorI18nTextQuery{
+                    .key = "frameDebug.noPass",
+                    .fallback = "No pass",
+                }));
+                return;
+            }
+
+            drawPassSummaryDetails(i18n, *pass);
+            drawPassCommandSummaryTable(i18n, snapshot, *pass);
+            drawPassAccessTable(i18n, snapshot, *pass);
+        }
+
+        void drawPassDetails(
+            EditorFrameContext& context, const asharia::BasicRenderViewDiagnostics& diagnostics,
             const std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>& imageResources,
             const EditorFrameDebugPreview& preview) {
-            drawReplayPassSelector(context, snapshot, preview);
+            const asharia::BasicRenderViewExecutionEvent* event =
+                selectedExecutionEvent(diagnostics, preview);
+            if (event != nullptr) {
+                drawSelectedExecutionEventDetails(context.i18n, *event);
+                ImGui::Separator();
+            }
+
+            drawSelectedPassDetails(context.i18n, diagnostics.renderGraph, preview);
+            ImGui::Separator();
             drawImageSelector(context, imageResources, preview);
 
             const bool previewVisible =
@@ -214,6 +486,19 @@ namespace asharia::editor {
                 (preview.message.empty() ? std::string{} : " - " + preview.message);
             ImGui::TextUnformatted(previewStatus.c_str());
             drawPreviewTexture(preview, kPreviewImageMaxHeight);
+        }
+
+        [[nodiscard]] bool shouldSmokeSelectRenderGraphTab(
+            EditorFrameContext& context, const EditorFrameDebugPreview& preview) {
+            if (!context.smokeMode ||
+                preview.status != EditorFrameDebugPreviewStatus::Available ||
+                !hasEditorViewportTexture(preview.texture)) {
+                return false;
+            }
+
+            const EditorFrameDebuggerStats stats = context.frameDebugger.stats();
+            return stats.previewTextureFramesDrawn > 0 &&
+                   stats.frameDebugRenderGraphSnapshotFrames == 0;
         }
 
         void drawSnapshotPane(const EditorI18n& i18n, const EditorFrameDebugCapture& capture,
@@ -231,30 +516,77 @@ namespace asharia::editor {
                 snapshot);
         }
 
+        void drawFrameDebugMainView(
+            EditorFrameContext& context, const EditorFrameDebugCapture& capture,
+            std::string_view status, const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+            const std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>& imageResources,
+            const EditorFrameDebugPreview& preview) {
+            static_cast<void>(status);
+            static_cast<void>(snapshot);
+
+            const float availableWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
+            float eventListWidth = std::clamp(availableWidth * kEventListWidthRatio,
+                                              kEventListMinWidth, kEventListMaxWidth);
+            if (availableWidth > kDetailsPaneMinWidth) {
+                eventListWidth =
+                    std::min(eventListWidth, std::max(kEventListNarrowWidth,
+                                                      availableWidth - kDetailsPaneMinWidth));
+            } else {
+                eventListWidth = std::max(1.0F, availableWidth * 0.45F);
+            }
+
+            ImGui::BeginChild("frame-debug-event-list-pane", ImVec2{eventListWidth, 0.0F},
+                              ImGuiChildFlags_Borders);
+            textUnformatted(context.i18n.text(EditorI18nTextQuery{
+                .key = "frameDebug.events",
+                .fallback = "Passes / Events",
+            }));
+            ImGui::Separator();
+            drawPassEventList(context, capture.diagnostics, preview);
+            ImGui::EndChild();
+            ImGui::SameLine();
+            ImGui::BeginChild("frame-debug-details-pane", ImVec2{0.0F, 0.0F},
+                              ImGuiChildFlags_Borders);
+            drawPassDetails(context, capture.diagnostics, imageResources, preview);
+            ImGui::EndChild();
+        }
+
         void drawFrameDebugContent(
             EditorFrameContext& context, const EditorFrameDebugCapture& capture,
             std::string_view status, const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
             const std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>& imageResources,
             const EditorFrameDebugPreview& preview) {
-            const float availableWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
-            float previewWidth = std::clamp(availableWidth * kPreviewPaneWidthRatio,
-                                            kPreviewPaneMinWidth, kPreviewPaneMaxWidth);
-            if (availableWidth > kRenderGraphPaneMinWidth) {
-                previewWidth =
-                    std::min(previewWidth, std::max(kPreviewPaneNarrowWidth,
-                                                    availableWidth - kRenderGraphPaneMinWidth));
-            } else {
-                previewWidth = std::max(1.0F, availableWidth * 0.45F);
+            if (ImGui::BeginTabBar("frame-debugger-view-tabs")) {
+                const std::string frameTab = context.i18n.label(EditorI18nLabelDesc{
+                    .key = "frameDebug.frameView",
+                    .stableId = "frame-debug-frame-view",
+                    .fallback = "Frame",
+                });
+                if (ImGui::BeginTabItem(frameTab.c_str())) {
+                    drawFrameDebugMainView(context, capture, status, snapshot, imageResources,
+                                           preview);
+                    ImGui::EndTabItem();
+                }
+
+                const std::string graphTab = context.i18n.label(EditorI18nLabelDesc{
+                    .key = "frameDebug.graphView",
+                    .stableId = "frame-debug-graph-view",
+                    .fallback = "RenderGraph",
+                });
+                const ImGuiTabItemFlags graphTabFlags =
+                    shouldSmokeSelectRenderGraphTab(context, preview)
+                        ? ImGuiTabItemFlags_SetSelected
+                        : ImGuiTabItemFlags_None;
+                if (ImGui::BeginTabItem(graphTab.c_str(), nullptr, graphTabFlags)) {
+                    context.frameDebugger.notifyFrameDebugRenderGraphViewDrawn(true);
+                    drawSnapshotPane(context.i18n, capture, status, snapshot);
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+                return;
             }
 
-            ImGui::BeginChild("frame-debug-preview-pane", ImVec2{previewWidth, 0.0F},
-                              ImGuiChildFlags_Borders);
-            drawPreviewPane(context, snapshot, imageResources, preview);
-            ImGui::EndChild();
-            ImGui::SameLine();
-            ImGui::BeginChild("frame-debug-rg-pane", ImVec2{0.0F, 0.0F}, ImGuiChildFlags_None);
-            drawSnapshotPane(context.i18n, capture, status, snapshot);
-            ImGui::EndChild();
+            drawFrameDebugMainView(context, capture, status, snapshot, imageResources, preview);
         }
 
     } // namespace
@@ -278,7 +610,6 @@ namespace asharia::editor {
         const std::optional<EditorFrameDebugCapture>& latestCapture =
             pausedCapture ? pausedCapture : context.frameDebugger.latestCapture();
 
-        context.frameDebugger.notifyFrameDebugRenderGraphViewDrawn(latestCapture.has_value());
         if (!latestCapture) {
             textUnformatted(context.i18n.text("frameDebug.noCapture"));
             return;
