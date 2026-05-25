@@ -6,6 +6,7 @@
 #include <span>
 
 #include "asharia/renderer_basic/draw_item.hpp"
+#include "asharia/renderer_basic_vulkan/render_view.hpp"
 #include "asharia/rhi_vulkan/vma_fwd.hpp"
 
 namespace asharia {
@@ -39,6 +40,8 @@ namespace asharia {
         VkDevice device{VK_NULL_HANDLE};
         VmaAllocator allocator{};
         std::filesystem::path shaderDirectory;
+        BasicRenderViewCamera camera{};
+        bool useRenderViewCamera{};
     };
 
     struct BasicDrawListRendererDesc {

@@ -22,6 +22,8 @@ BasicMesh3DRenderer& BasicMesh3DRenderer::operator=(BasicMesh3DRenderer&& other)
     pipelineDepthFormat_ = std::exchange(other.pipelineDepthFormat_, VK_FORMAT_UNDEFINED);
     pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
     allocator_ = std::exchange(other.allocator_, nullptr);
+    camera_ = other.camera_;
+    useRenderViewCamera_ = std::exchange(other.useRenderViewCamera_, false);
     return *this;
 }
 
@@ -125,6 +127,8 @@ Result<BasicMesh3DRenderer> BasicMesh3DRenderer::create(const BasicMesh3DRendere
     renderer.pipelineCache_ = std::move(*pipelineCache);
     renderer.vertexBuffer_ = std::move(*vertexBuffer);
     renderer.indexBuffer_ = std::move(*indexBuffer);
+    renderer.camera_ = desc.camera;
+    renderer.useRenderViewCamera_ = desc.useRenderViewCamera;
     return renderer;
 }
 
@@ -250,7 +254,8 @@ BasicMesh3DRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
                                  .vertex = vertexBuffer_.handle(),
                                  .index = indexBuffer_.handle(),
                              },
-                             depthBinding->vulkanImageView, *drawItem);
+                             depthBinding->vulkanImageView, *drawItem,
+                             useRenderViewCamera_ ? &camera_ : nullptr);
             return {};
         });
 

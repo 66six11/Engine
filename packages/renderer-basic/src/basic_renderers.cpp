@@ -22,7 +22,7 @@
 #include "asharia/shader_slang/reflection.hpp"
 
 namespace asharia {
-    namespace {
+    namespace renderer_basic_detail {
 
         [[nodiscard]] Error renderGraphError(std::string message) {
             return Error{ErrorDomain::RenderGraph, 0, std::move(message)};
@@ -470,6 +470,27 @@ namespace asharia {
             };
         }
 
+        [[nodiscard]] BasicMesh3DPushConstants
+        basicMesh3DPushConstants(const BasicRenderViewCamera& camera,
+                                 const BasicMat4& modelMatrix) {
+            const BasicMat4 mvp = multiplyBasicMat4(
+                BasicMat4{camera.viewProjection[0], camera.viewProjection[1],
+                          camera.viewProjection[2], camera.viewProjection[3],
+                          camera.viewProjection[4], camera.viewProjection[5],
+                          camera.viewProjection[6], camera.viewProjection[7],
+                          camera.viewProjection[8], camera.viewProjection[9],
+                          camera.viewProjection[10], camera.viewProjection[11],
+                          camera.viewProjection[12], camera.viewProjection[13],
+                          camera.viewProjection[14], camera.viewProjection[15]},
+                modelMatrix);
+            return BasicMesh3DPushConstants{
+                .mvpRow0 = {mvp[0], mvp[1], mvp[2], mvp[3]},
+                .mvpRow1 = {mvp[4], mvp[5], mvp[6], mvp[7]},
+                .mvpRow2 = {mvp[8], mvp[9], mvp[10], mvp[11]},
+                .mvpRow3 = {mvp[12], mvp[13], mvp[14], mvp[15]},
+            };
+        }
+
         struct BasicDrawBuffers {
             VkBuffer vertex{VK_NULL_HANDLE};
             VkBuffer index{VK_NULL_HANDLE};
@@ -547,7 +568,8 @@ namespace asharia {
 
         void recordMesh3DDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
                               VkPipelineLayout pipelineLayout, BasicDrawBuffers buffers,
-                              VkImageView depthImageView, BasicDrawItem drawItem) {
+                              VkImageView depthImageView, BasicDrawItem drawItem,
+                              const BasicRenderViewCamera* camera = nullptr) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = frame.imageView;
@@ -592,8 +614,9 @@ namespace asharia {
                 .offset = VkOffset2D{.x = 0, .y = 0},
                 .extent = frame.extent,
             };
-            const BasicMesh3DPushConstants pushConstants =
-                basicMesh3DPushConstants(frame.extent, basicMesh3DModelMatrix());
+            const BasicMesh3DPushConstants pushConstants = camera != nullptr
+                ? basicMesh3DPushConstants(*camera, basicMesh3DModelMatrix())
+                : basicMesh3DPushConstants(frame.extent, basicMesh3DModelMatrix());
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -1334,7 +1357,9 @@ namespace asharia {
             });
         }
 
-    } // namespace
+    } // namespace renderer_basic_detail
+
+    using namespace asharia::renderer_basic_detail;
 
     // Keep the renderer implementations in private source parts. They share the helpers above
     // without promoting those helpers to a public or cross-translation-unit API.

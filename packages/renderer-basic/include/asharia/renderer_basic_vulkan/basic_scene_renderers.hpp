@@ -147,6 +147,8 @@ namespace asharia {
         BasicPipelineCacheStats pipelineCacheStats_;
         VulkanTransientImagePool transientImagePool_;
         std::vector<VulkanTransientImageResource> transientImages_;
+        BasicRenderViewCamera camera_{};
+        bool useRenderViewCamera_{};
     };
 
     class BasicDrawListRenderer {
