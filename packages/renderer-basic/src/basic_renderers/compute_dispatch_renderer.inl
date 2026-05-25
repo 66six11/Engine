@@ -172,7 +172,6 @@ BasicComputeDispatchRenderer::recordFrame(const VulkanFrameRecordContext& frame)
     }
 
     const VkDeviceSize byteSize = storageBuffer_.size();
-    vkCmdFillBuffer(frame.commandBuffer, storageBuffer_.handle(), 0, byteSize, 0);
 
     RenderGraph graph;
     auto backbufferDesc = basicBackbufferDesc(frame);
@@ -183,7 +182,7 @@ BasicComputeDispatchRenderer::recordFrame(const VulkanFrameRecordContext& frame)
     const auto storage = graph.importBuffer(RenderGraphBufferDesc{
         .name = "ComputeStorageBuffer",
         .byteSize = byteSize,
-        .initialState = RenderGraphBufferState::TransferWrite,
+        .initialState = RenderGraphBufferState::Undefined,
         .finalState = RenderGraphBufferState::TransferRead,
     });
     const auto readback = graph.importBuffer(RenderGraphBufferDesc{
@@ -224,6 +223,32 @@ BasicComputeDispatchRenderer::recordFrame(const VulkanFrameRecordContext& frame)
     if (!namedReadback) {
         return std::unexpected{std::move(namedReadback.error())};
     }
+
+    constexpr BasicTransferFillBufferParams kFillParams{.value = 0};
+    graph.addPass("FillStorageBuffer", kBasicTransferFillBufferPassType)
+        .setParams(kBasicTransferFillBufferParamsType, kFillParams)
+        .writeBuffer("target", storage)
+        .execute([&frame, &bufferBindings,
+                  this](RenderGraphPassContext pass) -> Result<void> {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
+                frame, renderGraphPassDebugLabel(pass, {}, bufferBindings));
+            auto transitions =
+                recordRenderGraphBufferTransitions(frame, pass.bufferTransitionsBefore,
+                                                   bufferBindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+            auto target =
+                findVulkanRenderGraphBufferTransferWrite(pass, "target", bufferBindings);
+            if (!target) {
+                return std::unexpected{std::move(target.error())};
+            }
+            vkCmdFillBuffer(frame.commandBuffer, target->vulkanBuffer, target->offset,
+                            target->size == VK_WHOLE_SIZE ? storageBuffer_.size() : target->size,
+                            0);
+            return {};
+        });
 
     const BasicTransferClearParams clearParams = basicTransferClearParams(frame.clearColor);
     graph.addPass("ClearBackbuffer", kBasicTransferClearPassType)

@@ -33,6 +33,8 @@ namespace asharia {
     inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
     inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
     inline constexpr char kBasicComputeReadbackPassType[] = "builtin.compute-readback";
+    inline constexpr char kBasicTransferFillBufferPassType[] = "builtin.transfer-fill-buffer";
+    inline constexpr char kBasicTransferFillBufferParamsType[] = "builtin.transfer-fill-buffer.params";
     inline constexpr char kBasicDebugImageCopyPassType[] = "builtin.debug-image-copy";
 
     struct BasicTransferClearParams {
@@ -54,6 +56,10 @@ namespace asharia {
 
     struct BasicDrawListParams {
         std::uint32_t drawCount{};
+    };
+
+    struct BasicTransferFillBufferParams {
+        std::uint32_t value{};
     };
 
     struct BasicComputeDispatchParams {
@@ -279,6 +285,23 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicTransferFillBufferSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicTransferFillBufferPassType,
+            .paramsType = kBasicTransferFillBufferParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+        });
+    }
+
     inline void registerBasicComputeDispatchSchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicComputeDispatchPassType,
@@ -358,6 +381,7 @@ namespace asharia {
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRenderViewOverlaySchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
+        registerBasicTransferFillBufferSchema(schemas);
         registerBasicComputeDispatchSchema(schemas);
         registerBasicComputeReadbackSchema(schemas);
         registerBasicDebugImageCopySchema(schemas);
