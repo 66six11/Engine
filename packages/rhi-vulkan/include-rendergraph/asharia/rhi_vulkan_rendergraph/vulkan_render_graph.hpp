@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_types.hpp"
 
 namespace asharia {
 
