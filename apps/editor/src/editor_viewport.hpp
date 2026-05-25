@@ -151,6 +151,10 @@ namespace asharia::editor {
     [[nodiscard]] EditorViewportCamera defaultEditorSceneViewCamera(EditorExtent2D extent);
     [[nodiscard]] EditorViewportCamera
     editorViewportCameraForExtent(const EditorViewportCamera& camera, EditorExtent2D extent);
+    void orbitEditorViewportCamera(EditorViewportCamera& camera, float deltaYaw, float deltaPitch);
+    void panEditorViewportCamera(EditorViewportCamera& camera, float deltaX, float deltaY,
+                                 EditorExtent2D extent);
+    void dollyEditorViewportCamera(EditorViewportCamera& camera, float delta);
     [[nodiscard]] std::optional<EditorViewportWorldRay>
     unprojectEditorViewportPoint(const EditorViewportCamera& camera, EditorExtent2D extent,
                                  EditorViewportPoint point);

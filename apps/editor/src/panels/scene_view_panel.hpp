@@ -12,11 +12,13 @@ namespace asharia::editor {
 
     private:
         void updateCameraForViewportExtent(EditorExtent2D viewportExtent);
+        void handleCameraNavigation(EditorExtent2D viewportExtent);
 
         EditorViewportOverlayFlags overlayFlags_{defaultEditorSceneViewOverlayFlags()};
         EditorViewportCamera camera_;
         EditorExtent2D cameraExtent_;
         bool cameraInitialized_{false};
+        bool navigating_{false};
 
         EditorPanelDesc desc_{
             .id = EditorId{.value = "scene-view"},

@@ -287,4 +287,67 @@ namespace asharia::editor {
         return {};
     }
 
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    void orbitEditorViewportCamera(EditorViewportCamera& camera, float deltaYaw, float deltaPitch) {
+        const EditorVec3 direction =
+            normalizeEditorVec3(subtractEditorVec3(camera.position, camera.target));
+        float currentYaw = std::atan2(direction[0], direction[2]);
+        float currentPitch = std::asin(direction[1]);
+        currentYaw -= deltaYaw;
+        currentPitch = std::clamp(currentPitch - deltaPitch, -1.5F, 1.5F);
+        const float distance = std::sqrt(dotEditorVec3(
+            subtractEditorVec3(camera.position, camera.target),
+            subtractEditorVec3(camera.position, camera.target)));
+        const float newX =
+            camera.target[0] + (distance * std::cos(currentPitch) * std::sin(currentYaw));
+        const float newY = camera.target[1] + (distance * std::sin(currentPitch));
+        const float newZ =
+            camera.target[2] + (distance * std::cos(currentPitch) * std::cos(currentYaw));
+        camera.position = EditorVec3{newX, newY, newZ};
+    }
+
+    void panEditorViewportCamera(EditorViewportCamera& camera, float deltaX, float deltaY,
+                                 [[maybe_unused]] EditorExtent2D extent) {
+        const EditorVec3 forward =
+            normalizeEditorVec3(subtractEditorVec3(camera.target, camera.position));
+        const EditorVec3 right =
+            normalizeEditorVec3(crossEditorVec3(forward, camera.up));
+        const EditorVec3 viewUp =
+            normalizeEditorVec3(crossEditorVec3(right, forward));
+        const float distanceToTarget = std::sqrt(dotEditorVec3(
+            subtractEditorVec3(camera.target, camera.position),
+            subtractEditorVec3(camera.target, camera.position)));
+        const float panScale = distanceToTarget * 0.0025F;
+        const float panX = -deltaX * panScale;
+        const float panY = deltaY * panScale;
+        const EditorVec3 offset{
+            (right[0] * panX) + (viewUp[0] * panY),
+            (right[1] * panX) + (viewUp[1] * panY),
+            (right[2] * panX) + (viewUp[2] * panY),
+        };
+        camera.position = EditorVec3{
+            camera.position[0] + offset[0],
+            camera.position[1] + offset[1],
+            camera.position[2] + offset[2],
+        };
+        camera.target = EditorVec3{
+            camera.target[0] + offset[0],
+            camera.target[1] + offset[1],
+            camera.target[2] + offset[2],
+        };
+    }
+
+    void dollyEditorViewportCamera(EditorViewportCamera& camera, float delta) {
+        const float distance = std::sqrt(dotEditorVec3(
+            subtractEditorVec3(camera.position, camera.target),
+            subtractEditorVec3(camera.position, camera.target)));
+        const float newDistance = std::max(0.1F, distance - (delta * 0.5F));
+        const float ratio = newDistance / std::max(distance, 0.001F);
+        camera.position = EditorVec3{
+            camera.target[0] + ((camera.position[0] - camera.target[0]) * ratio),
+            camera.target[1] + ((camera.position[1] - camera.target[1]) * ratio),
+            camera.target[2] + ((camera.position[2] - camera.target[2]) * ratio),
+        };
+    }
+
 } // namespace asharia::editor
