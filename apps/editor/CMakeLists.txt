@@ -72,6 +72,8 @@ endif()
 add_executable(asharia-editor
     src/editor_action.cpp
     src/editor_app.cpp
+    src/editor_app_registration.cpp
+    src/editor_command.cpp
     src/editor_context.cpp
     src/editor_dock_layout.cpp
     src/editor_event.cpp

@@ -25,6 +25,7 @@
 
 #include "asharia/core/log.hpp"
 #include "asharia/core/result.hpp"
+#include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
@@ -32,6 +33,8 @@
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_action.hpp"
+#include "editor_app_registration.hpp"
+#include "editor_command.hpp"
 #include "editor_context.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -47,12 +50,6 @@
 #include "editor_workspace.hpp"
 #include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
-#include "panels/editor_settings_panel.hpp"
-#include "panels/frame_debugger_panel.hpp"
-#include "panels/log_panel.hpp"
-#include "panels/render_graph_panel.hpp"
-#include "panels/scene_view_panel.hpp"
-#include "panels/ui_style_preview_panel.hpp"
 
 namespace {
 
@@ -220,16 +217,35 @@ namespace {
                lhs.debugGizmoVisible == rhs.debugGizmoVisible;
     }
 
-    [[nodiscard]] bool validateRenderViewCameraSmoke(
-        const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
-        if (!closeFloat(viewportStats.lastRenderViewDiagnosticsCameraPosition[0], 0.0F) ||
-            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraPosition[1], 2.0F) ||
-            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraPosition[2], -6.0F) ||
-            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraNearPlane, 0.1F) ||
-            !closeFloat(viewportStats.lastRenderViewDiagnosticsCameraFarPlane, 1000.0F) ||
-            viewportStats.lastRenderViewDiagnosticsCameraProjectionXScale <= 0.0F ||
-            viewportStats.lastRenderViewDiagnosticsCameraProjectionYScale <= 1.0F ||
-            viewportStats.lastRenderViewDiagnosticsCameraViewProjectionDepthScale == 0.0F) {
+    [[nodiscard]] std::uint64_t
+    renderGraphPassTypeCount(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                             std::string_view passType) {
+        return static_cast<std::uint64_t>(std::ranges::count_if(
+            snapshot.passes, [passType](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                return pass.type == passType;
+            }));
+    }
+
+    [[nodiscard]] std::uint64_t
+    renderGraphOverlayCommandCount(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+        std::uint64_t commandCount = 0;
+        for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
+            if (pass.type == asharia::kBasicRenderViewOverlayPassType) {
+                commandCount += static_cast<std::uint64_t>(pass.commandCount);
+            }
+        }
+        return commandCount;
+    }
+
+    [[nodiscard]] bool
+    validateRenderViewCameraSmoke(const asharia::BasicRenderViewDiagnostics& diagnostics) {
+        if (!closeFloat(diagnostics.camera.position[0], 0.0F) ||
+            !closeFloat(diagnostics.camera.position[1], 2.0F) ||
+            !closeFloat(diagnostics.camera.position[2], -6.0F) ||
+            !closeFloat(diagnostics.camera.nearPlane, 0.1F) ||
+            !closeFloat(diagnostics.camera.farPlane, 1000.0F) ||
+            diagnostics.camera.projection[0] <= 0.0F || diagnostics.camera.projection[5] <= 1.0F ||
+            diagnostics.camera.viewProjection[10] == 0.0F) {
             asharia::logError(
                 "Editor viewport smoke recorded invalid RenderView camera diagnostics.");
             return false;
@@ -369,6 +385,47 @@ namespace {
         std::uint64_t inspectedWorldFramesAtPreview{};
         std::uint64_t inspectedWorldFramesAfterResume{};
     };
+
+    void requestSyntheticMultiViewSmoke(asharia::editor::EditorRunMode mode,
+                                        asharia::editor::EditorViewportCoordinator& viewportHost) {
+        if (mode != asharia::editor::EditorRunMode::SmokeViewport ||
+            viewportHost.stats().multiViewFramesRecorded > 0) {
+            return;
+        }
+
+        const asharia::editor::EditorViewportOverlayFlags allFlags{
+            .gridVisible = true,
+            .gizmoVisible = true,
+            .wireVisible = true,
+            .selectionOutlineVisible = true,
+            .debugOverlayVisible = true,
+            .debugGizmoVisible = true,
+        };
+        const asharia::editor::EditorExtent2D gameExtent{.width = 192, .height = 128};
+        const asharia::editor::EditorExtent2D previewExtent{.width = 96, .height = 96};
+        viewportHost.requestViewport(asharia::editor::EditorViewportRequest{
+            .panelId = asharia::editor::EditorId{.value = "editor-smoke-game-view"},
+            .kind = asharia::editor::EditorViewportKind::Game,
+            .extent = gameExtent,
+            .camera = asharia::editor::defaultEditorSceneViewCamera(gameExtent),
+            .overlayFlags = allFlags,
+            .refresh =
+                asharia::editor::EditorViewportRefreshRequest{
+                    .policy = asharia::editor::EditorViewportRefreshPolicy::OnDemand,
+                },
+        });
+        viewportHost.requestViewport(asharia::editor::EditorViewportRequest{
+            .panelId = asharia::editor::EditorId{.value = "editor-smoke-preview-view"},
+            .kind = asharia::editor::EditorViewportKind::Preview,
+            .extent = previewExtent,
+            .camera = asharia::editor::defaultEditorSceneViewCamera(previewExtent),
+            .overlayFlags = allFlags,
+            .refresh =
+                asharia::editor::EditorViewportRefreshRequest{
+                    .policy = asharia::editor::EditorViewportRefreshPolicy::OnDemand,
+                },
+        });
+    }
 
     void updateViewportResizeSmoke(asharia::GlfwWindow& window,
                                    const asharia::editor::EditorViewportCoordinator& viewportHost,
@@ -539,7 +596,7 @@ namespace {
             asharia::logError("Editor viewport smoke did not skip idle Scene View recording.");
             return false;
         }
-        if (viewportStats.renderViewDiagnosticsFramesRecorded >=
+        if (viewportStats.sceneViewDiagnosticsFramesRecorded >=
             static_cast<std::uint64_t>(runResult.renderedFrames)) {
             asharia::logError("Editor viewport smoke did not reuse the idle Scene View texture.");
             return false;
@@ -551,8 +608,101 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool validateSceneRenderViewDiagnosticsSmoke(
+        const asharia::editor::EditorViewportCoordinator& viewportHost,
+        asharia::BasicRenderViewDiagnostics& scene) {
+        const std::optional<asharia::editor::EditorRecordedRenderViewDiagnostics> sceneDiagnostics =
+            viewportHost.latestRecordedRenderViewDiagnosticsForView(
+                "scene-view", asharia::editor::EditorViewportKind::Scene);
+        if (!sceneDiagnostics) {
+            asharia::logError("Editor viewport smoke missed a keyed RenderView diagnostics "
+                              "snapshot.");
+            return false;
+        }
+
+        scene = sceneDiagnostics->diagnostics;
+        if (scene.renderGraph.passes.size() != 3U || scene.renderGraph.resources.size() != 2U ||
+            scene.renderGraph.accessEdges.size() != 4U ||
+            scene.renderGraph.dependencyEdges.size() != 2U ||
+            scene.renderGraph.transitions.size() != 4U || scene.executionEvents.empty()) {
+            asharia::logError(
+                "Editor viewport smoke recorded unexpected render view diagnostics counts: "
+                "passes " +
+                std::to_string(scene.renderGraph.passes.size()) + ", resources " +
+                std::to_string(scene.renderGraph.resources.size()) + ", access edges " +
+                std::to_string(scene.renderGraph.accessEdges.size()) + ", dependency edges " +
+                std::to_string(scene.renderGraph.dependencyEdges.size()) + ", transitions " +
+                std::to_string(scene.renderGraph.transitions.size()) + ", execution events " +
+                std::to_string(scene.executionEvents.size()) + ".");
+            return false;
+        }
+        if (renderGraphPassTypeCount(scene.renderGraph, asharia::kBasicRenderViewOverlayPassType) !=
+                1U ||
+            renderGraphOverlayCommandCount(scene.renderGraph) != 4U) {
+            asharia::logError(
+                "Editor viewport smoke did not record graph-visible RenderView overlay inputs.");
+            return false;
+        }
+        if (scene.viewKind != asharia::BasicRenderViewKind::Scene ||
+            scene.frameParams.frameIndex == 0 || !scene.overlay.enabled ||
+            scene.overlay.debugWorldLineCount == 0) {
+            asharia::logError(
+                "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateSyntheticMultiViewDiagnosticsSmoke(
+        asharia::editor::EditorRunMode mode,
+        const asharia::editor::EditorViewportCoordinator& viewportHost,
+        const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
+        if (mode != asharia::editor::EditorRunMode::SmokeViewport) {
+            return true;
+        }
+        if (viewportStats.multiViewFramesRecorded == 0 ||
+            viewportStats.viewportRequestsRecorded < 3 ||
+            viewportStats.gameViewDiagnosticsFramesRecorded == 0 ||
+            viewportStats.previewViewDiagnosticsFramesRecorded == 0) {
+            asharia::logError(
+                "Editor viewport smoke did not record multiple keyed RenderViews in one frame.");
+            return false;
+        }
+
+        const std::optional<asharia::editor::EditorRecordedRenderViewDiagnostics> gameDiagnostics =
+            viewportHost.latestRecordedRenderViewDiagnosticsForView(
+                "editor-smoke-game-view", asharia::editor::EditorViewportKind::Game);
+        const std::optional<asharia::editor::EditorRecordedRenderViewDiagnostics>
+            previewDiagnostics = viewportHost.latestRecordedRenderViewDiagnosticsForView(
+                "editor-smoke-preview-view", asharia::editor::EditorViewportKind::Preview);
+        if (!gameDiagnostics || !previewDiagnostics) {
+            asharia::logError(
+                "Editor viewport smoke missed a keyed multi-view diagnostics snapshot.");
+            return false;
+        }
+
+        const asharia::BasicRenderViewDiagnostics& game = gameDiagnostics->diagnostics;
+        if (game.viewKind != asharia::BasicRenderViewKind::Game || !game.overlay.enabled ||
+            game.overlay.debugWorldLineCount != 0 ||
+            renderGraphPassTypeCount(game.renderGraph, asharia::kBasicRenderViewOverlayPassType) !=
+                1U) {
+            asharia::logError("Editor viewport smoke recorded invalid Game View diagnostics.");
+            return false;
+        }
+
+        const asharia::BasicRenderViewDiagnostics& preview = previewDiagnostics->diagnostics;
+        if (preview.viewKind != asharia::BasicRenderViewKind::Preview || preview.overlay.enabled ||
+            renderGraphPassTypeCount(preview.renderGraph,
+                                     asharia::kBasicRenderViewOverlayPassType) != 0U) {
+            asharia::logError("Editor viewport smoke leaked overlay inputs into Preview View.");
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool validateViewportFlagsSmoke(
         asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        const asharia::editor::EditorViewportCoordinator& viewportHost,
         const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
         if (!isViewportSmokeMode(mode)) {
             return true;
@@ -630,7 +780,13 @@ namespace {
                 "Editor viewport smoke did not acquire a Scene View flagged texture.");
             return false;
         }
-        if (viewportStats.sceneViewOnlyFlagRequestsDiscarded != 0) {
+        if (mode == asharia::editor::EditorRunMode::SmokeViewport) {
+            if (viewportStats.sceneViewOnlyFlagRequestsDiscarded == 0) {
+                asharia::logError("Editor viewport smoke did not exercise Game View overlay "
+                                  "filtering through the coordinator.");
+                return false;
+            }
+        } else if (viewportStats.sceneViewOnlyFlagRequestsDiscarded != 0) {
             asharia::logError(
                 "Editor viewport smoke discarded Scene View-only flags unexpectedly.");
             return false;
@@ -646,44 +802,16 @@ namespace {
         if (!validateIdleSceneViewReuseSmoke(mode, runResult, viewportStats)) {
             return false;
         }
-        if (viewportStats.lastRenderViewDiagnosticsPasses != 3 ||
-            viewportStats.lastRenderViewDiagnosticsResources != 2 ||
-            viewportStats.lastRenderViewDiagnosticsAccessEdges != 4 ||
-            viewportStats.lastRenderViewDiagnosticsDependencyEdges != 2 ||
-            viewportStats.lastRenderViewDiagnosticsTransitions != 4 ||
-            viewportStats.lastRenderViewDiagnosticsExecutionEvents == 0) {
-            asharia::logError(
-                "Editor viewport smoke recorded unexpected render view diagnostics counts: passes " +
-                std::to_string(viewportStats.lastRenderViewDiagnosticsPasses) + ", resources " +
-                std::to_string(viewportStats.lastRenderViewDiagnosticsResources) +
-                ", access edges " +
-                std::to_string(viewportStats.lastRenderViewDiagnosticsAccessEdges) +
-                ", dependency edges " +
-                std::to_string(viewportStats.lastRenderViewDiagnosticsDependencyEdges) +
-                ", transitions " +
-                std::to_string(viewportStats.lastRenderViewDiagnosticsTransitions) +
-                ", execution events " +
-                std::to_string(viewportStats.lastRenderViewDiagnosticsExecutionEvents) + ".");
-            return false;
-        }
-        if (viewportStats.lastRenderViewDiagnosticsOverlayPasses != 1 ||
-            viewportStats.lastRenderViewDiagnosticsOverlayCommands != 4) {
-            asharia::logError(
-                "Editor viewport smoke did not record graph-visible RenderView overlay inputs.");
-            return false;
-        }
-        if (viewportStats.lastRenderViewDiagnosticsKind != asharia::BasicRenderViewKind::Scene ||
-            viewportStats.lastRenderViewDiagnosticsFrameIndex == 0 ||
-            !viewportStats.lastRenderViewDiagnosticsOverlayEnabled ||
-            viewportStats.lastRenderViewDiagnosticsDebugWorldLines == 0) {
-            asharia::logError(
-                "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
+
+        asharia::BasicRenderViewDiagnostics scene;
+        if (!validateSceneRenderViewDiagnosticsSmoke(viewportHost, scene) ||
+            !validateSyntheticMultiViewDiagnosticsSmoke(mode, viewportHost, viewportStats)) {
             return false;
         }
         if (!validateEditorViewportCameraSmoke()) {
             return false;
         }
-        return validateRenderViewCameraSmoke(viewportStats);
+        return validateRenderViewCameraSmoke(scene);
     }
 
     [[nodiscard]] bool validateViewportResizeSmoke(
@@ -796,8 +924,7 @@ namespace {
             capture->diagnostics.renderGraph.transitions.size() != 4) {
             asharia::logError(
                 "Editor frame debugger smoke captured unexpected RenderGraph diagnostics: passes " +
-                std::to_string(capture->diagnostics.renderGraph.passes.size()) +
-                ", resources " +
+                std::to_string(capture->diagnostics.renderGraph.passes.size()) + ", resources " +
                 std::to_string(capture->diagnostics.renderGraph.resources.size()) +
                 ", access edges " +
                 std::to_string(capture->diagnostics.renderGraph.accessEdges.size()) +
@@ -1380,6 +1507,7 @@ namespace {
                 .viewportHost = viewportHost,
             };
             buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
+            requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();
             shortcutRouter.beginFrame(inputRouter.snapshot());
             static_cast<void>(shortcutRouter.routeImGuiShortcuts(actionRegistry, editorContext));
@@ -1438,358 +1566,6 @@ namespace {
             .inputStats = inputRouter.stats(),
             .shortcutStats = shortcutRouter.stats(),
         };
-    }
-
-    [[nodiscard]] asharia::VoidResult
-    registerEditorPanels(asharia::editor::EditorPanelRegistry& panelRegistry) {
-        auto sceneView = panelRegistry.registerPanel(
-            [] { return std::make_unique<asharia::editor::SceneViewPanel>(); });
-        if (!sceneView) {
-            return std::unexpected{std::move(sceneView.error())};
-        }
-
-        auto renderGraph = panelRegistry.registerPanel(
-            [] { return std::make_unique<asharia::editor::RenderGraphPanel>(); });
-        if (!renderGraph) {
-            return std::unexpected{std::move(renderGraph.error())};
-        }
-
-        auto frameDebugger = panelRegistry.registerPanel(
-            [] { return std::make_unique<asharia::editor::FrameDebuggerPanel>(); });
-        if (!frameDebugger) {
-            return std::unexpected{std::move(frameDebugger.error())};
-        }
-
-        auto log = panelRegistry.registerPanel(
-            [] { return std::make_unique<asharia::editor::LogPanel>(); });
-        if (!log) {
-            return std::unexpected{std::move(log.error())};
-        }
-
-        auto settings = panelRegistry.registerPanel(
-            [] { return std::make_unique<asharia::editor::EditorSettingsPanel>(); });
-        if (!settings) {
-            return std::unexpected{std::move(settings.error())};
-        }
-
-        return panelRegistry.registerPanel(
-            [] { return std::make_unique<asharia::editor::UiStylePreviewPanel>(); });
-    }
-
-    [[nodiscard]] asharia::VoidResult
-    registerEditorActions(asharia::editor::EditorActionRegistry& actionRegistry) {
-        auto newScene = actionRegistry.registerAction(asharia::editor::EditorActionDesc{
-            .id = asharia::editor::EditorId{.value = "file.new-scene"},
-            .menuPath = "File",
-            .label = "New Scene",
-            .labelKey = "action.file.newScene",
-            .shortcut = "Ctrl+N",
-            .enabled = false,
-        });
-        if (!newScene) {
-            return std::unexpected{std::move(newScene.error())};
-        }
-
-        auto openScene = actionRegistry.registerAction(asharia::editor::EditorActionDesc{
-            .id = asharia::editor::EditorId{.value = "file.open"},
-            .menuPath = "File",
-            .label = "Open...",
-            .labelKey = "action.file.open",
-            .shortcut = "Ctrl+O",
-            .enabled = false,
-        });
-        if (!openScene) {
-            return std::unexpected{std::move(openScene.error())};
-        }
-
-        auto exit = actionRegistry.registerAction(asharia::editor::EditorActionDesc{
-            .id = asharia::editor::EditorId{.value = "file.exit"},
-            .menuPath = "File",
-            .label = "Exit",
-            .labelKey = "action.file.exit",
-            .shortcut = "Alt+F4",
-            .enabled = false,
-        });
-        if (!exit) {
-            return std::unexpected{std::move(exit.error())};
-        }
-
-        auto sceneView = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "view.scene-view"},
-                .menuPath = "View",
-                .label = "Scene View",
-                .labelKey = "action.view.sceneView",
-                .shortcut = "Ctrl+1",
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("scene-view"));
-            });
-        if (!sceneView) {
-            return std::unexpected{std::move(sceneView.error())};
-        }
-
-        auto renderGraph = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "view.render-graph"},
-                .menuPath = "View",
-                .label = "Live RG View",
-                .labelKey = "action.view.renderGraph",
-                .shortcut = "Ctrl+3",
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("render-graph"));
-            });
-        if (!renderGraph) {
-            return std::unexpected{std::move(renderGraph.error())};
-        }
-
-        auto frameDebugger = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "view.frame-debugger"},
-                .menuPath = "View",
-                .label = "Frame Debugger",
-                .labelKey = "action.view.frameDebugger",
-                .shortcut = "Ctrl+4",
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("frame-debugger"));
-            });
-        if (!frameDebugger) {
-            return std::unexpected{std::move(frameDebugger.error())};
-        }
-
-        auto log = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "view.log"},
-                .menuPath = "View",
-                .label = "Log",
-                .labelKey = "action.view.log",
-                .shortcut = "Ctrl+2",
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("log"));
-            });
-        if (!log) {
-            return std::unexpected{std::move(log.error())};
-        }
-
-        auto uiStylePreview = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "view.ui-style-preview"},
-                .menuPath = "View",
-                .label = "UI Style Preview",
-                .labelKey = "action.view.uiStylePreview",
-                .shortcut = "Ctrl+5",
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("ui-style-preview"));
-            });
-        if (!uiStylePreview) {
-            return std::unexpected{std::move(uiStylePreview.error())};
-        }
-
-        auto editorSettings = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "view.editor-settings"},
-                .menuPath = "View",
-                .label = "Editor Settings",
-                .labelKey = "action.view.editorSettings",
-                .shortcut = {},
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("editor-settings"));
-            });
-        if (!editorSettings) {
-            return std::unexpected{std::move(editorSettings.error())};
-        }
-
-        auto resetLayout = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "view.reset-layout"},
-                .menuPath = "View",
-                .label = "Reset Layout",
-                .labelKey = "action.view.resetLayout",
-                .shortcut = {},
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                context.workspace().requestLayoutReset();
-            });
-        if (!resetLayout) {
-            return std::unexpected{std::move(resetLayout.error())};
-        }
-
-        auto captureFrame = actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "debug.capture-frame"},
-                .menuPath = "Debug",
-                .label = "Capture Frame",
-                .labelKey = "action.debug.captureFrame",
-                .shortcut = "F8",
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.frameDebugger().requestCapture());
-            });
-        if (!captureFrame) {
-            return std::unexpected{std::move(captureFrame.error())};
-        }
-
-        return actionRegistry.registerAction(
-            asharia::editor::EditorActionDesc{
-                .id = asharia::editor::EditorId{.value = "debug.resume-frame"},
-                .menuPath = "Debug",
-                .label = "Resume",
-                .labelKey = "action.debug.resumeFrame",
-                .shortcut = "Shift+F8",
-                .enabled = true,
-            },
-            [](asharia::editor::EditorContext& context) {
-                static_cast<void>(context.frameDebugger().requestResume());
-            });
-    }
-
-    [[nodiscard]] asharia::VoidResult
-    registerEditorTools(asharia::editor::EditorToolRegistry& toolRegistry) {
-        auto sceneView = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
-            .id = asharia::editor::EditorId{.value = "tool.scene-view"},
-            .title = "Scene View",
-            .titleKey = "tool.sceneView",
-            .category = asharia::editor::EditorToolCategory::Viewport,
-            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "scene-view"}},
-            .actions = {asharia::editor::EditorToolActionContribution{
-                .actionId = "view.scene-view",
-                .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
-            }},
-            .viewportOverlays =
-                {
-                    asharia::editor::EditorToolViewportOverlayContribution{
-                        .overlayId = "scene.grid",
-                        .viewportId = "scene-view",
-                    },
-                    asharia::editor::EditorToolViewportOverlayContribution{
-                        .overlayId = "scene.transform-gizmo",
-                        .viewportId = "scene-view",
-                    },
-                    asharia::editor::EditorToolViewportOverlayContribution{
-                        .overlayId = "scene.selection-outline",
-                        .viewportId = "scene-view",
-                    },
-                },
-        });
-        if (!sceneView) {
-            return std::unexpected{std::move(sceneView.error())};
-        }
-
-        auto renderGraph = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
-            .id = asharia::editor::EditorId{.value = "tool.render-graph"},
-            .title = "RenderGraph Diagnostics",
-            .titleKey = "tool.renderGraph",
-            .category = asharia::editor::EditorToolCategory::Diagnostics,
-            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "render-graph"}},
-            .actions = {asharia::editor::EditorToolActionContribution{
-                .actionId = "view.render-graph",
-                .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!renderGraph) {
-            return std::unexpected{std::move(renderGraph.error())};
-        }
-
-        auto frameDebugger = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
-            .id = asharia::editor::EditorId{.value = "tool.frame-debugger"},
-            .title = "Frame Debugger",
-            .titleKey = "tool.frameDebugger",
-            .category = asharia::editor::EditorToolCategory::Diagnostics,
-            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "frame-debugger"}},
-            .actions =
-                {
-                    asharia::editor::EditorToolActionContribution{
-                        .actionId = "debug.capture-frame",
-                        .toolbarSlot = asharia::editor::EditorToolbarSlot::Debug,
-                    },
-                    asharia::editor::EditorToolActionContribution{
-                        .actionId = "debug.resume-frame",
-                        .toolbarSlot = asharia::editor::EditorToolbarSlot::Debug,
-                    },
-                    asharia::editor::EditorToolActionContribution{
-                        .actionId = "view.frame-debugger",
-                        .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
-                    },
-                },
-            .viewportOverlays = {},
-        });
-        if (!frameDebugger) {
-            return std::unexpected{std::move(frameDebugger.error())};
-        }
-
-        auto log = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
-            .id = asharia::editor::EditorId{.value = "tool.log"},
-            .title = "Log",
-            .titleKey = "tool.log",
-            .category = asharia::editor::EditorToolCategory::Diagnostics,
-            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "log"}},
-            .actions = {asharia::editor::EditorToolActionContribution{
-                .actionId = "view.log",
-                .toolbarSlot = asharia::editor::EditorToolbarSlot::View,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!log) {
-            return std::unexpected{std::move(log.error())};
-        }
-
-        auto style = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
-            .id = asharia::editor::EditorId{.value = "tool.ui-style-preview"},
-            .title = "UI Style Preview",
-            .titleKey = "tool.uiStylePreview",
-            .category = asharia::editor::EditorToolCategory::Styling,
-            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "ui-style-preview"}},
-            .actions = {asharia::editor::EditorToolActionContribution{
-                .actionId = "view.ui-style-preview",
-                .toolbarSlot = asharia::editor::EditorToolbarSlot::Utility,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!style) {
-            return std::unexpected{std::move(style.error())};
-        }
-
-        auto settings = toolRegistry.registerTool(asharia::editor::EditorToolDesc{
-            .id = asharia::editor::EditorId{.value = "tool.editor-settings"},
-            .title = "Editor Settings",
-            .titleKey = "tool.editorSettings",
-            .category = asharia::editor::EditorToolCategory::Settings,
-            .panels = {asharia::editor::EditorToolPanelContribution{.panelId = "editor-settings"}},
-            .actions = {asharia::editor::EditorToolActionContribution{
-                .actionId = "view.editor-settings",
-                .toolbarSlot = asharia::editor::EditorToolbarSlot::Utility,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!settings) {
-            return std::unexpected{std::move(settings.error())};
-        }
-
-        return toolRegistry.registerTool(asharia::editor::EditorToolDesc{
-            .id = asharia::editor::EditorId{.value = "tool.workspace-layout"},
-            .title = "Workspace Layout",
-            .titleKey = "tool.workspaceLayout",
-            .category = asharia::editor::EditorToolCategory::Core,
-            .panels = {},
-            .actions = {asharia::editor::EditorToolActionContribution{
-                .actionId = "view.reset-layout",
-            }},
-            .viewportOverlays = {},
-        });
     }
 
     [[nodiscard]] bool
@@ -2050,7 +1826,72 @@ namespace {
                validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry) &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, panelRegistry) &&
                validateEditorSettingsSmoke(mode, editorContext) &&
-               validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry);
+                validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry);
+    }
+
+    class TestSetIntCommand final : public asharia::editor::EditorCommand {
+    public:
+        TestSetIntCommand(int& target, int newValue)
+            : target_(&target), newValue_(newValue), oldValue_(target) {}
+
+        [[nodiscard]] std::string description() const override {
+            return "SetInt " + std::to_string(oldValue_) + " -> " + std::to_string(newValue_);
+        }
+
+        [[nodiscard]] asharia::Result<void> execute() override {
+            *target_ = newValue_;
+            return {};
+        }
+
+        [[nodiscard]] asharia::Result<void> undo() override {
+            *target_ = oldValue_;
+            return {};
+        }
+
+    private:
+        int* target_{};
+        int newValue_{};
+        int oldValue_{};
+    };
+
+    [[nodiscard]] bool
+    validateEditorCommandSmoke(asharia::editor::EditorRunMode mode) {
+        if (!isSmokeMode(mode)) {
+            return true;
+        }
+
+        int testValue = 0;
+        constexpr int kNewValue = 42;
+        asharia::editor::EditorCommandHistory history;
+        {
+            auto transaction = asharia::editor::EditorTransaction{};
+            transaction.addCommand(std::make_unique<TestSetIntCommand>(testValue, kNewValue));
+            history.push(std::move(transaction));
+        }
+        if (history.undoDepth() != 1 || history.redoDepth() != 0) {
+            asharia::logError("Editor command smoke: invalid depth after push.");
+            return false;
+        }
+        auto undoResult = history.undo();
+        if (!undoResult || testValue != 0 || history.undoDepth() != 0 ||
+            history.redoDepth() != 1) {
+            asharia::logError("Editor command smoke: undo did not restore value.");
+            return false;
+        }
+        auto redoResult = history.redo();
+        if (!redoResult || testValue != kNewValue || history.undoDepth() != 1 ||
+            history.redoDepth() != 0) {
+            asharia::logError("Editor command smoke: redo did not reapply value.");
+            return false;
+        }
+        auto emptyUndo = history.undo();
+        auto doubleUndo = history.undo();
+        if (doubleUndo) {
+            asharia::logError("Editor command smoke: double undo should have failed.");
+            return false;
+        }
+        static_cast<void>(emptyUndo);
+        return true;
     }
 
 } // namespace
@@ -2175,7 +2016,8 @@ namespace asharia::editor {
             panelRegistry, eventQueue,         diagnosticsLog,      frameDebugger,
             editorI18n,    settingsController, workspaceController, toolRegistry};
         if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, panelRegistry,
-                                             toolRegistry)) {
+                                             toolRegistry) ||
+            !validateEditorCommandSmoke(mode)) {
             return EXIT_FAILURE;
         }
 
@@ -2194,7 +2036,7 @@ namespace asharia::editor {
             viewportHost.textureRegistryStats();
         if (!validateViewportSmokePresentation(mode, *runResult, viewportHost,
                                                textureRegistryStats) ||
-            !validateViewportFlagsSmoke(mode, *runResult, viewportStats) ||
+            !validateViewportFlagsSmoke(mode, *runResult, viewportHost, viewportStats) ||
             !validateViewportResizeSmoke(mode, *runResult, viewportStats, textureRegistryStats) ||
             !validateFrameDebuggerSmoke(mode, *runResult, frameDebugger) ||
             !validateInputRouterSmoke(mode, *runResult) ||
