@@ -46,7 +46,8 @@ namespace asharia {
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
-        [[nodiscard]] Result<void> ensureDebugLinePipeline(VkFormat colorFormat);
+        [[nodiscard]] Result<void>
+        ensureDebugLinePipeline(VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode);
         [[nodiscard]] VkDescriptorSet
         acquireFullscreenDescriptorSet(const VulkanFrameRecordContext& frame);
         [[nodiscard]] VkDescriptorSet
@@ -71,6 +72,8 @@ namespace asharia {
         VulkanGraphicsPipeline debugLinePipeline_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat debugLinePipelineFormat_{VK_FORMAT_UNDEFINED};
+        BasicRenderViewOverlayBlendMode debugLinePipelineBlendMode_{
+            BasicRenderViewOverlayBlendMode::AlphaBlend};
         BasicPipelineCacheStats pipelineCacheStats_;
         VulkanRenderTarget offscreenViewportTarget_;
         VulkanDescriptorAllocator descriptorAllocator_;

@@ -253,7 +253,8 @@ namespace asharia::editor {
         updateCameraForViewportExtent(viewportExtent);
         std::uint64_t viewportFrameIndex{};
         if (const auto completed =
-                context.viewportHost.acquireViewportTextureForDraw(desc_.id.value);
+                context.viewportHost.acquireViewportTextureForDraw(desc_.id.value,
+                                                                   EditorViewportKind::Scene);
             completed && hasEditorViewportTexture(completed->texture)) {
             viewportFrameIndex = completed->texture.frameIndex;
             ImGui::Image(static_cast<ImTextureID>(completed->texture.textureId),

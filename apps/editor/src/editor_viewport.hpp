@@ -177,7 +177,7 @@ namespace asharia::editor {
 
         virtual void requestViewport(EditorViewportRequest request) = 0;
         [[nodiscard]] virtual std::optional<EditorViewportResult>
-        acquireViewportTextureForDraw(std::string_view panelId) = 0;
+        acquireViewportTextureForDraw(std::string_view panelId, EditorViewportKind kind) = 0;
     };
 
 } // namespace asharia::editor

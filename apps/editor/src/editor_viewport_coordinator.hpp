@@ -120,7 +120,7 @@ namespace asharia::editor {
         void beginImguiFrame(EditorViewportFrameEpochs epochs);
         void requestViewport(EditorViewportRequest request) override;
         [[nodiscard]] std::optional<EditorViewportResult>
-        acquireViewportTextureForDraw(std::string_view panelId) override;
+        acquireViewportTextureForDraw(std::string_view panelId, EditorViewportKind kind) override;
         [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
         recordRequestedViews(const asharia::VulkanFrameRecordContext& frame,
                              asharia::BasicFullscreenTextureRenderer& renderer,
@@ -170,7 +170,7 @@ namespace asharia::editor {
                                                            EditorViewportKind kind) const;
         [[nodiscard]] ViewportSlot& findOrCreateViewportSlot(const EditorViewportRequest& request);
         [[nodiscard]] const ViewportSlot*
-        findPresentedViewportSlotForPanel(std::string_view panelId) const;
+        findPresentedViewportSlotForView(std::string_view panelId, EditorViewportKind kind) const;
         void promotePendingTextures();
         [[nodiscard]] bool hasTextureToRelease() const;
         [[nodiscard]] static EditorViewportRepaintReasons

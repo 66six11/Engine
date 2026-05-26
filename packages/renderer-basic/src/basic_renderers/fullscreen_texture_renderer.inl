@@ -24,6 +24,8 @@ BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other
     pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
     debugLinePipelineFormat_ =
         std::exchange(other.debugLinePipelineFormat_, VK_FORMAT_UNDEFINED);
+    debugLinePipelineBlendMode_ = std::exchange(
+        other.debugLinePipelineBlendMode_, BasicRenderViewOverlayBlendMode::AlphaBlend);
     pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
     offscreenViewportTarget_ = std::move(other.offscreenViewportTarget_);
     descriptorAllocator_ = std::move(other.descriptorAllocator_);
@@ -281,14 +283,27 @@ Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat
     return {};
 }
 
-Result<void> BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat colorFormat) {
+Result<void> BasicFullscreenTextureRenderer::ensureDebugLinePipeline(
+    VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode) {
     if (debugLinePipeline_.handle() != VK_NULL_HANDLE &&
-        debugLinePipelineFormat_ == colorFormat) {
+        debugLinePipelineFormat_ == colorFormat && debugLinePipelineBlendMode_ == blendMode) {
         return {};
     }
 
     const auto bindings = basicDebugLineVertexInputBindings();
     const auto attributes = basicDebugLineVertexInputAttributes();
+    VkBlendFactor colorSrcBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    VkBlendFactor colorDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    VkBlendFactor alphaSrcBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor alphaDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    switch (blendMode) {
+    case BasicRenderViewOverlayBlendMode::AlphaBlend:
+        break;
+    case BasicRenderViewOverlayBlendMode::Additive:
+        colorDstBlendFactor = VK_BLEND_FACTOR_ONE;
+        alphaDstBlendFactor = VK_BLEND_FACTOR_ONE;
+        break;
+    }
 
     auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
         .device = device_,
@@ -304,11 +319,11 @@ Result<void> BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat co
         .vertexAttributes = attributes,
         .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
         .colorBlendEnable = VK_TRUE,
-        .colorSrcBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-        .colorDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorSrcBlendFactor = colorSrcBlendFactor,
+        .colorDstBlendFactor = colorDstBlendFactor,
         .colorBlendOp = VK_BLEND_OP_ADD,
-        .alphaSrcBlendFactor = VK_BLEND_FACTOR_ONE,
-        .alphaDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaSrcBlendFactor = alphaSrcBlendFactor,
+        .alphaDstBlendFactor = alphaDstBlendFactor,
         .alphaBlendOp = VK_BLEND_OP_ADD,
     });
     if (!pipeline) {
@@ -317,6 +332,7 @@ Result<void> BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat co
 
     debugLinePipeline_ = std::move(*pipeline);
     debugLinePipelineFormat_ = colorFormat;
+    debugLinePipelineBlendMode_ = blendMode;
     return {};
 }
 
@@ -509,7 +525,8 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     VkBuffer debugLineVertexBuffer = VK_NULL_HANDLE;
     std::uint32_t debugLineVertexCount = 0;
     if (view.overlay.enabled && !debugWorldLines.empty()) {
-        auto debugLinePipeline = ensureDebugLinePipeline(view.target.format);
+        auto debugLinePipeline =
+            ensureDebugLinePipeline(view.target.format, view.overlay.blendMode);
         if (!debugLinePipeline) {
             return std::unexpected{std::move(debugLinePipeline.error())};
         }

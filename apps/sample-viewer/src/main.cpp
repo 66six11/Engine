@@ -2965,7 +2965,44 @@ namespace {
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&renderer](const asharia::VulkanFrameRecordContext& recordContext) {
+                [&renderer, frame](const asharia::VulkanFrameRecordContext& recordContext) {
+                    if (frame == 1) {
+                        const std::array debugLines{
+                            asharia::BasicDebugWorldLine{
+                                .start = {-0.65F, 0.0F, 0.0F},
+                                .end = {0.65F, 0.0F, 0.0F},
+                                .color = {0.18F, 0.78F, 0.95F, 0.65F},
+                            },
+                        };
+                        return renderer->recordViewFrame(
+                            recordContext,
+                            asharia::BasicRenderViewDesc{
+                                .target =
+                                    asharia::BasicRenderViewTarget{
+                                        .image = recordContext.image,
+                                        .imageView = recordContext.imageView,
+                                        .format = recordContext.format,
+                                        .extent = recordContext.extent,
+                                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                        .finalUsage =
+                                            asharia::BasicRenderViewTargetFinalUsage::Present,
+                                    },
+                                .viewKind = asharia::BasicRenderViewKind::Game,
+                                .camera = asharia::BasicRenderViewCamera{},
+                                .frameParams =
+                                    asharia::BasicRenderViewFrameParams{
+                                        .frameIndex = static_cast<std::uint64_t>(frame + 1),
+                                    },
+                                .overlay =
+                                    asharia::BasicRenderViewOverlayDesc{
+                                        .enabled = true,
+                                        .blendMode =
+                                            asharia::BasicRenderViewOverlayBlendMode::Additive,
+                                        .debugWorldLines = debugLines,
+                                    },
+                                .viewName = "FullscreenTextureAdditiveOverlaySmoke",
+                            });
+                    }
                     return renderer->recordFrame(recordContext);
                 });
             if (!status) {
@@ -2990,7 +3027,7 @@ namespace {
                                               "Fullscreen texture smoke", 32)) {
             return EXIT_FAILURE;
         }
-        if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Fullscreen texture smoke")) {
+        if (!validateBufferUploadStats(renderer->bufferStats(), 2, "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Fullscreen texture smoke")) {

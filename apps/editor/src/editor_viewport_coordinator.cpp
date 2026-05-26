@@ -254,8 +254,9 @@ namespace asharia::editor {
     }
 
     std::optional<EditorViewportResult>
-    EditorViewportCoordinator::acquireViewportTextureForDraw(std::string_view panelId) {
-        const ViewportSlot* slot = findPresentedViewportSlotForPanel(panelId);
+    EditorViewportCoordinator::acquireViewportTextureForDraw(std::string_view panelId,
+                                                             EditorViewportKind kind) {
+        const ViewportSlot* slot = findPresentedViewportSlotForView(panelId, kind);
         if (slot == nullptr) {
             return std::nullopt;
         }
@@ -613,10 +614,13 @@ namespace asharia::editor {
     }
 
     const EditorViewportCoordinator::ViewportSlot*
-    EditorViewportCoordinator::findPresentedViewportSlotForPanel(std::string_view panelId) const {
-        auto slot = std::ranges::find_if(viewportSlots_, [panelId](const ViewportSlot& item) {
-            return item.panelId.value == panelId && item.presentedTexture.ready();
-        });
+    EditorViewportCoordinator::findPresentedViewportSlotForView(std::string_view panelId,
+                                                                EditorViewportKind kind) const {
+        auto slot = std::ranges::find_if(
+            viewportSlots_, [panelId, kind](const ViewportSlot& item) {
+                return item.panelId.value == panelId && item.kind == kind &&
+                       item.presentedTexture.ready();
+            });
         return slot == viewportSlots_.end() ? nullptr : &*slot;
     }
 
