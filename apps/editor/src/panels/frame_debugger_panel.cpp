@@ -196,7 +196,8 @@ namespace asharia::editor {
                                   !preview.selectedExecutionEventId;
             const std::string label = passEventLabel(pass);
             if (ImGui::Selectable(label.c_str(), selected)) {
-                static_cast<void>(context.frameDebugger.selectReplayPass(pass.passIndex));
+                static_cast<void>(
+                    context.diagnostics.frameDebugger.selectReplayPass(pass.passIndex));
             }
             if (selected) {
                 ImGui::SetItemDefaultFocus();
@@ -218,7 +219,8 @@ namespace asharia::editor {
                                       *preview.selectedExecutionEventId == event.id;
                 const std::string label = executionEventLabel(event);
                 if (ImGui::Selectable(label.c_str(), selected)) {
-                    static_cast<void>(context.frameDebugger.selectReplayEvent(event.id));
+                    static_cast<void>(
+                        context.diagnostics.frameDebugger.selectReplayEvent(event.id));
                 }
                 if (selected) {
                     ImGui::SetItemDefaultFocus();
@@ -238,7 +240,8 @@ namespace asharia::editor {
                 const std::string label =
                     std::to_string(command.commandIndex) + " " + commandKindName(command.kind);
                 if (ImGui::Selectable(label.c_str(), false)) {
-                    static_cast<void>(context.frameDebugger.selectReplayPass(pass.passIndex));
+                    static_cast<void>(
+                        context.diagnostics.frameDebugger.selectReplayPass(pass.passIndex));
                 }
             }
         }
@@ -248,7 +251,7 @@ namespace asharia::editor {
                                const EditorFrameDebugPreview& preview) {
             const asharia::RenderGraphDiagnosticsSnapshot& snapshot = diagnostics.renderGraph;
             if (snapshot.passes.empty()) {
-                textUnformatted(context.i18n.text(EditorI18nTextQuery{
+                textUnformatted(context.ui.i18n.text(EditorI18nTextQuery{
                     .key = "frameDebug.passEmpty",
                     .fallback = "Pass: -",
                 }));
@@ -271,7 +274,7 @@ namespace asharia::editor {
             EditorFrameContext& context,
             const std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>& imageResources,
             const EditorFrameDebugPreview& preview) {
-            const EditorI18n& i18n = context.i18n;
+            const EditorI18n& i18n = context.ui.i18n;
             if (imageResources.empty()) {
                 textUnformatted(i18n.text("frameDebug.imageEmpty"));
                 return;
@@ -300,8 +303,9 @@ namespace asharia::editor {
                         *preview.selectedImageResourceIndex == resource->resourceIndex;
                     const std::string label = imageResourceLabel(*resource);
                     if (ImGui::Selectable(label.c_str(), selected)) {
-                        static_cast<void>(context.frameDebugger.selectPreviewImageResource(
-                            resource->resourceIndex));
+                        static_cast<void>(
+                            context.diagnostics.frameDebugger.selectPreviewImageResource(
+                                resource->resourceIndex));
                     }
                     if (selected) {
                         ImGui::SetItemDefaultFocus();
@@ -469,36 +473,36 @@ namespace asharia::editor {
             const asharia::BasicRenderViewExecutionEvent* event =
                 selectedExecutionEvent(diagnostics, preview);
             if (event != nullptr) {
-                drawSelectedExecutionEventDetails(context.i18n, *event);
+                drawSelectedExecutionEventDetails(context.ui.i18n, *event);
                 ImGui::Separator();
             }
 
-            drawSelectedPassDetails(context.i18n, diagnostics.renderGraph, preview);
+            drawSelectedPassDetails(context.ui.i18n, diagnostics.renderGraph, preview);
             ImGui::Separator();
             drawImageSelector(context, imageResources, preview);
 
             const bool previewVisible =
                 preview.status == EditorFrameDebugPreviewStatus::Available &&
                 hasEditorViewportTexture(preview.texture);
-            context.frameDebugger.notifyFrameDebugPreviewDrawn(previewVisible);
+            context.diagnostics.frameDebugger.notifyFrameDebugPreviewDrawn(previewVisible);
 
             const std::string previewStatus =
-                std::string{context.i18n.text("frameDebug.preview")} + ": " +
+                std::string{context.ui.i18n.text("frameDebug.preview")} + ": " +
                 std::string{editorFrameDebugPreviewStatusName(preview.status)} +
                 (preview.message.empty() ? std::string{} : " - " + preview.message);
             ImGui::TextUnformatted(previewStatus.c_str());
             drawPreviewTexture(preview, kPreviewImageMaxHeight);
         }
 
-        [[nodiscard]] bool shouldSmokeSelectRenderGraphTab(
-            EditorFrameContext& context, const EditorFrameDebugPreview& preview) {
-            if (!context.smokeMode ||
+        [[nodiscard]] bool shouldSmokeSelectRenderGraphTab(EditorFrameContext& context,
+                                                           const EditorFrameDebugPreview& preview) {
+            if (!context.ui.smokeMode ||
                 preview.status != EditorFrameDebugPreviewStatus::Available ||
                 !hasEditorViewportTexture(preview.texture)) {
                 return false;
             }
 
-            const EditorFrameDebuggerStats stats = context.frameDebugger.stats();
+            const EditorFrameDebuggerStats stats = context.diagnostics.frameDebugger.stats();
             return stats.previewTextureFramesDrawn > 0 &&
                    stats.frameDebugRenderGraphSnapshotFrames == 0;
         }
@@ -539,7 +543,7 @@ namespace asharia::editor {
 
             ImGui::BeginChild("frame-debug-event-list-pane", ImVec2{eventListWidth, 0.0F},
                               ImGuiChildFlags_Borders);
-            textUnformatted(context.i18n.text(EditorI18nTextQuery{
+            textUnformatted(context.ui.i18n.text(EditorI18nTextQuery{
                 .key = "frameDebug.events",
                 .fallback = "Passes / Events",
             }));
@@ -559,7 +563,7 @@ namespace asharia::editor {
             const std::vector<const asharia::RenderGraphDiagnosticsResourceNode*>& imageResources,
             const EditorFrameDebugPreview& preview) {
             if (ImGui::BeginTabBar("frame-debugger-view-tabs")) {
-                const std::string frameTab = context.i18n.label(EditorI18nLabelDesc{
+                const std::string frameTab = context.ui.i18n.label(EditorI18nLabelDesc{
                     .key = "frameDebug.frameView",
                     .stableId = "frame-debug-frame-view",
                     .fallback = "Frame",
@@ -570,7 +574,7 @@ namespace asharia::editor {
                     ImGui::EndTabItem();
                 }
 
-                const std::string graphTab = context.i18n.label(EditorI18nLabelDesc{
+                const std::string graphTab = context.ui.i18n.label(EditorI18nLabelDesc{
                     .key = "frameDebug.graphView",
                     .stableId = "frame-debug-graph-view",
                     .fallback = "RenderGraph",
@@ -580,8 +584,8 @@ namespace asharia::editor {
                         ? ImGuiTabItemFlags_SetSelected
                         : ImGuiTabItemFlags_None;
                 if (ImGui::BeginTabItem(graphTab.c_str(), nullptr, graphTabFlags)) {
-                    context.frameDebugger.notifyFrameDebugRenderGraphViewDrawn(true);
-                    drawSnapshotPane(context.i18n, capture, status, snapshot);
+                    context.diagnostics.frameDebugger.notifyFrameDebugRenderGraphViewDrawn(true);
+                    drawSnapshotPane(context.ui.i18n, capture, status, snapshot);
                     ImGui::EndTabItem();
                 }
                 ImGui::EndTabBar();
@@ -599,7 +603,7 @@ namespace asharia::editor {
 
     void FrameDebuggerPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
-        if (context.smokeMode) {
+        if (context.ui.smokeMode) {
             ImGui::SetNextWindowSize(ImVec2{560.0F, 320.0F}, ImGuiCond_Always);
         }
     }
@@ -608,23 +612,23 @@ namespace asharia::editor {
         static_cast<void>(state);
 
         const std::optional<EditorFrameDebugCapture>& pausedCapture =
-            context.frameDebugger.pausedCapture();
+            context.diagnostics.frameDebugger.pausedCapture();
         const std::optional<EditorFrameDebugCapture>& latestCapture =
-            pausedCapture ? pausedCapture : context.frameDebugger.latestCapture();
+            pausedCapture ? pausedCapture : context.diagnostics.frameDebugger.latestCapture();
 
         if (!latestCapture) {
-            textUnformatted(context.i18n.text("frameDebug.noCapture"));
+            textUnformatted(context.ui.i18n.text("frameDebug.noCapture"));
             return;
         }
 
         const std::string_view status =
-            pausedCapture ? context.i18n.text("frameDebug.status.frozen")
-                          : context.i18n.text("frameDebug.status.latestNotPaused");
+            pausedCapture ? context.ui.i18n.text("frameDebug.status.frozen")
+                          : context.ui.i18n.text("frameDebug.status.latestNotPaused");
         const asharia::RenderGraphDiagnosticsSnapshot& snapshot =
             latestCapture->diagnostics.renderGraph;
         const std::vector<const asharia::RenderGraphDiagnosticsResourceNode*> imageResources =
             capturedImageResources(snapshot);
-        const EditorFrameDebugPreview& preview = context.frameDebugger.preview();
+        const EditorFrameDebugPreview& preview = context.diagnostics.frameDebugger.preview();
         drawFrameDebugContent(context, *latestCapture, status, snapshot, imageResources, preview);
     }
 

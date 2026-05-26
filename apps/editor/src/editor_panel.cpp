@@ -163,7 +163,7 @@ namespace asharia::editor {
             }
 
             bool open = entry.state.open;
-            const std::string windowTitle = panelWindowTitle(entry.desc.id.value, context.i18n);
+            const std::string windowTitle = panelWindowTitle(entry.desc.id.value, context.ui.i18n);
             const bool visible = ImGui::Begin(windowTitle.c_str(), &open);
             const bool wasOpen = entry.state.open;
             entry.state.open = open;

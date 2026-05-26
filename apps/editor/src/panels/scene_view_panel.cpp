@@ -90,7 +90,8 @@ namespace {
     }
 
     [[nodiscard]] SceneOverlayStripResult
-    drawSceneOverlayStrip(const asharia::editor::EditorFrameContext& context,
+    drawSceneOverlayStrip(const asharia::editor::EditorFrameUiContext& uiContext,
+                          const asharia::editor::EditorFrameToolContext& tools,
                           std::string_view viewportId, ImVec2 viewportMin, ImVec2 viewportMax,
                           asharia::editor::EditorViewportOverlayFlags& flags) {
         constexpr float kOverlayPadding = 8.0F;
@@ -99,7 +100,7 @@ namespace {
         const ImGuiStyle& style = ImGui::GetStyle();
         float controlsWidth = 0.0F;
         int controlCount = 0;
-        context.tools.visitViewportOverlays(
+        tools.registry.visitViewportOverlays(
             viewportId, [&](const asharia::editor::EditorToolDesc& tool,
                             const asharia::editor::EditorToolViewportOverlayContribution& overlay) {
                 static_cast<void>(tool);
@@ -107,7 +108,7 @@ namespace {
                     return;
                 }
                 const SceneOverlayLabel text = sceneOverlayLabelForId(overlay.overlayId);
-                const std::string label = context.i18n.label(asharia::editor::EditorI18nLabelDesc{
+                const std::string label = uiContext.i18n.label(asharia::editor::EditorI18nLabelDesc{
                     .key = text.key,
                     .stableId = overlay.overlayId,
                     .fallback = text.fallback,
@@ -143,7 +144,7 @@ namespace {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0F);
         ImGui::BeginGroup();
         bool drewToggle = false;
-        context.tools.visitViewportOverlays(
+        tools.registry.visitViewportOverlays(
             viewportId, [&](const asharia::editor::EditorToolDesc& tool,
                             const asharia::editor::EditorToolViewportOverlayContribution& overlay) {
                 static_cast<void>(tool);
@@ -155,7 +156,7 @@ namespace {
                     ImGui::SameLine();
                 }
                 result.changed =
-                    drawSceneOverlayToggle(context.i18n, overlay, *flag) || result.changed;
+                    drawSceneOverlayToggle(uiContext.i18n, overlay, *flag) || result.changed;
                 drewToggle = true;
             });
         ImGui::EndGroup();
@@ -177,15 +178,15 @@ namespace asharia::editor {
         static_cast<void>(state);
 
         const ImGuiCond sceneWindowCond =
-            context.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+            context.ui.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
         if (const ImGuiViewport* mainViewport = ImGui::GetMainViewport(); mainViewport != nullptr) {
             ImGui::SetNextWindowPos(
                 ImVec2{mainViewport->WorkPos.x + 8.0F, mainViewport->WorkPos.y + 8.0F},
                 sceneWindowCond);
         }
         ImGui::SetNextWindowSize(
-            ImVec2{std::max(320.0F, static_cast<float>(context.swapchainExtent.width) * 0.60F),
-                   std::max(240.0F, static_cast<float>(context.swapchainExtent.height) * 0.62F)},
+            ImVec2{std::max(320.0F, static_cast<float>(context.ui.swapchainExtent.width) * 0.60F),
+                   std::max(240.0F, static_cast<float>(context.ui.swapchainExtent.height) * 0.62F)},
             sceneWindowCond);
     }
 
@@ -252,9 +253,8 @@ namespace asharia::editor {
         const EditorExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
         updateCameraForViewportExtent(viewportExtent);
         std::uint64_t viewportFrameIndex{};
-        if (const auto completed =
-                context.viewportHost.acquireViewportTextureForDraw(desc_.id.value,
-                                                                   EditorViewportKind::Scene);
+        if (const auto completed = context.viewport.host.acquireViewportTextureForDraw(
+                desc_.id.value, EditorViewportKind::Scene);
             completed && hasEditorViewportTexture(completed->texture)) {
             viewportFrameIndex = completed->texture.frameIndex;
             ImGui::Image(static_cast<ImTextureID>(completed->texture.textureId),
@@ -268,9 +268,9 @@ namespace asharia::editor {
         const ImVec2 viewportMax = ImGui::GetItemRectMax();
         const bool viewportHovered = ImGui::IsItemHovered();
         handleCameraNavigation(viewportExtent);
-        const SceneOverlayStripResult overlayStrip =
-            drawSceneOverlayStrip(context, desc_.id.value, viewportMin, viewportMax, overlayFlags_);
-        context.inputRouter.reportSceneView(EditorSceneViewInputState{
+        const SceneOverlayStripResult overlayStrip = drawSceneOverlayStrip(
+            context.ui, context.tools, desc_.id.value, viewportMin, viewportMax, overlayFlags_);
+        context.input.router.reportSceneView(EditorSceneViewInputState{
             .hovered = viewportHovered && !overlayStrip.hovered,
             .focused = state.focused,
         });
@@ -286,7 +286,7 @@ namespace asharia::editor {
             addEditorViewportRepaintReason(refresh.repaintReasons,
                                            EditorViewportRepaintReason::CameraInputChanged);
         }
-        context.viewportHost.requestViewport(EditorViewportRequest{
+        context.viewport.host.requestViewport(EditorViewportRequest{
             .panelId = desc_.id,
             .kind = EditorViewportKind::Scene,
             .extent = viewportExtent,
@@ -295,10 +295,10 @@ namespace asharia::editor {
             .refresh = refresh,
         });
 
-        const EditorI18n& i18n = context.i18n;
+        const EditorI18n& i18n = context.ui.i18n;
         const std::string swapchainText = std::string{i18n.text("scene.swapchain")} + ": " +
-                                          std::to_string(context.swapchainExtent.width) + "x" +
-                                          std::to_string(context.swapchainExtent.height);
+                                          std::to_string(context.ui.swapchainExtent.width) + "x" +
+                                          std::to_string(context.ui.swapchainExtent.height);
         const std::string viewportText = std::string{i18n.text("scene.viewport")} + ": " +
                                          std::to_string(viewportExtent.width) + "x" +
                                          std::to_string(viewportExtent.height);

@@ -98,8 +98,9 @@ flowchart TD
 - `apps/editor` 当前承担 editor host 和 editor smoke harness。它可以直接链接 ImGui、`window-glfw`、
   `rhi-vulkan` 和 `renderer_basic_vulkan`，因为这些都属于 host integration；未来
   `packages/editor-core` 只能保留 backend-neutral editor state。
-- Editor panels 只通过 `EditorFrameContext`、`EditorPanelRegistry` 和 `EditorViewportPanelHost`
-  消费服务。Scene View panel 不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
+- Editor panels 只通过 `EditorFrameContext` capability groups、`EditorPanelRegistry` 和
+  `EditorViewportPanelHost` 消费服务。Scene View panel 不创建 Vulkan objects、不注册 descriptor、不录
+  command buffer。
 
 ## 当前架构总览
 

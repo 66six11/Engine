@@ -40,7 +40,8 @@ namespace asharia::editor {
             const std::string label = actionLabel(*action, editorContext.i18n());
             const char* shortcut = action->shortcut.empty() ? nullptr : action->shortcut.c_str();
             if (ImGui::MenuItem(label.c_str(), shortcut, selected, action->enabled)) {
-                static_cast<void>(actionRegistry.invoke(action->id.value, editorContext));
+                static_cast<void>(
+                    actionRegistry.invoke(action->id.value, editorContext.actionInvokeContext()));
             }
         }
 
@@ -54,18 +55,17 @@ namespace asharia::editor {
             const std::string label = actionLabel(*action, editorContext.i18n());
             ImGui::BeginDisabled(!action->enabled);
             if (ImGui::SmallButton(label.c_str()) && action->enabled) {
-                static_cast<void>(actionRegistry.invoke(action->id.value, editorContext));
+                static_cast<void>(
+                    actionRegistry.invoke(action->id.value, editorContext.actionInvokeContext()));
             }
             ImGui::EndDisabled();
         }
 
         [[nodiscard]] bool drawToolbarSlot(EditorActionRegistry& actionRegistry,
-                                           EditorContext& editorContext,
-                                           EditorToolbarSlot slot) {
+                                           EditorContext& editorContext, EditorToolbarSlot slot) {
             bool drewAction = false;
             editorContext.tools().visitToolbarActions(
-                slot,
-                [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
+                slot, [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
                     static_cast<void>(tool);
                     if (drewAction) {
                         ImGui::SameLine();
@@ -80,8 +80,7 @@ namespace asharia::editor {
                                           EditorToolbarSlot slot) {
             bool hasAction = false;
             editorContext.tools().visitToolbarActions(
-                slot,
-                [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
+                slot, [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
                     static_cast<void>(tool);
                     static_cast<void>(action);
                     hasAction = true;
@@ -258,10 +257,10 @@ namespace asharia::editor {
             text(editorContext.frameDebugger().stateName());
             sameLineSeparator();
             const std::string frameText =
-                std::string{"Frame "} + std::to_string(frameContext.frameIndex);
+                std::string{"Frame "} + std::to_string(frameContext.ui.frameIndex);
             text(frameText);
             sameLineSeparator();
-            const std::string extent = extentText(frameContext.swapchainExtent);
+            const std::string extent = extentText(frameContext.ui.swapchainExtent);
             text(extent);
             sameLineSeparator();
             const std::string panelCount =

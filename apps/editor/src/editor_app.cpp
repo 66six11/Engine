@@ -503,7 +503,8 @@ namespace {
         const asharia::editor::EditorInspectedWorldScheduler& inspectedWorldScheduler,
         EditorFrameDebuggerSmokeState& state) {
         if (!state.captureRequested) {
-            state.captureRequested = actionRegistry.invoke("debug.capture-frame", editorContext);
+            state.captureRequested =
+                actionRegistry.invoke("debug.capture-frame", editorContext.actionInvokeContext());
             return;
         }
 
@@ -547,7 +548,8 @@ namespace {
                 return;
             }
 
-            state.resumeRequested = actionRegistry.invoke("debug.resume-frame", editorContext);
+            state.resumeRequested =
+                actionRegistry.invoke("debug.resume-frame", editorContext.actionInvokeContext());
             return;
         }
 
@@ -650,13 +652,11 @@ namespace {
                 "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
             return false;
         }
-        const auto debugLineDraw =
-            std::ranges::find_if(scene.executionEvents,
-                                 [](const asharia::BasicRenderViewExecutionEvent& event) {
-                                     return event.kind ==
-                                                asharia::BasicRenderViewExecutionEventKind::Draw &&
-                                            event.label == "DrawDebugWorldLines";
-                                 });
+        const auto debugLineDraw = std::ranges::find_if(
+            scene.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
+                return event.kind == asharia::BasicRenderViewExecutionEventKind::Draw &&
+                       event.label == "DrawDebugWorldLines";
+            });
         if (debugLineDraw == scene.executionEvents.end() ||
             debugLineDraw->draw.vertexCount != scene.overlay.debugWorldLineCount * 2U) {
             asharia::logError(
@@ -1506,24 +1506,30 @@ namespace {
             panelRegistry.clearLifecycleEvents();
             editorContext.eventQueue().clear();
             asharia::editor::EditorFrameContext frameContext{
-                .frameIndex = renderedFrames,
-                .swapchainExtent = editorExtentFromVk(frameLoop.extent()),
-                .smokeMode = smokeMode,
-                .eventQueue = editorContext.eventQueue(),
-                .diagnosticsLog = editorContext.diagnosticsLog(),
-                .frameDebugger = frameDebugger,
-                .i18n = editorContext.i18n(),
-                .settings = editorContext.settings(),
-                .tools = editorContext.tools(),
-                .inputRouter = inputRouter,
-                .renderGraphSnapshots = viewportHost,
-                .viewportHost = viewportHost,
+                .ui =
+                    {
+                        .frameIndex = renderedFrames,
+                        .swapchainExtent = editorExtentFromVk(frameLoop.extent()),
+                        .smokeMode = smokeMode,
+                        .i18n = editorContext.i18n(),
+                    },
+                .diagnostics =
+                    {
+                        .log = editorContext.diagnosticsLog(),
+                        .frameDebugger = frameDebugger,
+                    },
+                .settings = {.controller = editorContext.settings()},
+                .tools = {.registry = editorContext.tools()},
+                .input = {.router = inputRouter},
+                .renderGraph = {.snapshots = viewportHost},
+                .viewport = {.host = viewportHost},
             };
             buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
             requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();
             shortcutRouter.beginFrame(inputRouter.snapshot());
-            static_cast<void>(shortcutRouter.routeImGuiShortcuts(actionRegistry, editorContext));
+            static_cast<void>(shortcutRouter.routeImGuiShortcuts(
+                actionRegistry, editorContext.actionInvokeContext()));
             ImGui::Render();
 
             auto rendered =
@@ -1615,12 +1621,13 @@ namespace {
             return false;
         }
         editorContext.eventQueue().clear();
-        if (actionRegistry.invoke("file.open", editorContext) ||
+        if (actionRegistry.invoke("file.open", editorContext.actionInvokeContext()) ||
             actionRegistry.invokeCount("file.open") != 0 || !editorContext.eventQueue().empty()) {
             asharia::logError("Editor action registry smoke invoked a disabled action.");
             return false;
         }
-        if (!panelRegistry.closePanel("log") || !actionRegistry.invoke("view.log", editorContext) ||
+        if (!panelRegistry.closePanel("log") ||
+            !actionRegistry.invoke("view.log", editorContext.actionInvokeContext()) ||
             !panelRegistry.isOpen("log") || actionRegistry.invokeCount("view.log") != 1) {
             asharia::logError("Editor action registry smoke failed to route View/Log action.");
             return false;
@@ -1648,7 +1655,7 @@ namespace {
         }
         editorContext.eventQueue().clear();
 
-        if (!actionRegistry.invoke("view.ui-style-preview", editorContext) ||
+        if (!actionRegistry.invoke("view.ui-style-preview", editorContext.actionInvokeContext()) ||
             !panelRegistry.isOpen("ui-style-preview") ||
             actionRegistry.invokeCount("view.ui-style-preview") != 1 ||
             !panelRegistry.closePanel("ui-style-preview")) {
@@ -1657,7 +1664,7 @@ namespace {
         }
         editorContext.eventQueue().clear();
 
-        if (!actionRegistry.invoke("view.editor-settings", editorContext) ||
+        if (!actionRegistry.invoke("view.editor-settings", editorContext.actionInvokeContext()) ||
             !panelRegistry.isOpen("editor-settings") ||
             actionRegistry.invokeCount("view.editor-settings") != 1 ||
             !panelRegistry.closePanel("editor-settings")) {
@@ -1666,7 +1673,7 @@ namespace {
         }
         editorContext.eventQueue().clear();
 
-        if (!actionRegistry.invoke("view.reset-layout", editorContext) ||
+        if (!actionRegistry.invoke("view.reset-layout", editorContext.actionInvokeContext()) ||
             actionRegistry.invokeCount("view.reset-layout") != 1 ||
             editorContext.workspace().layoutResetRequestCount() != 1) {
             asharia::logError("Editor action registry smoke failed to request layout reset.");
@@ -1791,7 +1798,8 @@ namespace {
         shortcutRouter.beginFrame(asharia::editor::EditorInputSnapshot{
             .shortcutsEnabled = false,
         });
-        if (shortcutRouter.routeShortcut(actionRegistry, editorContext, "view.log", true) ||
+        if (shortcutRouter.routeShortcut(actionRegistry, editorContext.actionInvokeContext(),
+                                         "view.log", true) ||
             actionRegistry.invokeCount("view.log") != 1 || !editorContext.eventQueue().empty()) {
             asharia::logError("Editor shortcut router smoke invoked while shortcuts were "
                               "disabled.");
@@ -1801,14 +1809,16 @@ namespace {
         shortcutRouter.beginFrame(asharia::editor::EditorInputSnapshot{
             .shortcutsEnabled = true,
         });
-        if (shortcutRouter.routeShortcut(actionRegistry, editorContext, "file.open", true) ||
+        if (shortcutRouter.routeShortcut(actionRegistry, editorContext.actionInvokeContext(),
+                                         "file.open", true) ||
             actionRegistry.invokeCount("file.open") != 0 || !editorContext.eventQueue().empty()) {
             asharia::logError("Editor shortcut router smoke invoked a disabled action.");
             return false;
         }
 
         if (!panelRegistry.closePanel("log") ||
-            !shortcutRouter.routeShortcut(actionRegistry, editorContext, "view.log", true) ||
+            !shortcutRouter.routeShortcut(actionRegistry, editorContext.actionInvokeContext(),
+                                          "view.log", true) ||
             !panelRegistry.isOpen("log") || actionRegistry.invokeCount("view.log") != 2) {
             asharia::logError("Editor shortcut router smoke failed to invoke View/Log.");
             return false;
@@ -1839,7 +1849,7 @@ namespace {
                validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry) &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, panelRegistry) &&
                validateEditorSettingsSmoke(mode, editorContext) &&
-                validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry);
+               validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry);
     }
 
     class TestSetIntCommand final : public asharia::editor::EditorCommand {
@@ -1867,8 +1877,7 @@ namespace {
         int oldValue_{};
     };
 
-    [[nodiscard]] bool
-    validateEditorCommandSmoke(asharia::editor::EditorRunMode mode) {
+    [[nodiscard]] bool validateEditorCommandSmoke(asharia::editor::EditorRunMode mode) {
         if (!isSmokeMode(mode)) {
             return true;
         }
@@ -1886,8 +1895,7 @@ namespace {
             return false;
         }
         auto undoResult = history.undo();
-        if (!undoResult || testValue != 0 || history.undoDepth() != 0 ||
-            history.redoDepth() != 1) {
+        if (!undoResult || testValue != 0 || history.undoDepth() != 0 || history.redoDepth() != 1) {
             asharia::logError("Editor command smoke: undo did not restore value.");
             return false;
         }

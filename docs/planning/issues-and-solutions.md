@@ -158,7 +158,7 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 
 ### 2.1 [Partially Fixed] Editor Context 与 App Glue 有 God Object 风险
 
-**优先级**: P3-E | **状态**: Partially Fixed (2026-05-25)
+**优先级**: P3-E | **状态**: Partially Fixed (2026-05-26)
 
 **根因**:
 - `EditorContext` 暴露 panel registry、event queue、diagnostics、frame debugger、i18n、settings、workspace 和 tools
@@ -170,9 +170,18 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 2. `editor_app.cpp` 减至 ~2085 行
 3. 新增 `EditorCommand` / `EditorTransaction` / `EditorCommandHistory` 体系，为未来 editor mutation 提供 undo/redo 基础
 
-**待完成 (Step 2)**:
-- 窄化 `EditorFrameContext` 为 capability-scoped context (ViewportContext / InputContext / UiContext / ToolContext)
-- Panel `draw()` 只接收需要的窄 context
+**已修复 (Step 2a)**:
+1. `EditorFrameContext` 不再暴露扁平服务集合，改为 `ui` / `diagnostics` / `settings` / `tools` /
+   `input` / `renderGraph` / `viewport` capability groups
+2. `EditorActionRegistry` dispatch 改为 `EditorActionInvokeContext`，统一负责 `ActionInvoked`
+   event；callback 只接收 `EditorActionContext`，action handler 只能访问 panel registry、frame
+   debugger 和 workspace layout 能力
+3. Scene View overlay helper 已以 `EditorFrameUiContext` + `EditorFrameToolContext` 作为窄 helper
+   边界，作为后续逐 panel context 收敛样例
+
+**待完成 (Step 2b)**:
+- 继续把 Panel `draw()` / `prepareWindow()` 从顶层 `EditorFrameContext` 推向逐面板需要的窄 context
+- 继续拆分 `editor_app.cpp` 中的 smoke checks、frame loop 和 ImGui/Vulkan glue
 
 ---
 
@@ -622,8 +631,8 @@ RenderGraphImageState::ShaderRead(fragment) → {
 
 **a) Editor Action (经典 Command):**
 - **位置**: `apps/editor/src/editor_action.hpp`
-- **形态**: `EditorActionDesc` + `EditorActionCallback = std::function<void(EditorContext&)>`，通过 `EditorActionRegistry::invoke(actionId, context)` 调用
-- **评价**: **正确但初级阶段**。当前 action 直接修改 state，没有 `execute()`/`undo()` 分离。和 `EditorCommand` / `EditorTransaction` 的差距见 10.4.1
+- **形态**: `EditorActionDesc` + `EditorActionCallback = std::function<void(EditorActionContext&)>`，通过 `EditorActionRegistry::invoke(actionId, actionInvokeContext)` 调用
+- **评价**: **正确但仍是过渡阶段**。当前 action 已不接收完整 `EditorContext`，但仍直接修改 panel/debug/workspace state，没有 `execute()`/`undo()` 分离。和 `EditorCommand` / `EditorTransaction` 的差距见 10.4.1
 - **对标**: Unity `EditorApplication.ExecuteMenuItem()`, Unreal `FUICommandList::ExecuteAction()`
 
 **b) RenderGraph Command (Interpreter 变体):**

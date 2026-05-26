@@ -25,11 +25,12 @@ namespace asharia::editor {
     void LogPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
-        const EditorI18n& i18n = context.i18n;
+        const EditorI18n& i18n = context.ui.i18n;
         const std::string modeText =
             std::string{i18n.text("log.mode")} + ": " +
-            std::string{i18n.text(context.smokeMode ? "log.mode.smoke" : "log.mode.interactive")};
-        const EditorInputSnapshot& input = context.inputRouter.snapshot();
+            std::string{
+                i18n.text(context.ui.smokeMode ? "log.mode.smoke" : "log.mode.interactive")};
+        const EditorInputSnapshot& input = context.input.router.snapshot();
         const std::string inputCaptureText =
             std::string{i18n.text("log.inputCapture")} + ": " +
             std::string{i18n.text("log.mouse")} + "=" + yesNo(i18n, input.imguiWantsMouse) + ", " +
@@ -55,7 +56,7 @@ namespace asharia::editor {
                                i18n.text("log.recentEvents").data() +
                                    i18n.text("log.recentEvents").size());
         const std::span<const EditorDiagnosticEvent> recentEvents =
-            context.diagnosticsLog.recentEvents();
+            context.diagnostics.log.recentEvents();
         if (recentEvents.empty()) {
             ImGui::TextUnformatted(i18n.text("log.noEvents").data(),
                                    i18n.text("log.noEvents").data() +

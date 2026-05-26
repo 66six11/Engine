@@ -56,19 +56,46 @@ namespace asharia::editor {
         std::uint32_t contentHeight{1};
     };
 
-    struct EditorFrameContext {
+    struct EditorFrameUiContext {
         int frameIndex{};
         EditorExtent2D swapchainExtent;
         bool smokeMode{};
-        EditorEventQueue& eventQueue;
-        EditorDiagnosticsLog& diagnosticsLog;
-        EditorFrameDebugger& frameDebugger;
         EditorI18n& i18n;
-        EditorSettingsController& settings;
-        const EditorToolRegistry& tools;
-        EditorInputRouter& inputRouter;
-        EditorRenderGraphSnapshotProvider& renderGraphSnapshots;
-        EditorViewportPanelHost& viewportHost;
+    };
+
+    struct EditorFrameDiagnosticsContext {
+        EditorDiagnosticsLog& log;
+        EditorFrameDebugger& frameDebugger;
+    };
+
+    struct EditorFrameSettingsContext {
+        EditorSettingsController& controller;
+    };
+
+    struct EditorFrameToolContext {
+        const EditorToolRegistry& registry;
+    };
+
+    struct EditorFrameInputContext {
+        EditorInputRouter& router;
+    };
+
+    struct EditorFrameRenderGraphContext {
+        EditorRenderGraphSnapshotProvider& snapshots;
+    };
+
+    struct EditorFrameViewportContext {
+        EditorViewportPanelHost& host;
+    };
+
+    struct EditorFrameContext {
+        EditorFrameUiContext ui;
+        EditorFrameDiagnosticsContext diagnostics;
+        EditorFrameSettingsContext settings;
+        EditorFrameToolContext tools;
+        EditorFrameInputContext input;
+        EditorFrameRenderGraphContext renderGraph;
+        EditorFrameViewportContext viewport;
     };
 
     class ImGuiEditorPanel {

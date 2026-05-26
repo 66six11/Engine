@@ -19,44 +19,40 @@
 
 namespace asharia::editor {
 
-    [[nodiscard]] asharia::VoidResult
-    registerEditorPanels(EditorPanelRegistry& panelRegistry) {
-        auto sceneView = panelRegistry.registerPanel(
-            [] { return std::make_unique<SceneViewPanel>(); });
+    [[nodiscard]] asharia::VoidResult registerEditorPanels(EditorPanelRegistry& panelRegistry) {
+        auto sceneView =
+            panelRegistry.registerPanel([] { return std::make_unique<SceneViewPanel>(); });
         if (!sceneView) {
             return std::unexpected{std::move(sceneView.error())};
         }
 
-        auto renderGraph = panelRegistry.registerPanel(
-            [] { return std::make_unique<RenderGraphPanel>(); });
+        auto renderGraph =
+            panelRegistry.registerPanel([] { return std::make_unique<RenderGraphPanel>(); });
         if (!renderGraph) {
             return std::unexpected{std::move(renderGraph.error())};
         }
 
-        auto frameDebugger = panelRegistry.registerPanel(
-            [] { return std::make_unique<FrameDebuggerPanel>(); });
+        auto frameDebugger =
+            panelRegistry.registerPanel([] { return std::make_unique<FrameDebuggerPanel>(); });
         if (!frameDebugger) {
             return std::unexpected{std::move(frameDebugger.error())};
         }
 
-        auto log = panelRegistry.registerPanel(
-            [] { return std::make_unique<LogPanel>(); });
+        auto log = panelRegistry.registerPanel([] { return std::make_unique<LogPanel>(); });
         if (!log) {
             return std::unexpected{std::move(log.error())};
         }
 
-        auto settings = panelRegistry.registerPanel(
-            [] { return std::make_unique<EditorSettingsPanel>(); });
+        auto settings =
+            panelRegistry.registerPanel([] { return std::make_unique<EditorSettingsPanel>(); });
         if (!settings) {
             return std::unexpected{std::move(settings.error())};
         }
 
-        return panelRegistry.registerPanel(
-            [] { return std::make_unique<UiStylePreviewPanel>(); });
+        return panelRegistry.registerPanel([] { return std::make_unique<UiStylePreviewPanel>(); });
     }
 
-    [[nodiscard]] asharia::VoidResult
-    registerEditorActions(EditorActionRegistry& actionRegistry) {
+    [[nodiscard]] asharia::VoidResult registerEditorActions(EditorActionRegistry& actionRegistry) {
         auto newScene = actionRegistry.registerAction(EditorActionDesc{
             .id = EditorId{.value = "file.new-scene"},
             .menuPath = "File",
@@ -102,8 +98,8 @@ namespace asharia::editor {
                 .shortcut = "Ctrl+1",
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("scene-view"));
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("scene-view"));
             });
         if (!sceneView) {
             return std::unexpected{std::move(sceneView.error())};
@@ -118,8 +114,8 @@ namespace asharia::editor {
                 .shortcut = "Ctrl+3",
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("render-graph"));
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("render-graph"));
             });
         if (!renderGraph) {
             return std::unexpected{std::move(renderGraph.error())};
@@ -134,8 +130,8 @@ namespace asharia::editor {
                 .shortcut = "Ctrl+4",
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("frame-debugger"));
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("frame-debugger"));
             });
         if (!frameDebugger) {
             return std::unexpected{std::move(frameDebugger.error())};
@@ -150,8 +146,8 @@ namespace asharia::editor {
                 .shortcut = "Ctrl+2",
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("log"));
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("log"));
             });
         if (!log) {
             return std::unexpected{std::move(log.error())};
@@ -166,8 +162,8 @@ namespace asharia::editor {
                 .shortcut = "Ctrl+5",
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("ui-style-preview"));
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("ui-style-preview"));
             });
         if (!uiStylePreview) {
             return std::unexpected{std::move(uiStylePreview.error())};
@@ -182,8 +178,8 @@ namespace asharia::editor {
                 .shortcut = {},
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.panelRegistry().focusPanel("editor-settings"));
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("editor-settings"));
             });
         if (!editorSettings) {
             return std::unexpected{std::move(editorSettings.error())};
@@ -198,9 +194,7 @@ namespace asharia::editor {
                 .shortcut = {},
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                context.workspace().requestLayoutReset();
-            });
+            [](EditorActionContext& context) { context.workspace.requestLayoutReset(); });
         if (!resetLayout) {
             return std::unexpected{std::move(resetLayout.error())};
         }
@@ -214,8 +208,8 @@ namespace asharia::editor {
                 .shortcut = "F8",
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.frameDebugger().requestCapture());
+            [](EditorActionContext& context) {
+                static_cast<void>(context.frameDebugger.requestCapture());
             });
         if (!captureFrame) {
             return std::unexpected{std::move(captureFrame.error())};
@@ -230,13 +224,12 @@ namespace asharia::editor {
                 .shortcut = "Shift+F8",
                 .enabled = true,
             },
-            [](EditorContext& context) {
-                static_cast<void>(context.frameDebugger().requestResume());
+            [](EditorActionContext& context) {
+                static_cast<void>(context.frameDebugger.requestResume());
             });
     }
 
-    [[nodiscard]] asharia::VoidResult
-    registerEditorTools(EditorToolRegistry& toolRegistry) {
+    [[nodiscard]] asharia::VoidResult registerEditorTools(EditorToolRegistry& toolRegistry) {
         auto sceneView = toolRegistry.registerTool(EditorToolDesc{
             .id = EditorId{.value = "tool.scene-view"},
             .title = "Scene View",

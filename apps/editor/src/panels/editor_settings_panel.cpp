@@ -141,15 +141,16 @@ namespace asharia::editor {
 
     void EditorSettingsPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
-        const ImGuiCond condition = context.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+        const ImGuiCond condition =
+            context.ui.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
         ImGui::SetNextWindowSize(ImVec2{440.0F, 180.0F}, condition);
     }
 
     void EditorSettingsPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
-        EditorSettingsController& settings = context.settings;
-        const EditorI18n& i18n = context.i18n;
+        EditorSettingsController& settings = context.settings.controller;
+        const EditorI18n& i18n = context.ui.i18n;
 
         drawEditorUiSectionHeader(i18n.text("settings.general"));
         if (beginEditorUiPropertyTable("editor-settings-general", 128.0F)) {

@@ -274,7 +274,11 @@ Add built-in panels by implementing `ImGuiEditorPanel` under `apps/editor/src/pa
 
 Panel rules:
 
-- Use `EditorFrameContext` services.
+- Use the capability groups on `EditorFrameContext` (`ui`, `diagnostics`, `settings`, `tools`,
+  `input`, `renderGraph`, `viewport`) instead of adding new flat service-locator fields.
+- Panel-local helpers should accept the smallest capability group they need; keep the top-level
+  `ImGuiEditorPanel` virtual entry point as the adapter boundary until the panel API is narrowed
+  further.
 - Declare category and preferred dock metadata in `EditorPanelDesc`; workspace presets can use that metadata or explicitly
   list panel ids for default layouts.
 - Keep persistent scene/asset edits out of `draw()` until transactions exist.
@@ -309,6 +313,8 @@ Action rules:
 - Use stable action ids such as `view.scene-view`.
 - Keep `shortcut` strings in action descriptors; `EditorShortcutRouter` is the only per-frame ImGui shortcut poller.
 - Emit `ActionInvoked` through the event queue.
+- Keep callbacks on `EditorActionContext`; `EditorActionInvokeContext` owns event emission for
+  dispatch, and full `EditorContext` should not enter command handlers.
 - 未来状态修改必须通过 command/transaction services。
 
 ### Input 扩展

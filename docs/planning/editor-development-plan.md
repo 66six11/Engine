@@ -220,13 +220,25 @@ struct EditorActionDesc {
     bool enabled{true};
 };
 
-using EditorActionCallback = std::function<void(EditorContext&)>;
+struct EditorActionContext {
+    EditorPanelRegistry& panels;
+    EditorFrameDebugger& frameDebugger;
+    EditorWorkspaceController& workspace;
+};
+
+struct EditorActionInvokeContext {
+    EditorEventQueue& eventQueue;
+    EditorActionContext actions;
+};
+
+using EditorActionCallback = std::function<void(EditorActionContext&)>;
 ```
 
 Rules:
 
 - Menus, shortcuts and future command palette invoke the same action ids.
-- Actions mutate editor state only through explicit services such as panel registry, selection, transaction or app commands.
+- Actions mutate editor state only through explicit services exposed by `EditorActionContext`; future persistent changes must
+  route through selection, transaction or app command services instead of full `EditorContext`.
 - `ActionInvoked` is an editor event, not the mutation itself. Menu, shortcut, command palette and script are invocation
   sources, not separate action meanings.
 - Disabled actions remain registered so menu/shortcut UI can show stable layout and diagnostics.

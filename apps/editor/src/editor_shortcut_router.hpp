@@ -7,8 +7,8 @@
 
 namespace asharia::editor {
 
+    struct EditorActionInvokeContext;
     class EditorActionRegistry;
-    class EditorContext;
 
     struct EditorShortcutRouterStats {
         std::uint64_t evaluatedFrames{};
@@ -22,10 +22,10 @@ namespace asharia::editor {
     public:
         void beginFrame(const EditorInputSnapshot& input);
         [[nodiscard]] bool routeImGuiShortcuts(EditorActionRegistry& actionRegistry,
-                                               EditorContext& context);
+                                               EditorActionInvokeContext context);
         [[nodiscard]] bool routeShortcut(EditorActionRegistry& actionRegistry,
-                                         EditorContext& context, std::string_view actionId,
-                                         bool pressed);
+                                         EditorActionInvokeContext context,
+                                         std::string_view actionId, bool pressed);
 
         [[nodiscard]] EditorShortcutRouterStats stats() const;
 

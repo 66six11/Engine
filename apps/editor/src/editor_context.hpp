@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "editor_action.hpp"
 #include "editor_event.hpp"
 #include "editor_panel.hpp"
 #include "editor_tool.hpp"
@@ -34,6 +35,7 @@ namespace asharia::editor {
         [[nodiscard]] const EditorWorkspaceController& workspace() const;
         [[nodiscard]] EditorToolRegistry& tools();
         [[nodiscard]] const EditorToolRegistry& tools() const;
+        [[nodiscard]] EditorActionInvokeContext actionInvokeContext();
 
     private:
         EditorPanelRegistry& panelRegistry_;

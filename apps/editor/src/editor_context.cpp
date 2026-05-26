@@ -12,8 +12,8 @@ namespace asharia::editor {
                                  EditorSettingsController& settings,
                                  EditorWorkspaceController& workspace, EditorToolRegistry& tools)
         : panelRegistry_(panelRegistry), eventQueue_(eventQueue), diagnosticsLog_(diagnosticsLog),
-          frameDebugger_(frameDebugger), i18n_(i18n), settings_(settings),
-          workspace_(workspace), tools_(tools) {}
+          frameDebugger_(frameDebugger), i18n_(i18n), settings_(settings), workspace_(workspace),
+          tools_(tools) {}
 
     EditorPanelRegistry& EditorContext::panelRegistry() {
         return panelRegistry_;
@@ -77,6 +77,18 @@ namespace asharia::editor {
 
     const EditorToolRegistry& EditorContext::tools() const {
         return tools_;
+    }
+
+    EditorActionInvokeContext EditorContext::actionInvokeContext() {
+        return EditorActionInvokeContext{
+            .eventQueue = eventQueue_,
+            .actions =
+                {
+                    .panels = panelRegistry_,
+                    .frameDebugger = frameDebugger_,
+                    .workspace = workspace_,
+                },
+        };
     }
 
 } // namespace asharia::editor

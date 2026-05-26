@@ -15,7 +15,7 @@ namespace asharia::editor {
 
     void RenderGraphPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
-        if (context.smokeMode) {
+        if (context.ui.smokeMode) {
             ImGui::SetNextWindowSize(ImVec2{560.0F, 320.0F}, ImGuiCond_Always);
         }
     }
@@ -24,23 +24,23 @@ namespace asharia::editor {
         static_cast<void>(state);
 
         const std::optional<EditorRenderGraphSnapshot> liveSnapshot =
-            context.renderGraphSnapshots.latestLiveRenderGraphSnapshot();
+            context.renderGraph.snapshots.latestLiveRenderGraphSnapshot();
         const bool snapshotVisible = liveSnapshot && liveSnapshot->snapshot != nullptr;
-        context.renderGraphSnapshots.notifyLiveRenderGraphViewDrawn(snapshotVisible);
+        context.renderGraph.snapshots.notifyLiveRenderGraphViewDrawn(snapshotVisible);
         if (!snapshotVisible) {
-            const std::string_view text = context.i18n.text("renderGraph.noLiveSnapshot");
+            const std::string_view text = context.ui.i18n.text("renderGraph.noLiveSnapshot");
             ImGui::TextUnformatted(text.data(), text.data() + text.size());
             return;
         }
 
         drawRenderGraphSnapshotView(
             RenderGraphSnapshotViewDesc{
-                .sourceLabel = context.i18n.text("renderGraph.liveSource"),
-                .statusLabel = context.i18n.text("renderGraph.status.latestCompiled"),
+                .sourceLabel = context.ui.i18n.text("renderGraph.liveSource"),
+                .statusLabel = context.ui.i18n.text("renderGraph.status.latestCompiled"),
                 .viewKind = liveSnapshot->viewKind,
                 .requestedExtent = liveSnapshot->requestedExtent,
                 .submittedFrameEpoch = liveSnapshot->submittedFrameEpoch,
-                .i18n = context.i18n,
+                .i18n = context.ui.i18n,
             },
             *liveSnapshot->snapshot);
     }
