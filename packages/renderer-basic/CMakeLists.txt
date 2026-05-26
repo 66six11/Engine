@@ -114,6 +114,30 @@ set(ASHARIA_RENDERER_BASIC_MESH3D_FRAG_METADATA
 set(ASHARIA_RENDERER_BASIC_MESH3D_FRAG_REFLECTION
     "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.frag.reflection.json"
 )
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.slang"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.vert.spv"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.vert.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.vert.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.frag.spv"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.frag.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.frag.reflection.json"
+)
 set(ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_SOURCE
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/basic_compute.slang"
 )
@@ -190,6 +214,26 @@ asharia_add_slang_shader(asharia-renderer-basic-mesh3d-frag
     DEPENDS "${ASHARIA_RENDERER_BASIC_MESH3D_SHADER_MANIFEST}"
 )
 
+asharia_add_slang_shader(asharia-renderer-basic-debug-line-vert
+    SOURCE "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_SOURCE}"
+    ENTRY debugLineVertexMain
+    STAGE vertex
+    OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST}"
+)
+
+asharia_add_slang_shader(asharia-renderer-basic-debug-line-frag
+    SOURCE "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_SOURCE}"
+    ENTRY debugLineFragmentMain
+    STAGE fragment
+    OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST}"
+)
+
 asharia_add_slang_shader(asharia-renderer-basic-compute-comp
     SOURCE "${ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_SOURCE}"
     ENTRY computeMain
@@ -208,6 +252,8 @@ add_custom_target(asharia-renderer-basic-shaders
         asharia-renderer-basic-descriptor-frag
         asharia-renderer-basic-mesh3d-vert
         asharia-renderer-basic-mesh3d-frag
+        asharia-renderer-basic-debug-line-vert
+        asharia-renderer-basic-debug-line-frag
         asharia-renderer-basic-compute-comp
 )
 

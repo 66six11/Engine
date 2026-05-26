@@ -10,7 +10,7 @@
 | 门禁 | 问题 | 状态 | 完成日期 |
 |------|------|------|---------|
 | **A** | Format / capability contract | ✓ Fixed | 2026-05-23 |
-| **B** | RenderView camera → GPU contract | ◐ Partially Fixed (B.2) | 2026-05-25 |
+| **B** | RenderView camera → GPU contract | ◐ Partially Fixed (B.2+B.3 renderer slice) | 2026-05-25 |
 | **C** | Multi-view request model | ✓ Fixed | 2026-05-23 |
 | **D** | Graph-visible GPU work | ✓ Fixed | 2026-05-25 |
 | **E** | Editor state and command model | ◐ Partially Fixed (Step 1+3) | 2026-05-25 |
@@ -44,22 +44,25 @@
 
 ---
 
-### 1.2 [Partially Fixed] RenderView Camera 数据只到 Diagnostics 不到 GPU
+### 1.2 [Partially Fixed] RenderView Camera 数据已进入 GPU Overlay Path
 
-**优先级**: P2-B | **状态**: Partially Fixed (2026-05-25)
+**优先级**: P2-B | **状态**: Partially Fixed (2026-05-26)
 
 **根因**:
 `EditorViewportCoordinator` 已经把 camera 数据桥接到 `BasicRenderViewOverlayDesc`，overlay enabled 时会插入 `builtin.render-view-overlay` pass。但 `BasicMesh3DRenderer` 等 sample renderer 在 renderer 内部用 `basicMesh3DProjectionMatrix(extent)` 和硬编码的 `basicMesh3DModelMatrix()` 计算 MVP，不从 `BasicRenderViewCamera` 读取。
 
-**已修复 (B.2)**:
+**已修复 (B.2+B.3 renderer slice)**:
 1. `BasicMesh3DRendererDesc` 新增 `camera` + `useRenderViewCamera` 字段
 2. `BasicMesh3DRenderer` 存储 camera，`recordFrame` 在 camera 模式用 `camera.viewProjection * modelMatrix` 替代硬编码投影
 3. 新增 `basicMesh3DPushConstants(camera, model)` 重载
 4. `recordMesh3DDraw` 接受 optional camera 指针
+5. `builtin.render-view-overlay` pass 在存在 `BasicDebugWorldLine` 时创建 renderer-owned debug-line pipeline，以 `VK_PRIMITIVE_TOPOLOGY_LINE_LIST` 绘制 Scene View grid/world lines。
+6. `BasicFullscreenTextureRenderer` 为 debug-line vertex upload 使用 per-frame buffer ring，避免同一帧多 RenderView / Frame Debug replay 复用正在录制的上传缓冲。
+7. `--smoke-editor-viewport` 验证 Scene View overlay pass 产生 `DrawDebugWorldLines` execution event，且 vertex count 等于 debug-world-line count × 2。
 
-**待完成 (B.3)**:
-- 可见 debug-line/grid GPU pass（需 shader 工作）
-- GPU smoke 验证不同 camera position 产生不同渲染输出
+**待完成**:
+- Camera-aware grid range/fade policy；当前 grid provider 仍输出原点附近固定 XZ line packet。
+- Pixel/readback 级 GPU smoke 验证不同 camera position 产生不同渲染输出；当前 smoke 覆盖 graph pass、draw event、vertex count 和 Vulkan validation。
 
 **行业参考**:
 - Unity: `UNITY_MATRIX_V`、`UNITY_MATRIX_P`、`_WorldSpaceCameraPos` 等 built-in shader variables，通过 `PerCamera` 或 `PerView` constant buffer 绑定。Unreal: `FSceneView::ViewUniformBuffer` 包含 ViewProjectionMatrix、ViewOrigin、PreExposure 等全集。Godot: 空间 shader built-ins 包括 `VIEW_MATRIX`、`PROJECTION_MATRIX`、`INV_VIEW_MATRIX`、`CAMERA_POSITION_WORLD` 等。所有三个引擎都把 view/camera 数据作为 shader 输入合同，不是 diagnostics-only。
@@ -374,34 +377,36 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 
 ---
 
-### 6.2 [Open] Scene View Camera 仍不完整 (Orbit/Pan/Dolly)
+### 6.2 [Fixed] Scene View Camera Orbit/Pan/Dolly 交互已接入
 
-**优先级**: P4 | **状态**: Open
+**优先级**: P4 | **状态**: Fixed (2026-05-25)
 
 **根因**:
-当前 Scene View panel 的 camera/unproject code (`editor_viewport_camera.hpp`) 已经支持 resize 后的投影重算和 viewport pixel → world ray unproject，但还没有 interactive orbit/pan/dolly 输入处理。
+Scene View panel 的 camera/unproject code (`editor_viewport_camera.hpp`) 已经支持 resize 后的投影重算和 viewport pixel → world ray unproject；原缺口是 viewport 内没有 interactive orbit/pan/dolly 输入处理，导致相机状态虽能进入 RenderView request，但用户无法通过 Scene View 交互驱动它。
 
 **行业参考**:
 - Unreal `FEditorViewportClient`: 拥有 `ViewTransform`、`CameraSpeed`、`EnableRealTimeMouse`, 用 `InputAxis` 驱动
 - Unity `SceneView`: `SceneView.lastActiveSceneView.pivot`、`SceneView.size`
 - Godot `EditorNode3DGizmoPlugin`: 继承 EditorPlugin，使用 `SubViewport` 的 camera
 
-**解决方案**:
-1. 在现有 `EditorViewportCamera` 中补:
+**修复方案** (已完成):
+1. 在 `EditorViewportCamera` helper 中补:
    ```cpp
-   void orbit(float deltaX, float deltaY);  // 绕 pivot 旋转
-   void pan(float deltaX, float deltaY);     // 沿 view plane 平移
-   void dolly(float delta);                  // 沿 forward 缩放
-   vec3 pivot() const;
+   void orbitEditorViewportCamera(EditorViewportCamera& camera, float deltaYaw, float deltaPitch);
+   void panEditorViewportCamera(EditorViewportCamera& camera, float deltaX, float deltaY, EditorExtent2D extent);
+   void dollyEditorViewportCamera(EditorViewportCamera& camera, float delta);
    ```
 
-2. `SceneViewPanel` 消费 `EditorInputRouter` 的 mouse delta + button state
-3. `CameraInputChanged` repaint reason 触发新的 RenderView recording
+2. `SceneViewPanel::handleCameraNavigation()` 消费 viewport hover、right-drag、middle-drag 和 mouse wheel，分别驱动 orbit / pan / dolly。
+3. 相机变化后重算 projection，并通过 `CameraInputChanged` repaint reason 触发新的 RenderView recording。
 
 **验收**:
-- Scene View 单击拖拽可 orbit/pan/dolly
-- 相机变化后 viewport 输出正确更新
-- `--smoke-editor-viewport` 或新增 camera smoke 验证
+- Scene View right-drag / middle-drag / wheel 可 orbit / pan / dolly。
+- 相机变化后 viewport 输出通过 `CameraInputChanged` 进入 on-demand repaint。
+- `--smoke-editor-viewport` 继续验证 camera diagnostics、unproject、resize aspect 和 Scene View repaint path。
+
+**后续要求**:
+- Camera-aware grid range/fade policy 仍归属于 RenderView/grid 后续切片，不在本条重复推进。
 
 ---
 
@@ -439,11 +444,11 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 
 ### 7.3 当前最需要关注的 5 个改变
 
-1. **Editor 有了 panel/action/event, 缺 command/transaction**: 否则没法加 undo/redo, material editor, asset browser
-2. **RenderView camera 仍停留在 diagnostics**: 继续拓展 gizmo/grid/selection 前必须让 camera 成为真实 GPU binding
-3. **Compute dispatch 的 graph 外 GPU work**: 继续增加 upload/copy/fill 的快速路径会破坏 Frame Debug 和 RG View 可信度
-4. **`render_graph.hpp` 在继续扩容**: 不加 API/implementation 分离会让后续 compile 改动影响所有 includer
-5. **Asset pipeline 只有 metadata**: 离真正的 mesh/texture 上传还有大量工具链工作
+1. **Editor context 仍需 capability-scoped 收敛**: command/transaction 已有基础，但 `EditorContext` / `EditorFrameContext` 仍是宽服务集合，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
+2. **Grid 仍需 camera-aware policy 和 pixel smoke**: renderer-owned debug-line GPU pass 已落地，但 grid provider 仍是固定原点 packet，尚未按 camera range/fade 生成稳定可读网格，也未做像素/readback 级 camera-difference 验证。
+3. **`render_graph.hpp` 仍需继续拆分实现边界**: types / compile headers 已提取，后续复杂 compiler/cache/unsafe pass 前还需要把更多实现移出大型 public header。
+4. **Asset pipeline 只有 metadata / catalog 基线**: 离真正的 source scan、product manifest、mesh/texture upload 还有工具链工作。
+5. **renderer_basic_vulkan 仍是单 TU `.inl` 分片**: 后续 renderer pass 增多前需要拆分编译单元，降低改动耦合和编译成本。
 
 ---
 
@@ -454,15 +459,17 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 ```
 已完成:
   A. Format contract ✓
+  B. RenderView camera → GPU contract B.2 + B.3 renderer slice ✓
   C. Multi-view request ✓
+  D. Graph-visible compute fill ✓
+  E. Editor command/transaction base ✓
 
 立即 (阻塞后续功能):
-  B. RenderView camera → GPU contract (1.2)
-  D. Graph-visible compute fill (1.3)
-  E. Editor context + command model (2.1, 2.3)
+  E.2 Capability-scoped EditorFrameContext / EditorContext 收敛 (2.1)
 
 短期 (2-4 轮迭代):
-  F. RenderGraph API/implementation split (1.4)
+  Grid camera-aware range/fade policy + pixel/readback camera smoke (1.2)
+  F. RenderGraph API/implementation split Phase 4+ (1.4)
   2.4 Game View panel
   1.5 Frame wait stage 拓展 (在多 RenderView 稳定后)
 
@@ -471,7 +478,6 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
   4.1 Asset pipeline 第一批 importer
   5.1 Scene file persistence 接入 schema
   6.1 renderer_basic_vulkan split
-  6.2 Scene View camera 交互
 
 长期:
   多线程 frame loop

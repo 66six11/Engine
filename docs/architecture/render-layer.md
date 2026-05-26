@@ -21,9 +21,10 @@
   contract。
 - `recordViewFrame()` 当前会构建 RenderGraph、记录 diagnostics 和 execution events。overlay enabled 的
   RenderView 会插入 `builtin.render-view-overlay` pass，把 camera / frame / debug-world-line count 作为 typed
-  params 与 command summary 进入 graph，并通过 dynamic-rendering load/store 触碰目标 attachment。它仍不是可见
-  line/grid renderer；后续 scene mesh、grid、selection、gizmo 或 debug line pass 必须继续把 per-view 数据作为
-  renderer-owned pass input，而不是从 diagnostics 读取。
+  params 与 command summary 进入 graph。存在 debug-world-line 数据时，该 pass 会在 `renderer_basic_vulkan`
+  内把 world line 投影成 line-list vertex buffer 并绘制到目标 attachment；没有 line 数据时保留 touch-only
+  路径，让 diagnostics 仍能解释 overlay input。后续 scene mesh、grid、selection、gizmo 或 debug line pass
+  必须继续把 per-view 数据作为 renderer-owned pass input，而不是从 diagnostics 读取。
 
 ## Public Header 布局
 
@@ -60,6 +61,7 @@
 - 实现分片不是独立 translation unit，不能提升并行编译能力。
 - `renderer_basic_vulkan` 仍包含 sample renderer、editor viewport renderer 和 debug preview 支撑，后续需要继续按 RenderView pipeline、scene sample renderer、debug capture support 拆分。
 - Frame Debug 的 execution event 目前是 renderer diagnostics 的轻量事件流，不等价于完整 GPU command capture。
+- Debug-line overlay 的 vertex upload 仍是 renderer-owned per-frame upload buffer ring，尚未建模为 RenderGraph buffer resource；当前 RenderGraph 只观察 color target write、pass params 和 execution event。
 
 ## 执行计划
 

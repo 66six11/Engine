@@ -33,13 +33,15 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 
 2026-05-23 内部设计审查补充：底层合同先行也包括 editor 内部对象设计，不只是 package 边界。
 
-- `EditorViewportCoordinator` 的单 `requestedViewport_` 只能支撑当前单 Scene View 过渡；进入 Scene/Game/Preview
-  同帧、多面板 viewport、asset preview 或 multi-view diagnostics 前，必须改为 keyed request / result / diagnostics
-  collection。
+- `EditorViewportCoordinator` 已从单 `requestedViewport_` 迁移到 `panelId + EditorViewportKind` keyed slot。
+  每个 slot 拥有独立 request、presented/pending texture、diagnostics snapshot 和 descriptor owner key；这关闭了
+  Scene/Game/Preview 同帧请求互相覆盖的问题。后续真实 Game View panel、asset preview 和 multi-view diagnostics
+  必须复用这个 keyed contract，而不是重新引入单例 viewport 状态。
 - Scene View camera、overlay 和 debug line intent 已能进入 `RenderView` diagnostics；overlay enabled 的
-  RenderView 现在还会记录 `builtin.render-view-overlay` 输入 pass，把 camera/frame/line-count 作为 typed params
-  与 command summary 纳入 RenderGraph。visible grid / gizmo / selection outline 继续推进前，仍必须补真正的
-  renderer-owned debug-line/grid graph pass。
+  RenderView 现在会记录 `builtin.render-view-overlay` pass，把 camera/frame/line-count 作为 typed params
+  与 command summary 纳入 RenderGraph，并在存在 `BasicDebugWorldLine` 时通过 renderer-owned debug-line
+  shader/pipeline 绘制 line-list。visible gizmo / selection outline 继续推进前，仍必须补 camera-aware grid
+  policy、source overlay id diagnostics 和更完整 provider contract。
 - `EditorContext` / `EditorFrameContext` 不能成为长期 service locator 或持久 mutation surface；会被保存、undo/redo、
   script 或 collaboration 消费的状态，必须走 command/transaction 或明确 owner。
 - `editor_app.cpp` 仍承担 startup、registration、smoke、frame loop 和 ImGui/Vulkan glue 等多种职责；新增 asset browser、
@@ -790,6 +792,10 @@ Validation:
 - `EditorViewportCoordinator::recordRequestedViews()` is the only editor-side caller of
   `BasicFullscreenTextureRenderer::recordViewFrame()` for the viewport path.
 - Renderer output is published through `ImGuiTextureRegistry` after the sampled RenderView record succeeds.
+- C.1 extends the coordinator to keyed viewport slots. `requestViewport()` stores requests by `panelId + kind`;
+  `recordRequestedViews()` records all valid requested slots in the frame, merges the returned wait-stage mask and stores
+  keyed diagnostics snapshots. The panel-facing `acquireViewportTextureForDraw(panelId)` stays stable for Scene View while
+  descriptor owner keys are separated internally to avoid future Scene/Game/Preview collisions.
 
 ### 17.4 Resize And Pending Texture Flow
 
@@ -826,6 +832,9 @@ Validation:
 - For resize smoke, verify old texture retirement and new extent publication.
 - `apps/editor/src/main.cpp` exposes both `--smoke-editor-viewport` and `--smoke-editor-viewport-resize`.
 - `docs/workflow/review.md` includes resize smoke in the editor viewport gate.
+- `--smoke-editor-viewport` also injects a synthetic Game View and Preview View request in the same frame as Scene View.
+  It verifies keyed diagnostics snapshots, Game debug overlay retention, Preview overlay stripping and that the existing
+  Scene View on-demand reuse path does not regress.
 
 ### 17.6 Input Capture Skeleton
 
@@ -1309,20 +1318,21 @@ Current implementation:
 - `EditorViewportCoordinator` maps provider packets into `BasicRenderViewOverlayDesc`.
 - `BasicFullscreenTextureRenderer::recordViewFrame()` now records a graph-visible
   `builtin.render-view-overlay` pass for overlay-enabled RenderViews. The pass carries camera position / near plane,
-  frame timing / render scale and debug-world-line count as typed params and command summary, then touches the target
-  attachment through dynamic-rendering load/store. It intentionally does not draw visible lines yet.
+  frame timing / render scale and debug-world-line count as typed params and command summary; when debug-world-line data
+  exists, `renderer_basic_vulkan` projects it to a line-list vertex buffer and draws visible lines through a
+  renderer-owned debug-line shader/pipeline.
 - `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
   packet, camera diagnostics to match the Scene View request, center unproject ray stability, near-plane origin, viewport
-  corner orientation, invalid matrix rejection, resize aspect handling, RenderView diagnostics debug-world-line count and
-  the graph-visible overlay input pass to exist for a flagged Scene View render.
+  corner orientation, invalid matrix rejection, resize aspect handling, RenderView diagnostics debug-world-line count,
+  the graph-visible overlay pass and a `DrawDebugWorldLines` execution event to exist for a flagged Scene View render.
 - This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
-  complete orbit/pan/dolly input, renderer-owned debug line draw pass, or visible GPU line rendering yet.
+  source overlay id diagnostics, or pixel/readback camera-difference smoke yet.
 
 Validation:
 
-- Current validation covers the provider contract, editor-to-RenderView packet bridge, diagnostics count and graph-visible
-  overlay input pass.
-- Future renderer-pass validation must prove Scene View graph contains the grid pass when the grid flag is enabled.
+- Current validation covers the provider contract, editor-to-RenderView packet bridge, diagnostics count,
+  graph-visible overlay pass and debug-line draw event.
+- Future renderer-pass validation must prove camera movement changes visible grid output at the pixel/readback level.
 - Future renderer-pass validation must prove Game View graph does not contain the grid pass unless an explicit debug mode
   allows it.
 - Future Frame Debug/RG View diagnostics must expose the grid overlay pass, packet count and view kind.

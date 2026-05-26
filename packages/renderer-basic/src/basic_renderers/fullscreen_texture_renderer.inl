@@ -13,16 +13,30 @@ BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other
     allocator_ = std::exchange(other.allocator_, nullptr);
     vertexShader_ = std::move(other.vertexShader_);
     fragmentShader_ = std::move(other.fragmentShader_);
+    debugLineVertexShader_ = std::move(other.debugLineVertexShader_);
+    debugLineFragmentShader_ = std::move(other.debugLineFragmentShader_);
     descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
     pipelineLayout_ = std::move(other.pipelineLayout_);
+    debugLinePipelineLayout_ = std::move(other.debugLinePipelineLayout_);
     pipelineCache_ = std::move(other.pipelineCache_);
     pipeline_ = std::move(other.pipeline_);
+    debugLinePipeline_ = std::move(other.debugLinePipeline_);
     pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
+    debugLinePipelineFormat_ =
+        std::exchange(other.debugLinePipelineFormat_, VK_FORMAT_UNDEFINED);
     pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
     offscreenViewportTarget_ = std::move(other.offscreenViewportTarget_);
     descriptorAllocator_ = std::move(other.descriptorAllocator_);
-    descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
-    compositeDescriptorSet_ = std::exchange(other.compositeDescriptorSet_, VK_NULL_HANDLE);
+    descriptorSets_ = std::move(other.descriptorSets_);
+    compositeDescriptorSets_ = std::move(other.compositeDescriptorSets_);
+    descriptorSetEpoch_ = std::exchange(other.descriptorSetEpoch_, 0);
+    compositeDescriptorSetEpoch_ = std::exchange(other.compositeDescriptorSetEpoch_, 0);
+    descriptorSetCursor_ = std::exchange(other.descriptorSetCursor_, 0);
+    compositeDescriptorSetCursor_ = std::exchange(other.compositeDescriptorSetCursor_, 0);
+    debugLineVertexBuffers_ = std::move(other.debugLineVertexBuffers_);
+    debugLineVertexBufferSizes_ = std::move(other.debugLineVertexBufferSizes_);
+    debugLineVertexBufferEpoch_ = std::exchange(other.debugLineVertexBufferEpoch_, 0);
+    debugLineVertexBufferCursor_ = std::exchange(other.debugLineVertexBufferCursor_, 0);
     uniformBuffer_ = std::move(other.uniformBuffer_);
     sampler_ = std::move(other.sampler_);
     transientImagePool_ = std::move(other.transientImagePool_);
@@ -46,6 +60,10 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     if (!signature) {
         return std::unexpected{std::move(signature.error())};
     }
+    auto debugLineReflection = validateDebugLineReflection(desc.shaderDirectory);
+    if (!debugLineReflection) {
+        return std::unexpected{std::move(debugLineReflection.error())};
+    }
     auto resources = createPipelineLayoutResources(desc.device, *signature);
     if (!resources) {
         return std::unexpected{std::move(resources.error())};
@@ -64,6 +82,14 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     if (!fragmentCode) {
         return std::unexpected{std::move(fragmentCode.error())};
     }
+    auto debugLineVertexCode = readSpirvFile(desc.shaderDirectory / "debug_line.vert.spv");
+    if (!debugLineVertexCode) {
+        return std::unexpected{std::move(debugLineVertexCode.error())};
+    }
+    auto debugLineFragmentCode = readSpirvFile(desc.shaderDirectory / "debug_line.frag.spv");
+    if (!debugLineFragmentCode) {
+        return std::unexpected{std::move(debugLineFragmentCode.error())};
+    }
 
     auto vertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
         .device = desc.device,
@@ -78,6 +104,28 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     });
     if (!fragmentShader) {
         return std::unexpected{std::move(fragmentShader.error())};
+    }
+    auto debugLineVertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+        .device = desc.device,
+        .code = *debugLineVertexCode,
+    });
+    if (!debugLineVertexShader) {
+        return std::unexpected{std::move(debugLineVertexShader.error())};
+    }
+    auto debugLineFragmentShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+        .device = desc.device,
+        .code = *debugLineFragmentCode,
+    });
+    if (!debugLineFragmentShader) {
+        return std::unexpected{std::move(debugLineFragmentShader.error())};
+    }
+    auto debugLinePipelineLayout = VulkanPipelineLayout::create(VulkanPipelineLayoutDesc{
+        .device = desc.device,
+        .setLayouts = {},
+        .pushConstantRanges = {},
+    });
+    if (!debugLinePipelineLayout) {
+        return std::unexpected{std::move(debugLinePipelineLayout.error())};
     }
 
     constexpr std::array tint{1.0F, 1.0F, 1.0F, 1.0F};
@@ -105,99 +153,101 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
         return std::unexpected{std::move(pipelineCache.error())};
     }
 
+    constexpr std::size_t kDescriptorSetRingSize = 16;
+    constexpr std::size_t kDebugLineVertexBufferRingSize = 16;
+    constexpr std::uint32_t kDescriptorSetCount =
+        static_cast<std::uint32_t>(kDescriptorSetRingSize * 2U);
     constexpr std::array poolSizes{
         VulkanDescriptorPoolSize{
             .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .count = 2,
+            .count = kDescriptorSetCount,
         },
         VulkanDescriptorPoolSize{
             .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-            .count = 2,
+            .count = kDescriptorSetCount,
         },
         VulkanDescriptorPoolSize{
             .type = VK_DESCRIPTOR_TYPE_SAMPLER,
-            .count = 2,
+            .count = kDescriptorSetCount,
         },
     };
     auto descriptorAllocator = VulkanDescriptorAllocator::create(VulkanDescriptorPoolDesc{
         .device = desc.device,
-        .maxSets = 2,
+        .maxSets = kDescriptorSetCount,
         .poolSizes = poolSizes,
     });
     if (!descriptorAllocator) {
         return std::unexpected{std::move(descriptorAllocator.error())};
     }
 
-    const std::array setLayouts{resources->descriptorSetLayouts.front().handle(),
-                                resources->descriptorSetLayouts.front().handle()};
+    std::vector<VkDescriptorSetLayout> setLayouts(kDescriptorSetCount,
+                                                  resources->descriptorSetLayouts.front().handle());
     auto descriptorSets = descriptorAllocator->allocate(VulkanDescriptorSetAllocationDesc{
         .setLayouts = setLayouts,
     });
     if (!descriptorSets) {
         return std::unexpected{std::move(descriptorSets.error())};
     }
-    if (descriptorSets->size() != 2 || descriptorSets->front() == VK_NULL_HANDLE ||
-        (*descriptorSets)[1] == VK_NULL_HANDLE) {
+    if (descriptorSets->size() != kDescriptorSetCount ||
+        std::ranges::any_of(*descriptorSets,
+                            [](VkDescriptorSet set) { return set == VK_NULL_HANDLE; })) {
         return std::unexpected{
             Error{ErrorDomain::Vulkan, 0,
-                  "Fullscreen texture renderer failed to allocate two descriptor sets"}};
+                  "Fullscreen texture renderer failed to allocate descriptor set ring"}};
     }
 
-    const std::array bufferWrites{
-        VulkanDescriptorBufferWrite{
-            .descriptorSet = descriptorSets->front(),
+    std::vector<VulkanDescriptorBufferWrite> bufferWrites;
+    bufferWrites.reserve(descriptorSets->size());
+    std::vector<VulkanDescriptorImageWrite> samplerWrites;
+    samplerWrites.reserve(descriptorSets->size());
+    for (VkDescriptorSet descriptorSet : *descriptorSets) {
+        bufferWrites.push_back(VulkanDescriptorBufferWrite{
+            .descriptorSet = descriptorSet,
             .binding = 0,
             .arrayElement = 0,
             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .buffer = uniformBuffer->handle(),
             .offset = 0,
             .range = uniformBuffer->size(),
-        },
-        VulkanDescriptorBufferWrite{
-            .descriptorSet = (*descriptorSets)[1],
-            .binding = 0,
+        });
+        samplerWrites.push_back(VulkanDescriptorImageWrite{
+            .descriptorSet = descriptorSet,
+            .binding = 2,
             .arrayElement = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .buffer = uniformBuffer->handle(),
-            .offset = 0,
-            .range = uniformBuffer->size(),
-        },
-    };
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .imageView = VK_NULL_HANDLE,
+            .sampler = sampler->handle(),
+            .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        });
+    }
     updateVulkanDescriptorBuffers(desc.device, bufferWrites);
-
-    const std::array samplerWrites{
-        VulkanDescriptorImageWrite{
-            .descriptorSet = descriptorSets->front(),
-            .binding = 2,
-            .arrayElement = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-            .imageView = VK_NULL_HANDLE,
-            .sampler = sampler->handle(),
-            .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        },
-        VulkanDescriptorImageWrite{
-            .descriptorSet = (*descriptorSets)[1],
-            .binding = 2,
-            .arrayElement = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-            .imageView = VK_NULL_HANDLE,
-            .sampler = sampler->handle(),
-            .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        },
-    };
     updateVulkanDescriptorImages(desc.device, samplerWrites);
+
+    std::vector<VkDescriptorSet> fullscreenDescriptorSets;
+    fullscreenDescriptorSets.reserve(kDescriptorSetRingSize);
+    std::vector<VkDescriptorSet> compositeDescriptorSets;
+    compositeDescriptorSets.reserve(kDescriptorSetRingSize);
+    for (std::size_t index = 0; index < kDescriptorSetRingSize; ++index) {
+        fullscreenDescriptorSets.push_back((*descriptorSets)[index]);
+        compositeDescriptorSets.push_back((*descriptorSets)[index + kDescriptorSetRingSize]);
+    }
 
     BasicFullscreenTextureRenderer renderer;
     renderer.device_ = desc.device;
     renderer.allocator_ = desc.allocator;
     renderer.vertexShader_ = std::move(*vertexShader);
     renderer.fragmentShader_ = std::move(*fragmentShader);
+    renderer.debugLineVertexShader_ = std::move(*debugLineVertexShader);
+    renderer.debugLineFragmentShader_ = std::move(*debugLineFragmentShader);
     renderer.descriptorSetLayouts_ = std::move(resources->descriptorSetLayouts);
     renderer.pipelineLayout_ = std::move(resources->pipelineLayout);
+    renderer.debugLinePipelineLayout_ = std::move(*debugLinePipelineLayout);
     renderer.pipelineCache_ = std::move(*pipelineCache);
     renderer.descriptorAllocator_ = std::move(*descriptorAllocator);
-    renderer.descriptorSet_ = descriptorSets->front();
-    renderer.compositeDescriptorSet_ = (*descriptorSets)[1];
+    renderer.descriptorSets_ = std::move(fullscreenDescriptorSets);
+    renderer.compositeDescriptorSets_ = std::move(compositeDescriptorSets);
+    renderer.debugLineVertexBuffers_.resize(kDebugLineVertexBufferRingSize);
+    renderer.debugLineVertexBufferSizes_.resize(kDebugLineVertexBufferRingSize);
     renderer.uniformBuffer_ = std::move(*uniformBuffer);
     renderer.sampler_ = std::move(*sampler);
     return renderer;
@@ -231,8 +281,119 @@ Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat
     return {};
 }
 
+Result<void> BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat colorFormat) {
+    if (debugLinePipeline_.handle() != VK_NULL_HANDLE &&
+        debugLinePipelineFormat_ == colorFormat) {
+        return {};
+    }
+
+    const auto bindings = basicDebugLineVertexInputBindings();
+    const auto attributes = basicDebugLineVertexInputAttributes();
+
+    auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
+        .device = device_,
+        .pipelineCache = pipelineCache_.handle(),
+        .layout = debugLinePipelineLayout_.handle(),
+        .vertexShader = debugLineVertexShader_.handle(),
+        .fragmentShader = debugLineFragmentShader_.handle(),
+        .vertexEntryPoint = "main",
+        .fragmentEntryPoint = "main",
+        .colorFormat = colorFormat,
+        .depthFormat = VK_FORMAT_UNDEFINED,
+        .vertexBindings = bindings,
+        .vertexAttributes = attributes,
+        .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+        .colorBlendEnable = VK_TRUE,
+        .colorSrcBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .colorDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .alphaSrcBlendFactor = VK_BLEND_FACTOR_ONE,
+        .alphaDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+    });
+    if (!pipeline) {
+        return std::unexpected{std::move(pipeline.error())};
+    }
+
+    debugLinePipeline_ = std::move(*pipeline);
+    debugLinePipelineFormat_ = colorFormat;
+    return {};
+}
+
 BasicPipelineCacheStats BasicFullscreenTextureRenderer::pipelineCacheStats() const {
     return pipelineCacheStats_;
+}
+
+VkDescriptorSet BasicFullscreenTextureRenderer::acquireFullscreenDescriptorSet(
+    const VulkanFrameRecordContext& frame) {
+    const std::uint64_t epoch =
+        frame.frameLoop == nullptr ? 0U : frame.frameLoop->submittedFrameEpoch() + 1U;
+    if (descriptorSetEpoch_ != epoch) {
+        descriptorSetEpoch_ = epoch;
+        descriptorSetCursor_ = 0;
+    }
+    if (descriptorSetCursor_ >= descriptorSets_.size()) {
+        return VK_NULL_HANDLE;
+    }
+    return descriptorSets_[descriptorSetCursor_++];
+}
+
+VkDescriptorSet BasicFullscreenTextureRenderer::acquireCompositeDescriptorSet(
+    const VulkanFrameRecordContext& frame) {
+    const std::uint64_t epoch =
+        frame.frameLoop == nullptr ? 0U : frame.frameLoop->submittedFrameEpoch() + 1U;
+    if (compositeDescriptorSetEpoch_ != epoch) {
+        compositeDescriptorSetEpoch_ = epoch;
+        compositeDescriptorSetCursor_ = 0;
+    }
+    if (compositeDescriptorSetCursor_ >= compositeDescriptorSets_.size()) {
+        return VK_NULL_HANDLE;
+    }
+    return compositeDescriptorSets_[compositeDescriptorSetCursor_++];
+}
+
+Result<VkBuffer> BasicFullscreenTextureRenderer::uploadDebugLineVertices(
+    const VulkanFrameRecordContext& frame, std::span<const std::byte> vertices) {
+    if (vertices.empty()) {
+        return VK_NULL_HANDLE;
+    }
+    const std::uint64_t epoch =
+        frame.frameLoop == nullptr ? 0U : frame.frameLoop->submittedFrameEpoch() + 1U;
+    if (debugLineVertexBufferEpoch_ != epoch) {
+        debugLineVertexBufferEpoch_ = epoch;
+        debugLineVertexBufferCursor_ = 0;
+    }
+    if (debugLineVertexBufferCursor_ >= debugLineVertexBuffers_.size()) {
+        return std::unexpected{
+            Error{ErrorDomain::Vulkan, 0,
+                  "Fullscreen texture renderer exhausted per-frame debug line vertex buffer ring"}};
+    }
+
+    VulkanBuffer& buffer = debugLineVertexBuffers_[debugLineVertexBufferCursor_];
+    VkDeviceSize& bufferSize = debugLineVertexBufferSizes_[debugLineVertexBufferCursor_];
+    ++debugLineVertexBufferCursor_;
+
+    const auto requiredSize = static_cast<VkDeviceSize>(vertices.size_bytes());
+    if (buffer.handle() == VK_NULL_HANDLE || bufferSize < requiredSize) {
+        auto created = VulkanBuffer::create(VulkanBufferDesc{
+            .device = device_,
+            .allocator = allocator_,
+            .size = requiredSize,
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+        });
+        if (!created) {
+            return std::unexpected{std::move(created.error())};
+        }
+        buffer = std::move(*created);
+        bufferSize = requiredSize;
+    }
+
+    auto uploaded = buffer.upload(vertices);
+    if (!uploaded) {
+        return std::unexpected{std::move(uploaded.error())};
+    }
+    return buffer.handle();
 }
 
 BasicOffscreenViewportStats BasicFullscreenTextureRenderer::offscreenViewportStats() const {
@@ -262,6 +423,9 @@ VulkanDescriptorAllocatorStats BasicFullscreenTextureRenderer::descriptorAllocat
 VulkanBufferStats BasicFullscreenTextureRenderer::bufferStats() const {
     VulkanBufferStats stats;
     accumulateBufferStats(stats, uniformBuffer_);
+    for (const VulkanBuffer& buffer : debugLineVertexBuffers_) {
+        accumulateBufferStats(stats, buffer);
+    }
     return stats;
 }
 
@@ -303,6 +467,12 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};
     }
+    const VkDescriptorSet fullscreenDescriptorSet = acquireFullscreenDescriptorSet(frame);
+    if (fullscreenDescriptorSet == VK_NULL_HANDLE) {
+        return std::unexpected{
+            Error{ErrorDomain::Vulkan, 0,
+                  "Fullscreen texture renderer exhausted per-frame descriptor set ring"}};
+    }
     const BasicRenderViewTarget viewTarget = view.target;
     BasicRenderViewExecutionEventRecorder eventRecorder;
 
@@ -330,7 +500,35 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     constexpr BasicFullscreenParams kFullscreenParams{
         .tint = {1.0F, 1.0F, 1.0F, 1.0F},
     };
+
+    std::vector<BasicDebugWorldLine> debugWorldLines(view.overlay.debugWorldLines.begin(),
+                                                     view.overlay.debugWorldLines.end());
+    view.overlay.debugWorldLines = std::span<const BasicDebugWorldLine>{debugWorldLines};
     const BasicRenderViewOverlayParams overlayParams = basicRenderViewOverlayParams(view);
+    std::vector<BasicDebugLineVertex> debugLineVertices;
+    VkBuffer debugLineVertexBuffer = VK_NULL_HANDLE;
+    std::uint32_t debugLineVertexCount = 0;
+    if (view.overlay.enabled && !debugWorldLines.empty()) {
+        auto debugLinePipeline = ensureDebugLinePipeline(view.target.format);
+        if (!debugLinePipeline) {
+            return std::unexpected{std::move(debugLinePipeline.error())};
+        }
+        debugLineVertices = basicDebugLineVertices(view.camera, debugWorldLines);
+        if (!debugLineVertices.empty()) {
+            if (debugLineVertices.size() > std::numeric_limits<std::uint32_t>::max()) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "RenderView debug line vertex count exceeds Vulkan draw limits"}};
+            }
+            debugLineVertexCount = static_cast<std::uint32_t>(debugLineVertices.size());
+            auto uploadedDebugLines =
+                uploadDebugLineVertices(frame, std::as_bytes(std::span{debugLineVertices}));
+            if (!uploadedDebugLines) {
+                return std::unexpected{std::move(uploadedDebugLines.error())};
+            }
+            debugLineVertexBuffer = *uploadedDebugLines;
+        }
+    }
 
     graph.addPass("ClearFullscreenSource", kBasicTransferClearPassType)
         .setParams(kBasicTransferClearParamsType, kClearParams)
@@ -353,10 +551,10 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
                 .drawFullscreenTriangle();
         })
         .execute([&frame, &bindings, viewTarget, &eventRecorder,
-                  this](RenderGraphPassContext pass) -> Result<void> {
+                  fullscreenDescriptorSet, this](RenderGraphPassContext pass) -> Result<void> {
             return executeBasicFullscreenTexturePass(
                 frame, pass, bindings, device_, pipeline_.handle(), pipelineLayout_.handle(),
-                descriptorSet_, viewTarget.extent,
+                fullscreenDescriptorSet, viewTarget.extent,
                 BasicFullscreenTexturePassMessages{
                     .paramsContext = "Fullscreen texture pass",
                     .unknownTextureSlotMessage =
@@ -378,10 +576,14 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
             })
             .execute([&frame, &bindings, viewTarget, colorLoadOp = view.overlay.colorLoadOp,
                       colorStoreOp = view.overlay.colorStoreOp,
+                      debugLinePipeline = debugLinePipeline_.handle(),
+                      debugLineVertexBuffer, debugLineVertexCount,
                       &eventRecorder](RenderGraphPassContext pass) -> Result<void> {
                 return executeBasicRenderViewOverlayPass(frame, pass, bindings,
                                                          viewTarget.extent, colorLoadOp,
-                                                         colorStoreOp, &eventRecorder);
+                                                         colorStoreOp, debugLinePipeline,
+                                                         debugLineVertexBuffer,
+                                                         debugLineVertexCount, &eventRecorder);
             });
     }
 
@@ -463,6 +665,12 @@ BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(const VulkanFrameRe
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};
     }
+    const VkDescriptorSet compositeDescriptorSet = acquireCompositeDescriptorSet(frame);
+    if (compositeDescriptorSet == VK_NULL_HANDLE) {
+        return std::unexpected{
+            Error{ErrorDomain::Vulkan, 0,
+                  "Offscreen viewport composite exhausted per-frame descriptor set ring"}};
+    }
     const BasicRenderViewTarget backbufferTarget = basicSwapchainRenderViewTarget(frame);
     const BasicRenderViewTarget viewportTarget =
         basicSampledRenderViewTarget(sampledViewportTarget);
@@ -502,10 +710,10 @@ BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(const VulkanFrameRe
                 .drawFullscreenTriangle();
         })
         .execute([&frame, &bindings, backbufferTarget,
-                  this](RenderGraphPassContext pass) -> Result<void> {
+                  compositeDescriptorSet, this](RenderGraphPassContext pass) -> Result<void> {
             return executeBasicFullscreenTexturePass(
                 frame, pass, bindings, device_, pipeline_.handle(), pipelineLayout_.handle(),
-                compositeDescriptorSet_, backbufferTarget.extent,
+                compositeDescriptorSet, backbufferTarget.extent,
                 BasicFullscreenTexturePassMessages{
                     .paramsContext = "Offscreen viewport composite pass",
                     .unknownTextureSlotMessage =

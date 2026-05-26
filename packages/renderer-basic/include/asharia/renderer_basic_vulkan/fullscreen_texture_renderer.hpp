@@ -2,6 +2,9 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <span>
 #include <vector>
 
 #include "asharia/core/result.hpp"
@@ -43,6 +46,14 @@ namespace asharia {
 
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
+        [[nodiscard]] Result<void> ensureDebugLinePipeline(VkFormat colorFormat);
+        [[nodiscard]] VkDescriptorSet
+        acquireFullscreenDescriptorSet(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] VkDescriptorSet
+        acquireCompositeDescriptorSet(const VulkanFrameRecordContext& frame);
+        [[nodiscard]] Result<VkBuffer>
+        uploadDebugLineVertices(const VulkanFrameRecordContext& frame,
+                                std::span<const std::byte> vertices);
         [[nodiscard]] Result<void>
         ensureOffscreenViewportTarget(const VulkanFrameRecordContext& frame, VkFormat format,
                                       VkExtent2D extent);
@@ -50,16 +61,29 @@ namespace asharia {
         VmaAllocator allocator_{};
         VulkanShaderModule vertexShader_;
         VulkanShaderModule fragmentShader_;
+        VulkanShaderModule debugLineVertexShader_;
+        VulkanShaderModule debugLineFragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
+        VulkanPipelineLayout debugLinePipelineLayout_;
         VulkanPipelineCache pipelineCache_;
         VulkanGraphicsPipeline pipeline_;
+        VulkanGraphicsPipeline debugLinePipeline_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
+        VkFormat debugLinePipelineFormat_{VK_FORMAT_UNDEFINED};
         BasicPipelineCacheStats pipelineCacheStats_;
         VulkanRenderTarget offscreenViewportTarget_;
         VulkanDescriptorAllocator descriptorAllocator_;
-        VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
-        VkDescriptorSet compositeDescriptorSet_{VK_NULL_HANDLE};
+        std::vector<VkDescriptorSet> descriptorSets_;
+        std::vector<VkDescriptorSet> compositeDescriptorSets_;
+        std::uint64_t descriptorSetEpoch_{};
+        std::uint64_t compositeDescriptorSetEpoch_{};
+        std::size_t descriptorSetCursor_{};
+        std::size_t compositeDescriptorSetCursor_{};
+        std::vector<VulkanBuffer> debugLineVertexBuffers_;
+        std::vector<VkDeviceSize> debugLineVertexBufferSizes_;
+        std::uint64_t debugLineVertexBufferEpoch_{};
+        std::size_t debugLineVertexBufferCursor_{};
         VulkanBuffer uniformBuffer_;
         VulkanSampler sampler_;
         VulkanTransientImagePool transientImagePool_;

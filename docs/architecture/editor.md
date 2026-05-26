@@ -163,8 +163,11 @@ contract in later slices instead of reading editor panel state directly.
 
 `EditorViewportCoordinator` owns the editor viewport target state:
 
-- `presentedTexture_` is the last texture safe for panels to draw.
-- `pendingTexture_` receives a newly rendered or resized target.
+- Viewport state is keyed by `panelId + EditorViewportKind`.
+- Each keyed slot owns the last presented texture safe for panels to draw and a pending texture that receives a newly
+  rendered or resized target.
+- Each keyed slot stores its latest `EditorRecordedRenderViewDiagnostics` snapshot so Live RG / smoke validation can inspect
+  a specific Scene/Game/Preview view without relying on a global "last request wins" value.
 - `retiredTextures_` holds replaced targets until they are deferred through the frame loop.
 
 旧 render target 通过 `VulkanFrameRecordContext::deferDeletion()` 销毁，让 frame loop 用 fence/epoch
@@ -178,6 +181,8 @@ contract in later slices instead of reading editor panel state directly.
 - `acquireForDraw()` records the submitted frame epoch that may reference the descriptor.
 - `collectGarbage(completedFrameEpoch)` calls `ImGui_ImplVulkan_RemoveTexture()` only after the frame loop reports the
   relevant submitted frame complete.
+- Descriptor owner keys are internal registry keys; viewport results still return the panel-facing `EditorId`. This lets a
+  future panel host Scene/Game/Preview textures without descriptor-key collisions.
 
 The registry does not own the underlying image or image view. It only owns ImGui's descriptor handle and retirement state.
 
@@ -402,11 +407,10 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 - Selection, transaction, dirty state, inspector and asset browser are blocked on scene/asset/schema ownership becoming
   concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
-  renderer-side view pass work. Grid now has an interim editor-owned fixed XZ debug-line provider packet bridge into
-  RenderView diagnostics, but no graph pass or visible GPU line rendering yet.
-- Renderer prerequisites for those passes are: view/camera params in render view data, explicit overlay pass load/store
-  semantics, blend state or a dedicated composition path, and a debug/world-line draw route. The current debug-world-line
-  route is data/diagnostics only; renderer-side drawing is still pending.
+  renderer-side view pass work. Grid now has an editor-owned fixed XZ debug-line provider packet bridge into RenderView
+  diagnostics and a renderer-owned visible debug-line overlay draw path.
+- Renderer prerequisites still pending for richer overlays are: camera-aware grid range/fade policy, provider/source ids in
+  diagnostics, and a more complete debug/world-line draw route for gizmo/selection shapes.
 - `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects.
   `EditorInspectedWorldScheduler` is the current counter-based seam for future runtime/script integration: it runs frame
   advance、game update 和 script update safe-point counters while allowed, and records skipped counters while Frame Debug is

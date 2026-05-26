@@ -2987,7 +2987,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                              "Fullscreen texture smoke", 2)) {
+                                              "Fullscreen texture smoke", 32)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Fullscreen texture smoke")) {
@@ -3133,7 +3133,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                              "Offscreen viewport smoke", 2)) {
+                                              "Offscreen viewport smoke", 32)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Offscreen viewport smoke")) {

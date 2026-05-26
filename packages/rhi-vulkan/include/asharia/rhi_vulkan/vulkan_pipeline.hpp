@@ -215,6 +215,14 @@ namespace asharia {
         VkFormat depthFormat{VK_FORMAT_UNDEFINED};
         std::span<const VkVertexInputBindingDescription> vertexBindings;
         std::span<const VkVertexInputAttributeDescription> vertexAttributes;
+        VkPrimitiveTopology topology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+        VkBool32 colorBlendEnable{VK_FALSE};
+        VkBlendFactor colorSrcBlendFactor{VK_BLEND_FACTOR_ONE};
+        VkBlendFactor colorDstBlendFactor{VK_BLEND_FACTOR_ZERO};
+        VkBlendOp colorBlendOp{VK_BLEND_OP_ADD};
+        VkBlendFactor alphaSrcBlendFactor{VK_BLEND_FACTOR_ONE};
+        VkBlendFactor alphaDstBlendFactor{VK_BLEND_FACTOR_ZERO};
+        VkBlendOp alphaBlendOp{VK_BLEND_OP_ADD};
     };
 
     class VulkanGraphicsPipeline {

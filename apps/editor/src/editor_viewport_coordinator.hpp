@@ -31,10 +31,19 @@ namespace asharia::editor {
     struct EditorViewportCoordinatorStats {
         std::uint64_t renderTargetsRetired{};
         std::uint64_t renderTargetsDeferred{};
+        std::uint64_t viewportRequestsQueued{};
+        std::uint64_t viewportRequestsRecorded{};
+        std::uint64_t lastFrameViewportRequests{};
+        std::uint64_t lastFrameRenderViewsRecorded{};
+        std::uint64_t lastFrameRenderViewsSkipped{};
+        std::uint64_t multiViewFramesRecorded{};
         std::uint64_t overlayFlagFramesRendered{};
         std::uint64_t overlayFlagTextureFramesAcquired{};
         std::uint64_t sceneViewOnlyFlagRequestsDiscarded{};
         std::uint64_t renderViewDiagnosticsFramesRecorded{};
+        std::uint64_t sceneViewDiagnosticsFramesRecorded{};
+        std::uint64_t gameViewDiagnosticsFramesRecorded{};
+        std::uint64_t previewViewDiagnosticsFramesRecorded{};
         std::uint64_t repaintReasonFramesRecorded{};
         std::uint64_t idleSceneViewFramesSkipped{};
         std::uint64_t liveRenderGraphViewFrames{};
@@ -64,6 +73,7 @@ namespace asharia::editor {
     };
 
     struct EditorRecordedRenderViewDiagnostics {
+        EditorId panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D requestedExtent;
         std::uint64_t submittedFrameEpoch{};
@@ -130,26 +140,61 @@ namespace asharia::editor {
         [[nodiscard]] ImGuiTextureRegistryStats textureRegistryStats() const;
         [[nodiscard]] const std::optional<EditorRecordedRenderViewDiagnostics>&
         latestRecordedRenderViewDiagnostics() const;
+        [[nodiscard]] std::optional<EditorRecordedRenderViewDiagnostics>
+        latestRecordedRenderViewDiagnosticsForView(std::string_view panelId,
+                                                   EditorViewportKind kind) const;
         [[nodiscard]] std::optional<EditorRenderGraphSnapshot>
         latestLiveRenderGraphSnapshot() const override;
         void notifyLiveRenderGraphViewDrawn(bool snapshotVisible) override;
 
     private:
-        void promotePendingTexture();
+        struct ViewportSlot {
+            ViewportSlot() = default;
+            ViewportSlot(const ViewportSlot&) = delete;
+            ViewportSlot& operator=(const ViewportSlot&) = delete;
+            ViewportSlot(ViewportSlot&&) noexcept = default;
+            ViewportSlot& operator=(ViewportSlot&&) noexcept = default;
+            ~ViewportSlot() = default;
+
+            EditorId panelId;
+            EditorViewportKind kind{EditorViewportKind::Scene};
+            ViewportTexture presentedTexture;
+            ViewportTexture pendingTexture;
+            std::optional<EditorViewportRequest> requestedViewport;
+            std::optional<EditorRecordedRenderViewDiagnostics> latestRecordedDiagnostics;
+        };
+
+        [[nodiscard]] ViewportSlot* findViewportSlot(std::string_view panelId,
+                                                     EditorViewportKind kind);
+        [[nodiscard]] const ViewportSlot* findViewportSlot(std::string_view panelId,
+                                                           EditorViewportKind kind) const;
+        [[nodiscard]] ViewportSlot& findOrCreateViewportSlot(const EditorViewportRequest& request);
+        [[nodiscard]] const ViewportSlot*
+        findPresentedViewportSlotForPanel(std::string_view panelId) const;
+        void promotePendingTextures();
         [[nodiscard]] bool hasTextureToRelease() const;
+        [[nodiscard]] static EditorViewportRepaintReasons
+        repaintReasonsForViewportRequest(const ViewportSlot& slot,
+                                         const EditorViewportRequest& request,
+                                         VkExtent2D requestedExtent, VkFormat requestedFormat,
+                                         EditorViewportRepaintReasons additionalRepaintReasons);
+        [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+        recordRequestedViewportSlot(const asharia::VulkanFrameRecordContext& frame,
+                                    asharia::BasicFullscreenTextureRenderer& renderer,
+                                    ViewportSlot& slot, const EditorViewportRequest& request,
+                                    VkExtent2D requestedExtent, VkFormat requestedFormat);
         [[nodiscard]] asharia::VoidResult
         processRetiredTextures(const asharia::VulkanFrameRecordContext& frame);
+        void updateRenderViewDiagnosticStats(const ViewportTexture& renderTexture);
 
         VkDevice device_{VK_NULL_HANDLE};
         VmaAllocator allocator_{};
         VkQueue queue_{VK_NULL_HANDLE};
         ImGuiTextureRegistry textureRegistry_;
-        ViewportTexture presentedTexture_;
-        ViewportTexture pendingTexture_;
+        std::vector<ViewportSlot> viewportSlots_;
         ViewportTexture debugReplayTexture_;
         ViewportTexture debugPreviewTexture_;
         std::vector<ViewportTexture> retiredTextures_;
-        std::optional<EditorViewportRequest> requestedViewport_;
         std::optional<EditorRecordedRenderViewDiagnostics> latestRecordedDiagnostics_;
         EditorViewportCoordinatorStats stats_;
         std::uint64_t currentFrameSubmittedEpoch_{};

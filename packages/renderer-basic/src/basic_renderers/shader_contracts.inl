@@ -302,6 +302,70 @@
             return {};
         }
 
+        [[nodiscard]] Result<void>
+        validateDebugLineReflection(const std::filesystem::path& shaderDirectory) {
+            auto vertexReflection =
+                readShaderReflection(shaderDirectory / "debug_line.vert.reflection.json");
+            if (!vertexReflection) {
+                return std::unexpected{std::move(vertexReflection.error())};
+            }
+            auto fragmentReflection =
+                readShaderReflection(shaderDirectory / "debug_line.frag.reflection.json");
+            if (!fragmentReflection) {
+                return std::unexpected{std::move(fragmentReflection.error())};
+            }
+
+            auto vertexEntry = expectString(vertexReflection->entry, "debugLineVertexMain",
+                                            "Debug line vertex shader reflection entry");
+            if (!vertexEntry) {
+                return std::unexpected{std::move(vertexEntry.error())};
+            }
+            auto vertexStage = expectString(vertexReflection->stage, "vertex",
+                                            "Debug line vertex shader reflection stage");
+            if (!vertexStage) {
+                return std::unexpected{std::move(vertexStage.error())};
+            }
+            auto fragmentEntry = expectString(fragmentReflection->entry, "debugLineFragmentMain",
+                                              "Debug line fragment shader reflection entry");
+            if (!fragmentEntry) {
+                return std::unexpected{std::move(fragmentEntry.error())};
+            }
+            auto fragmentStage = expectString(fragmentReflection->stage, "fragment",
+                                              "Debug line fragment shader reflection stage");
+            if (!fragmentStage) {
+                return std::unexpected{std::move(fragmentStage.error())};
+            }
+
+            auto vertexInputCount =
+                expectUint(static_cast<std::uint32_t>(vertexReflection->vertexInputs.size()), 2,
+                           "Debug line vertex shader input count");
+            if (!vertexInputCount) {
+                return std::unexpected{std::move(vertexInputCount.error())};
+            }
+            auto position =
+                validateVertexInput(*vertexReflection, "POSITION", 0, 0, "float32", 1, 2);
+            if (!position) {
+                return std::unexpected{std::move(position.error())};
+            }
+            auto color = validateVertexInput(*vertexReflection, "COLOR", 0, 1, "float32", 1, 4);
+            if (!color) {
+                return std::unexpected{std::move(color.error())};
+            }
+
+            auto vertexResources =
+                validateNoResourceBindings(*vertexReflection, "Debug line vertex shader");
+            if (!vertexResources) {
+                return std::unexpected{std::move(vertexResources.error())};
+            }
+            auto fragmentResources =
+                validateNoResourceBindings(*fragmentReflection, "Debug line fragment shader");
+            if (!fragmentResources) {
+                return std::unexpected{std::move(fragmentResources.error())};
+            }
+
+            return {};
+        }
+
         [[nodiscard]] Result<ShaderResourceSignature>
         validateDescriptorLayoutReflection(const std::filesystem::path& shaderDirectory) {
             auto fragmentReflection =

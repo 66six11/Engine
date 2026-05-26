@@ -7,6 +7,7 @@
 #include <cstring>
 #include <expected>
 #include <fstream>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <span>
@@ -48,6 +49,18 @@ namespace asharia {
             std::string_view paramsContext;
             std::string_view unknownTextureSlotMessage;
         };
+
+        struct BasicDebugLineVertex {
+            std::array<float, 2> position{};
+            std::array<float, 4> color{};
+        };
+
+        struct BasicProjectedDebugLinePoint {
+            float x{};
+            float y{};
+        };
+
+        constexpr float kBasicDebugLineClipEpsilon = 0.000001F;
 
 #include "basic_renderers/render_view_diagnostics.inl"
 
@@ -383,6 +396,35 @@ namespace asharia {
             };
         }
 
+        [[nodiscard]] std::array<VkVertexInputBindingDescription, 1>
+        basicDebugLineVertexInputBindings() {
+            return std::array{
+                VkVertexInputBindingDescription{
+                    .binding = 0,
+                    .stride = sizeof(BasicDebugLineVertex),
+                    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+                },
+            };
+        }
+
+        [[nodiscard]] std::array<VkVertexInputAttributeDescription, 2>
+        basicDebugLineVertexInputAttributes() {
+            return std::array{
+                VkVertexInputAttributeDescription{
+                    .location = 0,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32_SFLOAT,
+                    .offset = offsetof(BasicDebugLineVertex, position),
+                },
+                VkVertexInputAttributeDescription{
+                    .location = 1,
+                    .binding = 0,
+                    .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                    .offset = offsetof(BasicDebugLineVertex, color),
+                },
+            };
+        }
+
         using BasicMat4 = BasicTransformMatrix3D;
 
         [[nodiscard]] constexpr float basicMat4At(const BasicMat4& matrix, std::size_t row,
@@ -495,6 +537,66 @@ namespace asharia {
             VkBuffer vertex{VK_NULL_HANDLE};
             VkBuffer index{VK_NULL_HANDLE};
         };
+
+        [[nodiscard]] std::optional<BasicProjectedDebugLinePoint>
+        projectBasicDebugWorldLinePoint(const BasicRenderViewCamera& camera,
+                                        std::array<float, 3> point) {
+            const BasicMat4 viewProjection{
+                camera.viewProjection[0],  camera.viewProjection[1],
+                camera.viewProjection[2],  camera.viewProjection[3],
+                camera.viewProjection[4],  camera.viewProjection[5],
+                camera.viewProjection[6],  camera.viewProjection[7],
+                camera.viewProjection[8],  camera.viewProjection[9],
+                camera.viewProjection[10], camera.viewProjection[11],
+                camera.viewProjection[12], camera.viewProjection[13],
+                camera.viewProjection[14], camera.viewProjection[15],
+            };
+            const std::array world{point[0], point[1], point[2], 1.0F};
+            const float clipX =
+                (viewProjection[0] * world[0]) + (viewProjection[1] * world[1]) +
+                (viewProjection[2] * world[2]) + (viewProjection[3] * world[3]);
+            const float clipY =
+                (viewProjection[4] * world[0]) + (viewProjection[5] * world[1]) +
+                (viewProjection[6] * world[2]) + (viewProjection[7] * world[3]);
+            const float clipW =
+                (viewProjection[12] * world[0]) + (viewProjection[13] * world[1]) +
+                (viewProjection[14] * world[2]) + (viewProjection[15] * world[3]);
+            if (!std::isfinite(clipX) || !std::isfinite(clipY) || !std::isfinite(clipW) ||
+                clipW <= kBasicDebugLineClipEpsilon) {
+                return std::nullopt;
+            }
+
+            return BasicProjectedDebugLinePoint{
+                .x = clipX / clipW,
+                .y = clipY / clipW,
+            };
+        }
+
+        [[nodiscard]] std::vector<BasicDebugLineVertex>
+        basicDebugLineVertices(const BasicRenderViewCamera& camera,
+                               std::span<const BasicDebugWorldLine> lines) {
+            std::vector<BasicDebugLineVertex> vertices;
+            vertices.reserve(lines.size() * 2U);
+            for (const BasicDebugWorldLine& line : lines) {
+                const std::optional<BasicProjectedDebugLinePoint> start =
+                    projectBasicDebugWorldLinePoint(camera, line.start);
+                const std::optional<BasicProjectedDebugLinePoint> end =
+                    projectBasicDebugWorldLinePoint(camera, line.end);
+                if (!start || !end) {
+                    continue;
+                }
+
+                vertices.push_back(BasicDebugLineVertex{
+                    .position = {start->x, start->y},
+                    .color = {line.color[0], line.color[1], line.color[2], line.color[3]},
+                });
+                vertices.push_back(BasicDebugLineVertex{
+                    .position = {end->x, end->y},
+                    .color = {line.color[0], line.color[1], line.color[2], line.color[3]},
+                });
+            }
+            return vertices;
+        }
 
         void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
                                 BasicDrawBuffers buffers, BasicDrawItem drawItem,
@@ -895,6 +997,56 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
+        void recordBasicDebugLineDraw(const VulkanFrameRecordContext& frame,
+                                      VkImageView targetImageView, VkExtent2D targetExtent,
+                                      BasicRenderViewOverlayColorLoadOp loadOp,
+                                      BasicRenderViewOverlayColorStoreOp storeOp,
+                                      VkPipeline pipeline, VkBuffer vertexBuffer,
+                                      std::uint32_t vertexCount) {
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = targetImageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = basicRenderViewOverlayLoadOp(loadOp);
+            colorAttachment.storeOp = basicRenderViewOverlayStoreOp(storeOp);
+            colorAttachment.clearValue = VkClearValue{
+                .color = VkClearColorValue{{0.0F, 0.0F, 0.0F, 0.0F}},
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = targetExtent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachments = &colorAttachment;
+
+            const VkViewport viewport{
+                .x = 0.0F,
+                .y = 0.0F,
+                .width = static_cast<float>(targetExtent.width),
+                .height = static_cast<float>(targetExtent.height),
+                .minDepth = 0.0F,
+                .maxDepth = 1.0F,
+            };
+            const VkRect2D scissor{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = targetExtent,
+            };
+            constexpr VkDeviceSize kVertexBufferOffset = 0;
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &vertexBuffer,
+                                   &kVertexBufferOffset);
+            vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
+            vkCmdDraw(frame.commandBuffer, vertexCount, 1, 0, 0);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
         [[nodiscard]] Result<void>
         updateBasicFullscreenSourceDescriptor(VkDevice device, VkDescriptorSet descriptorSet,
                                               VkImageView sourceImageView) {
@@ -1039,7 +1191,8 @@ namespace asharia {
             const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
             std::span<const VulkanRenderGraphImageBinding> bindings, VkExtent2D targetExtent,
             BasicRenderViewOverlayColorLoadOp colorLoadOp,
-            BasicRenderViewOverlayColorStoreOp colorStoreOp,
+            BasicRenderViewOverlayColorStoreOp colorStoreOp, VkPipeline debugLinePipeline,
+            VkBuffer debugLineVertexBuffer, std::uint32_t debugLineVertexCount,
             BasicRenderViewExecutionEventRecorder* eventRecorder) {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
             [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(frame, pass.name);
@@ -1067,14 +1220,34 @@ namespace asharia {
                 return std::unexpected{std::move(targetBinding.error())};
             }
 
-            recordBasicRenderViewOverlayTouch(frame, targetBinding->vulkanImageView,
-                                              targetExtent, colorLoadOp, colorStoreOp);
             if (eventRecorder != nullptr) {
                 eventRecorder->append(
                     pass, BasicRenderViewExecutionEventKind::RenderViewInput,
                     "BindRenderViewInputs",
                     firstCommandIndex(pass, RenderGraphCommandKind::SetShader), {}, {},
                     std::nullopt, targetBinding->image.index);
+            }
+            if (debugLineVertexCount > 0 && debugLinePipeline != VK_NULL_HANDLE &&
+                debugLineVertexBuffer != VK_NULL_HANDLE) {
+                recordBasicDebugLineDraw(frame, targetBinding->vulkanImageView, targetExtent,
+                                         colorLoadOp, colorStoreOp, debugLinePipeline,
+                                         debugLineVertexBuffer, debugLineVertexCount);
+                if (eventRecorder != nullptr) {
+                    eventRecorder->append(pass, BasicRenderViewExecutionEventKind::Draw,
+                                          "DrawDebugWorldLines",
+                                          firstCommandIndex(pass, RenderGraphCommandKind::SetInt),
+                                          BasicRenderViewDrawEvent{
+                                              .vertexCount = debugLineVertexCount,
+                                              .indexCount = 0,
+                                              .instanceCount = 1,
+                                          },
+                                          {}, std::nullopt, targetBinding->image.index);
+                }
+            } else {
+                recordBasicRenderViewOverlayTouch(frame, targetBinding->vulkanImageView,
+                                                  targetExtent, colorLoadOp, colorStoreOp);
+            }
+            if (eventRecorder != nullptr) {
                 eventRecorder->endPass(pass);
             }
             return {};

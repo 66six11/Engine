@@ -29,11 +29,12 @@ RenderGraph 资料。
 - `asharia::renderer_basic` 未暴露 Vulkan type，Vulkan 命令录制和资源绑定在
   `asharia::renderer_basic_vulkan`。
 - `apps/editor` 当前是 host integration 和 smoke harness；panel 通过 backend-neutral request/result
-  消费 viewport 服务，不直接创建 pipeline、descriptor 或 command buffer。
+  消费 viewport 服务，不直接创建 pipeline、descriptor 或 command buffer。viewport coordination 已按
+  `panelId + EditorViewportKind` keyed slot 保存 request、texture result 和 diagnostics。
 - 当前仍有临时实现形状：`renderer_basic_vulkan` 同时承载 sample renderer、RenderView/offscreen viewport、
-  debug preview 和 execution event；`recordViewFrame()` 已为 overlay enabled view 增加
-  `builtin.render-view-overlay` 输入 pass，把 camera/frame/debug-line count 纳入 graph-visible typed params，但
-  真正可见 debug-line/grid renderer pass 尚未完成。
+  debug preview、debug-line overlay draw 和 execution event；`recordViewFrame()` 已为 overlay enabled view 增加
+  `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 纳入 graph-visible typed params，并在存在
+  `BasicDebugWorldLine` 时绘制可见 line-list。
 
 ## 模块边界
 
@@ -83,7 +84,8 @@ RenderGraph 资料。
   Vulkan commands；它不拥有 swapchain present。
 - `apps/editor` 拥有 editor-only UI state、ImGui context/backend lifecycle、viewport texture descriptor
   registration 和 delayed retirement。Scene View panel 只提交 `EditorViewportRequest`；
-  `EditorViewportCoordinator` 才把请求转换成 sampled RenderView target 和 ImGui texture publication。
+  `EditorViewportCoordinator` 才把 keyed request 转换成 sampled RenderView target、keyed diagnostics snapshot
+  和 ImGui texture publication。
 
 销毁顺序：
 
@@ -166,8 +168,8 @@ RenderGraph 资料。
 ## 后续扩展点
 
 - `renderer_basic_vulkan` 按 RenderView recording、sample scene renderer、debug preview/capture support 继续拆分。
-- 建立 renderer-owned per-view constants / pass input 合同，再接入 camera-aware grid、scene mesh、selection、
-  gizmo 和 debug line pass。
+- 在现有 renderer-owned overlay pass input 合同上继续接入 camera-aware grid、scene mesh、selection、
+  gizmo 和更完整 debug line/source diagnostics。
 - asset-pipeline / resource upload 把 source asset、product cache 和 runtime GPU resource 分开。
 - material/pipeline key、descriptor/resource signature 和 shader reflection JSON 形成可审查合同。
 - `editor-core` 只保留 selection、commands、undo/redo、workspace 和 backend-neutral viewport state。

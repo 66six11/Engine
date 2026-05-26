@@ -28,6 +28,7 @@ namespace asharia::editor {
 
     struct ImGuiTextureRegistration {
         std::string_view ownerId;
+        EditorId panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D requestedExtent;
         EditorViewportOverlayFlags overlayFlags;
@@ -62,6 +63,7 @@ namespace asharia::editor {
     private:
         struct Entry {
             std::string ownerId;
+            EditorId panelId;
             EditorViewportKind kind{EditorViewportKind::Scene};
             EditorExtent2D requestedExtent;
             EditorViewportOverlayFlags overlayFlags;

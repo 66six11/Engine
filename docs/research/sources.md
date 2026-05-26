@@ -67,8 +67,9 @@
   `packages/renderer-basic/include/asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp` 已把
   `basicRenderGraphImageFormat()` 收敛为 `Result<RenderGraphImageFormat>`，unsupported format 会在
   renderer/RG import 前 fail early。`--smoke-renderer-format-contract` 覆盖当前负向路径。
-- `apps/editor/src/editor_viewport_coordinator.*` 仍以单个 `requestedViewport_` 表达 viewport request，
-  会覆盖同帧多 view / 多 panel 需求。
+- `apps/editor/src/editor_viewport_coordinator.*` 已把 viewport request 收敛为 `panelId + EditorViewportKind`
+  keyed slot；同帧多 view / 多 panel 需求不再被单个 `requestedViewport_` 覆盖。`--smoke-editor-viewport`
+  合成 Scene + Game + Preview 请求验证该闭环。
 - `apps/editor/src/editor_viewport_overlay_provider.cpp`、`apps/editor/src/panels/scene_view_panel.cpp` 和
   renderer diagnostics 路径已经传递 camera / overlay / debug line intent。B.1 后，
   `packages/renderer-basic/src/basic_renderers/fullscreen_texture_renderer.inl` 会在 overlay enabled 时记录
@@ -109,6 +110,7 @@
 - Dear ImGui backends：https://github.com/ocornut/imgui/blob/master/docs/BACKENDS.md
 - Dear ImGui FAQ：https://github.com/ocornut/imgui/blob/master/docs/FAQ.md
 - Dear ImGui image loading and display examples：https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples
+- Dear ImGui multi-viewports wiki：https://github.com/ocornut/imgui/wiki/Multi-Viewports
 - Dear ImGui Vulkan backend header：https://github.com/ocornut/imgui/blob/master/backends/imgui_impl_vulkan.h
 - Unity Editor Windows：https://docs.unity.cn/Manual/editor-EditorWindows.html
 - Unreal FTabManager：https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/Framework/Docking/FTabManager
@@ -133,6 +135,7 @@
 - Bevy plugins quick start：https://bevy.org/learn/quick-start/getting-started/plugins/
 - Bevy RenderGraph API：https://docs.rs/bevy/latest/bevy/render/render_graph/struct.RenderGraph.html
 - Vulkan Guide threading：https://docs.vulkan.org/guide/latest/threading.html
+- Vulkan `vkQueueSubmit` reference：https://docs.vulkan.org/refpages/latest/refpages/source/vkQueueSubmit.html
 - Khronos command buffer usage sample：https://docs.vulkan.org/samples/latest/samples/performance/command_buffer_usage/README.html
 
 结论：
@@ -150,6 +153,10 @@
   `apps/editor`；panel/action/event、selection 和 transaction 才是未来 `editor-core` 的候选职责。
 - Unity、Unreal 和 Godot 的 editor window/dock 模型都支持按 id/type 注册和复用 panel，而不是让菜单直接
   创建任意 UI 实例。
+- Dear ImGui multi-viewports 是 platform window / docking 能力；Asharia 的 Scene/Game/Preview sampled viewport
+  仍需要 engine 自己的 keyed request、texture result 和 diagnostics model。
+- Vulkan `vkQueueSubmit` 的 wait-stage contract 仍由 frame callback 返回；同帧多 RenderView 录制路径需要把各 view
+  的 wait-stage mask 合并，而不是让最后一个 view 覆盖前面的结果。
 
 ## Viewport / camera / RenderView / shader input
 

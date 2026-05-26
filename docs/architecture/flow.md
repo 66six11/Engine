@@ -382,10 +382,11 @@ sequenceDiagram
 ## Editor Host 当前流程
 
 `apps/editor` 是当前 editor shell 和 editor smoke 的真实入口。它复用 `VulkanContext` /
-`VulkanFrameLoop`，通过 `BasicFullscreenTextureRenderer::recordViewFrame()` 生成 Scene View sampled
+`VulkanFrameLoop`，通过 `BasicFullscreenTextureRenderer::recordViewFrame()` 生成 sampled viewport
 target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Scene/debug viewport flags 和 refresh intent 随 request/result
-流动；Scene View 默认 on-demand，coordinator 只有在初始纹理、resize、overlay/debug event 或 `AlwaysRefresh`
-等 repaint reason 存在时才录制新的 RenderView。coordinator 会清掉 Scene-only authoring flags，同时保留显式 Game debug overlay/debug gizmo intent。Panel 只提交请求和消费 texture id，不持有
+流动；viewport coordinator 按 `panelId + EditorViewportKind` 收集 keyed slot，所以同帧 Scene/Game/Preview
+请求不会互相覆盖。Scene View 默认 on-demand，coordinator 只有在初始纹理、resize、overlay/debug event 或
+`AlwaysRefresh` 等 repaint reason 存在时才录制新的 RenderView。coordinator 会清掉 Scene-only authoring flags，同时保留显式 Game debug overlay/debug gizmo intent。Panel 只提交请求和消费 texture id，不持有
 Vulkan image、descriptor set 或 command buffer。完整 editor 架构见 `docs/architecture/editor.md`。
 
 ```mermaid
@@ -428,8 +429,10 @@ sequenceDiagram
         Main->>FrameLoop: renderFrame(record callback)
         alt repaint reason present and Frame Debug allows recording
             FrameLoop->>Viewport: recordRequestedViews(frame, renderer, repaint reasons)
-            Viewport->>RendererVk: recordViewFrame(sampled target)
-            Viewport->>TextureRegistry: registerOrUpdate(sampled image view)
+            loop keyed requested viewport slot
+                Viewport->>RendererVk: recordViewFrame(sampled target)
+                Viewport->>TextureRegistry: registerOrUpdate(sampled image view)
+            end
             Viewport->>FrameDebug: capture view-local diagnostics snapshot
         else idle on-demand Scene View
             FrameLoop->>Viewport: process retired viewport textures and reuse presented texture
@@ -447,8 +450,9 @@ sequenceDiagram
 
 - `EditorViewportPanelHost` 是 panel-facing API；它只暴露 `EditorViewportRequest` 和
   `EditorViewportResult`。
-- `EditorViewportCoordinator` 是 editor-side Vulkan bridge；它拥有 pending/presented/retired
-  viewport render targets，并通过 frame-loop deferred deletion 延迟释放旧 target。
+- `EditorViewportCoordinator` 是 editor-side Vulkan bridge；它按 `panelId + EditorViewportKind` 拥有 keyed
+  pending/presented viewport render targets 和 keyed diagnostics snapshot，并通过 frame-loop deferred deletion 延迟释放旧
+  target。Frame callback 仍返回一个合并后的 acquire wait-stage mask。
 - `EditorViewportOverlayFlags` 是当前 viewport overlay intent。Scene View 请求保留 grid、transform gizmo、wire、
   selection outline、debug overlay 和 debug gizmo flags；Game View 请求会清空 Scene-only authoring flags，但可保留
   显式 debug overlay/debug gizmo flags；Preview View 当前清空全部 overlay flags。
@@ -664,7 +668,8 @@ flowchart TD
     ViewLocal --> PrepareView
 ```
 
-- 当前 sample 只有一个 game view / swapchain target，但后续 editor 需要允许一帧多个 view graph。
+- 当前 sample 只有一个 game view / swapchain target；editor viewport coordinator 已先在 editor host 侧支持一帧多个
+  keyed view request，作为后续 Game View / asset preview / multi-view diagnostics 的小闭环。
 - Game View、Scene View、Preview View 共享 renderer、RenderGraph 和 Vulkan backend caches，但各自拥有
   view-local camera constants、render target、view flags、culling/layer mask、descriptor sets、transient resources
   和 compiled graph。Scene View camera state 可以由 editor viewport 拥有，但进入 renderer 后必须变成普通
@@ -912,10 +917,11 @@ flowchart TD
     负责 resize 后重算投影，`unprojectEditorViewportPoint()` 提供 viewport-local pixel（左上角原点，Y down）
     到 world ray 的后端无关语义；该 ray 用 inverse view-projection 计算，`origin`/`nearPoint` 位于
     near clipping plane，`farPoint` 位于 far clipping plane。当前 `recordViewFrame()` 会在 overlay enabled
-    时插入 `builtin.render-view-overlay` 输入 pass，把 camera/frame/debug-line count 作为 typed params 与
-    command summary 记录，并触碰目标 attachment；mesh/draw-list smoke 仍在 renderer 内部构造 MVP，可见
-    debug-line/grid renderer pass 尚未完成。后续 orbit/pan/dolly、camera-aware grid、scene mesh、
-    selection/gizmo 和可见 debug line pass 必须继续沿这条 RenderView route 接入。
+    时插入 `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 作为 typed params 与
+    command summary 记录；存在 `BasicDebugWorldLine` 时，`renderer_basic_vulkan` 会把 world line 投影为
+    line-list vertex buffer 并绘制到目标 attachment。mesh/draw-list smoke 仍在 renderer 内部构造 MVP。
+    后续 camera-aware grid、scene mesh、selection/gizmo 和更多 debug line pass 必须继续沿这条 RenderView
+    route 接入。
 14. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的

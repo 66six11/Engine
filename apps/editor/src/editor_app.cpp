@@ -650,6 +650,19 @@ namespace {
                 "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
             return false;
         }
+        const auto debugLineDraw =
+            std::ranges::find_if(scene.executionEvents,
+                                 [](const asharia::BasicRenderViewExecutionEvent& event) {
+                                     return event.kind ==
+                                                asharia::BasicRenderViewExecutionEventKind::Draw &&
+                                            event.label == "DrawDebugWorldLines";
+                                 });
+        if (debugLineDraw == scene.executionEvents.end() ||
+            debugLineDraw->draw.vertexCount != scene.overlay.debugWorldLineCount * 2U) {
+            asharia::logError(
+                "Editor viewport smoke did not record a debug-line overlay draw event.");
+            return false;
+        }
         return true;
     }
 

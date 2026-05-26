@@ -75,6 +75,7 @@ namespace asharia::editor {
 
         auto active = findActive(registration.ownerId);
         if (active != active_.end() && matches(*active, registration.texture)) {
+            active->panelId = registration.panelId;
             active->kind = registration.kind;
             active->requestedExtent = registration.requestedExtent;
             active->overlayFlags =
@@ -93,6 +94,7 @@ namespace asharia::editor {
 
         Entry replacement{
             .ownerId = std::string{registration.ownerId},
+            .panelId = registration.panelId,
             .kind = registration.kind,
             .requestedExtent = registration.requestedExtent,
             .overlayFlags =
@@ -197,7 +199,7 @@ namespace asharia::editor {
 
     EditorViewportResult ImGuiTextureRegistry::makeResult(const Entry& entry) {
         return EditorViewportResult{
-            .panelId = EditorId{.value = entry.ownerId},
+            .panelId = entry.panelId,
             .kind = entry.kind,
             .requestedExtent = entry.requestedExtent,
             .texture =
