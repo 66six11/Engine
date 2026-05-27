@@ -49,6 +49,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
   ImGui Vulkan frame renderer。
 - 2026-05-27：`imgui_frame_renderer.hpp/.cpp` 已接管 swapchain color/present barrier、dynamic rendering attachment
   setup 和 ImGui draw data Vulkan recording；`editor_app.cpp` 仍需继续拆 smoke checks、frame loop 和逐 panel context。
+- 2026-05-27：`editor_smoke.hpp/.cpp` 已接管 smoke mode/frame count、resize smoke 状态推进、synthetic
+  multi-view 请求和 Frame Debugger capture/preview/resume smoke 驱动；`editor_app.cpp` 仍保留 smoke validation
+  和主循环编排。
 
 推荐顺序：
 

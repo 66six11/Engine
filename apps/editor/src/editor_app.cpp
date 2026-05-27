@@ -43,6 +43,7 @@
 #include "editor_panel.hpp"
 #include "editor_settings.hpp"
 #include "editor_shortcut_router.hpp"
+#include "editor_smoke.hpp"
 #include "editor_tool.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
@@ -56,30 +57,7 @@ namespace {
 
     constexpr asharia::VulkanDebugLabelMode kEditorDebugLabels =
         asharia::VulkanDebugLabelMode::Required;
-    constexpr int kSmokeFrameCount = 3;
-    constexpr int kResizeSmokeFrameCount = 8;
-    constexpr int kFrameDebuggerSmokeFrameCount = 7;
     constexpr int kSmokeAttemptLimit = 120;
-    constexpr int kResizeSmokeWindowWidth = 960;
-    constexpr int kResizeSmokeWindowHeight = 540;
-
-    bool isSmokeMode(asharia::editor::EditorRunMode mode) {
-        return mode != asharia::editor::EditorRunMode::Interactive;
-    }
-
-    bool isViewportSmokeMode(asharia::editor::EditorRunMode mode) {
-        return mode == asharia::editor::EditorRunMode::SmokeViewport ||
-               mode == asharia::editor::EditorRunMode::SmokeViewportResize ||
-               mode == asharia::editor::EditorRunMode::SmokeFrameDebugger;
-    }
-
-    bool isViewportResizeSmokeMode(asharia::editor::EditorRunMode mode) {
-        return mode == asharia::editor::EditorRunMode::SmokeViewportResize;
-    }
-
-    bool isFrameDebuggerSmokeMode(asharia::editor::EditorRunMode mode) {
-        return mode == asharia::editor::EditorRunMode::SmokeFrameDebugger;
-    }
 
     [[nodiscard]] std::filesystem::path editorSmokeLayoutIniPath() {
         std::error_code error;
@@ -172,30 +150,12 @@ namespace {
         return asharia::editor::EditorLocale::EnUs;
     }
 
-    int smokeFrameCount(asharia::editor::EditorRunMode mode) {
-        if (isViewportResizeSmokeMode(mode)) {
-            return kResizeSmokeFrameCount;
-        }
-        if (isFrameDebuggerSmokeMode(mode)) {
-            return kFrameDebuggerSmokeFrameCount;
-        }
-        return kSmokeFrameCount;
-    }
-
     bool isRenderableExtent(asharia::WindowFramebufferExtent extent) {
         return extent.width > 0 && extent.height > 0;
     }
 
     bool extentMatches(VkExtent2D lhs, asharia::WindowFramebufferExtent rhs) {
         return lhs.width == rhs.width && lhs.height == rhs.height;
-    }
-
-    bool isRenderableExtent(VkExtent2D extent) {
-        return extent.width > 0 && extent.height > 0;
-    }
-
-    bool differs(VkExtent2D lhs, VkExtent2D rhs) {
-        return lhs.width != rhs.width || lhs.height != rhs.height;
     }
 
     bool closeFloat(float lhs, float rhs) {
@@ -319,10 +279,6 @@ namespace {
         return true;
     }
 
-    std::uint64_t extentArea(VkExtent2D extent) {
-        return static_cast<std::uint64_t>(extent.width) * static_cast<std::uint64_t>(extent.height);
-    }
-
     asharia::editor::EditorExtent2D editorExtentFromVk(VkExtent2D extent) {
         return asharia::editor::EditorExtent2D{
             .width = extent.width,
@@ -330,235 +286,11 @@ namespace {
         };
     }
 
-    struct EditorSmokeRunResult {
-        int renderedFrames{};
-        bool resizeRequested{};
-        bool resizedViewportPresented{};
-        bool frameDebugCaptureRequested{};
-        bool frameDebugReplayPassRequested{};
-        bool frameDebugPreviewRequested{};
-        bool frameDebugPreviewVisible{};
-        bool frameDebugResumeRequested{};
-        bool frameDebugRenderedAfterResume{};
-        VkExtent2D viewportExtentBeforeResize{};
-        VkExtent2D viewportExtentAfterResize{};
-        std::uint64_t textureFramesBeforeResize{};
-        std::uint64_t viewportFramesAtFrameDebugPause{};
-        std::uint64_t viewportFramesAtFrameDebugPreview{};
-        std::uint64_t viewportFramesAfterFrameDebugResume{};
-        std::uint64_t inspectedWorldFramesAtFrameDebugPause{};
-        std::uint64_t inspectedWorldFramesAtFrameDebugPreview{};
-        std::uint64_t inspectedWorldFramesAfterFrameDebugResume{};
-        asharia::editor::EditorInspectedWorldSchedulerStats inspectedWorldStats;
-        asharia::editor::EditorInputRouterStats inputStats;
-        asharia::editor::EditorShortcutRouterStats shortcutStats;
-    };
-
-    struct EditorViewportResizeSmokeState {
-        bool requested{};
-        bool presentedAfterResize{};
-        VkExtent2D extentBeforeResize{};
-        VkExtent2D extentAfterResize{};
-        std::uint64_t textureFramesBeforeResize{};
-    };
-
-    struct EditorFrameDebuggerSmokeState {
-        bool captureRequested{};
-        bool replayPassRequested{};
-        bool previewRequested{};
-        bool previewVisible{};
-        bool resumeRequested{};
-        bool renderedAfterResume{};
-        std::uint64_t viewportFramesAtPause{};
-        std::uint64_t viewportFramesAtPreview{};
-        std::uint64_t viewportFramesAfterResume{};
-        std::uint64_t inspectedWorldFramesAtPause{};
-        std::uint64_t inspectedWorldFramesAtPreview{};
-        std::uint64_t inspectedWorldFramesAfterResume{};
-    };
-
-    void requestSyntheticMultiViewSmoke(asharia::editor::EditorRunMode mode,
-                                        asharia::editor::EditorViewportCoordinator& viewportHost) {
-        if (mode != asharia::editor::EditorRunMode::SmokeViewport ||
-            viewportHost.stats().multiViewFramesRecorded > 0) {
-            return;
-        }
-
-        const asharia::editor::EditorViewportOverlayFlags allFlags{
-            .gridVisible = true,
-            .gizmoVisible = true,
-            .wireVisible = true,
-            .selectionOutlineVisible = true,
-            .debugOverlayVisible = true,
-            .debugGizmoVisible = true,
-        };
-        const asharia::editor::EditorExtent2D gameExtent{.width = 192, .height = 128};
-        const asharia::editor::EditorExtent2D previewExtent{.width = 96, .height = 96};
-        viewportHost.requestViewport(asharia::editor::EditorViewportRequest{
-            .panelId = asharia::editor::EditorId{.value = "editor-smoke-game-view"},
-            .kind = asharia::editor::EditorViewportKind::Game,
-            .extent = gameExtent,
-            .camera = asharia::editor::defaultEditorSceneViewCamera(gameExtent),
-            .overlayFlags = allFlags,
-            .refresh =
-                asharia::editor::EditorViewportRefreshRequest{
-                    .policy = asharia::editor::EditorViewportRefreshPolicy::OnDemand,
-                },
-        });
-        viewportHost.requestViewport(asharia::editor::EditorViewportRequest{
-            .panelId = asharia::editor::EditorId{.value = "editor-smoke-preview-view"},
-            .kind = asharia::editor::EditorViewportKind::Preview,
-            .extent = previewExtent,
-            .camera = asharia::editor::defaultEditorSceneViewCamera(previewExtent),
-            .overlayFlags = allFlags,
-            .refresh =
-                asharia::editor::EditorViewportRefreshRequest{
-                    .policy = asharia::editor::EditorViewportRefreshPolicy::OnDemand,
-                },
-        });
-    }
-
-    void updateViewportResizeSmoke(asharia::GlfwWindow& window,
-                                   const asharia::editor::EditorViewportCoordinator& viewportHost,
-                                   EditorViewportResizeSmokeState& state) {
-        if (!state.requested && viewportHost.hasPresentedViewportTexture()) {
-            state.extentBeforeResize = viewportHost.descriptorExtent();
-            state.textureFramesBeforeResize = viewportHost.textureFramesSubmitted();
-            window.setSize(kResizeSmokeWindowWidth, kResizeSmokeWindowHeight);
-            state.requested = true;
-        }
-
-        const VkExtent2D currentViewportExtent = viewportHost.descriptorExtent();
-        if (state.requested && !state.presentedAfterResize &&
-            isRenderableExtent(currentViewportExtent) &&
-            differs(currentViewportExtent, state.extentBeforeResize) &&
-            extentArea(currentViewportExtent) < extentArea(state.extentBeforeResize) &&
-            viewportHost.textureFramesSubmitted() > state.textureFramesBeforeResize) {
-            state.extentAfterResize = currentViewportExtent;
-            state.presentedAfterResize = true;
-        }
-    }
-
-    std::optional<std::size_t>
-    chooseFrameDebugReplayPass(const asharia::editor::EditorFrameDebugger& frameDebugger) {
-        const std::optional<asharia::editor::EditorFrameDebugCapture>& capture =
-            frameDebugger.pausedCapture();
-        if (!capture) {
-            return std::nullopt;
-        }
-
-        std::optional<std::size_t> fallback;
-        for (const asharia::RenderGraphDiagnosticsPassNode& pass :
-             capture->diagnostics.renderGraph.passes) {
-            if (!fallback) {
-                fallback = pass.passIndex;
-            }
-            if (pass.name == "ClearFullscreenSource") {
-                return pass.passIndex;
-            }
-        }
-        return fallback;
-    }
-
-    std::optional<asharia::BasicRenderViewExecutionEventId>
-    chooseFrameDebugReplayEvent(const asharia::editor::EditorFrameDebugger& frameDebugger) {
-        const std::optional<asharia::editor::EditorFrameDebugCapture>& capture =
-            frameDebugger.pausedCapture();
-        if (!capture) {
-            return std::nullopt;
-        }
-
-        std::optional<asharia::BasicRenderViewExecutionEventId> fallback;
-        for (const asharia::BasicRenderViewExecutionEvent& event :
-             capture->diagnostics.executionEvents) {
-            if (event.kind == asharia::BasicRenderViewExecutionEventKind::BeginPass ||
-                event.kind == asharia::BasicRenderViewExecutionEventKind::EndPass) {
-                continue;
-            }
-            if (!fallback) {
-                fallback = event.id;
-            }
-            if (event.passName == "ClearFullscreenSource" &&
-                event.kind == asharia::BasicRenderViewExecutionEventKind::ClearColor) {
-                return event.id;
-            }
-        }
-        return fallback;
-    }
-
-    void updateFrameDebuggerSmoke(
-        asharia::editor::EditorFrameDebugger& frameDebugger,
-        asharia::editor::EditorActionRegistry& actionRegistry,
-        asharia::editor::EditorContext& editorContext,
-        const asharia::editor::EditorViewportCoordinator& viewportHost,
-        const asharia::editor::EditorInspectedWorldScheduler& inspectedWorldScheduler,
-        EditorFrameDebuggerSmokeState& state) {
-        if (!state.captureRequested) {
-            state.captureRequested =
-                actionRegistry.invoke("debug.capture-frame", editorContext.actionInvokeContext());
-            return;
-        }
-
-        if (!state.resumeRequested &&
-            frameDebugger.state() == asharia::editor::EditorFrameDebuggerState::PausedFrameDebug) {
-            if (!state.replayPassRequested) {
-                state.viewportFramesAtPause = viewportHost.viewportFramesRendered();
-                state.inspectedWorldFramesAtPause =
-                    inspectedWorldScheduler.stats().frameAdvanceSafePoints;
-                const std::optional<asharia::BasicRenderViewExecutionEventId> replayEvent =
-                    chooseFrameDebugReplayEvent(frameDebugger);
-                if (replayEvent) {
-                    state.replayPassRequested = frameDebugger.selectReplayEvent(*replayEvent);
-                    state.previewRequested = state.replayPassRequested;
-                } else {
-                    const std::optional<std::size_t> replayPass =
-                        chooseFrameDebugReplayPass(frameDebugger);
-                    if (replayPass) {
-                        state.replayPassRequested = frameDebugger.selectReplayPass(*replayPass);
-                        state.previewRequested = state.replayPassRequested;
-                    }
-                }
-                return;
-            }
-
-            if (!state.previewRequested) {
-                return;
-            }
-
-            const asharia::editor::EditorFrameDebugPreview& preview = frameDebugger.preview();
-            const asharia::editor::EditorFrameDebuggerStats stats = frameDebugger.stats();
-            if (!state.previewVisible) {
-                if (preview.status == asharia::editor::EditorFrameDebugPreviewStatus::Available &&
-                    asharia::editor::hasEditorViewportTexture(preview.texture) &&
-                    stats.previewTextureFramesDrawn > 0) {
-                    state.viewportFramesAtPreview = viewportHost.viewportFramesRendered();
-                    state.inspectedWorldFramesAtPreview =
-                        inspectedWorldScheduler.stats().frameAdvanceSafePoints;
-                    state.previewVisible = true;
-                }
-                return;
-            }
-
-            state.resumeRequested =
-                actionRegistry.invoke("debug.resume-frame", editorContext.actionInvokeContext());
-            return;
-        }
-
-        if (state.resumeRequested && !state.renderedAfterResume &&
-            frameDebugger.state() == asharia::editor::EditorFrameDebuggerState::Running &&
-            viewportHost.viewportFramesRendered() > state.viewportFramesAtPause) {
-            state.viewportFramesAfterResume = viewportHost.viewportFramesRendered();
-            state.inspectedWorldFramesAfterResume =
-                inspectedWorldScheduler.stats().frameAdvanceSafePoints;
-            state.renderedAfterResume = true;
-        }
-    }
-
     [[nodiscard]] bool validateViewportSmokePresentation(
-        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        asharia::editor::EditorRunMode mode, const asharia::editor::EditorSmokeRunResult& runResult,
         const asharia::editor::EditorViewportCoordinator& viewportHost,
         const asharia::editor::ImGuiTextureRegistryStats& textureRegistryStats) {
-        if (!isViewportSmokeMode(mode)) {
+        if (!asharia::editor::isEditorViewportSmokeMode(mode)) {
             return true;
         }
         if (!viewportHost.hasPresentedViewportTexture()) {
@@ -580,7 +312,7 @@ namespace {
     }
 
     [[nodiscard]] bool validateIdleSceneViewReuseSmoke(
-        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        asharia::editor::EditorRunMode mode, const asharia::editor::EditorSmokeRunResult& runResult,
         const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
         if (mode != asharia::editor::EditorRunMode::SmokeViewport) {
             return true;
@@ -705,10 +437,10 @@ namespace {
     }
 
     [[nodiscard]] bool validateViewportFlagsSmoke(
-        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        asharia::editor::EditorRunMode mode, const asharia::editor::EditorSmokeRunResult& runResult,
         const asharia::editor::EditorViewportCoordinator& viewportHost,
         const asharia::editor::EditorViewportCoordinatorStats& viewportStats) {
-        if (!isViewportSmokeMode(mode)) {
+        if (!asharia::editor::isEditorViewportSmokeMode(mode)) {
             return true;
         }
 
@@ -819,10 +551,10 @@ namespace {
     }
 
     [[nodiscard]] bool validateViewportResizeSmoke(
-        asharia::editor::EditorRunMode mode, const EditorSmokeRunResult& runResult,
+        asharia::editor::EditorRunMode mode, const asharia::editor::EditorSmokeRunResult& runResult,
         const asharia::editor::EditorViewportCoordinatorStats& viewportStats,
         const asharia::editor::ImGuiTextureRegistryStats& textureRegistryStats) {
-        if (!isViewportResizeSmokeMode(mode)) {
+        if (!asharia::editor::isEditorViewportResizeSmokeMode(mode)) {
             return true;
         }
         if (!runResult.resizeRequested || !runResult.resizedViewportPresented) {
@@ -846,9 +578,9 @@ namespace {
 
     [[nodiscard]] bool
     validateFrameDebuggerSmoke(asharia::editor::EditorRunMode mode,
-                               const EditorSmokeRunResult& runResult,
+                               const asharia::editor::EditorSmokeRunResult& runResult,
                                const asharia::editor::EditorFrameDebugger& frameDebugger) {
-        if (!isFrameDebuggerSmokeMode(mode)) {
+        if (!asharia::editor::isEditorFrameDebuggerSmokeMode(mode)) {
             return true;
         }
 
@@ -949,9 +681,10 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] bool validateInputRouterSmoke(asharia::editor::EditorRunMode mode,
-                                                const EditorSmokeRunResult& runResult) {
-        if (!isSmokeMode(mode)) {
+    [[nodiscard]] bool
+    validateInputRouterSmoke(asharia::editor::EditorRunMode mode,
+                             const asharia::editor::EditorSmokeRunResult& runResult) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
         if (runResult.inputStats.capturedFrames <
@@ -966,9 +699,10 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] bool validateShortcutRouterRunSmoke(asharia::editor::EditorRunMode mode,
-                                                      const EditorSmokeRunResult& runResult) {
-        if (!isSmokeMode(mode)) {
+    [[nodiscard]] bool
+    validateShortcutRouterRunSmoke(asharia::editor::EditorRunMode mode,
+                                   const asharia::editor::EditorSmokeRunResult& runResult) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
         if (runResult.shortcutStats.evaluatedFrames <
@@ -987,7 +721,7 @@ namespace {
     [[nodiscard]] bool
     validateImguiLayoutPersistenceSmoke(asharia::editor::EditorRunMode mode,
                                         const asharia::editor::ImGuiRuntime& imgui) {
-        if (!isSmokeMode(mode)) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
         if (!imgui.layoutPersistenceEnabled()) {
@@ -999,7 +733,7 @@ namespace {
 
     [[nodiscard]] bool validateImguiLayoutSavedSmoke(asharia::editor::EditorRunMode mode,
                                                      const asharia::editor::ImGuiRuntime& imgui) {
-        if (!isSmokeMode(mode)) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
         if (!std::filesystem::exists(imgui.layoutIniPath())) {
@@ -1010,7 +744,7 @@ namespace {
     }
 
     [[nodiscard]] bool validateI18nSmoke(asharia::editor::EditorRunMode mode) {
-        if (!isSmokeMode(mode)) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
 
@@ -1051,7 +785,8 @@ namespace {
     [[nodiscard]] bool validateEditorFontSmoke(asharia::editor::EditorRunMode mode,
                                                const asharia::editor::ImGuiRuntime& imgui,
                                                asharia::editor::EditorLocale locale) {
-        if (!isSmokeMode(mode) || locale != asharia::editor::EditorLocale::ZhHans) {
+        if (!asharia::editor::isEditorSmokeMode(mode) ||
+            locale != asharia::editor::EditorLocale::ZhHans) {
             return true;
         }
 
@@ -1075,7 +810,7 @@ namespace {
 
     [[nodiscard]] bool validateEditorThemeSmoke(asharia::editor::EditorRunMode mode,
                                                 asharia::editor::EditorUiThemeId expectedTheme) {
-        if (!isSmokeMode(mode)) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
 
@@ -1164,7 +899,7 @@ namespace {
 
     [[nodiscard]] bool validateEditorSettingsSmoke(asharia::editor::EditorRunMode mode,
                                                    asharia::editor::EditorContext& editorContext) {
-        if (!isSmokeMode(mode)) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
 
@@ -1369,7 +1104,7 @@ namespace {
         return *status != asharia::VulkanFrameStatus::OutOfDate;
     }
 
-    [[nodiscard]] asharia::Result<EditorSmokeRunResult>
+    [[nodiscard]] asharia::Result<asharia::editor::EditorSmokeRunResult>
     runEditorLoop(asharia::GlfwWindow& window, asharia::VulkanFrameLoop& frameLoop,
                   asharia::BasicFullscreenTextureRenderer& renderer,
                   asharia::editor::EditorViewportCoordinator& viewportHost,
@@ -1378,9 +1113,9 @@ namespace {
                   asharia::editor::EditorContext& editorContext,
                   asharia::editor::EditorPanelRegistry& panelRegistry,
                   asharia::editor::EditorRunMode mode) {
-        const bool smokeMode = isSmokeMode(mode);
-        EditorViewportResizeSmokeState resizeSmoke;
-        EditorFrameDebuggerSmokeState frameDebugSmoke;
+        const bool smokeMode = asharia::editor::isEditorSmokeMode(mode);
+        asharia::editor::EditorViewportResizeSmokeState resizeSmoke;
+        asharia::editor::EditorFrameDebuggerSmokeState frameDebugSmoke;
         asharia::editor::EditorInspectedWorldScheduler inspectedWorldScheduler;
         asharia::editor::EditorInputRouter inputRouter;
         asharia::editor::EditorShortcutRouter shortcutRouter;
@@ -1401,9 +1136,10 @@ namespace {
                 continue;
             }
 
-            if (isFrameDebuggerSmokeMode(mode)) {
-                updateFrameDebuggerSmoke(frameDebugger, actionRegistry, editorContext, viewportHost,
-                                         inspectedWorldScheduler, frameDebugSmoke);
+            if (asharia::editor::isEditorFrameDebuggerSmokeMode(mode)) {
+                asharia::editor::updateFrameDebuggerSmoke(frameDebugger, actionRegistry,
+                                                          editorContext, viewportHost,
+                                                          inspectedWorldScheduler, frameDebugSmoke);
             }
             frameDebugger.beginFrame(renderedFrames);
             inspectedWorldScheduler.runFrameSafePoints(
@@ -1440,7 +1176,7 @@ namespace {
                 .viewport = {.host = viewportHost},
             };
             buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
-            requestSyntheticMultiViewSmoke(mode, viewportHost);
+            asharia::editor::requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();
             shortcutRouter.beginFrame(inputRouter.snapshot());
             static_cast<void>(shortcutRouter.routeImGuiShortcuts(
@@ -1456,18 +1192,19 @@ namespace {
                 ++renderedFrames;
             }
             frameDebugger.endSubmittedFrame(frameLoop.completedFrameEpoch());
-            if (isViewportResizeSmokeMode(mode)) {
-                updateViewportResizeSmoke(window, viewportHost, resizeSmoke);
+            if (asharia::editor::isEditorViewportResizeSmokeMode(mode)) {
+                asharia::editor::updateViewportResizeSmoke(window, viewportHost, resizeSmoke);
             }
-            if (isFrameDebuggerSmokeMode(mode)) {
-                updateFrameDebuggerSmoke(frameDebugger, actionRegistry, editorContext, viewportHost,
-                                         inspectedWorldScheduler, frameDebugSmoke);
+            if (asharia::editor::isEditorFrameDebuggerSmokeMode(mode)) {
+                asharia::editor::updateFrameDebuggerSmoke(frameDebugger, actionRegistry,
+                                                          editorContext, viewportHost,
+                                                          inspectedWorldScheduler, frameDebugSmoke);
             }
             editorContext.diagnosticsLog().appendEvents(editorContext.eventQueue().events());
             editorContext.eventQueue().clear();
             panelRegistry.clearLifecycleEvents();
 
-            if (smokeMode && renderedFrames >= smokeFrameCount(mode)) {
+            if (smokeMode && renderedFrames >= asharia::editor::editorSmokeFrameCount(mode)) {
                 break;
             }
 
@@ -1475,7 +1212,7 @@ namespace {
             std::this_thread::sleep_for(smokeMode ? 16ms : 1ms);
         }
 
-        return EditorSmokeRunResult{
+        return asharia::editor::EditorSmokeRunResult{
             .renderedFrames = renderedFrames,
             .resizeRequested = resizeSmoke.requested,
             .resizedViewportPresented = resizeSmoke.presentedAfterResize,
@@ -1756,7 +1493,7 @@ namespace {
                                     asharia::editor::EditorContext& editorContext,
                                     asharia::editor::EditorPanelRegistry& panelRegistry,
                                     const asharia::editor::EditorToolRegistry& toolRegistry) {
-        if (!isSmokeMode(mode)) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
 
@@ -1793,7 +1530,7 @@ namespace {
     };
 
     [[nodiscard]] bool validateEditorCommandSmoke(asharia::editor::EditorRunMode mode) {
-        if (!isSmokeMode(mode)) {
+        if (!asharia::editor::isEditorSmokeMode(mode)) {
             return true;
         }
 
@@ -1835,7 +1572,7 @@ namespace {
 namespace asharia::editor {
 
     int runEditor(EditorRunMode mode) {
-        const bool smokeMode = isSmokeMode(mode);
+        const bool smokeMode = asharia::editor::isEditorSmokeMode(mode);
 
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
@@ -2003,7 +1740,7 @@ namespace asharia::editor {
                   << ", frame debugger: " << frameDebugger.stateName()
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
-        if (isViewportResizeSmokeMode(mode)) {
+        if (asharia::editor::isEditorViewportResizeSmokeMode(mode)) {
             std::cout << "Editor viewport resize: " << runResult->viewportExtentBeforeResize.width
                       << 'x' << runResult->viewportExtentBeforeResize.height << " -> "
                       << runResult->viewportExtentAfterResize.width << 'x'
