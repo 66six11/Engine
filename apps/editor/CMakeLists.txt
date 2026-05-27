@@ -85,6 +85,7 @@ add_executable(asharia-editor
     src/editor_settings.cpp
     src/editor_shortcut_router.cpp
     src/editor_smoke.cpp
+    src/editor_smoke_validation.cpp
     src/editor_tool.cpp
     src/editor_ui.cpp
     src/editor_viewport.cpp

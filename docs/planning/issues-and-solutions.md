@@ -13,7 +13,7 @@
 | **B** | RenderView camera → GPU contract | ◐ Partially Fixed (B.2+B.3 renderer slice) | 2026-05-25 |
 | **C** | Multi-view request model | ✓ Fixed | 2026-05-23 |
 | **D** | Graph-visible GPU work | ✓ Fixed | 2026-05-25 |
-| **E** | Editor state and command model | ◐ Partially Fixed (Step 1+2a+2b-a+2b-b+3) | 2026-05-27 |
+| **E** | Editor state and command model | ◐ Partially Fixed (Step 1+2a+2b-a+2b-b+2b-c+3) | 2026-05-27 |
 | **F** | RenderGraph API / implementation split | ◐ Partially Fixed (Phase 1+2+3) | 2026-05-25 |
 
 ---
@@ -193,9 +193,15 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 3. `editor_app.cpp` 保留 smoke validation 和主循环编排，后续可继续拆出 validation/loop host
    而不再扩张顶层 app glue
 
+**已修复 (Step 2b-c)**:
+1. 拆出 `apps/editor/src/editor_smoke_validation.hpp/.cpp`
+2. `editor_smoke_validation` 接管 editor startup、registration、command、viewport、resize、
+   Frame Debugger、input、shortcut 和 layout persistence smoke 断言
+3. `editor_app.cpp` 继续保留 bootstrap、frame loop 和 shutdown 编排，不再承载大块 smoke validation
+
 **待完成 (Step 2b)**:
 - 继续把 Panel `draw()` / `prepareWindow()` 从顶层 `EditorFrameContext` 推向逐面板需要的窄 context
-- 继续拆分 `editor_app.cpp` 中的 smoke validation、frame loop 和剩余 Vulkan host glue
+- 继续拆分 `editor_app.cpp` 中的 frame loop 和剩余 Vulkan host glue
 
 ---
 

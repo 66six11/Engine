@@ -52,6 +52,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - 2026-05-27：`editor_smoke.hpp/.cpp` 已接管 smoke mode/frame count、resize smoke 状态推进、synthetic
   multi-view 请求和 Frame Debugger capture/preview/resume smoke 驱动；`editor_app.cpp` 仍保留 smoke validation
   和主循环编排。
+- 2026-05-27：`editor_smoke_validation.hpp/.cpp` 已接管 startup、registration、command、viewport、resize、
+  Frame Debugger、input、shortcut 和 layout persistence smoke 断言；`editor_app.cpp` 仍保留 bootstrap、
+  frame loop 和 shutdown 编排。
 
 推荐顺序：
 
