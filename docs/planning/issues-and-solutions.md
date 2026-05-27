@@ -14,7 +14,7 @@
 | **C** | Multi-view request model | ✓ Fixed | 2026-05-23 |
 | **D** | Graph-visible GPU work | ✓ Fixed | 2026-05-25 |
 | **E** | Editor state and command model | ◐ Partially Fixed (Step 1+2a+2b-a+2b-b+2b-c+3) | 2026-05-27 |
-| **F** | RenderGraph API / implementation split | ◐ Partially Fixed (Phase 1+2+3+4-A+4-B) | 2026-05-27 |
+| **F** | RenderGraph API / implementation split | ◐ Partially Fixed (Phase 1+2+3+4-A+4-B+4-C) | 2026-05-27 |
 
 ---
 
@@ -106,7 +106,7 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 - Unity RenderGraph: `RenderGraph.cs` + `RenderGraphBuilder.cs` + `RenderGraphPass.cs` 分离
 - Filament FrameGraph: `FrameGraph.h` + `FrameGraphPassResources.h` + `FrameGraphHandle.h` 分离
 
-**已修复 (Phase 1+2+3+4-A+4-B)**:
+**已修复 (Phase 1+2+3+4-A+4-B+4-C)**:
 1. ADR-001 记录拆分策略 (`docs/rendergraph/adr-001-header-split.md`)
 2. Phase 1: 提取纯数据类型到 `render_graph_types.hpp` (~200 行) — handles, enums, descs, schema
 3. Phase 2: `vulkan_render_graph.hpp` (adapter) 改为只依赖 `render_graph_types.hpp`，不再依赖完整 `render_graph.hpp`
@@ -115,17 +115,17 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 6. Phase 4-A: `RenderGraphCommandList` 方法实现移出 public header，现有 public API 不变
 7. Phase 4-B: `RenderGraphSchemaRegistry` / `RenderGraphExecutorRegistry` 实现移入 `src/render_graph.cpp`
 8. Phase 4-B: `PassBuilder` 非模板 builder 方法、RenderGraph resource/pass facade 和 public compile/execute overload 移入 `.cpp`
+9. Phase 4-C: `diagnosticsSnapshot()` 和 `formatDebugTables()` 实现移入 `.cpp`
 
 **当前结构**:
 ```
 render_graph_types.hpp      — 纯数据契约，无内部依赖
 render_graph_compile.hpp    — 编译产物，只依赖 types
-render_graph.hpp            — command/builder/registry/facade 声明、模板 builder 入口、compile/diagnostics 核心实现
-src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade 和 public overload 实现
+render_graph.hpp            — command/builder/registry/facade 声明、模板 builder 入口、compile/validation 核心实现
+src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、public overload 和 diagnostics formatting 实现
 ```
 
 **待完成 (Phase 4+)**:
-- 继续把 diagnostics snapshot / debug table formatting 实现从 header 迁移到 `src/`
 - 继续把 compile/validation/dependency/lifetime 核心实现从 header 迁移到 `src/`
 - `RenderGraphCommandList` / `PassBuilder` 独立 header（当前只有声明和模板入口，仍可接受）
 

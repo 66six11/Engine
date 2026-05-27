@@ -41,8 +41,8 @@
 当前项目已经具备这些前提：
 
 - `rendergraph` public API 不暴露 Vulkan 类型。
-- `asharia::rendergraph` 已是 STATIC target；`RenderGraphCommandList`、registry、非模板 `PassBuilder`
-  和 RenderGraph facade 实现已迁移到 `src/render_graph.cpp`。
+- `asharia::rendergraph` 已是 STATIC target；`RenderGraphCommandList`、registry、非模板 `PassBuilder`、
+  RenderGraph facade 和 diagnostics formatting 实现已迁移到 `src/render_graph.cpp`。
 - `asharia::rhi_vulkan` 与 `asharia::rhi_vulkan_rendergraph` 已分离。
 - graph transition 使用 `vkCmdPipelineBarrier2`。
 - frame loop 使用 `vkQueueSubmit2`。
