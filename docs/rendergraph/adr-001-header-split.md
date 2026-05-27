@@ -86,6 +86,8 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
   methods, and public compile/execute overloads into `src/render_graph.cpp`
 - Phase 4-C moved diagnostics snapshot and Markdown debug table formatting into
   `src/render_graph.cpp`
+- Phase 4-D moved validation helpers and dependency builder implementations into
+  `src/render_graph.cpp`
 
 ## Consequences
 

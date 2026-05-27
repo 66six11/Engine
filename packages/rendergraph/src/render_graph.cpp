@@ -466,6 +466,147 @@ namespace asharia {
         return execute(compiled, &executorRegistry);
     }
 
+    Result<void> RenderGraph::validateImages() const {
+        for (const RenderGraphImageDesc& image : images_) {
+            if (image.lifetime == RenderGraphImageLifetime::Imported &&
+                image.finalState == RenderGraphImageState::Undefined) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Imported render graph image '" + image.name +
+                        "' must declare an explicit final state.",
+                }};
+            }
+        }
+
+        return {};
+    }
+
+    Result<void> RenderGraph::validateBuffers() const {
+        for (const RenderGraphBufferDesc& buffer : buffers_) {
+            if (buffer.byteSize == 0) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph buffer '" + buffer.name + "' must declare a non-zero byte size.",
+                }};
+            }
+            if (buffer.lifetime == RenderGraphBufferLifetime::Imported &&
+                buffer.finalState == RenderGraphBufferState::Undefined) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Imported render graph buffer '" + buffer.name +
+                        "' must declare an explicit final state.",
+                }};
+            }
+        }
+
+        return {};
+    }
+
+    Result<void>
+    RenderGraph::validatePass(const Pass& pass,
+                              const RenderGraphSchemaRegistry* schemaRegistry) const {
+        auto slotsValidated = validateWriteSlots(pass);
+        if (!slotsValidated) {
+            return std::unexpected{std::move(slotsValidated.error())};
+        }
+
+        if (schemaRegistry != nullptr) {
+            auto schemaValidated = validateSchema(pass, *schemaRegistry);
+            if (!schemaValidated) {
+                return std::unexpected{std::move(schemaValidated.error())};
+            }
+        }
+
+        return {};
+    }
+
+    Result<std::vector<RenderGraphPassDependency>> RenderGraph::buildDependencies() const {
+        std::vector<RenderGraphPassDependency> dependencies;
+
+        auto imageDependencies = buildImageDependencies(dependencies);
+        if (!imageDependencies) {
+            return std::unexpected{std::move(imageDependencies.error())};
+        }
+
+        auto bufferDependencies = buildBufferDependencies(dependencies);
+        if (!bufferDependencies) {
+            return std::unexpected{std::move(bufferDependencies.error())};
+        }
+
+        return dependencies;
+    }
+
+    Result<void> RenderGraph::buildImageDependencies(
+        std::vector<RenderGraphPassDependency>& dependencies) const {
+        for (std::size_t imageIndex = 0; imageIndex < images_.size(); ++imageIndex) {
+            const RenderGraphImageHandle imageHandle{
+                .index = static_cast<std::uint32_t>(imageIndex),
+            };
+            std::vector<std::size_t> writers;
+            std::vector<std::size_t> readers;
+
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                const Pass& pass = passes_[passIndex];
+                if (passWritesImage(pass, imageHandle)) {
+                    writers.push_back(passIndex);
+                }
+                if (passReadsImage(pass, imageHandle)) {
+                    readers.push_back(passIndex);
+                }
+            }
+
+            for (std::size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex) {
+                addDependency(dependencies, writers[writerIndex - 1], writers[writerIndex],
+                              imageHandle, "write order");
+            }
+
+            auto readDependencies =
+                addReadDependencies(dependencies, imageHandle, writers, readers);
+            if (!readDependencies) {
+                return std::unexpected{std::move(readDependencies.error())};
+            }
+        }
+
+        return {};
+    }
+
+    Result<void> RenderGraph::buildBufferDependencies(
+        std::vector<RenderGraphPassDependency>& dependencies) const {
+        for (std::size_t bufferIndex = 0; bufferIndex < buffers_.size(); ++bufferIndex) {
+            const RenderGraphBufferHandle bufferHandle{
+                .index = static_cast<std::uint32_t>(bufferIndex),
+            };
+            std::vector<std::size_t> writers;
+            std::vector<std::size_t> readers;
+
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                const Pass& pass = passes_[passIndex];
+                if (passWritesBuffer(pass, bufferHandle)) {
+                    writers.push_back(passIndex);
+                }
+                if (passReadsBuffer(pass, bufferHandle)) {
+                    readers.push_back(passIndex);
+                }
+            }
+
+            for (std::size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex) {
+                addBufferDependency(dependencies, writers[writerIndex - 1], writers[writerIndex],
+                                    bufferHandle, "write order");
+            }
+
+            auto readDependencies =
+                addBufferReadDependencies(dependencies, bufferHandle, writers, readers);
+            if (!readDependencies) {
+                return std::unexpected{std::move(readDependencies.error())};
+            }
+        }
+
+        return {};
+    }
+
     // NOLINTBEGIN(readability-function-cognitive-complexity)
     RenderGraphDiagnosticsSnapshot
     RenderGraph::diagnosticsSnapshot(const RenderGraphCompileResult& compiled) const {
