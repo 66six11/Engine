@@ -14,7 +14,7 @@
 | **C** | Multi-view request model | ✓ Fixed | 2026-05-23 |
 | **D** | Graph-visible GPU work | ✓ Fixed | 2026-05-25 |
 | **E** | Editor state and command model | ◐ Partially Fixed (Step 1+2a+2b-a+2b-b+2b-c+3) | 2026-05-27 |
-| **F** | RenderGraph API / implementation split | ◐ Partially Fixed (Phase 1+2+3) | 2026-05-25 |
+| **F** | RenderGraph API / implementation split | ◐ Partially Fixed (Phase 1+2+3+4-A) | 2026-05-27 |
 
 ---
 
@@ -96,33 +96,35 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 
 ### 1.4 [Partially Fixed] RenderGraph Header 承载过多实现细节
 
-**优先级**: P3-F | **状态**: Partially Fixed (2026-05-25)
+**优先级**: P3-F | **状态**: Partially Fixed (2026-05-27)
 
 **根因**:
-`render_graph.hpp` 原约 4000 行，INTERFACE target，同时承载 public builder API、compile logic、diagnostics formatting、validation 和内部 helpers。
+`render_graph.hpp` 原约 4000 行，且原本作为 INTERFACE target 承载 public builder API、compile logic、diagnostics formatting、validation 和内部 helpers。
 
 **行业参考**:
 - Unreal RDG: `RenderGraph.h` (public API interface) + `RenderGraphBuilder.cpp` (implementation) 分离
 - Unity RenderGraph: `RenderGraph.cs` + `RenderGraphBuilder.cs` + `RenderGraphPass.cs` 分离
 - Filament FrameGraph: `FrameGraph.h` + `FrameGraphPassResources.h` + `FrameGraphHandle.h` 分离
 
-**已修复 (Phase 1+2+3)**:
+**已修复 (Phase 1+2+3+4-A)**:
 1. ADR-001 记录拆分策略 (`docs/rendergraph/adr-001-header-split.md`)
 2. Phase 1: 提取纯数据类型到 `render_graph_types.hpp` (~200 行) — handles, enums, descs, schema
 3. Phase 2: `vulkan_render_graph.hpp` (adapter) 改为只依赖 `render_graph_types.hpp`，不再依赖完整 `render_graph.hpp`
 4. Phase 3: 提取 compile/diagnostics 类型到 `render_graph_compile.hpp` (~210 行) — CompileResult, DiagnosticsSnapshot
-5. `render_graph.hpp`: 3993 → 3628 行
+5. Phase 4-A: `asharia-rendergraph` 改为 STATIC target，新增 `packages/rendergraph/src/render_graph.cpp`
+6. Phase 4-A: `RenderGraphCommandList` 方法实现移出 public header，现有 public API 不变
 
 **当前结构**:
 ```
 render_graph_types.hpp      — 纯数据契约，无内部依赖
 render_graph_compile.hpp    — 编译产物，只依赖 types
-render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义 (3600行)
+render_graph.hpp            — RenderGraphCommandList 声明 + PassContext + RenderGraph 类定义
+src/render_graph.cpp        — 第一批 RenderGraphCommandList 实现
 ```
 
 **待完成 (Phase 4+)**:
-- 实现代码从 header 移到 `src/`，target 改为 STATIC
-- `RenderGraphCommandList` 独立 header（当前 ~115 行，仍可接受）
+- 继续把 compile/validation/diagnostics 实现从 header 迁移到 `src/`
+- `RenderGraphCommandList` 独立 header（当前只有声明，仍可接受）
 
 ---
 

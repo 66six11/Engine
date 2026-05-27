@@ -5,8 +5,8 @@ Status: Accepted
 
 ## Context
 
-`packages/rendergraph/include/asharia/rendergraph/render_graph.hpp` is ~4000 lines,
-INTERFACE target. It carries:
+At the start of this ADR, `packages/rendergraph/include/asharia/rendergraph/render_graph.hpp`
+was ~4000 lines and `asharia-rendergraph` was an INTERFACE target. The header carried:
 
 - 7 enum types (format, state, shader stage, lifetime, slot access, command kind)
 - 12 POD structs (handles, descriptors, transitions, slots, schema, commands)
@@ -72,16 +72,16 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 - `RenderGraph` class + `PassBuilder`
 - `RenderGraphSchemaRegistry`
 - `RenderGraphPassContext`, `RenderGraphExecutorRegistry`
-- `RenderGraphCompileResult`
-- `RenderGraphDiagnosticsSnapshot`
+- `RenderGraphCompileResult` and `RenderGraphDiagnosticsSnapshot` before Phase 3
 - All compile/execute/diagnostics/formatting logic
 
-### Phase 2+ (future)
+### Phase 2+ status
 
-- `RenderGraphCommandList` moves to own header when it grows beyond 150 lines
-- Compile result types move to `render_graph_compile.hpp`
+- `RenderGraphCommandList` moves to own header when its declaration grows beyond the current small surface
+- Compile result types moved to `render_graph_compile.hpp`
 - Diagnostics snapshot to `render_graph_diagnostics.hpp`
-- Implementation moves from header to `src/render_graph_compile.cpp` etc.; target becomes STATIC
+- Implementation is moving from header to `src/`; Phase 4-A made the target STATIC and moved
+  `RenderGraphCommandList` method bodies into `src/render_graph.cpp`
 
 ## Consequences
 
@@ -97,9 +97,10 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 - Phase 2+ will require careful include dependency management
 
 ### Mitigation
-- Aggregate `render_graph.hpp` includes `render_graph_types.hpp` first
+- Aggregate headers include self-contained type/compile contracts before exposing builder APIs
 - Package test validates that types header is self-contained (compiles standalone)
-- CMake INTERFACE target unchanged throughout Phase 1
+- CMake target stayed INTERFACE throughout Phase 1; Phase 4-A changed it to STATIC once the
+  first implementation translation unit existed
 
 ## Commit plan
 

@@ -14,122 +14,26 @@
 
 #include "asharia/core/error.hpp"
 #include "asharia/core/result.hpp"
-#include "asharia/rendergraph/render_graph_types.hpp"
 #include "asharia/rendergraph/render_graph_compile.hpp"
+#include "asharia/rendergraph/render_graph_types.hpp"
 
 namespace asharia {
 
     class RenderGraphCommandList {
     public:
-        RenderGraphCommandList& setShader(std::string shaderAsset, std::string shaderPass) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::SetShader,
-                .name = std::move(shaderAsset),
-                .secondaryName = std::move(shaderPass),
-                .floatValues = {},
-                .intValue = 0,
-            });
-            return *this;
-        }
-
-        RenderGraphCommandList& setTexture(std::string bindingName, std::string slotName) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::SetTexture,
-                .name = std::move(bindingName),
-                .secondaryName = std::move(slotName),
-                .floatValues = {},
-                .intValue = 0,
-            });
-            return *this;
-        }
-
-        RenderGraphCommandList& setFloat(std::string bindingName, float value) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::SetFloat,
-                .name = std::move(bindingName),
-                .secondaryName = {},
-                .floatValues = {value, 0.0F, 0.0F, 0.0F},
-                .intValue = 0,
-            });
-            return *this;
-        }
-
-        RenderGraphCommandList& setInt(std::string bindingName, int value) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::SetInt,
-                .name = std::move(bindingName),
-                .secondaryName = {},
-                .floatValues = {},
-                .intValue = value,
-            });
-            return *this;
-        }
-
-        RenderGraphCommandList& setVec4(std::string bindingName, std::array<float, 4> value) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::SetVec4,
-                .name = std::move(bindingName),
-                .secondaryName = {},
-                .floatValues = value,
-                .intValue = 0,
-            });
-            return *this;
-        }
-
-        RenderGraphCommandList& drawFullscreenTriangle() {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::DrawFullscreenTriangle,
-                .name = {},
-                .secondaryName = {},
-                .floatValues = {},
-                .intValue = 0,
-            });
-            return *this;
-        }
-
-        RenderGraphCommandList& clearColor(std::string slotName, std::array<float, 4> color) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::ClearColor,
-                .name = std::move(slotName),
-                .secondaryName = {},
-                .floatValues = color,
-                .intValue = 0,
-            });
-            return *this;
-        }
-
-        RenderGraphCommandList& copyImage(std::string sourceSlotName, std::string targetSlotName) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::CopyImage,
-                .name = std::move(sourceSlotName),
-                .secondaryName = std::move(targetSlotName),
-                .floatValues = {},
-                .intValue = 0,
-                .uintValues = {},
-            });
-            return *this;
-        }
-
+        RenderGraphCommandList& setShader(std::string shaderAsset, std::string shaderPass);
+        RenderGraphCommandList& setTexture(std::string bindingName, std::string slotName);
+        RenderGraphCommandList& setFloat(std::string bindingName, float value);
+        RenderGraphCommandList& setInt(std::string bindingName, int value);
+        RenderGraphCommandList& setVec4(std::string bindingName, std::array<float, 4> value);
+        RenderGraphCommandList& drawFullscreenTriangle();
+        RenderGraphCommandList& clearColor(std::string slotName, std::array<float, 4> color);
+        RenderGraphCommandList& copyImage(std::string sourceSlotName, std::string targetSlotName);
         RenderGraphCommandList& dispatch(std::uint32_t groupCountX, std::uint32_t groupCountY,
-                                         std::uint32_t groupCountZ) {
-            commands_.push_back(RenderGraphCommand{
-                .kind = RenderGraphCommandKind::Dispatch,
-                .name = {},
-                .secondaryName = {},
-                .floatValues = {},
-                .intValue = 0,
-                .uintValues = {groupCountX, groupCountY, groupCountZ},
-            });
-            return *this;
-        }
+                                         std::uint32_t groupCountZ);
 
-        [[nodiscard]] std::span<const RenderGraphCommand> commands() const {
-            return commands_;
-        }
-
-        [[nodiscard]] std::vector<RenderGraphCommand> takeCommands() && {
-            return std::move(commands_);
-        }
+        [[nodiscard]] std::span<const RenderGraphCommand> commands() const;
+        [[nodiscard]] std::vector<RenderGraphCommand> takeCommands() &&;
 
     private:
         std::vector<RenderGraphCommand> commands_;

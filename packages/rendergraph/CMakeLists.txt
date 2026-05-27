@@ -11,16 +11,18 @@ include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
 
-add_library(asharia-rendergraph INTERFACE)
+add_library(asharia-rendergraph STATIC
+    src/render_graph.cpp
+)
 add_library(asharia::rendergraph ALIAS asharia-rendergraph)
 
 target_include_directories(asharia-rendergraph
-    INTERFACE
+    PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(asharia-rendergraph
-    INTERFACE
+    PUBLIC
         asharia::core
 )
 
