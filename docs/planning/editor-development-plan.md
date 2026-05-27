@@ -47,6 +47,8 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - `editor_app.cpp` 仍承担 startup、registration、smoke、frame loop 和 ImGui/Vulkan glue 等多种职责；新增 asset browser、
   material editor、script hot reload 或 persistent layout 前，先拆 app bootstrap/registration、smoke checks 和
   ImGui Vulkan frame renderer。
+- 2026-05-27：`imgui_frame_renderer.hpp/.cpp` 已接管 swapchain color/present barrier、dynamic rendering attachment
+  setup 和 ImGui draw data Vulkan recording；`editor_app.cpp` 仍需继续拆 smoke checks、frame loop 和逐 panel context。
 
 推荐顺序：
 

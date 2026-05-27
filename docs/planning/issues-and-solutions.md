@@ -1,7 +1,7 @@
 # 架构问题记录与解决方案
 
 记录日期: 2026-05-25
-更新日期: 2026-05-25
+更新日期: 2026-05-27
 
 本文基于 `docs/planning/next-development-plan.md` 的 A-F 门禁和全量代码审查，按层级归类所有已知架构缺陷，并针对每个问题提供根因分析、行业参考和具体可执行方案。已修复项标注 `Fixed` 并附修复摘要; 未修复项标注 `Open` 并按确定性推进顺序排列。
 
@@ -13,7 +13,7 @@
 | **B** | RenderView camera → GPU contract | ◐ Partially Fixed (B.2+B.3 renderer slice) | 2026-05-25 |
 | **C** | Multi-view request model | ✓ Fixed | 2026-05-23 |
 | **D** | Graph-visible GPU work | ✓ Fixed | 2026-05-25 |
-| **E** | Editor state and command model | ◐ Partially Fixed (Step 1+3) | 2026-05-25 |
+| **E** | Editor state and command model | ◐ Partially Fixed (Step 1+2a+2b-a+3) | 2026-05-27 |
 | **F** | RenderGraph API / implementation split | ◐ Partially Fixed (Phase 1+2+3) | 2026-05-25 |
 
 ---
@@ -158,7 +158,7 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 
 ### 2.1 [Partially Fixed] Editor Context 与 App Glue 有 God Object 风险
 
-**优先级**: P3-E | **状态**: Partially Fixed (2026-05-26)
+**优先级**: P3-E | **状态**: Partially Fixed (2026-05-27)
 
 **根因**:
 - `EditorContext` 暴露 panel registry、event queue、diagnostics、frame debugger、i18n、settings、workspace 和 tools
@@ -179,9 +179,16 @@ render_graph.hpp            — RenderGraphCommandList + PassContext + 类定义
 3. Scene View overlay helper 已以 `EditorFrameUiContext` + `EditorFrameToolContext` 作为窄 helper
    边界，作为后续逐 panel context 收敛样例
 
+**已修复 (Step 2b-a)**:
+1. 拆出 `apps/editor/src/imgui_frame_renderer.hpp/.cpp`
+2. `imgui_frame_renderer` 只负责 swapchain image color/present barrier、dynamic rendering attachment
+   setup 和 ImGui draw data Vulkan recording
+3. `editor_app.cpp` 的 frame callback 继续拥有 RenderView / Frame Debug orchestration，但不再内联
+   ImGui Vulkan draw data recording 细节
+
 **待完成 (Step 2b)**:
 - 继续把 Panel `draw()` / `prepareWindow()` 从顶层 `EditorFrameContext` 推向逐面板需要的窄 context
-- 继续拆分 `editor_app.cpp` 中的 smoke checks、frame loop 和 ImGui/Vulkan glue
+- 继续拆分 `editor_app.cpp` 中的 smoke checks、frame loop 和剩余 Vulkan host glue
 
 ---
 
