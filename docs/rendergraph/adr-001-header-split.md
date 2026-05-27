@@ -82,6 +82,8 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 - Diagnostics snapshot to `render_graph_diagnostics.hpp`
 - Implementation is moving from header to `src/`; Phase 4-A made the target STATIC and moved
   `RenderGraphCommandList` method bodies into `src/render_graph.cpp`
+- Phase 4-B moved registry methods, non-template `PassBuilder` methods, resource/pass facade
+  methods, and public compile/execute overloads into `src/render_graph.cpp`
 
 ## Consequences
 

@@ -79,27 +79,8 @@ namespace asharia {
 
     class RenderGraphSchemaRegistry {
     public:
-        RenderGraphSchemaRegistry& registerSchema(RenderGraphPassSchema schema) {
-            for (RenderGraphPassSchema& registered : schemas_) {
-                if (registered.type == schema.type) {
-                    registered = std::move(schema);
-                    return *this;
-                }
-            }
-
-            schemas_.push_back(std::move(schema));
-            return *this;
-        }
-
-        [[nodiscard]] const RenderGraphPassSchema* find(std::string_view type) const {
-            for (const RenderGraphPassSchema& schema : schemas_) {
-                if (schema.type == type) {
-                    return &schema;
-                }
-            }
-
-            return nullptr;
-        }
+        RenderGraphSchemaRegistry& registerSchema(RenderGraphPassSchema schema);
+        [[nodiscard]] const RenderGraphPassSchema* find(std::string_view type) const;
 
     private:
         std::vector<RenderGraphPassSchema> schemas_;
@@ -108,30 +89,8 @@ namespace asharia {
     class RenderGraphExecutorRegistry {
     public:
         RenderGraphExecutorRegistry& registerExecutor(std::string type,
-                                                      RenderGraphPassCallback callback) {
-            for (Executor& executor : executors_) {
-                if (executor.type == type) {
-                    executor.callback = std::move(callback);
-                    return *this;
-                }
-            }
-
-            executors_.push_back(Executor{
-                .type = std::move(type),
-                .callback = std::move(callback),
-            });
-            return *this;
-        }
-
-        [[nodiscard]] const RenderGraphPassCallback* find(std::string_view type) const {
-            for (const Executor& executor : executors_) {
-                if (executor.type == type) {
-                    return &executor.callback;
-                }
-            }
-
-            return nullptr;
-        }
+                                                      RenderGraphPassCallback callback);
+        [[nodiscard]] const RenderGraphPassCallback* find(std::string_view type) const;
 
     private:
         struct Executor {
@@ -169,147 +128,37 @@ namespace asharia {
     public:
         class PassBuilder {
         public:
-            PassBuilder& writeColor(RenderGraphImageHandle image) {
-                return writeColor("target", image);
-            }
-
-            PassBuilder& writeColor(std::string slotName, RenderGraphImageHandle image) {
-                graph_->passes_[passIndex_].colorWriteSlots.push_back(RenderGraphImageSlot{
-                    .name = std::move(slotName),
-                    .image = image,
-                });
-                return *this;
-            }
-
+            PassBuilder& writeColor(RenderGraphImageHandle image);
+            PassBuilder& writeColor(std::string slotName, RenderGraphImageHandle image);
             PassBuilder& readTexture(std::string slotName, RenderGraphImageHandle image,
-                                     RenderGraphShaderStage shaderStage) {
-                graph_->passes_[passIndex_].shaderReadSlots.push_back(RenderGraphImageSlot{
-                    .name = std::move(slotName),
-                    .image = image,
-                    .shaderStage = shaderStage,
-                });
-                return *this;
-            }
+                                     RenderGraphShaderStage shaderStage);
 
-            PassBuilder& readDepth(std::string slotName, RenderGraphImageHandle image) {
-                graph_->passes_[passIndex_].depthReadSlots.push_back(RenderGraphImageSlot{
-                    .name = std::move(slotName),
-                    .image = image,
-                });
-                return *this;
-            }
-
-            PassBuilder& writeDepth(std::string slotName, RenderGraphImageHandle image) {
-                graph_->passes_[passIndex_].depthWriteSlots.push_back(RenderGraphImageSlot{
-                    .name = std::move(slotName),
-                    .image = image,
-                });
-                return *this;
-            }
-
+            PassBuilder& readDepth(std::string slotName, RenderGraphImageHandle image);
+            PassBuilder& writeDepth(std::string slotName, RenderGraphImageHandle image);
             PassBuilder& readDepthTexture(std::string slotName, RenderGraphImageHandle image,
-                                          RenderGraphShaderStage shaderStage) {
-                graph_->passes_[passIndex_].depthSampledReadSlots.push_back(RenderGraphImageSlot{
-                    .name = std::move(slotName),
-                    .image = image,
-                    .shaderStage = shaderStage,
-                });
-                return *this;
-            }
+                                          RenderGraphShaderStage shaderStage);
 
-            PassBuilder& readTransfer(std::string slotName, RenderGraphImageHandle image) {
-                graph_->passes_[passIndex_].transferReadSlots.push_back(RenderGraphImageSlot{
-                    .name = std::move(slotName),
-                    .image = image,
-                });
-                return *this;
-            }
-
-            PassBuilder& readTransfer(RenderGraphImageHandle image) {
-                return readTransfer("source", image);
-            }
-
-            PassBuilder& writeTransfer(RenderGraphImageHandle image) {
-                return writeTransfer("target", image);
-            }
-
-            PassBuilder& writeTransfer(std::string slotName, RenderGraphImageHandle image) {
-                graph_->passes_[passIndex_].transferWriteSlots.push_back(RenderGraphImageSlot{
-                    .name = std::move(slotName),
-                    .image = image,
-                });
-                return *this;
-            }
-
+            PassBuilder& readTransfer(std::string slotName, RenderGraphImageHandle image);
+            PassBuilder& readTransfer(RenderGraphImageHandle image);
+            PassBuilder& writeTransfer(RenderGraphImageHandle image);
+            PassBuilder& writeTransfer(std::string slotName, RenderGraphImageHandle image);
             PassBuilder& readBuffer(std::string slotName, RenderGraphBufferHandle buffer,
-                                    RenderGraphShaderStage shaderStage) {
-                graph_->passes_[passIndex_].bufferReadSlots.push_back(RenderGraphBufferSlot{
-                    .name = std::move(slotName),
-                    .buffer = buffer,
-                    .shaderStage = shaderStage,
-                });
-                return *this;
-            }
+                                    RenderGraphShaderStage shaderStage);
 
-            PassBuilder& readTransferBuffer(std::string slotName, RenderGraphBufferHandle buffer) {
-                graph_->passes_[passIndex_].bufferTransferReadSlots.push_back(RenderGraphBufferSlot{
-                    .name = std::move(slotName),
-                    .buffer = buffer,
-                });
-                return *this;
-            }
-
-            PassBuilder& writeBuffer(RenderGraphBufferHandle buffer) {
-                return writeBuffer("target", buffer);
-            }
-
-            PassBuilder& writeBuffer(std::string slotName, RenderGraphBufferHandle buffer) {
-                graph_->passes_[passIndex_].bufferWriteSlots.push_back(RenderGraphBufferSlot{
-                    .name = std::move(slotName),
-                    .buffer = buffer,
-                });
-                return *this;
-            }
-
+            PassBuilder& readTransferBuffer(std::string slotName, RenderGraphBufferHandle buffer);
+            PassBuilder& writeBuffer(RenderGraphBufferHandle buffer);
+            PassBuilder& writeBuffer(std::string slotName, RenderGraphBufferHandle buffer);
             PassBuilder& readWriteStorageBuffer(std::string slotName,
                                                 RenderGraphBufferHandle buffer,
-                                                RenderGraphShaderStage shaderStage) {
-                graph_->passes_[passIndex_].bufferStorageReadWriteSlots.push_back(
-                    RenderGraphBufferSlot{
-                        .name = std::move(slotName),
-                        .buffer = buffer,
-                        .shaderStage = shaderStage,
-                    });
-                return *this;
-            }
+                                                RenderGraphShaderStage shaderStage);
 
-            [[nodiscard]] std::string_view name() const {
-                return graph_->passes_[passIndex_].name;
-            }
+            [[nodiscard]] std::string_view name() const;
+            [[nodiscard]] std::string_view type() const;
 
-            [[nodiscard]] std::string_view type() const {
-                return graph_->passes_[passIndex_].type;
-            }
-
-            PassBuilder& allowCulling(bool allow = true) {
-                graph_->passes_[passIndex_].allowCulling = allow;
-                return *this;
-            }
-
-            PassBuilder& hasSideEffects(bool hasSideEffects = true) {
-                graph_->passes_[passIndex_].hasSideEffects = hasSideEffects;
-                return *this;
-            }
-
-            PassBuilder& setParamsType(std::string paramsType) {
-                graph_->passes_[passIndex_].paramsType = std::move(paramsType);
-                return *this;
-            }
-
-            PassBuilder& setParamsData(std::vector<std::byte> paramsData) {
-                graph_->passes_[passIndex_].paramsData = std::move(paramsData);
-                return *this;
-            }
+            PassBuilder& allowCulling(bool allow = true);
+            PassBuilder& hasSideEffects(bool hasSideEffects = true);
+            PassBuilder& setParamsType(std::string paramsType);
+            PassBuilder& setParamsData(std::vector<std::byte> paramsData);
 
             template <typename Params>
             PassBuilder& setParams(std::string paramsType, const Params& params) {
@@ -322,15 +171,8 @@ namespace asharia {
                 return setParamsData(std::move(data));
             }
 
-            PassBuilder& execute(RenderGraphPassCallback callback) {
-                graph_->passes_[passIndex_].callback = std::move(callback);
-                return *this;
-            }
-
-            PassBuilder& setCommands(RenderGraphCommandList commands) {
-                graph_->passes_[passIndex_].commands = std::move(commands).takeCommands();
-                return *this;
-            }
+            PassBuilder& execute(RenderGraphPassCallback callback);
+            PassBuilder& setCommands(RenderGraphCommandList commands);
 
             template <typename Recorder> PassBuilder& recordCommands(Recorder&& recorder) {
                 RenderGraphCommandList commands;
@@ -341,113 +183,23 @@ namespace asharia {
         private:
             friend class RenderGraph;
 
-            PassBuilder(RenderGraph& graph, std::size_t passIndex)
-                : graph_(&graph), passIndex_(passIndex) {}
+            PassBuilder(RenderGraph& graph, std::size_t passIndex);
 
             RenderGraph* graph_{};
             std::size_t passIndex_{};
         };
 
-        [[nodiscard]] RenderGraphImageHandle importImage(RenderGraphImageDesc desc) {
-            desc.lifetime = RenderGraphImageLifetime::Imported;
-            images_.push_back(std::move(desc));
-            return RenderGraphImageHandle{
-                .index = static_cast<std::uint32_t>(images_.size() - 1),
-            };
-        }
+        [[nodiscard]] RenderGraphImageHandle importImage(RenderGraphImageDesc desc);
+        [[nodiscard]] RenderGraphImageHandle createTransientImage(RenderGraphImageDesc desc);
+        [[nodiscard]] RenderGraphBufferHandle importBuffer(RenderGraphBufferDesc desc);
+        [[nodiscard]] RenderGraphBufferHandle createTransientBuffer(RenderGraphBufferDesc desc);
 
-        [[nodiscard]] RenderGraphImageHandle createTransientImage(RenderGraphImageDesc desc) {
-            desc.lifetime = RenderGraphImageLifetime::Transient;
-            desc.initialState = RenderGraphImageState::Undefined;
-            desc.initialShaderStage = RenderGraphShaderStage::None;
-            desc.finalState = RenderGraphImageState::Undefined;
-            desc.finalShaderStage = RenderGraphShaderStage::None;
-            images_.push_back(std::move(desc));
-            return RenderGraphImageHandle{
-                .index = static_cast<std::uint32_t>(images_.size() - 1),
-            };
-        }
+        PassBuilder addPass(std::string name);
+        PassBuilder addPass(std::string name, std::string type);
 
-        [[nodiscard]] RenderGraphBufferHandle importBuffer(RenderGraphBufferDesc desc) {
-            desc.lifetime = RenderGraphBufferLifetime::Imported;
-            buffers_.push_back(std::move(desc));
-            return RenderGraphBufferHandle{
-                .index = static_cast<std::uint32_t>(buffers_.size() - 1),
-            };
-        }
-
-        [[nodiscard]] RenderGraphBufferHandle createTransientBuffer(RenderGraphBufferDesc desc) {
-            desc.lifetime = RenderGraphBufferLifetime::Transient;
-            desc.initialState = RenderGraphBufferState::Undefined;
-            desc.initialShaderStage = RenderGraphShaderStage::None;
-            desc.finalState = RenderGraphBufferState::Undefined;
-            desc.finalShaderStage = RenderGraphShaderStage::None;
-            buffers_.push_back(std::move(desc));
-            return RenderGraphBufferHandle{
-                .index = static_cast<std::uint32_t>(buffers_.size() - 1),
-            };
-        }
-
-        PassBuilder addPass(std::string name) {
-            Pass pass{
-                .name = std::move(name),
-                .type = {},
-                .paramsType = {},
-                .paramsData = {},
-                .colorWriteSlots = {},
-                .shaderReadSlots = {},
-                .depthReadSlots = {},
-                .depthWriteSlots = {},
-                .depthSampledReadSlots = {},
-                .transferReadSlots = {},
-                .transferWriteSlots = {},
-                .bufferReadSlots = {},
-                .bufferTransferReadSlots = {},
-                .bufferWriteSlots = {},
-                .bufferStorageReadWriteSlots = {},
-                .commands = {},
-                .allowCulling = {},
-                .hasSideEffects = {},
-                .callback = {},
-            };
-            passes_.push_back(std::move(pass));
-            return PassBuilder{*this, passes_.size() - 1};
-        }
-
-        PassBuilder addPass(std::string name, std::string type) {
-            Pass pass{
-                .name = std::move(name),
-                .type = std::move(type),
-                .paramsType = {},
-                .paramsData = {},
-                .colorWriteSlots = {},
-                .shaderReadSlots = {},
-                .depthReadSlots = {},
-                .depthWriteSlots = {},
-                .depthSampledReadSlots = {},
-                .transferReadSlots = {},
-                .transferWriteSlots = {},
-                .bufferReadSlots = {},
-                .bufferTransferReadSlots = {},
-                .bufferWriteSlots = {},
-                .bufferStorageReadWriteSlots = {},
-                .commands = {},
-                .allowCulling = {},
-                .hasSideEffects = {},
-                .callback = {},
-            };
-            passes_.push_back(std::move(pass));
-            return PassBuilder{*this, passes_.size() - 1};
-        }
-
-        [[nodiscard]] Result<RenderGraphCompileResult> compile() const {
-            return compile(nullptr);
-        }
-
+        [[nodiscard]] Result<RenderGraphCompileResult> compile() const;
         [[nodiscard]] Result<RenderGraphCompileResult>
-        compile(const RenderGraphSchemaRegistry& schemaRegistry) const {
-            return compile(&schemaRegistry);
-        }
+        compile(const RenderGraphSchemaRegistry& schemaRegistry) const;
 
     private:
         [[nodiscard]] Result<RenderGraphCompileResult>
@@ -751,34 +503,13 @@ namespace asharia {
         }
 
     public:
-        [[nodiscard]] Result<void> execute() const {
-            auto compiled = compile();
-            if (!compiled) {
-                return std::unexpected{std::move(compiled.error())};
-            }
-
-            return execute(*compiled);
-        }
-
+        [[nodiscard]] Result<void> execute() const;
         [[nodiscard]] Result<void>
-        execute(const RenderGraphExecutorRegistry& executorRegistry) const {
-            auto compiled = compile();
-            if (!compiled) {
-                return std::unexpected{std::move(compiled.error())};
-            }
-
-            return execute(*compiled, executorRegistry);
-        }
-
-        [[nodiscard]] Result<void> execute(const RenderGraphCompileResult& compiled) const {
-            return execute(compiled, nullptr);
-        }
-
+        execute(const RenderGraphExecutorRegistry& executorRegistry) const;
+        [[nodiscard]] Result<void> execute(const RenderGraphCompileResult& compiled) const;
         [[nodiscard]] Result<void>
         execute(const RenderGraphCompileResult& compiled,
-                const RenderGraphExecutorRegistry& executorRegistry) const {
-            return execute(compiled, &executorRegistry);
-        }
+                const RenderGraphExecutorRegistry& executorRegistry) const;
 
     private:
         [[nodiscard]] Result<void>
