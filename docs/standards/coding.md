@@ -30,6 +30,16 @@
 - 测试：`tests/<module>/<name>_tests.cpp` 或 `packages/<package>/tests/<name>_tests.cpp`。
 - shader：`shaders/<domain>/<name>.<stage>.<ext>`。
 
+## 代码拆分与头文件边界
+
+- 公共头文件必须是自包含的 API 契约：直接 include 自己使用的标准库和项目公共头，不依赖调用方的 include 顺序。
+- 公共头文件只放类型声明、轻量值类型、常量、必要的短小 inline 函数和模板入口。复杂非模板实现、编译算法、验证逻辑、格式化输出和平台/API 交互必须放入 `src/*.cpp`。
+- aggregate header 只作为兼容入口；新代码应优先 include 最窄的公共头，例如 `*_types.hpp`、`*_compile.hpp`、`*_diagnostics.hpp`。
+- 私有 helper 只被一个 `.cpp` 使用时，放在该 `.cpp` 的匿名 namespace 或类外私有实现中；需要跨多个 `.cpp` 共享时，放在 package 的 `src/<name>.hpp`，不得被其他 package 或 app include。
+- 一个 `.cpp` 同时承载多类职责并持续增长时，应按职责拆分，例如 `*_builder.cpp`、`*_compile.cpp`、`*_validation.cpp`、`*_diagnostics.cpp`。拆分必须同步更新 CMake source list 和 package-local tests。
+- 每个新增公共窄头都要有 standalone include 测试，确认只 include 该头即可编译。不要用 aggregate header 的成功编译替代窄头自包含验证。
+- backend-agnostic package 的公共头不得暴露后端 API 类型；RenderGraph/RHI 这类适配应通过独立 adapter target 和窄公共契约连接。
+
 ## 错误处理
 
 - 不允许忽略 `VkResult`。

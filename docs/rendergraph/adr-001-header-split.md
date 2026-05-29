@@ -86,14 +86,17 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
   methods, and public compile/execute overloads into `src/render_graph.cpp`
 - Phase 4-C moved diagnostics snapshot and Markdown debug table formatting into
   `src/render_graph.cpp`
-- Phase 4-D moved validation helpers and dependency builder implementations into
-  `src/render_graph.cpp`
+- Phase 4-D moved private `compile(schemaRegistry*)` and
+  `execute(compiled, executorRegistry*)` implementations into `src/render_graph.cpp`
+- Diagnostics snapshot types now live in `render_graph_diagnostics.hpp`; consumers that only
+  inspect diagnostics should include that narrow header instead of the aggregate header
 
 ## Consequences
 
 ### Positive
 - Includers that only need types (e.g., `rhi_vulkan_rendergraph`, tests, package consumers)
   can include `render_graph_types.hpp` instead of the full 4000-line header
+- Includers that only need diagnostics can include `render_graph_diagnostics.hpp`
 - Reduces transitive compile impact when RenderGraph internals change
 - Names `render_graph_types.hpp` directly convey purpose ("just the data contracts")
 - Zero API breakage for existing consumers (aggregate header includes types)
@@ -104,7 +107,8 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 
 ### Mitigation
 - Aggregate headers include self-contained type/compile contracts before exposing builder APIs
-- Package test validates that types header is self-contained (compiles standalone)
+- Package tests validate that the types, compile, diagnostics, and aggregate headers are
+  self-contained (compile standalone)
 - CMake target stayed INTERFACE throughout Phase 1; Phase 4-A changed it to STATIC once the
   first implementation translation unit existed
 

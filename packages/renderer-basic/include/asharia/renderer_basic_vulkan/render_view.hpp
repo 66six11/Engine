@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_diagnostics.hpp"
 
 namespace asharia {
 

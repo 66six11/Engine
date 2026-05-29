@@ -35,12 +35,27 @@ if(ASHARIA_BUILD_TESTS)
       tests/rendergraph_compile_tests.cpp
   )
 
+  add_executable(asharia-rendergraph-header-tests
+      tests/rendergraph_header_tests.cpp
+      tests/rendergraph_types_header_test.cpp
+      tests/rendergraph_compile_header_test.cpp
+      tests/rendergraph_diagnostics_header_test.cpp
+      tests/rendergraph_aggregate_header_test.cpp
+  )
+
   target_link_libraries(asharia-rendergraph-compile-tests
       PRIVATE
           asharia::rendergraph
   )
 
+  target_link_libraries(asharia-rendergraph-header-tests
+      PRIVATE
+          asharia::rendergraph
+  )
+
   asharia_configure_target(asharia-rendergraph-compile-tests)
+  asharia_configure_target(asharia-rendergraph-header-tests)
 
   add_test(NAME asharia-rendergraph-compile-tests COMMAND asharia-rendergraph-compile-tests)
+  add_test(NAME asharia-rendergraph-header-tests COMMAND asharia-rendergraph-header-tests)
 endif()

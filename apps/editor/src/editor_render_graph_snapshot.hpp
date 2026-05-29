@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <optional>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_diagnostics.hpp"
 
 #include "editor_viewport.hpp"
 

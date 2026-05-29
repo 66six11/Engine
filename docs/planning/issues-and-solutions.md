@@ -110,23 +110,25 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 1. ADR-001 记录拆分策略 (`docs/rendergraph/adr-001-header-split.md`)
 2. Phase 1: 提取纯数据类型到 `render_graph_types.hpp` (~200 行) — handles, enums, descs, schema
 3. Phase 2: `vulkan_render_graph.hpp` (adapter) 改为只依赖 `render_graph_types.hpp`，不再依赖完整 `render_graph.hpp`
-4. Phase 3: 提取 compile/diagnostics 类型到 `render_graph_compile.hpp` (~210 行) — CompileResult, DiagnosticsSnapshot
+4. Phase 3: 提取 compile 类型到 `render_graph_compile.hpp`，diagnostics 类型到 `render_graph_diagnostics.hpp`
 5. Phase 4-A: `asharia-rendergraph` 改为 STATIC target，新增 `packages/rendergraph/src/render_graph.cpp`
 6. Phase 4-A: `RenderGraphCommandList` 方法实现移出 public header，现有 public API 不变
 7. Phase 4-B: `RenderGraphSchemaRegistry` / `RenderGraphExecutorRegistry` 实现移入 `src/render_graph.cpp`
 8. Phase 4-B: `PassBuilder` 非模板 builder 方法、RenderGraph resource/pass facade 和 public compile/execute overload 移入 `.cpp`
 9. Phase 4-C: `diagnosticsSnapshot()` 和 `formatDebugTables()` 实现移入 `.cpp`
+10. Phase 4-D: private `compile(schemaRegistry*)` 和 `execute(compiled, executorRegistry*)` 实现移入 `.cpp`
 
 **当前结构**:
 ```
 render_graph_types.hpp      — 纯数据契约，无内部依赖
 render_graph_compile.hpp    — 编译产物，只依赖 types
-render_graph.hpp            — command/builder/registry/facade 声明、模板 builder 入口、compile/validation 核心实现
-src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、public overload 和 diagnostics formatting 实现
+render_graph_diagnostics.hpp — diagnostics snapshot，只依赖 compile/types
+render_graph.hpp            — command/builder/registry/facade 声明、模板 builder 入口、validation/dependency/lifetime helper 实现
+src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、compile/execute、diagnostics formatting 实现
 ```
 
 **待完成 (Phase 4+)**:
-- 继续把 compile/validation/dependency/lifetime 核心实现从 header 迁移到 `src/`
+- 继续把 validation/dependency/lifetime helper 实现从 header 迁移到 `src/`
 - `RenderGraphCommandList` / `PassBuilder` 独立 header（当前只有声明和模板入口，仍可接受）
 
 ---
