@@ -245,82 +245,16 @@ namespace asharia {
 
         [[nodiscard]] std::vector<bool>
         findActivePasses(std::span<const RenderGraphPassDependency> dependencies,
-                         const RenderGraphSchemaRegistry* schemaRegistry) const {
-            std::vector<bool> activePasses(passes_.size());
-            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
-                if (!passCanBeCulled(passes_[passIndex], schemaRegistry)) {
-                    activePasses[passIndex] = true;
-                }
-            }
+                         const RenderGraphSchemaRegistry* schemaRegistry) const;
 
-            bool changed = true;
-            while (changed) {
-                changed = false;
-                for (const RenderGraphPassDependency& dependency : dependencies) {
-                    if (dependency.toDeclarationIndex >= activePasses.size() ||
-                        dependency.fromDeclarationIndex >= activePasses.size()) {
-                        continue;
-                    }
-                    if (activePasses[dependency.toDeclarationIndex] &&
-                        !activePasses[dependency.fromDeclarationIndex]) {
-                        activePasses[dependency.fromDeclarationIndex] = true;
-                        changed = true;
-                    }
-                }
-            }
-
-            return activePasses;
-        }
-
-        [[nodiscard]] std::vector<RenderGraphPassDependency>
+        [[nodiscard]] static std::vector<RenderGraphPassDependency>
         filterActiveDependencies(std::span<const RenderGraphPassDependency> dependencies,
-                                 const std::vector<bool>& activePasses) const {
-            std::vector<RenderGraphPassDependency> activeDependencies;
-            activeDependencies.reserve(dependencies.size());
-            for (const RenderGraphPassDependency& dependency : dependencies) {
-                if (dependency.fromDeclarationIndex >= activePasses.size() ||
-                    dependency.toDeclarationIndex >= activePasses.size()) {
-                    continue;
-                }
-                if (activePasses[dependency.fromDeclarationIndex] &&
-                    activePasses[dependency.toDeclarationIndex]) {
-                    activeDependencies.push_back(dependency);
-                }
-            }
-
-            return activeDependencies;
-        }
+                                 const std::vector<bool>& activePasses);
 
         [[nodiscard]] std::vector<RenderGraphCulledPass>
-        makeCulledPasses(const std::vector<bool>& activePasses) const {
-            std::vector<RenderGraphCulledPass> culledPasses;
-            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
-                if (passIndex < activePasses.size() && activePasses[passIndex]) {
-                    continue;
-                }
+        makeCulledPasses(const std::vector<bool>& activePasses) const;
 
-                const Pass& pass = passes_[passIndex];
-                culledPasses.push_back(RenderGraphCulledPass{
-                    .declarationIndex = passIndex,
-                    .name = pass.name,
-                    .type = pass.type,
-                    .reason = "cullable pass has no active consumers or side effects",
-                });
-            }
-
-            return culledPasses;
-        }
-
-        [[nodiscard]] static std::size_t activePassCount(const std::vector<bool>& activePasses) {
-            std::size_t count = 0;
-            for (const bool active : activePasses) {
-                if (active) {
-                    ++count;
-                }
-            }
-
-            return count;
-        }
+        [[nodiscard]] static std::size_t activePassCount(const std::vector<bool>& activePasses);
 
         [[nodiscard]] Result<std::vector<RenderGraphPassDependency>> buildDependencies() const;
         [[nodiscard]] Result<void>
@@ -331,1955 +265,285 @@ namespace asharia {
         [[nodiscard]] Result<void>
         addReadDependencies(std::vector<RenderGraphPassDependency>& dependencies,
                             RenderGraphImageHandle image, std::span<const std::size_t> writers,
-                            std::span<const std::size_t> readers) const {
-            const RenderGraphImageDesc& imageDesc = images_[image.index];
-
-            for (const std::size_t reader : readers) {
-                if (writers.empty()) {
-                    if (!imageCanBeReadFromInitialState(imageDesc)) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            missingProducerMessage(reader, image),
-                        }};
-                    }
-                    continue;
-                }
-
-                std::size_t sourceWriter{};
-                bool hasSourceWriter = false;
-                for (const std::size_t writer : writers) {
-                    if (writer < reader) {
-                        sourceWriter = writer;
-                        hasSourceWriter = true;
-                    }
-                }
-
-                if (!hasSourceWriter && imageCanBeReadFromInitialState(imageDesc)) {
-                    for (const std::size_t writer : writers) {
-                        if (writer > reader) {
-                            addDependency(dependencies, reader, writer, image,
-                                          "initial read before overwrite");
-                        }
-                    }
-                    continue;
-                }
-
-                if (!hasSourceWriter) {
-                    if (writers.size() != 1) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            ambiguousProducerMessage(reader, image, writers),
-                        }};
-                    }
-                    sourceWriter = writers.front();
-                    hasSourceWriter = true;
-                }
-
-                addDependency(dependencies, sourceWriter, reader, image, "producer read");
-
-                for (const std::size_t writer : writers) {
-                    if (writer > reader && writer != sourceWriter) {
-                        addDependency(dependencies, reader, writer, image, "read before overwrite");
-                    }
-                }
-            }
-
-            return {};
-        }
+                            std::span<const std::size_t> readers) const;
 
         [[nodiscard]] Result<void> addBufferReadDependencies(
             std::vector<RenderGraphPassDependency>& dependencies, RenderGraphBufferHandle buffer,
-            std::span<const std::size_t> writers, std::span<const std::size_t> readers) const {
-            const RenderGraphBufferDesc& bufferDesc = buffers_[buffer.index];
-
-            for (const std::size_t reader : readers) {
-                if (writers.empty()) {
-                    if (!bufferCanBeReadFromInitialState(bufferDesc)) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            missingBufferProducerMessage(reader, buffer),
-                        }};
-                    }
-                    continue;
-                }
-
-                std::size_t sourceWriter{};
-                bool hasSourceWriter = false;
-                for (const std::size_t writer : writers) {
-                    if (writer < reader) {
-                        sourceWriter = writer;
-                        hasSourceWriter = true;
-                    }
-                }
-
-                if (!hasSourceWriter && bufferCanBeReadFromInitialState(bufferDesc)) {
-                    for (const std::size_t writer : writers) {
-                        if (writer > reader) {
-                            addBufferDependency(dependencies, reader, writer, buffer,
-                                                "initial read before overwrite");
-                        }
-                    }
-                    continue;
-                }
-
-                if (!hasSourceWriter) {
-                    if (writers.size() == 1 && writers.front() == reader) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            missingBufferProducerMessage(reader, buffer),
-                        }};
-                    }
-                    if (writers.size() != 1) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            ambiguousBufferProducerMessage(reader, buffer, writers),
-                        }};
-                    }
-                    sourceWriter = writers.front();
-                    hasSourceWriter = true;
-                }
-
-                addBufferDependency(dependencies, sourceWriter, reader, buffer, "producer read");
-
-                for (const std::size_t writer : writers) {
-                    if (writer > reader && writer != sourceWriter) {
-                        addBufferDependency(dependencies, reader, writer, buffer,
-                                            "read before overwrite");
-                    }
-                }
-            }
-
-            return {};
-        }
+            std::span<const std::size_t> writers, std::span<const std::size_t> readers) const;
 
         void addDependency(std::vector<RenderGraphPassDependency>& dependencies,
                            std::size_t fromPassIndex, std::size_t toPassIndex,
-                           RenderGraphImageHandle image, std::string reason) const {
-            if (fromPassIndex == toPassIndex) {
-                return;
-            }
-
-            for (const RenderGraphPassDependency& dependency : dependencies) {
-                if (dependency.fromDeclarationIndex == fromPassIndex &&
-                    dependency.toDeclarationIndex == toPassIndex &&
-                    dependency.resourceKind == RenderGraphResourceKind::Image &&
-                    dependency.image == image && dependency.reason == reason) {
-                    return;
-                }
-            }
-
-            dependencies.push_back(RenderGraphPassDependency{
-                .fromDeclarationIndex = fromPassIndex,
-                .toDeclarationIndex = toPassIndex,
-                .resourceKind = RenderGraphResourceKind::Image,
-                .image = image,
-                .imageName = images_[image.index].name,
-                .bufferName = {},
-                .reason = std::move(reason),
-            });
-        }
+                           RenderGraphImageHandle image, std::string reason) const;
 
         void addBufferDependency(std::vector<RenderGraphPassDependency>& dependencies,
                                  std::size_t fromPassIndex, std::size_t toPassIndex,
-                                 RenderGraphBufferHandle buffer, std::string reason) const {
-            if (fromPassIndex == toPassIndex) {
-                return;
-            }
-
-            for (RenderGraphPassDependency& dependency : dependencies) {
-                if (dependency.fromDeclarationIndex == fromPassIndex &&
-                    dependency.toDeclarationIndex == toPassIndex &&
-                    dependency.resourceKind == RenderGraphResourceKind::Buffer &&
-                    dependency.buffer == buffer) {
-                    if (dependency.reason.find(reason) == std::string::npos) {
-                        dependency.reason += "; ";
-                        dependency.reason += reason;
-                    }
-                    return;
-                }
-            }
-
-            dependencies.push_back(RenderGraphPassDependency{
-                .fromDeclarationIndex = fromPassIndex,
-                .toDeclarationIndex = toPassIndex,
-                .resourceKind = RenderGraphResourceKind::Buffer,
-                .buffer = buffer,
-                .imageName = {},
-                .bufferName = buffers_[buffer.index].name,
-                .reason = std::move(reason),
-            });
-        }
+                                 RenderGraphBufferHandle buffer, std::string reason) const;
 
         [[nodiscard]] Result<std::vector<std::size_t>>
         sortPassesByDependencies(std::span<const RenderGraphPassDependency> dependencies,
-                                 const std::vector<bool>& activePasses) const {
-            if (activePasses.size() != passes_.size()) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Render graph active pass set does not match the graph.",
-                }};
-            }
-
-            std::vector<std::vector<std::size_t>> adjacency(passes_.size());
-            std::vector<std::size_t> indegrees(passes_.size());
-
-            for (const RenderGraphPassDependency& dependency : dependencies) {
-                if (dependency.fromDeclarationIndex >= passes_.size() ||
-                    dependency.toDeclarationIndex >= passes_.size()) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph dependency references a pass outside the graph.",
-                    }};
-                }
-
-                if (!activePasses[dependency.fromDeclarationIndex] ||
-                    !activePasses[dependency.toDeclarationIndex]) {
-                    continue;
-                }
-
-                if (addTopoEdge(adjacency, dependency.fromDeclarationIndex,
-                                dependency.toDeclarationIndex)) {
-                    ++indegrees[dependency.toDeclarationIndex];
-                }
-            }
-
-            std::vector<std::size_t> order;
-            const std::size_t targetPassCount = activePassCount(activePasses);
-            order.reserve(targetPassCount);
-            std::vector<bool> emitted(passes_.size());
-
-            while (order.size() < targetPassCount) {
-                std::size_t nextPass = passes_.size();
-                for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
-                    if (activePasses[passIndex] && !emitted[passIndex] &&
-                        indegrees[passIndex] == 0) {
-                        nextPass = passIndex;
-                        break;
-                    }
-                }
-
-                if (nextPass == passes_.size()) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        dependencyCycleMessage(dependencies, activePasses, emitted, adjacency),
-                    }};
-                }
-
-                emitted[nextPass] = true;
-                order.push_back(nextPass);
-                for (const std::size_t dependent : adjacency[nextPass]) {
-                    --indegrees[dependent];
-                }
-            }
-
-            return order;
-        }
+                                 const std::vector<bool>& activePasses) const;
 
         [[nodiscard]] static bool addTopoEdge(std::vector<std::vector<std::size_t>>& adjacency,
-                                              std::size_t fromPassIndex, std::size_t toPassIndex) {
-            for (const std::size_t existing : adjacency[fromPassIndex]) {
-                if (existing == toPassIndex) {
-                    return false;
-                }
-            }
-
-            adjacency[fromPassIndex].push_back(toPassIndex);
-            return true;
-        }
+                                              std::size_t fromPassIndex, std::size_t toPassIndex);
 
         [[nodiscard]] std::string
         dependencyCycleMessage(std::span<const RenderGraphPassDependency> dependencies,
                                const std::vector<bool>& activePasses,
                                const std::vector<bool>& emitted,
-                               const std::vector<std::vector<std::size_t>>& adjacency) const {
-            std::string message = "Render graph contains a pass dependency cycle.";
-
-            std::size_t cycleFrom = passes_.size();
-            std::size_t cycleTo = passes_.size();
-            if (findDependencyCycleEdge(adjacency, activePasses, emitted, cycleFrom, cycleTo)) {
-                message += " Cycle edge ";
-                message += passDeclarationLabel(cycleFrom);
-                message += " -> ";
-                message += passDeclarationLabel(cycleTo);
-
-                const RenderGraphPassDependency* dependency =
-                    findDependencyForEdge(dependencies, cycleFrom, cycleTo);
-                if (dependency != nullptr) {
-                    message += " through resource '";
-                    message += dependencyResourceLabel(*dependency);
-                    message += "'";
-                    if (!dependency->reason.empty()) {
-                        message += " (";
-                        message += dependency->reason;
-                        message += ")";
-                    }
-                }
-
-                message += ".";
-            }
-
-            message += " Remaining passes: ";
-            bool firstRemaining = true;
-            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
-                if (!activePasses[passIndex] || emitted[passIndex]) {
-                    continue;
-                }
-                if (!firstRemaining) {
-                    message += ", ";
-                }
-                firstRemaining = false;
-                message += passDeclarationLabel(passIndex);
-            }
-            if (firstRemaining) {
-                message += "-";
-            }
-            message += ".";
-
-            return message;
-        }
+                               const std::vector<std::vector<std::size_t>>& adjacency) const;
 
         [[nodiscard]] bool
         findDependencyCycleEdge(const std::vector<std::vector<std::size_t>>& adjacency,
                                 const std::vector<bool>& activePasses,
                                 const std::vector<bool>& emitted, std::size_t& cycleFrom,
-                                std::size_t& cycleTo) const {
-            std::vector<std::uint8_t> visitStates(passes_.size());
-            std::function<bool(std::size_t)> visit = [&](std::size_t passIndex) {
-                visitStates[passIndex] = 1;
-                for (const std::size_t dependent : adjacency[passIndex]) {
-                    if (!activePasses[dependent] || emitted[dependent]) {
-                        continue;
-                    }
-                    if (visitStates[dependent] == 1) {
-                        cycleFrom = passIndex;
-                        cycleTo = dependent;
-                        return true;
-                    }
-                    if (visitStates[dependent] == 0 && visit(dependent)) {
-                        return true;
-                    }
-                }
-
-                visitStates[passIndex] = 2;
-                return false;
-            };
-
-            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
-                if (!activePasses[passIndex] || emitted[passIndex] || visitStates[passIndex] != 0) {
-                    continue;
-                }
-                if (visit(passIndex)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+                                std::size_t& cycleTo) const;
 
         [[nodiscard]] static const RenderGraphPassDependency*
         findDependencyForEdge(std::span<const RenderGraphPassDependency> dependencies,
-                              std::size_t fromPassIndex, std::size_t toPassIndex) {
-            for (const RenderGraphPassDependency& dependency : dependencies) {
-                if (dependency.fromDeclarationIndex == fromPassIndex &&
-                    dependency.toDeclarationIndex == toPassIndex) {
-                    return &dependency;
-                }
-            }
-
-            return nullptr;
-        }
+                              std::size_t fromPassIndex, std::size_t toPassIndex);
 
         [[nodiscard]] std::string missingProducerMessage(std::size_t reader,
-                                                         RenderGraphImageHandle image) const {
-            std::string message = "Render graph pass '";
-            message += passDeclarationLabel(reader);
-            message += "' reads image '";
-            message += imageHandleLabel(image);
-            message += "' before any pass writes it. Candidate writers: -.";
-            return message;
-        }
+                                                         RenderGraphImageHandle image) const;
 
         [[nodiscard]] std::string
         ambiguousProducerMessage(std::size_t reader, RenderGraphImageHandle image,
-                                 std::span<const std::size_t> writers) const {
-            std::string message = "Render graph pass '";
-            message += passDeclarationLabel(reader);
-            message += "' reads image '";
-            message += imageHandleLabel(image);
-            message += "' before a unique producing writer can be inferred. Candidate writers: ";
-            message += passDeclarationList(writers);
-            message += ".";
-            return message;
-        }
+                                 std::span<const std::size_t> writers) const;
 
         [[nodiscard]] std::string
-        missingBufferProducerMessage(std::size_t reader, RenderGraphBufferHandle buffer) const {
-            std::string message = "Render graph pass '";
-            message += passDeclarationLabel(reader);
-            message += "' reads buffer '";
-            message += bufferHandleLabel(buffer);
-            message += "' before any pass writes it. Candidate writers: -.";
-            return message;
-        }
+        missingBufferProducerMessage(std::size_t reader, RenderGraphBufferHandle buffer) const;
 
         [[nodiscard]] std::string
         ambiguousBufferProducerMessage(std::size_t reader, RenderGraphBufferHandle buffer,
-                                       std::span<const std::size_t> writers) const {
-            std::string message = "Render graph pass '";
-            message += passDeclarationLabel(reader);
-            message += "' reads buffer '";
-            message += bufferHandleLabel(buffer);
-            message += "' before a unique producing writer can be inferred. Candidate writers: ";
-            message += passDeclarationList(writers);
-            message += ".";
-            return message;
-        }
+                                       std::span<const std::size_t> writers) const;
+
+        [[nodiscard]] static bool imageCanBeReadFromInitialState(const RenderGraphImageDesc& image);
 
         [[nodiscard]] static bool
-        imageCanBeReadFromInitialState(const RenderGraphImageDesc& image) {
-            return image.lifetime == RenderGraphImageLifetime::Imported &&
-                   image.initialState != RenderGraphImageState::Undefined;
-        }
-
-        [[nodiscard]] static bool
-        bufferCanBeReadFromInitialState(const RenderGraphBufferDesc& buffer) {
-            return buffer.lifetime == RenderGraphBufferLifetime::Imported &&
-                   buffer.initialState != RenderGraphBufferState::Undefined;
-        }
+        bufferCanBeReadFromInitialState(const RenderGraphBufferDesc& buffer);
 
         [[nodiscard]] bool passCanBeCulled(const Pass& pass,
-                                           const RenderGraphSchemaRegistry* schemaRegistry) const {
-            return passAllowsCulling(pass, schemaRegistry) &&
-                   !passHasSideEffects(pass, schemaRegistry) && !passWritesImportedResource(pass);
-        }
+                                           const RenderGraphSchemaRegistry* schemaRegistry) const;
 
-        [[nodiscard]] bool
-        passAllowsCulling(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry) const {
-            const RenderGraphPassSchema* schema = passSchema(pass, schemaRegistry);
-            return pass.allowCulling || (schema != nullptr && schema->allowCulling);
-        }
+        [[nodiscard]] static bool
+        passAllowsCulling(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry);
 
-        [[nodiscard]] bool
-        passHasSideEffects(const Pass& pass,
-                           const RenderGraphSchemaRegistry* schemaRegistry) const {
-            const RenderGraphPassSchema* schema = passSchema(pass, schemaRegistry);
-            return pass.hasSideEffects || (schema != nullptr && schema->hasSideEffects);
-        }
+        [[nodiscard]] static bool
+        passHasSideEffects(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry);
 
-        [[nodiscard]] const RenderGraphPassSchema*
-        passSchema(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry) const {
-            if (schemaRegistry == nullptr || pass.type.empty()) {
-                return nullptr;
-            }
+        [[nodiscard]] static const RenderGraphPassSchema*
+        passSchema(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry);
 
-            return schemaRegistry->find(pass.type);
-        }
+        [[nodiscard]] bool passWritesImportedResource(const Pass& pass) const;
 
-        [[nodiscard]] bool passWritesImportedResource(const Pass& pass) const {
-            const std::array<std::span<const RenderGraphImageSlot>, 3> writeSlotGroups{
-                pass.colorWriteSlots,
-                pass.depthWriteSlots,
-                pass.transferWriteSlots,
-            };
-            for (std::span<const RenderGraphImageSlot> slots : writeSlotGroups) {
-                for (const RenderGraphImageSlot& slot : slots) {
-                    if (slot.image.index < images_.size() &&
-                        images_[slot.image.index].lifetime == RenderGraphImageLifetime::Imported) {
-                        return true;
-                    }
-                }
-            }
+        [[nodiscard]] static bool passReadsImage(const Pass& pass, RenderGraphImageHandle image);
 
-            const std::array<std::span<const RenderGraphBufferSlot>, 2> bufferWriteSlotGroups{
-                pass.bufferWriteSlots,
-                pass.bufferStorageReadWriteSlots,
-            };
-            for (std::span<const RenderGraphBufferSlot> slots : bufferWriteSlotGroups) {
-                for (const RenderGraphBufferSlot& slot : slots) {
-                    if (slot.buffer.index < buffers_.size() &&
-                        buffers_[slot.buffer.index].lifetime ==
-                            RenderGraphBufferLifetime::Imported) {
-                        return true;
-                    }
-                }
-            }
+        [[nodiscard]] static bool passWritesImage(const Pass& pass, RenderGraphImageHandle image);
 
-            return false;
-        }
-
-        [[nodiscard]] static bool passReadsImage(const Pass& pass, RenderGraphImageHandle image) {
-            return slotsUseImage(pass.shaderReadSlots, image) ||
-                   slotsUseImage(pass.depthReadSlots, image) ||
-                   slotsUseImage(pass.depthSampledReadSlots, image) ||
-                   slotsUseImage(pass.transferReadSlots, image);
-        }
-
-        [[nodiscard]] static bool passWritesImage(const Pass& pass, RenderGraphImageHandle image) {
-            return slotsUseImage(pass.colorWriteSlots, image) ||
-                   slotsUseImage(pass.depthWriteSlots, image) ||
-                   slotsUseImage(pass.transferWriteSlots, image);
-        }
-
-        [[nodiscard]] static bool passReadsBuffer(const Pass& pass,
-                                                  RenderGraphBufferHandle buffer) {
-            return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
-                   slotsUseBuffer(pass.bufferTransferReadSlots, buffer) ||
-                   slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
-        }
+        [[nodiscard]] static bool passReadsBuffer(const Pass& pass, RenderGraphBufferHandle buffer);
 
         [[nodiscard]] static bool passWritesBuffer(const Pass& pass,
-                                                   RenderGraphBufferHandle buffer) {
-            return slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
-                   slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
-        }
+                                                   RenderGraphBufferHandle buffer);
 
-        [[nodiscard]] Result<void> validateImageHandle(RenderGraphImageHandle image) const {
-            if (image.index >= images_.size()) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Render graph image handle is out of range.",
-                }};
-            }
+        [[nodiscard]] Result<void> validateImageHandle(RenderGraphImageHandle image) const;
 
-            return {};
-        }
+        [[nodiscard]] Result<void> validateBufferHandle(RenderGraphBufferHandle buffer) const;
 
-        [[nodiscard]] Result<void> validateBufferHandle(RenderGraphBufferHandle buffer) const {
-            if (buffer.index >= buffers_.size()) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Render graph buffer handle is out of range.",
-                }};
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void> validateWriteSlots(const Pass& pass) const {
-            auto colorSlots = validateSlots(pass, pass.colorWriteSlots);
-            if (!colorSlots) {
-                return std::unexpected{std::move(colorSlots.error())};
-            }
-
-            auto shaderReadSlots = validateShaderReadSlots(pass);
-            if (!shaderReadSlots) {
-                return std::unexpected{std::move(shaderReadSlots.error())};
-            }
-
-            auto depthReadSlots = validateSlots(pass, pass.depthReadSlots);
-            if (!depthReadSlots) {
-                return std::unexpected{std::move(depthReadSlots.error())};
-            }
-
-            auto depthWriteSlots = validateSlots(pass, pass.depthWriteSlots);
-            if (!depthWriteSlots) {
-                return std::unexpected{std::move(depthWriteSlots.error())};
-            }
-
-            auto depthSampledReadSlots = validateDepthSampledReadSlots(pass);
-            if (!depthSampledReadSlots) {
-                return std::unexpected{std::move(depthSampledReadSlots.error())};
-            }
-
-            auto transferReadSlots = validateSlots(pass, pass.transferReadSlots);
-            if (!transferReadSlots) {
-                return std::unexpected{std::move(transferReadSlots.error())};
-            }
-
-            auto transferSlots = validateSlots(pass, pass.transferWriteSlots);
-            if (!transferSlots) {
-                return std::unexpected{std::move(transferSlots.error())};
-            }
-
-            auto bufferReadSlots = validateBufferReadSlots(pass);
-            if (!bufferReadSlots) {
-                return std::unexpected{std::move(bufferReadSlots.error())};
-            }
-
-            auto bufferTransferReadSlots = validateSlots(pass, pass.bufferTransferReadSlots);
-            if (!bufferTransferReadSlots) {
-                return std::unexpected{std::move(bufferTransferReadSlots.error())};
-            }
-
-            auto bufferWriteSlots = validateSlots(pass, pass.bufferWriteSlots);
-            if (!bufferWriteSlots) {
-                return std::unexpected{std::move(bufferWriteSlots.error())};
-            }
-
-            auto bufferStorageReadWriteSlots = validateBufferStorageReadWriteSlots(pass);
-            if (!bufferStorageReadWriteSlots) {
-                return std::unexpected{std::move(bufferStorageReadWriteSlots.error())};
-            }
-
-            const std::array<std::span<const RenderGraphImageSlot>, 7> slotGroups{
-                pass.colorWriteSlots,    pass.shaderReadSlots,       pass.depthReadSlots,
-                pass.depthWriteSlots,    pass.depthSampledReadSlots, pass.transferReadSlots,
-                pass.transferWriteSlots,
-            };
-            auto duplicateSlots = validateUniqueResourceSlotNames(pass);
-            if (!duplicateSlots) {
-                return std::unexpected{std::move(duplicateSlots.error())};
-            }
-
-            auto imageAccesses = validateUniqueImageAccesses(pass, slotGroups);
-            if (!imageAccesses) {
-                return std::unexpected{std::move(imageAccesses.error())};
-            }
-
-            auto bufferAccesses = validateUniqueBufferAccesses(pass);
-            if (!bufferAccesses) {
-                return std::unexpected{std::move(bufferAccesses.error())};
-            }
-
-            return {};
-        }
+        [[nodiscard]] Result<void> validateWriteSlots(const Pass& pass) const;
 
         [[nodiscard]] Result<void> validateUniqueImageAccesses(
             const Pass& pass,
-            std::span<const std::span<const RenderGraphImageSlot>> slotGroups) const {
-            const std::array<RenderGraphImageSlotGroup, 7> namedGroups{
-                RenderGraphImageSlotGroup{
-                    .access = "ColorWrite",
-                    .slots = slotGroups[0],
-                },
-                RenderGraphImageSlotGroup{
-                    .access = "ShaderRead",
-                    .slots = slotGroups[1],
-                },
-                RenderGraphImageSlotGroup{
-                    .access = "DepthAttachmentRead",
-                    .slots = slotGroups[2],
-                },
-                RenderGraphImageSlotGroup{
-                    .access = "DepthAttachmentWrite",
-                    .slots = slotGroups[3],
-                },
-                RenderGraphImageSlotGroup{
-                    .access = "DepthSampledRead",
-                    .slots = slotGroups[4],
-                },
-                RenderGraphImageSlotGroup{
-                    .access = "TransferRead",
-                    .slots = slotGroups[5],
-                },
-                RenderGraphImageSlotGroup{
-                    .access = "TransferWrite",
-                    .slots = slotGroups[6],
-                },
-            };
+            std::span<const std::span<const RenderGraphImageSlot>> slotGroups) const;
 
-            for (std::size_t groupIndex = 0; groupIndex < namedGroups.size(); ++groupIndex) {
-                const RenderGraphImageSlotGroup& group = namedGroups[groupIndex];
-                for (std::size_t slotIndex = 0; slotIndex < group.slots.size(); ++slotIndex) {
-                    const RenderGraphImageSlot& slot = group.slots[slotIndex];
-                    for (std::size_t otherGroupIndex = groupIndex;
-                         otherGroupIndex < namedGroups.size(); ++otherGroupIndex) {
-                        const RenderGraphImageSlotGroup& otherGroup = namedGroups[otherGroupIndex];
-                        const std::size_t otherSlotBegin =
-                            otherGroupIndex == groupIndex ? slotIndex + 1 : 0;
-                        for (std::size_t otherSlotIndex = otherSlotBegin;
-                             otherSlotIndex < otherGroup.slots.size(); ++otherSlotIndex) {
-                            const RenderGraphImageSlot& otherSlot =
-                                otherGroup.slots[otherSlotIndex];
-                            if (slot.image == otherSlot.image) {
-                                return std::unexpected{Error{
-                                    ErrorDomain::RenderGraph,
-                                    0,
-                                    imageAccessConflictMessage(pass, slot, group.access, otherSlot,
-                                                               otherGroup.access),
-                                }};
-                            }
-                        }
-                    }
-                }
-            }
+        [[nodiscard]] Result<void> validateUniqueBufferAccesses(const Pass& pass) const;
 
-            return {};
-        }
+        [[nodiscard]] static Result<void>
+        validateSchema(const Pass& pass, const RenderGraphSchemaRegistry& schemaRegistry);
 
-        [[nodiscard]] Result<void> validateUniqueBufferAccesses(const Pass& pass) const {
-            const std::array<RenderGraphBufferSlotGroup, 4> namedGroups{
-                RenderGraphBufferSlotGroup{
-                    .access = "BufferShaderRead",
-                    .slots = pass.bufferReadSlots,
-                },
-                RenderGraphBufferSlotGroup{
-                    .access = "BufferTransferRead",
-                    .slots = pass.bufferTransferReadSlots,
-                },
-                RenderGraphBufferSlotGroup{
-                    .access = "BufferTransferWrite",
-                    .slots = pass.bufferWriteSlots,
-                },
-                RenderGraphBufferSlotGroup{
-                    .access = "BufferStorageReadWrite",
-                    .slots = pass.bufferStorageReadWriteSlots,
-                },
-            };
-
-            for (std::size_t groupIndex = 0; groupIndex < namedGroups.size(); ++groupIndex) {
-                const RenderGraphBufferSlotGroup& group = namedGroups[groupIndex];
-                for (std::size_t slotIndex = 0; slotIndex < group.slots.size(); ++slotIndex) {
-                    const RenderGraphBufferSlot& slot = group.slots[slotIndex];
-                    for (std::size_t otherGroupIndex = groupIndex;
-                         otherGroupIndex < namedGroups.size(); ++otherGroupIndex) {
-                        const RenderGraphBufferSlotGroup& otherGroup = namedGroups[otherGroupIndex];
-                        const std::size_t otherSlotBegin =
-                            otherGroupIndex == groupIndex ? slotIndex + 1 : 0;
-                        for (std::size_t otherSlotIndex = otherSlotBegin;
-                             otherSlotIndex < otherGroup.slots.size(); ++otherSlotIndex) {
-                            const RenderGraphBufferSlot& otherSlot =
-                                otherGroup.slots[otherSlotIndex];
-                            if (slot.buffer == otherSlot.buffer) {
-                                return std::unexpected{Error{
-                                    ErrorDomain::RenderGraph,
-                                    0,
-                                    bufferAccessConflictMessage(pass, slot, group.access, otherSlot,
-                                                                otherGroup.access),
-                                }};
-                            }
-                        }
-                    }
-                }
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void>
-        validateSchema(const Pass& pass, const RenderGraphSchemaRegistry& schemaRegistry) const {
-            if (pass.type.empty()) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Render graph pass '" + pass.name +
-                        "' cannot be schema-validated without a type.",
-                }};
-            }
-
-            const RenderGraphPassSchema* schema = schemaRegistry.find(pass.type);
-            if (schema == nullptr) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Render graph pass '" + pass.name + "' has no registered schema for type '" +
-                        pass.type + "'.",
-                }};
-            }
-
-            if (pass.paramsType != schema->paramsType) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Render graph pass '" + pass.name + "' expected params type '" +
-                        schema->paramsType + "' but found '" + pass.paramsType + "'.",
-                }};
-            }
-
-            auto colorSlots = validateSlotsAgainstSchema(
-                pass, pass.colorWriteSlots, RenderGraphSlotAccess::ColorWrite, *schema);
-            if (!colorSlots) {
-                return std::unexpected{std::move(colorSlots.error())};
-            }
-
-            auto shaderReadSlots = validateSlotsAgainstSchema(
-                pass, pass.shaderReadSlots, RenderGraphSlotAccess::ShaderRead, *schema);
-            if (!shaderReadSlots) {
-                return std::unexpected{std::move(shaderReadSlots.error())};
-            }
-
-            auto depthReadSlots = validateSlotsAgainstSchema(
-                pass, pass.depthReadSlots, RenderGraphSlotAccess::DepthAttachmentRead, *schema);
-            if (!depthReadSlots) {
-                return std::unexpected{std::move(depthReadSlots.error())};
-            }
-
-            auto depthWriteSlots = validateSlotsAgainstSchema(
-                pass, pass.depthWriteSlots, RenderGraphSlotAccess::DepthAttachmentWrite, *schema);
-            if (!depthWriteSlots) {
-                return std::unexpected{std::move(depthWriteSlots.error())};
-            }
-
-            auto depthSampledReadSlots = validateSlotsAgainstSchema(
-                pass, pass.depthSampledReadSlots, RenderGraphSlotAccess::DepthSampledRead, *schema);
-            if (!depthSampledReadSlots) {
-                return std::unexpected{std::move(depthSampledReadSlots.error())};
-            }
-
-            auto transferReadSlots = validateSlotsAgainstSchema(
-                pass, pass.transferReadSlots, RenderGraphSlotAccess::TransferRead, *schema);
-            if (!transferReadSlots) {
-                return std::unexpected{std::move(transferReadSlots.error())};
-            }
-
-            auto transferSlots = validateSlotsAgainstSchema(
-                pass, pass.transferWriteSlots, RenderGraphSlotAccess::TransferWrite, *schema);
-            if (!transferSlots) {
-                return std::unexpected{std::move(transferSlots.error())};
-            }
-
-            auto bufferReadSlots = validateSlotsAgainstSchema(
-                pass, pass.bufferReadSlots, RenderGraphSlotAccess::BufferShaderRead, *schema);
-            if (!bufferReadSlots) {
-                return std::unexpected{std::move(bufferReadSlots.error())};
-            }
-
-            auto bufferTransferReadSlots =
-                validateSlotsAgainstSchema(pass, pass.bufferTransferReadSlots,
-                                           RenderGraphSlotAccess::BufferTransferRead, *schema);
-            if (!bufferTransferReadSlots) {
-                return std::unexpected{std::move(bufferTransferReadSlots.error())};
-            }
-
-            auto bufferWriteSlots = validateSlotsAgainstSchema(
-                pass, pass.bufferWriteSlots, RenderGraphSlotAccess::BufferTransferWrite, *schema);
-            if (!bufferWriteSlots) {
-                return std::unexpected{std::move(bufferWriteSlots.error())};
-            }
-
-            auto bufferStorageReadWriteSlots =
-                validateSlotsAgainstSchema(pass, pass.bufferStorageReadWriteSlots,
-                                           RenderGraphSlotAccess::BufferStorageReadWrite, *schema);
-            if (!bufferStorageReadWriteSlots) {
-                return std::unexpected{std::move(bufferStorageReadWriteSlots.error())};
-            }
-
-            for (const RenderGraphResourceSlotSchema& slotSchema : schema->resourceSlots) {
-                if (slotSchema.optional) {
-                    continue;
-                }
-                if (!hasSlot(pass, slotSchema)) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' is missing required slot '" +
-                            slotSchema.name + "'.",
-                    }};
-                }
-            }
-
-            auto commands = validateCommandsAgainstSchema(pass, *schema);
-            if (!commands) {
-                return std::unexpected{std::move(commands.error())};
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void>
-        validateCommandsAgainstSchema(const Pass& pass, const RenderGraphPassSchema& schema) const {
-            for (const RenderGraphCommand& command : pass.commands) {
-                if (!commandAllowedBySchema(command.kind, schema)) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' command '" +
-                            std::string{commandKindName(command.kind)} +
-                            "' is not allowed by schema '" + schema.type + "'.",
-                    }};
-                }
-            }
-
-            return {};
-        }
+        [[nodiscard]] static Result<void>
+        validateCommandsAgainstSchema(const Pass& pass, const RenderGraphPassSchema& schema);
 
         [[nodiscard]] static bool commandAllowedBySchema(RenderGraphCommandKind commandKind,
-                                                         const RenderGraphPassSchema& schema) {
-            for (const RenderGraphCommandKind allowed : schema.allowedCommands) {
-                if (allowed == commandKind) {
-                    return true;
-                }
-            }
+                                                         const RenderGraphPassSchema& schema);
 
-            return false;
-        }
-
-        [[nodiscard]] Result<void>
+        [[nodiscard]] static Result<void>
         validateSlotsAgainstSchema(const Pass& pass, std::span<const RenderGraphImageSlot> slots,
                                    RenderGraphSlotAccess access,
-                                   const RenderGraphPassSchema& schema) const {
-            for (const RenderGraphImageSlot& slot : slots) {
-                if (findSlotSchema(schema, slot.name, access, slot.shaderStage) == nullptr) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' declares slot '" + slot.name +
-                            "' that is not allowed by schema '" + schema.type + "'.",
-                    }};
-                }
-            }
+                                   const RenderGraphPassSchema& schema);
 
-            return {};
-        }
-
-        [[nodiscard]] Result<void>
+        [[nodiscard]] static Result<void>
         validateSlotsAgainstSchema(const Pass& pass, std::span<const RenderGraphBufferSlot> slots,
                                    RenderGraphSlotAccess access,
-                                   const RenderGraphPassSchema& schema) const {
-            for (const RenderGraphBufferSlot& slot : slots) {
-                if (findSlotSchema(schema, slot.name, access, slot.shaderStage) == nullptr) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' declares slot '" + slot.name +
-                            "' that is not allowed by schema '" + schema.type + "'.",
-                    }};
-                }
-            }
+                                   const RenderGraphPassSchema& schema);
 
-            return {};
-        }
-
-        [[nodiscard]] bool hasSlot(const Pass& pass,
-                                   const RenderGraphResourceSlotSchema& slotSchema) const {
-            const std::span<const RenderGraphImageSlot> slots =
-                slotsForAccess(pass, slotSchema.access);
-            for (const RenderGraphImageSlot& slot : slots) {
-                if (slot.name == slotSchema.name && slot.shaderStage == slotSchema.shaderStage) {
-                    return true;
-                }
-            }
-
-            const std::span<const RenderGraphBufferSlot> bufferSlots =
-                bufferSlotsForAccess(pass, slotSchema.access);
-            for (const RenderGraphBufferSlot& slot : bufferSlots) {
-                if (slot.name == slotSchema.name && slot.shaderStage == slotSchema.shaderStage) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+        [[nodiscard]] static bool hasSlot(const Pass& pass,
+                                          const RenderGraphResourceSlotSchema& slotSchema);
 
         [[nodiscard]] static const RenderGraphResourceSlotSchema*
         findSlotSchema(const RenderGraphPassSchema& schema, std::string_view name,
-                       RenderGraphSlotAccess access, RenderGraphShaderStage shaderStage) {
-            for (const RenderGraphResourceSlotSchema& slotSchema : schema.resourceSlots) {
-                if (slotSchema.name == name && slotSchema.access == access &&
-                    slotSchema.shaderStage == shaderStage) {
-                    return &slotSchema;
-                }
-            }
+                       RenderGraphSlotAccess access, RenderGraphShaderStage shaderStage);
 
-            return nullptr;
-        }
+        [[nodiscard]] static std::span<const RenderGraphImageSlot>
+        slotsForAccess(const Pass& pass, RenderGraphSlotAccess access);
 
-        [[nodiscard]] std::span<const RenderGraphImageSlot>
-        slotsForAccess(const Pass& pass, RenderGraphSlotAccess access) const {
-            switch (access) {
-            case RenderGraphSlotAccess::ColorWrite:
-                return pass.colorWriteSlots;
-            case RenderGraphSlotAccess::ShaderRead:
-                return pass.shaderReadSlots;
-            case RenderGraphSlotAccess::DepthAttachmentRead:
-                return pass.depthReadSlots;
-            case RenderGraphSlotAccess::DepthAttachmentWrite:
-                return pass.depthWriteSlots;
-            case RenderGraphSlotAccess::DepthSampledRead:
-                return pass.depthSampledReadSlots;
-            case RenderGraphSlotAccess::TransferRead:
-                return pass.transferReadSlots;
-            case RenderGraphSlotAccess::TransferWrite:
-                return pass.transferWriteSlots;
-            case RenderGraphSlotAccess::BufferShaderRead:
-            case RenderGraphSlotAccess::BufferTransferRead:
-            case RenderGraphSlotAccess::BufferTransferWrite:
-            case RenderGraphSlotAccess::BufferStorageReadWrite:
-                return {};
-            }
-            return {};
-        }
+        [[nodiscard]] static std::span<const RenderGraphBufferSlot>
+        bufferSlotsForAccess(const Pass& pass, RenderGraphSlotAccess access);
 
-        [[nodiscard]] std::span<const RenderGraphBufferSlot>
-        bufferSlotsForAccess(const Pass& pass, RenderGraphSlotAccess access) const {
-            switch (access) {
-            case RenderGraphSlotAccess::BufferShaderRead:
-                return pass.bufferReadSlots;
-            case RenderGraphSlotAccess::BufferTransferRead:
-                return pass.bufferTransferReadSlots;
-            case RenderGraphSlotAccess::BufferTransferWrite:
-                return pass.bufferWriteSlots;
-            case RenderGraphSlotAccess::BufferStorageReadWrite:
-                return pass.bufferStorageReadWriteSlots;
-            case RenderGraphSlotAccess::ColorWrite:
-            case RenderGraphSlotAccess::ShaderRead:
-            case RenderGraphSlotAccess::DepthAttachmentRead:
-            case RenderGraphSlotAccess::DepthAttachmentWrite:
-            case RenderGraphSlotAccess::DepthSampledRead:
-            case RenderGraphSlotAccess::TransferRead:
-            case RenderGraphSlotAccess::TransferWrite:
-                return {};
-            }
-            return {};
-        }
+        [[nodiscard]] Result<void> validateSlots(const Pass& pass,
+                                                 std::span<const RenderGraphImageSlot> slots) const;
 
         [[nodiscard]] Result<void>
-        validateSlots(const Pass& pass, std::span<const RenderGraphImageSlot> slots) const {
-            for (std::size_t index = 0; index < slots.size(); ++index) {
-                const RenderGraphImageSlot& slot = slots[index];
-                if (slot.name.empty()) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' has an unnamed resource slot.",
-                    }};
-                }
+        validateSlots(const Pass& pass, std::span<const RenderGraphBufferSlot> slots) const;
 
-                auto validated = validateImageHandle(slot.image);
-                if (!validated) {
-                    return std::unexpected{std::move(validated.error())};
-                }
+        [[nodiscard]] Result<void> validateShaderReadSlots(const Pass& pass) const;
 
-                for (std::size_t otherIndex = index + 1; otherIndex < slots.size(); ++otherIndex) {
-                    if (slot.name == slots[otherIndex].name) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            duplicateSlotMessage(pass, slot.name),
-                        }};
-                    }
-                }
-            }
+        [[nodiscard]] Result<void> validateDepthSampledReadSlots(const Pass& pass) const;
 
-            return {};
-        }
+        [[nodiscard]] Result<void> validateBufferReadSlots(const Pass& pass) const;
 
-        [[nodiscard]] Result<void>
-        validateSlots(const Pass& pass, std::span<const RenderGraphBufferSlot> slots) const {
-            for (std::size_t index = 0; index < slots.size(); ++index) {
-                const RenderGraphBufferSlot& slot = slots[index];
-                if (slot.name.empty()) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' has an unnamed resource slot.",
-                    }};
-                }
+        [[nodiscard]] Result<void> validateBufferStorageReadWriteSlots(const Pass& pass) const;
 
-                auto validated = validateBufferHandle(slot.buffer);
-                if (!validated) {
-                    return std::unexpected{std::move(validated.error())};
-                }
-
-                for (std::size_t otherIndex = index + 1; otherIndex < slots.size(); ++otherIndex) {
-                    if (slot.name == slots[otherIndex].name) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            duplicateSlotMessage(pass, slot.name),
-                        }};
-                    }
-                }
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void> validateShaderReadSlots(const Pass& pass) const {
-            auto slots = validateSlots(pass, pass.shaderReadSlots);
-            if (!slots) {
-                return std::unexpected{std::move(slots.error())};
-            }
-
-            for (const RenderGraphImageSlot& slot : pass.shaderReadSlots) {
-                if (slot.shaderStage == RenderGraphShaderStage::None) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' declares shader read slot '" +
-                            slot.name + "' without a shader stage.",
-                    }};
-                }
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void> validateDepthSampledReadSlots(const Pass& pass) const {
-            auto slots = validateSlots(pass, pass.depthSampledReadSlots);
-            if (!slots) {
-                return std::unexpected{std::move(slots.error())};
-            }
-
-            for (const RenderGraphImageSlot& slot : pass.depthSampledReadSlots) {
-                if (slot.shaderStage == RenderGraphShaderStage::None) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' declares depth sampled read slot '" +
-                            slot.name + "' without a shader stage.",
-                    }};
-                }
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void> validateBufferReadSlots(const Pass& pass) const {
-            auto slots = validateSlots(pass, pass.bufferReadSlots);
-            if (!slots) {
-                return std::unexpected{std::move(slots.error())};
-            }
-
-            for (const RenderGraphBufferSlot& slot : pass.bufferReadSlots) {
-                if (slot.shaderStage == RenderGraphShaderStage::None) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name + "' declares buffer shader read slot '" +
-                            slot.name + "' without a shader stage.",
-                    }};
-                }
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void> validateBufferStorageReadWriteSlots(const Pass& pass) const {
-            auto slots = validateSlots(pass, pass.bufferStorageReadWriteSlots);
-            if (!slots) {
-                return std::unexpected{std::move(slots.error())};
-            }
-
-            for (const RenderGraphBufferSlot& slot : pass.bufferStorageReadWriteSlots) {
-                if (slot.shaderStage == RenderGraphShaderStage::None) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "Render graph pass '" + pass.name +
-                            "' declares buffer storage read/write slot '" + slot.name +
-                            "' without a shader stage.",
-                    }};
-                }
-            }
-
-            return {};
-        }
-
-        [[nodiscard]] Result<void> validateUniqueResourceSlotNames(const Pass& pass) const {
-            std::vector<std::string_view> names;
-            const auto addName = [&](std::string_view name) -> Result<void> {
-                for (const std::string_view existing : names) {
-                    if (existing == name) {
-                        return std::unexpected{Error{
-                            ErrorDomain::RenderGraph,
-                            0,
-                            duplicateSlotMessage(pass, name),
-                        }};
-                    }
-                }
-                names.push_back(name);
-                return {};
-            };
-
-            for (const RenderGraphImageSlot& slot : pass.colorWriteSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphImageSlot& slot : pass.shaderReadSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphImageSlot& slot : pass.depthReadSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphImageSlot& slot : pass.depthWriteSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphImageSlot& slot : pass.depthSampledReadSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphImageSlot& slot : pass.transferReadSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphImageSlot& slot : pass.transferWriteSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphBufferSlot& slot : pass.bufferReadSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphBufferSlot& slot : pass.bufferTransferReadSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphBufferSlot& slot : pass.bufferWriteSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-            for (const RenderGraphBufferSlot& slot : pass.bufferStorageReadWriteSlots) {
-                auto added = addName(slot.name);
-                if (!added) {
-                    return added;
-                }
-            }
-
-            return {};
-        }
+        [[nodiscard]] static Result<void> validateUniqueResourceSlotNames(const Pass& pass);
 
         [[nodiscard]] static std::vector<RenderGraphImageHandle>
-        imageHandles(std::span<const RenderGraphImageSlot> slots) {
-            std::vector<RenderGraphImageHandle> handles;
-            handles.reserve(slots.size());
-            for (const RenderGraphImageSlot& slot : slots) {
-                handles.push_back(slot.image);
-            }
-            return handles;
-        }
+        imageHandles(std::span<const RenderGraphImageSlot> slots);
 
         [[nodiscard]] static std::vector<RenderGraphBufferHandle>
-        bufferHandles(std::span<const RenderGraphBufferSlot> slots) {
-            std::vector<RenderGraphBufferHandle> handles;
-            handles.reserve(slots.size());
-            for (const RenderGraphBufferSlot& slot : slots) {
-                handles.push_back(slot.buffer);
-            }
-            return handles;
-        }
+        bufferHandles(std::span<const RenderGraphBufferSlot> slots);
 
         [[nodiscard]] Result<RenderGraphTransientImageAllocation>
         makeTransientAllocation(std::size_t imageIndex,
                                 std::span<const RenderGraphCompiledPass> passes,
-                                RenderGraphImageAccess finalAccess) const {
-            std::size_t firstPass = passes.size();
-            std::size_t lastPass{};
-            const RenderGraphImageHandle imageHandle{
-                .index = static_cast<std::uint32_t>(imageIndex),
-            };
-
-            for (std::size_t passIndex = 0; passIndex < passes.size(); ++passIndex) {
-                if (!passUsesImage(passes[passIndex], imageHandle)) {
-                    continue;
-                }
-
-                if (firstPass == passes.size()) {
-                    firstPass = passIndex;
-                }
-                lastPass = passIndex;
-            }
-
-            const RenderGraphImageDesc& image = images_[imageIndex];
-            if (firstPass == passes.size()) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Transient render graph image '" + image.name + "' is never used.",
-                }};
-            }
-
-            return RenderGraphTransientImageAllocation{
-                .image = imageHandle,
-                .imageName = image.name,
-                .format = image.format,
-                .extent = image.extent,
-                .firstPassIndex = firstPass,
-                .lastPassIndex = lastPass,
-                .finalState = finalAccess.state,
-                .finalShaderStage = finalAccess.shaderStage,
-            };
-        }
+                                RenderGraphImageAccess finalAccess) const;
 
         [[nodiscard]] Result<RenderGraphTransientBufferAllocation>
         makeTransientBufferAllocation(std::size_t bufferIndex,
                                       std::span<const RenderGraphCompiledPass> passes,
-                                      RenderGraphBufferAccess finalAccess) const {
-            std::size_t firstPass = passes.size();
-            std::size_t lastPass{};
-            const RenderGraphBufferHandle bufferHandle{
-                .index = static_cast<std::uint32_t>(bufferIndex),
-            };
-
-            for (std::size_t passIndex = 0; passIndex < passes.size(); ++passIndex) {
-                if (!passUsesBuffer(passes[passIndex], bufferHandle)) {
-                    continue;
-                }
-
-                if (firstPass == passes.size()) {
-                    firstPass = passIndex;
-                }
-                lastPass = passIndex;
-            }
-
-            const RenderGraphBufferDesc& buffer = buffers_[bufferIndex];
-            if (firstPass == passes.size()) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph,
-                    0,
-                    "Transient render graph buffer '" + buffer.name + "' is never used.",
-                }};
-            }
-
-            return RenderGraphTransientBufferAllocation{
-                .buffer = bufferHandle,
-                .bufferName = buffer.name,
-                .byteSize = buffer.byteSize,
-                .firstPassIndex = firstPass,
-                .lastPassIndex = lastPass,
-                .finalState = finalAccess.state,
-                .finalShaderStage = finalAccess.shaderStage,
-            };
-        }
+                                      RenderGraphBufferAccess finalAccess) const;
 
         [[nodiscard]] static bool passUsesImage(const RenderGraphCompiledPass& pass,
-                                                RenderGraphImageHandle image) {
-            return slotsUseImage(pass.colorWriteSlots, image) ||
-                   slotsUseImage(pass.shaderReadSlots, image) ||
-                   slotsUseImage(pass.depthReadSlots, image) ||
-                   slotsUseImage(pass.depthWriteSlots, image) ||
-                   slotsUseImage(pass.depthSampledReadSlots, image) ||
-                   slotsUseImage(pass.transferReadSlots, image) ||
-                   slotsUseImage(pass.transferWriteSlots, image);
-        }
+                                                RenderGraphImageHandle image);
 
         [[nodiscard]] static bool
         imageUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
-                                  RenderGraphImageHandle image) {
-            for (const RenderGraphCompiledPass& pass : passes) {
-                if (passUsesImage(pass, image)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+                                  RenderGraphImageHandle image);
 
         [[nodiscard]] static bool passUsesBuffer(const RenderGraphCompiledPass& pass,
-                                                 RenderGraphBufferHandle buffer) {
-            return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
-                   slotsUseBuffer(pass.bufferTransferReadSlots, buffer) ||
-                   slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
-                   slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
-        }
+                                                 RenderGraphBufferHandle buffer);
 
         [[nodiscard]] static bool
         bufferUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
-                                   RenderGraphBufferHandle buffer) {
-            for (const RenderGraphCompiledPass& pass : passes) {
-                if (passUsesBuffer(pass, buffer)) {
-                    return true;
-                }
-            }
+                                   RenderGraphBufferHandle buffer);
 
-            return false;
-        }
+        [[nodiscard]] bool bufferUsedByDeclaredPasses(RenderGraphBufferHandle buffer) const;
 
-        [[nodiscard]] bool bufferUsedByDeclaredPasses(RenderGraphBufferHandle buffer) const {
-            for (const Pass& pass : passes_) {
-                if (passReadsBuffer(pass, buffer) || passWritesBuffer(pass, buffer)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        [[nodiscard]] bool imageUsedByDeclaredPasses(RenderGraphImageHandle image) const {
-            for (const Pass& pass : passes_) {
-                if (passReadsImage(pass, image) || passWritesImage(pass, image)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+        [[nodiscard]] bool imageUsedByDeclaredPasses(RenderGraphImageHandle image) const;
 
         [[nodiscard]] static bool slotsUseImage(std::span<const RenderGraphImageSlot> slots,
-                                                RenderGraphImageHandle image) {
-            for (const RenderGraphImageSlot& slot : slots) {
-                if (slot.image == image) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+                                                RenderGraphImageHandle image);
 
         [[nodiscard]] static bool slotsUseBuffer(std::span<const RenderGraphBufferSlot> slots,
-                                                 RenderGraphBufferHandle buffer) {
-            for (const RenderGraphBufferSlot& slot : slots) {
-                if (slot.buffer == buffer) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+                                                 RenderGraphBufferHandle buffer);
 
         [[nodiscard]] Result<void>
         transitionImages(std::span<const RenderGraphImageSlot> imageSlots,
                          RenderGraphImageAccess requiredAccess,
                          std::vector<RenderGraphImageAccess>& currentAccesses,
-                         RenderGraphCompiledPass& compiledPass) const {
-            for (const RenderGraphImageSlot& slot : imageSlots) {
-                RenderGraphImageHandle imageHandle = slot.image;
-                auto validated = validateImageHandle(imageHandle);
-                if (!validated) {
-                    return std::unexpected{std::move(validated.error())};
-                }
-
-                RenderGraphImageAccess slotAccess = requiredAccess;
-                if (slotAccess.state == RenderGraphImageState::ShaderRead ||
-                    slotAccess.state == RenderGraphImageState::DepthSampledRead) {
-                    slotAccess.shaderStage = slot.shaderStage;
-                }
-
-                const RenderGraphImageDesc& image = images_[imageHandle.index];
-                if (currentAccesses[imageHandle.index] != slotAccess) {
-                    compiledPass.transitionsBefore.push_back(makeTransition(
-                        imageHandle, image, currentAccesses[imageHandle.index], slotAccess));
-                    currentAccesses[imageHandle.index] = slotAccess;
-                }
-            }
-
-            return {};
-        }
+                         RenderGraphCompiledPass& compiledPass) const;
 
         [[nodiscard]] Result<void>
         transitionBuffers(std::span<const RenderGraphBufferSlot> bufferSlots,
                           RenderGraphBufferAccess requiredAccess,
                           std::vector<RenderGraphBufferAccess>& currentAccesses,
-                          RenderGraphCompiledPass& compiledPass) const {
-            for (const RenderGraphBufferSlot& slot : bufferSlots) {
-                RenderGraphBufferHandle bufferHandle = slot.buffer;
-                auto validated = validateBufferHandle(bufferHandle);
-                if (!validated) {
-                    return std::unexpected{std::move(validated.error())};
-                }
-
-                RenderGraphBufferAccess slotAccess = requiredAccess;
-                if (slotAccess.state == RenderGraphBufferState::ShaderRead ||
-                    slotAccess.state == RenderGraphBufferState::StorageReadWrite) {
-                    slotAccess.shaderStage = slot.shaderStage;
-                }
-
-                const RenderGraphBufferDesc& buffer = buffers_[bufferHandle.index];
-                if (currentAccesses[bufferHandle.index] != slotAccess) {
-                    compiledPass.bufferTransitionsBefore.push_back(makeTransition(
-                        bufferHandle, buffer, currentAccesses[bufferHandle.index], slotAccess));
-                    currentAccesses[bufferHandle.index] = slotAccess;
-                }
-            }
-
-            return {};
-        }
+                          RenderGraphCompiledPass& compiledPass) const;
 
         [[nodiscard]] static RenderGraphImageTransition
         makeTransition(RenderGraphImageHandle imageHandle, const RenderGraphImageDesc& image,
-                       RenderGraphImageAccess oldAccess, RenderGraphImageAccess newAccess) {
-            return RenderGraphImageTransition{
-                .image = imageHandle,
-                .imageName = image.name,
-                .oldState = oldAccess.state,
-                .oldShaderStage = oldAccess.shaderStage,
-                .newState = newAccess.state,
-                .newShaderStage = newAccess.shaderStage,
-            };
-        }
+                       RenderGraphImageAccess oldAccess, RenderGraphImageAccess newAccess);
 
         [[nodiscard]] static RenderGraphBufferTransition
         makeTransition(RenderGraphBufferHandle bufferHandle, const RenderGraphBufferDesc& buffer,
-                       RenderGraphBufferAccess oldAccess, RenderGraphBufferAccess newAccess) {
-            return RenderGraphBufferTransition{
-                .buffer = bufferHandle,
-                .bufferName = buffer.name,
-                .oldState = oldAccess.state,
-                .oldShaderStage = oldAccess.shaderStage,
-                .newState = newAccess.state,
-                .newShaderStage = newAccess.shaderStage,
-            };
-        }
+                       RenderGraphBufferAccess oldAccess, RenderGraphBufferAccess newAccess);
 
-        [[nodiscard]] static std::string_view imageFormatName(RenderGraphImageFormat format) {
-            switch (format) {
-            case RenderGraphImageFormat::B8G8R8A8Srgb:
-                return "B8G8R8A8Srgb";
-            case RenderGraphImageFormat::D32Sfloat:
-                return "D32Sfloat";
-            case RenderGraphImageFormat::Undefined:
-            default:
-                return "Undefined";
-            }
-        }
+        [[nodiscard]] static std::string_view imageFormatName(RenderGraphImageFormat format);
 
-        [[nodiscard]] static std::string_view imageStateName(RenderGraphImageState state) {
-            switch (state) {
-            case RenderGraphImageState::ColorAttachment:
-                return "ColorAttachment";
-            case RenderGraphImageState::ShaderRead:
-                return "ShaderRead";
-            case RenderGraphImageState::DepthAttachmentRead:
-                return "DepthAttachmentRead";
-            case RenderGraphImageState::DepthAttachmentWrite:
-                return "DepthAttachmentWrite";
-            case RenderGraphImageState::DepthSampledRead:
-                return "DepthSampledRead";
-            case RenderGraphImageState::TransferSrc:
-                return "TransferSrc";
-            case RenderGraphImageState::TransferDst:
-                return "TransferDst";
-            case RenderGraphImageState::Present:
-                return "Present";
-            case RenderGraphImageState::Undefined:
-            default:
-                return "Undefined";
-            }
-        }
+        [[nodiscard]] static std::string_view imageStateName(RenderGraphImageState state);
 
-        [[nodiscard]] static std::string_view bufferStateName(RenderGraphBufferState state) {
-            switch (state) {
-            case RenderGraphBufferState::TransferRead:
-                return "TransferRead";
-            case RenderGraphBufferState::TransferWrite:
-                return "TransferWrite";
-            case RenderGraphBufferState::HostRead:
-                return "HostRead";
-            case RenderGraphBufferState::ShaderRead:
-                return "ShaderRead";
-            case RenderGraphBufferState::StorageReadWrite:
-                return "StorageReadWrite";
-            case RenderGraphBufferState::Undefined:
-            default:
-                return "Undefined";
-            }
-        }
+        [[nodiscard]] static std::string_view bufferStateName(RenderGraphBufferState state);
 
-        [[nodiscard]] static std::string_view imageLifetimeName(RenderGraphImageLifetime lifetime) {
-            switch (lifetime) {
-            case RenderGraphImageLifetime::Transient:
-                return "Transient";
-            case RenderGraphImageLifetime::Imported:
-            default:
-                return "Imported";
-            }
-        }
+        [[nodiscard]] static std::string_view imageLifetimeName(RenderGraphImageLifetime lifetime);
 
         [[nodiscard]] static std::string_view
-        bufferLifetimeName(RenderGraphBufferLifetime lifetime) {
-            switch (lifetime) {
-            case RenderGraphBufferLifetime::Transient:
-                return "Transient";
-            case RenderGraphBufferLifetime::Imported:
-            default:
-                return "Imported";
-            }
-        }
+        bufferLifetimeName(RenderGraphBufferLifetime lifetime);
 
         [[nodiscard]] static std::string
-        missingCallbackMessage(const RenderGraphCompiledPass& pass) {
-            std::string message = "Render graph pass '";
-            message += pass.name;
-            message += "'";
-            if (!pass.type.empty()) {
-                message += " of type '";
-                message += pass.type;
-                message += "'";
-            }
-            message += " is missing an execute callback.";
-            return message;
-        }
+        missingCallbackMessage(const RenderGraphCompiledPass& pass);
 
         [[nodiscard]] static std::string duplicateSlotMessage(const Pass& pass,
-                                                              std::string_view slotName) {
-            std::string message = "Render graph pass '";
-            message += pass.name;
-            message += "' declares duplicate resource slot '";
-            message += slotName;
-            message += "'.";
-            return message;
-        }
+                                                              std::string_view slotName);
 
         [[nodiscard]] std::string imageAccessConflictMessage(const Pass& pass,
                                                              const RenderGraphImageSlot& slot,
                                                              std::string_view access,
                                                              const RenderGraphImageSlot& otherSlot,
-                                                             std::string_view otherAccess) const {
-            std::string message = "Render graph pass '";
-            message += pass.name;
-            message += "' declares image '";
-            message += imageHandleLabel(slot.image);
-            message += "' more than once in slots '";
-            message += slot.name;
-            message += "' (";
-            message += access;
-            message += ") and '";
-            message += otherSlot.name;
-            message += "' (";
-            message += otherAccess;
-            message += "). Split the operation into separate passes or add an explicit combined "
-                       "access state.";
-            return message;
-        }
+                                                             std::string_view otherAccess) const;
 
         [[nodiscard]] std::string
         bufferAccessConflictMessage(const Pass& pass, const RenderGraphBufferSlot& slot,
                                     std::string_view access, const RenderGraphBufferSlot& otherSlot,
-                                    std::string_view otherAccess) const {
-            std::string message = "Render graph pass '";
-            message += pass.name;
-            message += "' declares buffer '";
-            message += bufferHandleLabel(slot.buffer);
-            message += "' more than once in slots '";
-            message += slot.name;
-            message += "' (";
-            message += access;
-            message += ") and '";
-            message += otherSlot.name;
-            message += "' (";
-            message += otherAccess;
-            message += "). Split the operation into separate passes or add an explicit combined "
-                       "access state.";
-            return message;
-        }
+                                    std::string_view otherAccess) const;
 
-        [[nodiscard]] std::string imageHandleLabel(RenderGraphImageHandle image) const {
-            std::string label = "#";
-            label += std::to_string(image.index);
-            if (image.index < images_.size() && !images_[image.index].name.empty()) {
-                label += " ";
-                label += images_[image.index].name;
-            }
-            return label;
-        }
+        [[nodiscard]] std::string imageHandleLabel(RenderGraphImageHandle image) const;
 
-        [[nodiscard]] std::string bufferHandleLabel(RenderGraphBufferHandle buffer) const {
-            std::string label = "#";
-            label += std::to_string(buffer.index);
-            if (buffer.index < buffers_.size() && !buffers_[buffer.index].name.empty()) {
-                label += " ";
-                label += buffers_[buffer.index].name;
-            }
-            return label;
-        }
+        [[nodiscard]] std::string bufferHandleLabel(RenderGraphBufferHandle buffer) const;
 
         [[nodiscard]] std::string
-        dependencyResourceLabel(const RenderGraphPassDependency& dependency) const {
-            if (dependency.resourceKind == RenderGraphResourceKind::Buffer) {
-                return bufferHandleLabel(dependency.buffer);
-            }
-            return imageHandleLabel(dependency.image);
-        }
+        dependencyResourceLabel(const RenderGraphPassDependency& dependency) const;
 
-        [[nodiscard]] std::string passDeclarationLabel(std::size_t passIndex) const {
-            std::string label = "#";
-            label += std::to_string(passIndex);
-            if (passIndex < passes_.size() && !passes_[passIndex].name.empty()) {
-                label += " ";
-                label += passes_[passIndex].name;
-            }
-            return label;
-        }
+        [[nodiscard]] std::string passDeclarationLabel(std::size_t passIndex) const;
 
         [[nodiscard]] std::string
-        passDeclarationList(std::span<const std::size_t> passIndices) const {
-            if (passIndices.empty()) {
-                return "-";
-            }
-
-            std::string labels;
-            for (std::size_t index = 0; index < passIndices.size(); ++index) {
-                if (index > 0) {
-                    labels += ", ";
-                }
-                labels += passDeclarationLabel(passIndices[index]);
-            }
-            return labels;
-        }
+        passDeclarationList(std::span<const std::size_t> passIndices) const;
 
         [[nodiscard]] std::string
-        imageHandleList(std::span<const RenderGraphImageHandle> images) const {
-            if (images.empty()) {
-                return "-";
-            }
+        imageHandleList(std::span<const RenderGraphImageHandle> images) const;
 
-            std::string labels;
-            for (std::size_t index = 0; index < images.size(); ++index) {
-                if (index > 0) {
-                    labels += ", ";
-                }
-                labels += imageHandleLabel(images[index]);
-            }
-            return labels;
-        }
+        [[nodiscard]] static std::string_view shaderStageName(RenderGraphShaderStage stage);
 
-        [[nodiscard]] static std::string_view shaderStageName(RenderGraphShaderStage stage) {
-            switch (stage) {
-            case RenderGraphShaderStage::Fragment:
-                return "fragment";
-            case RenderGraphShaderStage::Compute:
-                return "compute";
-            case RenderGraphShaderStage::None:
-            default:
-                return "";
-            }
-        }
+        [[nodiscard]] static std::string_view commandKindName(RenderGraphCommandKind kind);
 
-        [[nodiscard]] static std::string_view commandKindName(RenderGraphCommandKind kind) {
-            switch (kind) {
-            case RenderGraphCommandKind::SetShader:
-                return "SetShader";
-            case RenderGraphCommandKind::SetTexture:
-                return "SetTexture";
-            case RenderGraphCommandKind::SetFloat:
-                return "SetFloat";
-            case RenderGraphCommandKind::SetInt:
-                return "SetInt";
-            case RenderGraphCommandKind::SetVec4:
-                return "SetVec4";
-            case RenderGraphCommandKind::DrawFullscreenTriangle:
-                return "DrawFullscreenTriangle";
-            case RenderGraphCommandKind::ClearColor:
-                return "ClearColor";
-            case RenderGraphCommandKind::CopyImage:
-                return "CopyImage";
-            case RenderGraphCommandKind::Dispatch:
-                return "Dispatch";
-            }
-            return "";
-        }
+        [[nodiscard]] static std::string commandDetail(const RenderGraphCommand& command);
 
-        [[nodiscard]] static std::string commandDetail(const RenderGraphCommand& command) {
-            switch (command.kind) {
-            case RenderGraphCommandKind::SetShader:
-            case RenderGraphCommandKind::SetTexture:
-                return command.name + " -> " + command.secondaryName;
-            case RenderGraphCommandKind::SetFloat:
-                return command.name + " = " + std::to_string(command.floatValues[0]);
-            case RenderGraphCommandKind::SetInt:
-                return command.name + " = " + std::to_string(command.intValue);
-            case RenderGraphCommandKind::SetVec4:
-            case RenderGraphCommandKind::ClearColor:
-                return command.name + " = (" + std::to_string(command.floatValues[0]) + ", " +
-                       std::to_string(command.floatValues[1]) + ", " +
-                       std::to_string(command.floatValues[2]) + ", " +
-                       std::to_string(command.floatValues[3]) + ")";
-            case RenderGraphCommandKind::CopyImage:
-                return command.name + " -> " + command.secondaryName;
-            case RenderGraphCommandKind::DrawFullscreenTriangle:
-                return "-";
-            case RenderGraphCommandKind::Dispatch:
-                return std::to_string(command.uintValues[0]) + " x " +
-                       std::to_string(command.uintValues[1]) + " x " +
-                       std::to_string(command.uintValues[2]);
-            }
-            return "-";
-        }
+        [[nodiscard]] static std::string imageAccessName(RenderGraphImageState state,
+                                                         RenderGraphShaderStage shaderStage);
 
-        [[nodiscard]] std::string imageAccessName(RenderGraphImageState state,
-                                                  RenderGraphShaderStage shaderStage) const {
-            std::string name{imageStateName(state)};
-            if ((state == RenderGraphImageState::ShaderRead ||
-                 state == RenderGraphImageState::DepthSampledRead) &&
-                shaderStage != RenderGraphShaderStage::None) {
-                name += "(";
-                name += shaderStageName(shaderStage);
-                name += ")";
-            }
-            return name;
-        }
+        [[nodiscard]] static std::string bufferAccessName(RenderGraphBufferState state,
+                                                          RenderGraphShaderStage shaderStage);
 
-        [[nodiscard]] std::string bufferAccessName(RenderGraphBufferState state,
-                                                   RenderGraphShaderStage shaderStage) const {
-            std::string name{bufferStateName(state)};
-            if (state == RenderGraphBufferState::ShaderRead &&
-                shaderStage != RenderGraphShaderStage::None) {
-                name += "(";
-                name += shaderStageName(shaderStage);
-                name += ")";
-            }
-            if (state == RenderGraphBufferState::StorageReadWrite &&
-                shaderStage != RenderGraphShaderStage::None) {
-                name += "(";
-                name += shaderStageName(shaderStage);
-                name += ")";
-            }
-            return name;
-        }
+        [[nodiscard]] std::string slotImageLabel(const RenderGraphImageSlot& slot) const;
 
-        [[nodiscard]] std::string slotImageLabel(const RenderGraphImageSlot& slot) const {
-            std::string label = slot.name;
-            if (slot.shaderStage != RenderGraphShaderStage::None) {
-                label += "(";
-                label += shaderStageName(slot.shaderStage);
-                label += ")";
-            }
-            label += "=";
-            label += imageHandleLabel(slot.image);
-            return label;
-        }
+        [[nodiscard]] std::string slotBufferLabel(const RenderGraphBufferSlot& slot) const;
 
-        [[nodiscard]] std::string slotBufferLabel(const RenderGraphBufferSlot& slot) const {
-            std::string label = slot.name;
-            if (slot.shaderStage != RenderGraphShaderStage::None) {
-                label += "(";
-                label += shaderStageName(slot.shaderStage);
-                label += ")";
-            }
-            label += "=";
-            label += bufferHandleLabel(slot.buffer);
-            return label;
-        }
-
-        [[nodiscard]] std::string imageSlotList(std::span<const RenderGraphImageSlot> slots) const {
-            if (slots.empty()) {
-                return "-";
-            }
-
-            std::string labels;
-            for (std::size_t index = 0; index < slots.size(); ++index) {
-                if (index > 0) {
-                    labels += ", ";
-                }
-                labels += slotImageLabel(slots[index]);
-            }
-            return labels;
-        }
+        [[nodiscard]] std::string imageSlotList(std::span<const RenderGraphImageSlot> slots) const;
 
         [[nodiscard]] std::string
-        bufferSlotList(std::span<const RenderGraphBufferSlot> slots) const {
-            if (slots.empty()) {
-                return "-";
-            }
-
-            std::string labels;
-            for (std::size_t index = 0; index < slots.size(); ++index) {
-                if (index > 0) {
-                    labels += ", ";
-                }
-                labels += slotBufferLabel(slots[index]);
-            }
-            return labels;
-        }
+        bufferSlotList(std::span<const RenderGraphBufferSlot> slots) const;
 
         void appendSlotRows(std::string& output, std::string_view passName, std::string_view access,
-                            std::span<const RenderGraphImageSlot> slots) const {
-            if (slots.empty()) {
-                return;
-            }
-
-            for (const RenderGraphImageSlot& slot : slots) {
-                output += "| ";
-                output += passName;
-                output += " | ";
-                output += access;
-                output += " | ";
-                output += slot.name;
-                if (slot.shaderStage != RenderGraphShaderStage::None) {
-                    output += "(";
-                    output += shaderStageName(slot.shaderStage);
-                    output += ")";
-                }
-                output += " | ";
-                output += imageHandleLabel(slot.image);
-                output += " |\n";
-            }
-        }
+                            std::span<const RenderGraphImageSlot> slots) const;
 
         void appendBufferSlotRows(std::string& output, std::string_view passName,
                                   std::string_view access,
-                                  std::span<const RenderGraphBufferSlot> slots) const {
-            if (slots.empty()) {
-                return;
-            }
+                                  std::span<const RenderGraphBufferSlot> slots) const;
 
-            for (const RenderGraphBufferSlot& slot : slots) {
-                output += "| ";
-                output += passName;
-                output += " | ";
-                output += access;
-                output += " | ";
-                output += slot.name;
-                if (slot.shaderStage != RenderGraphShaderStage::None) {
-                    output += "(";
-                    output += shaderStageName(slot.shaderStage);
-                    output += ")";
-                }
-                output += " | ";
-                output += bufferHandleLabel(slot.buffer);
-                output += " |\n";
-            }
-        }
-
-        void appendCommandRows(std::string& output, const RenderGraphCompiledPass& pass) const {
-            for (std::size_t index = 0; index < pass.commands.size(); ++index) {
-                const RenderGraphCommand& command = pass.commands[index];
-                output += "| ";
-                output += pass.name;
-                output += " | ";
-                output += std::to_string(index);
-                output += " | ";
-                output += commandKindName(command.kind);
-                output += " | ";
-                output += commandDetail(command);
-                output += " |\n";
-            }
-        }
+        static void appendCommandRows(std::string& output, const RenderGraphCompiledPass& pass);
 
         void appendTransitionRow(std::string& output, std::string_view phase,
                                  std::string_view passName,
-                                 const RenderGraphImageTransition& transition) const {
-            output += "| ";
-            output += phase;
-            output += " | ";
-            output += passName;
-            output += " | ";
-            output += imageHandleLabel(transition.image);
-            output += " | ";
-            output += imageAccessName(transition.oldState, transition.oldShaderStage);
-            output += " | ";
-            output += imageAccessName(transition.newState, transition.newShaderStage);
-            output += " |\n";
-        }
+                                 const RenderGraphImageTransition& transition) const;
 
         void appendTransitionRow(std::string& output, std::string_view phase,
                                  std::string_view passName,
-                                 const RenderGraphBufferTransition& transition) const {
-            output += "| ";
-            output += phase;
-            output += " | ";
-            output += passName;
-            output += " | ";
-            output += bufferHandleLabel(transition.buffer);
-            output += " | ";
-            output += bufferAccessName(transition.oldState, transition.oldShaderStage);
-            output += " | ";
-            output += bufferAccessName(transition.newState, transition.newShaderStage);
-            output += " |\n";
-        }
+                                 const RenderGraphBufferTransition& transition) const;
 
         std::vector<RenderGraphImageDesc> images_;
         std::vector<RenderGraphBufferDesc> buffers_;

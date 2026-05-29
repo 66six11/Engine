@@ -88,6 +88,16 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
   `src/render_graph.cpp`
 - Phase 4-D moved private `compile(schemaRegistry*)` and
   `execute(compiled, executorRegistry*)` implementations into `src/render_graph.cpp`
+- Phase 4-E moved dependency ordering, producer inference, and pass culling helpers into
+  `src/render_graph_dependencies.cpp`
+- Phase 4-F moved handle and slot validation helpers into
+  `src/render_graph_validation.cpp`
+- Phase 4-G moved schema and access validation helpers into
+  `src/render_graph_validation.cpp`
+- Phase 4-H moved transient lifetime and resource transition helpers into
+  `src/render_graph_lifetime.cpp`
+- Phase 4-I moved debug label and table formatting helpers into
+  `src/render_graph_debug.cpp`
 - Diagnostics snapshot types now live in `render_graph_diagnostics.hpp`; consumers that only
   inspect diagnostics should include that narrow header instead of the aggregate header
 

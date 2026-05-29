@@ -13,6 +13,10 @@ asharia_require_package_target(asharia::core engine/core)
 
 add_library(asharia-rendergraph STATIC
     src/render_graph.cpp
+    src/render_graph_debug.cpp
+    src/render_graph_dependencies.cpp
+    src/render_graph_lifetime.cpp
+    src/render_graph_validation.cpp
 )
 add_library(asharia::rendergraph ALIAS asharia-rendergraph)
 

@@ -117,18 +117,27 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 8. Phase 4-B: `PassBuilder` 非模板 builder 方法、RenderGraph resource/pass facade 和 public compile/execute overload 移入 `.cpp`
 9. Phase 4-C: `diagnosticsSnapshot()` 和 `formatDebugTables()` 实现移入 `.cpp`
 10. Phase 4-D: private `compile(schemaRegistry*)` 和 `execute(compiled, executorRegistry*)` 实现移入 `.cpp`
+11. Phase 4-E: dependency/culling/producer helper 实现移入 `src/render_graph_dependencies.cpp`
+12. Phase 4-F: handle/slot validation helper 实现移入 `src/render_graph_validation.cpp`
+13. Phase 4-G: schema/access validation helper 实现移入 `src/render_graph_validation.cpp`
+14. Phase 4-H: transient lifetime/resource transition helper 实现移入 `src/render_graph_lifetime.cpp`
+15. Phase 4-I: debug label/table formatting helper 实现移入 `src/render_graph_debug.cpp`
 
 **当前结构**:
 ```
 render_graph_types.hpp      — 纯数据契约，无内部依赖
 render_graph_compile.hpp    — 编译产物，只依赖 types
 render_graph_diagnostics.hpp — diagnostics snapshot，只依赖 compile/types
-render_graph.hpp            — command/builder/registry/facade 声明、模板 builder 入口、validation/dependency/lifetime helper 实现
+render_graph.hpp            — command/builder/registry/facade 声明、模板 builder 入口、private helper 声明
 src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、compile/execute、diagnostics formatting 实现
+src/render_graph_debug.cpp — debug label/table formatting helper 实现
+src/render_graph_dependencies.cpp — dependency/culling/producer helper 实现
+src/render_graph_lifetime.cpp — transient lifetime/resource transition helper 实现
+src/render_graph_validation.cpp — handle/slot/schema/access validation helper 实现
 ```
 
 **待完成 (Phase 4+)**:
-- 继续把 validation/dependency/lifetime helper 实现从 header 迁移到 `src/`
+- 继续评估是否拆出 `RenderGraphCommandList` / `PassBuilder` 独立 header
 - `RenderGraphCommandList` / `PassBuilder` 独立 header（当前只有声明和模板入口，仍可接受）
 
 ---
