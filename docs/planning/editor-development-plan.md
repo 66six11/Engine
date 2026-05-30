@@ -62,6 +62,8 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - 2026-05-30：`editor_vulkan_host.hpp/.cpp` 已接管 renderable-window wait、Vulkan context/frame-loop
   creation、swapchain extent readiness 和一帧 RenderView/ImGui submission glue；`editor_app.cpp` 继续保留
   app service bootstrap、主循环顺序和 shutdown 编排。
+- 2026-05-30：`editor_shell_host.hpp/.cpp` 已接管 shell capability context 适配和 panel draw dispatch；
+  `editor_app.cpp` 继续保留 app service bootstrap、frame context 构造、主循环顺序和 shutdown 编排。
 
 推荐顺序：
 
@@ -141,6 +143,7 @@ Rules:
 apps/editor/src/
   editor_app.hpp/.cpp
   editor_app_config.hpp/.cpp
+  editor_shell_host.hpp/.cpp
   editor_vulkan_host.hpp/.cpp
   editor_action.hpp/.cpp
   editor_event.hpp/.cpp
@@ -161,6 +164,7 @@ apps/editor/src/
 | `editor_app` | startup, loop, frame order, smoke modes, shutdown order | panel drawing details |
 | `editor_app_config` | run paths, smoke settings/layout isolation, i18n resource directory, locale env parsing | service aggregation, panel registry or GPU lifecycle |
 | `editor_vulkan_host` | renderable-window wait, Vulkan context/frame-loop creation, swapchain extent readiness, one-frame RenderView/ImGui submission glue | action dispatch, panel/service ownership or persistent editor state |
+| `editor_shell_host` | shell capability context adaptation and panel draw dispatch for one editor frame | app service lifetime, renderer command recording or persistent editor state |
 | `editor_action` | action descriptors, callbacks, invocation, shortcut metadata | menu widget code |
 | `editor_event` | small typed queue for editor facts | global EventBus semantics |
 | `editor_panel` | panel descriptors, state, registry, singleton reuse | ImGui backend setup |
@@ -525,7 +529,8 @@ Scope:
 - Keep rendered output and smoke behavior unchanged.
 - The transitional `editor_context` facade has since been retired; app loop now passes explicit services into shell,
   frame and smoke contexts, while `editor_app_config` owns run path / locale bootstrap helpers and
-  `editor_vulkan_host` owns Vulkan/window/frame submission helpers.
+  `editor_vulkan_host` owns Vulkan/window/frame submission helpers and `editor_shell_host` owns shell capability
+  adaptation.
 
 Validation:
 
@@ -566,8 +571,8 @@ Validation:
 - Dockspace and menu render as before.
 - `imgui_editor_shell` public API no longer includes `editor_context`; shell entry points consume
   dockspace/menu/command/status capability contexts.
-- Implemented as `apps/editor/src/imgui_editor_shell.hpp/.cpp`; panel window contents remain in `editor_app`
-  until the panel registry baseline.
+- Implemented as `apps/editor/src/imgui_editor_shell.hpp/.cpp`; `editor_shell_host` adapts app services into those
+  shell contexts and dispatches registered panel drawing.
 
 ### 16.4 Panel Registry Baseline
 

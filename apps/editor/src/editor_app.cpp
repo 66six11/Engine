@@ -27,6 +27,7 @@
 #include "editor_inspected_world.hpp"
 #include "editor_panel.hpp"
 #include "editor_settings.hpp"
+#include "editor_shell_host.hpp"
 #include "editor_shortcut_router.hpp"
 #include "editor_smoke.hpp"
 #include "editor_smoke_validation.hpp"
@@ -36,50 +37,11 @@
 #include "editor_viewport_overlay_provider.hpp"
 #include "editor_vulkan_host.hpp"
 #include "editor_workspace.hpp"
-#include "imgui_editor_shell.hpp"
 #include "imgui_runtime.hpp"
 
 namespace {
 
     constexpr int kSmokeAttemptLimit = 120;
-
-    void buildEditorShell(asharia::editor::EditorActionRegistry& actionRegistry,
-                          asharia::editor::EditorActionServices& actionServices,
-                          asharia::editor::EditorFrameDebugger& frameDebugger,
-                          asharia::editor::EditorI18n& i18n,
-                          asharia::editor::EditorPanelRegistry& panelRegistry,
-                          asharia::editor::EditorToolRegistry& toolRegistry,
-                          asharia::editor::EditorWorkspaceController& workspace,
-                          asharia::editor::EditorFrameContext& frameContext) {
-        const asharia::editor::EditorActionInvokeContext actionInvoke =
-            asharia::editor::makeEditorActionInvokeContext(actionServices);
-        auto dockspaceContext = asharia::editor::EditorDockspaceContext{
-            .panels = panelRegistry,
-            .i18n = i18n,
-            .workspace = workspace,
-        };
-        const auto menuContext = asharia::editor::EditorMenuContext{
-            .panels = panelRegistry,
-            .i18n = i18n,
-            .actionInvoke = actionInvoke,
-        };
-        const auto commandBarContext = asharia::editor::EditorCommandBarContext{
-            .i18n = i18n,
-            .tools = toolRegistry,
-            .actionInvoke = actionInvoke,
-        };
-        const auto statusBarContext = asharia::editor::EditorStatusBarContext{
-            .frame = frameContext,
-            .panels = panelRegistry,
-            .frameDebugger = frameDebugger,
-        };
-
-        asharia::editor::drawEditorMainMenu(actionRegistry, menuContext);
-        asharia::editor::drawEditorCommandBar(actionRegistry, commandBarContext);
-        asharia::editor::drawEditorStatusBar(statusBarContext);
-        asharia::editor::drawEditorDockspace(dockspaceContext);
-        panelRegistry.drawPanels(frameContext);
-    }
 
     [[nodiscard]] asharia::Result<asharia::editor::EditorSmokeRunResult>
     runEditorLoop(asharia::GlfwWindow& window, asharia::VulkanFrameLoop& frameLoop,
@@ -158,8 +120,9 @@ namespace {
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},
             };
-            buildEditorShell(actionRegistry, actionServices, frameDebugger, i18n, panelRegistry,
-                             toolRegistry, workspace, frameContext);
+            asharia::editor::drawEditorShellFrame(actionRegistry, actionServices, frameDebugger,
+                                                  i18n, panelRegistry, toolRegistry, workspace,
+                                                  frameContext);
             asharia::editor::requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();
             shortcutRouter.beginFrame(inputRouter.snapshot());
