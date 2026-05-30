@@ -13,7 +13,7 @@
 | **B** | RenderView camera → GPU contract | ◐ Partially Fixed (B.2+B.3 renderer slice) | 2026-05-25 |
 | **C** | Multi-view request model | ✓ Fixed | 2026-05-23 |
 | **D** | Graph-visible GPU work | ✓ Fixed | 2026-05-25 |
-| **E** | Editor state and command model | ◐ Partially Fixed (Step 1+2a+2b-a+2b-b+2b-c+2c-a+2c-b+3) | 2026-05-27 |
+| **E** | Editor state and command model | ◐ Partially Fixed (Step 1+2a+2b-a+2b-b+2b-c+2c-a+2c-b+2c-c+3) | 2026-05-27 |
 | **F** | RenderGraph API / implementation split | ◐ Partially Fixed (Phase 1+2+3+4-A+4-B+4-C) | 2026-05-27 |
 
 ---
@@ -226,14 +226,16 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
    Frame Debugger、input、shortcut 和 layout persistence smoke 断言
 3. `editor_app.cpp` 继续保留 bootstrap、frame loop 和 shutdown 编排，不再承载大块 smoke validation
 
-**已修复 (Step 2c-a+2c-b)**:
+**已修复 (Step 2c-a+2c-b+2c-c)**:
 1. `prepareWindow()` 已改用只暴露 `ui` 的 `EditorPanelWindowContext`
 2. 顶层 `ImGuiEditorPanel::draw()` 虚接口已改用 `EditorPanelDrawContext`；`EditorPanelRegistry::drawPanels()`
    是从顶层 `EditorFrameContext` 到 panel draw capability context 的唯一适配点
-3. 当前内置 panel 的 `draw()` 实现会继续映射为 panel-local context，helper 不再传播完整 frame context
+3. `EditorPanelDrawContext` 已拆成 viewport / diagnostics / settings / tools category context；内置 panel
+   通过 category-specific base class 只覆写对应窄 context
+4. 当前内置 panel 的 `draw()` 实现会继续映射为 panel-local context，helper 不再传播完整 frame context
 
 **待完成 (Step 2b)**:
-- 继续把 `EditorPanelDrawContext` 从全 panel 能力合集拆成 category/per-panel 所需的更窄 context
+- 继续把 category draw context 拆成 per-panel 所需的更窄 context
 - 继续拆分 `editor_app.cpp` 中的 frame loop 和剩余 Vulkan host glue
 
 ---
@@ -506,7 +508,7 @@ Scene View panel 的 camera/unproject code (`editor_viewport_camera.hpp`) 已经
 
 ### 7.3 当前最需要关注的 5 个改变
 
-1. **Editor context 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，但 `EditorContext` / `EditorPanelDrawContext` 仍是宽服务集合，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
+1. **Editor context 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，但 `EditorContext` 和部分 category draw context 仍偏宽，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
 2. **Grid 仍需 camera-aware policy 和 pixel smoke**: renderer-owned debug-line GPU pass 已落地，但 grid provider 仍是固定原点 packet，尚未按 camera range/fade 生成稳定可读网格，也未做像素/readback 级 camera-difference 验证。
 3. **RenderGraph 内部 helper 声明仍需继续收敛**: public headers 已拆成 types / command / execution / builder / compile / diagnostics / aggregate，后续复杂 compiler/cache/unsafe pass 前还需要评估是否把 private compile、validation、dependency、lifetime helper 声明继续收敛到内部 implementation headers。
 4. **Asset pipeline 只有 metadata / catalog 基线**: 离真正的 source scan、product manifest、mesh/texture upload 还有工具链工作。
@@ -720,6 +722,12 @@ RenderGraphImageState::ShaderRead(fragment) → {
 class ImGuiEditorPanel {
     virtual void prepareWindow(EditorPanelWindowContext&, EditorPanelState&) {}  // hook
     virtual void draw(EditorPanelDrawContext&, EditorPanelState&) = 0;           // template step
+};
+
+class ImGuiDiagnosticsEditorPanel : public ImGuiEditorPanel {
+    void draw(EditorPanelDrawContext&, EditorPanelState&) final;                 // dispatch
+    virtual void drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext&,
+                                      EditorPanelState&) = 0;                   // narrow step
 };
 ```
 

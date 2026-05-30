@@ -34,6 +34,23 @@ namespace asharia::editor {
         static_cast<void>(state);
     }
 
+    void ImGuiViewportEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawViewportPanel(context.viewport, state);
+    }
+
+    void ImGuiDiagnosticsEditorPanel::draw(EditorPanelDrawContext& context,
+                                           EditorPanelState& state) {
+        drawDiagnosticsPanel(context.diagnostics, state);
+    }
+
+    void ImGuiSettingsEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawSettingsPanel(context.settings, state);
+    }
+
+    void ImGuiToolsEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawToolsPanel(context.tools, state);
+    }
+
     asharia::VoidResult EditorPanelRegistry::registerPanel(EditorPanelFactory factory) {
         if (!factory) {
             return std::unexpected{
@@ -156,13 +173,30 @@ namespace asharia::editor {
             .ui = context.ui,
         };
         EditorPanelDrawContext drawContext{
-            .ui = context.ui,
-            .diagnostics = context.diagnostics,
-            .settings = context.settings,
-            .tools = context.tools,
-            .input = context.input,
-            .renderGraph = context.renderGraph,
-            .viewport = context.viewport,
+            .viewport =
+                EditorViewportPanelDrawContext{
+                    .ui = context.ui,
+                    .tools = context.tools,
+                    .input = context.input,
+                    .viewport = context.viewport,
+                },
+            .diagnostics =
+                EditorDiagnosticsPanelDrawContext{
+                    .ui = context.ui,
+                    .diagnostics = context.diagnostics,
+                    .input = context.input,
+                    .renderGraph = context.renderGraph,
+                },
+            .settings =
+                EditorSettingsPanelDrawContext{
+                    .ui = context.ui,
+                    .settings = context.settings,
+                },
+            .tools =
+                EditorToolsPanelDrawContext{
+                    .ui = context.ui,
+                    .settings = context.settings,
+                },
         };
         for (PanelEntry& entry : panels_) {
             if (!entry.state.open || entry.panel == nullptr) {

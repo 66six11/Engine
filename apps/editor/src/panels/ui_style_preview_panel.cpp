@@ -528,7 +528,8 @@ namespace asharia::editor {
         ImGui::SetNextWindowSize(ImVec2{980.0F, 680.0F}, condition);
     }
 
-    void UiStylePreviewPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+    void UiStylePreviewPanel::drawToolsPanel(EditorToolsPanelDrawContext& context,
+                                             EditorPanelState& state) {
         static_cast<void>(state);
 
         UiStylePreviewPanelContext panelContext{

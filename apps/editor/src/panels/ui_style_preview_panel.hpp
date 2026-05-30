@@ -7,13 +7,14 @@
 
 namespace asharia::editor {
 
-    class UiStylePreviewPanel final : public ImGuiEditorPanel {
+    class UiStylePreviewPanel final : public ImGuiToolsEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
         void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) override;
-        void draw(EditorPanelDrawContext& context, EditorPanelState& state) override;
 
     private:
+        void drawToolsPanel(EditorToolsPanelDrawContext& context, EditorPanelState& state) override;
+
         EditorPanelDesc desc_{
             .id = EditorId{.value = "ui-style-preview"},
             .title = "UI Style Preview",

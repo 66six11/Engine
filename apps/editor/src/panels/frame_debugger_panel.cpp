@@ -613,7 +613,8 @@ namespace asharia::editor {
         }
     }
 
-    void FrameDebuggerPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+    void FrameDebuggerPanel::drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
+                                                  EditorPanelState& state) {
         static_cast<void>(state);
 
         FrameDebuggerPanelContext panelContext{

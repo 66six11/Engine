@@ -4,12 +4,14 @@
 
 namespace asharia::editor {
 
-    class LogPanel final : public ImGuiEditorPanel {
+    class LogPanel final : public ImGuiDiagnosticsEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
-        void draw(EditorPanelDrawContext& context, EditorPanelState& state) override;
 
     private:
+        void drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
+                                  EditorPanelState& state) override;
+
         EditorPanelDesc desc_{
             .id = EditorId{.value = "log"},
             .title = "Log",

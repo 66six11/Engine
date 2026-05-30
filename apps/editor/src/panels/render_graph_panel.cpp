@@ -29,7 +29,8 @@ namespace asharia::editor {
         }
     }
 
-    void RenderGraphPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+    void RenderGraphPanel::drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
+                                                EditorPanelState& state) {
         static_cast<void>(state);
 
         RenderGraphPanelContext panelContext{

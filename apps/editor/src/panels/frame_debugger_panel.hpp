@@ -4,13 +4,15 @@
 
 namespace asharia::editor {
 
-    class FrameDebuggerPanel final : public ImGuiEditorPanel {
+    class FrameDebuggerPanel final : public ImGuiDiagnosticsEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
         void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) override;
-        void draw(EditorPanelDrawContext& context, EditorPanelState& state) override;
 
     private:
+        void drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
+                                  EditorPanelState& state) override;
+
         EditorPanelDesc desc_{
             .id = EditorId{.value = "frame-debugger"},
             .title = "Frame Debugger",
