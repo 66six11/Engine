@@ -41,6 +41,10 @@
 #include "asharia/serialization/text_archive.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
+namespace asharia::sample_viewer {
+    int runScriptLabHost(std::span<char*> args);
+}
+
 namespace {
 
     constexpr asharia::VulkanDebugLabelMode kSmokeDebugLabels =
@@ -78,6 +82,8 @@ namespace {
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
                      "[--smoke-reflection-attributes] [--smoke-serialization-roundtrip] "
                      "[--smoke-serialization-json-archive] [--smoke-serialization-migration] "
+                     "[--scriptlab-host --scriptlab-bridge-manifest path "
+                     "--scriptlab-ready-file path --scriptlab-go-file path] "
                      "[--bench-rendergraph --warmup N --frames N --output path]\n";
     }
 
@@ -5158,6 +5164,9 @@ namespace {
         }
         if (hasArg(args, "--smoke-mrt")) {
             return runSmokeMrt(args);
+        }
+        if (hasArg(args, "--scriptlab-host")) {
+            return asharia::sample_viewer::runScriptLabHost(args);
         }
 
         struct SmokeCommand {

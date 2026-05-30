@@ -17,6 +17,7 @@ asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-
 
 add_executable(asharia-sample-viewer
     src/main.cpp
+    src/scriptlab_host.cpp
 )
 
 add_executable(asharia::sample_viewer ALIAS asharia-sample-viewer)

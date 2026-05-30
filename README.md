@@ -73,6 +73,15 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-seri
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-serialization-migration
 ```
 
+Manual ScriptLab attach host mode requires a bridge manifest and ready/go files:
+
+```powershell
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --scriptlab-host `
+  --scriptlab-bridge-manifest D:\Game\apps\sample-viewer\scriptlab.bridge.json `
+  --scriptlab-ready-file D:\Game\apps\sample-viewer\scriptlab.ready `
+  --scriptlab-go-file D:\Game\apps\sample-viewer\scriptlab.go
+```
+
 无参数启动会打开交互式 triangle viewer；`--smoke-*` 入口用于自动验证和提交前审查。
 
 运行 editor：
