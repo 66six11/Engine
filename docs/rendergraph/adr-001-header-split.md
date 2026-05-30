@@ -35,7 +35,8 @@ while keeping a single aggregate include for existing consumers (zero migration 
 ```
 include/asharia/rendergraph/
   render_graph_types.hpp        # handles, enums, descs, transitions, slots, schema, commands
-  render_graph_command_list.hpp # RenderGraphCommandList (separated when it grows)
+  render_graph_command_list.hpp # RenderGraphCommandList command accumulator
+  render_graph_execution.hpp    # pass context, callback, schema/executor registries
   render_graph_builder.hpp      # RenderGraph + PassBuilder declarations
   render_graph_compile.hpp      # RenderGraphCompileResult, compile declaration
   render_graph_diagnostics.hpp  # RenderGraphDiagnosticsSnapshot factory
@@ -98,14 +99,22 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
   `src/render_graph_lifetime.cpp`
 - Phase 4-I moved debug label and table formatting helpers into
   `src/render_graph_debug.cpp`
+- Phase 5-A/B moved `RenderGraphCommandList` into `render_graph_command_list.hpp`,
+  moved pass execution context plus schema/executor registries into
+  `render_graph_execution.hpp`, and kept `render_graph.hpp` as the aggregate include
 - Diagnostics snapshot types now live in `render_graph_diagnostics.hpp`; consumers that only
   inspect diagnostics should include that narrow header instead of the aggregate header
+- Consumers that only record command summaries should include `render_graph_command_list.hpp`;
+  consumers that only register schemas or executors should include `render_graph_execution.hpp`
 
 ## Consequences
 
 ### Positive
 - Includers that only need types (e.g., `rhi_vulkan_rendergraph`, tests, package consumers)
   can include `render_graph_types.hpp` instead of the full 4000-line header
+- Includers that only need command recording helpers can include `render_graph_command_list.hpp`
+- Includers that only need pass context, schema registry, or executor registry can include
+  `render_graph_execution.hpp`
 - Includers that only need diagnostics can include `render_graph_diagnostics.hpp`
 - Reduces transitive compile impact when RenderGraph internals change
 - Names `render_graph_types.hpp` directly convey purpose ("just the data contracts")

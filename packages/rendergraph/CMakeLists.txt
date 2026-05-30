@@ -41,7 +41,9 @@ if(ASHARIA_BUILD_TESTS)
 
   add_executable(asharia-rendergraph-header-tests
       tests/rendergraph_header_tests.cpp
+      tests/rendergraph_command_list_header_test.cpp
       tests/rendergraph_types_header_test.cpp
+      tests/rendergraph_execution_header_test.cpp
       tests/rendergraph_compile_header_test.cpp
       tests/rendergraph_diagnostics_header_test.cpp
       tests/rendergraph_aggregate_header_test.cpp
