@@ -78,9 +78,9 @@
 - `packages/renderer-basic/src/basic_renderers/compute_dispatch_renderer.inl` 在 graph 录制前使用
   `vkCmdFillBuffer` 做外部 GPU work；该路径需要进入 RenderGraph command/pass 或 named external pre-pass
   diagnostics。
-- `apps/editor/src/editor_context.hpp`、`apps/editor/src/editor_panel.hpp` 和 `apps/editor/src/editor_app.cpp`
-  显示 editor 仍有宽 context 与 app glue 聚合风险，后续 asset/material/script/editor persistence 前需要
-  command/transaction 与 capability-scoped context。
+- `apps/editor/src/editor_panel.hpp` 和 `apps/editor/src/editor_app.cpp` 显示 editor 仍有 app glue
+  聚合风险；过渡期 `editor_context.hpp/.cpp` 已删除，后续 asset/material/script/editor persistence 前仍需要
+  command/transaction 与 capability-scoped context，避免重新引入宽 app context。
 - `packages/rendergraph/include/asharia/rendergraph/render_graph.hpp` 仍是大型 public header，后续继续扩展
   cache、alias、multi-queue 或 unsafe/native pass 前需要 API / implementation split 计划。
 

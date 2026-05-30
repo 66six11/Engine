@@ -21,7 +21,6 @@
 
 #include "editor_action.hpp"
 #include "editor_command.hpp"
-#include "editor_context.hpp"
 #include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -735,12 +734,12 @@ namespace asharia::editor {
     }
 
     [[nodiscard]] bool validateEditorSettingsSmoke(EditorRunMode mode,
-                                                   EditorContext& editorContext) {
+                                                   EditorSettingsController& settings,
+                                                   EditorI18n& i18n) {
         if (!isEditorSmokeMode(mode)) {
             return true;
         }
 
-        EditorSettingsController& settings = editorContext.settings();
         const EditorLocale initialLocale = settings.settings().locale;
         const EditorUiThemeId initialTheme = settings.settings().theme;
         const EditorLocale changedLocale = alternateLocale(initialLocale);
@@ -748,8 +747,7 @@ namespace asharia::editor {
             asharia::logError(changed.error().message);
             return false;
         }
-        if (settings.settings().locale != changedLocale ||
-            editorContext.i18n().locale() != changedLocale) {
+        if (settings.settings().locale != changedLocale || i18n.locale() != changedLocale) {
             asharia::logError("Editor settings smoke did not apply the selected locale.");
             return false;
         }
@@ -788,8 +786,7 @@ namespace asharia::editor {
             asharia::logError(restored.error().message);
             return false;
         }
-        if (settings.settings().locale != initialLocale ||
-            editorContext.i18n().locale() != initialLocale) {
+        if (settings.settings().locale != initialLocale || i18n.locale() != initialLocale) {
             asharia::logError("Editor settings smoke did not restore the initial locale.");
             return false;
         }
@@ -1040,8 +1037,9 @@ namespace asharia::editor {
 
     [[nodiscard]] bool validateEditorRegistrationSmoke(EditorRunMode mode,
                                                        EditorActionRegistry& actionRegistry,
-                                                       EditorContext& editorContext,
                                                        EditorActionServices& actionServices,
+                                                       EditorSettingsController& settings,
+                                                       EditorI18n& i18n,
                                                        const EditorToolRegistry& toolRegistry) {
         if (!isEditorSmokeMode(mode)) {
             return true;
@@ -1050,7 +1048,7 @@ namespace asharia::editor {
         return validatePanelRegistrySmoke(actionServices.panels) &&
                validateActionRegistrySmoke(actionRegistry, actionServices) &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, actionServices.panels) &&
-               validateEditorSettingsSmoke(mode, editorContext) &&
+               validateEditorSettingsSmoke(mode, settings, i18n) &&
                validateShortcutRouterSmoke(actionRegistry, actionServices);
     }
 

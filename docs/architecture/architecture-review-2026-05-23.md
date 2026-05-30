@@ -114,6 +114,10 @@ smoke 已验证 Scene View graph 包含 overlay pass、Game/Preview 不接收 Sc
 - `apps/editor/src/editor_panel.hpp:59` 到 `:72` 的 `EditorFrameContext` 暴露每帧 UI、diagnostics、settings、input、RenderGraph snapshot 和 viewport host。
 - `apps/editor/src/editor_app.cpp` 当前约 2216 行，并包含 panel/action/tool 注册、smoke 统计、frame loop 和 ImGui/Vulkan glue；`registerEditorPanels()` 在 `:1419`，`registerEditorActions()` 在 `:1455`，`registerEditorTools()` 在 `:1635`。
 
+当前状态 (2026-05-30): 过渡期 `EditorContext` facade 已删除；风险从 context 成员膨胀转为
+`editor_app.cpp` 的 bootstrap、frame loop 和 Vulkan/ImGui glue 聚合。后续仍应通过 command/transaction
+owner 与 capability context 收敛。
+
 风险：
 
 当前 editor 仍处在 host MVP 阶段，这种宽 context 可以接受；但如果在此基础上直接加入 asset browser、material editor、persistent layout、script hot reload 或 inspector mutation，panel 会自然绕过 command/transaction owner，形成长期 service locator。

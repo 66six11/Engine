@@ -59,11 +59,10 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
 | `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
-| `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、full `EditorContext` access、hard-coded tool layout policy |
+| `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
-| `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full `EditorContext` access |
+| `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
-| `editor_context` | references to current editor app services still being retired into capability contexts | action dispatch、panel registry ownership、frame debugger ownership、GPU resources、long-lived document ownership |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
 | `editor_viewport` | backend-neutral viewport request/result structs、Scene/debug viewport flags and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
@@ -315,7 +314,7 @@ Action rules:
 - Keep `shortcut` strings in action descriptors; `EditorShortcutRouter` is the only per-frame ImGui shortcut poller.
 - Emit `ActionInvoked` through the event queue.
 - Keep callbacks on `EditorActionContext`; `EditorActionInvokeContext` owns event emission for
-  dispatch, and full `EditorContext` should not enter command handlers.
+  dispatch, and broad app service bundles should not enter command handlers.
 - 未来状态修改必须通过 command/transaction services。
 
 ### Input 扩展

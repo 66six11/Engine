@@ -74,7 +74,6 @@ add_executable(asharia-editor
     src/editor_app.cpp
     src/editor_app_registration.cpp
     src/editor_command.cpp
-    src/editor_context.cpp
     src/editor_dock_layout.cpp
     src/editor_event.cpp
     src/editor_frame_debugger.cpp

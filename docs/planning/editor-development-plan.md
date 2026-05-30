@@ -42,8 +42,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
   与 command summary 纳入 RenderGraph，并在存在 `BasicDebugWorldLine` 时通过 renderer-owned debug-line
   shader/pipeline 绘制 line-list。visible gizmo / selection outline 继续推进前，仍必须补 camera-aware grid
   policy、source overlay id diagnostics 和更完整 provider contract。
-- `EditorContext` / `EditorFrameContext` 不能成为长期 service locator 或持久 mutation surface；会被保存、undo/redo、
-  script 或 collaboration 消费的状态，必须走 command/transaction 或明确 owner。
+- `EditorFrameContext` 和任何 app-level service bundle 不能成为长期 service locator 或持久 mutation surface；
+  过渡期 `EditorContext` 已删除；会被保存、undo/redo、script 或 collaboration 消费的状态，必须走
+  command/transaction 或明确 owner。
 - `editor_app.cpp` 仍承担 startup、registration、smoke、frame loop 和 ImGui/Vulkan glue 等多种职责；新增 asset browser、
   material editor、script hot reload 或 persistent layout 前，先拆 app bootstrap/registration、smoke checks 和
   ImGui Vulkan frame renderer。
@@ -133,7 +134,6 @@ Rules:
 ```text
 apps/editor/src/
   editor_app.hpp/.cpp
-  editor_context.hpp/.cpp
   editor_action.hpp/.cpp
   editor_event.hpp/.cpp
   editor_panel.hpp/.cpp
@@ -151,7 +151,6 @@ apps/editor/src/
 | Module | Owns | Must not own |
 | --- | --- | --- |
 | `editor_app` | startup, loop, frame order, smoke modes, shutdown order | panel drawing details |
-| `editor_context` | per-frame/editor services passed to panels | GPU objects |
 | `editor_action` | action descriptors, callbacks, invocation, shortcut metadata | menu widget code |
 | `editor_event` | small typed queue for editor facts | global EventBus semantics |
 | `editor_panel` | panel descriptors, state, registry, singleton reuse | ImGui backend setup |
@@ -267,7 +266,7 @@ Rules:
 
 - Menus, shortcuts and future command palette invoke the same action ids.
 - Actions mutate editor state only through explicit services exposed by `EditorActionContext`; callers build invoke context
-  from `EditorActionServices` instead of full `EditorContext`, and future persistent changes must route through selection,
+  from `EditorActionServices` instead of broad app services, and future persistent changes must route through selection,
   transaction or app command services.
 - `ActionInvoked` is an editor event, not the mutation itself. Menu, shortcut, command palette and script are invocation
   sources, not separate action meanings.
@@ -512,10 +511,10 @@ Status: Done.
 Scope:
 
 - Move startup, frame loop and shutdown into `editor_app`.
-- Move per-frame service references into `editor_context`.
+- Keep per-frame service references explicit until narrow frame/panel contexts own them.
 - Keep rendered output and smoke behavior unchanged.
-- Current implementation keeps per-frame service references inside `editor_app` until panel registry work creates a real
-  `editor_context` consumer.
+- The transitional `editor_context` facade has since been retired; app loop now passes explicit services into shell,
+  frame and smoke contexts.
 
 Validation:
 
@@ -591,8 +590,7 @@ Validation:
 
 - Menu only invokes action ids.
 - Action registry can be unit-smoked without ImGui where practical.
-- Implemented as `apps/editor/src/editor_action.hpp/.cpp` and a minimal
-  `apps/editor/src/editor_context.hpp/.cpp`; File menu entries are disabled action placeholders and View menu entries
+- Implemented as `apps/editor/src/editor_action.hpp/.cpp`; File menu entries are disabled action placeholders and View menu entries
   route through action ids to the panel registry.
 - Editor smoke validates action count, disabled action rejection and View/Log action routing without ImGui widgets.
 

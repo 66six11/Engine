@@ -35,7 +35,7 @@
 #include "editor_action.hpp"
 #include "editor_app_registration.hpp"
 #include "editor_command.hpp"
-#include "editor_context.hpp"
+#include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
@@ -167,26 +167,28 @@ namespace {
     }
 
     void buildEditorShell(asharia::editor::EditorActionRegistry& actionRegistry,
-                          asharia::editor::EditorContext& editorContext,
                           asharia::editor::EditorActionServices& actionServices,
                           asharia::editor::EditorFrameDebugger& frameDebugger,
+                          asharia::editor::EditorI18n& i18n,
                           asharia::editor::EditorPanelRegistry& panelRegistry,
+                          asharia::editor::EditorToolRegistry& toolRegistry,
+                          asharia::editor::EditorWorkspaceController& workspace,
                           asharia::editor::EditorFrameContext& frameContext) {
         const asharia::editor::EditorActionInvokeContext actionInvoke =
             asharia::editor::makeEditorActionInvokeContext(actionServices);
         auto dockspaceContext = asharia::editor::EditorDockspaceContext{
             .panels = panelRegistry,
-            .i18n = editorContext.i18n(),
-            .workspace = editorContext.workspace(),
+            .i18n = i18n,
+            .workspace = workspace,
         };
         const auto menuContext = asharia::editor::EditorMenuContext{
             .panels = panelRegistry,
-            .i18n = editorContext.i18n(),
+            .i18n = i18n,
             .actionInvoke = actionInvoke,
         };
         const auto commandBarContext = asharia::editor::EditorCommandBarContext{
-            .i18n = editorContext.i18n(),
-            .tools = editorContext.tools(),
+            .i18n = i18n,
+            .tools = toolRegistry,
             .actionInvoke = actionInvoke,
         };
         const auto statusBarContext = asharia::editor::EditorStatusBarContext{
@@ -222,7 +224,8 @@ namespace {
     }
 
     [[nodiscard]] asharia::Result<asharia::VulkanContext>
-    createEditorContext(const std::vector<std::string>& extensions, asharia::GlfwWindow& window) {
+    createEditorVulkanContext(const std::vector<std::string>& extensions,
+                              asharia::GlfwWindow& window) {
         const asharia::VulkanContextDesc contextDesc{
             .applicationName = "Asharia Engine Editor",
             .requiredInstanceExtensions = extensions,
@@ -332,8 +335,13 @@ namespace {
                   asharia::editor::EditorFrameDebugger& frameDebugger,
                   asharia::editor::EditorActionRegistry& actionRegistry,
                   asharia::editor::EditorActionServices& actionServices,
-                  asharia::editor::EditorContext& editorContext,
+                  asharia::editor::EditorEventQueue& eventQueue,
+                  asharia::editor::EditorDiagnosticsLog& diagnosticsLog,
+                  asharia::editor::EditorI18n& i18n,
+                  asharia::editor::EditorSettingsController& settingsController,
                   asharia::editor::EditorPanelRegistry& panelRegistry,
+                  asharia::editor::EditorToolRegistry& toolRegistry,
+                  asharia::editor::EditorWorkspaceController& workspace,
                   asharia::editor::EditorRunMode mode) {
         const bool smokeMode = asharia::editor::isEditorSmokeMode(mode);
         asharia::editor::EditorViewportResizeSmokeState resizeSmoke;
@@ -377,28 +385,28 @@ namespace {
             });
             viewportHost.beginImguiFrame(asharia::editor::editorViewportFrameEpochs(frameLoop));
             panelRegistry.clearLifecycleEvents();
-            editorContext.eventQueue().clear();
+            eventQueue.clear();
             asharia::editor::EditorFrameContext frameContext{
                 .ui =
                     {
                         .frameIndex = renderedFrames,
                         .swapchainExtent = editorExtentFromVk(frameLoop.extent()),
                         .smokeMode = smokeMode,
-                        .i18n = editorContext.i18n(),
+                        .i18n = i18n,
                     },
                 .diagnostics =
                     {
-                        .log = editorContext.diagnosticsLog(),
+                        .log = diagnosticsLog,
                         .frameDebugger = frameDebugger,
                     },
-                .settings = {.controller = editorContext.settings()},
-                .tools = {.registry = editorContext.tools()},
+                .settings = {.controller = settingsController},
+                .tools = {.registry = toolRegistry},
                 .input = {.router = inputRouter},
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},
             };
-            buildEditorShell(actionRegistry, editorContext, actionServices, frameDebugger,
-                             panelRegistry, frameContext);
+            buildEditorShell(actionRegistry, actionServices, frameDebugger, i18n, panelRegistry,
+                             toolRegistry, workspace, frameContext);
             asharia::editor::requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();
             shortcutRouter.beginFrame(inputRouter.snapshot());
@@ -423,8 +431,8 @@ namespace {
                                                           actionServices, viewportHost,
                                                           inspectedWorldScheduler, frameDebugSmoke);
             }
-            editorContext.diagnosticsLog().appendEvents(editorContext.eventQueue().events());
-            editorContext.eventQueue().clear();
+            diagnosticsLog.appendEvents(eventQueue.events());
+            eventQueue.clear();
             panelRegistry.clearLifecycleEvents();
 
             if (smokeMode && renderedFrames >= asharia::editor::editorSmokeFrameCount(mode)) {
@@ -488,9 +496,9 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        auto context = createEditorContext(*extensions, *window);
-        if (!context) {
-            asharia::logError(context.error().message);
+        auto vulkanContext = createEditorVulkanContext(*extensions, *window);
+        if (!vulkanContext) {
+            asharia::logError(vulkanContext.error().message);
             return EXIT_FAILURE;
         }
 
@@ -503,7 +511,7 @@ namespace asharia::editor {
             return EXIT_SUCCESS;
         }
 
-        auto frameLoop = createEditorFrameLoop(*context, *window);
+        auto frameLoop = createEditorFrameLoop(*vulkanContext, *window);
         if (!frameLoop) {
             asharia::logError(frameLoop.error().message);
             return EXIT_FAILURE;
@@ -527,7 +535,8 @@ namespace asharia::editor {
             .cjkFontPath = {},
             .fontPixelSize = 16.0F,
         };
-        if (auto created = imgui.create(window->nativeHandle(), *context, *frameLoop, imguiDesc);
+        if (auto created =
+                imgui.create(window->nativeHandle(), *vulkanContext, *frameLoop, imguiDesc);
             !created) {
             asharia::logError(created.error().message);
             return EXIT_FAILURE;
@@ -539,8 +548,8 @@ namespace asharia::editor {
         const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
         auto renderer = asharia::BasicFullscreenTextureRenderer::create(
             asharia::BasicFullscreenTextureRendererDesc{
-                .device = context->device(),
-                .allocator = context->allocator(),
+                .device = vulkanContext->device(),
+                .allocator = vulkanContext->allocator(),
                 .shaderDirectory = shaderDir,
             });
         if (!renderer) {
@@ -549,7 +558,7 @@ namespace asharia::editor {
         }
 
         EditorViewportCoordinator viewportHost;
-        if (auto created = viewportHost.create(*context); !created) {
+        if (auto created = viewportHost.create(*vulkanContext); !created) {
             asharia::logError(created.error().message);
             return EXIT_FAILURE;
         }
@@ -586,18 +595,16 @@ namespace asharia::editor {
             .frameDebugger = frameDebugger,
             .workspace = workspaceController,
         };
-        asharia::editor::EditorContext editorContext{eventQueue,          diagnosticsLog,
-                                                     editorI18n,          settingsController,
-                                                     workspaceController, toolRegistry};
-        if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, actionServices,
-                                             toolRegistry) ||
+        if (!validateEditorRegistrationSmoke(mode, actionRegistry, actionServices,
+                                             settingsController, editorI18n, toolRegistry) ||
             !validateEditorCommandSmoke(mode)) {
             return EXIT_FAILURE;
         }
 
-        auto runResult =
-            runEditorLoop(*window, *frameLoop, *renderer, viewportHost, frameDebugger,
-                          actionRegistry, actionServices, editorContext, panelRegistry, mode);
+        auto runResult = runEditorLoop(*window, *frameLoop, *renderer, viewportHost, frameDebugger,
+                                       actionRegistry, actionServices, eventQueue, diagnosticsLog,
+                                       editorI18n, settingsController, panelRegistry, toolRegistry,
+                                       workspaceController, mode);
         if (!runResult) {
             asharia::logError(runResult.error().message);
             return EXIT_FAILURE;

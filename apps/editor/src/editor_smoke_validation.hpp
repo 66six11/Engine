@@ -6,8 +6,8 @@
 
 namespace asharia::editor {
     class EditorActionRegistry;
-    class EditorContext;
     class EditorFrameDebugger;
+    class EditorSettingsController;
     class EditorToolRegistry;
     class EditorViewportCoordinator;
     class ImGuiRuntime;
@@ -20,8 +20,9 @@ namespace asharia::editor {
                                                   EditorLocale locale, EditorUiThemeId theme);
     [[nodiscard]] bool validateEditorRegistrationSmoke(EditorRunMode mode,
                                                        EditorActionRegistry& actionRegistry,
-                                                       EditorContext& editorContext,
                                                        EditorActionServices& actionServices,
+                                                       EditorSettingsController& settings,
+                                                       EditorI18n& i18n,
                                                        const EditorToolRegistry& toolRegistry);
     [[nodiscard]] bool validateEditorCommandSmoke(EditorRunMode mode);
     [[nodiscard]] bool

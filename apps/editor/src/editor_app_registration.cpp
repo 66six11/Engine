@@ -5,7 +5,6 @@
 #include "asharia/core/result.hpp"
 
 #include "editor_action.hpp"
-#include "editor_context.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_panel.hpp"
 #include "editor_tool.hpp"
