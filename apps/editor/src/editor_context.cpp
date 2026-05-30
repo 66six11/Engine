@@ -6,22 +6,11 @@
 
 namespace asharia::editor {
 
-    EditorContext::EditorContext(EditorPanelRegistry& panelRegistry, EditorEventQueue& eventQueue,
-                                 EditorDiagnosticsLog& diagnosticsLog,
-                                 EditorFrameDebugger& frameDebugger, EditorI18n& i18n,
-                                 EditorSettingsController& settings,
+    EditorContext::EditorContext(EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog,
+                                 EditorI18n& i18n, EditorSettingsController& settings,
                                  EditorWorkspaceController& workspace, EditorToolRegistry& tools)
-        : panelRegistry_(panelRegistry), eventQueue_(eventQueue), diagnosticsLog_(diagnosticsLog),
-          frameDebugger_(frameDebugger), i18n_(i18n), settings_(settings), workspace_(workspace),
-          tools_(tools) {}
-
-    EditorPanelRegistry& EditorContext::panelRegistry() {
-        return panelRegistry_;
-    }
-
-    const EditorPanelRegistry& EditorContext::panelRegistry() const {
-        return panelRegistry_;
-    }
+        : eventQueue_(eventQueue), diagnosticsLog_(diagnosticsLog), i18n_(i18n),
+          settings_(settings), workspace_(workspace), tools_(tools) {}
 
     EditorEventQueue& EditorContext::eventQueue() {
         return eventQueue_;
@@ -37,14 +26,6 @@ namespace asharia::editor {
 
     const EditorDiagnosticsLog& EditorContext::diagnosticsLog() const {
         return diagnosticsLog_;
-    }
-
-    EditorFrameDebugger& EditorContext::frameDebugger() {
-        return frameDebugger_;
-    }
-
-    const EditorFrameDebugger& EditorContext::frameDebugger() const {
-        return frameDebugger_;
     }
 
     EditorI18n& EditorContext::i18n() {
@@ -77,18 +58,6 @@ namespace asharia::editor {
 
     const EditorToolRegistry& EditorContext::tools() const {
         return tools_;
-    }
-
-    EditorActionInvokeContext EditorContext::actionInvokeContext() {
-        return EditorActionInvokeContext{
-            .eventQueue = eventQueue_,
-            .actions =
-                {
-                    .panels = panelRegistry_,
-                    .frameDebugger = frameDebugger_,
-                    .workspace = workspace_,
-                },
-        };
     }
 
 } // namespace asharia::editor

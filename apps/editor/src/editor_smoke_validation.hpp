@@ -8,11 +8,11 @@ namespace asharia::editor {
     class EditorActionRegistry;
     class EditorContext;
     class EditorFrameDebugger;
-    class EditorPanelRegistry;
     class EditorToolRegistry;
     class EditorViewportCoordinator;
     class ImGuiRuntime;
     struct EditorSmokeRunResult;
+    struct EditorActionServices;
     struct EditorViewportCoordinatorStats;
     struct ImGuiTextureRegistryStats;
 
@@ -21,7 +21,7 @@ namespace asharia::editor {
     [[nodiscard]] bool validateEditorRegistrationSmoke(EditorRunMode mode,
                                                        EditorActionRegistry& actionRegistry,
                                                        EditorContext& editorContext,
-                                                       EditorPanelRegistry& panelRegistry,
+                                                       EditorActionServices& actionServices,
                                                        const EditorToolRegistry& toolRegistry);
     [[nodiscard]] bool validateEditorCommandSmoke(EditorRunMode mode);
     [[nodiscard]] bool

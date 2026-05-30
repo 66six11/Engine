@@ -266,8 +266,9 @@ using EditorActionCallback = std::function<void(EditorActionContext&)>;
 Rules:
 
 - Menus, shortcuts and future command palette invoke the same action ids.
-- Actions mutate editor state only through explicit services exposed by `EditorActionContext`; future persistent changes must
-  route through selection, transaction or app command services instead of full `EditorContext`.
+- Actions mutate editor state only through explicit services exposed by `EditorActionContext`; callers build invoke context
+  from `EditorActionServices` instead of full `EditorContext`, and future persistent changes must route through selection,
+  transaction or app command services.
 - `ActionInvoked` is an editor event, not the mutation itself. Menu, shortcut, command palette and script are invocation
   sources, not separate action meanings.
 - Disabled actions remain registered so menu/shortcut UI can show stable layout and diagnostics.
@@ -1062,7 +1063,7 @@ Implementation:
 
 - `EditorFrameDebugger` stores `Running -> CaptureRequested -> CapturingFrame -> WaitingGpuFence -> PausedFrameDebug ->
   Resume -> Running` state, stats and the latest captured diagnostics snapshot.
-- Debug menu actions `debug.capture-frame` and `debug.resume-frame` route through `EditorContext` to the frame debugger.
+- Debug menu actions `debug.capture-frame` and `debug.resume-frame` route through `EditorActionServices` to the frame debugger.
 - `EditorViewportCoordinator::recordRequestedViews()` can process retired viewport targets while skipping new RenderView
   recording, which is the pause behavior used by frame debug.
 - `EditorInspectedWorldScheduler` runs frame advance、game update 和 script update safe-point counters while Frame Debug

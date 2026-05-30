@@ -9,6 +9,18 @@
 
 namespace asharia::editor {
 
+    EditorActionInvokeContext makeEditorActionInvokeContext(EditorActionServices& services) {
+        return EditorActionInvokeContext{
+            .eventQueue = services.eventQueue,
+            .actions =
+                {
+                    .panels = services.panels,
+                    .frameDebugger = services.frameDebugger,
+                    .workspace = services.workspace,
+                },
+        };
+    }
+
     asharia::VoidResult EditorActionRegistry::registerAction(EditorActionDesc desc,
                                                              EditorActionCallback callback) {
         if (desc.id.value.empty()) {

@@ -8,7 +8,6 @@
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_action.hpp"
-#include "editor_context.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
@@ -175,13 +174,13 @@ namespace asharia::editor {
 
     void updateFrameDebuggerSmoke(EditorFrameDebugger& frameDebugger,
                                   EditorActionRegistry& actionRegistry,
-                                  EditorContext& editorContext,
+                                  EditorActionServices& actionServices,
                                   const EditorViewportCoordinator& viewportHost,
                                   const EditorInspectedWorldScheduler& inspectedWorldScheduler,
                                   EditorFrameDebuggerSmokeState& state) {
         if (!state.captureRequested) {
-            state.captureRequested =
-                actionRegistry.invoke("debug.capture-frame", editorContext.actionInvokeContext());
+            state.captureRequested = actionRegistry.invoke(
+                "debug.capture-frame", makeEditorActionInvokeContext(actionServices));
             return;
         }
 
@@ -225,8 +224,8 @@ namespace asharia::editor {
                 return;
             }
 
-            state.resumeRequested =
-                actionRegistry.invoke("debug.resume-frame", editorContext.actionInvokeContext());
+            state.resumeRequested = actionRegistry.invoke(
+                "debug.resume-frame", makeEditorActionInvokeContext(actionServices));
             return;
         }
 

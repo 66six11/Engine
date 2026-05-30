@@ -15,9 +15,9 @@ namespace asharia {
 
 namespace asharia::editor {
     class EditorActionRegistry;
-    class EditorContext;
     class EditorFrameDebugger;
     class EditorViewportCoordinator;
+    struct EditorActionServices;
 
     struct EditorSmokeRunResult {
         int renderedFrames{};
@@ -79,7 +79,7 @@ namespace asharia::editor {
                                    EditorViewportResizeSmokeState& state);
     void updateFrameDebuggerSmoke(EditorFrameDebugger& frameDebugger,
                                   EditorActionRegistry& actionRegistry,
-                                  EditorContext& editorContext,
+                                  EditorActionServices& actionServices,
                                   const EditorViewportCoordinator& viewportHost,
                                   const EditorInspectedWorldScheduler& inspectedWorldScheduler,
                                   EditorFrameDebuggerSmokeState& state);

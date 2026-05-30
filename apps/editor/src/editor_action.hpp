@@ -29,6 +29,16 @@ namespace asharia::editor {
         EditorActionContext actions;
     };
 
+    struct EditorActionServices {
+        EditorEventQueue& eventQueue;
+        EditorPanelRegistry& panels;
+        EditorFrameDebugger& frameDebugger;
+        EditorWorkspaceController& workspace;
+    };
+
+    [[nodiscard]] EditorActionInvokeContext
+    makeEditorActionInvokeContext(EditorActionServices& services);
+
     struct EditorActionDesc {
         EditorId id;
         std::string menuPath;

@@ -168,8 +168,12 @@ namespace {
 
     void buildEditorShell(asharia::editor::EditorActionRegistry& actionRegistry,
                           asharia::editor::EditorContext& editorContext,
+                          asharia::editor::EditorActionServices& actionServices,
+                          asharia::editor::EditorFrameDebugger& frameDebugger,
                           asharia::editor::EditorPanelRegistry& panelRegistry,
                           asharia::editor::EditorFrameContext& frameContext) {
+        const asharia::editor::EditorActionInvokeContext actionInvoke =
+            asharia::editor::makeEditorActionInvokeContext(actionServices);
         auto dockspaceContext = asharia::editor::EditorDockspaceContext{
             .panels = panelRegistry,
             .i18n = editorContext.i18n(),
@@ -178,17 +182,17 @@ namespace {
         const auto menuContext = asharia::editor::EditorMenuContext{
             .panels = panelRegistry,
             .i18n = editorContext.i18n(),
-            .actionInvoke = editorContext.actionInvokeContext(),
+            .actionInvoke = actionInvoke,
         };
         const auto commandBarContext = asharia::editor::EditorCommandBarContext{
             .i18n = editorContext.i18n(),
             .tools = editorContext.tools(),
-            .actionInvoke = editorContext.actionInvokeContext(),
+            .actionInvoke = actionInvoke,
         };
         const auto statusBarContext = asharia::editor::EditorStatusBarContext{
             .frame = frameContext,
             .panels = panelRegistry,
-            .frameDebugger = editorContext.frameDebugger(),
+            .frameDebugger = frameDebugger,
         };
 
         asharia::editor::drawEditorMainMenu(actionRegistry, menuContext);
@@ -327,6 +331,7 @@ namespace {
                   asharia::editor::EditorViewportCoordinator& viewportHost,
                   asharia::editor::EditorFrameDebugger& frameDebugger,
                   asharia::editor::EditorActionRegistry& actionRegistry,
+                  asharia::editor::EditorActionServices& actionServices,
                   asharia::editor::EditorContext& editorContext,
                   asharia::editor::EditorPanelRegistry& panelRegistry,
                   asharia::editor::EditorRunMode mode) {
@@ -355,7 +360,7 @@ namespace {
 
             if (asharia::editor::isEditorFrameDebuggerSmokeMode(mode)) {
                 asharia::editor::updateFrameDebuggerSmoke(frameDebugger, actionRegistry,
-                                                          editorContext, viewportHost,
+                                                          actionServices, viewportHost,
                                                           inspectedWorldScheduler, frameDebugSmoke);
             }
             frameDebugger.beginFrame(renderedFrames);
@@ -392,12 +397,13 @@ namespace {
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},
             };
-            buildEditorShell(actionRegistry, editorContext, panelRegistry, frameContext);
+            buildEditorShell(actionRegistry, editorContext, actionServices, frameDebugger,
+                             panelRegistry, frameContext);
             asharia::editor::requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();
             shortcutRouter.beginFrame(inputRouter.snapshot());
             static_cast<void>(shortcutRouter.routeImGuiShortcuts(
-                actionRegistry, editorContext.actionInvokeContext()));
+                actionRegistry, asharia::editor::makeEditorActionInvokeContext(actionServices)));
             ImGui::Render();
 
             auto rendered =
@@ -414,7 +420,7 @@ namespace {
             }
             if (asharia::editor::isEditorFrameDebuggerSmokeMode(mode)) {
                 asharia::editor::updateFrameDebuggerSmoke(frameDebugger, actionRegistry,
-                                                          editorContext, viewportHost,
+                                                          actionServices, viewportHost,
                                                           inspectedWorldScheduler, frameDebugSmoke);
             }
             editorContext.diagnosticsLog().appendEvents(editorContext.eventQueue().events());
@@ -574,17 +580,24 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        asharia::editor::EditorContext editorContext{
-            panelRegistry, eventQueue,         diagnosticsLog,      frameDebugger,
-            editorI18n,    settingsController, workspaceController, toolRegistry};
-        if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, panelRegistry,
+        asharia::editor::EditorActionServices actionServices{
+            .eventQueue = eventQueue,
+            .panels = panelRegistry,
+            .frameDebugger = frameDebugger,
+            .workspace = workspaceController,
+        };
+        asharia::editor::EditorContext editorContext{eventQueue,          diagnosticsLog,
+                                                     editorI18n,          settingsController,
+                                                     workspaceController, toolRegistry};
+        if (!validateEditorRegistrationSmoke(mode, actionRegistry, editorContext, actionServices,
                                              toolRegistry) ||
             !validateEditorCommandSmoke(mode)) {
             return EXIT_FAILURE;
         }
 
-        auto runResult = runEditorLoop(*window, *frameLoop, *renderer, viewportHost, frameDebugger,
-                                       actionRegistry, editorContext, panelRegistry, mode);
+        auto runResult =
+            runEditorLoop(*window, *frameLoop, *renderer, viewportHost, frameDebugger,
+                          actionRegistry, actionServices, editorContext, panelRegistry, mode);
         if (!runResult) {
             asharia::logError(runResult.error().message);
             return EXIT_FAILURE;

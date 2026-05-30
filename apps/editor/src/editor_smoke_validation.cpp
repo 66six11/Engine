@@ -826,8 +826,7 @@ namespace asharia::editor {
     }
 
     [[nodiscard]] bool validateActionRegistrySmoke(EditorActionRegistry& actionRegistry,
-                                                   EditorContext& editorContext,
-                                                   EditorPanelRegistry& panelRegistry) {
+                                                   EditorActionServices& actionServices) {
         constexpr std::size_t kExpectedActionCount = 12;
         constexpr std::size_t kExpectedEnabledActionCount = 9;
 
@@ -836,19 +835,19 @@ namespace asharia::editor {
             asharia::logError("Editor action registry smoke detected invalid action counts.");
             return false;
         }
-        editorContext.eventQueue().clear();
-        if (actionRegistry.invoke("file.open", editorContext.actionInvokeContext()) ||
-            actionRegistry.invokeCount("file.open") != 0 || !editorContext.eventQueue().empty()) {
+        actionServices.eventQueue.clear();
+        if (actionRegistry.invoke("file.open", makeEditorActionInvokeContext(actionServices)) ||
+            actionRegistry.invokeCount("file.open") != 0 || !actionServices.eventQueue.empty()) {
             asharia::logError("Editor action registry smoke invoked a disabled action.");
             return false;
         }
-        if (!panelRegistry.closePanel("log") ||
-            !actionRegistry.invoke("view.log", editorContext.actionInvokeContext()) ||
-            !panelRegistry.isOpen("log") || actionRegistry.invokeCount("view.log") != 1) {
+        if (!actionServices.panels.closePanel("log") ||
+            !actionRegistry.invoke("view.log", makeEditorActionInvokeContext(actionServices)) ||
+            !actionServices.panels.isOpen("log") || actionRegistry.invokeCount("view.log") != 1) {
             asharia::logError("Editor action registry smoke failed to route View/Log action.");
             return false;
         }
-        const std::span<const EditorEvent> events = editorContext.eventQueue().events();
+        const std::span<const EditorEvent> events = actionServices.eventQueue.events();
         const bool closedLog = std::ranges::any_of(events, [](const EditorEvent& event) {
             return event.kind == EditorEventKind::PanelClosed && event.sourceId.value == "log";
         });
@@ -863,33 +862,36 @@ namespace asharia::editor {
             asharia::logError("Editor event queue smoke missed action or panel lifecycle events.");
             return false;
         }
-        editorContext.eventQueue().clear();
+        actionServices.eventQueue.clear();
 
-        if (!actionRegistry.invoke("view.ui-style-preview", editorContext.actionInvokeContext()) ||
-            !panelRegistry.isOpen("ui-style-preview") ||
+        if (!actionRegistry.invoke("view.ui-style-preview",
+                                   makeEditorActionInvokeContext(actionServices)) ||
+            !actionServices.panels.isOpen("ui-style-preview") ||
             actionRegistry.invokeCount("view.ui-style-preview") != 1 ||
-            !panelRegistry.closePanel("ui-style-preview")) {
+            !actionServices.panels.closePanel("ui-style-preview")) {
             asharia::logError("Editor action registry smoke failed to route UI Style Preview.");
             return false;
         }
-        editorContext.eventQueue().clear();
+        actionServices.eventQueue.clear();
 
-        if (!actionRegistry.invoke("view.editor-settings", editorContext.actionInvokeContext()) ||
-            !panelRegistry.isOpen("editor-settings") ||
+        if (!actionRegistry.invoke("view.editor-settings",
+                                   makeEditorActionInvokeContext(actionServices)) ||
+            !actionServices.panels.isOpen("editor-settings") ||
             actionRegistry.invokeCount("view.editor-settings") != 1 ||
-            !panelRegistry.closePanel("editor-settings")) {
+            !actionServices.panels.closePanel("editor-settings")) {
             asharia::logError("Editor action registry smoke failed to route Editor Settings.");
             return false;
         }
-        editorContext.eventQueue().clear();
+        actionServices.eventQueue.clear();
 
-        if (!actionRegistry.invoke("view.reset-layout", editorContext.actionInvokeContext()) ||
+        if (!actionRegistry.invoke("view.reset-layout",
+                                   makeEditorActionInvokeContext(actionServices)) ||
             actionRegistry.invokeCount("view.reset-layout") != 1 ||
-            editorContext.workspace().layoutResetRequestCount() != 1) {
+            actionServices.workspace.layoutResetRequestCount() != 1) {
             asharia::logError("Editor action registry smoke failed to request layout reset.");
             return false;
         }
-        editorContext.eventQueue().clear();
+        actionServices.eventQueue.clear();
 
         return true;
     }
@@ -992,17 +994,16 @@ namespace asharia::editor {
     }
 
     [[nodiscard]] bool validateShortcutRouterSmoke(EditorActionRegistry& actionRegistry,
-                                                   EditorContext& editorContext,
-                                                   EditorPanelRegistry& panelRegistry) {
+                                                   EditorActionServices& actionServices) {
         EditorShortcutRouter shortcutRouter;
-        editorContext.eventQueue().clear();
+        actionServices.eventQueue.clear();
 
         shortcutRouter.beginFrame(EditorInputSnapshot{
             .shortcutsEnabled = false,
         });
-        if (shortcutRouter.routeShortcut(actionRegistry, editorContext.actionInvokeContext(),
-                                         "view.log", true) ||
-            actionRegistry.invokeCount("view.log") != 1 || !editorContext.eventQueue().empty()) {
+        if (shortcutRouter.routeShortcut(
+                actionRegistry, makeEditorActionInvokeContext(actionServices), "view.log", true) ||
+            actionRegistry.invokeCount("view.log") != 1 || !actionServices.eventQueue.empty()) {
             asharia::logError("Editor shortcut router smoke invoked while shortcuts were "
                               "disabled.");
             return false;
@@ -1011,17 +1012,17 @@ namespace asharia::editor {
         shortcutRouter.beginFrame(EditorInputSnapshot{
             .shortcutsEnabled = true,
         });
-        if (shortcutRouter.routeShortcut(actionRegistry, editorContext.actionInvokeContext(),
-                                         "file.open", true) ||
-            actionRegistry.invokeCount("file.open") != 0 || !editorContext.eventQueue().empty()) {
+        if (shortcutRouter.routeShortcut(
+                actionRegistry, makeEditorActionInvokeContext(actionServices), "file.open", true) ||
+            actionRegistry.invokeCount("file.open") != 0 || !actionServices.eventQueue.empty()) {
             asharia::logError("Editor shortcut router smoke invoked a disabled action.");
             return false;
         }
 
-        if (!panelRegistry.closePanel("log") ||
-            !shortcutRouter.routeShortcut(actionRegistry, editorContext.actionInvokeContext(),
-                                          "view.log", true) ||
-            !panelRegistry.isOpen("log") || actionRegistry.invokeCount("view.log") != 2) {
+        if (!actionServices.panels.closePanel("log") ||
+            !shortcutRouter.routeShortcut(
+                actionRegistry, makeEditorActionInvokeContext(actionServices), "view.log", true) ||
+            !actionServices.panels.isOpen("log") || actionRegistry.invokeCount("view.log") != 2) {
             asharia::logError("Editor shortcut router smoke failed to invoke View/Log.");
             return false;
         }
@@ -1032,7 +1033,7 @@ namespace asharia::editor {
             asharia::logError("Editor shortcut router smoke detected invalid shortcut stats.");
             return false;
         }
-        editorContext.eventQueue().clear();
+        actionServices.eventQueue.clear();
 
         return true;
     }
@@ -1040,17 +1041,17 @@ namespace asharia::editor {
     [[nodiscard]] bool validateEditorRegistrationSmoke(EditorRunMode mode,
                                                        EditorActionRegistry& actionRegistry,
                                                        EditorContext& editorContext,
-                                                       EditorPanelRegistry& panelRegistry,
+                                                       EditorActionServices& actionServices,
                                                        const EditorToolRegistry& toolRegistry) {
         if (!isEditorSmokeMode(mode)) {
             return true;
         }
 
-        return validatePanelRegistrySmoke(panelRegistry) &&
-               validateActionRegistrySmoke(actionRegistry, editorContext, panelRegistry) &&
-               validateToolRegistrySmoke(toolRegistry, actionRegistry, panelRegistry) &&
+        return validatePanelRegistrySmoke(actionServices.panels) &&
+               validateActionRegistrySmoke(actionRegistry, actionServices) &&
+               validateToolRegistrySmoke(toolRegistry, actionRegistry, actionServices.panels) &&
                validateEditorSettingsSmoke(mode, editorContext) &&
-               validateShortcutRouterSmoke(actionRegistry, editorContext, panelRegistry);
+               validateShortcutRouterSmoke(actionRegistry, actionServices);
     }
 
     class TestSetIntCommand final : public EditorCommand {
