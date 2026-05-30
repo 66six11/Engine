@@ -241,8 +241,15 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
    和 UI Style Preview 不再共享 category 大包
 7. 当前内置 panel 的 `draw()` 实现会继续映射为 panel-local context，helper 不再传播完整 frame context
 
+**已修复 (Step 2b-d)**:
+1. `imgui_editor_shell` public API 已改为 `EditorDockspaceContext` / `EditorMenuContext` /
+   `EditorCommandBarContext` / `EditorStatusBarContext`
+2. shell 不再 include 或接收完整 `EditorContext`；`editor_app.cpp` 是当前 shell context 的适配点
+3. 菜单和命令栏 action binding 只消费 `EditorActionInvokeContext`、i18n、panel/tool/workspace/frame debugger
+   等窄能力
+
 **待完成 (Step 2b)**:
-- 继续拆分 `EditorContext` 中的 shell/action/workspace/settings 等宽 facade
+- 继续拆分 `EditorContext` 中 action/workspace/settings 等剩余宽 facade
 - 继续拆分 `editor_app.cpp` 中的 frame loop、smoke checks 和剩余 Vulkan host glue
 
 ---

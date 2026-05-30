@@ -8,7 +8,10 @@
 #include "editor_dock_layout.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
+#include "editor_panel.hpp"
+#include "editor_tool.hpp"
 #include "editor_ui.hpp"
+#include "editor_workspace.hpp"
 
 namespace asharia::editor {
 
@@ -30,56 +33,58 @@ namespace asharia::editor {
             });
         }
 
-        void drawActionMenuItem(EditorActionRegistry& actionRegistry, EditorContext& editorContext,
+        void drawActionMenuItem(EditorActionRegistry& actionRegistry, const EditorI18n& i18n,
+                                const EditorActionInvokeContext& actionInvoke,
                                 std::string_view actionId, bool selected = false) {
             const EditorActionDesc* action = actionRegistry.findAction(actionId);
             if (action == nullptr) {
                 return;
             }
 
-            const std::string label = actionLabel(*action, editorContext.i18n());
+            const std::string label = actionLabel(*action, i18n);
             const char* shortcut = action->shortcut.empty() ? nullptr : action->shortcut.c_str();
             if (ImGui::MenuItem(label.c_str(), shortcut, selected, action->enabled)) {
-                static_cast<void>(
-                    actionRegistry.invoke(action->id.value, editorContext.actionInvokeContext()));
+                static_cast<void>(actionRegistry.invoke(action->id.value, actionInvoke));
             }
         }
 
-        void drawActionButton(EditorActionRegistry& actionRegistry, EditorContext& editorContext,
+        void drawActionButton(EditorActionRegistry& actionRegistry, const EditorI18n& i18n,
+                              const EditorActionInvokeContext& actionInvoke,
                               std::string_view actionId) {
             const EditorActionDesc* action = actionRegistry.findAction(actionId);
             if (action == nullptr) {
                 return;
             }
 
-            const std::string label = actionLabel(*action, editorContext.i18n());
+            const std::string label = actionLabel(*action, i18n);
             ImGui::BeginDisabled(!action->enabled);
             if (ImGui::SmallButton(label.c_str()) && action->enabled) {
-                static_cast<void>(
-                    actionRegistry.invoke(action->id.value, editorContext.actionInvokeContext()));
+                static_cast<void>(actionRegistry.invoke(action->id.value, actionInvoke));
             }
             ImGui::EndDisabled();
         }
 
         [[nodiscard]] bool drawToolbarSlot(EditorActionRegistry& actionRegistry,
-                                           EditorContext& editorContext, EditorToolbarSlot slot) {
+                                           const EditorCommandBarContext& context,
+                                           EditorToolbarSlot slot) {
             bool drewAction = false;
-            editorContext.tools().visitToolbarActions(
+            context.tools.visitToolbarActions(
                 slot, [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
                     static_cast<void>(tool);
                     if (drewAction) {
                         ImGui::SameLine();
                     }
-                    drawActionButton(actionRegistry, editorContext, action.actionId);
+                    drawActionButton(actionRegistry, context.i18n, context.actionInvoke,
+                                     action.actionId);
                     drewAction = true;
                 });
             return drewAction;
         }
 
-        [[nodiscard]] bool hasToolbarSlot(const EditorContext& editorContext,
+        [[nodiscard]] bool hasToolbarSlot(const EditorCommandBarContext& context,
                                           EditorToolbarSlot slot) {
             bool hasAction = false;
-            editorContext.tools().visitToolbarActions(
+            context.tools.visitToolbarActions(
                 slot, [&](const EditorToolDesc& tool, const EditorToolActionContribution& action) {
                     static_cast<void>(tool);
                     static_cast<void>(action);
@@ -106,31 +111,32 @@ namespace asharia::editor {
 
     } // namespace
 
-    void drawEditorDockspace(EditorContext& editorContext) {
+    void drawEditorDockspace(EditorDockspaceContext& context) {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         if (viewport == nullptr) {
             return;
         }
 
         const ImGuiID dockspaceId = editorDockspaceId();
-        const bool resetRequested = editorContext.workspace().consumeLayoutResetRequest();
+        const bool resetRequested = context.workspace.consumeLayoutResetRequest();
         if (!editorDockLayoutExists(dockspaceId) || resetRequested) {
             buildEditorDockLayout(EditorDockLayoutBuildDesc{
-                .panelRegistry = editorContext.panelRegistry(),
-                .i18n = editorContext.i18n(),
+                .panelRegistry = context.panels,
+                .i18n = context.i18n,
                 .viewport = *viewport,
                 .dockspaceId = dockspaceId,
-                .preset = editorContext.workspace().activePreset(),
+                .preset = context.workspace.activePreset(),
             });
-            editorContext.workspace().notifyLayoutApplied();
+            context.workspace.notifyLayoutApplied();
         }
 
         ImGui::DockSpaceOverViewport(dockspaceId, viewport);
     }
 
-    void drawEditorMainMenu(EditorActionRegistry& actionRegistry, EditorContext& editorContext) {
+    void drawEditorMainMenu(EditorActionRegistry& actionRegistry,
+                            const EditorMenuContext& context) {
         if (ImGui::BeginMainMenuBar()) {
-            const EditorI18n& i18n = editorContext.i18n();
+            const EditorI18n& i18n = context.i18n;
             const std::string fileMenu = i18n.label(EditorI18nLabelDesc{
                 .key = "menu.file",
                 .stableId = "menu.file",
@@ -148,40 +154,47 @@ namespace asharia::editor {
             });
 
             if (ImGui::BeginMenu(fileMenu.c_str())) {
-                drawActionMenuItem(actionRegistry, editorContext, "file.new-scene");
-                drawActionMenuItem(actionRegistry, editorContext, "file.open");
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "file.new-scene");
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke, "file.open");
                 ImGui::Separator();
-                drawActionMenuItem(actionRegistry, editorContext, "file.exit");
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke, "file.exit");
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(viewMenu.c_str())) {
-                drawActionMenuItem(actionRegistry, editorContext, "view.scene-view",
-                                   editorContext.panelRegistry().isOpen("scene-view"));
-                drawActionMenuItem(actionRegistry, editorContext, "view.log",
-                                   editorContext.panelRegistry().isOpen("log"));
-                drawActionMenuItem(actionRegistry, editorContext, "view.render-graph",
-                                   editorContext.panelRegistry().isOpen("render-graph"));
-                drawActionMenuItem(actionRegistry, editorContext, "view.frame-debugger",
-                                   editorContext.panelRegistry().isOpen("frame-debugger"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.scene-view", context.panels.isOpen("scene-view"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke, "view.log",
+                                   context.panels.isOpen("log"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.render-graph", context.panels.isOpen("render-graph"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.frame-debugger", context.panels.isOpen("frame-debugger"));
                 ImGui::Separator();
-                drawActionMenuItem(actionRegistry, editorContext, "view.ui-style-preview",
-                                   editorContext.panelRegistry().isOpen("ui-style-preview"));
-                drawActionMenuItem(actionRegistry, editorContext, "view.editor-settings",
-                                   editorContext.panelRegistry().isOpen("editor-settings"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.ui-style-preview",
+                                   context.panels.isOpen("ui-style-preview"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.editor-settings",
+                                   context.panels.isOpen("editor-settings"));
                 ImGui::Separator();
-                drawActionMenuItem(actionRegistry, editorContext, "view.reset-layout");
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.reset-layout");
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(debugMenu.c_str())) {
-                drawActionMenuItem(actionRegistry, editorContext, "debug.capture-frame");
-                drawActionMenuItem(actionRegistry, editorContext, "debug.resume-frame");
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "debug.capture-frame");
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "debug.resume-frame");
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
         }
     }
 
-    void drawEditorCommandBar(EditorActionRegistry& actionRegistry, EditorContext& editorContext) {
+    void drawEditorCommandBar(EditorActionRegistry& actionRegistry,
+                              const EditorCommandBarContext& context) {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         if (viewport == nullptr) {
             return;
@@ -197,26 +210,26 @@ namespace asharia::editor {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{5.0F, 4.0F});
         if (ImGui::BeginViewportSideBar("##asharia-editor-command-bar", viewport, ImGuiDir_Up,
                                         kCommandBarHeight, kWindowFlags)) {
-            const bool hasDebug = hasToolbarSlot(editorContext, EditorToolbarSlot::Debug);
-            const bool hasView = hasToolbarSlot(editorContext, EditorToolbarSlot::View);
-            const bool hasUtility = hasToolbarSlot(editorContext, EditorToolbarSlot::Utility);
+            const bool hasDebug = hasToolbarSlot(context, EditorToolbarSlot::Debug);
+            const bool hasView = hasToolbarSlot(context, EditorToolbarSlot::View);
+            const bool hasUtility = hasToolbarSlot(context, EditorToolbarSlot::Utility);
             if (hasDebug) {
                 static_cast<void>(
-                    drawToolbarSlot(actionRegistry, editorContext, EditorToolbarSlot::Debug));
+                    drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::Debug));
             }
             if (hasDebug && hasView) {
                 sameLineSeparator();
             }
             if (hasView) {
                 static_cast<void>(
-                    drawToolbarSlot(actionRegistry, editorContext, EditorToolbarSlot::View));
+                    drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::View));
             }
             if ((hasDebug || hasView) && hasUtility) {
                 sameLineSeparator();
             }
             if (hasUtility) {
                 static_cast<void>(
-                    drawToolbarSlot(actionRegistry, editorContext, EditorToolbarSlot::Utility));
+                    drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::Utility));
             }
 
             const std::string themeLabel = std::string{"Theme: "} + std::string{theme.name};
@@ -235,8 +248,7 @@ namespace asharia::editor {
         ImGui::PopStyleColor();
     }
 
-    void drawEditorStatusBar(const EditorFrameContext& frameContext,
-                             const EditorContext& editorContext) {
+    void drawEditorStatusBar(const EditorStatusBarContext& context) {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         if (viewport == nullptr) {
             return;
@@ -254,19 +266,18 @@ namespace asharia::editor {
                                         kStatusBarHeight, kWindowFlags)) {
             text("Ready");
             sameLineSeparator();
-            text(editorContext.frameDebugger().stateName());
+            text(context.frameDebugger.stateName());
             sameLineSeparator();
             const std::string frameText =
-                std::string{"Frame "} + std::to_string(frameContext.ui.frameIndex);
+                std::string{"Frame "} + std::to_string(context.frame.ui.frameIndex);
             text(frameText);
             sameLineSeparator();
-            const std::string extent = extentText(frameContext.ui.swapchainExtent);
+            const std::string extent = extentText(context.frame.ui.swapchainExtent);
             text(extent);
             sameLineSeparator();
-            const std::string panelCount =
-                std::string{"Panels "} +
-                std::to_string(editorContext.panelRegistry().openPanelCount()) + "/" +
-                std::to_string(editorContext.panelRegistry().panelCount());
+            const std::string panelCount = std::string{"Panels "} +
+                                           std::to_string(context.panels.openPanelCount()) + "/" +
+                                           std::to_string(context.panels.panelCount());
             text(panelCount);
         }
         ImGui::End();

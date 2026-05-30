@@ -553,7 +553,8 @@ Scope:
 Validation:
 
 - Dockspace and menu render as before.
-- `imgui_editor_shell` only depends on editor action/panel interfaces and ImGui.
+- `imgui_editor_shell` public API no longer includes `editor_context`; shell entry points consume
+  dockspace/menu/command/status capability contexts.
 - Implemented as `apps/editor/src/imgui_editor_shell.hpp/.cpp`; panel window contents remain in `editor_app`
   until the panel registry baseline.
 

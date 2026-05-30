@@ -59,7 +59,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
 | `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
-| `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding | renderer command recording、panel object ownership、hard-coded tool layout policy |
+| `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、full `EditorContext` access、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids | command transaction semantics before transaction exists |
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |

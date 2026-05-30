@@ -170,10 +170,31 @@ namespace {
                           asharia::editor::EditorContext& editorContext,
                           asharia::editor::EditorPanelRegistry& panelRegistry,
                           asharia::editor::EditorFrameContext& frameContext) {
-        asharia::editor::drawEditorMainMenu(actionRegistry, editorContext);
-        asharia::editor::drawEditorCommandBar(actionRegistry, editorContext);
-        asharia::editor::drawEditorStatusBar(frameContext, editorContext);
-        asharia::editor::drawEditorDockspace(editorContext);
+        auto dockspaceContext = asharia::editor::EditorDockspaceContext{
+            .panels = panelRegistry,
+            .i18n = editorContext.i18n(),
+            .workspace = editorContext.workspace(),
+        };
+        const auto menuContext = asharia::editor::EditorMenuContext{
+            .panels = panelRegistry,
+            .i18n = editorContext.i18n(),
+            .actionInvoke = editorContext.actionInvokeContext(),
+        };
+        const auto commandBarContext = asharia::editor::EditorCommandBarContext{
+            .i18n = editorContext.i18n(),
+            .tools = editorContext.tools(),
+            .actionInvoke = editorContext.actionInvokeContext(),
+        };
+        const auto statusBarContext = asharia::editor::EditorStatusBarContext{
+            .frame = frameContext,
+            .panels = panelRegistry,
+            .frameDebugger = editorContext.frameDebugger(),
+        };
+
+        asharia::editor::drawEditorMainMenu(actionRegistry, menuContext);
+        asharia::editor::drawEditorCommandBar(actionRegistry, commandBarContext);
+        asharia::editor::drawEditorStatusBar(statusBarContext);
+        asharia::editor::drawEditorDockspace(dockspaceContext);
         panelRegistry.drawPanels(frameContext);
     }
 
