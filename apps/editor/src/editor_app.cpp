@@ -8,17 +8,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <filesystem>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 #include <iostream>
-#include <memory>
-#include <optional>
 #include <span>
 #include <string>
-#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -33,6 +29,7 @@
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_action.hpp"
+#include "editor_app_config.hpp"
 #include "editor_app_registration.hpp"
 #include "editor_command.hpp"
 #include "editor_event.hpp"
@@ -59,97 +56,6 @@ namespace {
     constexpr asharia::VulkanDebugLabelMode kEditorDebugLabels =
         asharia::VulkanDebugLabelMode::Required;
     constexpr int kSmokeAttemptLimit = 120;
-
-    [[nodiscard]] std::filesystem::path editorSmokeLayoutIniPath() {
-        std::error_code error;
-        std::filesystem::path basePath = std::filesystem::temp_directory_path(error);
-        if (error) {
-            basePath = std::filesystem::current_path(error);
-        }
-        if (basePath.empty()) {
-            basePath = ".";
-        }
-        return basePath / "Asharia" / "EditorSmoke" / "imgui-layout.ini";
-    }
-
-    [[nodiscard]] std::filesystem::path editorI18nDirectory() {
-#if defined(ASHARIA_EDITOR_I18N_DIR)
-        return std::filesystem::path{ASHARIA_EDITOR_I18N_DIR};
-#else
-        return std::filesystem::path{"resources/i18n"};
-#endif
-    }
-
-    [[nodiscard]] std::filesystem::path editorLayoutIniPathForRun(bool smokeMode) {
-        if (smokeMode) {
-            return editorSmokeLayoutIniPath();
-        }
-        return {};
-    }
-
-    [[nodiscard]] std::filesystem::path editorSettingsPathForRun(bool smokeMode) {
-        return smokeMode ? asharia::editor::editorSmokeSettingsPath()
-                         : asharia::editor::editorUserSettingsPath();
-    }
-
-    struct EditorSettingsRunState {
-        asharia::editor::EditorSettings settings;
-        std::filesystem::path path;
-    };
-
-    [[nodiscard]] EditorSettingsRunState
-    loadEditorSettingsForRun(bool smokeMode, asharia::editor::EditorLocale fallbackLocale) {
-        EditorSettingsRunState state{
-            .settings =
-                asharia::editor::EditorSettings{
-                    .locale = fallbackLocale,
-                    .theme = asharia::editor::defaultEditorUiThemeId(),
-                },
-            .path = editorSettingsPathForRun(smokeMode),
-        };
-        if (smokeMode) {
-            std::error_code removeError;
-            std::filesystem::remove(state.path, removeError);
-        }
-
-        auto loaded = asharia::editor::loadEditorSettings(state.path, fallbackLocale);
-        if (loaded) {
-            state.settings = *loaded;
-        } else {
-            asharia::logError(loaded.error().message);
-        }
-        return state;
-    }
-
-    [[nodiscard]] std::string editorLocaleEnvironmentValue() {
-#if defined(_WIN32)
-        char* value = nullptr;
-        std::size_t valueSize = 0;
-        if (_dupenv_s(&value, &valueSize, "ASHARIA_EDITOR_LOCALE") != 0 || value == nullptr) {
-            return {};
-        }
-        const std::unique_ptr<char, decltype(&std::free)> ownedValue{value, &std::free};
-        return std::string{ownedValue.get()};
-#else
-        const char* value = std::getenv("ASHARIA_EDITOR_LOCALE");
-        return value == nullptr ? std::string{} : std::string{value};
-#endif
-    }
-
-    [[nodiscard]] asharia::editor::EditorLocale editorLocaleFromEnvironment() {
-        const std::string value = editorLocaleEnvironmentValue();
-        if (value.empty()) {
-            return asharia::editor::EditorLocale::EnUs;
-        }
-        const std::optional<asharia::editor::EditorLocale> locale =
-            asharia::editor::editorLocaleFromName(value);
-        if (locale) {
-            return *locale;
-        }
-
-        asharia::logError("Unsupported ASHARIA_EDITOR_LOCALE value: " + value);
-        return asharia::editor::EditorLocale::EnUs;
-    }
 
     bool isRenderableExtent(asharia::WindowFramebufferExtent extent) {
         return extent.width > 0 && extent.height > 0;

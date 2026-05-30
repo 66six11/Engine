@@ -260,6 +260,12 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
 2. `editor_app.cpp` 的 shell、frame context 和 diagnostics append 不再经由 `EditorContext` 转发服务
 3. settings smoke 改为直接接收 `EditorSettingsController` 与 `EditorI18n`
 
+**已修复 (Step 2b-g)**:
+1. 新增 `apps/editor/src/editor_app_config.hpp/.cpp`
+2. run path、smoke layout/settings isolation、i18n resource directory 和 locale env 解析不再内联在
+   `editor_app.cpp`
+3. `editor_app_config` 只返回配置值，不聚合 editor services，避免形成新的 app context facade
+
 **待完成 (Step 2b)**:
 - 继续拆分 `editor_app.cpp` 中的 frame loop host、bootstrap 和剩余 Vulkan host glue
 - 避免为方便传参重新引入宽 app context / service locator facade
@@ -534,7 +540,7 @@ Scene View panel 的 camera/unproject code (`editor_viewport_camera.hpp`) 已经
 
 ### 7.3 当前最需要关注的 5 个改变
 
-1. **Editor app glue 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，宽 dispatch bundle 已是 implementation detail，内置 panel draw context 已按 Scene View / Log / Live RG / Frame Debugger / Editor Settings / UI Style Preview 拆到 per-panel context，过渡期 `EditorContext` 已删除；但 `editor_app.cpp` 仍承担 bootstrap、frame loop 和 Vulkan/ImGui host glue，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
+1. **Editor app glue 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，宽 dispatch bundle 已是 implementation detail，内置 panel draw context 已按 Scene View / Log / Live RG / Frame Debugger / Editor Settings / UI Style Preview 拆到 per-panel context，过渡期 `EditorContext` 已删除，run config helpers 已拆到 `editor_app_config`；但 `editor_app.cpp` 仍承担 window/GPU bootstrap、frame loop 和 Vulkan/ImGui host glue，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
 2. **Grid 仍需 camera-aware policy 和 pixel smoke**: renderer-owned debug-line GPU pass 已落地，但 grid provider 仍是固定原点 packet，尚未按 camera range/fade 生成稳定可读网格，也未做像素/readback 级 camera-difference 验证。
 3. **RenderGraph 内部 helper 声明仍需继续收敛**: public headers 已拆成 types / command / execution / builder / compile / diagnostics / aggregate，后续复杂 compiler/cache/unsafe pass 前还需要评估是否把 private compile、validation、dependency、lifetime helper 声明继续收敛到内部 implementation headers。
 4. **Asset pipeline 只有 metadata / catalog 基线**: 离真正的 source scan、product manifest、mesh/texture upload 还有工具链工作。
