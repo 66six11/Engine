@@ -106,7 +106,7 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 - Unity RenderGraph: `RenderGraph.cs` + `RenderGraphBuilder.cs` + `RenderGraphPass.cs` 分离
 - Filament FrameGraph: `FrameGraph.h` + `FrameGraphPassResources.h` + `FrameGraphHandle.h` 分离
 
-**已修复 (Phase 1+2+3+4+5-A/B)**:
+**已修复 (Phase 1+2+3+4+5)**:
 1. ADR-001 记录拆分策略 (`docs/rendergraph/adr-001-header-split.md`)
 2. Phase 1: 提取纯数据类型到 `render_graph_types.hpp` (~200 行) — handles, enums, descs, schema
 3. Phase 2: `vulkan_render_graph.hpp` (adapter) 改为只依赖 `render_graph_types.hpp`，不再依赖完整 `render_graph.hpp`
@@ -123,15 +123,17 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 14. Phase 4-H: transient lifetime/resource transition helper 实现移入 `src/render_graph_lifetime.cpp`
 15. Phase 4-I: debug label/table formatting helper 实现移入 `src/render_graph_debug.cpp`
 16. Phase 5-A/B: `RenderGraphCommandList` 提取到 `render_graph_command_list.hpp`，pass context 与 schema/executor registry 提取到 `render_graph_execution.hpp`
+17. Phase 5-D: `RenderGraph` / `RenderGraph::PassBuilder` 声明提取到 `render_graph_builder.hpp`，`render_graph.hpp` 收敛为纯聚合头
 
 **当前结构**:
 ```
 render_graph_types.hpp      — 纯数据契约，无内部依赖
 render_graph_command_list.hpp — command summary accumulator，只依赖 types
 render_graph_execution.hpp  — pass context、callback、schema/executor registry，只依赖 types/core result
+render_graph_builder.hpp    — RenderGraph/PassBuilder 声明、模板 builder 入口、private helper 声明
 render_graph_compile.hpp    — 编译产物，只依赖 types
 render_graph_diagnostics.hpp — diagnostics snapshot，只依赖 compile/types
-render_graph.hpp            — aggregate + RenderGraph/PassBuilder 声明、模板 builder 入口、private helper 声明
+render_graph.hpp            — aggregate header，兼容旧 include
 src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、compile/execute、diagnostics formatting 实现
 src/render_graph_debug.cpp — debug label/table formatting helper 实现
 src/render_graph_dependencies.cpp — dependency/culling/producer helper 实现
@@ -140,7 +142,6 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
 ```
 
 **待完成 (Phase 5+)**:
-- 继续评估是否拆出 `PassBuilder` / `RenderGraph` builder 声明到独立 header
 - 后续新增 cache、alias、multi-queue 或 unsafe/native pass 前，优先保持窄头自包含测试与 include 边界
 
 ---
@@ -494,7 +495,7 @@ Scene View panel 的 camera/unproject code (`editor_viewport_camera.hpp`) 已经
 
 1. **Editor context 仍需 capability-scoped 收敛**: command/transaction 已有基础，但 `EditorContext` / `EditorFrameContext` 仍是宽服务集合，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
 2. **Grid 仍需 camera-aware policy 和 pixel smoke**: renderer-owned debug-line GPU pass 已落地，但 grid provider 仍是固定原点 packet，尚未按 camera range/fade 生成稳定可读网格，也未做像素/readback 级 camera-difference 验证。
-3. **`render_graph.hpp` 仍需继续拆分实现边界**: types / compile headers 已提取，后续复杂 compiler/cache/unsafe pass 前还需要把更多实现移出大型 public header。
+3. **RenderGraph 内部 helper 声明仍需继续收敛**: public headers 已拆成 types / command / execution / builder / compile / diagnostics / aggregate，后续复杂 compiler/cache/unsafe pass 前还需要评估是否把 private compile、validation、dependency、lifetime helper 声明继续收敛到内部 implementation headers。
 4. **Asset pipeline 只有 metadata / catalog 基线**: 离真正的 source scan、product manifest、mesh/texture upload 还有工具链工作。
 5. **renderer_basic_vulkan 仍是单 TU `.inl` 分片**: 后续 renderer pass 增多前需要拆分编译单元，降低改动耦合和编译成本。
 

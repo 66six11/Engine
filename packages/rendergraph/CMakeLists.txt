@@ -44,6 +44,7 @@ if(ASHARIA_BUILD_TESTS)
       tests/rendergraph_command_list_header_test.cpp
       tests/rendergraph_types_header_test.cpp
       tests/rendergraph_execution_header_test.cpp
+      tests/rendergraph_builder_header_test.cpp
       tests/rendergraph_compile_header_test.cpp
       tests/rendergraph_diagnostics_header_test.cpp
       tests/rendergraph_aggregate_header_test.cpp

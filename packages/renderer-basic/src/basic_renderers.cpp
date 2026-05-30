@@ -19,7 +19,7 @@
 #include "asharia/core/error.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp"
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_builder.hpp"
 #include "asharia/shader_slang/reflection.hpp"
 
 namespace asharia {

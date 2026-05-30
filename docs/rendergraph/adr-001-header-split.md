@@ -67,7 +67,7 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 | `RenderGraphPassSchema` | 182-189 |
 | `RenderGraphCommand` | 191-198 |
 
-### What stays in `render_graph.hpp`
+### What stayed in `render_graph.hpp` after Phase 1
 
 - `RenderGraphCommandList` class (200+)
 - `RenderGraph` class + `PassBuilder`
@@ -102,10 +102,13 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 - Phase 5-A/B moved `RenderGraphCommandList` into `render_graph_command_list.hpp`,
   moved pass execution context plus schema/executor registries into
   `render_graph_execution.hpp`, and kept `render_graph.hpp` as the aggregate include
+- Phase 5-D moved `RenderGraph` and `RenderGraph::PassBuilder` declarations into
+  `render_graph_builder.hpp`, leaving `render_graph.hpp` as a pure aggregate include
 - Diagnostics snapshot types now live in `render_graph_diagnostics.hpp`; consumers that only
   inspect diagnostics should include that narrow header instead of the aggregate header
 - Consumers that only record command summaries should include `render_graph_command_list.hpp`;
   consumers that only register schemas or executors should include `render_graph_execution.hpp`
+- Consumers that build graphs directly can include `render_graph_builder.hpp`
 
 ## Consequences
 
@@ -115,6 +118,7 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 - Includers that only need command recording helpers can include `render_graph_command_list.hpp`
 - Includers that only need pass context, schema registry, or executor registry can include
   `render_graph_execution.hpp`
+- Includers that build graph declarations can include `render_graph_builder.hpp`
 - Includers that only need diagnostics can include `render_graph_diagnostics.hpp`
 - Reduces transitive compile impact when RenderGraph internals change
 - Names `render_graph_types.hpp` directly convey purpose ("just the data contracts")
