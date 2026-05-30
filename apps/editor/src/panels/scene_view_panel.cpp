@@ -1,6 +1,7 @@
 ﻿#include "panels/scene_view_panel.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <imgui.h>
 #include <string>
@@ -212,14 +213,14 @@ namespace asharia::editor {
         cameraExtent_ = viewportExtent;
     }
 
-    void SceneViewPanel::handleCameraNavigation(EditorExtent2D viewportExtent) {
+    bool SceneViewPanel::handleCameraNavigation(EditorExtent2D viewportExtent) {
         const bool viewportHovered = ImGui::IsItemHovered();
         const ImVec2 mouseDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
         const ImVec2 panDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
         const float scrollDelta = ImGui::GetIO().MouseWheel;
 
         if (!viewportHovered) {
-            return;
+            return false;
         }
 
         bool cameraChanged = false;
@@ -230,27 +231,21 @@ namespace asharia::editor {
                                       mouseDelta.y * kOrbitSpeed);
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Right);
             cameraChanged = true;
-            navigating_ = true;
         }
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle) &&
             (std::fabs(panDelta.x) > 0.0F || std::fabs(panDelta.y) > 0.0F)) {
             panEditorViewportCamera(camera_, panDelta.x, panDelta.y, viewportExtent);
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Middle);
             cameraChanged = true;
-            navigating_ = true;
         }
         if (std::fabs(scrollDelta) > 0.0F) {
             dollyEditorViewportCamera(camera_, scrollDelta);
             cameraChanged = true;
-            navigating_ = true;
-        }
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Right) &&
-            !ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
-            navigating_ = false;
         }
         if (cameraChanged) {
             camera_ = editorViewportCameraForExtent(camera_, viewportExtent);
         }
+        return cameraChanged;
     }
 
     void SceneViewPanel::drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
@@ -282,7 +277,7 @@ namespace asharia::editor {
         const ImVec2 viewportMin = ImGui::GetItemRectMin();
         const ImVec2 viewportMax = ImGui::GetItemRectMax();
         const bool viewportHovered = ImGui::IsItemHovered();
-        handleCameraNavigation(viewportExtent);
+        const bool cameraChanged = handleCameraNavigation(viewportExtent);
         const SceneOverlayStripResult overlayStrip =
             drawSceneOverlayStrip(*panelContext.ui, *panelContext.tools, desc_.id.value,
                                   viewportMin, viewportMax, overlayFlags_);
@@ -298,7 +293,7 @@ namespace asharia::editor {
             addEditorViewportRepaintReason(refresh.repaintReasons,
                                            EditorViewportRepaintReason::OverlayFlagsChanged);
         }
-        if (navigating_) {
+        if (cameraChanged) {
             addEditorViewportRepaintReason(refresh.repaintReasons,
                                            EditorViewportRepaintReason::CameraInputChanged);
         }

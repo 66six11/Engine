@@ -149,6 +149,26 @@ namespace asharia::editor {
             asharia::logError("Editor viewport smoke found invalid camera extent handling.");
             return false;
         }
+
+        EditorViewportCamera dollyCamera = camera;
+        dollyEditorViewportCamera(dollyCamera, 1.0F);
+        if (editorVec3Distance(dollyCamera.position, dollyCamera.target) >=
+            editorVec3Distance(camera.position, camera.target)) {
+            asharia::logError("Editor viewport smoke found invalid camera dolly direction.");
+            return false;
+        }
+
+        EditorViewportCamera panCamera = camera;
+        panEditorViewportCamera(panCamera, 10.0F, 10.0F, extent);
+        if (panCamera.position[0] >= camera.position[0] ||
+            panCamera.target[0] >= camera.target[0] ||
+            panCamera.position[1] >= camera.position[1] ||
+            panCamera.target[1] >= camera.target[1] ||
+            !closeFloat(editorVec3Distance(panCamera.position, panCamera.target),
+                        editorVec3Distance(camera.position, camera.target))) {
+            asharia::logError("Editor viewport smoke found invalid reversed camera pan direction.");
+            return false;
+        }
         return true;
     }
 

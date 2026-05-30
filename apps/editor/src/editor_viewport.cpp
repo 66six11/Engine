@@ -318,8 +318,8 @@ namespace asharia::editor {
             subtractEditorVec3(camera.target, camera.position),
             subtractEditorVec3(camera.target, camera.position)));
         const float panScale = distanceToTarget * 0.0025F;
-        const float panX = -deltaX * panScale;
-        const float panY = deltaY * panScale;
+        const float panX = deltaX * panScale;
+        const float panY = -deltaY * panScale;
         const EditorVec3 offset{
             (right[0] * panX) + (viewUp[0] * panY),
             (right[1] * panX) + (viewUp[1] * panY),

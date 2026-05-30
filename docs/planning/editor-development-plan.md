@@ -1420,12 +1420,14 @@ Implementation:
 - `unprojectEditorViewportPoint()` maps viewport-local pixels through inverse view-projection into a near-plane origin,
   far-plane point and normalized world ray. GLM is an `apps/editor` implementation detail and is not exposed in the public
   viewport API.
+- The follow-up camera input slice adds right-drag orbit, reversed middle-drag pan and mouse-wheel dolly; every camera
+  mutation, including wheel-only dolly, submits `CameraInputChanged` so on-demand Scene View recording refreshes immediately.
 
 Validation:
 
 - `--smoke-editor-viewport` validates the default center unproject ray, near-plane origin, normalized direction, corner
-  orientation, zero-extent rejection, invalid matrix rejection and resize aspect handling alongside RenderView camera
-  diagnostics.
+  orientation, zero-extent rejection, invalid matrix rejection, resize aspect handling, dolly direction and reversed pan
+  direction alongside RenderView camera diagnostics.
 
 ### 21.12 Pass Graph Node View
 
@@ -1707,18 +1709,16 @@ Current completed slices:
 - `feat: add scene view unproject foundation`: `SceneViewPanel` owns transient editor camera state, viewport resize
   recomputes camera projection data, and `unprojectEditorViewportPoint()` maps viewport-local pixels through inverse
   view-projection to near/far world rays for later picking, gizmos and camera-aware grid policy.
+- `feat: add scene view camera input repaint`: `SceneViewPanel` applies right-drag orbit, reversed middle-drag pan and
+  mouse-wheel dolly to the panel-owned camera. Any camera mutation emits `CameraInputChanged`, so wheel-only dolly refreshes
+  the on-demand Scene View immediately instead of waiting for a later drag input.
 
-1. `feat: add scene view camera input repaint`
-
-Add the minimum orbit/pan/dolly input semantics needed to mutate panel-owned Scene View camera state and emit
-`CameraInputChanged` repaint reason. No gizmo, picking or selection mutation in that slice.
-
-2. `feat: add camera-aware scene grid`
+1. `feat: add camera-aware scene grid`
 
 After minimum camera interaction semantics exist, add the Scene View-only overlay policy using RenderView camera params and
 the debug/world-line route. No gizmo interaction, picking or selection outline in that slice.
 
-3. `feat: add pass/event texture preview upgrade`
+2. `feat: add pass/event texture preview upgrade`
 
 After replay identity is stable, upgrade image-resource preview to pass/event-selected output preview and optional explicit
 debug preservation for resources that cannot be replayed.
