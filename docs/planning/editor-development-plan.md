@@ -205,6 +205,15 @@ private:
     virtual void drawViewportPanel(EditorViewportPanelDrawContext& context,
                                    EditorPanelState& state) = 0;
 };
+
+class ImGuiRenderGraphEditorPanel : public ImGuiEditorPanel {
+public:
+    void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+private:
+    virtual void drawRenderGraphPanel(EditorRenderGraphPanelDrawContext& context,
+                                      EditorPanelState& state) = 0;
+};
 ```
 
 Future `editor-core` may keep `EditorId`, action/event types, panel descriptor/state and registry metadata. It must not keep
@@ -1143,7 +1152,7 @@ Scope:
 Implementation:
 
 - `RenderGraphPanel` is now the Live RG View and reads `EditorRenderGraphSnapshotProvider` through
-  the diagnostics category draw context.
+  `EditorRenderGraphPanelDrawContext`.
 - `FrameDebuggerPanel` owns both the Frame view and its RenderGraph view; both read `EditorFrameDebugger` captures.
 - `panels/render_graph_snapshot_view.*` contains the shared read-only table renderer.
 - `EditorViewportCoordinator` publishes the latest live RenderGraph snapshot and tracks Live RG View snapshot consumption.

@@ -4,13 +4,13 @@
 
 namespace asharia::editor {
 
-    class RenderGraphPanel final : public ImGuiDiagnosticsEditorPanel {
+    class RenderGraphPanel final : public ImGuiRenderGraphEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
         void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) override;
 
     private:
-        void drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
+        void drawRenderGraphPanel(EditorRenderGraphPanelDrawContext& context,
                                   EditorPanelState& state) override;
 
         EditorPanelDesc desc_{

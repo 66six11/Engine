@@ -613,13 +613,13 @@ namespace asharia::editor {
         }
     }
 
-    void FrameDebuggerPanel::drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
-                                                  EditorPanelState& state) {
+    void FrameDebuggerPanel::drawFrameDebuggerPanel(EditorFrameDebuggerPanelDrawContext& context,
+                                                    EditorPanelState& state) {
         static_cast<void>(state);
 
         FrameDebuggerPanelContext panelContext{
             .ui = &context.ui,
-            .frameDebugger = &context.diagnostics.frameDebugger,
+            .frameDebugger = &context.frameDebugger,
         };
         const std::optional<EditorFrameDebugCapture>& pausedCapture =
             panelContext.frameDebugger->pausedCapture();

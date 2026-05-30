@@ -30,7 +30,9 @@ namespace asharia::editor {
 
     struct EditorPanelDrawContext {
         EditorViewportPanelDrawContext viewport;
-        EditorDiagnosticsPanelDrawContext diagnostics;
+        EditorLogPanelDrawContext log;
+        EditorRenderGraphPanelDrawContext renderGraph;
+        EditorFrameDebuggerPanelDrawContext frameDebugger;
         EditorSettingsPanelDrawContext settings;
         EditorToolsPanelDrawContext tools;
     };
@@ -45,9 +47,18 @@ namespace asharia::editor {
         drawViewportPanel(context.viewport, state);
     }
 
-    void ImGuiDiagnosticsEditorPanel::draw(EditorPanelDrawContext& context,
+    void ImGuiLogEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawLogPanel(context.log, state);
+    }
+
+    void ImGuiRenderGraphEditorPanel::draw(EditorPanelDrawContext& context,
                                            EditorPanelState& state) {
-        drawDiagnosticsPanel(context.diagnostics, state);
+        drawRenderGraphPanel(context.renderGraph, state);
+    }
+
+    void ImGuiFrameDebuggerEditorPanel::draw(EditorPanelDrawContext& context,
+                                             EditorPanelState& state) {
+        drawFrameDebuggerPanel(context.frameDebugger, state);
     }
 
     void ImGuiSettingsEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
@@ -187,12 +198,21 @@ namespace asharia::editor {
                     .input = context.input,
                     .viewport = context.viewport,
                 },
-            .diagnostics =
-                EditorDiagnosticsPanelDrawContext{
+            .log =
+                EditorLogPanelDrawContext{
                     .ui = context.ui,
-                    .diagnostics = context.diagnostics,
-                    .input = context.input,
-                    .renderGraph = context.renderGraph,
+                    .diagnosticsLog = context.diagnostics.log,
+                    .inputRouter = context.input.router,
+                },
+            .renderGraph =
+                EditorRenderGraphPanelDrawContext{
+                    .ui = context.ui,
+                    .snapshots = context.renderGraph.snapshots,
+                },
+            .frameDebugger =
+                EditorFrameDebuggerPanelDrawContext{
+                    .ui = context.ui,
+                    .frameDebugger = context.diagnostics.frameDebugger,
                 },
             .settings =
                 EditorSettingsPanelDrawContext{

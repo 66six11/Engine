@@ -28,14 +28,13 @@ namespace asharia::editor {
         return desc_;
     }
 
-    void LogPanel::drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
-                                        EditorPanelState& state) {
+    void LogPanel::drawLogPanel(EditorLogPanelDrawContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
         LogPanelContext panelContext{
             .ui = &context.ui,
-            .input = &context.input.router.snapshot(),
-            .diagnosticsLog = &context.diagnostics.log,
+            .input = &context.inputRouter.snapshot(),
+            .diagnosticsLog = &context.diagnosticsLog,
         };
         const EditorI18n& i18n = panelContext.ui->i18n;
         const std::string modeText =

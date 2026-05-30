@@ -29,13 +29,13 @@ namespace asharia::editor {
         }
     }
 
-    void RenderGraphPanel::drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
+    void RenderGraphPanel::drawRenderGraphPanel(EditorRenderGraphPanelDrawContext& context,
                                                 EditorPanelState& state) {
         static_cast<void>(state);
 
         RenderGraphPanelContext panelContext{
             .ui = &context.ui,
-            .snapshots = &context.renderGraph.snapshots,
+            .snapshots = &context.snapshots,
         };
         const std::optional<EditorRenderGraphSnapshot> liveSnapshot =
             panelContext.snapshots->latestLiveRenderGraphSnapshot();

@@ -99,11 +99,20 @@ namespace asharia::editor {
         EditorFrameViewportContext& viewport;
     };
 
-    struct EditorDiagnosticsPanelDrawContext {
+    struct EditorLogPanelDrawContext {
         const EditorFrameUiContext& ui;
-        EditorFrameDiagnosticsContext& diagnostics;
-        EditorFrameInputContext& input;
-        EditorFrameRenderGraphContext& renderGraph;
+        EditorDiagnosticsLog& diagnosticsLog;
+        EditorInputRouter& inputRouter;
+    };
+
+    struct EditorRenderGraphPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        EditorRenderGraphSnapshotProvider& snapshots;
+    };
+
+    struct EditorFrameDebuggerPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        EditorFrameDebugger& frameDebugger;
     };
 
     struct EditorSettingsPanelDrawContext {
@@ -151,13 +160,30 @@ namespace asharia::editor {
                                        EditorPanelState& state) = 0;
     };
 
-    class ImGuiDiagnosticsEditorPanel : public ImGuiEditorPanel {
+    class ImGuiLogEditorPanel : public ImGuiEditorPanel {
     public:
         void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
 
     private:
-        virtual void drawDiagnosticsPanel(EditorDiagnosticsPanelDrawContext& context,
+        virtual void drawLogPanel(EditorLogPanelDrawContext& context, EditorPanelState& state) = 0;
+    };
+
+    class ImGuiRenderGraphEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawRenderGraphPanel(EditorRenderGraphPanelDrawContext& context,
                                           EditorPanelState& state) = 0;
+    };
+
+    class ImGuiFrameDebuggerEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawFrameDebuggerPanel(EditorFrameDebuggerPanelDrawContext& context,
+                                            EditorPanelState& state) = 0;
     };
 
     class ImGuiSettingsEditorPanel : public ImGuiEditorPanel {
