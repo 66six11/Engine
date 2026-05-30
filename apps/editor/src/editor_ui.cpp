@@ -30,8 +30,44 @@ namespace asharia::editor {
             return converted;
         }
 
-        [[nodiscard]] const std::array<EditorUiTheme, 7>& themes() {
-            static const std::array<EditorUiTheme, 7> kThemes{
+        [[nodiscard]] const std::array<EditorUiTheme, 8>& themes() {
+            static const std::array<EditorUiTheme, 8> kThemes{
+                EditorUiTheme{
+                    .id = EditorUiThemeId::BlackDefault,
+                    .storageName = "black-default",
+                    .name = "Black Default",
+                    .appBackground = rgb(17, 18, 20),
+                    .panelBackground = rgb(24, 25, 29),
+                    .floatingBackground = rgb(30, 31, 36),
+                    .panelBackgroundAlt = rgb(28, 29, 33),
+                    .titleBackground = rgb(20, 21, 24),
+                    .menuBackground = rgb(18, 19, 22),
+                    .inputBackground = rgb(22, 23, 26),
+                    .surface = rgb(29, 30, 34),
+                    .surfaceHover = rgb(39, 41, 47),
+                    .surfaceActive = rgb(44, 64, 80),
+                    .border = rgb(49, 52, 60),
+                    .borderStrong = rgb(66, 70, 80),
+                    .divider = rgb(39, 41, 48),
+                    .text = rgb(232, 236, 241),
+                    .textSecondary = rgb(177, 185, 193),
+                    .textMuted = rgb(125, 135, 146),
+                    .textDisabled = rgb(82, 90, 101),
+                    .accent = rgb(92, 176, 221),
+                    .accentHover = rgb(121, 199, 235),
+                    .accentActive = rgb(151, 218, 248),
+                    .selection = rgb(38, 65, 84),
+                    .viewportBackground = rgb(36, 36, 39),
+                    .info = rgb(121, 199, 235),
+                    .success = rgb(113, 203, 137),
+                    .warning = rgb(226, 183, 89),
+                    .danger = rgb(232, 102, 113),
+                    .windowRounding = 2.0F,
+                    .childRounding = 2.0F,
+                    .frameRounding = 3.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
+                },
                 EditorUiTheme{
                     .id = EditorUiThemeId::ClassicBlueGray,
                     .storageName = "classic-blue-gray-2",
@@ -289,7 +325,7 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] EditorUiThemeId& currentThemeIdStorage() {
-            static EditorUiThemeId currentThemeId = EditorUiThemeId::ClassicBlueGray;
+            static EditorUiThemeId currentThemeId = EditorUiThemeId::BlackDefault;
             return currentThemeId;
         }
 
@@ -369,7 +405,7 @@ namespace asharia::editor {
     } // namespace
 
     EditorUiThemeId defaultEditorUiThemeId() {
-        return EditorUiThemeId::ClassicBlueGray;
+        return EditorUiThemeId::BlackDefault;
     }
 
     EditorUiThemeId currentEditorUiThemeId() {
@@ -381,6 +417,9 @@ namespace asharia::editor {
     }
 
     std::optional<EditorUiThemeId> editorUiThemeIdFromName(std::string_view name) {
+        if (name == "dark-black" || name == "Dark Black") {
+            return EditorUiThemeId::BlackDefault;
+        }
         if (name == "classic-blue-gray" || name == "Classic Blue Gray" || name == "night-slate" ||
             name == "Night Slate") {
             return EditorUiThemeId::ClassicBlueGray;

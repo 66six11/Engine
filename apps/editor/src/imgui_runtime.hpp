@@ -30,7 +30,7 @@ namespace asharia::editor {
 
     struct ImGuiRuntimeDesc {
         std::filesystem::path layoutIniPath;
-        EditorUiThemeId theme{EditorUiThemeId::ClassicBlueGray};
+        EditorUiThemeId theme{EditorUiThemeId::BlackDefault};
         bool enableCjkGlyphs{false};
         std::filesystem::path cjkFontPath;
         float fontPixelSize{16.0F};

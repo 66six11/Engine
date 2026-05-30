@@ -13,7 +13,7 @@ namespace asharia::editor {
 
     struct EditorSettings {
         EditorLocale locale{EditorLocale::EnUs};
-        EditorUiThemeId theme{EditorUiThemeId::ClassicBlueGray};
+        EditorUiThemeId theme{EditorUiThemeId::BlackDefault};
     };
 
     [[nodiscard]] std::filesystem::path editorUserSettingsPath();

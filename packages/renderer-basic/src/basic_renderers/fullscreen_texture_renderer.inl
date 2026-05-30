@@ -511,7 +511,7 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     bindings.push_back(basicRenderViewTargetBinding(renderTarget, viewTarget));
 
     constexpr BasicTransferClearParams kClearParams{
-        .color = {0.18F, 0.36F, 0.95F, 1.0F},
+        .color = {0.12F, 0.12F, 0.13F, 1.0F},
     };
     constexpr BasicFullscreenParams kFullscreenParams{
         .tint = {1.0F, 1.0F, 1.0F, 1.0F},

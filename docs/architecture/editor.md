@@ -211,9 +211,9 @@ draw its compact grid/gizmo/selection-outline strip over the sampled viewport wh
 ### ImGui theme
 
 `editor_ui` owns the editor-local Dear ImGui style tokens and the built-in editor theme catalog. The default theme is
-`classic-blue-gray-2` (Classic Blue Gray 2.0 / Night Slate); the legacy `classic-blue-gray` settings value is still accepted
-as an alias. Alternate themes include warm graphite amber, forest green slate, purple electric, carbon copper, cool gray
-teal and light graphite orange. `ImGuiRuntime::create()` applies the startup theme from editor settings, and runtime theme
+`black-default` (Black Default); `classic-blue-gray-2` remains available, and the legacy `classic-blue-gray` settings value
+is still accepted as an alias. Alternate themes include warm graphite amber, forest green slate, purple electric, carbon
+copper, cool gray teal and light graphite orange. `ImGuiRuntime::create()` applies the startup theme from editor settings, and runtime theme
 changes are applied through `EditorSettingsController`. This is editor shell presentation state only; renderer, RHI and
 runtime packages do not depend on theme colors, rounding values or component preview helpers.
 

@@ -5,7 +5,7 @@
 本文定义 Asharia Editor 第一版视觉与交互风格目标。它是设计规范和后续实现约束，不替代
 `docs/architecture/editor.md` 的当前架构事实，也不替代 `docs/planning/editor-development-plan.md` 的阶段拆分。
 
-配色值以当前 `Classic Blue Gray 2.0 / Night Slate` 主题实现为准。本文不重新定义具体 hex 色表，重点约束布局、
+配色值以当前 `Black Default` 主题实现为准。本文不重新定义具体 hex 色表，重点约束布局、
 密度、组件状态、viewport 视觉系统、主题数据结构和颜色空间接入方式。
 
 ## 定位
@@ -322,16 +322,16 @@ Inspector：
 
 ```json
 {
-  "name": "Classic Blue Gray 2.0",
-  "id": "classic-blue-gray-2",
+  "name": "Black Default",
+  "id": "black-default",
   "density": "compact",
   "colorEncoding": "srgb8",
   "ui": {
-    "appBg": "#171D24",
-    "panelBg": "#202833"
+    "appBg": "#111214",
+    "panelBg": "#18191D"
   },
   "viewport": {
-    "bg": "#10161D",
+    "bg": "#242427",
     "gridMinor": "#263342"
   },
   "metrics": {
@@ -476,17 +476,17 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debug
 Future color validation should add one focused readback test:
 
 ```text
-input authoring color: #171D24
+input authoring color: #111214
 draw no-blend swatch through editor UI pass
 read back SRGB attachment bytes
-expected RGB: 17 1D 24, tolerance +/- 1
+expected RGB: 11 12 14, tolerance +/- 1
 ```
 
 ## Current Status
 
 Implemented:
 
-- Built-in editor themes with `Classic Blue Gray 2.0` as default.
+- Built-in editor themes with `Black Default` as default and `Classic Blue Gray 2.0` retained.
 - User setting persistence for theme selection.
 - `ColorSrgba8` theme storage.
 - encoded sRGB ImGui adapter.

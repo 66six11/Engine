@@ -657,32 +657,19 @@ namespace asharia::editor {
         return true;
     }
 
-    [[nodiscard]] bool validateEditorThemeSmoke(EditorRunMode mode, EditorUiThemeId expectedTheme) {
-        if (!isEditorSmokeMode(mode)) {
-            return true;
-        }
+    [[nodiscard]] bool colorMatches(ColorSrgba8 color, std::uint8_t red, std::uint8_t green,
+                                    std::uint8_t blue, std::uint8_t alpha) {
+        return color.r == red && color.g == green && color.b == blue && color.a == alpha;
+    }
 
-        const std::span<const EditorUiTheme> themes = editorUiThemes();
-        if (themes.size() != 7U) {
+    [[nodiscard]] bool validateEditorThemeCatalogSmoke(std::span<const EditorUiTheme> themes) {
+        if (themes.size() != 8U) {
             asharia::logError("Editor theme smoke found an unexpected theme count.");
             return false;
         }
-        if (defaultEditorUiThemeId() != EditorUiThemeId::ClassicBlueGray ||
-            editorUiThemeName(defaultEditorUiThemeId()) != "classic-blue-gray-2") {
+        if (defaultEditorUiThemeId() != EditorUiThemeId::BlackDefault ||
+            editorUiThemeName(defaultEditorUiThemeId()) != "black-default") {
             asharia::logError("Editor theme smoke found an invalid default theme.");
-            return false;
-        }
-        const EditorUiTheme& classicTheme = editorUiTheme(EditorUiThemeId::ClassicBlueGray);
-        const bool classicAppBgMatches =
-            classicTheme.appBackground.r == 0x17U && classicTheme.appBackground.g == 0x1DU &&
-            classicTheme.appBackground.b == 0x24U && classicTheme.appBackground.a == 0xFFU;
-        const bool classicAccentMatches =
-            classicTheme.accent.r == 0x72U && classicTheme.accent.g == 0xB7U &&
-            classicTheme.accent.b == 0xE8U && classicTheme.accent.a == 0xFFU;
-        if (!classicAppBgMatches || !classicAccentMatches ||
-            toImGuiEncodedSrgbU32(classicTheme.appBackground) !=
-                IM_COL32(0x17U, 0x1DU, 0x24U, 0xFFU)) {
-            asharia::logError("Editor theme smoke found an invalid encoded sRGB theme byte.");
             return false;
         }
         for (std::size_t index = 0; index < themes.size(); ++index) {
@@ -697,10 +684,41 @@ namespace asharia::editor {
                 }
             }
         }
+        return true;
+    }
+
+    [[nodiscard]] bool validateEditorThemeColorSmoke() {
+        const EditorUiTheme& blackTheme = editorUiTheme(EditorUiThemeId::BlackDefault);
+        if (!colorMatches(blackTheme.appBackground, 0x11U, 0x12U, 0x14U, 0xFFU) ||
+            !colorMatches(blackTheme.viewportBackground, 0x24U, 0x24U, 0x27U, 0xFFU) ||
+            toImGuiEncodedSrgbU32(blackTheme.appBackground) !=
+                IM_COL32(0x11U, 0x12U, 0x14U, 0xFFU)) {
+            asharia::logError("Editor theme smoke found an invalid black default theme byte.");
+            return false;
+        }
+
+        const EditorUiTheme& classicTheme = editorUiTheme(EditorUiThemeId::ClassicBlueGray);
+        if (!colorMatches(classicTheme.appBackground, 0x17U, 0x1DU, 0x24U, 0xFFU) ||
+            !colorMatches(classicTheme.accent, 0x72U, 0xB7U, 0xE8U, 0xFFU) ||
+            toImGuiEncodedSrgbU32(classicTheme.appBackground) !=
+                IM_COL32(0x17U, 0x1DU, 0x24U, 0xFFU)) {
+            asharia::logError("Editor theme smoke found an invalid encoded sRGB theme byte.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateEditorThemeNameResolutionSmoke() {
         const std::optional<EditorUiThemeId> defaultTheme =
-            editorUiThemeIdFromName("classic-blue-gray-2");
-        if (!defaultTheme || *defaultTheme != EditorUiThemeId::ClassicBlueGray) {
+            editorUiThemeIdFromName("black-default");
+        if (!defaultTheme || *defaultTheme != EditorUiThemeId::BlackDefault) {
             asharia::logError("Editor theme smoke could not resolve the default theme name.");
+            return false;
+        }
+        const std::optional<EditorUiThemeId> defaultThemeAlias =
+            editorUiThemeIdFromName("Dark Black");
+        if (!defaultThemeAlias || *defaultThemeAlias != EditorUiThemeId::BlackDefault) {
+            asharia::logError("Editor theme smoke could not resolve the black theme alias.");
             return false;
         }
         const std::optional<EditorUiThemeId> legacyDefaultTheme =
@@ -708,6 +726,18 @@ namespace asharia::editor {
         if (!legacyDefaultTheme || *legacyDefaultTheme != EditorUiThemeId::ClassicBlueGray) {
             asharia::logError(
                 "Editor theme smoke could not resolve the legacy default theme name.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateEditorThemeSmoke(EditorRunMode mode, EditorUiThemeId expectedTheme) {
+        if (!isEditorSmokeMode(mode)) {
+            return true;
+        }
+
+        if (!validateEditorThemeCatalogSmoke(editorUiThemes()) ||
+            !validateEditorThemeColorSmoke() || !validateEditorThemeNameResolutionSmoke()) {
             return false;
         }
         if (currentEditorUiThemeId() != expectedTheme) {

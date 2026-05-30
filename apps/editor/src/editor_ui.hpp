@@ -9,6 +9,7 @@
 namespace asharia::editor {
 
     enum class EditorUiThemeId {
+        BlackDefault,
         ClassicBlueGray,
         WarmGraphiteAmber,
         ForestGreen,
@@ -46,7 +47,7 @@ namespace asharia::editor {
     };
 
     struct EditorUiTheme {
-        EditorUiThemeId id{EditorUiThemeId::ClassicBlueGray};
+        EditorUiThemeId id{EditorUiThemeId::BlackDefault};
         std::string_view storageName;
         std::string_view name;
         ColorSrgba8 appBackground;
