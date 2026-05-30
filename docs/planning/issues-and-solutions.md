@@ -83,9 +83,10 @@
 **修复方案** (已完成):
 1. 新增 `builtin.transfer-fill-buffer` pass type + `BasicTransferFillBufferParams`
 2. 新增 `registerBasicTransferFillBufferSchema()` schema 注册
-3. Storage buffer 初始状态改为 `Undefined`，FillStorageBuffer pass 写入 `BufferTransferWrite`
-4. 移除 graph 外 `vkCmdFillBuffer`，将 fill 操作封装为 RenderGraph pass
-5. `--smoke-compute-dispatch` / `--smoke-rendergraph` 验证通过
+3. 新增 `RenderGraphCommandKind::FillBuffer` / `RenderGraphCommandList::fillBuffer()`，让 diagnostics 与 Frame Debug 能看到 buffer fill command summary
+4. Storage buffer 初始状态改为 `Undefined`，FillStorageBuffer pass 写入 `BufferTransferWrite`
+5. 移除 graph 外 `vkCmdFillBuffer`，将 fill 操作封装为 RenderGraph pass
+6. `--smoke-compute-dispatch` / `--smoke-rendergraph` 验证通过
 
 **Graph 执行顺序**:
 ```

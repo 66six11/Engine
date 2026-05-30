@@ -228,25 +228,35 @@ BasicComputeDispatchRenderer::recordFrame(const VulkanFrameRecordContext& frame)
     graph.addPass("FillStorageBuffer", kBasicTransferFillBufferPassType)
         .setParams(kBasicTransferFillBufferParamsType, kFillParams)
         .writeBuffer("target", storage)
-        .execute([&frame, &bufferBindings,
-                  this](RenderGraphPassContext pass) -> Result<void> {
+        .recordCommands([](RenderGraphCommandList& commands) {
+            commands.fillBuffer("target", kFillParams.value);
+        })
+        .execute([&frame, &bufferBindings, this](RenderGraphPassContext pass) -> Result<void> {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
             [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
                 frame, renderGraphPassDebugLabel(pass, {}, bufferBindings));
-            auto transitions =
-                recordRenderGraphBufferTransitions(frame, pass.bufferTransitionsBefore,
-                                                   bufferBindings);
+            auto params = readPassParams<BasicTransferFillBufferParams>(
+                pass, kBasicTransferFillBufferParamsType, "Transfer fill buffer pass");
+            if (!params) {
+                return std::unexpected{std::move(params.error())};
+            }
+            auto commands = validateBasicTransferFillBufferCommands(pass, *params);
+            if (!commands) {
+                return std::unexpected{std::move(commands.error())};
+            }
+            auto transitions = recordRenderGraphBufferTransitions(
+                frame, pass.bufferTransitionsBefore, bufferBindings);
             if (!transitions) {
                 return std::unexpected{std::move(transitions.error())};
             }
-            auto target =
-                findVulkanRenderGraphBufferTransferWrite(pass, "target", bufferBindings);
+            auto target = findVulkanRenderGraphBufferTransferWrite(pass, "target", bufferBindings);
             if (!target) {
                 return std::unexpected{std::move(target.error())};
             }
             vkCmdFillBuffer(frame.commandBuffer, target->vulkanBuffer, target->offset,
                             target->size == VK_WHOLE_SIZE ? storageBuffer_.size() : target->size,
-                            0);
+                            params->value);
+            ++computeStats_.bufferFillsRecorded;
             return {};
         });
 

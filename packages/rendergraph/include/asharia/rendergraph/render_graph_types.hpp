@@ -166,6 +166,7 @@ namespace asharia {
         SetVec4,
         DrawFullscreenTriangle,
         ClearColor,
+        FillBuffer,
         CopyImage,
         Dispatch,
     };

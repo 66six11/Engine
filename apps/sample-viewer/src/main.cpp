@@ -1444,9 +1444,9 @@ namespace {
 
     bool validateComputeDispatchStats(asharia::BasicComputeDispatchStats stats,
                                       std::string_view context) {
-        if (stats.dispatchesRecorded != 1) {
+        if (stats.bufferFillsRecorded != 1 || stats.dispatchesRecorded != 1) {
             asharia::logError(std::string{context} +
-                              " did not record exactly one compute dispatch.");
+                              " did not record exactly one buffer fill and compute dispatch.");
             return false;
         }
         return true;
@@ -3812,6 +3812,7 @@ namespace {
         RasterDrawList,
         ComputeDispatch,
         ComputeReadback,
+        TransferFillBuffer,
         DebugImageCopy,
     };
 
@@ -3956,6 +3957,14 @@ namespace {
         }
     }
 
+    void writeBufferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                      std::string_view omittedSlot, std::string_view slot,
+                                      asharia::RenderGraphBufferHandle buffer) {
+        if (omittedSlot != slot) {
+            pass.writeBuffer(std::string{slot}, buffer);
+        }
+    }
+
     void addBuiltinSchemaSmokeSlots(BuiltinSchemaSmokePass passKind,
                                     asharia::RenderGraph::PassBuilder& pass,
                                     BuiltinSchemaSmokeImages images,
@@ -3993,6 +4002,9 @@ namespace {
             break;
         case BuiltinSchemaSmokePass::ComputeReadback:
             addBuiltinComputeReadbackSmokeSlots(pass, images, omittedSlot);
+            break;
+        case BuiltinSchemaSmokePass::TransferFillBuffer:
+            writeBufferSlotUnlessOmitted(pass, omittedSlot, "target", images.storageTarget);
             break;
         case BuiltinSchemaSmokePass::DebugImageCopy:
             readTransferSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
@@ -4149,6 +4161,13 @@ namespace {
                 .paramsType = {},
                 .missingSlot = "source",
                 .context = "builtin compute readback",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::TransferFillBuffer,
+                .type = asharia::kBasicTransferFillBufferPassType,
+                .paramsType = asharia::kBasicTransferFillBufferParamsType,
+                .missingSlot = "target",
+                .context = "builtin transfer fill buffer",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::DebugImageCopy,
@@ -4627,6 +4646,8 @@ namespace {
         computeGraph.addPass("SeedComputeStorage", "basic.buffer-transfer-write")
             .setParamsType("basic.buffer-transfer-write.params")
             .writeBuffer("target", storageBuffer)
+            .recordCommands(
+                [](asharia::RenderGraphCommandList& commands) { commands.fillBuffer("target", 0); })
             .execute([&seedCallbackCount](
                          asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 if (context.name != "SeedComputeStorage" || context.bufferWrites.size() != 1 ||
@@ -4634,7 +4655,11 @@ namespace {
                     !context.bufferStorageReadWrites.empty() ||
                     context.bufferTransitionsBefore.size() != 1 ||
                     context.bufferTransitionsBefore.front().newState !=
-                        asharia::RenderGraphBufferState::TransferWrite) {
+                        asharia::RenderGraphBufferState::TransferWrite ||
+                    context.commands.size() != 1 ||
+                    context.commands.front().kind != asharia::RenderGraphCommandKind::FillBuffer ||
+                    context.commands.front().name != "target" ||
+                    context.commands.front().uintValues[0] != 0) {
                     return std::unexpected{asharia::Error{
                         asharia::ErrorDomain::RenderGraph,
                         0,
@@ -4712,6 +4737,9 @@ namespace {
             return false;
         }
         if (compiled->passes.size() != 3 || compiled->passes[0].name != "SeedComputeStorage" ||
+            compiled->passes[0].commands.size() != 1 ||
+            compiled->passes[0].commands.front().kind !=
+                asharia::RenderGraphCommandKind::FillBuffer ||
             compiled->passes[1].name != "ComputeDispatch" ||
             compiled->passes[2].name != "ComputeReadbackCopy" ||
             compiled->dependencies.size() != 2 || compiled->transientBuffers.size() != 1 ||
@@ -5389,7 +5417,7 @@ namespace {
                         .optional = false,
                     },
                 },
-            .allowedCommands = {},
+            .allowedCommands = {asharia::RenderGraphCommandKind::FillBuffer},
         });
         schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.buffer-read-fragment",

@@ -243,6 +243,8 @@ namespace asharia {
             return "DrawFullscreenTriangle";
         case RenderGraphCommandKind::ClearColor:
             return "ClearColor";
+        case RenderGraphCommandKind::FillBuffer:
+            return "FillBuffer";
         case RenderGraphCommandKind::CopyImage:
             return "CopyImage";
         case RenderGraphCommandKind::Dispatch:
@@ -266,6 +268,8 @@ namespace asharia {
                    std::to_string(command.floatValues[1]) + ", " +
                    std::to_string(command.floatValues[2]) + ", " +
                    std::to_string(command.floatValues[3]) + ")";
+        case RenderGraphCommandKind::FillBuffer:
+            return command.name + " = " + std::to_string(command.uintValues[0]);
         case RenderGraphCommandKind::CopyImage:
             return command.name + " -> " + command.secondaryName;
         case RenderGraphCommandKind::DrawFullscreenTriangle:

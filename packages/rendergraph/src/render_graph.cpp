@@ -122,6 +122,19 @@ namespace asharia {
         return *this;
     }
 
+    RenderGraphCommandList& RenderGraphCommandList::fillBuffer(std::string slotName,
+                                                               std::uint32_t value) {
+        commands_.push_back(RenderGraphCommand{
+            .kind = RenderGraphCommandKind::FillBuffer,
+            .name = std::move(slotName),
+            .secondaryName = {},
+            .floatValues = {},
+            .intValue = 0,
+            .uintValues = {value, 0, 0},
+        });
+        return *this;
+    }
+
     RenderGraphCommandList& RenderGraphCommandList::copyImage(std::string sourceSlotName,
                                                               std::string targetSlotName) {
         commands_.push_back(RenderGraphCommand{

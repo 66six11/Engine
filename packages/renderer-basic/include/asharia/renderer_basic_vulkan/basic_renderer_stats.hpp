@@ -16,6 +16,7 @@ namespace asharia {
     };
 
     struct BasicComputeDispatchStats {
+        std::uint64_t bufferFillsRecorded{};
         std::uint64_t dispatchesRecorded{};
     };
 

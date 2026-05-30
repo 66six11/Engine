@@ -104,6 +104,8 @@ namespace asharia::editor {
                 return "DrawFullscreenTriangle";
             case asharia::RenderGraphCommandKind::ClearColor:
                 return "ClearColor";
+            case asharia::RenderGraphCommandKind::FillBuffer:
+                return "FillBuffer";
             case asharia::RenderGraphCommandKind::CopyImage:
                 return "CopyImage";
             case asharia::RenderGraphCommandKind::Dispatch:

@@ -1253,6 +1253,27 @@ namespace asharia {
             return {};
         }
 
+        [[nodiscard]] Result<void>
+        validateBasicTransferFillBufferCommands(RenderGraphPassContext pass,
+                                                BasicTransferFillBufferParams params) {
+            if (pass.commands.size() != 1) {
+                return std::unexpected{
+                    renderGraphError("Transfer fill buffer pass expected exactly one command")};
+            }
+
+            const RenderGraphCommand& fill = pass.commands.front();
+            auto fillKind =
+                expectCommandKind(fill, RenderGraphCommandKind::FillBuffer, "Transfer fill buffer");
+            if (!fillKind) {
+                return std::unexpected{std::move(fillKind.error())};
+            }
+            if (fill.name != "target" || fill.uintValues[0] != params.value) {
+                return std::unexpected{
+                    renderGraphError("Transfer fill buffer command does not match typed params")};
+            }
+            return {};
+        }
+
         [[nodiscard]] Result<void> validateBasicComputeCommands(RenderGraphPassContext pass,
                                                                 BasicComputeDispatchParams params) {
             if (pass.commands.size() != 2) {

@@ -34,7 +34,8 @@ namespace asharia {
     inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
     inline constexpr char kBasicComputeReadbackPassType[] = "builtin.compute-readback";
     inline constexpr char kBasicTransferFillBufferPassType[] = "builtin.transfer-fill-buffer";
-    inline constexpr char kBasicTransferFillBufferParamsType[] = "builtin.transfer-fill-buffer.params";
+    inline constexpr char kBasicTransferFillBufferParamsType[] =
+        "builtin.transfer-fill-buffer.params";
     inline constexpr char kBasicDebugImageCopyPassType[] = "builtin.debug-image-copy";
 
     struct BasicTransferClearParams {
@@ -298,7 +299,7 @@ namespace asharia {
                         .optional = false,
                     },
                 },
-            .allowedCommands = {},
+            .allowedCommands = {RenderGraphCommandKind::FillBuffer},
         });
     }
 

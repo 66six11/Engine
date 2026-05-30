@@ -19,6 +19,7 @@ namespace asharia {
         RenderGraphCommandList& setVec4(std::string bindingName, std::array<float, 4> value);
         RenderGraphCommandList& drawFullscreenTriangle();
         RenderGraphCommandList& clearColor(std::string slotName, std::array<float, 4> color);
+        RenderGraphCommandList& fillBuffer(std::string slotName, std::uint32_t value);
         RenderGraphCommandList& copyImage(std::string sourceSlotName, std::string targetSlotName);
         RenderGraphCommandList& dispatch(std::uint32_t groupCountX, std::uint32_t groupCountY,
                                          std::uint32_t groupCountZ);

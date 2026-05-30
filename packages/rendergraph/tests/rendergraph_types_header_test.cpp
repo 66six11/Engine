@@ -15,7 +15,9 @@ namespace asharia::rendergraph_header_tests {
             .finalState = RenderGraphBufferState::HostRead,
         };
         [[maybe_unused]] const RenderGraphCommand command{
-            .kind = RenderGraphCommandKind::DrawFullscreenTriangle,
+            .kind = RenderGraphCommandKind::FillBuffer,
+            .name = "HeaderBuffer",
+            .uintValues = {42, 0, 0},
         };
     }
 

@@ -16,6 +16,7 @@ namespace {
     constexpr std::string_view kImageCopyPass = "test.image-copy";
     constexpr std::string_view kStorageReadWritePass = "test.storage-rw";
     constexpr std::string_view kBufferTransferReadPass = "test.buffer-transfer-read";
+    constexpr std::string_view kBufferTransferWritePass = "test.buffer-transfer-write";
     constexpr std::string_view kSideEffectPass = "test.side-effect";
 
     [[nodiscard]] bool contains(std::string_view text, std::string_view needle) {
@@ -213,6 +214,20 @@ namespace {
                     },
                 },
             .allowedCommands = {},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = std::string{kBufferTransferWritePass},
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::FillBuffer},
         });
         schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = std::string{kSideEffectPass},
@@ -570,6 +585,56 @@ namespace {
                       "RenderGraph diagnostics snapshot missed the TransferRead edge.");
     }
 
+    [[nodiscard]] bool compilesBufferFillCommand(
+        const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto target = graph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "FillTarget",
+            .byteSize = 256,
+            .initialState = asharia::RenderGraphBufferState::Undefined,
+            .finalState = asharia::RenderGraphBufferState::TransferRead,
+        });
+
+        graph.addPass("FillBuffer", std::string{kBufferTransferWritePass})
+            .writeBuffer("target", target)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.fillBuffer("target", 0xA5000000U);
+            });
+
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            std::cerr << compiled.error().message << '\n';
+            return false;
+        }
+        if (!expect(compiled->passes.size() == 1,
+                    "RenderGraph did not keep the buffer fill pass.")) {
+            return false;
+        }
+
+        const asharia::RenderGraphCompiledPass& fillPass = compiled->passes.front();
+        if (!expect(fillPass.commands.size() == 1 &&
+                        fillPass.commands.front().kind ==
+                            asharia::RenderGraphCommandKind::FillBuffer &&
+                        fillPass.commands.front().name == "target" &&
+                        fillPass.commands.front().uintValues[0] == 0xA5000000U,
+                    "RenderGraph did not preserve buffer fill command summary.")) {
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(*compiled);
+        if (!expect(snapshot.commands.size() == 1,
+                    "RenderGraph diagnostics snapshot missed buffer fill command nodes.")) {
+            return false;
+        }
+        const asharia::RenderGraphDiagnosticsCommandNode& fillCommand = snapshot.commands.front();
+        return expect(fillCommand.passIndex == 0 && fillCommand.declarationIndex == 0 &&
+                          fillCommand.commandIndex == 0 && fillCommand.passName == "FillBuffer" &&
+                          fillCommand.kind == asharia::RenderGraphCommandKind::FillBuffer &&
+                          fillCommand.detail == "target = 2768240640",
+                      "RenderGraph diagnostics snapshot buffer fill command node was unexpected.");
+    }
+
     [[nodiscard]] bool rejectsMissingProducers(
         const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph imageGraph;
@@ -648,6 +713,7 @@ int main() {
                         keepsImportedInitialReadBeforeOverwrite(schemas) &&
                         buildsDiagnosticsSnapshot(schemas) &&
                         compilesImageTransferCopy(schemas) &&
+                        compilesBufferFillCommand(schemas) &&
                         rejectsMissingProducers(schemas) &&
                         rejectsImportedResourcesWithoutFinalState(schemas);
 
