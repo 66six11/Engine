@@ -56,8 +56,9 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_settings` | editor-local user settings persistence plus runtime editor locale/theme switching | scene data, asset import settings or runtime/game configuration |
 | `editor_app_config` | editor run paths, smoke layout/settings isolation, i18n resource directory and locale environment parsing | service aggregation, panel registry ownership or GPU/window lifecycle |
 | `editor_vulkan_host` | editor window renderability wait, Vulkan context/frame-loop creation, swapchain extent readiness and one-frame RenderView/ImGui submission glue | panel registry ownership、action dispatch、persistent editor state or generic RHI abstraction |
+| `editor_loop_host` | main editor loop, per-frame frame-context construction, ImGui frame begin/end order, input/shortcut routing and smoke loop state | app service lifetime、window/GPU object creation、shutdown order or broad service aggregation |
 | `editor_shell_host` | per-frame shell capability context adaptation and panel draw dispatch | app service lifetime、renderer command recording、persistent editor state or broad service aggregation |
-| `editor_app` | startup orchestration、main editor loop、frame order、smoke modes、shutdown order | shell capability adaptation、panel widget details becoming feature-specific renderer logic、low-level Vulkan frame submission helpers |
+| `editor_app` | startup orchestration、service lifetime、startup smoke gates and shutdown order | main loop internals、shell capability adaptation、panel widget details becoming feature-specific renderer logic、low-level Vulkan frame submission helpers |
 | `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle and the editor ImGui fragment shader contract | panel registry、editor state、viewport target ownership |
 | `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |

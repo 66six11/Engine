@@ -81,6 +81,7 @@ add_executable(asharia-editor
     src/editor_i18n.cpp
     src/editor_inspected_world.cpp
     src/editor_input_router.cpp
+    src/editor_loop_host.cpp
     src/editor_panel.cpp
     src/editor_settings.cpp
     src/editor_shell_host.cpp

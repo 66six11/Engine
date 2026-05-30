@@ -64,6 +64,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
   app service bootstrap、主循环顺序和 shutdown 编排。
 - 2026-05-30：`editor_shell_host.hpp/.cpp` 已接管 shell capability context 适配和 panel draw dispatch；
   `editor_app.cpp` 继续保留 app service bootstrap、frame context 构造、主循环顺序和 shutdown 编排。
+- 2026-05-30：`editor_loop_host.hpp/.cpp` 已接管主循环、每帧 frame context 构造、ImGui frame
+  begin/end 顺序、input/shortcut routing 和 smoke loop state；`editor_app.cpp` 继续保留 app service
+  bootstrap、startup smoke gates 和 shutdown 编排。
 
 推荐顺序：
 
@@ -143,6 +146,7 @@ Rules:
 apps/editor/src/
   editor_app.hpp/.cpp
   editor_app_config.hpp/.cpp
+  editor_loop_host.hpp/.cpp
   editor_shell_host.hpp/.cpp
   editor_vulkan_host.hpp/.cpp
   editor_action.hpp/.cpp
@@ -161,9 +165,10 @@ apps/editor/src/
 
 | Module | Owns | Must not own |
 | --- | --- | --- |
-| `editor_app` | startup, loop, frame order, smoke modes, shutdown order | panel drawing details |
+| `editor_app` | startup, service lifetime, startup smoke gates and shutdown order | loop internals or panel drawing details |
 | `editor_app_config` | run paths, smoke settings/layout isolation, i18n resource directory, locale env parsing | service aggregation, panel registry or GPU lifecycle |
 | `editor_vulkan_host` | renderable-window wait, Vulkan context/frame-loop creation, swapchain extent readiness, one-frame RenderView/ImGui submission glue | action dispatch, panel/service ownership or persistent editor state |
+| `editor_loop_host` | main editor loop, per-frame frame-context construction, ImGui frame begin/end order, input/shortcut routing and smoke loop state | app service lifetime, window/GPU object creation or shutdown order |
 | `editor_shell_host` | shell capability context adaptation and panel draw dispatch for one editor frame | app service lifetime, renderer command recording or persistent editor state |
 | `editor_action` | action descriptors, callbacks, invocation, shortcut metadata | menu widget code |
 | `editor_event` | small typed queue for editor facts | global EventBus semantics |
@@ -529,8 +534,8 @@ Scope:
 - Keep rendered output and smoke behavior unchanged.
 - The transitional `editor_context` facade has since been retired; app loop now passes explicit services into shell,
   frame and smoke contexts, while `editor_app_config` owns run path / locale bootstrap helpers and
-  `editor_vulkan_host` owns Vulkan/window/frame submission helpers and `editor_shell_host` owns shell capability
-  adaptation.
+  `editor_vulkan_host` owns Vulkan/window/frame submission helpers, `editor_shell_host` owns shell capability
+  adaptation and `editor_loop_host` owns main-loop/frame-context orchestration.
 
 Validation:
 

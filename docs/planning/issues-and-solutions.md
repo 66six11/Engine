@@ -277,8 +277,14 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
 2. shell capability context 适配和 panel draw dispatch 不再内联在 `editor_app.cpp`
 3. `editor_shell_host` 只接收 shell 绘制当前帧所需引用，不聚合 app service lifetime，也不记录 renderer/Vulkan commands
 
+**已修复 (Step 2b-j)**:
+1. 新增 `apps/editor/src/editor_loop_host.hpp/.cpp`
+2. 主循环、每帧 `EditorFrameContext` 构造、ImGui frame begin/end 顺序、input/shortcut routing 和 smoke loop state
+   不再内联在 `editor_app.cpp`
+3. `editor_loop_host` 仍通过显式参数接收当前运行所需服务，不重新引入宽 app context / service locator facade
+
 **待完成 (Step 2b)**:
-- 继续拆分 `editor_app.cpp` 中的 app service bootstrap、frame context 构造和主循环编排
+- 继续拆分 `editor_app.cpp` 中的 app service bootstrap、startup smoke gates 和 shutdown 编排
 - 避免为方便传参重新引入宽 app context / service locator facade
 
 ---
@@ -551,7 +557,7 @@ Scene View panel 的 camera/unproject code (`editor_viewport_camera.hpp`) 已经
 
 ### 7.3 当前最需要关注的 5 个改变
 
-1. **Editor app glue 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，宽 dispatch bundle 已是 implementation detail，内置 panel draw context 已按 Scene View / Log / Live RG / Frame Debugger / Editor Settings / UI Style Preview 拆到 per-panel context，过渡期 `EditorContext` 已删除，run config helpers 已拆到 `editor_app_config`，Vulkan/window/frame submission helpers 已拆到 `editor_vulkan_host`，shell capability context 适配已拆到 `editor_shell_host`；但 `editor_app.cpp` 仍承担 app service bootstrap、frame context 构造和主循环编排，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
+1. **Editor app glue 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，宽 dispatch bundle 已是 implementation detail，内置 panel draw context 已按 Scene View / Log / Live RG / Frame Debugger / Editor Settings / UI Style Preview 拆到 per-panel context，过渡期 `EditorContext` 已删除，run config helpers 已拆到 `editor_app_config`，Vulkan/window/frame submission helpers 已拆到 `editor_vulkan_host`，shell capability context 适配已拆到 `editor_shell_host`，主循环和 frame context 构造已拆到 `editor_loop_host`；但 `editor_app.cpp` 仍承担 app service bootstrap、startup smoke gates 和 shutdown 编排，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
 2. **Grid 仍需 camera-aware policy 和 pixel smoke**: renderer-owned debug-line GPU pass 已落地，但 grid provider 仍是固定原点 packet，尚未按 camera range/fade 生成稳定可读网格，也未做像素/readback 级 camera-difference 验证。
 3. **RenderGraph 内部 helper 声明仍需继续收敛**: public headers 已拆成 types / command / execution / builder / compile / diagnostics / aggregate，后续复杂 compiler/cache/unsafe pass 前还需要评估是否把 private compile、validation、dependency、lifetime helper 声明继续收敛到内部 implementation headers。
 4. **Asset pipeline 只有 metadata / catalog 基线**: 离真正的 source scan、product manifest、mesh/texture upload 还有工具链工作。
