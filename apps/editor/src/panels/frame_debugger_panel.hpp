@@ -7,7 +7,7 @@ namespace asharia::editor {
     class FrameDebuggerPanel final : public ImGuiEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
-        void prepareWindow(EditorFrameContext& context, EditorPanelState& state) override;
+        void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) override;
         void draw(EditorFrameContext& context, EditorPanelState& state) override;
 
     private:

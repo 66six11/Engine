@@ -28,7 +28,8 @@ namespace asharia::editor {
 
     } // namespace
 
-    void ImGuiEditorPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
+    void ImGuiEditorPanel::prepareWindow(EditorPanelWindowContext& context,
+                                         EditorPanelState& state) {
         static_cast<void>(context);
         static_cast<void>(state);
     }
@@ -151,12 +152,15 @@ namespace asharia::editor {
     }
 
     void EditorPanelRegistry::drawPanels(EditorFrameContext& context) {
+        EditorPanelWindowContext windowContext{
+            .ui = context.ui,
+        };
         for (PanelEntry& entry : panels_) {
             if (!entry.state.open || entry.panel == nullptr) {
                 continue;
             }
 
-            entry.panel->prepareWindow(context, entry.state);
+            entry.panel->prepareWindow(windowContext, entry.state);
             if (entry.focusRequested) {
                 ImGui::SetNextWindowFocus();
                 entry.focusRequested = false;

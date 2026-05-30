@@ -174,7 +174,7 @@ namespace asharia::editor {
         return desc_;
     }
 
-    void SceneViewPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
+    void SceneViewPanel::prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
         const ImGuiCond sceneWindowCond =

@@ -13,7 +13,8 @@ namespace asharia::editor {
         return desc_;
     }
 
-    void RenderGraphPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
+    void RenderGraphPanel::prepareWindow(EditorPanelWindowContext& context,
+                                         EditorPanelState& state) {
         static_cast<void>(state);
         if (context.ui.smokeMode) {
             ImGui::SetNextWindowSize(ImVec2{560.0F, 320.0F}, ImGuiCond_Always);

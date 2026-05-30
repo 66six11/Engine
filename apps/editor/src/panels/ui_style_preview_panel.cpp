@@ -516,7 +516,8 @@ namespace asharia::editor {
         return desc_;
     }
 
-    void UiStylePreviewPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
+    void UiStylePreviewPanel::prepareWindow(EditorPanelWindowContext& context,
+                                            EditorPanelState& state) {
         static_cast<void>(state);
         const ImGuiCond condition =
             context.ui.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;

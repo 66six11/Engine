@@ -63,6 +63,10 @@ namespace asharia::editor {
         EditorI18n& i18n;
     };
 
+    struct EditorPanelWindowContext {
+        const EditorFrameUiContext& ui;
+    };
+
     struct EditorFrameDiagnosticsContext {
         EditorDiagnosticsLog& log;
         EditorFrameDebugger& frameDebugger;
@@ -108,7 +112,7 @@ namespace asharia::editor {
         virtual ~ImGuiEditorPanel() = default;
 
         [[nodiscard]] virtual const EditorPanelDesc& desc() const = 0;
-        virtual void prepareWindow(EditorFrameContext& context, EditorPanelState& state);
+        virtual void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state);
         virtual void draw(EditorFrameContext& context, EditorPanelState& state) = 0;
     };
 
