@@ -187,6 +187,8 @@ struct EditorPanelState {
     std::uint32_t contentHeight{1};
 };
 
+struct EditorPanelDrawContext; // opaque dispatch bundle owned by editor_panel.cpp
+
 class ImGuiEditorPanel {
 public:
     virtual ~ImGuiEditorPanel() = default;

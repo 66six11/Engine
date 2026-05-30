@@ -28,6 +28,13 @@ namespace asharia::editor {
 
     } // namespace
 
+    struct EditorPanelDrawContext {
+        EditorViewportPanelDrawContext viewport;
+        EditorDiagnosticsPanelDrawContext diagnostics;
+        EditorSettingsPanelDrawContext settings;
+        EditorToolsPanelDrawContext tools;
+    };
+
     void ImGuiEditorPanel::prepareWindow(EditorPanelWindowContext& context,
                                          EditorPanelState& state) {
         static_cast<void>(context);

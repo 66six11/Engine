@@ -116,12 +116,7 @@ namespace asharia::editor {
         EditorFrameSettingsContext& settings;
     };
 
-    struct EditorPanelDrawContext {
-        EditorViewportPanelDrawContext viewport;
-        EditorDiagnosticsPanelDrawContext diagnostics;
-        EditorSettingsPanelDrawContext settings;
-        EditorToolsPanelDrawContext tools;
-    };
+    struct EditorPanelDrawContext;
 
     struct EditorFrameContext {
         EditorFrameUiContext ui;
