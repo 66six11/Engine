@@ -253,7 +253,7 @@ namespace asharia::editor {
         }
     }
 
-    void SceneViewPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
+    void SceneViewPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
         SceneViewPanelContext panelContext{
             .ui = &context.ui,
             .tools = &context.tools,

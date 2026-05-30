@@ -191,7 +191,8 @@ class ImGuiEditorPanel {
 public:
     virtual ~ImGuiEditorPanel() = default;
     virtual const EditorPanelDesc& desc() const = 0;
-    virtual void draw(EditorFrameContext& context, EditorPanelState& state) = 0;
+    virtual void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) {}
+    virtual void draw(EditorPanelDrawContext& context, EditorPanelState& state) = 0;
 };
 ```
 
@@ -1130,7 +1131,8 @@ Scope:
 
 Implementation:
 
-- `RenderGraphPanel` is now the Live RG View and reads `EditorRenderGraphSnapshotProvider` from `EditorFrameContext`.
+- `RenderGraphPanel` is now the Live RG View and reads `EditorRenderGraphSnapshotProvider` through
+  the panel-scoped `EditorPanelDrawContext`.
 - `FrameDebuggerPanel` owns both the Frame view and its RenderGraph view; both read `EditorFrameDebugger` captures.
 - `panels/render_graph_snapshot_view.*` contains the shared read-only table renderer.
 - `EditorViewportCoordinator` publishes the latest live RenderGraph snapshot and tracks Live RG View snapshot consumption.

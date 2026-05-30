@@ -7,7 +7,7 @@ namespace asharia::editor {
     class LogPanel final : public ImGuiEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
-        void draw(EditorFrameContext& context, EditorPanelState& state) override;
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) override;
 
     private:
         EditorPanelDesc desc_{

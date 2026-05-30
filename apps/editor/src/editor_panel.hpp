@@ -92,6 +92,16 @@ namespace asharia::editor {
         EditorViewportPanelHost& host;
     };
 
+    struct EditorPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        EditorFrameDiagnosticsContext& diagnostics;
+        EditorFrameSettingsContext& settings;
+        const EditorFrameToolContext& tools;
+        EditorFrameInputContext& input;
+        EditorFrameRenderGraphContext& renderGraph;
+        EditorFrameViewportContext& viewport;
+    };
+
     struct EditorFrameContext {
         EditorFrameUiContext ui;
         EditorFrameDiagnosticsContext diagnostics;
@@ -113,7 +123,7 @@ namespace asharia::editor {
 
         [[nodiscard]] virtual const EditorPanelDesc& desc() const = 0;
         virtual void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state);
-        virtual void draw(EditorFrameContext& context, EditorPanelState& state) = 0;
+        virtual void draw(EditorPanelDrawContext& context, EditorPanelState& state) = 0;
     };
 
     enum class EditorPanelLifecycleEventKind {

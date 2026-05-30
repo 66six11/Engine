@@ -155,6 +155,15 @@ namespace asharia::editor {
         EditorPanelWindowContext windowContext{
             .ui = context.ui,
         };
+        EditorPanelDrawContext drawContext{
+            .ui = context.ui,
+            .diagnostics = context.diagnostics,
+            .settings = context.settings,
+            .tools = context.tools,
+            .input = context.input,
+            .renderGraph = context.renderGraph,
+            .viewport = context.viewport,
+        };
         for (PanelEntry& entry : panels_) {
             if (!entry.state.open || entry.panel == nullptr) {
                 continue;
@@ -188,7 +197,7 @@ namespace asharia::editor {
                 std::max(1U, static_cast<std::uint32_t>(std::max(available.y, 1.0F)));
 
             if (visible && entry.state.open) {
-                entry.panel->draw(context, entry.state);
+                entry.panel->draw(drawContext, entry.state);
             }
             ImGui::End();
         }

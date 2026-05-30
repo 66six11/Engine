@@ -28,7 +28,7 @@ namespace asharia::editor {
         return desc_;
     }
 
-    void LogPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
+    void LogPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
         LogPanelContext panelContext{
