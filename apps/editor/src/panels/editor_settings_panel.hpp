@@ -4,14 +4,14 @@
 
 namespace asharia::editor {
 
-    class EditorSettingsPanel final : public ImGuiSettingsEditorPanel {
+    class EditorSettingsPanel final : public ImGuiEditorSettingsPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
         void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) override;
 
     private:
-        void drawSettingsPanel(EditorSettingsPanelDrawContext& context,
-                               EditorPanelState& state) override;
+        void drawEditorSettingsPanel(EditorSettingsPanelDrawContext& context,
+                                     EditorPanelState& state) override;
 
         EditorPanelDesc desc_{
             .id = EditorId{.value = "editor-settings"},

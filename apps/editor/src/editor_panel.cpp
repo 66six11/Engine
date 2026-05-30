@@ -29,12 +29,12 @@ namespace asharia::editor {
     } // namespace
 
     struct EditorPanelDrawContext {
-        EditorViewportPanelDrawContext viewport;
+        EditorSceneViewPanelDrawContext sceneView;
         EditorLogPanelDrawContext log;
         EditorRenderGraphPanelDrawContext renderGraph;
         EditorFrameDebuggerPanelDrawContext frameDebugger;
-        EditorSettingsPanelDrawContext settings;
-        EditorToolsPanelDrawContext tools;
+        EditorSettingsPanelDrawContext editorSettings;
+        EditorUiStylePreviewPanelDrawContext uiStylePreview;
     };
 
     void ImGuiEditorPanel::prepareWindow(EditorPanelWindowContext& context,
@@ -43,8 +43,8 @@ namespace asharia::editor {
         static_cast<void>(state);
     }
 
-    void ImGuiViewportEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
-        drawViewportPanel(context.viewport, state);
+    void ImGuiSceneViewEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawSceneViewPanel(context.sceneView, state);
     }
 
     void ImGuiLogEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
@@ -61,12 +61,13 @@ namespace asharia::editor {
         drawFrameDebuggerPanel(context.frameDebugger, state);
     }
 
-    void ImGuiSettingsEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
-        drawSettingsPanel(context.settings, state);
+    void ImGuiEditorSettingsPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawEditorSettingsPanel(context.editorSettings, state);
     }
 
-    void ImGuiToolsEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
-        drawToolsPanel(context.tools, state);
+    void ImGuiUiStylePreviewEditorPanel::draw(EditorPanelDrawContext& context,
+                                              EditorPanelState& state) {
+        drawUiStylePreviewPanel(context.uiStylePreview, state);
     }
 
     asharia::VoidResult EditorPanelRegistry::registerPanel(EditorPanelFactory factory) {
@@ -191,12 +192,12 @@ namespace asharia::editor {
             .ui = context.ui,
         };
         EditorPanelDrawContext drawContext{
-            .viewport =
-                EditorViewportPanelDrawContext{
+            .sceneView =
+                EditorSceneViewPanelDrawContext{
                     .ui = context.ui,
-                    .tools = context.tools,
-                    .input = context.input,
-                    .viewport = context.viewport,
+                    .tools = context.tools.registry,
+                    .inputRouter = context.input.router,
+                    .viewportHost = context.viewport.host,
                 },
             .log =
                 EditorLogPanelDrawContext{
@@ -214,15 +215,14 @@ namespace asharia::editor {
                     .ui = context.ui,
                     .frameDebugger = context.diagnostics.frameDebugger,
                 },
-            .settings =
+            .editorSettings =
                 EditorSettingsPanelDrawContext{
                     .ui = context.ui,
-                    .settings = context.settings,
+                    .settings = context.settings.controller,
                 },
-            .tools =
-                EditorToolsPanelDrawContext{
-                    .ui = context.ui,
-                    .settings = context.settings,
+            .uiStylePreview =
+                EditorUiStylePreviewPanelDrawContext{
+                    .settings = context.settings.controller,
                 },
         };
         for (PanelEntry& entry : panels_) {

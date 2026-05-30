@@ -92,11 +92,11 @@ namespace asharia::editor {
         EditorViewportPanelHost& host;
     };
 
-    struct EditorViewportPanelDrawContext {
+    struct EditorSceneViewPanelDrawContext {
         const EditorFrameUiContext& ui;
-        const EditorFrameToolContext& tools;
-        EditorFrameInputContext& input;
-        EditorFrameViewportContext& viewport;
+        const EditorToolRegistry& tools;
+        EditorInputRouter& inputRouter;
+        EditorViewportPanelHost& viewportHost;
     };
 
     struct EditorLogPanelDrawContext {
@@ -117,12 +117,11 @@ namespace asharia::editor {
 
     struct EditorSettingsPanelDrawContext {
         const EditorFrameUiContext& ui;
-        EditorFrameSettingsContext& settings;
+        EditorSettingsController& settings;
     };
 
-    struct EditorToolsPanelDrawContext {
-        const EditorFrameUiContext& ui;
-        EditorFrameSettingsContext& settings;
+    struct EditorUiStylePreviewPanelDrawContext {
+        EditorSettingsController& settings;
     };
 
     struct EditorPanelDrawContext;
@@ -151,13 +150,13 @@ namespace asharia::editor {
         virtual void draw(EditorPanelDrawContext& context, EditorPanelState& state) = 0;
     };
 
-    class ImGuiViewportEditorPanel : public ImGuiEditorPanel {
+    class ImGuiSceneViewEditorPanel : public ImGuiEditorPanel {
     public:
         void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
 
     private:
-        virtual void drawViewportPanel(EditorViewportPanelDrawContext& context,
-                                       EditorPanelState& state) = 0;
+        virtual void drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
+                                        EditorPanelState& state) = 0;
     };
 
     class ImGuiLogEditorPanel : public ImGuiEditorPanel {
@@ -186,22 +185,22 @@ namespace asharia::editor {
                                             EditorPanelState& state) = 0;
     };
 
-    class ImGuiSettingsEditorPanel : public ImGuiEditorPanel {
+    class ImGuiEditorSettingsPanel : public ImGuiEditorPanel {
     public:
         void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
 
     private:
-        virtual void drawSettingsPanel(EditorSettingsPanelDrawContext& context,
-                                       EditorPanelState& state) = 0;
+        virtual void drawEditorSettingsPanel(EditorSettingsPanelDrawContext& context,
+                                             EditorPanelState& state) = 0;
     };
 
-    class ImGuiToolsEditorPanel : public ImGuiEditorPanel {
+    class ImGuiUiStylePreviewEditorPanel : public ImGuiEditorPanel {
     public:
         void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
 
     private:
-        virtual void drawToolsPanel(EditorToolsPanelDrawContext& context,
-                                    EditorPanelState& state) = 0;
+        virtual void drawUiStylePreviewPanel(EditorUiStylePreviewPanelDrawContext& context,
+                                             EditorPanelState& state) = 0;
     };
 
     enum class EditorPanelLifecycleEventKind {

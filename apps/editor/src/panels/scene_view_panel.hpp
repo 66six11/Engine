@@ -4,14 +4,14 @@
 
 namespace asharia::editor {
 
-    class SceneViewPanel final : public ImGuiViewportEditorPanel {
+    class SceneViewPanel final : public ImGuiSceneViewEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
         void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) override;
 
     private:
-        void drawViewportPanel(EditorViewportPanelDrawContext& context,
-                               EditorPanelState& state) override;
+        void drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
+                                EditorPanelState& state) override;
         void updateCameraForViewportExtent(EditorExtent2D viewportExtent);
         void handleCameraNavigation(EditorExtent2D viewportExtent);
 

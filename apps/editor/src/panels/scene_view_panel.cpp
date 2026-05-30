@@ -33,7 +33,7 @@ namespace {
 
     struct SceneViewPanelContext {
         const asharia::editor::EditorFrameUiContext* ui{};
-        const asharia::editor::EditorFrameToolContext* tools{};
+        const asharia::editor::EditorToolRegistry* tools{};
         asharia::editor::EditorInputRouter* inputRouter{};
         asharia::editor::EditorViewportPanelHost* viewportHost{};
     };
@@ -98,7 +98,7 @@ namespace {
 
     [[nodiscard]] SceneOverlayStripResult
     drawSceneOverlayStrip(const asharia::editor::EditorFrameUiContext& uiContext,
-                          const asharia::editor::EditorFrameToolContext& tools,
+                          const asharia::editor::EditorToolRegistry& tools,
                           std::string_view viewportId, ImVec2 viewportMin, ImVec2 viewportMax,
                           asharia::editor::EditorViewportOverlayFlags& flags) {
         constexpr float kOverlayPadding = 8.0F;
@@ -107,7 +107,7 @@ namespace {
         const ImGuiStyle& style = ImGui::GetStyle();
         float controlsWidth = 0.0F;
         int controlCount = 0;
-        tools.registry.visitViewportOverlays(
+        tools.visitViewportOverlays(
             viewportId, [&](const asharia::editor::EditorToolDesc& tool,
                             const asharia::editor::EditorToolViewportOverlayContribution& overlay) {
                 static_cast<void>(tool);
@@ -151,7 +151,7 @@ namespace {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0F);
         ImGui::BeginGroup();
         bool drewToggle = false;
-        tools.registry.visitViewportOverlays(
+        tools.visitViewportOverlays(
             viewportId, [&](const asharia::editor::EditorToolDesc& tool,
                             const asharia::editor::EditorToolViewportOverlayContribution& overlay) {
                 static_cast<void>(tool);
@@ -253,13 +253,13 @@ namespace asharia::editor {
         }
     }
 
-    void SceneViewPanel::drawViewportPanel(EditorViewportPanelDrawContext& context,
-                                           EditorPanelState& state) {
+    void SceneViewPanel::drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
+                                            EditorPanelState& state) {
         SceneViewPanelContext panelContext{
             .ui = &context.ui,
             .tools = &context.tools,
-            .inputRouter = &context.input.router,
-            .viewportHost = &context.viewport.host,
+            .inputRouter = &context.inputRouter,
+            .viewportHost = &context.viewportHost,
         };
 
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();

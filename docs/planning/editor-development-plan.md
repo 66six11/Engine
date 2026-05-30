@@ -197,13 +197,13 @@ public:
     virtual void draw(EditorPanelDrawContext& context, EditorPanelState& state) = 0;
 };
 
-class ImGuiViewportEditorPanel : public ImGuiEditorPanel {
+class ImGuiSceneViewEditorPanel : public ImGuiEditorPanel {
 public:
     void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
 
 private:
-    virtual void drawViewportPanel(EditorViewportPanelDrawContext& context,
-                                   EditorPanelState& state) = 0;
+    virtual void drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
+                                    EditorPanelState& state) = 0;
 };
 
 class ImGuiRenderGraphEditorPanel : public ImGuiEditorPanel {
