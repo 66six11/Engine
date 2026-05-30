@@ -28,6 +28,11 @@ namespace asharia::editor {
                          .fallback = "Chinese (Simplified)"},
         };
 
+        struct EditorSettingsPanelContext {
+            EditorSettingsController* settings{};
+            const EditorI18n* i18n{};
+        };
+
         void text(std::string_view value) {
             ImGui::TextUnformatted(value.data(), value.data() + value.size());
         }
@@ -150,17 +155,19 @@ namespace asharia::editor {
     void EditorSettingsPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
-        EditorSettingsController& settings = context.settings.controller;
-        const EditorI18n& i18n = context.ui.i18n;
+        EditorSettingsPanelContext panelContext{
+            .settings = &context.settings.controller,
+            .i18n = &context.ui.i18n,
+        };
 
-        drawEditorUiSectionHeader(i18n.text("settings.general"));
+        drawEditorUiSectionHeader(panelContext.i18n->text("settings.general"));
         if (beginEditorUiPropertyTable("editor-settings-general", 128.0F)) {
-            drawLanguageSetting(settings, i18n);
-            drawThemeSetting(settings, i18n);
+            drawLanguageSetting(*panelContext.settings, *panelContext.i18n);
+            drawThemeSetting(*panelContext.settings, *panelContext.i18n);
             endEditorUiPropertyTable();
         }
 
-        drawSettingsStatus(i18n, settings);
+        drawSettingsStatus(*panelContext.i18n, *panelContext.settings);
     }
 
 } // namespace asharia::editor

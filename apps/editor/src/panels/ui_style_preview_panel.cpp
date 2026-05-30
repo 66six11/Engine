@@ -31,6 +31,10 @@ namespace asharia::editor {
             int* comboIndex{};
         };
 
+        struct UiStylePreviewPanelContext {
+            EditorSettingsController* settings{};
+        };
+
         struct TablePreviewRow {
             std::string_view pass;
             std::string_view type;
@@ -527,7 +531,11 @@ namespace asharia::editor {
     void UiStylePreviewPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
-        drawWorkbenchHeader(context.settings.controller);
+        UiStylePreviewPanelContext panelContext{
+            .settings = &context.settings.controller,
+        };
+
+        drawWorkbenchHeader(*panelContext.settings);
 
         if (!ImGui::BeginTable("theme-workbench-layout", 3, kWorkbenchTableFlags)) {
             return;

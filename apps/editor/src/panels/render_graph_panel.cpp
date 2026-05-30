@@ -8,6 +8,14 @@
 #include "panels/render_graph_snapshot_view.hpp"
 
 namespace asharia::editor {
+    namespace {
+
+        struct RenderGraphPanelContext {
+            const EditorFrameUiContext* ui{};
+            EditorRenderGraphSnapshotProvider* snapshots{};
+        };
+
+    } // namespace
 
     const EditorPanelDesc& RenderGraphPanel::desc() const {
         return desc_;
@@ -24,24 +32,28 @@ namespace asharia::editor {
     void RenderGraphPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
+        RenderGraphPanelContext panelContext{
+            .ui = &context.ui,
+            .snapshots = &context.renderGraph.snapshots,
+        };
         const std::optional<EditorRenderGraphSnapshot> liveSnapshot =
-            context.renderGraph.snapshots.latestLiveRenderGraphSnapshot();
+            panelContext.snapshots->latestLiveRenderGraphSnapshot();
         const bool snapshotVisible = liveSnapshot && liveSnapshot->snapshot != nullptr;
-        context.renderGraph.snapshots.notifyLiveRenderGraphViewDrawn(snapshotVisible);
+        panelContext.snapshots->notifyLiveRenderGraphViewDrawn(snapshotVisible);
         if (!snapshotVisible) {
-            const std::string_view text = context.ui.i18n.text("renderGraph.noLiveSnapshot");
+            const std::string_view text = panelContext.ui->i18n.text("renderGraph.noLiveSnapshot");
             ImGui::TextUnformatted(text.data(), text.data() + text.size());
             return;
         }
 
         drawRenderGraphSnapshotView(
             RenderGraphSnapshotViewDesc{
-                .sourceLabel = context.ui.i18n.text("renderGraph.liveSource"),
-                .statusLabel = context.ui.i18n.text("renderGraph.status.latestCompiled"),
+                .sourceLabel = panelContext.ui->i18n.text("renderGraph.liveSource"),
+                .statusLabel = panelContext.ui->i18n.text("renderGraph.status.latestCompiled"),
                 .viewKind = liveSnapshot->viewKind,
                 .requestedExtent = liveSnapshot->requestedExtent,
                 .submittedFrameEpoch = liveSnapshot->submittedFrameEpoch,
-                .i18n = context.ui.i18n,
+                .i18n = panelContext.ui->i18n,
             },
             *liveSnapshot->snapshot);
     }

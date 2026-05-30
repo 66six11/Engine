@@ -31,6 +31,13 @@ namespace {
         bool changed{};
     };
 
+    struct SceneViewPanelContext {
+        const asharia::editor::EditorFrameUiContext* ui{};
+        const asharia::editor::EditorFrameToolContext* tools{};
+        asharia::editor::EditorInputRouter* inputRouter{};
+        asharia::editor::EditorViewportPanelHost* viewportHost{};
+    };
+
     [[nodiscard]] bool* sceneOverlayFlagForId(asharia::editor::EditorViewportOverlayFlags& flags,
                                               std::string_view overlayId) {
         if (overlayId == "scene.grid") {
@@ -247,13 +254,20 @@ namespace asharia::editor {
     }
 
     void SceneViewPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
+        SceneViewPanelContext panelContext{
+            .ui = &context.ui,
+            .tools = &context.tools,
+            .inputRouter = &context.input.router,
+            .viewportHost = &context.viewport.host,
+        };
+
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();
         viewportSize.y =
             std::max(1.0F, viewportSize.y - (ImGui::GetTextLineHeightWithSpacing() * 3.0F));
         const EditorExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
         updateCameraForViewportExtent(viewportExtent);
         std::uint64_t viewportFrameIndex{};
-        if (const auto completed = context.viewport.host.acquireViewportTextureForDraw(
+        if (const auto completed = panelContext.viewportHost->acquireViewportTextureForDraw(
                 desc_.id.value, EditorViewportKind::Scene);
             completed && hasEditorViewportTexture(completed->texture)) {
             viewportFrameIndex = completed->texture.frameIndex;
@@ -268,9 +282,10 @@ namespace asharia::editor {
         const ImVec2 viewportMax = ImGui::GetItemRectMax();
         const bool viewportHovered = ImGui::IsItemHovered();
         handleCameraNavigation(viewportExtent);
-        const SceneOverlayStripResult overlayStrip = drawSceneOverlayStrip(
-            context.ui, context.tools, desc_.id.value, viewportMin, viewportMax, overlayFlags_);
-        context.input.router.reportSceneView(EditorSceneViewInputState{
+        const SceneOverlayStripResult overlayStrip =
+            drawSceneOverlayStrip(*panelContext.ui, *panelContext.tools, desc_.id.value,
+                                  viewportMin, viewportMax, overlayFlags_);
+        panelContext.inputRouter->reportSceneView(EditorSceneViewInputState{
             .hovered = viewportHovered && !overlayStrip.hovered,
             .focused = state.focused,
         });
@@ -286,7 +301,7 @@ namespace asharia::editor {
             addEditorViewportRepaintReason(refresh.repaintReasons,
                                            EditorViewportRepaintReason::CameraInputChanged);
         }
-        context.viewport.host.requestViewport(EditorViewportRequest{
+        panelContext.viewportHost->requestViewport(EditorViewportRequest{
             .panelId = desc_.id,
             .kind = EditorViewportKind::Scene,
             .extent = viewportExtent,
@@ -295,10 +310,11 @@ namespace asharia::editor {
             .refresh = refresh,
         });
 
-        const EditorI18n& i18n = context.ui.i18n;
+        const EditorI18n& i18n = panelContext.ui->i18n;
         const std::string swapchainText = std::string{i18n.text("scene.swapchain")} + ": " +
-                                          std::to_string(context.ui.swapchainExtent.width) + "x" +
-                                          std::to_string(context.ui.swapchainExtent.height);
+                                          std::to_string(panelContext.ui->swapchainExtent.width) +
+                                          "x" +
+                                          std::to_string(panelContext.ui->swapchainExtent.height);
         const std::string viewportText = std::string{i18n.text("scene.viewport")} + ": " +
                                          std::to_string(viewportExtent.width) + "x" +
                                          std::to_string(viewportExtent.height);

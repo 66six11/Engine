@@ -10,6 +10,12 @@
 
 namespace {
 
+    struct LogPanelContext {
+        const asharia::editor::EditorFrameUiContext* ui{};
+        const asharia::editor::EditorInputSnapshot* input{};
+        asharia::editor::EditorDiagnosticsLog* diagnosticsLog{};
+    };
+
     std::string yesNo(const asharia::editor::EditorI18n& i18n, bool value) {
         return std::string{i18n.text(value ? "common.yes" : "common.no")};
     }
@@ -25,12 +31,17 @@ namespace asharia::editor {
     void LogPanel::draw(EditorFrameContext& context, EditorPanelState& state) {
         static_cast<void>(state);
 
-        const EditorI18n& i18n = context.ui.i18n;
+        LogPanelContext panelContext{
+            .ui = &context.ui,
+            .input = &context.input.router.snapshot(),
+            .diagnosticsLog = &context.diagnostics.log,
+        };
+        const EditorI18n& i18n = panelContext.ui->i18n;
         const std::string modeText =
             std::string{i18n.text("log.mode")} + ": " +
             std::string{
-                i18n.text(context.ui.smokeMode ? "log.mode.smoke" : "log.mode.interactive")};
-        const EditorInputSnapshot& input = context.input.router.snapshot();
+                i18n.text(panelContext.ui->smokeMode ? "log.mode.smoke" : "log.mode.interactive")};
+        const EditorInputSnapshot& input = *panelContext.input;
         const std::string inputCaptureText =
             std::string{i18n.text("log.inputCapture")} + ": " +
             std::string{i18n.text("log.mouse")} + "=" + yesNo(i18n, input.imguiWantsMouse) + ", " +
@@ -56,7 +67,7 @@ namespace asharia::editor {
                                i18n.text("log.recentEvents").data() +
                                    i18n.text("log.recentEvents").size());
         const std::span<const EditorDiagnosticEvent> recentEvents =
-            context.diagnostics.log.recentEvents();
+            panelContext.diagnosticsLog->recentEvents();
         if (recentEvents.empty()) {
             ImGui::TextUnformatted(i18n.text("log.noEvents").data(),
                                    i18n.text("log.noEvents").data() +

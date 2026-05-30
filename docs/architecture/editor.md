@@ -276,9 +276,10 @@ Panel rules:
 
 - Use the capability groups on `EditorFrameContext` (`ui`, `diagnostics`, `settings`, `tools`,
   `input`, `renderGraph`, `viewport`) instead of adding new flat service-locator fields.
-- Panel-local helpers should accept the smallest capability group they need; keep the top-level
-  `ImGuiEditorPanel` virtual entry point as the adapter boundary until the panel API is narrowed
-  further.
+- Panel `draw()` implementations should immediately adapt the frame context into a panel-local
+  context before calling helpers. Panel-local helpers should accept the smallest capability group
+  they need; keep the top-level `ImGuiEditorPanel` virtual entry point as the adapter boundary until
+  the panel API is narrowed further.
 - Declare category and preferred dock metadata in `EditorPanelDesc`; workspace presets can use that metadata or explicitly
   list panel ids for default layouts.
 - Keep persistent scene/asset edits out of `draw()` until transactions exist.

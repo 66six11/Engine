@@ -222,8 +222,14 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
    Frame Debugger、input、shortcut 和 layout persistence smoke 断言
 3. `editor_app.cpp` 继续保留 bootstrap、frame loop 和 shutdown 编排，不再承载大块 smoke validation
 
+**已修复 (Step 2c-a)**:
+1. `prepareWindow()` 已改用只暴露 `ui` 的 `EditorPanelWindowContext`
+2. 当前内置 panel 的 `draw()` 实现会先把顶层 `EditorFrameContext` 映射为 panel-local context，
+   helper 不再继续传播完整 frame context
+3. 顶层 `ImGuiEditorPanel::draw()` 虚接口暂时作为兼容适配边界保留，下一步再把虚接口本身推向窄 context
+
 **待完成 (Step 2b)**:
-- 继续把 Panel `draw()` / `prepareWindow()` 从顶层 `EditorFrameContext` 推向逐面板需要的窄 context
+- 继续把 Panel `draw()` 虚接口从顶层 `EditorFrameContext` 推向逐面板需要的窄 context
 - 继续拆分 `editor_app.cpp` 中的 frame loop 和剩余 Vulkan host glue
 
 ---
