@@ -59,6 +59,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - 2026-05-30：`editor_app_config.hpp/.cpp` 已接管 run path、smoke layout/settings isolation、i18n
   resource directory 和 locale env 解析；`editor_app.cpp` 继续保留 window/GPU bootstrap、frame loop 和
   shutdown 编排。
+- 2026-05-30：`editor_vulkan_host.hpp/.cpp` 已接管 renderable-window wait、Vulkan context/frame-loop
+  creation、swapchain extent readiness 和一帧 RenderView/ImGui submission glue；`editor_app.cpp` 继续保留
+  app service bootstrap、主循环顺序和 shutdown 编排。
 
 推荐顺序：
 
@@ -138,6 +141,7 @@ Rules:
 apps/editor/src/
   editor_app.hpp/.cpp
   editor_app_config.hpp/.cpp
+  editor_vulkan_host.hpp/.cpp
   editor_action.hpp/.cpp
   editor_event.hpp/.cpp
   editor_panel.hpp/.cpp
@@ -156,6 +160,7 @@ apps/editor/src/
 | --- | --- | --- |
 | `editor_app` | startup, loop, frame order, smoke modes, shutdown order | panel drawing details |
 | `editor_app_config` | run paths, smoke settings/layout isolation, i18n resource directory, locale env parsing | service aggregation, panel registry or GPU lifecycle |
+| `editor_vulkan_host` | renderable-window wait, Vulkan context/frame-loop creation, swapchain extent readiness, one-frame RenderView/ImGui submission glue | action dispatch, panel/service ownership or persistent editor state |
 | `editor_action` | action descriptors, callbacks, invocation, shortcut metadata | menu widget code |
 | `editor_event` | small typed queue for editor facts | global EventBus semantics |
 | `editor_panel` | panel descriptors, state, registry, singleton reuse | ImGui backend setup |
@@ -519,7 +524,8 @@ Scope:
 - Keep per-frame service references explicit until narrow frame/panel contexts own them.
 - Keep rendered output and smoke behavior unchanged.
 - The transitional `editor_context` facade has since been retired; app loop now passes explicit services into shell,
-  frame and smoke contexts, while `editor_app_config` owns run path / locale bootstrap helpers.
+  frame and smoke contexts, while `editor_app_config` owns run path / locale bootstrap helpers and
+  `editor_vulkan_host` owns Vulkan/window/frame submission helpers.
 
 Validation:
 

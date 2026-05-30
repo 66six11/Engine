@@ -266,8 +266,14 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
    `editor_app.cpp`
 3. `editor_app_config` 只返回配置值，不聚合 editor services，避免形成新的 app context facade
 
+**已修复 (Step 2b-h)**:
+1. 新增 `apps/editor/src/editor_vulkan_host.hpp/.cpp`
+2. renderable-window wait、Vulkan context/frame-loop creation、swapchain extent readiness 和一帧
+   RenderView/ImGui submission glue 不再内联在 `editor_app.cpp`
+3. `editor_vulkan_host` 不持有 panel/action/settings 等 editor service，只接收当前帧所需引用
+
 **待完成 (Step 2b)**:
-- 继续拆分 `editor_app.cpp` 中的 frame loop host、bootstrap 和剩余 Vulkan host glue
+- 继续拆分 `editor_app.cpp` 中的 app service bootstrap、shell/frame context 适配和主循环编排
 - 避免为方便传参重新引入宽 app context / service locator facade
 
 ---
@@ -540,7 +546,7 @@ Scene View panel 的 camera/unproject code (`editor_viewport_camera.hpp`) 已经
 
 ### 7.3 当前最需要关注的 5 个改变
 
-1. **Editor app glue 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，宽 dispatch bundle 已是 implementation detail，内置 panel draw context 已按 Scene View / Log / Live RG / Frame Debugger / Editor Settings / UI Style Preview 拆到 per-panel context，过渡期 `EditorContext` 已删除，run config helpers 已拆到 `editor_app_config`；但 `editor_app.cpp` 仍承担 window/GPU bootstrap、frame loop 和 Vulkan/ImGui host glue，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
+1. **Editor app glue 仍需 capability-scoped 收敛**: command/transaction 已有基础，panel `draw()` 已不再直接接收顶层 `EditorFrameContext`，宽 dispatch bundle 已是 implementation detail，内置 panel draw context 已按 Scene View / Log / Live RG / Frame Debugger / Editor Settings / UI Style Preview 拆到 per-panel context，过渡期 `EditorContext` 已删除，run config helpers 已拆到 `editor_app_config`，Vulkan/window/frame submission helpers 已拆到 `editor_vulkan_host`；但 `editor_app.cpp` 仍承担 app service bootstrap、shell/frame context 适配和主循环编排，新增 asset browser、material editor 或 inspector mutation 前需要继续收窄。
 2. **Grid 仍需 camera-aware policy 和 pixel smoke**: renderer-owned debug-line GPU pass 已落地，但 grid provider 仍是固定原点 packet，尚未按 camera range/fade 生成稳定可读网格，也未做像素/readback 级 camera-difference 验证。
 3. **RenderGraph 内部 helper 声明仍需继续收敛**: public headers 已拆成 types / command / execution / builder / compile / diagnostics / aggregate，后续复杂 compiler/cache/unsafe pass 前还需要评估是否把 private compile、validation、dependency、lifetime helper 声明继续收敛到内部 implementation headers。
 4. **Asset pipeline 只有 metadata / catalog 基线**: 离真正的 source scan、product manifest、mesh/texture upload 还有工具链工作。

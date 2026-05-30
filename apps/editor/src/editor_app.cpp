@@ -1,31 +1,19 @@
 ﻿#include "editor_app.hpp"
 
-#include <vulkan/vulkan.h>
-
-#include <algorithm>
-#include <array>
 #include <chrono>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 #include <iostream>
-#include <span>
-#include <string>
 #include <thread>
 #include <utility>
-#include <vector>
 
 #include "asharia/core/log.hpp"
 #include "asharia/core/result.hpp"
-#include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
-#include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
-#include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_action.hpp"
@@ -46,31 +34,14 @@
 #include "editor_viewport.hpp"
 #include "editor_viewport_coordinator.hpp"
 #include "editor_viewport_overlay_provider.hpp"
+#include "editor_vulkan_host.hpp"
 #include "editor_workspace.hpp"
 #include "imgui_editor_shell.hpp"
-#include "imgui_frame_renderer.hpp"
 #include "imgui_runtime.hpp"
 
 namespace {
 
-    constexpr asharia::VulkanDebugLabelMode kEditorDebugLabels =
-        asharia::VulkanDebugLabelMode::Required;
     constexpr int kSmokeAttemptLimit = 120;
-
-    bool isRenderableExtent(asharia::WindowFramebufferExtent extent) {
-        return extent.width > 0 && extent.height > 0;
-    }
-
-    bool extentMatches(VkExtent2D lhs, asharia::WindowFramebufferExtent rhs) {
-        return lhs.width == rhs.width && lhs.height == rhs.height;
-    }
-
-    asharia::editor::EditorExtent2D editorExtentFromVk(VkExtent2D extent) {
-        return asharia::editor::EditorExtent2D{
-            .width = extent.width,
-            .height = extent.height,
-        };
-    }
 
     void buildEditorShell(asharia::editor::EditorActionRegistry& actionRegistry,
                           asharia::editor::EditorActionServices& actionServices,
@@ -110,130 +81,6 @@ namespace {
         panelRegistry.drawPanels(frameContext);
     }
 
-    [[nodiscard]] asharia::VoidResult waitForRenderableWindow(asharia::GlfwWindow& window,
-                                                              bool smokeMode) {
-        int attempts = 0;
-        auto framebuffer = window.framebufferExtent();
-        while (!window.shouldClose() && !isRenderableExtent(framebuffer)) {
-            if (smokeMode && attempts++ >= kSmokeAttemptLimit) {
-                return std::unexpected{
-                    asharia::vulkanError("Timed out waiting for a renderable editor framebuffer")};
-            }
-
-            using namespace std::chrono_literals;
-            std::this_thread::sleep_for(16ms);
-            asharia::GlfwWindow::pollEvents();
-            framebuffer = window.framebufferExtent();
-        }
-
-        return {};
-    }
-
-    [[nodiscard]] asharia::Result<asharia::VulkanContext>
-    createEditorVulkanContext(const std::vector<std::string>& extensions,
-                              asharia::GlfwWindow& window) {
-        const asharia::VulkanContextDesc contextDesc{
-            .applicationName = "Asharia Engine Editor",
-            .requiredInstanceExtensions = extensions,
-            .createSurface =
-                [&window](VkInstance instance) {
-                    return asharia::glfwCreateVulkanSurface(window, instance);
-                },
-            .debugLabels = kEditorDebugLabels,
-        };
-
-        return asharia::VulkanContext::create(contextDesc);
-    }
-
-    [[nodiscard]] asharia::Result<asharia::VulkanFrameLoop>
-    createEditorFrameLoop(const asharia::VulkanContext& context,
-                          const asharia::GlfwWindow& window) {
-        const auto framebuffer = window.framebufferExtent();
-        return asharia::VulkanFrameLoop::create(
-            context, asharia::VulkanFrameLoopDesc{
-                         .width = framebuffer.width,
-                         .height = framebuffer.height,
-                         .clearColor = VkClearColorValue{{0.015F, 0.018F, 0.022F, 1.0F}},
-                     });
-    }
-
-    [[nodiscard]] asharia::Result<bool>
-    prepareFrameLoopExtent(asharia::GlfwWindow& window, asharia::VulkanFrameLoop& frameLoop) {
-        const auto currentFramebuffer = window.framebufferExtent();
-        frameLoop.setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
-        if (!isRenderableExtent(currentFramebuffer)) {
-            using namespace std::chrono_literals;
-            std::this_thread::sleep_for(16ms);
-            return false;
-        }
-
-        if (!extentMatches(frameLoop.extent(), currentFramebuffer)) {
-            auto recreated = frameLoop.recreate();
-            if (!recreated) {
-                return std::unexpected{std::move(recreated.error())};
-            }
-            if (*recreated == asharia::VulkanFrameStatus::OutOfDate) {
-                using namespace std::chrono_literals;
-                std::this_thread::sleep_for(16ms);
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    [[nodiscard]] asharia::Result<bool>
-    renderEditorFrame(asharia::VulkanFrameLoop& frameLoop,
-                      asharia::BasicFullscreenTextureRenderer& renderer,
-                      asharia::editor::EditorViewportCoordinator& viewportHost,
-                      asharia::editor::EditorFrameDebugger& frameDebugger, int frameIndex) {
-        auto status =
-            frameLoop.renderFrame([&renderer, &viewportHost, &frameDebugger,
-                                   frameIndex](const asharia::VulkanFrameRecordContext& context)
-                                      -> asharia::Result<asharia::VulkanFrameRecordResult> {
-                const bool recordRenderViews = frameDebugger.shouldRecordRenderViews();
-                asharia::editor::EditorViewportRepaintReasons repaintReasons =
-                    frameDebugger.consumeRenderViewRepaintReasons();
-                if (frameDebugger.isCapturingFrame()) {
-                    asharia::editor::addEditorViewportRepaintReason(
-                        repaintReasons,
-                        asharia::editor::EditorViewportRepaintReason::FrameDebugEventChanged);
-                }
-                auto viewport = viewportHost.recordRequestedViews(
-                    context, renderer, recordRenderViews, repaintReasons);
-                if (!viewport) {
-                    return std::unexpected{std::move(viewport.error())};
-                }
-                auto frameDebugPreview =
-                    viewportHost.recordFrameDebugPreview(context, renderer, frameDebugger);
-                if (!frameDebugPreview) {
-                    return std::unexpected{std::move(frameDebugPreview.error())};
-                }
-                if (!recordRenderViews) {
-                    frameDebugger.notifyRenderViewSkipped();
-                } else if (frameDebugger.isCapturingFrame()) {
-                    const auto& diagnostics = viewportHost.latestRecordedRenderViewDiagnostics();
-                    if (diagnostics) {
-                        frameDebugger.captureRecordedView(
-                            asharia::editor::EditorFrameDebugCaptureDesc{
-                                .frameIndex = frameIndex,
-                                .submittedFrameEpoch = diagnostics->submittedFrameEpoch,
-                                .viewKind = diagnostics->kind,
-                                .requestedExtent = diagnostics->requestedExtent,
-                                .diagnostics = diagnostics->diagnostics,
-                            });
-                    }
-                }
-
-                return asharia::editor::recordEditorImguiFrame(context);
-            });
-        if (!status) {
-            return std::unexpected{std::move(status.error())};
-        }
-
-        return *status != asharia::VulkanFrameStatus::OutOfDate;
-    }
-
     [[nodiscard]] asharia::Result<asharia::editor::EditorSmokeRunResult>
     runEditorLoop(asharia::GlfwWindow& window, asharia::VulkanFrameLoop& frameLoop,
                   asharia::BasicFullscreenTextureRenderer& renderer,
@@ -264,7 +111,7 @@ namespace {
             }
 
             asharia::GlfwWindow::pollEvents();
-            auto extentReady = prepareFrameLoopExtent(window, frameLoop);
+            auto extentReady = asharia::editor::prepareEditorFrameLoopExtent(window, frameLoop);
             if (!extentReady) {
                 return std::unexpected{std::move(extentReady.error())};
             }
@@ -296,7 +143,7 @@ namespace {
                 .ui =
                     {
                         .frameIndex = renderedFrames,
-                        .swapchainExtent = editorExtentFromVk(frameLoop.extent()),
+                        .swapchainExtent = asharia::editor::editorExtentFromVk(frameLoop.extent()),
                         .smokeMode = smokeMode,
                         .i18n = i18n,
                     },
@@ -320,8 +167,8 @@ namespace {
                 actionRegistry, asharia::editor::makeEditorActionInvokeContext(actionServices)));
             ImGui::Render();
 
-            auto rendered =
-                renderEditorFrame(frameLoop, renderer, viewportHost, frameDebugger, renderedFrames);
+            auto rendered = asharia::editor::renderEditorFrame(frameLoop, renderer, viewportHost,
+                                                               frameDebugger, renderedFrames);
             if (!rendered) {
                 return std::unexpected{std::move(rendered.error())};
             }
@@ -409,7 +256,7 @@ namespace asharia::editor {
         }
 
         asharia::GlfwWindow::pollEvents();
-        if (auto waited = waitForRenderableWindow(*window, smokeMode); !waited) {
+        if (auto waited = waitForRenderableEditorWindow(*window, smokeMode); !waited) {
             asharia::logError(waited.error().message);
             return EXIT_FAILURE;
         }
@@ -536,7 +383,7 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        const VkExtent2D viewportExtent = viewportHost.descriptorExtent();
+        const auto viewportExtent = viewportHost.descriptorExtent();
         viewportHost.shutdown();
         imgui.shutdown();
         window->requestClose();

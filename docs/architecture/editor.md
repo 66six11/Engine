@@ -55,7 +55,8 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_ui` | small editor-local ImGui style primitives, built-in editor theme tokens and component preview helpers used by panels | a generic UI framework or runtime-facing widget abstraction |
 | `editor_settings` | editor-local user settings persistence plus runtime editor locale/theme switching | scene data, asset import settings or runtime/game configuration |
 | `editor_app_config` | editor run paths, smoke layout/settings isolation, i18n resource directory and locale environment parsing | service aggregation, panel registry ownership or GPU/window lifecycle |
-| `editor_app` | startup、window/context/frame-loop wiring、main editor loop、frame order、smoke modes、shutdown order | panel widget details becoming feature-specific renderer logic |
+| `editor_vulkan_host` | editor window renderability wait, Vulkan context/frame-loop creation, swapchain extent readiness and one-frame RenderView/ImGui submission glue | panel registry ownership、action dispatch、persistent editor state or generic RHI abstraction |
+| `editor_app` | startup orchestration、main editor loop、frame order、smoke modes、shutdown order | panel widget details becoming feature-specific renderer logic、low-level Vulkan frame submission helpers |
 | `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle and the editor ImGui fragment shader contract | panel registry、editor state、viewport target ownership |
 | `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
@@ -446,6 +447,7 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   Frame Debug panel now selects a renderer execution event first, resolves that event's pass to a previewable image output
   from the frozen diagnostics snapshot, and serves the refresh without resuming normal RenderView recording. CPU readback,
   export and draw-call precise replay remain deferred.
-- `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
-  超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。
+- `recordEditorImguiFrame()` 位于 `imgui_frame_renderer.cpp`，由 `editor_vulkan_host` 的一帧提交 helper
+  调用。作为 host integration 现在可以接受；如果它超出 swapchain ImGui pass recording，应继续移动到
+  `imgui_runtime` 或独立的 editor ImGui pass module。
 - There is no `packages/editor-core` yet by design.
