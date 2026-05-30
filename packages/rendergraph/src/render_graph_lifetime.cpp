@@ -6,12 +6,12 @@
 #include <utility>
 #include <vector>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "render_graph_internal.hpp"
 
 namespace asharia {
 
     std::vector<RenderGraphImageHandle>
-    RenderGraph::imageHandles(std::span<const RenderGraphImageSlot> slots) {
+    RenderGraph::Impl::imageHandles(std::span<const RenderGraphImageSlot> slots) {
         std::vector<RenderGraphImageHandle> handles;
         handles.reserve(slots.size());
         for (const RenderGraphImageSlot& slot : slots) {
@@ -21,7 +21,7 @@ namespace asharia {
     }
 
     std::vector<RenderGraphBufferHandle>
-    RenderGraph::bufferHandles(std::span<const RenderGraphBufferSlot> slots) {
+    RenderGraph::Impl::bufferHandles(std::span<const RenderGraphBufferSlot> slots) {
         std::vector<RenderGraphBufferHandle> handles;
         handles.reserve(slots.size());
         for (const RenderGraphBufferSlot& slot : slots) {
@@ -31,9 +31,9 @@ namespace asharia {
     }
 
     Result<RenderGraphTransientImageAllocation>
-    RenderGraph::makeTransientAllocation(std::size_t imageIndex,
-                                         std::span<const RenderGraphCompiledPass> passes,
-                                         RenderGraphImageAccess finalAccess) const {
+    RenderGraph::Impl::makeTransientAllocation(std::size_t imageIndex,
+                                               std::span<const RenderGraphCompiledPass> passes,
+                                               RenderGraphImageAccess finalAccess) const {
         std::size_t firstPass = passes.size();
         std::size_t lastPass{};
         const RenderGraphImageHandle imageHandle{
@@ -72,10 +72,9 @@ namespace asharia {
         };
     }
 
-    Result<RenderGraphTransientBufferAllocation>
-    RenderGraph::makeTransientBufferAllocation(std::size_t bufferIndex,
-                                               std::span<const RenderGraphCompiledPass> passes,
-                                               RenderGraphBufferAccess finalAccess) const {
+    Result<RenderGraphTransientBufferAllocation> RenderGraph::Impl::makeTransientBufferAllocation(
+        std::size_t bufferIndex, std::span<const RenderGraphCompiledPass> passes,
+        RenderGraphBufferAccess finalAccess) const {
         std::size_t firstPass = passes.size();
         std::size_t lastPass{};
         const RenderGraphBufferHandle bufferHandle{
@@ -113,8 +112,8 @@ namespace asharia {
         };
     }
 
-    bool RenderGraph::passUsesImage(const RenderGraphCompiledPass& pass,
-                                    RenderGraphImageHandle image) {
+    bool RenderGraph::Impl::passUsesImage(const RenderGraphCompiledPass& pass,
+                                          RenderGraphImageHandle image) {
         return slotsUseImage(pass.colorWriteSlots, image) ||
                slotsUseImage(pass.shaderReadSlots, image) ||
                slotsUseImage(pass.depthReadSlots, image) ||
@@ -124,56 +123,59 @@ namespace asharia {
                slotsUseImage(pass.transferWriteSlots, image);
     }
 
-    bool RenderGraph::imageUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
-                                                RenderGraphImageHandle image) {
+    bool
+    RenderGraph::Impl::imageUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
+                                                 RenderGraphImageHandle image) {
         return std::ranges::any_of(passes, [image](const RenderGraphCompiledPass& pass) {
             return passUsesImage(pass, image);
         });
     }
 
-    bool RenderGraph::passUsesBuffer(const RenderGraphCompiledPass& pass,
-                                     RenderGraphBufferHandle buffer) {
+    bool RenderGraph::Impl::passUsesBuffer(const RenderGraphCompiledPass& pass,
+                                           RenderGraphBufferHandle buffer) {
         return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferTransferReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
                slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
     }
 
-    bool RenderGraph::bufferUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
-                                                 RenderGraphBufferHandle buffer) {
+    bool
+    RenderGraph::Impl::bufferUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
+                                                  RenderGraphBufferHandle buffer) {
         return std::ranges::any_of(passes, [buffer](const RenderGraphCompiledPass& pass) {
             return passUsesBuffer(pass, buffer);
         });
     }
 
-    bool RenderGraph::bufferUsedByDeclaredPasses(RenderGraphBufferHandle buffer) const {
+    bool RenderGraph::Impl::bufferUsedByDeclaredPasses(RenderGraphBufferHandle buffer) const {
         return std::ranges::any_of(passes_, [buffer](const Pass& pass) {
             return passReadsBuffer(pass, buffer) || passWritesBuffer(pass, buffer);
         });
     }
 
-    bool RenderGraph::imageUsedByDeclaredPasses(RenderGraphImageHandle image) const {
+    bool RenderGraph::Impl::imageUsedByDeclaredPasses(RenderGraphImageHandle image) const {
         return std::ranges::any_of(passes_, [image](const Pass& pass) {
             return passReadsImage(pass, image) || passWritesImage(pass, image);
         });
     }
 
-    bool RenderGraph::slotsUseImage(std::span<const RenderGraphImageSlot> slots,
-                                    RenderGraphImageHandle image) {
+    bool RenderGraph::Impl::slotsUseImage(std::span<const RenderGraphImageSlot> slots,
+                                          RenderGraphImageHandle image) {
         return std::ranges::any_of(
             slots, [image](const RenderGraphImageSlot& slot) { return slot.image == image; });
     }
 
-    bool RenderGraph::slotsUseBuffer(std::span<const RenderGraphBufferSlot> slots,
-                                     RenderGraphBufferHandle buffer) {
+    bool RenderGraph::Impl::slotsUseBuffer(std::span<const RenderGraphBufferSlot> slots,
+                                           RenderGraphBufferHandle buffer) {
         return std::ranges::any_of(
             slots, [buffer](const RenderGraphBufferSlot& slot) { return slot.buffer == buffer; });
     }
 
-    Result<void> RenderGraph::transitionImages(std::span<const RenderGraphImageSlot> imageSlots,
-                                               RenderGraphImageAccess requiredAccess,
-                                               std::vector<RenderGraphImageAccess>& currentAccesses,
-                                               RenderGraphCompiledPass& compiledPass) const {
+    Result<void>
+    RenderGraph::Impl::transitionImages(std::span<const RenderGraphImageSlot> imageSlots,
+                                        RenderGraphImageAccess requiredAccess,
+                                        std::vector<RenderGraphImageAccess>& currentAccesses,
+                                        RenderGraphCompiledPass& compiledPass) const {
         for (const RenderGraphImageSlot& slot : imageSlots) {
             RenderGraphImageHandle imageHandle = slot.image;
             auto validated = validateImageHandle(imageHandle);
@@ -199,10 +201,10 @@ namespace asharia {
     }
 
     Result<void>
-    RenderGraph::transitionBuffers(std::span<const RenderGraphBufferSlot> bufferSlots,
-                                   RenderGraphBufferAccess requiredAccess,
-                                   std::vector<RenderGraphBufferAccess>& currentAccesses,
-                                   RenderGraphCompiledPass& compiledPass) const {
+    RenderGraph::Impl::transitionBuffers(std::span<const RenderGraphBufferSlot> bufferSlots,
+                                         RenderGraphBufferAccess requiredAccess,
+                                         std::vector<RenderGraphBufferAccess>& currentAccesses,
+                                         RenderGraphCompiledPass& compiledPass) const {
         for (const RenderGraphBufferSlot& slot : bufferSlots) {
             RenderGraphBufferHandle bufferHandle = slot.buffer;
             auto validated = validateBufferHandle(bufferHandle);
@@ -228,10 +230,10 @@ namespace asharia {
     }
 
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    RenderGraphImageTransition RenderGraph::makeTransition(RenderGraphImageHandle imageHandle,
-                                                           const RenderGraphImageDesc& image,
-                                                           RenderGraphImageAccess oldAccess,
-                                                           RenderGraphImageAccess newAccess) {
+    RenderGraphImageTransition RenderGraph::Impl::makeTransition(RenderGraphImageHandle imageHandle,
+                                                                 const RenderGraphImageDesc& image,
+                                                                 RenderGraphImageAccess oldAccess,
+                                                                 RenderGraphImageAccess newAccess) {
         return RenderGraphImageTransition{
             .image = imageHandle,
             .imageName = image.name,
@@ -243,10 +245,9 @@ namespace asharia {
     }
 
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    RenderGraphBufferTransition RenderGraph::makeTransition(RenderGraphBufferHandle bufferHandle,
-                                                            const RenderGraphBufferDesc& buffer,
-                                                            RenderGraphBufferAccess oldAccess,
-                                                            RenderGraphBufferAccess newAccess) {
+    RenderGraphBufferTransition RenderGraph::Impl::makeTransition(
+        RenderGraphBufferHandle bufferHandle, const RenderGraphBufferDesc& buffer,
+        RenderGraphBufferAccess oldAccess, RenderGraphBufferAccess newAccess) {
         return RenderGraphBufferTransition{
             .buffer = bufferHandle,
             .bufferName = buffer.name,

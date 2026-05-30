@@ -3,11 +3,11 @@
 #include <string>
 #include <string_view>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "render_graph_internal.hpp"
 
 namespace asharia {
 
-    std::string_view RenderGraph::imageFormatName(RenderGraphImageFormat format) {
+    std::string_view RenderGraph::Impl::imageFormatName(RenderGraphImageFormat format) {
         switch (format) {
         case RenderGraphImageFormat::B8G8R8A8Srgb:
             return "B8G8R8A8Srgb";
@@ -19,7 +19,7 @@ namespace asharia {
         }
     }
 
-    std::string_view RenderGraph::imageStateName(RenderGraphImageState state) {
+    std::string_view RenderGraph::Impl::imageStateName(RenderGraphImageState state) {
         switch (state) {
         case RenderGraphImageState::ColorAttachment:
             return "ColorAttachment";
@@ -43,7 +43,7 @@ namespace asharia {
         }
     }
 
-    std::string_view RenderGraph::bufferStateName(RenderGraphBufferState state) {
+    std::string_view RenderGraph::Impl::bufferStateName(RenderGraphBufferState state) {
         switch (state) {
         case RenderGraphBufferState::TransferRead:
             return "TransferRead";
@@ -61,7 +61,7 @@ namespace asharia {
         }
     }
 
-    std::string_view RenderGraph::imageLifetimeName(RenderGraphImageLifetime lifetime) {
+    std::string_view RenderGraph::Impl::imageLifetimeName(RenderGraphImageLifetime lifetime) {
         switch (lifetime) {
         case RenderGraphImageLifetime::Transient:
             return "Transient";
@@ -71,7 +71,7 @@ namespace asharia {
         }
     }
 
-    std::string_view RenderGraph::bufferLifetimeName(RenderGraphBufferLifetime lifetime) {
+    std::string_view RenderGraph::Impl::bufferLifetimeName(RenderGraphBufferLifetime lifetime) {
         switch (lifetime) {
         case RenderGraphBufferLifetime::Transient:
             return "Transient";
@@ -81,7 +81,7 @@ namespace asharia {
         }
     }
 
-    std::string RenderGraph::missingCallbackMessage(const RenderGraphCompiledPass& pass) {
+    std::string RenderGraph::Impl::missingCallbackMessage(const RenderGraphCompiledPass& pass) {
         std::string message = "Render graph pass '";
         message += pass.name;
         message += "'";
@@ -94,7 +94,8 @@ namespace asharia {
         return message;
     }
 
-    std::string RenderGraph::duplicateSlotMessage(const Pass& pass, std::string_view slotName) {
+    std::string RenderGraph::Impl::duplicateSlotMessage(const Pass& pass,
+                                                        std::string_view slotName) {
         std::string message = "Render graph pass '";
         message += pass.name;
         message += "' declares duplicate resource slot '";
@@ -103,11 +104,11 @@ namespace asharia {
         return message;
     }
 
-    std::string RenderGraph::imageAccessConflictMessage(const Pass& pass,
-                                                        const RenderGraphImageSlot& slot,
-                                                        std::string_view access,
-                                                        const RenderGraphImageSlot& otherSlot,
-                                                        std::string_view otherAccess) const {
+    std::string RenderGraph::Impl::imageAccessConflictMessage(const Pass& pass,
+                                                              const RenderGraphImageSlot& slot,
+                                                              std::string_view access,
+                                                              const RenderGraphImageSlot& otherSlot,
+                                                              std::string_view otherAccess) const {
         std::string message = "Render graph pass '";
         message += pass.name;
         message += "' declares image '";
@@ -125,11 +126,9 @@ namespace asharia {
         return message;
     }
 
-    std::string RenderGraph::bufferAccessConflictMessage(const Pass& pass,
-                                                         const RenderGraphBufferSlot& slot,
-                                                         std::string_view access,
-                                                         const RenderGraphBufferSlot& otherSlot,
-                                                         std::string_view otherAccess) const {
+    std::string RenderGraph::Impl::bufferAccessConflictMessage(
+        const Pass& pass, const RenderGraphBufferSlot& slot, std::string_view access,
+        const RenderGraphBufferSlot& otherSlot, std::string_view otherAccess) const {
         std::string message = "Render graph pass '";
         message += pass.name;
         message += "' declares buffer '";
@@ -147,7 +146,7 @@ namespace asharia {
         return message;
     }
 
-    std::string RenderGraph::imageHandleLabel(RenderGraphImageHandle image) const {
+    std::string RenderGraph::Impl::imageHandleLabel(RenderGraphImageHandle image) const {
         std::string label = "#";
         label += std::to_string(image.index);
         if (image.index < images_.size() && !images_[image.index].name.empty()) {
@@ -157,7 +156,7 @@ namespace asharia {
         return label;
     }
 
-    std::string RenderGraph::bufferHandleLabel(RenderGraphBufferHandle buffer) const {
+    std::string RenderGraph::Impl::bufferHandleLabel(RenderGraphBufferHandle buffer) const {
         std::string label = "#";
         label += std::to_string(buffer.index);
         if (buffer.index < buffers_.size() && !buffers_[buffer.index].name.empty()) {
@@ -168,14 +167,14 @@ namespace asharia {
     }
 
     std::string
-    RenderGraph::dependencyResourceLabel(const RenderGraphPassDependency& dependency) const {
+    RenderGraph::Impl::dependencyResourceLabel(const RenderGraphPassDependency& dependency) const {
         if (dependency.resourceKind == RenderGraphResourceKind::Buffer) {
             return bufferHandleLabel(dependency.buffer);
         }
         return imageHandleLabel(dependency.image);
     }
 
-    std::string RenderGraph::passDeclarationLabel(std::size_t passIndex) const {
+    std::string RenderGraph::Impl::passDeclarationLabel(std::size_t passIndex) const {
         std::string label = "#";
         label += std::to_string(passIndex);
         if (passIndex < passes_.size() && !passes_[passIndex].name.empty()) {
@@ -185,7 +184,8 @@ namespace asharia {
         return label;
     }
 
-    std::string RenderGraph::passDeclarationList(std::span<const std::size_t> passIndices) const {
+    std::string
+    RenderGraph::Impl::passDeclarationList(std::span<const std::size_t> passIndices) const {
         if (passIndices.empty()) {
             return "-";
         }
@@ -200,7 +200,8 @@ namespace asharia {
         return labels;
     }
 
-    std::string RenderGraph::imageHandleList(std::span<const RenderGraphImageHandle> images) const {
+    std::string
+    RenderGraph::Impl::imageHandleList(std::span<const RenderGraphImageHandle> images) const {
         if (images.empty()) {
             return "-";
         }
@@ -215,7 +216,7 @@ namespace asharia {
         return labels;
     }
 
-    std::string_view RenderGraph::shaderStageName(RenderGraphShaderStage stage) {
+    std::string_view RenderGraph::Impl::shaderStageName(RenderGraphShaderStage stage) {
         switch (stage) {
         case RenderGraphShaderStage::Fragment:
             return "fragment";
@@ -227,7 +228,7 @@ namespace asharia {
         }
     }
 
-    std::string_view RenderGraph::commandKindName(RenderGraphCommandKind kind) {
+    std::string_view RenderGraph::Impl::commandKindName(RenderGraphCommandKind kind) {
         switch (kind) {
         case RenderGraphCommandKind::SetShader:
             return "SetShader";
@@ -253,7 +254,7 @@ namespace asharia {
         return "";
     }
 
-    std::string RenderGraph::commandDetail(const RenderGraphCommand& command) {
+    std::string RenderGraph::Impl::commandDetail(const RenderGraphCommand& command) {
         switch (command.kind) {
         case RenderGraphCommandKind::SetShader:
         case RenderGraphCommandKind::SetTexture:
@@ -282,8 +283,8 @@ namespace asharia {
         return "-";
     }
 
-    std::string RenderGraph::imageAccessName(RenderGraphImageState state,
-                                             RenderGraphShaderStage shaderStage) {
+    std::string RenderGraph::Impl::imageAccessName(RenderGraphImageState state,
+                                                   RenderGraphShaderStage shaderStage) {
         std::string name{imageStateName(state)};
         if ((state == RenderGraphImageState::ShaderRead ||
              state == RenderGraphImageState::DepthSampledRead) &&
@@ -295,8 +296,8 @@ namespace asharia {
         return name;
     }
 
-    std::string RenderGraph::bufferAccessName(RenderGraphBufferState state,
-                                              RenderGraphShaderStage shaderStage) {
+    std::string RenderGraph::Impl::bufferAccessName(RenderGraphBufferState state,
+                                                    RenderGraphShaderStage shaderStage) {
         std::string name{bufferStateName(state)};
         if (state == RenderGraphBufferState::ShaderRead &&
             shaderStage != RenderGraphShaderStage::None) {
@@ -313,7 +314,7 @@ namespace asharia {
         return name;
     }
 
-    std::string RenderGraph::slotImageLabel(const RenderGraphImageSlot& slot) const {
+    std::string RenderGraph::Impl::slotImageLabel(const RenderGraphImageSlot& slot) const {
         std::string label = slot.name;
         if (slot.shaderStage != RenderGraphShaderStage::None) {
             label += "(";
@@ -325,7 +326,7 @@ namespace asharia {
         return label;
     }
 
-    std::string RenderGraph::slotBufferLabel(const RenderGraphBufferSlot& slot) const {
+    std::string RenderGraph::Impl::slotBufferLabel(const RenderGraphBufferSlot& slot) const {
         std::string label = slot.name;
         if (slot.shaderStage != RenderGraphShaderStage::None) {
             label += "(";
@@ -337,7 +338,8 @@ namespace asharia {
         return label;
     }
 
-    std::string RenderGraph::imageSlotList(std::span<const RenderGraphImageSlot> slots) const {
+    std::string
+    RenderGraph::Impl::imageSlotList(std::span<const RenderGraphImageSlot> slots) const {
         if (slots.empty()) {
             return "-";
         }
@@ -352,7 +354,8 @@ namespace asharia {
         return labels;
     }
 
-    std::string RenderGraph::bufferSlotList(std::span<const RenderGraphBufferSlot> slots) const {
+    std::string
+    RenderGraph::Impl::bufferSlotList(std::span<const RenderGraphBufferSlot> slots) const {
         if (slots.empty()) {
             return "-";
         }
@@ -367,9 +370,9 @@ namespace asharia {
         return labels;
     }
 
-    void RenderGraph::appendSlotRows(std::string& output, std::string_view passName,
-                                     std::string_view access,
-                                     std::span<const RenderGraphImageSlot> slots) const {
+    void RenderGraph::Impl::appendSlotRows(std::string& output, std::string_view passName,
+                                           std::string_view access,
+                                           std::span<const RenderGraphImageSlot> slots) const {
         if (slots.empty()) {
             return;
         }
@@ -392,9 +395,10 @@ namespace asharia {
         }
     }
 
-    void RenderGraph::appendBufferSlotRows(std::string& output, std::string_view passName,
-                                           std::string_view access,
-                                           std::span<const RenderGraphBufferSlot> slots) const {
+    void
+    RenderGraph::Impl::appendBufferSlotRows(std::string& output, std::string_view passName,
+                                            std::string_view access,
+                                            std::span<const RenderGraphBufferSlot> slots) const {
         if (slots.empty()) {
             return;
         }
@@ -417,7 +421,8 @@ namespace asharia {
         }
     }
 
-    void RenderGraph::appendCommandRows(std::string& output, const RenderGraphCompiledPass& pass) {
+    void RenderGraph::Impl::appendCommandRows(std::string& output,
+                                              const RenderGraphCompiledPass& pass) {
         for (std::size_t index = 0; index < pass.commands.size(); ++index) {
             const RenderGraphCommand& command = pass.commands[index];
             output += "| ";
@@ -432,9 +437,10 @@ namespace asharia {
         }
     }
 
-    void RenderGraph::appendTransitionRow(std::string& output, std::string_view phase,
-                                          std::string_view passName,
-                                          const RenderGraphImageTransition& transition) const {
+    void
+    RenderGraph::Impl::appendTransitionRow(std::string& output, std::string_view phase,
+                                           std::string_view passName,
+                                           const RenderGraphImageTransition& transition) const {
         output += "| ";
         output += phase;
         output += " | ";
@@ -448,9 +454,10 @@ namespace asharia {
         output += " |\n";
     }
 
-    void RenderGraph::appendTransitionRow(std::string& output, std::string_view phase,
-                                          std::string_view passName,
-                                          const RenderGraphBufferTransition& transition) const {
+    void
+    RenderGraph::Impl::appendTransitionRow(std::string& output, std::string_view phase,
+                                           std::string_view passName,
+                                           const RenderGraphBufferTransition& transition) const {
         output += "| ";
         output += phase;
         output += " | ";

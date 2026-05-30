@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "render_graph_internal.hpp"
 
 namespace asharia {
 
@@ -62,8 +62,8 @@ namespace asharia {
     } // namespace
 
     std::vector<bool>
-    RenderGraph::findActivePasses(std::span<const RenderGraphPassDependency> dependencies,
-                                  const RenderGraphSchemaRegistry* schemaRegistry) const {
+    RenderGraph::Impl::findActivePasses(std::span<const RenderGraphPassDependency> dependencies,
+                                        const RenderGraphSchemaRegistry* schemaRegistry) const {
         std::vector<bool> activePasses(passes_.size());
         for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
             if (!passCanBeCulled(passes_[passIndex], schemaRegistry)) {
@@ -91,7 +91,7 @@ namespace asharia {
     }
 
     std::vector<RenderGraphCulledPass>
-    RenderGraph::makeCulledPasses(const std::vector<bool>& activePasses) const {
+    RenderGraph::Impl::makeCulledPasses(const std::vector<bool>& activePasses) const {
         std::vector<RenderGraphCulledPass> culledPasses;
         for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
             if (passIndex < activePasses.size() && activePasses[passIndex]) {
@@ -112,7 +112,7 @@ namespace asharia {
 
     // NOLINTBEGIN(readability-function-cognitive-complexity,
     // bugprone-easily-swappable-parameters)
-    Result<void> RenderGraph::addReadDependencies(
+    Result<void> RenderGraph::Impl::addReadDependencies(
         std::vector<RenderGraphPassDependency>& dependencies, RenderGraphImageHandle image,
         std::span<const std::size_t> writers, std::span<const std::size_t> readers) const {
         const RenderGraphImageDesc& imageDesc = images_[image.index];
@@ -171,7 +171,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::addBufferReadDependencies(
+    Result<void> RenderGraph::Impl::addBufferReadDependencies(
         std::vector<RenderGraphPassDependency>& dependencies, RenderGraphBufferHandle buffer,
         std::span<const std::size_t> writers, std::span<const std::size_t> readers) const {
         const RenderGraphBufferDesc& bufferDesc = buffers_[buffer.index];
@@ -240,9 +240,9 @@ namespace asharia {
     // NOLINTEND(readability-function-cognitive-complexity,
     // bugprone-easily-swappable-parameters)
 
-    void RenderGraph::addDependency(std::vector<RenderGraphPassDependency>& dependencies,
-                                    std::size_t fromPassIndex, std::size_t toPassIndex,
-                                    RenderGraphImageHandle image, std::string reason) const {
+    void RenderGraph::Impl::addDependency(std::vector<RenderGraphPassDependency>& dependencies,
+                                          std::size_t fromPassIndex, std::size_t toPassIndex,
+                                          RenderGraphImageHandle image, std::string reason) const {
         if (fromPassIndex == toPassIndex) {
             return;
         }
@@ -267,10 +267,9 @@ namespace asharia {
         });
     }
 
-    void RenderGraph::addBufferDependency(std::vector<RenderGraphPassDependency>& dependencies,
-                                          std::size_t fromPassIndex, std::size_t toPassIndex,
-                                          RenderGraphBufferHandle buffer,
-                                          std::string reason) const {
+    void RenderGraph::Impl::addBufferDependency(
+        std::vector<RenderGraphPassDependency>& dependencies, std::size_t fromPassIndex,
+        std::size_t toPassIndex, RenderGraphBufferHandle buffer, std::string reason) const {
         if (fromPassIndex == toPassIndex) {
             return;
         }
@@ -299,9 +298,9 @@ namespace asharia {
         });
     }
 
-    Result<std::vector<std::size_t>>
-    RenderGraph::sortPassesByDependencies(std::span<const RenderGraphPassDependency> dependencies,
-                                          const std::vector<bool>& activePasses) const {
+    Result<std::vector<std::size_t>> RenderGraph::Impl::sortPassesByDependencies(
+        std::span<const RenderGraphPassDependency> dependencies,
+        const std::vector<bool>& activePasses) const {
         if (activePasses.size() != passes_.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
@@ -366,7 +365,7 @@ namespace asharia {
         return order;
     }
 
-    std::string RenderGraph::dependencyCycleMessage(
+    std::string RenderGraph::Impl::dependencyCycleMessage(
         std::span<const RenderGraphPassDependency> dependencies,
         const std::vector<bool>& activePasses, const std::vector<bool>& emitted,
         const std::vector<std::vector<std::size_t>>& adjacency) const {
@@ -417,11 +416,10 @@ namespace asharia {
     }
 
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-    bool
-    RenderGraph::findDependencyCycleEdge(const std::vector<std::vector<std::size_t>>& adjacency,
-                                         const std::vector<bool>& activePasses,
-                                         const std::vector<bool>& emitted, std::size_t& cycleFrom,
-                                         std::size_t& cycleTo) const {
+    bool RenderGraph::Impl::findDependencyCycleEdge(
+        const std::vector<std::vector<std::size_t>>& adjacency,
+        const std::vector<bool>& activePasses, const std::vector<bool>& emitted,
+        std::size_t& cycleFrom, std::size_t& cycleTo) const {
         std::vector<std::uint8_t> visitStates(passes_.size());
         std::function<bool(std::size_t)> visit = [&](std::size_t passIndex) {
             visitStates[passIndex] = 1;
@@ -456,8 +454,8 @@ namespace asharia {
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
-    std::string RenderGraph::missingProducerMessage(std::size_t reader,
-                                                    RenderGraphImageHandle image) const {
+    std::string RenderGraph::Impl::missingProducerMessage(std::size_t reader,
+                                                          RenderGraphImageHandle image) const {
         std::string message = "Render graph pass '";
         message += passDeclarationLabel(reader);
         message += "' reads image '";
@@ -466,9 +464,9 @@ namespace asharia {
         return message;
     }
 
-    std::string RenderGraph::ambiguousProducerMessage(std::size_t reader,
-                                                      RenderGraphImageHandle image,
-                                                      std::span<const std::size_t> writers) const {
+    std::string
+    RenderGraph::Impl::ambiguousProducerMessage(std::size_t reader, RenderGraphImageHandle image,
+                                                std::span<const std::size_t> writers) const {
         std::string message = "Render graph pass '";
         message += passDeclarationLabel(reader);
         message += "' reads image '";
@@ -479,8 +477,9 @@ namespace asharia {
         return message;
     }
 
-    std::string RenderGraph::missingBufferProducerMessage(std::size_t reader,
-                                                          RenderGraphBufferHandle buffer) const {
+    std::string
+    RenderGraph::Impl::missingBufferProducerMessage(std::size_t reader,
+                                                    RenderGraphBufferHandle buffer) const {
         std::string message = "Render graph pass '";
         message += passDeclarationLabel(reader);
         message += "' reads buffer '";
@@ -490,8 +489,9 @@ namespace asharia {
     }
 
     std::string
-    RenderGraph::ambiguousBufferProducerMessage(std::size_t reader, RenderGraphBufferHandle buffer,
-                                                std::span<const std::size_t> writers) const {
+    RenderGraph::Impl::ambiguousBufferProducerMessage(std::size_t reader,
+                                                      RenderGraphBufferHandle buffer,
+                                                      std::span<const std::size_t> writers) const {
         std::string message = "Render graph pass '";
         message += passDeclarationLabel(reader);
         message += "' reads buffer '";
@@ -502,26 +502,27 @@ namespace asharia {
         return message;
     }
 
-    bool RenderGraph::passCanBeCulled(const Pass& pass,
-                                      const RenderGraphSchemaRegistry* schemaRegistry) const {
+    bool RenderGraph::Impl::passCanBeCulled(const Pass& pass,
+                                            const RenderGraphSchemaRegistry* schemaRegistry) const {
         return passAllowsCulling(pass, schemaRegistry) &&
                !passHasSideEffects(pass, schemaRegistry) && !passWritesImportedResource(pass);
     }
 
-    bool RenderGraph::passAllowsCulling(const Pass& pass,
-                                        const RenderGraphSchemaRegistry* schemaRegistry) {
+    bool RenderGraph::Impl::passAllowsCulling(const Pass& pass,
+                                              const RenderGraphSchemaRegistry* schemaRegistry) {
         const RenderGraphPassSchema* schema = passSchema(pass, schemaRegistry);
         return pass.allowCulling || (schema != nullptr && schema->allowCulling);
     }
 
-    bool RenderGraph::passHasSideEffects(const Pass& pass,
-                                         const RenderGraphSchemaRegistry* schemaRegistry) {
+    bool RenderGraph::Impl::passHasSideEffects(const Pass& pass,
+                                               const RenderGraphSchemaRegistry* schemaRegistry) {
         const RenderGraphPassSchema* schema = passSchema(pass, schemaRegistry);
         return pass.hasSideEffects || (schema != nullptr && schema->hasSideEffects);
     }
 
     const RenderGraphPassSchema*
-    RenderGraph::passSchema(const Pass& pass, const RenderGraphSchemaRegistry* schemaRegistry) {
+    RenderGraph::Impl::passSchema(const Pass& pass,
+                                  const RenderGraphSchemaRegistry* schemaRegistry) {
         if (schemaRegistry == nullptr || pass.type.empty()) {
             return nullptr;
         }
@@ -529,7 +530,7 @@ namespace asharia {
         return schemaRegistry->find(pass.type);
     }
 
-    bool RenderGraph::passWritesImportedResource(const Pass& pass) const {
+    bool RenderGraph::Impl::passWritesImportedResource(const Pass& pass) const {
         const std::array<std::span<const RenderGraphImageSlot>, 3> writeSlotGroups{
             pass.colorWriteSlots,
             pass.depthWriteSlots,
@@ -560,26 +561,26 @@ namespace asharia {
         return false;
     }
 
-    bool RenderGraph::passReadsImage(const Pass& pass, RenderGraphImageHandle image) {
+    bool RenderGraph::Impl::passReadsImage(const Pass& pass, RenderGraphImageHandle image) {
         return slotsUseImage(pass.shaderReadSlots, image) ||
                slotsUseImage(pass.depthReadSlots, image) ||
                slotsUseImage(pass.depthSampledReadSlots, image) ||
                slotsUseImage(pass.transferReadSlots, image);
     }
 
-    bool RenderGraph::passWritesImage(const Pass& pass, RenderGraphImageHandle image) {
+    bool RenderGraph::Impl::passWritesImage(const Pass& pass, RenderGraphImageHandle image) {
         return slotsUseImage(pass.colorWriteSlots, image) ||
                slotsUseImage(pass.depthWriteSlots, image) ||
                slotsUseImage(pass.transferWriteSlots, image);
     }
 
-    bool RenderGraph::passReadsBuffer(const Pass& pass, RenderGraphBufferHandle buffer) {
+    bool RenderGraph::Impl::passReadsBuffer(const Pass& pass, RenderGraphBufferHandle buffer) {
         return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferTransferReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
     }
 
-    bool RenderGraph::passWritesBuffer(const Pass& pass, RenderGraphBufferHandle buffer) {
+    bool RenderGraph::Impl::passWritesBuffer(const Pass& pass, RenderGraphBufferHandle buffer) {
         return slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
                slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
     }

@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "render_graph_internal.hpp"
 
 namespace asharia {
 
@@ -22,7 +22,7 @@ namespace asharia {
 
     } // namespace
 
-    Result<void> RenderGraph::validateImageHandle(RenderGraphImageHandle image) const {
+    Result<void> RenderGraph::Impl::validateImageHandle(RenderGraphImageHandle image) const {
         if (image.index >= images_.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
@@ -34,7 +34,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateBufferHandle(RenderGraphBufferHandle buffer) const {
+    Result<void> RenderGraph::Impl::validateBufferHandle(RenderGraphBufferHandle buffer) const {
         if (buffer.index >= buffers_.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
@@ -47,7 +47,7 @@ namespace asharia {
     }
 
     // NOLINTBEGIN(readability-function-cognitive-complexity, readability-function-size)
-    Result<void> RenderGraph::validateWriteSlots(const Pass& pass) const {
+    Result<void> RenderGraph::Impl::validateWriteSlots(const Pass& pass) const {
         auto colorSlots = validateSlots(pass, pass.colorWriteSlots);
         if (!colorSlots) {
             return std::unexpected{std::move(colorSlots.error())};
@@ -126,46 +126,46 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateUniqueImageAccesses(
+    Result<void> RenderGraph::Impl::validateUniqueImageAccesses(
         const Pass& pass, std::span<const std::span<const RenderGraphImageSlot>> slotGroups) const {
-        const std::array<RenderGraphImageSlotGroup, 7> namedGroups{
-            RenderGraphImageSlotGroup{
+        const std::array<ImageSlotGroup, 7> namedGroups{
+            ImageSlotGroup{
                 .access = "ColorWrite",
                 .slots = slotGroups[0],
             },
-            RenderGraphImageSlotGroup{
+            ImageSlotGroup{
                 .access = "ShaderRead",
                 .slots = slotGroups[1],
             },
-            RenderGraphImageSlotGroup{
+            ImageSlotGroup{
                 .access = "DepthAttachmentRead",
                 .slots = slotGroups[2],
             },
-            RenderGraphImageSlotGroup{
+            ImageSlotGroup{
                 .access = "DepthAttachmentWrite",
                 .slots = slotGroups[3],
             },
-            RenderGraphImageSlotGroup{
+            ImageSlotGroup{
                 .access = "DepthSampledRead",
                 .slots = slotGroups[4],
             },
-            RenderGraphImageSlotGroup{
+            ImageSlotGroup{
                 .access = "TransferRead",
                 .slots = slotGroups[5],
             },
-            RenderGraphImageSlotGroup{
+            ImageSlotGroup{
                 .access = "TransferWrite",
                 .slots = slotGroups[6],
             },
         };
 
         for (auto groupIt = namedGroups.begin(); groupIt != namedGroups.end(); ++groupIt) {
-            const RenderGraphImageSlotGroup& group = *groupIt;
+            const ImageSlotGroup& group = *groupIt;
             for (std::size_t slotIndex = 0; slotIndex < group.slots.size(); ++slotIndex) {
                 const RenderGraphImageSlot& slot = group.slots[slotIndex];
                 for (auto otherGroupIt = groupIt; otherGroupIt != namedGroups.end();
                      ++otherGroupIt) {
-                    const RenderGraphImageSlotGroup& otherGroup = *otherGroupIt;
+                    const ImageSlotGroup& otherGroup = *otherGroupIt;
                     const std::size_t otherSlotBegin = otherGroupIt == groupIt ? slotIndex + 1 : 0;
                     for (std::size_t otherSlotIndex = otherSlotBegin;
                          otherSlotIndex < otherGroup.slots.size(); ++otherSlotIndex) {
@@ -186,33 +186,33 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateUniqueBufferAccesses(const Pass& pass) const {
-        const std::array<RenderGraphBufferSlotGroup, 4> namedGroups{
-            RenderGraphBufferSlotGroup{
+    Result<void> RenderGraph::Impl::validateUniqueBufferAccesses(const Pass& pass) const {
+        const std::array<BufferSlotGroup, 4> namedGroups{
+            BufferSlotGroup{
                 .access = "BufferShaderRead",
                 .slots = pass.bufferReadSlots,
             },
-            RenderGraphBufferSlotGroup{
+            BufferSlotGroup{
                 .access = "BufferTransferRead",
                 .slots = pass.bufferTransferReadSlots,
             },
-            RenderGraphBufferSlotGroup{
+            BufferSlotGroup{
                 .access = "BufferTransferWrite",
                 .slots = pass.bufferWriteSlots,
             },
-            RenderGraphBufferSlotGroup{
+            BufferSlotGroup{
                 .access = "BufferStorageReadWrite",
                 .slots = pass.bufferStorageReadWriteSlots,
             },
         };
 
         for (auto groupIt = namedGroups.begin(); groupIt != namedGroups.end(); ++groupIt) {
-            const RenderGraphBufferSlotGroup& group = *groupIt;
+            const BufferSlotGroup& group = *groupIt;
             for (std::size_t slotIndex = 0; slotIndex < group.slots.size(); ++slotIndex) {
                 const RenderGraphBufferSlot& slot = group.slots[slotIndex];
                 for (auto otherGroupIt = groupIt; otherGroupIt != namedGroups.end();
                      ++otherGroupIt) {
-                    const RenderGraphBufferSlotGroup& otherGroup = *otherGroupIt;
+                    const BufferSlotGroup& otherGroup = *otherGroupIt;
                     const std::size_t otherSlotBegin = otherGroupIt == groupIt ? slotIndex + 1 : 0;
                     for (std::size_t otherSlotIndex = otherSlotBegin;
                          otherSlotIndex < otherGroup.slots.size(); ++otherSlotIndex) {
@@ -233,8 +233,9 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateSchema(const Pass& pass,
-                                             const RenderGraphSchemaRegistry& schemaRegistry) {
+    Result<void>
+    RenderGraph::Impl::validateSchema(const Pass& pass,
+                                      const RenderGraphSchemaRegistry& schemaRegistry) {
         if (pass.type.empty()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
@@ -352,8 +353,9 @@ namespace asharia {
     }
     // NOLINTEND(readability-function-cognitive-complexity, readability-function-size)
 
-    Result<void> RenderGraph::validateCommandsAgainstSchema(const Pass& pass,
-                                                            const RenderGraphPassSchema& schema) {
+    Result<void>
+    RenderGraph::Impl::validateCommandsAgainstSchema(const Pass& pass,
+                                                     const RenderGraphPassSchema& schema) {
         for (const RenderGraphCommand& command : pass.commands) {
             if (!commandAllowedBySchema(command.kind, schema)) {
                 return std::unexpected{Error{
@@ -369,7 +371,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateSlotsAgainstSchema(
+    Result<void> RenderGraph::Impl::validateSlotsAgainstSchema(
         const Pass& pass, std::span<const RenderGraphImageSlot> slots, RenderGraphSlotAccess access,
         const RenderGraphPassSchema& schema) {
         for (const RenderGraphImageSlot& slot : slots) {
@@ -386,7 +388,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateSlotsAgainstSchema(
+    Result<void> RenderGraph::Impl::validateSlotsAgainstSchema(
         const Pass& pass, std::span<const RenderGraphBufferSlot> slots,
         RenderGraphSlotAccess access, const RenderGraphPassSchema& schema) {
         for (const RenderGraphBufferSlot& slot : slots) {
@@ -403,7 +405,8 @@ namespace asharia {
         return {};
     }
 
-    bool RenderGraph::hasSlot(const Pass& pass, const RenderGraphResourceSlotSchema& slotSchema) {
+    bool RenderGraph::Impl::hasSlot(const Pass& pass,
+                                    const RenderGraphResourceSlotSchema& slotSchema) {
         const std::span<const RenderGraphImageSlot> slots = slotsForAccess(pass, slotSchema.access);
         const std::span<const RenderGraphBufferSlot> bufferSlots =
             bufferSlotsForAccess(pass, slotSchema.access);
@@ -416,8 +419,9 @@ namespace asharia {
     }
 
     const RenderGraphResourceSlotSchema*
-    RenderGraph::findSlotSchema(const RenderGraphPassSchema& schema, std::string_view name,
-                                RenderGraphSlotAccess access, RenderGraphShaderStage shaderStage) {
+    RenderGraph::Impl::findSlotSchema(const RenderGraphPassSchema& schema, std::string_view name,
+                                      RenderGraphSlotAccess access,
+                                      RenderGraphShaderStage shaderStage) {
         for (const RenderGraphResourceSlotSchema& slotSchema : schema.resourceSlots) {
             if (slotSchema.name == name && slotSchema.access == access &&
                 slotSchema.shaderStage == shaderStage) {
@@ -429,7 +433,7 @@ namespace asharia {
     }
 
     std::span<const RenderGraphImageSlot>
-    RenderGraph::slotsForAccess(const Pass& pass, RenderGraphSlotAccess access) {
+    RenderGraph::Impl::slotsForAccess(const Pass& pass, RenderGraphSlotAccess access) {
         switch (access) {
         case RenderGraphSlotAccess::ColorWrite:
             return pass.colorWriteSlots;
@@ -455,7 +459,7 @@ namespace asharia {
     }
 
     std::span<const RenderGraphBufferSlot>
-    RenderGraph::bufferSlotsForAccess(const Pass& pass, RenderGraphSlotAccess access) {
+    RenderGraph::Impl::bufferSlotsForAccess(const Pass& pass, RenderGraphSlotAccess access) {
         switch (access) {
         case RenderGraphSlotAccess::BufferShaderRead:
             return pass.bufferReadSlots;
@@ -477,8 +481,9 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateSlots(const Pass& pass,
-                                            std::span<const RenderGraphImageSlot> slots) const {
+    Result<void>
+    RenderGraph::Impl::validateSlots(const Pass& pass,
+                                     std::span<const RenderGraphImageSlot> slots) const {
         for (std::size_t index = 0; index < slots.size(); ++index) {
             const RenderGraphImageSlot& slot = slots[index];
             if (slot.name.empty()) {
@@ -508,8 +513,9 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateSlots(const Pass& pass,
-                                            std::span<const RenderGraphBufferSlot> slots) const {
+    Result<void>
+    RenderGraph::Impl::validateSlots(const Pass& pass,
+                                     std::span<const RenderGraphBufferSlot> slots) const {
         for (std::size_t index = 0; index < slots.size(); ++index) {
             const RenderGraphBufferSlot& slot = slots[index];
             if (slot.name.empty()) {
@@ -539,7 +545,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateShaderReadSlots(const Pass& pass) const {
+    Result<void> RenderGraph::Impl::validateShaderReadSlots(const Pass& pass) const {
         auto slots = validateSlots(pass, pass.shaderReadSlots);
         if (!slots) {
             return std::unexpected{std::move(slots.error())};
@@ -559,7 +565,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateDepthSampledReadSlots(const Pass& pass) const {
+    Result<void> RenderGraph::Impl::validateDepthSampledReadSlots(const Pass& pass) const {
         auto slots = validateSlots(pass, pass.depthSampledReadSlots);
         if (!slots) {
             return std::unexpected{std::move(slots.error())};
@@ -579,7 +585,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateBufferReadSlots(const Pass& pass) const {
+    Result<void> RenderGraph::Impl::validateBufferReadSlots(const Pass& pass) const {
         auto slots = validateSlots(pass, pass.bufferReadSlots);
         if (!slots) {
             return std::unexpected{std::move(slots.error())};
@@ -599,7 +605,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateBufferStorageReadWriteSlots(const Pass& pass) const {
+    Result<void> RenderGraph::Impl::validateBufferStorageReadWriteSlots(const Pass& pass) const {
         auto slots = validateSlots(pass, pass.bufferStorageReadWriteSlots);
         if (!slots) {
             return std::unexpected{std::move(slots.error())};
@@ -621,7 +627,7 @@ namespace asharia {
     }
 
     // NOLINTBEGIN(readability-function-cognitive-complexity)
-    Result<void> RenderGraph::validateUniqueResourceSlotNames(const Pass& pass) {
+    Result<void> RenderGraph::Impl::validateUniqueResourceSlotNames(const Pass& pass) {
         std::vector<std::string_view> names;
         const auto addName = [&](std::string_view name) -> Result<void> {
             for (const std::string_view existing : names) {

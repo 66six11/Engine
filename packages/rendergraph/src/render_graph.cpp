@@ -1,9 +1,10 @@
-﻿#include "asharia/rendergraph/render_graph.hpp"
-
-#include <cstddef>
+﻿#include <cstddef>
+#include <memory>
 #include <span>
 #include <utility>
 #include <vector>
+
+#include "render_graph_internal.hpp"
 
 namespace asharia {
 
@@ -40,6 +41,24 @@ namespace asharia {
         }
 
     } // namespace
+
+    RenderGraph::RenderGraph() : impl_(std::make_unique<Impl>()) {}
+
+    RenderGraph::~RenderGraph() = default;
+
+    RenderGraph::RenderGraph(const RenderGraph& other)
+        : impl_(other.impl_ ? std::make_unique<Impl>(*other.impl_) : std::make_unique<Impl>()) {}
+
+    RenderGraph& RenderGraph::operator=(const RenderGraph& other) {
+        if (this != &other) {
+            impl_ = other.impl_ ? std::make_unique<Impl>(*other.impl_) : std::make_unique<Impl>();
+        }
+        return *this;
+    }
+
+    RenderGraph::RenderGraph(RenderGraph&& other) noexcept = default;
+
+    RenderGraph& RenderGraph::operator=(RenderGraph&& other) noexcept = default;
 
     RenderGraphCommandList& RenderGraphCommandList::setShader(std::string shaderAsset,
                                                               std::string shaderPass) {
@@ -226,7 +245,7 @@ namespace asharia {
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::writeColor(std::string slotName,
                                                                    RenderGraphImageHandle image) {
-        graph_->passes_[passIndex_].colorWriteSlots.push_back(RenderGraphImageSlot{
+        graph_->impl_->passes_[passIndex_].colorWriteSlots.push_back(RenderGraphImageSlot{
             .name = std::move(slotName),
             .image = image,
         });
@@ -236,7 +255,7 @@ namespace asharia {
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::readTexture(std::string slotName, RenderGraphImageHandle image,
                                           RenderGraphShaderStage shaderStage) {
-        graph_->passes_[passIndex_].shaderReadSlots.push_back(RenderGraphImageSlot{
+        graph_->impl_->passes_[passIndex_].shaderReadSlots.push_back(RenderGraphImageSlot{
             .name = std::move(slotName),
             .image = image,
             .shaderStage = shaderStage,
@@ -246,7 +265,7 @@ namespace asharia {
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::readDepth(std::string slotName,
                                                                   RenderGraphImageHandle image) {
-        graph_->passes_[passIndex_].depthReadSlots.push_back(RenderGraphImageSlot{
+        graph_->impl_->passes_[passIndex_].depthReadSlots.push_back(RenderGraphImageSlot{
             .name = std::move(slotName),
             .image = image,
         });
@@ -255,7 +274,7 @@ namespace asharia {
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::writeDepth(std::string slotName,
                                                                    RenderGraphImageHandle image) {
-        graph_->passes_[passIndex_].depthWriteSlots.push_back(RenderGraphImageSlot{
+        graph_->impl_->passes_[passIndex_].depthWriteSlots.push_back(RenderGraphImageSlot{
             .name = std::move(slotName),
             .image = image,
         });
@@ -265,7 +284,7 @@ namespace asharia {
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::readDepthTexture(std::string slotName, RenderGraphImageHandle image,
                                                RenderGraphShaderStage shaderStage) {
-        graph_->passes_[passIndex_].depthSampledReadSlots.push_back(RenderGraphImageSlot{
+        graph_->impl_->passes_[passIndex_].depthSampledReadSlots.push_back(RenderGraphImageSlot{
             .name = std::move(slotName),
             .image = image,
             .shaderStage = shaderStage,
@@ -275,7 +294,7 @@ namespace asharia {
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::readTransfer(std::string slotName,
                                                                      RenderGraphImageHandle image) {
-        graph_->passes_[passIndex_].transferReadSlots.push_back(RenderGraphImageSlot{
+        graph_->impl_->passes_[passIndex_].transferReadSlots.push_back(RenderGraphImageSlot{
             .name = std::move(slotName),
             .image = image,
         });
@@ -293,7 +312,7 @@ namespace asharia {
 
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::writeTransfer(std::string slotName, RenderGraphImageHandle image) {
-        graph_->passes_[passIndex_].transferWriteSlots.push_back(RenderGraphImageSlot{
+        graph_->impl_->passes_[passIndex_].transferWriteSlots.push_back(RenderGraphImageSlot{
             .name = std::move(slotName),
             .image = image,
         });
@@ -303,7 +322,7 @@ namespace asharia {
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::readBuffer(std::string slotName, RenderGraphBufferHandle buffer,
                                          RenderGraphShaderStage shaderStage) {
-        graph_->passes_[passIndex_].bufferReadSlots.push_back(RenderGraphBufferSlot{
+        graph_->impl_->passes_[passIndex_].bufferReadSlots.push_back(RenderGraphBufferSlot{
             .name = std::move(slotName),
             .buffer = buffer,
             .shaderStage = shaderStage,
@@ -314,7 +333,7 @@ namespace asharia {
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::readTransferBuffer(std::string slotName,
                                                  RenderGraphBufferHandle buffer) {
-        graph_->passes_[passIndex_].bufferTransferReadSlots.push_back(RenderGraphBufferSlot{
+        graph_->impl_->passes_[passIndex_].bufferTransferReadSlots.push_back(RenderGraphBufferSlot{
             .name = std::move(slotName),
             .buffer = buffer,
         });
@@ -328,7 +347,7 @@ namespace asharia {
 
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::writeBuffer(std::string slotName, RenderGraphBufferHandle buffer) {
-        graph_->passes_[passIndex_].bufferWriteSlots.push_back(RenderGraphBufferSlot{
+        graph_->impl_->passes_[passIndex_].bufferWriteSlots.push_back(RenderGraphBufferSlot{
             .name = std::move(slotName),
             .buffer = buffer,
         });
@@ -337,51 +356,52 @@ namespace asharia {
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::readWriteStorageBuffer(
         std::string slotName, RenderGraphBufferHandle buffer, RenderGraphShaderStage shaderStage) {
-        graph_->passes_[passIndex_].bufferStorageReadWriteSlots.push_back(RenderGraphBufferSlot{
-            .name = std::move(slotName),
-            .buffer = buffer,
-            .shaderStage = shaderStage,
-        });
+        graph_->impl_->passes_[passIndex_].bufferStorageReadWriteSlots.push_back(
+            RenderGraphBufferSlot{
+                .name = std::move(slotName),
+                .buffer = buffer,
+                .shaderStage = shaderStage,
+            });
         return *this;
     }
 
     std::string_view RenderGraph::PassBuilder::name() const {
-        return graph_->passes_[passIndex_].name;
+        return graph_->impl_->passes_[passIndex_].name;
     }
 
     std::string_view RenderGraph::PassBuilder::type() const {
-        return graph_->passes_[passIndex_].type;
+        return graph_->impl_->passes_[passIndex_].type;
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::allowCulling(bool allow) {
-        graph_->passes_[passIndex_].allowCulling = allow;
+        graph_->impl_->passes_[passIndex_].allowCulling = allow;
         return *this;
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::hasSideEffects(bool hasSideEffects) {
-        graph_->passes_[passIndex_].hasSideEffects = hasSideEffects;
+        graph_->impl_->passes_[passIndex_].hasSideEffects = hasSideEffects;
         return *this;
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::setParamsType(std::string paramsType) {
-        graph_->passes_[passIndex_].paramsType = std::move(paramsType);
+        graph_->impl_->passes_[passIndex_].paramsType = std::move(paramsType);
         return *this;
     }
 
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::setParamsData(std::vector<std::byte> paramsData) {
-        graph_->passes_[passIndex_].paramsData = std::move(paramsData);
+        graph_->impl_->passes_[passIndex_].paramsData = std::move(paramsData);
         return *this;
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::execute(RenderGraphPassCallback callback) {
-        graph_->passes_[passIndex_].callback = std::move(callback);
+        graph_->impl_->passes_[passIndex_].callback = std::move(callback);
         return *this;
     }
 
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::setCommands(RenderGraphCommandList commands) {
-        graph_->passes_[passIndex_].commands = std::move(commands).takeCommands();
+        graph_->impl_->passes_[passIndex_].commands = std::move(commands).takeCommands();
         return *this;
     }
 
@@ -390,9 +410,9 @@ namespace asharia {
 
     RenderGraphImageHandle RenderGraph::importImage(RenderGraphImageDesc desc) {
         desc.lifetime = RenderGraphImageLifetime::Imported;
-        images_.push_back(std::move(desc));
+        impl_->images_.push_back(std::move(desc));
         return RenderGraphImageHandle{
-            .index = static_cast<std::uint32_t>(images_.size() - 1),
+            .index = static_cast<std::uint32_t>(impl_->images_.size() - 1),
         };
     }
 
@@ -402,17 +422,17 @@ namespace asharia {
         desc.initialShaderStage = RenderGraphShaderStage::None;
         desc.finalState = RenderGraphImageState::Undefined;
         desc.finalShaderStage = RenderGraphShaderStage::None;
-        images_.push_back(std::move(desc));
+        impl_->images_.push_back(std::move(desc));
         return RenderGraphImageHandle{
-            .index = static_cast<std::uint32_t>(images_.size() - 1),
+            .index = static_cast<std::uint32_t>(impl_->images_.size() - 1),
         };
     }
 
     RenderGraphBufferHandle RenderGraph::importBuffer(RenderGraphBufferDesc desc) {
         desc.lifetime = RenderGraphBufferLifetime::Imported;
-        buffers_.push_back(std::move(desc));
+        impl_->buffers_.push_back(std::move(desc));
         return RenderGraphBufferHandle{
-            .index = static_cast<std::uint32_t>(buffers_.size() - 1),
+            .index = static_cast<std::uint32_t>(impl_->buffers_.size() - 1),
         };
     }
 
@@ -422,14 +442,14 @@ namespace asharia {
         desc.initialShaderStage = RenderGraphShaderStage::None;
         desc.finalState = RenderGraphBufferState::Undefined;
         desc.finalShaderStage = RenderGraphShaderStage::None;
-        buffers_.push_back(std::move(desc));
+        impl_->buffers_.push_back(std::move(desc));
         return RenderGraphBufferHandle{
-            .index = static_cast<std::uint32_t>(buffers_.size() - 1),
+            .index = static_cast<std::uint32_t>(impl_->buffers_.size() - 1),
         };
     }
 
     RenderGraph::PassBuilder RenderGraph::addPass(std::string name) {
-        Pass pass{
+        Impl::Pass pass{
             .name = std::move(name),
             .type = {},
             .paramsType = {},
@@ -450,12 +470,12 @@ namespace asharia {
             .hasSideEffects = {},
             .callback = {},
         };
-        passes_.push_back(std::move(pass));
-        return PassBuilder{*this, passes_.size() - 1};
+        impl_->passes_.push_back(std::move(pass));
+        return PassBuilder{*this, impl_->passes_.size() - 1};
     }
 
     RenderGraph::PassBuilder RenderGraph::addPass(std::string name, std::string type) {
-        Pass pass{
+        Impl::Pass pass{
             .name = std::move(name),
             .type = std::move(type),
             .paramsType = {},
@@ -476,22 +496,22 @@ namespace asharia {
             .hasSideEffects = {},
             .callback = {},
         };
-        passes_.push_back(std::move(pass));
-        return PassBuilder{*this, passes_.size() - 1};
+        impl_->passes_.push_back(std::move(pass));
+        return PassBuilder{*this, impl_->passes_.size() - 1};
     }
 
     Result<RenderGraphCompileResult> RenderGraph::compile() const {
-        return compile(nullptr);
+        return impl_->compile(nullptr);
     }
 
     Result<RenderGraphCompileResult>
     RenderGraph::compile(const RenderGraphSchemaRegistry& schemaRegistry) const {
-        return compile(&schemaRegistry);
+        return impl_->compile(&schemaRegistry);
     }
 
     // NOLINTBEGIN(readability-function-cognitive-complexity)
     Result<RenderGraphCompileResult>
-    RenderGraph::compile(const RenderGraphSchemaRegistry* schemaRegistry) const {
+    RenderGraph::Impl::compile(const RenderGraphSchemaRegistry* schemaRegistry) const {
         auto imagesValidated = validateImages();
         if (!imagesValidated) {
             return std::unexpected{std::move(imagesValidated.error())};
@@ -797,7 +817,7 @@ namespace asharia {
             return std::unexpected{std::move(compiled.error())};
         }
 
-        return execute(*compiled);
+        return impl_->execute(*compiled, nullptr);
     }
 
     Result<void> RenderGraph::execute(const RenderGraphExecutorRegistry& executorRegistry) const {
@@ -806,20 +826,21 @@ namespace asharia {
             return std::unexpected{std::move(compiled.error())};
         }
 
-        return execute(*compiled, executorRegistry);
+        return impl_->execute(*compiled, &executorRegistry);
     }
 
     Result<void> RenderGraph::execute(const RenderGraphCompileResult& compiled) const {
-        return execute(compiled, nullptr);
+        return impl_->execute(compiled, nullptr);
     }
 
     Result<void> RenderGraph::execute(const RenderGraphCompileResult& compiled,
                                       const RenderGraphExecutorRegistry& executorRegistry) const {
-        return execute(compiled, &executorRegistry);
+        return impl_->execute(compiled, &executorRegistry);
     }
 
-    Result<void> RenderGraph::execute(const RenderGraphCompileResult& compiled,
-                                      const RenderGraphExecutorRegistry* executorRegistry) const {
+    Result<void>
+    RenderGraph::Impl::execute(const RenderGraphCompileResult& compiled,
+                               const RenderGraphExecutorRegistry* executorRegistry) const {
         if (compiled.declaredPassCount != passes_.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
@@ -904,7 +925,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateImages() const {
+    Result<void> RenderGraph::Impl::validateImages() const {
         for (const RenderGraphImageDesc& image : images_) {
             if (image.lifetime == RenderGraphImageLifetime::Imported &&
                 image.finalState == RenderGraphImageState::Undefined) {
@@ -920,7 +941,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validateBuffers() const {
+    Result<void> RenderGraph::Impl::validateBuffers() const {
         for (const RenderGraphBufferDesc& buffer : buffers_) {
             if (buffer.byteSize == 0) {
                 return std::unexpected{Error{
@@ -943,8 +964,9 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::validatePass(const Pass& pass,
-                                           const RenderGraphSchemaRegistry* schemaRegistry) const {
+    Result<void>
+    RenderGraph::Impl::validatePass(const Pass& pass,
+                                    const RenderGraphSchemaRegistry* schemaRegistry) const {
         auto slotsValidated = validateWriteSlots(pass);
         if (!slotsValidated) {
             return std::unexpected{std::move(slotsValidated.error())};
@@ -960,7 +982,7 @@ namespace asharia {
         return {};
     }
 
-    Result<std::vector<RenderGraphPassDependency>> RenderGraph::buildDependencies() const {
+    Result<std::vector<RenderGraphPassDependency>> RenderGraph::Impl::buildDependencies() const {
         std::vector<RenderGraphPassDependency> dependencies;
 
         auto imageDependencies = buildImageDependencies(dependencies);
@@ -976,7 +998,7 @@ namespace asharia {
         return dependencies;
     }
 
-    Result<void> RenderGraph::buildImageDependencies(
+    Result<void> RenderGraph::Impl::buildImageDependencies(
         std::vector<RenderGraphPassDependency>& dependencies) const {
         for (std::size_t imageIndex = 0; imageIndex < images_.size(); ++imageIndex) {
             const RenderGraphImageHandle imageHandle{
@@ -1010,7 +1032,7 @@ namespace asharia {
         return {};
     }
 
-    Result<void> RenderGraph::buildBufferDependencies(
+    Result<void> RenderGraph::Impl::buildBufferDependencies(
         std::vector<RenderGraphPassDependency>& dependencies) const {
         for (std::size_t bufferIndex = 0; bufferIndex < buffers_.size(); ++bufferIndex) {
             const RenderGraphBufferHandle bufferHandle{
@@ -1044,9 +1066,18 @@ namespace asharia {
         return {};
     }
 
-    // NOLINTBEGIN(readability-function-cognitive-complexity)
     RenderGraphDiagnosticsSnapshot
     RenderGraph::diagnosticsSnapshot(const RenderGraphCompileResult& compiled) const {
+        return impl_->diagnosticsSnapshot(compiled);
+    }
+
+    std::string RenderGraph::formatDebugTables(const RenderGraphCompileResult& compiled) const {
+        return impl_->formatDebugTables(compiled);
+    }
+
+    // NOLINTBEGIN(readability-function-cognitive-complexity)
+    RenderGraphDiagnosticsSnapshot
+    RenderGraph::Impl::diagnosticsSnapshot(const RenderGraphCompileResult& compiled) const {
         RenderGraphDiagnosticsSnapshot snapshot;
         snapshot.declaredPassCount = compiled.declaredPassCount;
         snapshot.declaredImageCount = compiled.declaredImageCount;
@@ -1320,7 +1351,8 @@ namespace asharia {
     // NOLINTEND(readability-function-cognitive-complexity)
 
     // NOLINTBEGIN(readability-function-cognitive-complexity)
-    std::string RenderGraph::formatDebugTables(const RenderGraphCompileResult& compiled) const {
+    std::string
+    RenderGraph::Impl::formatDebugTables(const RenderGraphCompileResult& compiled) const {
         std::string output;
         output += "### RenderGraph Resources\n\n";
         output += "| # | Name | Lifetime | Format | Extent | Initial | Final |\n";

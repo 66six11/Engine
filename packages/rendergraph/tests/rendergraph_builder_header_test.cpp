@@ -1,4 +1,6 @@
-﻿#include "asharia/rendergraph/render_graph_builder.hpp"
+﻿#include <utility>
+
+#include "asharia/rendergraph/render_graph_builder.hpp"
 
 namespace asharia::rendergraph_header_tests {
 
@@ -20,6 +22,14 @@ namespace asharia::rendergraph_header_tests {
             .recordCommands([](RenderGraphCommandList& commands) {
                 commands.setFloat("Value", 1.0F).drawFullscreenTriangle();
             });
+
+        RenderGraph copyConstructed{graph};
+        RenderGraph copyAssigned;
+        copyAssigned = copyConstructed;
+        RenderGraph moveConstructed{std::move(copyAssigned)};
+        RenderGraph moveAssigned;
+        moveAssigned = std::move(moveConstructed);
+        (void)moveAssigned.compile();
     }
 
 } // namespace asharia::rendergraph_header_tests
