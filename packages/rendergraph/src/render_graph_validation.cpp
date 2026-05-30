@@ -714,4 +714,61 @@ namespace asharia {
     }
     // NOLINTEND(readability-function-cognitive-complexity)
 
+    Result<void> RenderGraph::Impl::validateImages() const {
+        for (const RenderGraphImageDesc& image : images_) {
+            if (image.lifetime == RenderGraphImageLifetime::Imported &&
+                image.finalState == RenderGraphImageState::Undefined) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Imported render graph image '" + image.name +
+                        "' must declare an explicit final state.",
+                }};
+            }
+        }
+
+        return {};
+    }
+
+    Result<void> RenderGraph::Impl::validateBuffers() const {
+        for (const RenderGraphBufferDesc& buffer : buffers_) {
+            if (buffer.byteSize == 0) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph buffer '" + buffer.name + "' must declare a non-zero byte size.",
+                }};
+            }
+            if (buffer.lifetime == RenderGraphBufferLifetime::Imported &&
+                buffer.finalState == RenderGraphBufferState::Undefined) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Imported render graph buffer '" + buffer.name +
+                        "' must declare an explicit final state.",
+                }};
+            }
+        }
+
+        return {};
+    }
+
+    Result<void>
+    RenderGraph::Impl::validatePass(const Pass& pass,
+                                    const RenderGraphSchemaRegistry* schemaRegistry) const {
+        auto slotsValidated = validateWriteSlots(pass);
+        if (!slotsValidated) {
+            return std::unexpected{std::move(slotsValidated.error())};
+        }
+
+        if (schemaRegistry != nullptr) {
+            auto schemaValidated = validateSchema(pass, *schemaRegistry);
+            if (!schemaValidated) {
+                return std::unexpected{std::move(schemaValidated.error())};
+            }
+        }
+
+        return {};
+    }
+
 } // namespace asharia

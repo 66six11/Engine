@@ -585,4 +585,88 @@ namespace asharia {
                slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
     }
 
+    Result<std::vector<RenderGraphPassDependency>> RenderGraph::Impl::buildDependencies() const {
+        std::vector<RenderGraphPassDependency> dependencies;
+
+        auto imageDependencies = buildImageDependencies(dependencies);
+        if (!imageDependencies) {
+            return std::unexpected{std::move(imageDependencies.error())};
+        }
+
+        auto bufferDependencies = buildBufferDependencies(dependencies);
+        if (!bufferDependencies) {
+            return std::unexpected{std::move(bufferDependencies.error())};
+        }
+
+        return dependencies;
+    }
+
+    Result<void> RenderGraph::Impl::buildImageDependencies(
+        std::vector<RenderGraphPassDependency>& dependencies) const {
+        for (std::size_t imageIndex = 0; imageIndex < images_.size(); ++imageIndex) {
+            const RenderGraphImageHandle imageHandle{
+                .index = static_cast<std::uint32_t>(imageIndex),
+            };
+            std::vector<std::size_t> writers;
+            std::vector<std::size_t> readers;
+
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                const Pass& pass = passes_[passIndex];
+                if (passWritesImage(pass, imageHandle)) {
+                    writers.push_back(passIndex);
+                }
+                if (passReadsImage(pass, imageHandle)) {
+                    readers.push_back(passIndex);
+                }
+            }
+
+            for (std::size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex) {
+                addDependency(dependencies, writers[writerIndex - 1], writers[writerIndex],
+                              imageHandle, "write order");
+            }
+
+            auto readDependencies =
+                addReadDependencies(dependencies, imageHandle, writers, readers);
+            if (!readDependencies) {
+                return std::unexpected{std::move(readDependencies.error())};
+            }
+        }
+
+        return {};
+    }
+
+    Result<void> RenderGraph::Impl::buildBufferDependencies(
+        std::vector<RenderGraphPassDependency>& dependencies) const {
+        for (std::size_t bufferIndex = 0; bufferIndex < buffers_.size(); ++bufferIndex) {
+            const RenderGraphBufferHandle bufferHandle{
+                .index = static_cast<std::uint32_t>(bufferIndex),
+            };
+            std::vector<std::size_t> writers;
+            std::vector<std::size_t> readers;
+
+            for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex) {
+                const Pass& pass = passes_[passIndex];
+                if (passWritesBuffer(pass, bufferHandle)) {
+                    writers.push_back(passIndex);
+                }
+                if (passReadsBuffer(pass, bufferHandle)) {
+                    readers.push_back(passIndex);
+                }
+            }
+
+            for (std::size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex) {
+                addBufferDependency(dependencies, writers[writerIndex - 1], writers[writerIndex],
+                                    bufferHandle, "write order");
+            }
+
+            auto readDependencies =
+                addBufferReadDependencies(dependencies, bufferHandle, writers, readers);
+            if (!readDependencies) {
+                return std::unexpected{std::move(readDependencies.error())};
+            }
+        }
+
+        return {};
+    }
+
 } // namespace asharia
