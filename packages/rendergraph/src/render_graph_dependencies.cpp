@@ -1,11 +1,65 @@
 ﻿#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <span>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "asharia/rendergraph/render_graph.hpp"
 
 namespace asharia {
+
+    namespace {
+
+        std::size_t activePassCount(const std::vector<bool>& activePasses) {
+            std::size_t count = 0;
+            for (const bool active : activePasses) {
+                if (active) {
+                    ++count;
+                }
+            }
+
+            return count;
+        }
+
+        bool addTopoEdge(std::vector<std::vector<std::size_t>>& adjacency,
+                         std::size_t fromPassIndex, std::size_t toPassIndex) {
+            for (const std::size_t existing : adjacency[fromPassIndex]) {
+                if (existing == toPassIndex) {
+                    return false;
+                }
+            }
+
+            adjacency[fromPassIndex].push_back(toPassIndex);
+            return true;
+        }
+
+        const RenderGraphPassDependency*
+        findDependencyForEdge(std::span<const RenderGraphPassDependency> dependencies,
+                              std::size_t fromPassIndex, std::size_t toPassIndex) {
+            for (const RenderGraphPassDependency& dependency : dependencies) {
+                if (dependency.fromDeclarationIndex == fromPassIndex &&
+                    dependency.toDeclarationIndex == toPassIndex) {
+                    return &dependency;
+                }
+            }
+
+            return nullptr;
+        }
+
+        bool imageCanBeReadFromInitialState(const RenderGraphImageDesc& image) {
+            return image.lifetime == RenderGraphImageLifetime::Imported &&
+                   image.initialState != RenderGraphImageState::Undefined;
+        }
+
+        bool bufferCanBeReadFromInitialState(const RenderGraphBufferDesc& buffer) {
+            return buffer.lifetime == RenderGraphBufferLifetime::Imported &&
+                   buffer.initialState != RenderGraphBufferState::Undefined;
+        }
+
+    } // namespace
 
     std::vector<bool>
     RenderGraph::findActivePasses(std::span<const RenderGraphPassDependency> dependencies,
@@ -36,25 +90,6 @@ namespace asharia {
         return activePasses;
     }
 
-    std::vector<RenderGraphPassDependency>
-    RenderGraph::filterActiveDependencies(std::span<const RenderGraphPassDependency> dependencies,
-                                          const std::vector<bool>& activePasses) {
-        std::vector<RenderGraphPassDependency> activeDependencies;
-        activeDependencies.reserve(dependencies.size());
-        for (const RenderGraphPassDependency& dependency : dependencies) {
-            if (dependency.fromDeclarationIndex >= activePasses.size() ||
-                dependency.toDeclarationIndex >= activePasses.size()) {
-                continue;
-            }
-            if (activePasses[dependency.fromDeclarationIndex] &&
-                activePasses[dependency.toDeclarationIndex]) {
-                activeDependencies.push_back(dependency);
-            }
-        }
-
-        return activeDependencies;
-    }
-
     std::vector<RenderGraphCulledPass>
     RenderGraph::makeCulledPasses(const std::vector<bool>& activePasses) const {
         std::vector<RenderGraphCulledPass> culledPasses;
@@ -73,17 +108,6 @@ namespace asharia {
         }
 
         return culledPasses;
-    }
-
-    std::size_t RenderGraph::activePassCount(const std::vector<bool>& activePasses) {
-        std::size_t count = 0;
-        for (const bool active : activePasses) {
-            if (active) {
-                ++count;
-            }
-        }
-
-        return count;
     }
 
     // NOLINTBEGIN(readability-function-cognitive-complexity,
@@ -342,18 +366,6 @@ namespace asharia {
         return order;
     }
 
-    bool RenderGraph::addTopoEdge(std::vector<std::vector<std::size_t>>& adjacency,
-                                  std::size_t fromPassIndex, std::size_t toPassIndex) {
-        for (const std::size_t existing : adjacency[fromPassIndex]) {
-            if (existing == toPassIndex) {
-                return false;
-            }
-        }
-
-        adjacency[fromPassIndex].push_back(toPassIndex);
-        return true;
-    }
-
     std::string RenderGraph::dependencyCycleMessage(
         std::span<const RenderGraphPassDependency> dependencies,
         const std::vector<bool>& activePasses, const std::vector<bool>& emitted,
@@ -444,19 +456,6 @@ namespace asharia {
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
-    const RenderGraphPassDependency*
-    RenderGraph::findDependencyForEdge(std::span<const RenderGraphPassDependency> dependencies,
-                                       std::size_t fromPassIndex, std::size_t toPassIndex) {
-        for (const RenderGraphPassDependency& dependency : dependencies) {
-            if (dependency.fromDeclarationIndex == fromPassIndex &&
-                dependency.toDeclarationIndex == toPassIndex) {
-                return &dependency;
-            }
-        }
-
-        return nullptr;
-    }
-
     std::string RenderGraph::missingProducerMessage(std::size_t reader,
                                                     RenderGraphImageHandle image) const {
         std::string message = "Render graph pass '";
@@ -501,16 +500,6 @@ namespace asharia {
         message += passDeclarationList(writers);
         message += ".";
         return message;
-    }
-
-    bool RenderGraph::imageCanBeReadFromInitialState(const RenderGraphImageDesc& image) {
-        return image.lifetime == RenderGraphImageLifetime::Imported &&
-               image.initialState != RenderGraphImageState::Undefined;
-    }
-
-    bool RenderGraph::bufferCanBeReadFromInitialState(const RenderGraphBufferDesc& buffer) {
-        return buffer.lifetime == RenderGraphBufferLifetime::Imported &&
-               buffer.initialState != RenderGraphBufferState::Undefined;
     }
 
     bool RenderGraph::passCanBeCulled(const Pass& pass,

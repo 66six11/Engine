@@ -1,8 +1,45 @@
 ﻿#include "asharia/rendergraph/render_graph.hpp"
 
+#include <cstddef>
+#include <span>
 #include <utility>
+#include <vector>
 
 namespace asharia {
+
+    namespace {
+
+        std::vector<RenderGraphPassDependency>
+        filterActiveDependencies(std::span<const RenderGraphPassDependency> dependencies,
+                                 const std::vector<bool>& activePasses) {
+            std::vector<RenderGraphPassDependency> activeDependencies;
+            activeDependencies.reserve(dependencies.size());
+            for (const RenderGraphPassDependency& dependency : dependencies) {
+                if (dependency.fromDeclarationIndex >= activePasses.size() ||
+                    dependency.toDeclarationIndex >= activePasses.size()) {
+                    continue;
+                }
+                if (activePasses[dependency.fromDeclarationIndex] &&
+                    activePasses[dependency.toDeclarationIndex]) {
+                    activeDependencies.push_back(dependency);
+                }
+            }
+
+            return activeDependencies;
+        }
+
+        std::size_t activePassCount(const std::vector<bool>& activePasses) {
+            std::size_t count = 0;
+            for (const bool active : activePasses) {
+                if (active) {
+                    ++count;
+                }
+            }
+
+            return count;
+        }
+
+    } // namespace
 
     RenderGraphCommandList& RenderGraphCommandList::setShader(std::string shaderAsset,
                                                               std::string shaderPass) {

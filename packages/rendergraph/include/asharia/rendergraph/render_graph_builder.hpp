@@ -162,14 +162,8 @@ namespace asharia {
         findActivePasses(std::span<const RenderGraphPassDependency> dependencies,
                          const RenderGraphSchemaRegistry* schemaRegistry) const;
 
-        [[nodiscard]] static std::vector<RenderGraphPassDependency>
-        filterActiveDependencies(std::span<const RenderGraphPassDependency> dependencies,
-                                 const std::vector<bool>& activePasses);
-
         [[nodiscard]] std::vector<RenderGraphCulledPass>
         makeCulledPasses(const std::vector<bool>& activePasses) const;
-
-        [[nodiscard]] static std::size_t activePassCount(const std::vector<bool>& activePasses);
 
         [[nodiscard]] Result<std::vector<RenderGraphPassDependency>> buildDependencies() const;
         [[nodiscard]] Result<void>
@@ -198,9 +192,6 @@ namespace asharia {
         sortPassesByDependencies(std::span<const RenderGraphPassDependency> dependencies,
                                  const std::vector<bool>& activePasses) const;
 
-        [[nodiscard]] static bool addTopoEdge(std::vector<std::vector<std::size_t>>& adjacency,
-                                              std::size_t fromPassIndex, std::size_t toPassIndex);
-
         [[nodiscard]] std::string
         dependencyCycleMessage(std::span<const RenderGraphPassDependency> dependencies,
                                const std::vector<bool>& activePasses,
@@ -212,10 +203,6 @@ namespace asharia {
                                 const std::vector<bool>& activePasses,
                                 const std::vector<bool>& emitted, std::size_t& cycleFrom,
                                 std::size_t& cycleTo) const;
-
-        [[nodiscard]] static const RenderGraphPassDependency*
-        findDependencyForEdge(std::span<const RenderGraphPassDependency> dependencies,
-                              std::size_t fromPassIndex, std::size_t toPassIndex);
 
         [[nodiscard]] std::string missingProducerMessage(std::size_t reader,
                                                          RenderGraphImageHandle image) const;
@@ -230,11 +217,6 @@ namespace asharia {
         [[nodiscard]] std::string
         ambiguousBufferProducerMessage(std::size_t reader, RenderGraphBufferHandle buffer,
                                        std::span<const std::size_t> writers) const;
-
-        [[nodiscard]] static bool imageCanBeReadFromInitialState(const RenderGraphImageDesc& image);
-
-        [[nodiscard]] static bool
-        bufferCanBeReadFromInitialState(const RenderGraphBufferDesc& buffer);
 
         [[nodiscard]] bool passCanBeCulled(const Pass& pass,
                                            const RenderGraphSchemaRegistry* schemaRegistry) const;
@@ -276,9 +258,6 @@ namespace asharia {
 
         [[nodiscard]] static Result<void>
         validateCommandsAgainstSchema(const Pass& pass, const RenderGraphPassSchema& schema);
-
-        [[nodiscard]] static bool commandAllowedBySchema(RenderGraphCommandKind commandKind,
-                                                         const RenderGraphPassSchema& schema);
 
         [[nodiscard]] static Result<void>
         validateSlotsAgainstSchema(const Pass& pass, std::span<const RenderGraphImageSlot> slots,

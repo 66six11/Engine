@@ -124,17 +124,18 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 15. Phase 4-I: debug label/table formatting helper 实现移入 `src/render_graph_debug.cpp`
 16. Phase 5-A/B: `RenderGraphCommandList` 提取到 `render_graph_command_list.hpp`，pass context 与 schema/executor registry 提取到 `render_graph_execution.hpp`
 17. Phase 5-D: `RenderGraph` / `RenderGraph::PassBuilder` 声明提取到 `render_graph_builder.hpp`，`render_graph.hpp` 收敛为纯聚合头
+18. Phase 5-E: 不访问 `RenderGraph` 私有状态的 compile/dependency/schema helper 收敛为 `.cpp` 文件局部函数，减少 `render_graph_builder.hpp` private static 声明
 
 **当前结构**:
 ```
 render_graph_types.hpp      — 纯数据契约，无内部依赖
 render_graph_command_list.hpp — command summary accumulator，只依赖 types
 render_graph_execution.hpp  — pass context、callback、schema/executor registry，只依赖 types/core result
-render_graph_builder.hpp    — RenderGraph/PassBuilder 声明、模板 builder 入口、private helper 声明
+render_graph_builder.hpp    — RenderGraph/PassBuilder 声明、模板 builder 入口、仍需成员访问的 private helper 声明
 render_graph_compile.hpp    — 编译产物，只依赖 types
 render_graph_diagnostics.hpp — diagnostics snapshot，只依赖 compile/types
 render_graph.hpp            — aggregate header，兼容旧 include
-src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、compile/execute、diagnostics formatting 实现
+src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、compile/execute、diagnostics formatting 实现，以及 compile-only 局部 helper
 src/render_graph_debug.cpp — debug label/table formatting helper 实现
 src/render_graph_dependencies.cpp — dependency/culling/producer helper 实现
 src/render_graph_lifetime.cpp — transient lifetime/resource transition helper 实现
@@ -143,6 +144,7 @@ src/render_graph_validation.cpp — handle/slot/schema/access validation helper 
 
 **待完成 (Phase 5+)**:
 - 后续新增 cache、alias、multi-queue 或 unsafe/native pass 前，优先保持窄头自包含测试与 include 边界
+- 继续评估 debug name/command formatting helper 是否需要收敛到 `src/` 内部 header；完整移除成员 helper 声明需要先设计 `RenderGraph` 数据/pimpl 边界
 
 ---
 

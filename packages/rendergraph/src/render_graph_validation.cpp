@@ -11,6 +11,17 @@
 
 namespace asharia {
 
+    namespace {
+
+        bool commandAllowedBySchema(RenderGraphCommandKind commandKind,
+                                    const RenderGraphPassSchema& schema) {
+            return std::ranges::any_of(
+                schema.allowedCommands,
+                [commandKind](RenderGraphCommandKind allowed) { return allowed == commandKind; });
+        }
+
+    } // namespace
+
     Result<void> RenderGraph::validateImageHandle(RenderGraphImageHandle image) const {
         if (image.index >= images_.size()) {
             return std::unexpected{Error{
@@ -356,13 +367,6 @@ namespace asharia {
         }
 
         return {};
-    }
-
-    bool RenderGraph::commandAllowedBySchema(RenderGraphCommandKind commandKind,
-                                             const RenderGraphPassSchema& schema) {
-        return std::ranges::any_of(
-            schema.allowedCommands,
-            [commandKind](RenderGraphCommandKind allowed) { return allowed == commandKind; });
     }
 
     Result<void> RenderGraph::validateSlotsAgainstSchema(

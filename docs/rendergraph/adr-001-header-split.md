@@ -104,6 +104,9 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
   `render_graph_execution.hpp`, and kept `render_graph.hpp` as the aggregate include
 - Phase 5-D moved `RenderGraph` and `RenderGraph::PassBuilder` declarations into
   `render_graph_builder.hpp`, leaving `render_graph.hpp` as a pure aggregate include
+- Phase 5-E moved stateless compile/dependency/schema helpers that do not access private graph
+  state into `.cpp` file-local functions, reducing implementation-only declarations in
+  `render_graph_builder.hpp`
 - Diagnostics snapshot types now live in `render_graph_diagnostics.hpp`; consumers that only
   inspect diagnostics should include that narrow header instead of the aggregate header
 - Consumers that only record command summaries should include `render_graph_command_list.hpp`;
