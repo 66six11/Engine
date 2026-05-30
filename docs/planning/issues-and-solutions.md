@@ -126,6 +126,7 @@ FillStorageBuffer (BufferTransferWrite) → ClearBackbuffer → ComputeDispatch 
 16. Phase 5-A/B: `RenderGraphCommandList` 提取到 `render_graph_command_list.hpp`，pass context 与 schema/executor registry 提取到 `render_graph_execution.hpp`
 17. Phase 5-D: `RenderGraph` / `RenderGraph::PassBuilder` 声明提取到 `render_graph_builder.hpp`，`render_graph.hpp` 收敛为纯聚合头
 18. Phase 5-E: 不访问 `RenderGraph` 私有状态的 compile/dependency/schema helper 收敛为 `.cpp` 文件局部函数，减少 `render_graph_builder.hpp` private static 声明
+19. Phase 5-F: `src/render_graph.cpp` 继续瘦身为 RenderGraph 生命周期与 public compile/execute/diagnostics facade；command list、schema/executor registry、非模板 builder/resource declaration API 分别拆到 `render_graph_command_list.cpp`、`render_graph_registry.cpp`、`render_graph_builder.cpp`
 
 **当前结构**:
 ```
@@ -136,7 +137,10 @@ render_graph_builder.hpp    — RenderGraph/PassBuilder 声明、模板 builder 
 render_graph_compile.hpp    — 编译产物，只依赖 types
 render_graph_diagnostics.hpp — diagnostics snapshot，只依赖 compile/types
 render_graph.hpp            — aggregate header，兼容旧 include
-src/render_graph.cpp        — command list、registry、builder facade、resource/pass facade、compile/execute、diagnostics formatting 实现，以及 compile-only 局部 helper
+src/render_graph.cpp        — RenderGraph 生命周期与 public compile/execute/diagnostics facade
+src/render_graph_builder.cpp — 非模板 PassBuilder 和 graph resource/pass declaration API
+src/render_graph_command_list.cpp — command summary accumulator 实现
+src/render_graph_registry.cpp — schema/executor registry 实现
 src/render_graph_debug.cpp — debug label/table formatting helper 实现
 src/render_graph_dependencies.cpp — dependency/culling/producer helper 实现
 src/render_graph_lifetime.cpp — transient lifetime/resource transition helper 实现

@@ -107,6 +107,11 @@ Move lines 20-199 of `render_graph.hpp` into `render_graph_types.hpp`:
 - Phase 5-E moved stateless compile/dependency/schema helpers that do not access private graph
   state into `.cpp` file-local functions, reducing implementation-only declarations in
   `render_graph_builder.hpp`
+- Phase 5-F split implementation responsibilities under `src/`: command list methods moved to
+  `render_graph_command_list.cpp`, schema/executor registry methods moved to
+  `render_graph_registry.cpp`, and non-template builder/resource declaration methods moved to
+  `render_graph_builder.cpp`. `render_graph.cpp` now stays as the `RenderGraph` lifetime and
+  public compile/execute/diagnostics facade.
 - Diagnostics snapshot types now live in `render_graph_diagnostics.hpp`; consumers that only
   inspect diagnostics should include that narrow header instead of the aggregate header
 - Consumers that only record command summaries should include `render_graph_command_list.hpp`;
