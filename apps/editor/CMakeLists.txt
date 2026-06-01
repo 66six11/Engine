@@ -117,6 +117,7 @@ add_executable(asharia-editor
     src/panels/frame_debugger_panel.cpp
     src/panels/log_panel.cpp
     src/panels/render_graph_panel.cpp
+    src/panels/render_graph_snapshot_format.cpp
     src/panels/render_graph_snapshot_view.cpp
     src/panels/scene_view_panel.cpp
     src/panels/ui_style_preview_panel.cpp

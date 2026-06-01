@@ -133,6 +133,8 @@ E 补充（2026-06-01）: Step 2b-x 已把 Editor UI section header、property t
 
 E 补充（2026-06-01）: Step 2b-y 已把 Frame Debug replay pass/event/image 选择、preview request consume/publish/unavailable 状态更新从 `editor_frame_debugger.cpp` 拆到 `editor_frame_debugger_replay.hpp/.cpp`；`editor_frame_debugger.cpp` 保留 capture/resume/fence 状态机和只读查询，GPU preview 录制仍在 `editor_frame_debug_preview.cpp`。
 
+E 补充（2026-06-01）: Step 2b-z 已把 RenderGraph snapshot enum/name、resource/pass label 与 access cell 数据整形从 `render_graph_snapshot_view.cpp` 拆到 `render_graph_snapshot_format.hpp/.cpp`；`render_graph_snapshot_view.cpp` 保留 ImGui summary、timeline matrix 与 detail table 绘制。
+
 阻塞规则：
 
 - A 必须保持通过；扩大 swapchain/offscreen target format、material/pipeline format key 或 texture preview 范围时，先扩展 format helper、Vulkan adapter 映射和 negative smoke。
