@@ -136,6 +136,16 @@ namespace {
             .colorLoadOp = asharia::BasicRenderViewOverlayColorLoadOp::LoadSceneColor,
             .colorStoreOp = asharia::BasicRenderViewOverlayColorStoreOp::Store,
             .blendMode = asharia::BasicRenderViewOverlayBlendMode::AlphaBlend,
+            .worldGrid =
+                asharia::BasicRenderViewWorldGridDesc{
+                    .enabled = flags.gridVisible,
+                    .planeY = 0.0F,
+                    .minorSpacing = 1.0F,
+                    .majorSpacing = 10.0F,
+                    .fadeStart = 48.0F,
+                    .fadeEnd = 160.0F,
+                    .opacity = 1.0F,
+                },
             .debugWorldLines = debugWorldLines,
         };
     }

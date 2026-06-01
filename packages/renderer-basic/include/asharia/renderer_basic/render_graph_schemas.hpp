@@ -25,6 +25,10 @@ namespace asharia {
     inline constexpr char kBasicRasterMrtParamsType[] = "builtin.raster-mrt.params";
     inline constexpr char kBasicRasterFullscreenPassType[] = "builtin.raster-fullscreen";
     inline constexpr char kBasicRasterFullscreenParamsType[] = "builtin.raster-fullscreen.params";
+    inline constexpr char kBasicRenderViewWorldGridPassType[] =
+        "builtin.render-view-world-grid";
+    inline constexpr char kBasicRenderViewWorldGridParamsType[] =
+        "builtin.render-view-world-grid.params";
     inline constexpr char kBasicRenderViewOverlayPassType[] = "builtin.render-view-overlay";
     inline constexpr char kBasicRenderViewOverlayParamsType[] =
         "builtin.render-view-overlay.params";
@@ -53,6 +57,16 @@ namespace asharia {
         std::uint32_t viewKind{};
         std::uint32_t overlayEnabled{};
         std::uint32_t reserved{};
+    };
+
+    struct BasicRenderViewWorldGridParams {
+        std::array<float, 4> cameraPositionNear{};
+        std::array<float, 4> viewportFade{};
+        std::array<float, 4> gridSettings{};
+        std::uint32_t viewKind{};
+        std::uint32_t enabled{};
+        std::uint32_t reserved0{};
+        std::uint32_t reserved1{};
     };
 
     struct BasicDrawListParams {
@@ -241,6 +255,28 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicRenderViewWorldGridSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewWorldGridPassType,
+            .paramsType = kBasicRenderViewWorldGridParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::SetVec4,
+                    RenderGraphCommandKind::DrawFullscreenTriangle,
+                },
+        });
+    }
+
     inline void registerBasicRenderViewOverlaySchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicRenderViewOverlayPassType,
@@ -380,6 +416,7 @@ namespace asharia {
         registerBasicRasterMesh3DSchema(schemas);
         registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
+        registerBasicRenderViewWorldGridSchema(schemas);
         registerBasicRenderViewOverlaySchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
         registerBasicTransferFillBufferSchema(schemas);

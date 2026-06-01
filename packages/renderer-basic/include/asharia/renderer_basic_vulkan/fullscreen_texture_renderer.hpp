@@ -47,6 +47,8 @@ namespace asharia {
     private:
         [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
         [[nodiscard]] Result<void>
+        ensureWorldGridPipeline(VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode);
+        [[nodiscard]] Result<void>
         ensureDebugLinePipeline(VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode);
         [[nodiscard]] VkDescriptorSet
         acquireFullscreenDescriptorSet(const VulkanFrameRecordContext& frame);
@@ -62,16 +64,23 @@ namespace asharia {
         VmaAllocator allocator_{};
         VulkanShaderModule vertexShader_;
         VulkanShaderModule fragmentShader_;
+        VulkanShaderModule worldGridVertexShader_;
+        VulkanShaderModule worldGridFragmentShader_;
         VulkanShaderModule debugLineVertexShader_;
         VulkanShaderModule debugLineFragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
+        VulkanPipelineLayout worldGridPipelineLayout_;
         VulkanPipelineLayout debugLinePipelineLayout_;
         VulkanPipelineCache pipelineCache_;
         VulkanGraphicsPipeline pipeline_;
+        VulkanGraphicsPipeline worldGridPipeline_;
         VulkanGraphicsPipeline debugLinePipeline_;
         VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
+        VkFormat worldGridPipelineFormat_{VK_FORMAT_UNDEFINED};
         VkFormat debugLinePipelineFormat_{VK_FORMAT_UNDEFINED};
+        BasicRenderViewOverlayBlendMode worldGridPipelineBlendMode_{
+            BasicRenderViewOverlayBlendMode::AlphaBlend};
         BasicRenderViewOverlayBlendMode debugLinePipelineBlendMode_{
             BasicRenderViewOverlayBlendMode::AlphaBlend};
         BasicPipelineCacheStats pipelineCacheStats_;

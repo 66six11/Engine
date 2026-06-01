@@ -2998,6 +2998,7 @@ namespace {
                                         .enabled = true,
                                         .blendMode =
                                             asharia::BasicRenderViewOverlayBlendMode::Additive,
+                                        .worldGrid = {},
                                         .debugWorldLines = debugLines,
                                     },
                                 .viewName = "FullscreenTextureAdditiveOverlaySmoke",
@@ -3808,6 +3809,7 @@ namespace {
         RasterMesh3D,
         RasterMrt,
         RasterFullscreen,
+        RenderViewWorldGrid,
         RenderViewOverlay,
         RasterDrawList,
         ComputeDispatch,
@@ -3975,6 +3977,7 @@ namespace {
             break;
         case BuiltinSchemaSmokePass::DynamicClear:
         case BuiltinSchemaSmokePass::RasterTriangle:
+        case BuiltinSchemaSmokePass::RenderViewWorldGrid:
         case BuiltinSchemaSmokePass::RenderViewOverlay:
             writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
@@ -4133,6 +4136,13 @@ namespace {
                 .paramsType = asharia::kBasicRasterFullscreenParamsType,
                 .missingSlot = "source",
                 .context = "builtin raster fullscreen",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RenderViewWorldGrid,
+                .type = asharia::kBasicRenderViewWorldGridPassType,
+                .paramsType = asharia::kBasicRenderViewWorldGridParamsType,
+                .missingSlot = "target",
+                .context = "builtin render view world grid",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RenderViewOverlay,

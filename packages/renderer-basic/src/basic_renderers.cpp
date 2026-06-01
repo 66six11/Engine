@@ -43,6 +43,18 @@ namespace asharia {
             std::array<float, 4> mvpRow3{};
         };
 
+        struct BasicRenderViewWorldGridPushConstants {
+            std::array<float, 4> inverseViewProjectionRow0{};
+            std::array<float, 4> inverseViewProjectionRow1{};
+            std::array<float, 4> inverseViewProjectionRow2{};
+            std::array<float, 4> inverseViewProjectionRow3{};
+            std::array<float, 4> cameraPositionNear{};
+            std::array<float, 4> viewportFade{};
+            std::array<float, 4> gridSettings{};
+        };
+
+        static_assert(sizeof(BasicRenderViewWorldGridPushConstants) <= 128);
+
         constexpr std::uint32_t kBasicComputeValueCount = 4;
 
         struct BasicFullscreenTexturePassMessages {
@@ -156,6 +168,38 @@ namespace asharia {
             };
         }
 
+        [[nodiscard]] BasicRenderViewWorldGridParams
+        basicRenderViewWorldGridParams(const BasicRenderViewDesc& view) {
+            const BasicRenderViewWorldGridDesc& grid = view.overlay.worldGrid;
+            return BasicRenderViewWorldGridParams{
+                .cameraPositionNear =
+                    {
+                        view.camera.position[0],
+                        view.camera.position[1],
+                        view.camera.position[2],
+                        view.camera.nearPlane,
+                    },
+                .viewportFade =
+                    {
+                        static_cast<float>(std::max(view.target.extent.width, 1U)),
+                        static_cast<float>(std::max(view.target.extent.height, 1U)),
+                        grid.fadeStart,
+                        grid.fadeEnd,
+                    },
+                .gridSettings =
+                    {
+                        grid.minorSpacing,
+                        grid.majorSpacing,
+                        grid.planeY,
+                        grid.opacity,
+                    },
+                .viewKind = basicRenderViewKindValue(view.viewKind),
+                .enabled = grid.enabled ? 1U : 0U,
+                .reserved0 = 0,
+                .reserved1 = 0,
+            };
+        }
+
         void accumulateBufferStats(VulkanBufferStats& total, const VulkanBuffer& buffer) {
             const VulkanBufferStats stats = buffer.stats();
             total.created += stats.created;
@@ -225,6 +269,71 @@ namespace asharia {
                 .textureBinding = texture.name,
                 .textureSlot = texture.secondaryName,
             };
+        }
+
+        [[nodiscard]] Result<void>
+        validateBasicRenderViewWorldGridCommands(RenderGraphPassContext pass,
+                                                 BasicRenderViewWorldGridParams params) {
+            if (pass.commands.size() != 5) {
+                return std::unexpected{
+                    renderGraphError("RenderView world grid pass expected exactly five commands")};
+            }
+
+            const RenderGraphCommand& shader = pass.commands[0];
+            const RenderGraphCommand& camera = pass.commands[1];
+            const RenderGraphCommand& viewportFade = pass.commands[2];
+            const RenderGraphCommand& gridSettings = pass.commands[3];
+            const RenderGraphCommand& draw = pass.commands[4];
+
+            auto shaderKind = expectCommandKind(shader, RenderGraphCommandKind::SetShader,
+                                                "RenderView world grid shader");
+            if (!shaderKind) {
+                return std::unexpected{std::move(shaderKind.error())};
+            }
+            auto cameraKind = expectCommandKind(camera, RenderGraphCommandKind::SetVec4,
+                                                "RenderView world grid camera constants");
+            if (!cameraKind) {
+                return std::unexpected{std::move(cameraKind.error())};
+            }
+            auto viewportKind = expectCommandKind(viewportFade, RenderGraphCommandKind::SetVec4,
+                                                  "RenderView world grid viewport constants");
+            if (!viewportKind) {
+                return std::unexpected{std::move(viewportKind.error())};
+            }
+            auto settingsKind = expectCommandKind(gridSettings, RenderGraphCommandKind::SetVec4,
+                                                  "RenderView world grid settings");
+            if (!settingsKind) {
+                return std::unexpected{std::move(settingsKind.error())};
+            }
+            auto drawKind = expectCommandKind(draw, RenderGraphCommandKind::DrawFullscreenTriangle,
+                                              "RenderView world grid draw");
+            if (!drawKind) {
+                return std::unexpected{std::move(drawKind.error())};
+            }
+
+            if (shader.name != "Hidden/RenderViewWorldGrid" ||
+                shader.secondaryName != "Fullscreen") {
+                return std::unexpected{
+                    renderGraphError("RenderView world grid shader command does not match the "
+                                     "current input contract")};
+            }
+            if (camera.name != "CameraPositionNear" ||
+                camera.floatValues != params.cameraPositionNear) {
+                return std::unexpected{
+                    renderGraphError("RenderView world grid camera command does not match params")};
+            }
+            if (viewportFade.name != "ViewportFade" ||
+                viewportFade.floatValues != params.viewportFade) {
+                return std::unexpected{renderGraphError(
+                    "RenderView world grid viewport command does not match params")};
+            }
+            if (gridSettings.name != "GridSettings" ||
+                gridSettings.floatValues != params.gridSettings) {
+                return std::unexpected{renderGraphError(
+                    "RenderView world grid settings command does not match params")};
+            }
+
+            return {};
         }
 
         [[nodiscard]] Result<void>
@@ -426,6 +535,7 @@ namespace asharia {
         }
 
         using BasicMat4 = BasicTransformMatrix3D;
+        using BasicAugmentedMat4 = std::array<std::array<float, 8>, 4>;
 
         [[nodiscard]] constexpr float basicMat4At(const BasicMat4& matrix, std::size_t row,
                                                   std::size_t column) {
@@ -444,6 +554,102 @@ namespace asharia {
                 }
             }
             return result;
+        }
+
+        [[nodiscard]] float& basicAugmentedAt(BasicAugmentedMat4& matrix, std::size_t row,
+                                              std::size_t column) {
+            return matrix.at(row).at(column);
+        }
+
+        [[nodiscard]] float basicAugmentedAt(const BasicAugmentedMat4& matrix, std::size_t row,
+                                             std::size_t column) {
+            return matrix.at(row).at(column);
+        }
+
+        [[nodiscard]] std::optional<BasicAugmentedMat4>
+        makeBasicInverseAugmentedMatrix(const BasicMat4& matrix) {
+            BasicAugmentedMat4 augmented{};
+            for (std::size_t row = 0; row < 4U; ++row) {
+                for (std::size_t column = 0; column < 4U; ++column) {
+                    const float value = basicMat4At(matrix, row, column);
+                    if (!std::isfinite(value)) {
+                        return std::nullopt;
+                    }
+                    basicAugmentedAt(augmented, row, column) = value;
+                }
+                basicAugmentedAt(augmented, row, row + 4U) = 1.0F;
+            }
+            return augmented;
+        }
+
+        [[nodiscard]] std::optional<std::size_t>
+        findBasicInversePivotRow(const BasicAugmentedMat4& augmented, std::size_t column) {
+            constexpr float kPivotEpsilon = 0.000001F;
+            std::size_t pivotRow = column;
+            float pivotMagnitude = std::fabs(basicAugmentedAt(augmented, pivotRow, column));
+            for (std::size_t row = column + 1U; row < 4U; ++row) {
+                const float candidateMagnitude =
+                    std::fabs(basicAugmentedAt(augmented, row, column));
+                if (candidateMagnitude > pivotMagnitude) {
+                    pivotRow = row;
+                    pivotMagnitude = candidateMagnitude;
+                }
+            }
+            if (pivotMagnitude <= kPivotEpsilon) {
+                return std::nullopt;
+            }
+            return pivotRow;
+        }
+
+        void normalizeBasicInversePivotRow(BasicAugmentedMat4& augmented, std::size_t column) {
+            const float pivot = basicAugmentedAt(augmented, column, column);
+            for (float& value : augmented.at(column)) {
+                value /= pivot;
+            }
+        }
+
+        void eliminateBasicInverseColumn(BasicAugmentedMat4& augmented, std::size_t column) {
+            for (std::size_t row = 0; row < 4U; ++row) {
+                if (row == column) {
+                    continue;
+                }
+                const float factor = basicAugmentedAt(augmented, row, column);
+                for (std::size_t entry = 0; entry < 8U; ++entry) {
+                    basicAugmentedAt(augmented, row, entry) -=
+                        factor * augmented.at(column).at(entry);
+                }
+            }
+        }
+
+        [[nodiscard]] BasicMat4 basicInverseFromAugmented(const BasicAugmentedMat4& augmented) {
+            BasicMat4 inverse{};
+            for (std::size_t row = 0; row < 4U; ++row) {
+                for (std::size_t column = 0; column < 4U; ++column) {
+                    inverse.at((row * 4U) + column) =
+                        basicAugmentedAt(augmented, row, column + 4U);
+                }
+            }
+            return inverse;
+        }
+
+        [[nodiscard]] std::optional<BasicMat4> inverseBasicMat4(const BasicMat4& matrix) {
+            std::optional<BasicAugmentedMat4> augmented = makeBasicInverseAugmentedMatrix(matrix);
+            if (!augmented) {
+                return std::nullopt;
+            }
+            for (std::size_t column = 0; column < 4U; ++column) {
+                const std::optional<std::size_t> pivotRow =
+                    findBasicInversePivotRow(*augmented, column);
+                if (!pivotRow) {
+                    return std::nullopt;
+                }
+                if (*pivotRow != column) {
+                    std::swap(augmented->at(*pivotRow), augmented->at(column));
+                }
+                normalizeBasicInversePivotRow(*augmented, column);
+                eliminateBasicInverseColumn(*augmented, column);
+            }
+            return basicInverseFromAugmented(*augmented);
         }
 
         [[nodiscard]] BasicMat4 basicMesh3DModelMatrix() {
@@ -530,6 +736,38 @@ namespace asharia {
                 .mvpRow1 = {mvp[4], mvp[5], mvp[6], mvp[7]},
                 .mvpRow2 = {mvp[8], mvp[9], mvp[10], mvp[11]},
                 .mvpRow3 = {mvp[12], mvp[13], mvp[14], mvp[15]},
+            };
+        }
+
+        [[nodiscard]] Result<BasicRenderViewWorldGridPushConstants>
+        basicRenderViewWorldGridPushConstants(const BasicRenderViewCamera& camera,
+                                              BasicRenderViewWorldGridParams params) {
+            const BasicMat4 viewProjection{
+                camera.viewProjection[0],  camera.viewProjection[1],
+                camera.viewProjection[2],  camera.viewProjection[3],
+                camera.viewProjection[4],  camera.viewProjection[5],
+                camera.viewProjection[6],  camera.viewProjection[7],
+                camera.viewProjection[8],  camera.viewProjection[9],
+                camera.viewProjection[10], camera.viewProjection[11],
+                camera.viewProjection[12], camera.viewProjection[13],
+                camera.viewProjection[14], camera.viewProjection[15],
+            };
+            const std::optional<BasicMat4> inverseViewProjection = inverseBasicMat4(viewProjection);
+            if (!inverseViewProjection) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph, 0,
+                    "RenderView world grid requires an invertible view-projection matrix"}};
+            }
+
+            const BasicMat4& inverse = *inverseViewProjection;
+            return BasicRenderViewWorldGridPushConstants{
+                .inverseViewProjectionRow0 = {inverse[0], inverse[1], inverse[2], inverse[3]},
+                .inverseViewProjectionRow1 = {inverse[4], inverse[5], inverse[6], inverse[7]},
+                .inverseViewProjectionRow2 = {inverse[8], inverse[9], inverse[10], inverse[11]},
+                .inverseViewProjectionRow3 = {inverse[12], inverse[13], inverse[14], inverse[15]},
+                .cameraPositionNear = params.cameraPositionNear,
+                .viewportFade = params.viewportFade,
+                .gridSettings = params.gridSettings,
             };
         }
 
@@ -997,6 +1235,56 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
+        void recordBasicWorldGridDraw(const VulkanFrameRecordContext& frame,
+                                      VkImageView targetImageView, VkExtent2D targetExtent,
+                                      BasicRenderViewOverlayColorLoadOp loadOp,
+                                      BasicRenderViewOverlayColorStoreOp storeOp,
+                                      VkPipeline pipeline, VkPipelineLayout pipelineLayout,
+                                      const BasicRenderViewWorldGridPushConstants& pushConstants) {
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = targetImageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = basicRenderViewOverlayLoadOp(loadOp);
+            colorAttachment.storeOp = basicRenderViewOverlayStoreOp(storeOp);
+            colorAttachment.clearValue = VkClearValue{
+                .color = VkClearColorValue{{0.0F, 0.0F, 0.0F, 0.0F}},
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = targetExtent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachments = &colorAttachment;
+
+            const VkViewport viewport{
+                .x = 0.0F,
+                .y = 0.0F,
+                .width = static_cast<float>(targetExtent.width),
+                .height = static_cast<float>(targetExtent.height),
+                .minDepth = 0.0F,
+                .maxDepth = 1.0F,
+            };
+            const VkRect2D scissor{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = targetExtent,
+            };
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdPushConstants(frame.commandBuffer, pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               static_cast<std::uint32_t>(sizeof(pushConstants)), &pushConstants);
+            vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
+            vkCmdDraw(frame.commandBuffer, 3, 1, 0, 0);
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
         void recordBasicDebugLineDraw(const VulkanFrameRecordContext& frame,
                                       VkImageView targetImageView, VkExtent2D targetExtent,
                                       BasicRenderViewOverlayColorLoadOp loadOp,
@@ -1182,6 +1470,72 @@ namespace asharia {
                         .instanceCount = 1,
                     },
                     {}, sourceBinding->image.index, targetBinding->image.index);
+                eventRecorder->endPass(pass);
+            }
+            return {};
+        }
+
+        [[nodiscard]] Result<void> executeBasicRenderViewWorldGridPass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> bindings, VkExtent2D targetExtent,
+            const BasicRenderViewCamera& camera, BasicRenderViewOverlayColorLoadOp colorLoadOp,
+            BasicRenderViewOverlayColorStoreOp colorStoreOp, VkPipeline worldGridPipeline,
+            VkPipelineLayout worldGridPipelineLayout,
+            BasicRenderViewExecutionEventRecorder* eventRecorder) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(frame, pass.name);
+            if (eventRecorder != nullptr) {
+                eventRecorder->beginPass(pass);
+            }
+            auto transitions =
+                recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+
+            auto gridParams = readPassParams<BasicRenderViewWorldGridParams>(
+                pass, kBasicRenderViewWorldGridParamsType, "RenderView world grid pass");
+            if (!gridParams) {
+                return std::unexpected{std::move(gridParams.error())};
+            }
+            auto commands = validateBasicRenderViewWorldGridCommands(pass, *gridParams);
+            if (!commands) {
+                return std::unexpected{std::move(commands.error())};
+            }
+            if (gridParams->enabled == 0U) {
+                return std::unexpected{
+                    renderGraphError("RenderView world grid pass cannot execute while disabled")};
+            }
+            if (worldGridPipeline == VK_NULL_HANDLE ||
+                worldGridPipelineLayout == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "RenderView world grid pass has an incomplete Vulkan pipeline"}};
+            }
+
+            auto targetBinding = findVulkanRenderGraphColorWrite(pass, "target", bindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
+            auto pushConstants = basicRenderViewWorldGridPushConstants(camera, *gridParams);
+            if (!pushConstants) {
+                return std::unexpected{std::move(pushConstants.error())};
+            }
+
+            recordBasicWorldGridDraw(frame, targetBinding->vulkanImageView, targetExtent,
+                                     colorLoadOp, colorStoreOp, worldGridPipeline,
+                                     worldGridPipelineLayout, *pushConstants);
+            if (eventRecorder != nullptr) {
+                eventRecorder->append(
+                    pass, BasicRenderViewExecutionEventKind::DrawFullscreenTriangle,
+                    "DrawWorldGrid",
+                    firstCommandIndex(pass, RenderGraphCommandKind::DrawFullscreenTriangle),
+                    BasicRenderViewDrawEvent{
+                        .vertexCount = 3,
+                        .indexCount = 0,
+                        .instanceCount = 1,
+                    },
+                    {}, std::nullopt, targetBinding->image.index);
                 eventRecorder->endPass(pass);
             }
             return {};

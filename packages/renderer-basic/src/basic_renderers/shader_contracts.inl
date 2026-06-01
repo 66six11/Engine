@@ -366,6 +366,85 @@
             return {};
         }
 
+        [[nodiscard]] Result<void>
+        validateWorldGridReflection(const std::filesystem::path& shaderDirectory) {
+            auto vertexReflection =
+                readShaderReflection(shaderDirectory / "world_grid.vert.reflection.json");
+            if (!vertexReflection) {
+                return std::unexpected{std::move(vertexReflection.error())};
+            }
+            auto fragmentReflection =
+                readShaderReflection(shaderDirectory / "world_grid.frag.reflection.json");
+            if (!fragmentReflection) {
+                return std::unexpected{std::move(fragmentReflection.error())};
+            }
+
+            auto vertexEntry = expectString(vertexReflection->entry, "worldGridVertexMain",
+                                            "World grid vertex shader reflection entry");
+            if (!vertexEntry) {
+                return std::unexpected{std::move(vertexEntry.error())};
+            }
+            auto vertexStage = expectString(vertexReflection->stage, "vertex",
+                                            "World grid vertex shader reflection stage");
+            if (!vertexStage) {
+                return std::unexpected{std::move(vertexStage.error())};
+            }
+            auto fragmentEntry = expectString(fragmentReflection->entry, "worldGridFragmentMain",
+                                              "World grid fragment shader reflection entry");
+            if (!fragmentEntry) {
+                return std::unexpected{std::move(fragmentEntry.error())};
+            }
+            auto fragmentStage = expectString(fragmentReflection->stage, "fragment",
+                                              "World grid fragment shader reflection stage");
+            if (!fragmentStage) {
+                return std::unexpected{std::move(fragmentStage.error())};
+            }
+
+            auto vertexInputCount =
+                expectUint(static_cast<std::uint32_t>(vertexReflection->vertexInputs.size()), 0,
+                           "World grid vertex shader input count");
+            if (!vertexInputCount) {
+                return std::unexpected{std::move(vertexInputCount.error())};
+            }
+
+            for (const ShaderReflection* reflection : {&*vertexReflection, &*fragmentReflection}) {
+                auto descriptorCount =
+                    expectUint(reflection->descriptorBindingCount, 1,
+                               "World grid push constant descriptor signature");
+                if (!descriptorCount) {
+                    return std::unexpected{std::move(descriptorCount.error())};
+                }
+                auto pushConstantCount =
+                    expectUint(reflection->pushConstantCount, 1,
+                               "World grid push constant reflection signature");
+                if (!pushConstantCount) {
+                    return std::unexpected{std::move(pushConstantCount.error())};
+                }
+                const ShaderDescriptorBindingReflection& descriptor =
+                    reflection->descriptorBindings.front();
+                auto descriptorName = expectString(descriptor.name, "gWorldGrid",
+                                                   "World grid push constant descriptor name");
+                if (!descriptorName) {
+                    return std::unexpected{std::move(descriptorName.error())};
+                }
+                auto descriptorCategory =
+                    expectString(descriptor.category, "pushConstantBuffer",
+                                 "World grid push constant descriptor category");
+                if (!descriptorCategory) {
+                    return std::unexpected{std::move(descriptorCategory.error())};
+                }
+                const ShaderPushConstantReflection& pushConstant =
+                    reflection->pushConstants.front();
+                auto pushConstantName = expectString(pushConstant.name, "gWorldGrid",
+                                                     "World grid push constant name");
+                if (!pushConstantName) {
+                    return std::unexpected{std::move(pushConstantName.error())};
+                }
+            }
+
+            return {};
+        }
+
         [[nodiscard]] Result<ShaderResourceSignature>
         validateDescriptorLayoutReflection(const std::filesystem::path& shaderDirectory) {
             auto fragmentReflection =

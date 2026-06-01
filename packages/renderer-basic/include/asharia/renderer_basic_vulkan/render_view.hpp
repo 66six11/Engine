@@ -88,12 +88,23 @@ namespace asharia {
         Additive,
     };
 
+    struct BasicRenderViewWorldGridDesc {
+        bool enabled{};
+        float planeY{};
+        float minorSpacing{1.0F};
+        float majorSpacing{10.0F};
+        float fadeStart{32.0F};
+        float fadeEnd{128.0F};
+        float opacity{1.0F};
+    };
+
     struct BasicRenderViewOverlayDesc {
         bool enabled{};
         BasicRenderViewOverlayColorLoadOp colorLoadOp{
             BasicRenderViewOverlayColorLoadOp::LoadSceneColor};
         BasicRenderViewOverlayColorStoreOp colorStoreOp{BasicRenderViewOverlayColorStoreOp::Store};
         BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
+        BasicRenderViewWorldGridDesc worldGrid;
         std::span<const BasicDebugWorldLine> debugWorldLines{};
     };
 
@@ -103,6 +114,7 @@ namespace asharia {
             BasicRenderViewOverlayColorLoadOp::LoadSceneColor};
         BasicRenderViewOverlayColorStoreOp colorStoreOp{BasicRenderViewOverlayColorStoreOp::Store};
         BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
+        bool worldGridEnabled{};
         std::uint64_t debugWorldLineCount{};
     };
 

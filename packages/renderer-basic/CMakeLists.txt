@@ -120,6 +120,30 @@ set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_SOURCE
 set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.shader.json"
 )
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_grid.slang"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_grid.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.vert.spv"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.vert.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.vert.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.frag.spv"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.frag.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.frag.reflection.json"
+)
 set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_SPV
     "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.vert.spv"
 )
@@ -234,6 +258,26 @@ asharia_add_slang_shader(asharia-renderer-basic-debug-line-frag
     DEPENDS "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST}"
 )
 
+asharia_add_slang_shader(asharia-renderer-basic-world-grid-vert
+    SOURCE "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_SOURCE}"
+    ENTRY worldGridVertexMain
+    STAGE vertex
+    OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_MANIFEST}"
+)
+
+asharia_add_slang_shader(asharia-renderer-basic-world-grid-frag
+    SOURCE "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_SOURCE}"
+    ENTRY worldGridFragmentMain
+    STAGE fragment
+    OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_MANIFEST}"
+)
+
 asharia_add_slang_shader(asharia-renderer-basic-compute-comp
     SOURCE "${ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_SOURCE}"
     ENTRY computeMain
@@ -254,6 +298,8 @@ add_custom_target(asharia-renderer-basic-shaders
         asharia-renderer-basic-mesh3d-frag
         asharia-renderer-basic-debug-line-vert
         asharia-renderer-basic-debug-line-frag
+        asharia-renderer-basic-world-grid-vert
+        asharia-renderer-basic-world-grid-frag
         asharia-renderer-basic-compute-comp
 )
 

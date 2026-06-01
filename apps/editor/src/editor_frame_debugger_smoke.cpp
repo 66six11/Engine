@@ -84,10 +84,10 @@ namespace asharia::editor {
             asharia::logError("Editor frame debugger smoke did not keep a captured snapshot.");
             return false;
         }
-        if (capture->diagnostics.renderGraph.passes.size() != 3 ||
+        if (capture->diagnostics.renderGraph.passes.size() != 4 ||
             capture->diagnostics.renderGraph.resources.size() != 2 ||
-            capture->diagnostics.renderGraph.accessEdges.size() != 4 ||
-            capture->diagnostics.renderGraph.dependencyEdges.size() != 2 ||
+            capture->diagnostics.renderGraph.accessEdges.size() != 5 ||
+            capture->diagnostics.renderGraph.dependencyEdges.size() != 3 ||
             capture->diagnostics.renderGraph.transitions.size() != 4) {
             asharia::logError(
                 "Editor frame debugger smoke captured unexpected RenderGraph diagnostics: passes " +

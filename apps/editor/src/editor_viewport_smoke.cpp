@@ -62,6 +62,17 @@ namespace asharia::editor {
             return commandCount;
         }
 
+        [[nodiscard]] std::uint64_t
+        renderGraphWorldGridCommandCount(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+            std::uint64_t commandCount = 0;
+            for (const asharia::RenderGraphDiagnosticsPassNode& pass : snapshot.passes) {
+                if (pass.type == asharia::kBasicRenderViewWorldGridPassType) {
+                    commandCount += static_cast<std::uint64_t>(pass.commandCount);
+                }
+            }
+            return commandCount;
+        }
+
         [[nodiscard]] bool
         validateRenderViewCameraSmoke(const asharia::BasicRenderViewDiagnostics& diagnostics) {
             if (!closeFloat(diagnostics.camera.position[0], 0.0F) ||
@@ -201,9 +212,9 @@ namespace asharia::editor {
             }
 
             scene = sceneDiagnostics->diagnostics;
-            if (scene.renderGraph.passes.size() != 3U || scene.renderGraph.resources.size() != 2U ||
-                scene.renderGraph.accessEdges.size() != 4U ||
-                scene.renderGraph.dependencyEdges.size() != 2U ||
+            if (scene.renderGraph.passes.size() != 4U || scene.renderGraph.resources.size() != 2U ||
+                scene.renderGraph.accessEdges.size() != 5U ||
+                scene.renderGraph.dependencyEdges.size() != 3U ||
                 scene.renderGraph.transitions.size() != 4U || scene.executionEvents.empty()) {
                 asharia::logError(
                     "Editor viewport smoke recorded unexpected render view diagnostics counts: "
@@ -217,29 +228,33 @@ namespace asharia::editor {
                 return false;
             }
             if (renderGraphPassTypeCount(scene.renderGraph,
+                                         asharia::kBasicRenderViewWorldGridPassType) != 1U ||
+                renderGraphWorldGridCommandCount(scene.renderGraph) != 5U ||
+                renderGraphPassTypeCount(scene.renderGraph,
                                          asharia::kBasicRenderViewOverlayPassType) != 1U ||
                 renderGraphOverlayCommandCount(scene.renderGraph) != 4U) {
                 asharia::logError(
-                    "Editor viewport smoke did not record graph-visible RenderView overlay "
+                    "Editor viewport smoke did not record graph-visible RenderView grid/overlay "
                     "inputs.");
                 return false;
             }
             if (scene.viewKind != asharia::BasicRenderViewKind::Scene ||
                 scene.frameParams.frameIndex == 0 || !scene.overlay.enabled ||
-                scene.overlay.debugWorldLineCount == 0) {
+                !scene.overlay.worldGridEnabled || scene.overlay.debugWorldLineCount != 0) {
                 asharia::logError(
                     "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
                 return false;
             }
-            const auto debugLineDraw = std::ranges::find_if(
+            const auto worldGridDraw = std::ranges::find_if(
                 scene.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
-                    return event.kind == asharia::BasicRenderViewExecutionEventKind::Draw &&
-                           event.label == "DrawDebugWorldLines";
+                    return event.kind ==
+                               asharia::BasicRenderViewExecutionEventKind::DrawFullscreenTriangle &&
+                           event.label == "DrawWorldGrid";
                 });
-            if (debugLineDraw == scene.executionEvents.end() ||
-                debugLineDraw->draw.vertexCount != scene.overlay.debugWorldLineCount * 2U) {
+            if (worldGridDraw == scene.executionEvents.end() ||
+                worldGridDraw->draw.vertexCount != 3U) {
                 asharia::logError(
-                    "Editor viewport smoke did not record a debug-line overlay draw event.");
+                    "Editor viewport smoke did not record a world-grid overlay draw event.");
                 return false;
             }
             return true;
@@ -275,7 +290,9 @@ namespace asharia::editor {
 
             const asharia::BasicRenderViewDiagnostics& game = gameDiagnostics->diagnostics;
             if (game.viewKind != asharia::BasicRenderViewKind::Game || !game.overlay.enabled ||
-                game.overlay.debugWorldLineCount != 0 ||
+                game.overlay.worldGridEnabled || game.overlay.debugWorldLineCount != 0 ||
+                renderGraphPassTypeCount(game.renderGraph,
+                                         asharia::kBasicRenderViewWorldGridPassType) != 0U ||
                 renderGraphPassTypeCount(game.renderGraph,
                                          asharia::kBasicRenderViewOverlayPassType) != 1U) {
                 asharia::logError("Editor viewport smoke recorded invalid Game View diagnostics.");
@@ -285,6 +302,8 @@ namespace asharia::editor {
             const asharia::BasicRenderViewDiagnostics& preview = previewDiagnostics->diagnostics;
             if (preview.viewKind != asharia::BasicRenderViewKind::Preview ||
                 preview.overlay.enabled ||
+                renderGraphPassTypeCount(preview.renderGraph,
+                                         asharia::kBasicRenderViewWorldGridPassType) != 0U ||
                 renderGraphPassTypeCount(preview.renderGraph,
                                          asharia::kBasicRenderViewOverlayPassType) != 0U) {
                 asharia::logError("Editor viewport smoke leaked overlay inputs into Preview View.");
@@ -374,10 +393,8 @@ namespace asharia::editor {
                 .camera = defaultEditorSceneViewCamera(EditorExtent2D{.width = 320, .height = 240}),
                 .overlayFlags = gameFlags,
             });
-        if (scenePackets.packets.size() != 1U ||
-            scenePackets.packets.front().overlayId != "scene.grid" ||
-            scenePackets.packets.front().viewportKind != EditorViewportKind::Scene ||
-            scenePackets.debugWorldLineCount() == 0 || !gamePackets.packets.empty()) {
+        if (!scenePackets.packets.empty() || scenePackets.debugWorldLineCount() != 0 ||
+            !gamePackets.packets.empty()) {
             asharia::logError("Editor viewport smoke detected invalid overlay provider packets.");
             return false;
         }

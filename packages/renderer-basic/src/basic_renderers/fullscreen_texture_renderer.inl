@@ -13,17 +13,25 @@ BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other
     allocator_ = std::exchange(other.allocator_, nullptr);
     vertexShader_ = std::move(other.vertexShader_);
     fragmentShader_ = std::move(other.fragmentShader_);
+    worldGridVertexShader_ = std::move(other.worldGridVertexShader_);
+    worldGridFragmentShader_ = std::move(other.worldGridFragmentShader_);
     debugLineVertexShader_ = std::move(other.debugLineVertexShader_);
     debugLineFragmentShader_ = std::move(other.debugLineFragmentShader_);
     descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
     pipelineLayout_ = std::move(other.pipelineLayout_);
+    worldGridPipelineLayout_ = std::move(other.worldGridPipelineLayout_);
     debugLinePipelineLayout_ = std::move(other.debugLinePipelineLayout_);
     pipelineCache_ = std::move(other.pipelineCache_);
     pipeline_ = std::move(other.pipeline_);
+    worldGridPipeline_ = std::move(other.worldGridPipeline_);
     debugLinePipeline_ = std::move(other.debugLinePipeline_);
     pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
+    worldGridPipelineFormat_ =
+        std::exchange(other.worldGridPipelineFormat_, VK_FORMAT_UNDEFINED);
     debugLinePipelineFormat_ =
         std::exchange(other.debugLinePipelineFormat_, VK_FORMAT_UNDEFINED);
+    worldGridPipelineBlendMode_ = std::exchange(
+        other.worldGridPipelineBlendMode_, BasicRenderViewOverlayBlendMode::AlphaBlend);
     debugLinePipelineBlendMode_ = std::exchange(
         other.debugLinePipelineBlendMode_, BasicRenderViewOverlayBlendMode::AlphaBlend);
     pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
@@ -66,6 +74,10 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     if (!debugLineReflection) {
         return std::unexpected{std::move(debugLineReflection.error())};
     }
+    auto worldGridReflection = validateWorldGridReflection(desc.shaderDirectory);
+    if (!worldGridReflection) {
+        return std::unexpected{std::move(worldGridReflection.error())};
+    }
     auto resources = createPipelineLayoutResources(desc.device, *signature);
     if (!resources) {
         return std::unexpected{std::move(resources.error())};
@@ -83,6 +95,14 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     auto fragmentCode = readSpirvFile(desc.shaderDirectory / "descriptor_layout.frag.spv");
     if (!fragmentCode) {
         return std::unexpected{std::move(fragmentCode.error())};
+    }
+    auto worldGridVertexCode = readSpirvFile(desc.shaderDirectory / "world_grid.vert.spv");
+    if (!worldGridVertexCode) {
+        return std::unexpected{std::move(worldGridVertexCode.error())};
+    }
+    auto worldGridFragmentCode = readSpirvFile(desc.shaderDirectory / "world_grid.frag.spv");
+    if (!worldGridFragmentCode) {
+        return std::unexpected{std::move(worldGridFragmentCode.error())};
     }
     auto debugLineVertexCode = readSpirvFile(desc.shaderDirectory / "debug_line.vert.spv");
     if (!debugLineVertexCode) {
@@ -107,6 +127,20 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     if (!fragmentShader) {
         return std::unexpected{std::move(fragmentShader.error())};
     }
+    auto worldGridVertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+        .device = desc.device,
+        .code = *worldGridVertexCode,
+    });
+    if (!worldGridVertexShader) {
+        return std::unexpected{std::move(worldGridVertexShader.error())};
+    }
+    auto worldGridFragmentShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+        .device = desc.device,
+        .code = *worldGridFragmentCode,
+    });
+    if (!worldGridFragmentShader) {
+        return std::unexpected{std::move(worldGridFragmentShader.error())};
+    }
     auto debugLineVertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
         .device = desc.device,
         .code = *debugLineVertexCode,
@@ -120,6 +154,22 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     });
     if (!debugLineFragmentShader) {
         return std::unexpected{std::move(debugLineFragmentShader.error())};
+    }
+    constexpr std::array worldGridPushConstantRanges{
+        VkPushConstantRange{
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            .offset = 0,
+            .size =
+                static_cast<std::uint32_t>(sizeof(BasicRenderViewWorldGridPushConstants)),
+        },
+    };
+    auto worldGridPipelineLayout = VulkanPipelineLayout::create(VulkanPipelineLayoutDesc{
+        .device = desc.device,
+        .setLayouts = {},
+        .pushConstantRanges = worldGridPushConstantRanges,
+    });
+    if (!worldGridPipelineLayout) {
+        return std::unexpected{std::move(worldGridPipelineLayout.error())};
     }
     auto debugLinePipelineLayout = VulkanPipelineLayout::create(VulkanPipelineLayoutDesc{
         .device = desc.device,
@@ -239,10 +289,13 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     renderer.allocator_ = desc.allocator;
     renderer.vertexShader_ = std::move(*vertexShader);
     renderer.fragmentShader_ = std::move(*fragmentShader);
+    renderer.worldGridVertexShader_ = std::move(*worldGridVertexShader);
+    renderer.worldGridFragmentShader_ = std::move(*worldGridFragmentShader);
     renderer.debugLineVertexShader_ = std::move(*debugLineVertexShader);
     renderer.debugLineFragmentShader_ = std::move(*debugLineFragmentShader);
     renderer.descriptorSetLayouts_ = std::move(resources->descriptorSetLayouts);
     renderer.pipelineLayout_ = std::move(resources->pipelineLayout);
+    renderer.worldGridPipelineLayout_ = std::move(*worldGridPipelineLayout);
     renderer.debugLinePipelineLayout_ = std::move(*debugLinePipelineLayout);
     renderer.pipelineCache_ = std::move(*pipelineCache);
     renderer.descriptorAllocator_ = std::move(*descriptorAllocator);
@@ -280,6 +333,57 @@ Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat
     pipeline_ = std::move(*pipeline);
     pipelineFormat_ = colorFormat;
     ++pipelineCacheStats_.created;
+    return {};
+}
+
+Result<void> BasicFullscreenTextureRenderer::ensureWorldGridPipeline(
+    VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode) {
+    if (worldGridPipeline_.handle() != VK_NULL_HANDLE &&
+        worldGridPipelineFormat_ == colorFormat && worldGridPipelineBlendMode_ == blendMode) {
+        return {};
+    }
+
+    VkBlendFactor colorSrcBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    VkBlendFactor colorDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    VkBlendFactor alphaSrcBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor alphaDstBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    switch (blendMode) {
+    case BasicRenderViewOverlayBlendMode::AlphaBlend:
+        break;
+    case BasicRenderViewOverlayBlendMode::Additive:
+        colorDstBlendFactor = VK_BLEND_FACTOR_ONE;
+        alphaDstBlendFactor = VK_BLEND_FACTOR_ONE;
+        break;
+    }
+
+    auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
+        .device = device_,
+        .pipelineCache = pipelineCache_.handle(),
+        .layout = worldGridPipelineLayout_.handle(),
+        .vertexShader = worldGridVertexShader_.handle(),
+        .fragmentShader = worldGridFragmentShader_.handle(),
+        .vertexEntryPoint = "main",
+        .fragmentEntryPoint = "main",
+        .colorFormat = colorFormat,
+        .depthFormat = VK_FORMAT_UNDEFINED,
+        .vertexBindings = {},
+        .vertexAttributes = {},
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .colorBlendEnable = VK_TRUE,
+        .colorSrcBlendFactor = colorSrcBlendFactor,
+        .colorDstBlendFactor = colorDstBlendFactor,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .alphaSrcBlendFactor = alphaSrcBlendFactor,
+        .alphaDstBlendFactor = alphaDstBlendFactor,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+    });
+    if (!pipeline) {
+        return std::unexpected{std::move(pipeline.error())};
+    }
+
+    worldGridPipeline_ = std::move(*pipeline);
+    worldGridPipelineFormat_ = colorFormat;
+    worldGridPipelineBlendMode_ = blendMode;
     return {};
 }
 
@@ -520,6 +624,16 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     std::vector<BasicDebugWorldLine> debugWorldLines(view.overlay.debugWorldLines.begin(),
                                                      view.overlay.debugWorldLines.end());
     view.overlay.debugWorldLines = std::span<const BasicDebugWorldLine>{debugWorldLines};
+    const bool worldGridEnabled = view.overlay.enabled && view.overlay.worldGrid.enabled;
+    if (worldGridEnabled) {
+        auto worldGridPipeline =
+            ensureWorldGridPipeline(view.target.format, view.overlay.blendMode);
+        if (!worldGridPipeline) {
+            return std::unexpected{std::move(worldGridPipeline.error())};
+        }
+    }
+    const BasicRenderViewWorldGridParams worldGridParams =
+        basicRenderViewWorldGridParams(view);
     const BasicRenderViewOverlayParams overlayParams = basicRenderViewOverlayParams(view);
     std::vector<BasicDebugLineVertex> debugLineVertices;
     VkBuffer debugLineVertexBuffer = VK_NULL_HANDLE;
@@ -579,6 +693,29 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
                 },
                 &eventRecorder);
         });
+
+    if (worldGridEnabled) {
+        graph.addPass("RenderViewWorldGrid", kBasicRenderViewWorldGridPassType)
+            .setParams(kBasicRenderViewWorldGridParamsType, worldGridParams)
+            .writeColor("target", renderTarget)
+            .recordCommands([worldGridParams](RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/RenderViewWorldGrid", "Fullscreen")
+                    .setVec4("CameraPositionNear", worldGridParams.cameraPositionNear)
+                    .setVec4("ViewportFade", worldGridParams.viewportFade)
+                    .setVec4("GridSettings", worldGridParams.gridSettings)
+                    .drawFullscreenTriangle();
+            })
+            .execute([&frame, &bindings, viewTarget, camera = view.camera,
+                      colorLoadOp = view.overlay.colorLoadOp,
+                      colorStoreOp = view.overlay.colorStoreOp,
+                      worldGridPipeline = worldGridPipeline_.handle(),
+                      worldGridPipelineLayout = worldGridPipelineLayout_.handle(),
+                      &eventRecorder](RenderGraphPassContext pass) -> Result<void> {
+                return executeBasicRenderViewWorldGridPass(
+                    frame, pass, bindings, viewTarget.extent, camera, colorLoadOp, colorStoreOp,
+                    worldGridPipeline, worldGridPipelineLayout, &eventRecorder);
+            });
+    }
 
     if (view.overlay.enabled) {
         graph.addPass("RenderViewOverlayInputs", kBasicRenderViewOverlayPassType)
