@@ -106,7 +106,8 @@ namespace asharia::editor {
                 .viewport = {.host = viewportHost},
             };
             drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, i18n, panelRegistry,
-                                 toolRegistry, workspace, frameContext);
+                                 toolRegistry, workspace, frameContext.ui);
+            panelRegistry.drawPanels(frameContext);
             requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();
             shortcutRouter.beginFrame(inputRouter.snapshot());

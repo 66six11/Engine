@@ -74,25 +74,37 @@ add_executable(asharia-editor
     src/editor_app.cpp
     src/editor_app_config.cpp
     src/editor_app_registration.cpp
+    src/editor_app_run_completion.cpp
+    src/editor_app_services.cpp
     src/editor_command.cpp
+    src/editor_command_smoke.cpp
     src/editor_dock_layout.cpp
     src/editor_event.cpp
     src/editor_frame_debugger.cpp
+    src/editor_frame_debugger_smoke.cpp
+    src/editor_frame_debug_preview.cpp
     src/editor_i18n.cpp
     src/editor_inspected_world.cpp
+    src/editor_input_smoke.cpp
     src/editor_input_router.cpp
     src/editor_loop_host.cpp
     src/editor_panel.cpp
+    src/editor_render_runtime.cpp
+    src/editor_registration_smoke.cpp
     src/editor_settings.cpp
     src/editor_shell_host.cpp
     src/editor_shortcut_router.cpp
+    src/editor_shortcut_smoke.cpp
     src/editor_smoke.cpp
     src/editor_smoke_validation.cpp
+    src/editor_startup_smoke.cpp
     src/editor_tool.cpp
     src/editor_ui.cpp
+    src/editor_ui_widgets.cpp
     src/editor_viewport.cpp
     src/editor_viewport_coordinator.cpp
     src/editor_viewport_overlay_provider.cpp
+    src/editor_viewport_smoke.cpp
     src/editor_vulkan_host.cpp
     src/editor_workspace.cpp
     src/imgui_editor_shell.cpp

@@ -269,10 +269,10 @@ namespace asharia::editor {
             text(context.frameDebugger.stateName());
             sameLineSeparator();
             const std::string frameText =
-                std::string{"Frame "} + std::to_string(context.frame.ui.frameIndex);
+                std::string{"Frame "} + std::to_string(context.ui.frameIndex);
             text(frameText);
             sameLineSeparator();
-            const std::string extent = extentText(context.frame.ui.swapchainExtent);
+            const std::string extent = extentText(context.ui.swapchainExtent);
             text(extent);
             sameLineSeparator();
             const std::string panelCount = std::string{"Panels "} +

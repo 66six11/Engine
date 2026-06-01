@@ -9,7 +9,7 @@ namespace asharia::editor {
     class EditorPanelRegistry;
     class EditorToolRegistry;
     class EditorWorkspaceController;
-    struct EditorFrameContext;
+    struct EditorFrameUiContext;
 
     struct EditorDockspaceContext {
         const EditorPanelRegistry& panels;
@@ -30,7 +30,7 @@ namespace asharia::editor {
     };
 
     struct EditorStatusBarContext {
-        const EditorFrameContext& frame;
+        const EditorFrameUiContext& ui;
         const EditorPanelRegistry& panels;
         const EditorFrameDebugger& frameDebugger;
     };

@@ -56,6 +56,30 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - 2026-05-27：`editor_smoke_validation.hpp/.cpp` 已接管 startup、registration、command、viewport、resize、
   Frame Debugger、input、shortcut 和 layout persistence smoke 断言；`editor_app.cpp` 仍保留 bootstrap、
   frame loop 和 shutdown 编排。
+- 2026-05-31：command/transaction smoke 已拆到 `editor_command_smoke.hpp/.cpp`，`editor_smoke_validation`
+  只保留 startup gate 聚合调用，不再承载 command history 测试实现。
+- 2026-06-01：registration/settings/action/tool/shortcut smoke 已拆到
+  `editor_registration_smoke.hpp/.cpp`，`editor_smoke_validation` 继续保留 startup gate 聚合、
+  viewport、resize、Frame Debugger、input/shortcut run-level 和 layout saved smoke。
+- 2026-06-01：startup/layout/i18n/font/theme smoke 已拆到 `editor_startup_smoke.hpp/.cpp`，
+  `editor_smoke_validation` 只保留 startup gate 聚合与 viewport/frame debugger/run-level 验证。
+- 2026-06-01：viewport presentation、overlay flags、camera/unproject、RenderView diagnostics、
+  multi-view 和 resize smoke 已拆到 `editor_viewport_smoke.hpp/.cpp`，`editor_smoke_validation`
+  只保留 startup gate 聚合、Frame Debugger、input 和 shortcut run-level smoke。
+- 2026-06-01：Frame Debugger capture、preview、replay、resume 和 inspected-world safe-point
+  smoke 已拆到 `editor_frame_debugger_smoke.hpp/.cpp`，`editor_smoke_validation`
+  只保留 startup gate 聚合、input 和 shortcut run-level smoke。
+- 2026-06-01：shortcut router registration/routing smoke 和 shortcut run-level smoke 已拆到
+  `editor_shortcut_smoke.hpp/.cpp`，`editor_registration_smoke` 不再直接 include input/shortcut
+  router，`editor_smoke_validation` 只保留 startup gate 聚合和 input run-level smoke。
+- 2026-06-01：input router run-level smoke 已拆到 `editor_input_smoke.hpp/.cpp`，
+  `editor_smoke_validation` 只保留 startup/registration/command gate 聚合。
+- 2026-06-01：Frame Debug image preview / replay recording 已拆到
+  `editor_frame_debug_preview.cpp`，`editor_viewport_coordinator.cpp` 保留普通 viewport request、
+  slot、texture lifetime 与 diagnostics 编排。
+- 2026-06-01：Editor UI section header、property table、status pill 与 color swatch
+  绘制 helper 已拆到 `editor_ui_widgets.cpp`，`editor_ui.cpp` 保留主题 catalog、当前主题状态、
+  color token 与 ImGui style 应用。
 - 2026-05-30：`editor_app_config.hpp/.cpp` 已接管 run path、smoke layout/settings isolation、i18n
   resource directory 和 locale env 解析；`editor_app.cpp` 继续保留 window/GPU bootstrap、frame loop 和
   shutdown 编排。
@@ -147,6 +171,7 @@ apps/editor/src/
   editor_app.hpp/.cpp
   editor_app_config.hpp/.cpp
   editor_loop_host.hpp/.cpp
+  editor_render_runtime.hpp/.cpp
   editor_shell_host.hpp/.cpp
   editor_vulkan_host.hpp/.cpp
   editor_action.hpp/.cpp
@@ -167,6 +192,7 @@ apps/editor/src/
 | --- | --- | --- |
 | `editor_app` | startup, service lifetime, startup smoke gates and shutdown order | loop internals or panel drawing details |
 | `editor_app_config` | run paths, smoke settings/layout isolation, i18n resource directory, locale env parsing | service aggregation, panel registry or GPU lifecycle |
+| `editor_render_runtime` | ImGui runtime, fullscreen renderer and viewport coordinator creation/ownership for the app render loop; public header keeps backend-heavy types behind PImpl | editor service bundles, panel/action registries or frame-loop policy |
 | `editor_vulkan_host` | renderable-window wait, Vulkan context/frame-loop creation, swapchain extent readiness, one-frame RenderView/ImGui submission glue | action dispatch, panel/service ownership or persistent editor state |
 | `editor_loop_host` | main editor loop, per-frame frame-context construction, ImGui frame begin/end order, input/shortcut routing and smoke loop state | app service lifetime, window/GPU object creation or shutdown order |
 | `editor_shell_host` | shell capability context adaptation and panel draw dispatch for one editor frame | app service lifetime, renderer command recording or persistent editor state |
@@ -176,7 +202,10 @@ apps/editor/src/
 | `editor_input_router` | ImGui capture snapshot, Scene View hover/focus state and derived input routing flags | raw GLFW callback ownership or camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing, ImGui shortcut polling and input-gated action invocation | transaction semantics or raw GLFW callback ownership |
 | `editor_viewport` | backend-neutral viewport request/result model | ImGui descriptor allocation or Vulkan command recording |
-| `editor_viewport_coordinator` | request collection, RenderView recording, render target lifetime, texture registry publication | panel widgets or ImGui backend setup |
+| `editor_viewport_coordinator` | request collection, RenderView recording, render target lifetime, texture registry publication | panel widgets, Frame Debug preview recording, or ImGui backend setup |
+| `editor_frame_debug_preview` | Frame Debug image preview / replay recording and preview texture publication | ordinary Scene/Game viewport request collection or panel widgets |
+| `editor_ui` | theme catalog, current theme state, color tokens and ImGui style application | panel-specific widgets or repeated utility drawing helpers |
+| `editor_ui_widgets` | shared small editor UI drawing helpers such as section headers, property tables, status pills and color swatches | theme catalog ownership, panel-specific layout or ImGui backend setup |
 | `imgui_runtime` | ImGui context and GLFW/Vulkan backend lifecycle | panel registry or editor state |
 | `imgui_editor_shell` | dockspace, main menu, panel host windows | renderer command recording |
 | `imgui_texture_registry` | `ImTextureID` creation, descriptor retirement, sampler choice | RenderTarget ownership |

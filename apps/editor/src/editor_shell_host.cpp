@@ -15,7 +15,7 @@ namespace asharia::editor {
                               EditorFrameDebugger& frameDebugger, EditorI18n& i18n,
                               EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
                               EditorWorkspaceController& workspace,
-                              EditorFrameContext& frameContext) {
+                              const EditorFrameUiContext& uiContext) {
         const EditorActionInvokeContext actionInvoke =
             makeEditorActionInvokeContext(actionServices);
         auto dockspaceContext = EditorDockspaceContext{
@@ -34,7 +34,7 @@ namespace asharia::editor {
             .actionInvoke = actionInvoke,
         };
         const auto statusBarContext = EditorStatusBarContext{
-            .frame = frameContext,
+            .ui = uiContext,
             .panels = panelRegistry,
             .frameDebugger = frameDebugger,
         };
@@ -43,7 +43,6 @@ namespace asharia::editor {
         drawEditorCommandBar(actionRegistry, commandBarContext);
         drawEditorStatusBar(statusBarContext);
         drawEditorDockspace(dockspaceContext);
-        panelRegistry.drawPanels(frameContext);
     }
 
 } // namespace asharia::editor

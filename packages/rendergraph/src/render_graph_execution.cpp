@@ -1,15 +1,88 @@
-﻿#include <cstddef>
+﻿#include "asharia/rendergraph/render_graph_execution.hpp"
+
+#include <cstddef>
+#include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "render_graph_internal.hpp"
+#include "render_graph_operations.hpp"
 
 namespace asharia {
 
-    Result<void>
-    RenderGraph::Impl::execute(const RenderGraphCompileResult& compiled,
-                               const RenderGraphExecutorRegistry* executorRegistry) const {
-        if (compiled.declaredPassCount != passes_.size()) {
+    Result<void> RenderGraph::execute() const {
+        auto compiled = compile();
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        const rendergraph_internal::RenderGraphDeclarationView declarations =
+            rendergraph_internal::makeRenderGraphDeclarationView(
+                std::span<const RenderGraphImageDesc>{impl_->images_},
+                std::span<const RenderGraphBufferDesc>{impl_->buffers_},
+                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+        return rendergraph_internal::executeRenderGraph(declarations, *compiled, nullptr);
+    }
+
+    Result<void> RenderGraph::execute(const RenderGraphExecutorRegistry& executorRegistry) const {
+        auto compiled = compile();
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+
+        const rendergraph_internal::RenderGraphDeclarationView declarations =
+            rendergraph_internal::makeRenderGraphDeclarationView(
+                std::span<const RenderGraphImageDesc>{impl_->images_},
+                std::span<const RenderGraphBufferDesc>{impl_->buffers_},
+                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+        return rendergraph_internal::executeRenderGraph(declarations, *compiled, &executorRegistry);
+    }
+
+    Result<void> RenderGraph::execute(const RenderGraphCompileResult& compiled) const {
+        const rendergraph_internal::RenderGraphDeclarationView declarations =
+            rendergraph_internal::makeRenderGraphDeclarationView(
+                std::span<const RenderGraphImageDesc>{impl_->images_},
+                std::span<const RenderGraphBufferDesc>{impl_->buffers_},
+                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+        return rendergraph_internal::executeRenderGraph(declarations, compiled, nullptr);
+    }
+
+    Result<void> RenderGraph::execute(const RenderGraphCompileResult& compiled,
+                                      const RenderGraphExecutorRegistry& executorRegistry) const {
+        const rendergraph_internal::RenderGraphDeclarationView declarations =
+            rendergraph_internal::makeRenderGraphDeclarationView(
+                std::span<const RenderGraphImageDesc>{impl_->images_},
+                std::span<const RenderGraphBufferDesc>{impl_->buffers_},
+                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+        return rendergraph_internal::executeRenderGraph(declarations, compiled, &executorRegistry);
+    }
+
+} // namespace asharia
+
+namespace asharia::rendergraph_internal {
+
+    namespace {
+
+        [[nodiscard]] std::string missingCallbackMessage(const RenderGraphCompiledPass& pass) {
+            std::string message = "Render graph pass '";
+            message += pass.name;
+            message += "'";
+            if (!pass.type.empty()) {
+                message += " of type '";
+                message += pass.type;
+                message += "'";
+            }
+            message += " is missing an execute callback.";
+            return message;
+        }
+
+    } // namespace
+
+    Result<void> executeRenderGraph(RenderGraphDeclarationView declarations,
+                                    const RenderGraphCompileResult& compiled,
+                                    const RenderGraphExecutorRegistry* executorRegistry) {
+        if (compiled.declaredPassCount != declarations.passes.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
                 0,
@@ -17,11 +90,11 @@ namespace asharia {
             }};
         }
 
-        std::vector<bool> executedDeclarations(passes_.size());
+        std::vector<bool> executedDeclarations(declarations.passes.size());
         for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
             const RenderGraphCompiledPass& pass = compiled.passes[index];
-            if (pass.declarationIndex >= passes_.size() ||
-                passes_[pass.declarationIndex].name != pass.name) {
+            if (pass.declarationIndex >= declarations.passes.size() ||
+                declarations.passes[pass.declarationIndex].name != pass.name) {
                 return std::unexpected{Error{
                     ErrorDomain::RenderGraph,
                     0,
@@ -38,7 +111,8 @@ namespace asharia {
             }
             executedDeclarations[pass.declarationIndex] = true;
 
-            const RenderGraphPassCallback* callback = &passes_[pass.declarationIndex].callback;
+            const RenderGraphPassCallback* callback =
+                &declarations.passes[pass.declarationIndex].callback;
             if (!*callback && executorRegistry != nullptr) {
                 callback = executorRegistry->find(pass.type);
             }
@@ -92,4 +166,4 @@ namespace asharia {
 
         return {};
     }
-} // namespace asharia
+} // namespace asharia::rendergraph_internal

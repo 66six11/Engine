@@ -363,4 +363,24 @@ namespace asharia::editor {
         });
     }
 
+    [[nodiscard]] asharia::VoidResult
+    registerEditorAppRegistries(EditorPanelRegistry& panelRegistry,
+                                EditorActionRegistry& actionRegistry,
+                                EditorToolRegistry& toolRegistry,
+                                EditorEventQueue& eventQueue) {
+        panelRegistry.setEventQueue(&eventQueue);
+
+        auto panels = registerEditorPanels(panelRegistry);
+        if (!panels) {
+            return std::unexpected{std::move(panels.error())};
+        }
+
+        auto actions = registerEditorActions(actionRegistry);
+        if (!actions) {
+            return std::unexpected{std::move(actions.error())};
+        }
+
+        return registerEditorTools(toolRegistry);
+    }
+
 } // namespace asharia::editor

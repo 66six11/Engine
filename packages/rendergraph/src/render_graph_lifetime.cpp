@@ -1,39 +1,21 @@
-﻿#include <algorithm>
+﻿#include "render_graph_lifetime.hpp"
+
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <string>
 #include <utility>
 #include <vector>
 
-#include "render_graph_internal.hpp"
+#include "render_graph_pass_queries.hpp"
+#include "render_graph_validation.hpp"
 
-namespace asharia {
-
-    std::vector<RenderGraphImageHandle>
-    RenderGraph::Impl::imageHandles(std::span<const RenderGraphImageSlot> slots) {
-        std::vector<RenderGraphImageHandle> handles;
-        handles.reserve(slots.size());
-        for (const RenderGraphImageSlot& slot : slots) {
-            handles.push_back(slot.image);
-        }
-        return handles;
-    }
-
-    std::vector<RenderGraphBufferHandle>
-    RenderGraph::Impl::bufferHandles(std::span<const RenderGraphBufferSlot> slots) {
-        std::vector<RenderGraphBufferHandle> handles;
-        handles.reserve(slots.size());
-        for (const RenderGraphBufferSlot& slot : slots) {
-            handles.push_back(slot.buffer);
-        }
-        return handles;
-    }
+namespace asharia::rendergraph_internal {
 
     Result<RenderGraphTransientImageAllocation>
-    RenderGraph::Impl::makeTransientAllocation(std::size_t imageIndex,
-                                               std::span<const RenderGraphCompiledPass> passes,
-                                               RenderGraphImageAccess finalAccess) const {
+    makeTransientAllocation(std::span<const RenderGraphImageDesc> images, std::size_t imageIndex,
+                            std::span<const RenderGraphCompiledPass> passes,
+                            RenderGraphImageAccess finalAccess) {
         std::size_t firstPass = passes.size();
         std::size_t lastPass{};
         const RenderGraphImageHandle imageHandle{
@@ -51,7 +33,7 @@ namespace asharia {
             lastPass = passIndex;
         }
 
-        const RenderGraphImageDesc& image = images_[imageIndex];
+        const RenderGraphImageDesc& image = images[imageIndex];
         if (firstPass == passes.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
@@ -72,9 +54,9 @@ namespace asharia {
         };
     }
 
-    Result<RenderGraphTransientBufferAllocation> RenderGraph::Impl::makeTransientBufferAllocation(
-        std::size_t bufferIndex, std::span<const RenderGraphCompiledPass> passes,
-        RenderGraphBufferAccess finalAccess) const {
+    Result<RenderGraphTransientBufferAllocation> makeTransientBufferAllocation(
+        std::span<const RenderGraphBufferDesc> buffers, std::size_t bufferIndex,
+        std::span<const RenderGraphCompiledPass> passes, RenderGraphBufferAccess finalAccess) {
         std::size_t firstPass = passes.size();
         std::size_t lastPass{};
         const RenderGraphBufferHandle bufferHandle{
@@ -92,7 +74,7 @@ namespace asharia {
             lastPass = passIndex;
         }
 
-        const RenderGraphBufferDesc& buffer = buffers_[bufferIndex];
+        const RenderGraphBufferDesc& buffer = buffers[bufferIndex];
         if (firstPass == passes.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
@@ -112,73 +94,26 @@ namespace asharia {
         };
     }
 
-    bool RenderGraph::Impl::passUsesImage(const RenderGraphCompiledPass& pass,
-                                          RenderGraphImageHandle image) {
-        return slotsUseImage(pass.colorWriteSlots, image) ||
-               slotsUseImage(pass.shaderReadSlots, image) ||
-               slotsUseImage(pass.depthReadSlots, image) ||
-               slotsUseImage(pass.depthWriteSlots, image) ||
-               slotsUseImage(pass.depthSampledReadSlots, image) ||
-               slotsUseImage(pass.transferReadSlots, image) ||
-               slotsUseImage(pass.transferWriteSlots, image);
-    }
-
-    bool
-    RenderGraph::Impl::imageUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
-                                                 RenderGraphImageHandle image) {
-        return std::ranges::any_of(passes, [image](const RenderGraphCompiledPass& pass) {
-            return passUsesImage(pass, image);
-        });
-    }
-
-    bool RenderGraph::Impl::passUsesBuffer(const RenderGraphCompiledPass& pass,
-                                           RenderGraphBufferHandle buffer) {
-        return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
-               slotsUseBuffer(pass.bufferTransferReadSlots, buffer) ||
-               slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
-               slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
-    }
-
-    bool
-    RenderGraph::Impl::bufferUsedByCompiledPasses(std::span<const RenderGraphCompiledPass> passes,
-                                                  RenderGraphBufferHandle buffer) {
-        return std::ranges::any_of(passes, [buffer](const RenderGraphCompiledPass& pass) {
-            return passUsesBuffer(pass, buffer);
-        });
-    }
-
-    bool RenderGraph::Impl::bufferUsedByDeclaredPasses(RenderGraphBufferHandle buffer) const {
-        return std::ranges::any_of(passes_, [buffer](const Pass& pass) {
+    bool bufferUsedByDeclaredPasses(std::span<const Pass> passes, RenderGraphBufferHandle buffer) {
+        return std::ranges::any_of(passes, [buffer](const auto& pass) {
             return passReadsBuffer(pass, buffer) || passWritesBuffer(pass, buffer);
         });
     }
 
-    bool RenderGraph::Impl::imageUsedByDeclaredPasses(RenderGraphImageHandle image) const {
-        return std::ranges::any_of(passes_, [image](const Pass& pass) {
+    bool imageUsedByDeclaredPasses(std::span<const Pass> passes, RenderGraphImageHandle image) {
+        return std::ranges::any_of(passes, [image](const auto& pass) {
             return passReadsImage(pass, image) || passWritesImage(pass, image);
         });
     }
 
-    bool RenderGraph::Impl::slotsUseImage(std::span<const RenderGraphImageSlot> slots,
-                                          RenderGraphImageHandle image) {
-        return std::ranges::any_of(
-            slots, [image](const RenderGraphImageSlot& slot) { return slot.image == image; });
-    }
-
-    bool RenderGraph::Impl::slotsUseBuffer(std::span<const RenderGraphBufferSlot> slots,
-                                           RenderGraphBufferHandle buffer) {
-        return std::ranges::any_of(
-            slots, [buffer](const RenderGraphBufferSlot& slot) { return slot.buffer == buffer; });
-    }
-
-    Result<void>
-    RenderGraph::Impl::transitionImages(std::span<const RenderGraphImageSlot> imageSlots,
-                                        RenderGraphImageAccess requiredAccess,
-                                        std::vector<RenderGraphImageAccess>& currentAccesses,
-                                        RenderGraphCompiledPass& compiledPass) const {
+    Result<void> transitionImages(std::span<const RenderGraphImageDesc> images,
+                                  std::span<const RenderGraphImageSlot> imageSlots,
+                                  RenderGraphImageAccess requiredAccess,
+                                  std::vector<RenderGraphImageAccess>& currentAccesses,
+                                  RenderGraphCompiledPass& compiledPass) {
         for (const RenderGraphImageSlot& slot : imageSlots) {
             RenderGraphImageHandle imageHandle = slot.image;
-            auto validated = validateImageHandle(imageHandle);
+            auto validated = validateImageHandle(images, imageHandle);
             if (!validated) {
                 return std::unexpected{std::move(validated.error())};
             }
@@ -189,7 +124,7 @@ namespace asharia {
                 slotAccess.shaderStage = slot.shaderStage;
             }
 
-            const RenderGraphImageDesc& image = images_[imageHandle.index];
+            const RenderGraphImageDesc& image = images[imageHandle.index];
             if (currentAccesses[imageHandle.index] != slotAccess) {
                 compiledPass.transitionsBefore.push_back(makeTransition(
                     imageHandle, image, currentAccesses[imageHandle.index], slotAccess));
@@ -200,14 +135,14 @@ namespace asharia {
         return {};
     }
 
-    Result<void>
-    RenderGraph::Impl::transitionBuffers(std::span<const RenderGraphBufferSlot> bufferSlots,
-                                         RenderGraphBufferAccess requiredAccess,
-                                         std::vector<RenderGraphBufferAccess>& currentAccesses,
-                                         RenderGraphCompiledPass& compiledPass) const {
+    Result<void> transitionBuffers(std::span<const RenderGraphBufferDesc> buffers,
+                                   std::span<const RenderGraphBufferSlot> bufferSlots,
+                                   RenderGraphBufferAccess requiredAccess,
+                                   std::vector<RenderGraphBufferAccess>& currentAccesses,
+                                   RenderGraphCompiledPass& compiledPass) {
         for (const RenderGraphBufferSlot& slot : bufferSlots) {
             RenderGraphBufferHandle bufferHandle = slot.buffer;
-            auto validated = validateBufferHandle(bufferHandle);
+            auto validated = validateBufferHandle(buffers, bufferHandle);
             if (!validated) {
                 return std::unexpected{std::move(validated.error())};
             }
@@ -218,7 +153,7 @@ namespace asharia {
                 slotAccess.shaderStage = slot.shaderStage;
             }
 
-            const RenderGraphBufferDesc& buffer = buffers_[bufferHandle.index];
+            const RenderGraphBufferDesc& buffer = buffers[bufferHandle.index];
             if (currentAccesses[bufferHandle.index] != slotAccess) {
                 compiledPass.bufferTransitionsBefore.push_back(makeTransition(
                     bufferHandle, buffer, currentAccesses[bufferHandle.index], slotAccess));
@@ -229,33 +164,4 @@ namespace asharia {
         return {};
     }
 
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    RenderGraphImageTransition RenderGraph::Impl::makeTransition(RenderGraphImageHandle imageHandle,
-                                                                 const RenderGraphImageDesc& image,
-                                                                 RenderGraphImageAccess oldAccess,
-                                                                 RenderGraphImageAccess newAccess) {
-        return RenderGraphImageTransition{
-            .image = imageHandle,
-            .imageName = image.name,
-            .oldState = oldAccess.state,
-            .oldShaderStage = oldAccess.shaderStage,
-            .newState = newAccess.state,
-            .newShaderStage = newAccess.shaderStage,
-        };
-    }
-
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    RenderGraphBufferTransition RenderGraph::Impl::makeTransition(
-        RenderGraphBufferHandle bufferHandle, const RenderGraphBufferDesc& buffer,
-        RenderGraphBufferAccess oldAccess, RenderGraphBufferAccess newAccess) {
-        return RenderGraphBufferTransition{
-            .buffer = bufferHandle,
-            .bufferName = buffer.name,
-            .oldState = oldAccess.state,
-            .oldShaderStage = oldAccess.shaderStage,
-            .newState = newAccess.state,
-            .newShaderStage = newAccess.shaderStage,
-        };
-    }
-
-} // namespace asharia
+} // namespace asharia::rendergraph_internal

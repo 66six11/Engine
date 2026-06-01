@@ -9,13 +9,13 @@ namespace asharia::editor {
     class EditorToolRegistry;
     class EditorWorkspaceController;
     struct EditorActionServices;
-    struct EditorFrameContext;
+    struct EditorFrameUiContext;
 
     void drawEditorShellFrame(EditorActionRegistry& actionRegistry,
                               EditorActionServices& actionServices,
                               EditorFrameDebugger& frameDebugger, EditorI18n& i18n,
                               EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
                               EditorWorkspaceController& workspace,
-                              EditorFrameContext& frameContext);
+                              const EditorFrameUiContext& uiContext);
 
 } // namespace asharia::editor

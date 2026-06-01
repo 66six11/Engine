@@ -3,9 +3,16 @@
 #include "asharia/core/result.hpp"
 
 namespace asharia::editor {
-    class EditorPanelRegistry;
     class EditorActionRegistry;
+    class EditorEventQueue;
+    class EditorPanelRegistry;
     class EditorToolRegistry;
+
+    [[nodiscard]] asharia::VoidResult
+    registerEditorAppRegistries(EditorPanelRegistry& panelRegistry,
+                                EditorActionRegistry& actionRegistry,
+                                EditorToolRegistry& toolRegistry,
+                                EditorEventQueue& eventQueue);
 
     [[nodiscard]] asharia::VoidResult
     registerEditorPanels(EditorPanelRegistry& panelRegistry);

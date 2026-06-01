@@ -14,14 +14,37 @@ asharia_require_package_target(asharia::core engine/core)
 add_library(asharia-rendergraph STATIC
     src/render_graph.cpp
     src/render_graph_builder.cpp
+    src/render_graph_command_schema_validation.cpp
     src/render_graph_command_list.cpp
     src/render_graph_compile.cpp
-    src/render_graph_debug.cpp
+    src/render_graph_compiled_pass.cpp
+    src/render_graph_buffer_access_validation.cpp
+    src/render_graph_buffer_dependency_builder.cpp
+    src/render_graph_declaration_view.cpp
+    src/render_graph_dependency_builder.cpp
+    src/render_graph_dependency_culling.cpp
+    src/render_graph_dependency_sort.cpp
+    src/render_graph_debug_detail_tables.cpp
+    src/render_graph_debug_names.cpp
+    src/render_graph_debug_summary_tables.cpp
+    src/render_graph_debug_tables.cpp
     src/render_graph_diagnostics.cpp
-    src/render_graph_dependencies.cpp
+    src/render_graph_diagnostics_pass_snapshot.cpp
+    src/render_graph_diagnostics_snapshot.cpp
     src/render_graph_execution.cpp
+    src/render_graph_image_access_validation.cpp
+    src/render_graph_image_dependency_builder.cpp
     src/render_graph_lifetime.cpp
+    src/render_graph_pass_declarations.cpp
+    src/render_graph_pass_queries.cpp
     src/render_graph_registry.cpp
+    src/render_graph_resource_declarations.cpp
+    src/render_graph_resource_schema_validation.cpp
+    src/render_graph_buffer_slot_validation.cpp
+    src/render_graph_image_slot_validation.cpp
+    src/render_graph_schema_queries.cpp
+    src/render_graph_schema_validation.cpp
+    src/render_graph_slot_validation.cpp
     src/render_graph_validation.cpp
 )
 add_library(asharia::rendergraph ALIAS asharia-rendergraph)
@@ -49,6 +72,7 @@ if(ASHARIA_BUILD_TESTS)
       tests/rendergraph_header_tests.cpp
       tests/rendergraph_command_list_header_test.cpp
       tests/rendergraph_types_header_test.cpp
+      tests/rendergraph_pass_context_header_test.cpp
       tests/rendergraph_execution_header_test.cpp
       tests/rendergraph_builder_header_test.cpp
       tests/rendergraph_compile_header_test.cpp

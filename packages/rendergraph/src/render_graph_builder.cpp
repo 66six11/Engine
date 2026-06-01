@@ -1,5 +1,4 @@
 ﻿#include <cstddef>
-#include <cstdint>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -176,97 +175,5 @@ namespace asharia {
 
     RenderGraph::PassBuilder::PassBuilder(RenderGraph& graph, std::size_t passIndex)
         : graph_(&graph), passIndex_(passIndex) {}
-
-    RenderGraphImageHandle RenderGraph::importImage(RenderGraphImageDesc desc) {
-        desc.lifetime = RenderGraphImageLifetime::Imported;
-        impl_->images_.push_back(std::move(desc));
-        return RenderGraphImageHandle{
-            .index = static_cast<std::uint32_t>(impl_->images_.size() - 1),
-        };
-    }
-
-    RenderGraphImageHandle RenderGraph::createTransientImage(RenderGraphImageDesc desc) {
-        desc.lifetime = RenderGraphImageLifetime::Transient;
-        desc.initialState = RenderGraphImageState::Undefined;
-        desc.initialShaderStage = RenderGraphShaderStage::None;
-        desc.finalState = RenderGraphImageState::Undefined;
-        desc.finalShaderStage = RenderGraphShaderStage::None;
-        impl_->images_.push_back(std::move(desc));
-        return RenderGraphImageHandle{
-            .index = static_cast<std::uint32_t>(impl_->images_.size() - 1),
-        };
-    }
-
-    RenderGraphBufferHandle RenderGraph::importBuffer(RenderGraphBufferDesc desc) {
-        desc.lifetime = RenderGraphBufferLifetime::Imported;
-        impl_->buffers_.push_back(std::move(desc));
-        return RenderGraphBufferHandle{
-            .index = static_cast<std::uint32_t>(impl_->buffers_.size() - 1),
-        };
-    }
-
-    RenderGraphBufferHandle RenderGraph::createTransientBuffer(RenderGraphBufferDesc desc) {
-        desc.lifetime = RenderGraphBufferLifetime::Transient;
-        desc.initialState = RenderGraphBufferState::Undefined;
-        desc.initialShaderStage = RenderGraphShaderStage::None;
-        desc.finalState = RenderGraphBufferState::Undefined;
-        desc.finalShaderStage = RenderGraphShaderStage::None;
-        impl_->buffers_.push_back(std::move(desc));
-        return RenderGraphBufferHandle{
-            .index = static_cast<std::uint32_t>(impl_->buffers_.size() - 1),
-        };
-    }
-
-    RenderGraph::PassBuilder RenderGraph::addPass(std::string name) {
-        Impl::Pass pass{
-            .name = std::move(name),
-            .type = {},
-            .paramsType = {},
-            .paramsData = {},
-            .colorWriteSlots = {},
-            .shaderReadSlots = {},
-            .depthReadSlots = {},
-            .depthWriteSlots = {},
-            .depthSampledReadSlots = {},
-            .transferReadSlots = {},
-            .transferWriteSlots = {},
-            .bufferReadSlots = {},
-            .bufferTransferReadSlots = {},
-            .bufferWriteSlots = {},
-            .bufferStorageReadWriteSlots = {},
-            .commands = {},
-            .allowCulling = {},
-            .hasSideEffects = {},
-            .callback = {},
-        };
-        impl_->passes_.push_back(std::move(pass));
-        return PassBuilder{*this, impl_->passes_.size() - 1};
-    }
-
-    RenderGraph::PassBuilder RenderGraph::addPass(std::string name, std::string type) {
-        Impl::Pass pass{
-            .name = std::move(name),
-            .type = std::move(type),
-            .paramsType = {},
-            .paramsData = {},
-            .colorWriteSlots = {},
-            .shaderReadSlots = {},
-            .depthReadSlots = {},
-            .depthWriteSlots = {},
-            .depthSampledReadSlots = {},
-            .transferReadSlots = {},
-            .transferWriteSlots = {},
-            .bufferReadSlots = {},
-            .bufferTransferReadSlots = {},
-            .bufferWriteSlots = {},
-            .bufferStorageReadWriteSlots = {},
-            .commands = {},
-            .allowCulling = {},
-            .hasSideEffects = {},
-            .callback = {},
-        };
-        impl_->passes_.push_back(std::move(pass));
-        return PassBuilder{*this, impl_->passes_.size() - 1};
-    }
 
 } // namespace asharia
