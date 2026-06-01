@@ -131,6 +131,8 @@ E 补充（2026-06-01）: Step 2b-w 已把 Frame Debug image preview / replay re
 
 E 补充（2026-06-01）: Step 2b-x 已把 Editor UI section header、property table、status pill 与 color swatch 绘制 helper 从 `editor_ui.cpp` 拆到 `editor_ui_widgets.cpp`；`editor_ui.cpp` 继续保留主题 catalog、当前主题状态、color token 与 ImGui style 应用。
 
+E 补充（2026-06-01）: Step 2b-y 已把 Frame Debug replay pass/event/image 选择、preview request consume/publish/unavailable 状态更新从 `editor_frame_debugger.cpp` 拆到 `editor_frame_debugger_replay.hpp/.cpp`；`editor_frame_debugger.cpp` 保留 capture/resume/fence 状态机和只读查询，GPU preview 录制仍在 `editor_frame_debug_preview.cpp`。
+
 阻塞规则：
 
 - A 必须保持通过；扩大 swapchain/offscreen target format、material/pipeline format key 或 texture preview 范围时，先扩展 format helper、Vulkan adapter 映射和 negative smoke。

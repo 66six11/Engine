@@ -80,6 +80,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - 2026-06-01：Editor UI section header、property table、status pill 与 color swatch
   绘制 helper 已拆到 `editor_ui_widgets.cpp`，`editor_ui.cpp` 保留主题 catalog、当前主题状态、
   color token 与 ImGui style 应用。
+- 2026-06-01：Frame Debug replay pass/event/image 选择与 preview request consume/publish
+  状态更新已拆到 `editor_frame_debugger_replay.hpp/.cpp`，`editor_frame_debugger.cpp`
+  保留 capture/resume/fence 状态机和只读查询。
 - 2026-05-30：`editor_app_config.hpp/.cpp` 已接管 run path、smoke layout/settings isolation、i18n
   resource directory 和 locale env 解析；`editor_app.cpp` 继续保留 window/GPU bootstrap、frame loop 和
   shutdown 编排。
@@ -204,6 +207,7 @@ apps/editor/src/
 | `editor_viewport` | backend-neutral viewport request/result model | ImGui descriptor allocation or Vulkan command recording |
 | `editor_viewport_coordinator` | request collection, RenderView recording, render target lifetime, texture registry publication | panel widgets, Frame Debug preview recording, or ImGui backend setup |
 | `editor_frame_debug_preview` | Frame Debug image preview / replay recording and preview texture publication | ordinary Scene/Game viewport request collection or panel widgets |
+| `editor_frame_debugger_replay` | replay pass/event/image selection, preview request lifecycle and default replay target lookup | GPU preview recording, viewport texture publication or panel widgets |
 | `editor_ui` | theme catalog, current theme state, color tokens and ImGui style application | panel-specific widgets or repeated utility drawing helpers |
 | `editor_ui_widgets` | shared small editor UI drawing helpers such as section headers, property tables, status pills and color swatches | theme catalog ownership, panel-specific layout or ImGui backend setup |
 | `imgui_runtime` | ImGui context and GLFW/Vulkan backend lifecycle | panel registry or editor state |
