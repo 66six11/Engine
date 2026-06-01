@@ -86,6 +86,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 - 2026-06-01：RenderGraph snapshot enum/name、resource/pass label 与 access cell
   数据整形已拆到 `render_graph_snapshot_format.hpp/.cpp`，`render_graph_snapshot_view.cpp`
   保留 ImGui summary、timeline matrix 与 detail table 绘制。
+- 2026-06-01：RenderGraph snapshot access events、resource、pass 与 dependency
+  明细表绘制已拆到 `render_graph_snapshot_details.hpp/.cpp`，`render_graph_snapshot_view.cpp`
+  保留 summary、access timeline matrix 与 hover tooltip。
 - 2026-05-30：`editor_app_config.hpp/.cpp` 已接管 run path、smoke layout/settings isolation、i18n
   resource directory 和 locale env 解析；`editor_app.cpp` 继续保留 window/GPU bootstrap、frame loop 和
   shutdown 编排。
@@ -212,6 +215,7 @@ apps/editor/src/
 | `editor_frame_debug_preview` | Frame Debug image preview / replay recording and preview texture publication | ordinary Scene/Game viewport request collection or panel widgets |
 | `editor_frame_debugger_replay` | replay pass/event/image selection, preview request lifecycle and default replay target lookup | GPU preview recording, viewport texture publication or panel widgets |
 | `render_graph_snapshot_format` | RenderGraph snapshot display labels, resource/pass formatting and access-cell data shaping | ImGui timeline/detail table drawing, viewport texture ownership or RenderGraph compilation |
+| `render_graph_snapshot_details` | RenderGraph snapshot access/resource/pass/dependency detail table drawing | timeline matrix drawing, snapshot formatting or RenderGraph compilation |
 | `editor_ui` | theme catalog, current theme state, color tokens and ImGui style application | panel-specific widgets or repeated utility drawing helpers |
 | `editor_ui_widgets` | shared small editor UI drawing helpers such as section headers, property tables, status pills and color swatches | theme catalog ownership, panel-specific layout or ImGui backend setup |
 | `imgui_runtime` | ImGui context and GLFW/Vulkan backend lifecycle | panel registry or editor state |
