@@ -2967,6 +2967,140 @@ namespace {
         return true;
     }
 
+    constexpr std::string_view kInvalidSceneInputSmokeExpectedError =
+        "RenderView scene input item must declare vertices or indices and a non-zero instance "
+        "count";
+
+    struct SmokeFullscreenTextureState {
+        asharia::BasicRenderViewDiagnostics overlayDiagnostics;
+        bool overlayDiagnosticsRecorded{};
+        bool invalidSceneInputRejected{};
+    };
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeFullscreenTextureOverlayFrame(
+        const asharia::VulkanFrameRecordContext& recordContext,
+        asharia::BasicFullscreenTextureRenderer& renderer,
+        SmokeFullscreenTextureState& state, int frame) {
+        constexpr auto drawItems = asharia::basicDrawListSmokeItems();
+        const std::array debugLines{
+            asharia::BasicDebugWorldLine{
+                .start = {-0.65F, 0.0F, 0.0F},
+                .end = {0.65F, 0.0F, 0.0F},
+                .color = {0.18F, 0.78F, 0.95F, 0.65F},
+            },
+        };
+        auto recorded = renderer.recordViewFrame(
+            recordContext,
+            asharia::BasicRenderViewDesc{
+                .target =
+                    asharia::BasicRenderViewTarget{
+                        .image = recordContext.image,
+                        .imageView = recordContext.imageView,
+                        .format = recordContext.format,
+                        .extent = recordContext.extent,
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .finalUsage = asharia::BasicRenderViewTargetFinalUsage::Present,
+                    },
+                .viewKind = asharia::BasicRenderViewKind::Game,
+                .camera = asharia::BasicRenderViewCamera{},
+                .frameParams =
+                    asharia::BasicRenderViewFrameParams{
+                        .frameIndex = static_cast<std::uint64_t>(frame + 1),
+                    },
+                .scene =
+                    asharia::BasicRenderViewSceneDesc{
+                        .drawItems = drawItems,
+                    },
+                .overlay =
+                    asharia::BasicRenderViewOverlayDesc{
+                        .enabled = true,
+                        .blendMode = asharia::BasicRenderViewOverlayBlendMode::Additive,
+                        .worldGrid = {},
+                        .debugWorldLines = debugLines,
+                    },
+                .viewName = "FullscreenTextureAdditiveOverlaySmoke",
+                .diagnostics = &state.overlayDiagnostics,
+            });
+        if (recorded) {
+            state.overlayDiagnosticsRecorded = true;
+        }
+        return recorded;
+    }
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeFullscreenTextureInvalidSceneFrame(
+        const asharia::VulkanFrameRecordContext& recordContext,
+        asharia::BasicFullscreenTextureRenderer& renderer,
+        SmokeFullscreenTextureState& state, int frame) {
+        constexpr std::array invalidDrawItems{
+            asharia::BasicDrawListItem{
+                .drawItem =
+                    asharia::BasicDrawItem{
+                        .vertexCount = 0,
+                        .indexCount = 0,
+                        .instanceCount = 1,
+                    },
+                .modelMatrix = asharia::basicIdentityTransform3D(),
+            },
+        };
+        auto rejected = renderer.recordViewFrame(
+            recordContext,
+            asharia::BasicRenderViewDesc{
+                .target =
+                    asharia::BasicRenderViewTarget{
+                        .image = recordContext.image,
+                        .imageView = recordContext.imageView,
+                        .format = recordContext.format,
+                        .extent = recordContext.extent,
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .finalUsage = asharia::BasicRenderViewTargetFinalUsage::Present,
+                    },
+                .viewKind = asharia::BasicRenderViewKind::Game,
+                .camera = asharia::BasicRenderViewCamera{},
+                .frameParams =
+                    asharia::BasicRenderViewFrameParams{
+                        .frameIndex = static_cast<std::uint64_t>(frame + 1),
+                    },
+                .scene =
+                    asharia::BasicRenderViewSceneDesc{
+                        .drawItems = invalidDrawItems,
+                    },
+                .overlay = {},
+                .viewName = "FullscreenTextureInvalidSceneInputSmoke",
+            });
+        if (rejected) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
+                0,
+                "Fullscreen texture smoke accepted invalid scene input",
+            }};
+        }
+
+        state.invalidSceneInputRejected =
+            rejected.error().message.find(kInvalidSceneInputSmokeExpectedError) !=
+            std::string::npos;
+        if (!state.invalidSceneInputRejected) {
+            return std::unexpected{std::move(rejected.error())};
+        }
+        return renderer.recordFrame(recordContext);
+    }
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeFullscreenTextureFrame(
+        const asharia::VulkanFrameRecordContext& recordContext,
+        asharia::BasicFullscreenTextureRenderer& renderer,
+        SmokeFullscreenTextureState& state, int frame) {
+        if (frame == 1) {
+            return recordSmokeFullscreenTextureOverlayFrame(recordContext, renderer, state, frame);
+        }
+        if (frame == 2) {
+            return recordSmokeFullscreenTextureInvalidSceneFrame(recordContext, renderer, state,
+                                                                frame);
+        }
+        return renderer.recordFrame(recordContext);
+    }
+
     using SmokeGridVec3 = std::array<float, 3>;
     using SmokeGridMat4 = std::array<float, 16>;
 
@@ -3627,65 +3761,18 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        asharia::BasicRenderViewDiagnostics overlayDiagnostics;
-        bool overlayDiagnosticsRecorded = false;
+        SmokeFullscreenTextureState smokeState;
         for (int frame = 0; frame < 3; ++frame) {
             asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&renderer, &overlayDiagnostics, &overlayDiagnosticsRecorded,
-                 frame](const asharia::VulkanFrameRecordContext& recordContext) {
-                    if (frame == 1) {
-                        constexpr auto drawItems = asharia::basicDrawListSmokeItems();
-                        const std::array debugLines{
-                            asharia::BasicDebugWorldLine{
-                                .start = {-0.65F, 0.0F, 0.0F},
-                                .end = {0.65F, 0.0F, 0.0F},
-                                .color = {0.18F, 0.78F, 0.95F, 0.65F},
-                            },
-                        };
-                        auto recorded = renderer->recordViewFrame(
-                            recordContext,
-                            asharia::BasicRenderViewDesc{
-                                .target =
-                                    asharia::BasicRenderViewTarget{
-                                        .image = recordContext.image,
-                                        .imageView = recordContext.imageView,
-                                        .format = recordContext.format,
-                                        .extent = recordContext.extent,
-                                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                        .finalUsage =
-                                            asharia::BasicRenderViewTargetFinalUsage::Present,
-                                    },
-                                .viewKind = asharia::BasicRenderViewKind::Game,
-                                .camera = asharia::BasicRenderViewCamera{},
-                                .frameParams =
-                                    asharia::BasicRenderViewFrameParams{
-                                        .frameIndex = static_cast<std::uint64_t>(frame + 1),
-                                    },
-                                .scene =
-                                    asharia::BasicRenderViewSceneDesc{
-                                        .drawItems = drawItems,
-                                    },
-                                .overlay =
-                                    asharia::BasicRenderViewOverlayDesc{
-                                        .enabled = true,
-                                        .blendMode =
-                                            asharia::BasicRenderViewOverlayBlendMode::Additive,
-                                        .worldGrid = {},
-                                        .debugWorldLines = debugLines,
-                                    },
-                                .viewName = "FullscreenTextureAdditiveOverlaySmoke",
-                                .diagnostics = &overlayDiagnostics,
-                            });
-                        if (recorded) {
-                            overlayDiagnosticsRecorded = true;
-                        }
-                        return recorded;
-                    }
-                    return renderer->recordFrame(recordContext);
+                [&renderer, &smokeState,
+                 frame](const asharia::VulkanFrameRecordContext& recordContext)
+                    -> asharia::Result<asharia::VulkanFrameRecordResult> {
+                    return recordSmokeFullscreenTextureFrame(
+                        recordContext, *renderer, smokeState, frame);
                 });
             if (!status) {
                 asharia::logError(status.error().message);
@@ -3701,8 +3788,12 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
-        if (!validateFullscreenTextureOverlayDiagnostics(overlayDiagnostics,
-                                                         overlayDiagnosticsRecorded)) {
+        if (!validateFullscreenTextureOverlayDiagnostics(smokeState.overlayDiagnostics,
+                                                         smokeState.overlayDiagnosticsRecorded)) {
+            return EXIT_FAILURE;
+        }
+        if (!smokeState.invalidSceneInputRejected) {
+            asharia::logError("Fullscreen texture smoke did not reject invalid scene input.");
             return EXIT_FAILURE;
         }
 

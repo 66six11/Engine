@@ -187,6 +187,17 @@ namespace asharia {
                     "RenderView scene draw item count exceeds command summary limits",
                 }};
             }
+            for (const BasicDrawListItem& item : view.scene.drawItems) {
+                if ((item.drawItem.vertexCount == 0 && item.drawItem.indexCount == 0) ||
+                    item.drawItem.instanceCount == 0) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        "RenderView scene input item must declare vertices or indices and a "
+                        "non-zero instance count",
+                    }};
+                }
+            }
             return {};
         }
 

@@ -140,9 +140,10 @@ debug world-line count 作为 typed params 与 command summary 记录，并在 `
 通过 debug-line shader/pipeline 绘制 line-list。没有 debug line 时 overlay intent 只保留在 diagnostics，避免空
 pass。`BasicRenderViewDesc::scene` 已作为 scene/asset/SRP 的最小输入入口：非空 draw item span 会生成
 `builtin.render-view-scene-inputs` marker pass、typed draw item count 和 `BindRenderViewSceneInputs` execution event，
-但暂不绘制 mesh 或拥有 asset/GPU upload 生命周期。现有 mesh/draw-list smoke 仍在 renderer 内部用 extent 和 model
-matrix 计算 MVP。后续相机相关 grid、scene mesh、selection、gizmo 或 debug line pass 必须继续沿 renderer-owned
-per-view constants / pass input 合同推进，不能回退到 diagnostics-only 数据源。
+并拒绝没有 vertex/index 或 instanceCount 为零的无效 draw item；但暂不绘制 mesh 或拥有 asset/GPU upload 生命周期。
+现有 mesh/draw-list smoke 仍在 renderer 内部用 extent 和 model matrix 计算 MVP。后续相机相关 grid、scene mesh、
+selection、gizmo 或 debug line pass 必须继续沿 renderer-owned per-view constants / pass input 合同推进，不能回退到
+diagnostics-only 数据源。
 
 ### Editor 是 orchestration
 

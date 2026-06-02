@@ -36,7 +36,8 @@
 - `BasicRenderViewDesc::scene` 是 scene/asset/SRP 接入的当前最小入口。它只接收 `renderer_basic` 的
   backend-neutral `BasicDrawListItem` span；`recordViewFrame()` 在 draw item 非空时插入
   `builtin.render-view-scene-inputs` marker pass，把 draw item count 作为 typed params 与 command summary 放入
-  RenderGraph，并记录 `BindRenderViewSceneInputs` execution event。该 pass 暂不绘制 mesh、上传 GPU 资源或读取
+  RenderGraph，并记录 `BindRenderViewSceneInputs` execution event。非空 scene draw item 会先验证基础 draw 语义：
+  每个 item 至少声明 vertex 或 index，且 instance count 非零。该 pass 暂不绘制 mesh、上传 GPU 资源或读取
   asset/editor object；真实 scene mesh pass 后续必须消费同一类 renderer-owned input，再显式声明 color/depth/buffer
   resource usage。
 

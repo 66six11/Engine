@@ -1638,6 +1638,7 @@ Scope:
   object crosses this contract.
 - When scene draw items are present, record a graph-visible `builtin.render-view-scene-inputs` marker pass with typed draw
   item count and a `BindRenderViewSceneInputs` execution event.
+- Reject scene draw items that would not issue any draw work: zero vertex/index count or zero instance count.
 - Do not draw scene mesh from this pass yet; real mesh rendering, resource upload, material keys and depth/color resource
   declarations remain later renderer/asset slices.
 
@@ -1645,6 +1646,7 @@ Validation:
 
 - `--smoke-fullscreen-texture` verifies scene input diagnostics, the scene input marker pass, command summary and renderer
   execution event.
+- `--smoke-fullscreen-texture` also verifies invalid scene draw items are rejected before graph recording.
 - Builtin schema smoke covers the no-resource scene input schema through wrong params and unexpected slot failures.
 
 ## Phase 24: Asset Browser And Material Editor
