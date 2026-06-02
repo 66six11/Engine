@@ -107,6 +107,15 @@ namespace asharia::editor {
         bool debugGizmoVisible{};
     };
 
+    struct EditorViewportWorldGridSettings {
+        float planeY{};
+        float minorSpacing{1.0F};
+        float majorSpacing{10.0F};
+        float fadeStart{};
+        float fadeEnd{};
+        float opacity{1.0F};
+    };
+
     struct EditorViewportRefreshRequest {
         EditorViewportRefreshPolicy policy{EditorViewportRefreshPolicy::Continuous};
         EditorViewportRepaintReasons repaintReasons{};
@@ -129,6 +138,7 @@ namespace asharia::editor {
         EditorExtent2D extent;
         EditorViewportCamera camera;
         EditorViewportOverlayFlags overlayFlags;
+        EditorViewportWorldGridSettings worldGrid;
         EditorViewportRefreshRequest refresh;
     };
 
@@ -163,6 +173,8 @@ namespace asharia::editor {
     [[nodiscard]] bool anyEditorSceneOnlyOverlayFlagEnabled(EditorViewportOverlayFlags flags);
     [[nodiscard]] bool sameEditorViewportOverlayFlags(EditorViewportOverlayFlags lhs,
                                                       EditorViewportOverlayFlags rhs);
+    [[nodiscard]] bool sameEditorViewportWorldGridSettings(EditorViewportWorldGridSettings lhs,
+                                                           EditorViewportWorldGridSettings rhs);
     [[nodiscard]] EditorViewportOverlayFlags
     effectiveEditorViewportOverlayFlags(EditorViewportKind kind, EditorViewportOverlayFlags flags);
 

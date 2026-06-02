@@ -8,12 +8,14 @@
 
 #include "editor_i18n.hpp"
 #include "editor_ui.hpp"
+#include "editor_viewport.hpp"
 
 namespace asharia::editor {
 
     struct EditorSettings {
         EditorLocale locale{EditorLocale::EnUs};
         EditorUiThemeId theme{EditorUiThemeId::BlackDefault};
+        EditorViewportWorldGridSettings sceneGrid;
     };
 
     [[nodiscard]] std::filesystem::path editorUserSettingsPath();
@@ -35,6 +37,7 @@ namespace asharia::editor {
         [[nodiscard]] bool lastSaveFailed() const;
         [[nodiscard]] asharia::VoidResult setLocale(EditorLocale locale);
         [[nodiscard]] asharia::VoidResult setTheme(EditorUiThemeId theme);
+        [[nodiscard]] asharia::VoidResult setSceneGrid(EditorViewportWorldGridSettings sceneGrid);
 
     private:
         EditorSettings settings_;

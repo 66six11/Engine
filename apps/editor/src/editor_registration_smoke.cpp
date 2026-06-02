@@ -1,6 +1,7 @@
 ﻿#include "editor_registration_smoke.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <span>
 
@@ -31,6 +32,19 @@ namespace asharia::editor {
                                                                : EditorUiThemeId::WarmGraphiteAmber;
         }
 
+        [[nodiscard]] bool closeFloat(float lhs, float rhs) {
+            return std::fabs(lhs - rhs) < 0.0001F;
+        }
+
+        [[nodiscard]] bool sameWorldGridSettings(EditorViewportWorldGridSettings lhs,
+                                                 EditorViewportWorldGridSettings rhs) {
+            return closeFloat(lhs.planeY, rhs.planeY) &&
+                   closeFloat(lhs.minorSpacing, rhs.minorSpacing) &&
+                   closeFloat(lhs.majorSpacing, rhs.majorSpacing) &&
+                   closeFloat(lhs.fadeStart, rhs.fadeStart) &&
+                   closeFloat(lhs.fadeEnd, rhs.fadeEnd) && closeFloat(lhs.opacity, rhs.opacity);
+        }
+
         [[nodiscard]] bool validateEditorSettingsSmoke(EditorRunMode mode,
                                                        EditorSettingsController& settings,
                                                        EditorI18n& i18n) {
@@ -40,6 +54,7 @@ namespace asharia::editor {
 
             const EditorLocale initialLocale = settings.settings().locale;
             const EditorUiThemeId initialTheme = settings.settings().theme;
+            const EditorViewportWorldGridSettings initialSceneGrid = settings.settings().sceneGrid;
             const EditorLocale changedLocale = alternateLocale(initialLocale);
             if (auto changed = settings.setLocale(changedLocale); !changed) {
                 asharia::logError(changed.error().message);
@@ -81,6 +96,35 @@ namespace asharia::editor {
                 return false;
             }
 
+            const EditorViewportWorldGridSettings changedSceneGrid{
+                .planeY = 0.25F,
+                .minorSpacing = 2.0F,
+                .majorSpacing = 20.0F,
+                .fadeStart = 12.0F,
+                .fadeEnd = 96.0F,
+                .opacity = 0.6F,
+            };
+            if (auto changed = settings.setSceneGrid(changedSceneGrid); !changed) {
+                asharia::logError(changed.error().message);
+                return false;
+            }
+            if (!sameWorldGridSettings(settings.settings().sceneGrid, changedSceneGrid)) {
+                asharia::logError("Editor settings smoke did not apply the Scene View grid "
+                                  "settings.");
+                return false;
+            }
+
+            loaded = loadEditorSettings(settings.settingsPath(), initialLocale);
+            if (!loaded) {
+                asharia::logError(loaded.error().message);
+                return false;
+            }
+            if (!sameWorldGridSettings(loaded->sceneGrid, changedSceneGrid)) {
+                asharia::logError("Editor settings smoke did not persist the Scene View grid "
+                                  "settings.");
+                return false;
+            }
+
             if (auto restored = settings.setLocale(initialLocale); !restored) {
                 asharia::logError(restored.error().message);
                 return false;
@@ -96,6 +140,15 @@ namespace asharia::editor {
             if (settings.settings().theme != initialTheme ||
                 currentEditorUiThemeId() != initialTheme) {
                 asharia::logError("Editor settings smoke did not restore the initial theme.");
+                return false;
+            }
+            if (auto restored = settings.setSceneGrid(initialSceneGrid); !restored) {
+                asharia::logError(restored.error().message);
+                return false;
+            }
+            if (!sameWorldGridSettings(settings.settings().sceneGrid, initialSceneGrid)) {
+                asharia::logError(
+                    "Editor settings smoke did not restore the initial Scene View grid settings.");
                 return false;
             }
 

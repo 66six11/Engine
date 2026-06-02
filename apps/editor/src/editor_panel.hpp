@@ -36,6 +36,7 @@ namespace asharia::editor {
     class EditorFrameDebugger;
     class EditorI18n;
     class EditorInputRouter;
+    struct EditorSettings;
     class EditorSettingsController;
     class EditorToolRegistry;
 
@@ -94,6 +95,7 @@ namespace asharia::editor {
 
     struct EditorSceneViewPanelDrawContext {
         const EditorFrameUiContext& ui;
+        const EditorSettings& settings;
         const EditorToolRegistry& tools;
         EditorInputRouter& inputRouter;
         EditorViewportPanelHost& viewportHost;

@@ -270,6 +270,13 @@ namespace asharia::editor {
                lhs.debugGizmoVisible == rhs.debugGizmoVisible;
     }
 
+    bool sameEditorViewportWorldGridSettings(EditorViewportWorldGridSettings lhs,
+                                             EditorViewportWorldGridSettings rhs) {
+        return lhs.planeY == rhs.planeY && lhs.minorSpacing == rhs.minorSpacing &&
+               lhs.majorSpacing == rhs.majorSpacing && lhs.fadeStart == rhs.fadeStart &&
+               lhs.fadeEnd == rhs.fadeEnd && lhs.opacity == rhs.opacity;
+    }
+
     EditorViewportOverlayFlags
     effectiveEditorViewportOverlayFlags(EditorViewportKind kind, EditorViewportOverlayFlags flags) {
         if (kind == EditorViewportKind::Scene) {

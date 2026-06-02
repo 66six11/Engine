@@ -278,13 +278,14 @@ fullscreen world-grid intent，不再由 provider 生成原点附近固定 XZ `E
 packet stable id 复制到 `BasicRenderViewOverlayDesc::sourceOverlayIds` 供 diagnostics 溯源。
 `renderer_basic_vulkan` 已消费 debug-line route 并绘制可见 line-list；world-grid LOD 由 RenderView policy
 只按 camera 到 grid plane 的垂直距离计算为整帧统一的 `GridLodSettings`，不按水平距离或片元距离改变 LOD；低高度锁定 base spacing，拉高后在
-1/2/5/10 spacing 间平滑切换，默认不做距离淡出。这仍不是 runtime camera system 或 manifest-backed
-provider/settings。
+1/2/5/10 spacing 间平滑切换，默认不做距离淡出。Scene View grid 的 plane、minor/major spacing、fade 和 opacity
+已经从 `EditorSettings::sceneGrid` 经 `EditorViewportRequest::worldGrid` bridge 到 `BasicRenderViewOverlayDesc::worldGrid`。
+这仍不是 runtime camera system，也还不是 manifest-backed provider、grid color 或 settings UI。
 
 下一步顺序：
 
-1. 让 grid/provider 参数来自 manifest/settings-ready 数据。
-2. 把 optional fade/color/spacing 暴露为可热更新设置。
+1. 让 grid/provider 默认值来自 manifest-backed contribution 数据。
+2. 把 color、spacing/fade UI 和热更新设置接到同一 `sceneGrid` 数据合同。
 3. 继续完善 Frame Debug / RG View 的 pass、packet source、view kind 和 selected event 细节。
 
 ### Frame Debug

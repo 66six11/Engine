@@ -67,6 +67,7 @@ namespace asharia::editor {
                 EditorSettings{
                     .locale = fallbackLocale,
                     .theme = defaultEditorUiThemeId(),
+                    .sceneGrid = {},
                 },
             .path = editorSettingsPathForRun(smokeMode),
         };

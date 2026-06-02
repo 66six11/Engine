@@ -9,6 +9,7 @@
 
 #include "editor_event.hpp"
 #include "editor_i18n.hpp"
+#include "editor_settings.hpp"
 
 namespace asharia::editor {
 
@@ -195,6 +196,7 @@ namespace asharia::editor {
             .sceneView =
                 EditorSceneViewPanelDrawContext{
                     .ui = context.ui,
+                    .settings = context.settings.controller.settings(),
                     .tools = context.tools.registry,
                     .inputRouter = context.input.router,
                     .viewportHost = context.viewport.host,

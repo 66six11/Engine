@@ -417,10 +417,11 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 - Selection, transaction, dirty state, inspector and asset browser are blocked on scene/asset/schema ownership becoming
   concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
-  renderer-side view pass work. Grid now has an editor-owned fixed XZ debug-line provider packet bridge into RenderView
-  diagnostics and a renderer-owned visible debug-line overlay draw path.
-- Renderer prerequisites still pending for richer overlays are: camera-aware grid range/fade policy, provider/source ids in
-  diagnostics, and a more complete debug/world-line draw route for gizmo/selection shapes.
+  renderer-side view pass work. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
+  camera-height LOD/fade, source overlay diagnostics, Frame Debug replay preservation and a `sceneGrid` settings bridge
+  for plane, spacing, fade and opacity.
+- Renderer prerequisites still pending for richer overlays are: manifest-backed grid defaults, grid color/settings UI,
+  hot update behavior, and a more complete debug/world-line draw route for gizmo/selection shapes.
 - `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects.
   `EditorInspectedWorldScheduler` is the current counter-based seam for future runtime/script integration: it runs frame
   advance、game update 和 script update safe-point counters while allowed, and records skipped counters while Frame Debug is

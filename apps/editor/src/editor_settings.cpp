@@ -1,5 +1,7 @@
 ﻿#include "editor_settings.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -94,6 +96,120 @@ namespace asharia::editor {
             return editorUiThemeIdFromName(themeValue->stringValue);
         }
 
+        [[nodiscard]] std::optional<float>
+        archiveFiniteFloat(const asharia::archive::ArchiveValue& value) {
+            double number = 0.0;
+            if (value.kind == asharia::archive::ArchiveValueKind::Float) {
+                number = value.floatValue;
+            } else if (value.kind == asharia::archive::ArchiveValueKind::Integer) {
+                number = static_cast<double>(value.integerValue);
+            } else {
+                return std::nullopt;
+            }
+            if (!std::isfinite(number)) {
+                return std::nullopt;
+            }
+            return static_cast<float>(number);
+        }
+
+        void readFiniteFloatMember(const asharia::archive::ArchiveValue& object,
+                                   std::string_view key, float& output) {
+            const asharia::archive::ArchiveValue* value = object.findMemberValue(key);
+            if (value == nullptr) {
+                return;
+            }
+            if (const std::optional<float> number = archiveFiniteFloat(*value); number) {
+                output = *number;
+            }
+        }
+
+        void readPositiveFloatMember(const asharia::archive::ArchiveValue& object,
+                                     std::string_view key, float& output) {
+            const asharia::archive::ArchiveValue* value = object.findMemberValue(key);
+            if (value == nullptr) {
+                return;
+            }
+            const std::optional<float> number = archiveFiniteFloat(*value);
+            if (number && *number > 0.0F) {
+                output = *number;
+            }
+        }
+
+        void readNonNegativeFloatMember(const asharia::archive::ArchiveValue& object,
+                                        std::string_view key, float& output) {
+            const asharia::archive::ArchiveValue* value = object.findMemberValue(key);
+            if (value == nullptr) {
+                return;
+            }
+            const std::optional<float> number = archiveFiniteFloat(*value);
+            if (number && *number >= 0.0F) {
+                output = *number;
+            }
+        }
+
+        [[nodiscard]] EditorViewportWorldGridSettings
+        normalizeSceneGridSettings(EditorViewportWorldGridSettings settings) {
+            constexpr float kMinimumSpacing = 0.0001F;
+            settings.minorSpacing = std::max(settings.minorSpacing, kMinimumSpacing);
+            settings.majorSpacing = std::max(settings.majorSpacing, settings.minorSpacing);
+            settings.fadeStart = std::max(settings.fadeStart, 0.0F);
+            settings.fadeEnd = std::max(settings.fadeEnd, 0.0F);
+            settings.opacity = std::clamp(settings.opacity, 0.0F, 1.0F);
+            return settings;
+        }
+
+        [[nodiscard]] EditorViewportWorldGridSettings
+        readSceneGridSettings(const asharia::archive::ArchiveValue& root,
+                              EditorViewportWorldGridSettings defaults) {
+            const asharia::archive::ArchiveValue* viewportValue = root.findMemberValue("viewport");
+            const asharia::archive::ArchiveValue* sceneGridValue =
+                viewportValue == nullptr ? nullptr : viewportValue->findMemberValue("sceneGrid");
+            if (sceneGridValue == nullptr ||
+                sceneGridValue->kind != asharia::archive::ArchiveValueKind::Object) {
+                return defaults;
+            }
+
+            EditorViewportWorldGridSettings settings = defaults;
+            readFiniteFloatMember(*sceneGridValue, "planeY", settings.planeY);
+            readPositiveFloatMember(*sceneGridValue, "minorSpacing", settings.minorSpacing);
+            readPositiveFloatMember(*sceneGridValue, "majorSpacing", settings.majorSpacing);
+            readNonNegativeFloatMember(*sceneGridValue, "fadeStart", settings.fadeStart);
+            readNonNegativeFloatMember(*sceneGridValue, "fadeEnd", settings.fadeEnd);
+            readNonNegativeFloatMember(*sceneGridValue, "opacity", settings.opacity);
+            return normalizeSceneGridSettings(settings);
+        }
+
+        [[nodiscard]] asharia::archive::ArchiveValue
+        sceneGridSettingsArchive(EditorViewportWorldGridSettings settings) {
+            settings = normalizeSceneGridSettings(settings);
+            return asharia::archive::ArchiveValue::object({
+                asharia::archive::ArchiveMember{
+                    .key = "planeY",
+                    .value = asharia::archive::ArchiveValue::floating(settings.planeY),
+                },
+                asharia::archive::ArchiveMember{
+                    .key = "minorSpacing",
+                    .value = asharia::archive::ArchiveValue::floating(settings.minorSpacing),
+                },
+                asharia::archive::ArchiveMember{
+                    .key = "majorSpacing",
+                    .value = asharia::archive::ArchiveValue::floating(settings.majorSpacing),
+                },
+                asharia::archive::ArchiveMember{
+                    .key = "fadeStart",
+                    .value = asharia::archive::ArchiveValue::floating(settings.fadeStart),
+                },
+                asharia::archive::ArchiveMember{
+                    .key = "fadeEnd",
+                    .value = asharia::archive::ArchiveValue::floating(settings.fadeEnd),
+                },
+                asharia::archive::ArchiveMember{
+                    .key = "opacity",
+                    .value = asharia::archive::ArchiveValue::floating(settings.opacity),
+                },
+            });
+        }
+
     } // namespace
 
     std::filesystem::path editorUserSettingsPath() {
@@ -109,6 +225,7 @@ namespace asharia::editor {
         EditorSettings settings{
             .locale = fallbackLocale,
             .theme = defaultEditorUiThemeId(),
+            .sceneGrid = {},
         };
         if (path.empty()) {
             return settings;
@@ -143,6 +260,7 @@ namespace asharia::editor {
         if (theme) {
             settings.theme = *theme;
         }
+        settings.sceneGrid = readSceneGridSettings(*archive, settings.sceneGrid);
         return settings;
     }
 
@@ -180,6 +298,15 @@ namespace asharia::editor {
                         .key = "theme",
                         .value = asharia::archive::ArchiveValue::string(
                             std::string{editorUiThemeName(settings.theme)}),
+                    },
+                }),
+            },
+            asharia::archive::ArchiveMember{
+                .key = "viewport",
+                .value = asharia::archive::ArchiveValue::object({
+                    asharia::archive::ArchiveMember{
+                        .key = "sceneGrid",
+                        .value = sceneGridSettingsArchive(settings.sceneGrid),
                     },
                 }),
             },
@@ -240,6 +367,23 @@ namespace asharia::editor {
     asharia::VoidResult EditorSettingsController::setTheme(EditorUiThemeId theme) {
         settings_.theme = theme;
         applyEditorUiTheme(theme);
+
+        auto saved = saveEditorSettings(settingsPath_, settings_);
+        lastSaveAttempted_ = true;
+        if (!saved) {
+            lastSaveFailed_ = true;
+            lastSaveError_ = saved.error().message;
+            return std::unexpected{std::move(saved.error())};
+        }
+
+        lastSaveFailed_ = false;
+        lastSaveError_.clear();
+        return {};
+    }
+
+    asharia::VoidResult
+    EditorSettingsController::setSceneGrid(EditorViewportWorldGridSettings sceneGrid) {
+        settings_.sceneGrid = normalizeSceneGridSettings(sceneGrid);
 
         auto saved = saveEditorSettings(settingsPath_, settings_);
         lastSaveAttempted_ = true;

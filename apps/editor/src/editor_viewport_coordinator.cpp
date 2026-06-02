@@ -167,6 +167,7 @@ namespace {
 
     asharia::BasicRenderViewOverlayDesc
     basicRenderViewOverlay(asharia::editor::EditorViewportOverlayFlags flags,
+                           asharia::editor::EditorViewportWorldGridSettings worldGrid,
                            std::span<const asharia::BasicDebugWorldLine> debugWorldLines,
                            std::span<const std::string_view> sourceOverlayIds) {
         return asharia::BasicRenderViewOverlayDesc{
@@ -177,12 +178,12 @@ namespace {
             .worldGrid =
                 asharia::BasicRenderViewWorldGridDesc{
                     .enabled = flags.gridVisible,
-                    .planeY = 0.0F,
-                    .minorSpacing = 1.0F,
-                    .majorSpacing = 10.0F,
-                    .fadeStart = 0.0F,
-                    .fadeEnd = 0.0F,
-                    .opacity = 1.0F,
+                    .planeY = worldGrid.planeY,
+                    .minorSpacing = worldGrid.minorSpacing,
+                    .majorSpacing = worldGrid.majorSpacing,
+                    .fadeStart = worldGrid.fadeStart,
+                    .fadeEnd = worldGrid.fadeEnd,
+                    .opacity = worldGrid.opacity,
                 },
             .sourceOverlayIds = sourceOverlayIds,
             .debugWorldLines = debugWorldLines,
@@ -230,6 +231,7 @@ namespace asharia::editor {
         kind = EditorViewportKind::Scene;
         requestedExtent = {};
         overlayFlags = {};
+        worldGrid = {};
         diagnostics = {};
         frameIndex = {};
         rendered = false;
@@ -522,6 +524,13 @@ namespace asharia::editor {
                 addEditorViewportRepaintReason(repaintReasons,
                                                EditorViewportRepaintReason::OverlayFlagsChanged);
             }
+            const bool comparesWorldGrid =
+                slot.presentedTexture.overlayFlags.gridVisible || request.overlayFlags.gridVisible;
+            if (comparesWorldGrid && !sameEditorViewportWorldGridSettings(
+                                         slot.presentedTexture.worldGrid, request.worldGrid)) {
+                addEditorViewportRepaintReason(repaintReasons,
+                                               EditorViewportRepaintReason::OverlayFlagsChanged);
+            }
         }
         if (request.refresh.policy == EditorViewportRefreshPolicy::Continuous) {
             addEditorViewportRepaintReason(repaintReasons,
@@ -589,9 +598,8 @@ namespace asharia::editor {
                 .viewKind = basicRenderViewKind(request.kind),
                 .camera = basicRenderViewCamera(request.camera),
                 .frameParams = basicRenderViewFrameParams(viewportFrameIndex),
-                .overlay =
-                    basicRenderViewOverlay(request.overlayFlags, debugWorldLines,
-                                           sourceOverlayIds),
+                .overlay = basicRenderViewOverlay(request.overlayFlags, request.worldGrid,
+                                                  debugWorldLines, sourceOverlayIds),
                 .viewName = editorViewportKindName(request.kind),
                 .diagnostics = &diagnostics,
             });
@@ -624,6 +632,7 @@ namespace asharia::editor {
         renderTexture.kind = request.kind;
         renderTexture.requestedExtent = request.extent;
         renderTexture.overlayFlags = request.overlayFlags;
+        renderTexture.worldGrid = request.worldGrid;
         renderTexture.diagnostics = std::move(diagnostics);
         renderTexture.frameIndex = viewportFrameIndex;
         renderTexture.format = texture.format;

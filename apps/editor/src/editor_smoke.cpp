@@ -125,14 +125,39 @@ namespace asharia::editor {
             .debugOverlayVisible = true,
             .debugGizmoVisible = true,
         };
+        const EditorViewportOverlayFlags customSceneGridFlags{
+            .gridVisible = true,
+        };
         const EditorExtent2D gameExtent{.width = 192, .height = 128};
         const EditorExtent2D previewExtent{.width = 96, .height = 96};
+        const EditorExtent2D customSceneExtent{.width = 128, .height = 96};
+        const EditorViewportWorldGridSettings customSceneGrid{
+            .planeY = 0.5F,
+            .minorSpacing = 2.0F,
+            .majorSpacing = 20.0F,
+            .fadeStart = 8.0F,
+            .fadeEnd = 80.0F,
+            .opacity = 0.65F,
+        };
+        viewportHost.requestViewport(EditorViewportRequest{
+            .panelId = EditorId{.value = "editor-smoke-custom-grid-scene-view"},
+            .kind = EditorViewportKind::Scene,
+            .extent = customSceneExtent,
+            .camera = defaultEditorSceneViewCamera(customSceneExtent),
+            .overlayFlags = customSceneGridFlags,
+            .worldGrid = customSceneGrid,
+            .refresh =
+                EditorViewportRefreshRequest{
+                    .policy = EditorViewportRefreshPolicy::OnDemand,
+                },
+        });
         viewportHost.requestViewport(EditorViewportRequest{
             .panelId = EditorId{.value = "editor-smoke-game-view"},
             .kind = EditorViewportKind::Game,
             .extent = gameExtent,
             .camera = defaultEditorSceneViewCamera(gameExtent),
             .overlayFlags = allFlags,
+            .worldGrid = {},
             .refresh =
                 EditorViewportRefreshRequest{
                     .policy = EditorViewportRefreshPolicy::OnDemand,
@@ -144,6 +169,7 @@ namespace asharia::editor {
             .extent = previewExtent,
             .camera = defaultEditorSceneViewCamera(previewExtent),
             .overlayFlags = allFlags,
+            .worldGrid = {},
             .refresh =
                 EditorViewportRefreshRequest{
                     .policy = EditorViewportRefreshPolicy::OnDemand,

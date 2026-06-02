@@ -9,6 +9,7 @@
 
 #include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
+#include "editor_settings.hpp"
 #include "editor_tool.hpp"
 #include "editor_ui.hpp"
 #include "editor_viewport.hpp"
@@ -35,6 +36,7 @@ namespace {
 
     struct SceneViewPanelContext {
         const asharia::editor::EditorFrameUiContext* ui{};
+        const asharia::editor::EditorSettings* settings{};
         const asharia::editor::EditorToolRegistry* tools{};
         asharia::editor::EditorInputRouter* inputRouter{};
         asharia::editor::EditorViewportPanelHost* viewportHost{};
@@ -253,6 +255,7 @@ namespace asharia::editor {
                                             EditorPanelState& state) {
         SceneViewPanelContext panelContext{
             .ui = &context.ui,
+            .settings = &context.settings,
             .tools = &context.tools,
             .inputRouter = &context.inputRouter,
             .viewportHost = &context.viewportHost,
@@ -304,6 +307,7 @@ namespace asharia::editor {
             .extent = viewportExtent,
             .camera = camera_,
             .overlayFlags = overlayFlags_,
+            .worldGrid = panelContext.settings->sceneGrid,
             .refresh = refresh,
         });
 

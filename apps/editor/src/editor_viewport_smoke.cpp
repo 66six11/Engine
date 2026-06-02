@@ -81,13 +81,16 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool
-        validSceneWorldGridDiagnostics(const asharia::BasicRenderViewOverlayDiagnostics& overlay) {
+        matchesWorldGridSettings(const asharia::BasicRenderViewOverlayDiagnostics& overlay,
+                                 EditorViewportWorldGridSettings expected) {
             const asharia::BasicRenderViewWorldGridDesc& worldGrid = overlay.worldGrid;
             return overlay.worldGridEnabled && worldGrid.enabled &&
-                   closeFloat(worldGrid.planeY, 0.0F) && closeFloat(worldGrid.minorSpacing, 1.0F) &&
-                   closeFloat(worldGrid.majorSpacing, 10.0F) &&
-                   closeFloat(worldGrid.fadeStart, 0.0F) && closeFloat(worldGrid.fadeEnd, 0.0F) &&
-                   closeFloat(worldGrid.opacity, 1.0F);
+                   closeFloat(worldGrid.planeY, expected.planeY) &&
+                   closeFloat(worldGrid.minorSpacing, expected.minorSpacing) &&
+                   closeFloat(worldGrid.majorSpacing, expected.majorSpacing) &&
+                   closeFloat(worldGrid.fadeStart, expected.fadeStart) &&
+                   closeFloat(worldGrid.fadeEnd, expected.fadeEnd) &&
+                   closeFloat(worldGrid.opacity, expected.opacity);
         }
 
         [[nodiscard]] bool
@@ -266,7 +269,7 @@ namespace asharia::editor {
             }
             if (scene.viewKind != asharia::BasicRenderViewKind::Scene ||
                 scene.frameParams.frameIndex == 0 || !scene.overlay.enabled ||
-                !validSceneWorldGridDiagnostics(scene.overlay) ||
+                !matchesWorldGridSettings(scene.overlay, EditorViewportWorldGridSettings{}) ||
                 scene.overlay.debugWorldLineCount != 0 ||
                 scene.overlay.sourceOverlayIds.size() != 3U ||
                 !hasSourceOverlayId(scene.overlay, kEditorSceneGridOverlayId) ||
@@ -298,7 +301,7 @@ namespace asharia::editor {
                 return true;
             }
             if (viewportStats.multiViewFramesRecorded == 0 ||
-                viewportStats.viewportRequestsRecorded < 3 ||
+                viewportStats.viewportRequestsRecorded < 4 ||
                 viewportStats.gameViewDiagnosticsFramesRecorded == 0 ||
                 viewportStats.previewViewDiagnosticsFramesRecorded == 0) {
                 asharia::logError(
@@ -313,9 +316,38 @@ namespace asharia::editor {
             const std::optional<EditorRecordedRenderViewDiagnostics> previewDiagnostics =
                 viewportHost.latestRecordedRenderViewDiagnosticsForView(
                     "editor-smoke-preview-view", EditorViewportKind::Preview);
-            if (!gameDiagnostics || !previewDiagnostics) {
+            const std::optional<EditorRecordedRenderViewDiagnostics> customSceneDiagnostics =
+                viewportHost.latestRecordedRenderViewDiagnosticsForView(
+                    "editor-smoke-custom-grid-scene-view", EditorViewportKind::Scene);
+            if (!gameDiagnostics || !previewDiagnostics || !customSceneDiagnostics) {
                 asharia::logError(
                     "Editor viewport smoke missed a keyed multi-view diagnostics snapshot.");
+                return false;
+            }
+
+            const EditorViewportWorldGridSettings customSceneGrid{
+                .planeY = 0.5F,
+                .minorSpacing = 2.0F,
+                .majorSpacing = 20.0F,
+                .fadeStart = 8.0F,
+                .fadeEnd = 80.0F,
+                .opacity = 0.65F,
+            };
+            const asharia::BasicRenderViewDiagnostics& customScene =
+                customSceneDiagnostics->diagnostics;
+            if (customScene.viewKind != asharia::BasicRenderViewKind::Scene ||
+                !customScene.overlay.enabled ||
+                !matchesWorldGridSettings(customScene.overlay, customSceneGrid) ||
+                customScene.overlay.debugWorldLineCount != 0 ||
+                customScene.overlay.sourceOverlayIds.size() != 1U ||
+                !hasSourceOverlayId(customScene.overlay, kEditorSceneGridOverlayId) ||
+                renderGraphPassTypeCount(customScene.renderGraph,
+                                         asharia::kBasicRenderViewWorldGridPassType) != 1U ||
+                renderGraphWorldGridCommandCount(customScene.renderGraph) != 6U ||
+                renderGraphPassTypeCount(customScene.renderGraph,
+                                         asharia::kBasicRenderViewOverlayPassType) != 0U) {
+                asharia::logError(
+                    "Editor viewport smoke did not route custom Scene View grid settings.");
                 return false;
             }
 

@@ -103,6 +103,7 @@ namespace asharia::editor {
             EditorViewportKind kind{EditorViewportKind::Scene};
             EditorExtent2D requestedExtent;
             EditorViewportOverlayFlags overlayFlags;
+            EditorViewportWorldGridSettings worldGrid;
             asharia::BasicRenderViewDiagnostics diagnostics;
             std::uint64_t frameIndex{};
             bool rendered{false};
