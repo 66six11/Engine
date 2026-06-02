@@ -57,9 +57,15 @@ namespace asharia::editor {
         std::optional<std::size_t> selectedPassIndex;
         std::optional<asharia::BasicRenderViewExecutionEventId> selectedExecutionEventId;
         std::optional<std::uint32_t> selectedImageResourceIndex;
+        std::optional<std::size_t> copiedAfterPassIndex;
         EditorViewportTexture texture;
         std::string message;
         bool dirty{};
+    };
+
+    struct EditorFrameDebugPreviewRequest {
+        std::uint32_t imageResourceIndex{};
+        std::optional<std::size_t> afterPassIndex;
     };
 
     struct EditorFrameDebugCapture {
@@ -92,8 +98,9 @@ namespace asharia::editor {
         [[nodiscard]] bool selectReplayPass(std::size_t passIndex);
         [[nodiscard]] bool selectReplayEvent(asharia::BasicRenderViewExecutionEventId eventId);
         [[nodiscard]] bool selectPreviewImageResource(std::uint32_t resourceIndex);
-        [[nodiscard]] std::optional<std::uint32_t> consumePreviewRequest();
-        void publishPreviewTexture(std::uint32_t resourceIndex, EditorViewportTexture texture);
+        [[nodiscard]] std::optional<EditorFrameDebugPreviewRequest> consumePreviewRequest();
+        void publishPreviewTexture(std::uint32_t resourceIndex, EditorViewportTexture texture,
+                                   std::optional<std::size_t> copiedAfterPassIndex);
         void markPreviewUnavailable(std::uint32_t resourceIndex, std::string message);
 
         [[nodiscard]] EditorViewportRepaintReasons consumeRenderViewRepaintReasons();

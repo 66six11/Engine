@@ -294,7 +294,7 @@ namespace asharia::editor {
         float currentYaw = std::atan2(direction[0], direction[2]);
         float currentPitch = std::asin(direction[1]);
         currentYaw -= deltaYaw;
-        currentPitch = std::clamp(currentPitch - deltaPitch, -1.5F, 1.5F);
+        currentPitch = std::clamp(currentPitch + deltaPitch, -1.5F, 1.5F);
         const float distance = std::sqrt(dotEditorVec3(
             subtractEditorVec3(camera.position, camera.target),
             subtractEditorVec3(camera.position, camera.target)));
@@ -319,7 +319,7 @@ namespace asharia::editor {
             subtractEditorVec3(camera.target, camera.position)));
         const float panScale = distanceToTarget * 0.0025F;
         const float panX = deltaX * panScale;
-        const float panY = -deltaY * panScale;
+        const float panY = deltaY * panScale;
         const EditorVec3 offset{
             (right[0] * panX) + (viewUp[0] * panY),
             (right[1] * panX) + (viewUp[1] * panY),

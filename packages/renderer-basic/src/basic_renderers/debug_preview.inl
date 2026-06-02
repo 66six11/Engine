@@ -76,6 +76,7 @@ void setBasicDebugPreviewResult(BasicDebugPreviewRequest* request, BasicDebugPre
     *request->result = BasicDebugPreviewResult{
         .status = status,
         .sourceImageResourceIndex = request->sourceImageResourceIndex,
+        .copiedAfterPassIndex = request->afterPassIndex,
         .message = std::move(message),
         .copiesRecorded = {},
     };
@@ -149,4 +150,17 @@ tryAddBasicDebugPreviewPass(RenderGraph& graph, BasicDebugPreviewRequest* reques
                                                   eventRecorder);
         });
     return true;
+}
+
+[[nodiscard]] Result<bool> tryAddBasicDebugPreviewPassAfterPass(
+    RenderGraph& graph, BasicDebugPreviewRequest* request,
+    std::span<const BasicRenderViewImageCandidate> candidates,
+    std::vector<VulkanRenderGraphImageBinding>& bindings, const VulkanFrameRecordContext& frame,
+    BasicRenderViewExecutionEventRecorder* eventRecorder, std::size_t completedPassIndex) {
+    if (request == nullptr || !request->afterPassIndex ||
+        *request->afterPassIndex != completedPassIndex) {
+        return false;
+    }
+
+    return tryAddBasicDebugPreviewPass(graph, request, candidates, bindings, frame, eventRecorder);
 }

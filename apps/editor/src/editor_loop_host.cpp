@@ -151,6 +151,8 @@ namespace asharia::editor {
             .frameDebugReplayPassRequested = frameDebugSmoke.replayPassRequested,
             .frameDebugPreviewRequested = frameDebugSmoke.previewRequested,
             .frameDebugPreviewVisible = frameDebugSmoke.previewVisible,
+            .frameDebugPreviewSelectedPassIndex = frameDebugSmoke.previewSelectedPassIndex,
+            .frameDebugPreviewCopiedAfterPassIndex = frameDebugSmoke.previewCopiedAfterPassIndex,
             .frameDebugResumeRequested = frameDebugSmoke.resumeRequested,
             .frameDebugRenderedAfterResume = frameDebugSmoke.renderedAfterResume,
             .viewportExtentBeforeResize = resizeSmoke.extentBeforeResize,

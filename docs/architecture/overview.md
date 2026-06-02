@@ -32,7 +32,8 @@ RenderGraph 资料。
   消费 viewport 服务，不直接创建 pipeline、descriptor 或 command buffer。viewport coordination 已按
   `panelId + EditorViewportKind` keyed slot 保存 request、texture result 和 diagnostics。
 - 当前仍有临时实现形状：`renderer_basic_vulkan` 同时承载 sample renderer、RenderView/offscreen viewport、
-  debug preview、world-grid/debug-line overlay draw 和 execution event；`recordViewFrame()` 已为 world grid 增加
+  debug preview、world-grid/debug-line overlay draw 和 execution event；Frame Debug pass/event preview 会在
+  replay graph 中把 debug image copy 放到选中 RenderView pass 之后；`recordViewFrame()` 已为 world grid 增加
   `builtin.render-view-world-grid` fullscreen overlay pass，并为 overlay enabled view 保留
   `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 纳入 graph-visible typed params；存在
   `BasicDebugWorldLine` 时继续绘制可见 line-list。

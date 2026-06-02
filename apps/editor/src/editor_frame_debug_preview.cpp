@@ -55,6 +55,31 @@ namespace {
         }
     }
 
+    asharia::BasicRenderViewWorldGridDesc
+    replayWorldGridDesc(const asharia::BasicRenderViewOverlayDiagnostics& overlay) {
+        return asharia::BasicRenderViewWorldGridDesc{
+            .enabled = overlay.worldGridEnabled,
+            .planeY = 0.0F,
+            .minorSpacing = 1.0F,
+            .majorSpacing = 10.0F,
+            .fadeStart = 48.0F,
+            .fadeEnd = 160.0F,
+            .opacity = 1.0F,
+        };
+    }
+
+    asharia::BasicRenderViewOverlayDesc
+    replayOverlayDesc(const asharia::BasicRenderViewOverlayDiagnostics& overlay) {
+        return asharia::BasicRenderViewOverlayDesc{
+            .enabled = overlay.enabled,
+            .colorLoadOp = overlay.colorLoadOp,
+            .colorStoreOp = overlay.colorStoreOp,
+            .blendMode = overlay.blendMode,
+            .worldGrid = replayWorldGridDesc(overlay),
+            .debugWorldLines = {},
+        };
+    }
+
 } // namespace
 
 namespace asharia::editor {
@@ -63,8 +88,9 @@ namespace asharia::editor {
     EditorViewportCoordinator::recordFrameDebugPreview(
         const asharia::VulkanFrameRecordContext& frame,
         asharia::BasicFullscreenTextureRenderer& renderer, EditorFrameDebugger& frameDebugger) {
-        const std::optional<std::uint32_t> requestedImage = frameDebugger.consumePreviewRequest();
-        if (!requestedImage) {
+        const std::optional<EditorFrameDebugPreviewRequest> requestedPreview =
+            frameDebugger.consumePreviewRequest();
+        if (!requestedPreview) {
             return asharia::VulkanFrameRecordResult{
                 .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             };
@@ -72,17 +98,18 @@ namespace asharia::editor {
 
         const std::optional<EditorFrameDebugCapture>& capture = frameDebugger.pausedCapture();
         if (!capture) {
-            frameDebugger.markPreviewUnavailable(*requestedImage, "No paused frame debug capture.");
+            frameDebugger.markPreviewUnavailable(requestedPreview->imageResourceIndex,
+                                                 "No paused frame debug capture.");
             ++stats_.frameDebugPreviewUnavailableFrames;
             return asharia::VulkanFrameRecordResult{
                 .waitStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             };
         }
 
-        const asharia::RenderGraphDiagnosticsResourceNode* resource =
-            findImageResource(capture->diagnostics.renderGraph, *requestedImage);
+        const asharia::RenderGraphDiagnosticsResourceNode* resource = findImageResource(
+            capture->diagnostics.renderGraph, requestedPreview->imageResourceIndex);
         if (resource == nullptr) {
-            frameDebugger.markPreviewUnavailable(*requestedImage,
+            frameDebugger.markPreviewUnavailable(requestedPreview->imageResourceIndex,
                                                  "Selected image resource was not captured.");
             ++stats_.frameDebugPreviewUnavailableFrames;
             return asharia::VulkanFrameRecordResult{
@@ -90,7 +117,7 @@ namespace asharia::editor {
             };
         }
         if (resource->imageFormat != asharia::RenderGraphImageFormat::B8G8R8A8Srgb) {
-            frameDebugger.markPreviewUnavailable(*requestedImage,
+            frameDebugger.markPreviewUnavailable(requestedPreview->imageResourceIndex,
                                                  "Selected image format is not previewable.");
             ++stats_.frameDebugPreviewUnavailableFrames;
             return asharia::VulkanFrameRecordResult{
@@ -107,7 +134,7 @@ namespace asharia::editor {
         if (frame.format == VK_FORMAT_UNDEFINED || previewFormat == VK_FORMAT_UNDEFINED ||
             replayExtent.width == 0 || replayExtent.height == 0 || previewExtent.width == 0 ||
             previewExtent.height == 0) {
-            frameDebugger.markPreviewUnavailable(*requestedImage,
+            frameDebugger.markPreviewUnavailable(requestedPreview->imageResourceIndex,
                                                  "Selected image preview shape is invalid.");
             ++stats_.frameDebugPreviewUnavailableFrames;
             return asharia::VulkanFrameRecordResult{
@@ -147,7 +174,8 @@ namespace asharia::editor {
             debugPreviewTexture_.target.sampledTextureView();
         asharia::BasicDebugPreviewResult previewResult;
         asharia::BasicDebugPreviewRequest previewRequest{
-            .sourceImageResourceIndex = *requestedImage,
+            .sourceImageResourceIndex = requestedPreview->imageResourceIndex,
+            .afterPassIndex = requestedPreview->afterPassIndex,
             .target =
                 asharia::BasicRenderViewTarget{
                     .image = previewTexture.image,
@@ -169,7 +197,10 @@ namespace asharia::editor {
             .aspectMask = replayTexture.aspectMask,
             .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
         };
-        replayView.viewKind = asharia::BasicRenderViewKind::Preview;
+        replayView.viewKind = capture->diagnostics.viewKind;
+        replayView.camera = capture->diagnostics.camera;
+        replayView.frameParams = capture->diagnostics.frameParams;
+        replayView.overlay = replayOverlayDesc(capture->diagnostics.overlay);
         replayView.viewName = "Frame Debug Replay";
         replayView.debugPreview = &previewRequest;
 
@@ -180,7 +211,7 @@ namespace asharia::editor {
 
         if (previewResult.status != asharia::BasicDebugPreviewStatus::Available ||
             previewResult.copiesRecorded == 0) {
-            frameDebugger.markPreviewUnavailable(*requestedImage,
+            frameDebugger.markPreviewUnavailable(requestedPreview->imageResourceIndex,
                                                  previewResult.message.empty()
                                                      ? "Preview unavailable for selected image."
                                                      : previewResult.message);
@@ -216,7 +247,8 @@ namespace asharia::editor {
         debugPreviewTexture_.requestedExtent = editorExtentFromVk(previewTexture.extent);
         debugPreviewTexture_.format = previewTexture.format;
         debugPreviewTexture_.extent = previewTexture.extent;
-        frameDebugger.publishPreviewTexture(*requestedImage, published->texture);
+        frameDebugger.publishPreviewTexture(requestedPreview->imageResourceIndex,
+                                            published->texture, previewResult.copiedAfterPassIndex);
         ++stats_.frameDebugPreviewFramesRecorded;
         ++stats_.frameDebugPreviewTexturesPublished;
         return *recorded;

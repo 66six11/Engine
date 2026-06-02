@@ -71,8 +71,8 @@ namespace {
             if (!fallback) {
                 fallback = event.id;
             }
-            if (event.passName == "ClearFullscreenSource" &&
-                event.kind == asharia::BasicRenderViewExecutionEventKind::ClearColor) {
+            if (event.passName == "FullscreenTexture" &&
+                event.kind == asharia::BasicRenderViewExecutionEventKind::DrawFullscreenTriangle) {
                 return event.id;
             }
         }
@@ -216,6 +216,8 @@ namespace asharia::editor {
                 if (preview.status == EditorFrameDebugPreviewStatus::Available &&
                     hasEditorViewportTexture(preview.texture) &&
                     stats.previewTextureFramesDrawn > 0) {
+                    state.previewSelectedPassIndex = preview.selectedPassIndex;
+                    state.previewCopiedAfterPassIndex = preview.copiedAfterPassIndex;
                     state.viewportFramesAtPreview = viewportHost.viewportFramesRendered();
                     state.inspectedWorldFramesAtPreview =
                         inspectedWorldScheduler.stats().frameAdvanceSafePoints;

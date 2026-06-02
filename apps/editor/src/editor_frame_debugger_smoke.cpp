@@ -46,6 +46,14 @@ namespace asharia::editor {
                 "Editor frame debugger smoke recorded a normal RenderView while previewing.");
             return false;
         }
+        if (!runResult.frameDebugPreviewSelectedPassIndex ||
+            !runResult.frameDebugPreviewCopiedAfterPassIndex ||
+            *runResult.frameDebugPreviewSelectedPassIndex !=
+                *runResult.frameDebugPreviewCopiedAfterPassIndex) {
+            asharia::logError(
+                "Editor frame debugger smoke did not copy preview after the selected pass.");
+            return false;
+        }
         if (runResult.inspectedWorldFramesAtFrameDebugPreview !=
             runResult.inspectedWorldFramesAtFrameDebugPause) {
             asharia::logError("Editor frame debugger smoke advanced inspected-world safe points "

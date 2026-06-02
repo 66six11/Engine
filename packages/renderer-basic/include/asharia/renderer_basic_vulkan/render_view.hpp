@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -186,12 +187,14 @@ namespace asharia {
     struct BasicDebugPreviewResult {
         BasicDebugPreviewStatus status{BasicDebugPreviewStatus::NotRequested};
         std::uint32_t sourceImageResourceIndex{};
+        std::optional<std::size_t> copiedAfterPassIndex;
         std::string message;
         std::uint64_t copiesRecorded{};
     };
 
     struct BasicDebugPreviewRequest {
         std::uint32_t sourceImageResourceIndex{};
+        std::optional<std::size_t> afterPassIndex;
         BasicRenderViewTarget target{};
         BasicDebugPreviewResult* result{};
     };

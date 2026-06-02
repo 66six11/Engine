@@ -133,6 +133,7 @@ namespace asharia::editor {
         preview_.selectedPassIndex = passIndex;
         preview_.selectedExecutionEventId.reset();
         preview_.selectedImageResourceIndex.reset();
+        preview_.copiedAfterPassIndex.reset();
         preview_.texture = {};
         preview_.message.clear();
         ++stats_.replayPassRequests;
@@ -178,6 +179,7 @@ namespace asharia::editor {
         preview_.selectedExecutionEventId = eventId;
         preview_.selectedPassIndex = event->passIndex;
         preview_.selectedImageResourceIndex.reset();
+        preview_.copiedAfterPassIndex.reset();
         preview_.texture = {};
         preview_.message.clear();
         ++stats_.replayEventRequests;
@@ -216,6 +218,7 @@ namespace asharia::editor {
         preview_.selectedPassIndex.reset();
         preview_.selectedExecutionEventId.reset();
         preview_.selectedImageResourceIndex = resourceIndex;
+        preview_.copiedAfterPassIndex.reset();
         preview_.texture = {};
         preview_.message.clear();
         preview_.status = EditorFrameDebugPreviewStatus::Pending;
@@ -227,19 +230,25 @@ namespace asharia::editor {
         return true;
     }
 
-    std::optional<std::uint32_t> EditorFrameDebugger::consumePreviewRequest() {
+    std::optional<EditorFrameDebugPreviewRequest> EditorFrameDebugger::consumePreviewRequest() {
         if (state_ != EditorFrameDebuggerState::PausedFrameDebug || !preview_.dirty ||
             !preview_.selectedImageResourceIndex) {
             return std::nullopt;
         }
 
         preview_.dirty = false;
-        return preview_.selectedImageResourceIndex;
+        return EditorFrameDebugPreviewRequest{
+            .imageResourceIndex = *preview_.selectedImageResourceIndex,
+            .afterPassIndex = preview_.selectedPassIndex,
+        };
     }
 
-    void EditorFrameDebugger::publishPreviewTexture(std::uint32_t resourceIndex,
-                                                    EditorViewportTexture texture) {
+    void
+    EditorFrameDebugger::publishPreviewTexture(std::uint32_t resourceIndex,
+                                               EditorViewportTexture texture,
+                                               std::optional<std::size_t> copiedAfterPassIndex) {
         preview_.selectedImageResourceIndex = resourceIndex;
+        preview_.copiedAfterPassIndex = copiedAfterPassIndex;
         preview_.texture = texture;
         preview_.message.clear();
         preview_.status = EditorFrameDebugPreviewStatus::Available;
@@ -251,6 +260,7 @@ namespace asharia::editor {
     void EditorFrameDebugger::markPreviewUnavailable(std::uint32_t resourceIndex,
                                                      std::string message) {
         preview_.selectedImageResourceIndex = resourceIndex;
+        preview_.copiedAfterPassIndex.reset();
         preview_.texture = {};
         preview_.message = std::move(message);
         preview_.status = EditorFrameDebugPreviewStatus::Unavailable;

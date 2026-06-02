@@ -908,8 +908,10 @@ flowchart TD
 12. Frame Debug intermediate image preview v1 只在 paused Frame Debug 中通过 editor-controlled replay/copy 录制
     `builtin.debug-image-copy`，把 captured snapshot 中选中的 graph-local color image copy 到 editor-owned sampled
     preview target。Frame Debug 主面板现在先选择 renderer execution event，并从冻结 diagnostics snapshot 中解析
-    该 event 所属 pass 的 previewable color 输出；graph-local image 选择仍作为 resource override。normal RenderView recording 继续暂停；
-    不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
+    该 event 所属 pass 的 previewable color 输出；pass/event 预览会在 replay graph 中继承 captured view
+    kind、camera、frame params 和 overlay intent，并把 debug image copy 插入选中 RenderView pass 之后，避免只看到最终
+    RenderViewTarget。graph-local image 选择仍作为 resource override；没有 pass 约束时按最终资源图 preview。normal
+    RenderView recording 继续暂停；不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
 13. RenderView 现在携带 renderer-owned view kind、camera/view/projection params、per-view frame params、overlay
     color load/store、blend mode 和 data-only debug world-line route。Scene View panel 现在持有 editor-owned
     navigation/camera state；这是输入所有权，不是 renderer 矩阵旁路。Scene View request 携带 camera context，

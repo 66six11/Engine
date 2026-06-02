@@ -2,7 +2,9 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include "editor_app.hpp"
 #include "editor_input_router.hpp"
@@ -27,6 +29,8 @@ namespace asharia::editor {
         bool frameDebugReplayPassRequested{};
         bool frameDebugPreviewRequested{};
         bool frameDebugPreviewVisible{};
+        std::optional<std::size_t> frameDebugPreviewSelectedPassIndex;
+        std::optional<std::size_t> frameDebugPreviewCopiedAfterPassIndex;
         bool frameDebugResumeRequested{};
         bool frameDebugRenderedAfterResume{};
         VkExtent2D viewportExtentBeforeResize{};
@@ -56,6 +60,8 @@ namespace asharia::editor {
         bool replayPassRequested{};
         bool previewRequested{};
         bool previewVisible{};
+        std::optional<std::size_t> previewSelectedPassIndex;
+        std::optional<std::size_t> previewCopiedAfterPassIndex;
         bool resumeRequested{};
         bool renderedAfterResume{};
         std::uint64_t viewportFramesAtPause{};
