@@ -96,6 +96,9 @@
     "settings.language.enUs": "English (US)",
     "settings.language.zhHans": "Chinese (Simplified)",
     "settings.saved": "Saved",
-    "settings.saveFailed": "Save failed"
+    "settings.saveFailed": "Save failed",
+    "settings.viewport": "Viewport",
+    "settings.sceneGrid": "Scene Grid",
+    "settings.sceneGrid.color": "Grid Color"
   }
 }

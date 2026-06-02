@@ -138,6 +138,7 @@ namespace asharia::editor {
             .fadeStart = 8.0F,
             .fadeEnd = 80.0F,
             .opacity = 0.65F,
+            .color = {0.58F, 0.62F, 0.72F, 0.8F},
         };
         viewportHost.requestViewport(EditorViewportRequest{
             .panelId = EditorId{.value = "editor-smoke-custom-grid-scene-view"},

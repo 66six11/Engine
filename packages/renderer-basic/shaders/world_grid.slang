@@ -3,10 +3,10 @@ struct WorldGridPushConstants {
     float4 inverseViewProjectionRow1;
     float4 inverseViewProjectionRow2;
     float4 inverseViewProjectionRow3;
-    float4 cameraPositionNear;
     float4 viewportFade;
     float4 gridSettings;
     float4 gridLodSettings;
+    float4 gridColor;
 };
 
 [[vk::push_constant]]
@@ -93,8 +93,8 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
     const float xAxisAlpha = axisLineAlpha(worldPosition.z, 1.7);
     const float zAxisAlpha = axisLineAlpha(worldPosition.x, 1.7);
 
-    const float3 minorColor = float3(0.22, 0.25, 0.30);
-    const float3 majorColor = float3(0.36, 0.39, 0.44);
+    const float3 majorColor = saturate(gWorldGrid.gridColor.rgb);
+    const float3 minorColor = majorColor * 0.68;
     const float3 xAxisColor = float3(0.84, 0.22, 0.18);
     const float3 zAxisColor = float3(0.22, 0.42, 0.92);
 
@@ -117,12 +117,11 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
     const float fadeEnd = gWorldGrid.viewportFade.w;
     float distanceFade = 1.0;
     if (fadeEnd > fadeStart && fadeEnd > 0.0) {
-        const float distanceToCamera =
-            length(worldPosition - gWorldGrid.cameraPositionNear.xyz);
+        const float distanceToCamera = length(worldPosition - nearWorld);
         distanceFade =
             1.0 - saturate((distanceToCamera - fadeStart) / (fadeEnd - fadeStart));
     }
-    alpha *= opacity * distanceFade;
+    alpha *= opacity * saturate(gWorldGrid.gridColor.a) * distanceFade;
     if (alpha <= 0.001) {
         discard;
     }

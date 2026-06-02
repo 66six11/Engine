@@ -138,6 +138,33 @@ namespace asharia::editor {
             }
         }
 
+        void drawSceneGridColorSetting(EditorSettingsController& settings, const EditorI18n& i18n) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            text(i18n.text(EditorI18nTextQuery{
+                .key = "settings.sceneGrid.color",
+                .fallback = "Grid Color",
+            }));
+            ImGui::TableSetColumnIndex(1);
+
+            EditorViewportWorldGridSettings sceneGrid = settings.settings().sceneGrid;
+            std::array<float, 4> color = sceneGrid.color;
+            ImGui::SetNextItemWidth(-1.0F);
+            const std::string colorLabel = i18n.label(EditorI18nLabelDesc{
+                .key = "settings.sceneGrid.color",
+                .stableId = "editor-settings-scene-grid-color",
+                .fallback = "Grid Color",
+            });
+            constexpr ImGuiColorEditFlags kColorFlags =
+                ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf;
+            if (ImGui::ColorEdit4(colorLabel.c_str(), color.data(), kColorFlags)) {
+                sceneGrid.color = color;
+                if (auto changed = settings.setSceneGrid(sceneGrid); !changed) {
+                    static_cast<void>(changed.error());
+                }
+            }
+        }
+
     } // namespace
 
     const EditorPanelDesc& EditorSettingsPanel::desc() const {
@@ -149,7 +176,7 @@ namespace asharia::editor {
         static_cast<void>(state);
         const ImGuiCond condition =
             context.ui.smokeMode ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
-        ImGui::SetNextWindowSize(ImVec2{440.0F, 180.0F}, condition);
+        ImGui::SetNextWindowSize(ImVec2{440.0F, 240.0F}, condition);
     }
 
     void EditorSettingsPanel::drawEditorSettingsPanel(EditorSettingsPanelDrawContext& context,
@@ -165,6 +192,15 @@ namespace asharia::editor {
         if (beginEditorUiPropertyTable("editor-settings-general", 128.0F)) {
             drawLanguageSetting(*panelContext.settings, *panelContext.i18n);
             drawThemeSetting(*panelContext.settings, *panelContext.i18n);
+            endEditorUiPropertyTable();
+        }
+
+        drawEditorUiSectionHeader(panelContext.i18n->text(EditorI18nTextQuery{
+            .key = "settings.viewport",
+            .fallback = "Viewport",
+        }));
+        if (beginEditorUiPropertyTable("editor-settings-viewport", 128.0F)) {
+            drawSceneGridColorSetting(*panelContext.settings, *panelContext.i18n);
             endEditorUiPropertyTable();
         }
 

@@ -921,10 +921,11 @@ flowchart TD
     到 world ray 的后端无关语义；该 ray 用 inverse view-projection 计算，`origin`/`nearPoint` 位于
     near clipping plane，`farPoint` 位于 far clipping plane。当前 `recordViewFrame()` 会在
     `BasicRenderViewOverlayDesc::worldGrid` enabled 时插入 `builtin.render-view-world-grid` fullscreen
-    overlay pass，用 inverse view-projection / camera / optional fade / per-view LOD push constants 绘制
+    overlay pass，用 inverse view-projection / optional fade / per-view LOD / grid color push constants 绘制
     XZ world grid；`fadeStart == fadeEnd == 0` 时不做距离淡出，RenderView policy 只按 camera 到 grid plane
     的垂直距离计算整帧统一的 1/2/5/10 spacing，不按水平距离或片元距离改变 LOD，低高度锁定 base spacing，shader 只消费 `GridLodSettings`。
-    Scene View panel 从 `EditorSettings::sceneGrid` 读取 plane、minor/major spacing、fade 和 opacity，
+    `CameraPositionNear` 仍记录在 RenderGraph command summary 里作为 diagnostics。Scene View panel 从 `EditorSettings::sceneGrid`
+    读取 plane、minor/major spacing、fade、opacity 和 color，
     经 `EditorViewportRequest::worldGrid` 交给 `EditorViewportCoordinator`，再转换为 renderer-owned
     `BasicRenderViewWorldGridDesc`；settings 缺省值来自 Scene grid overlay contribution 的 built-in 默认值，
     不拥有 renderer/Vulkan 类型。

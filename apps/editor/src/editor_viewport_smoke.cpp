@@ -90,7 +90,11 @@ namespace asharia::editor {
                    closeFloat(worldGrid.majorSpacing, expected.majorSpacing) &&
                    closeFloat(worldGrid.fadeStart, expected.fadeStart) &&
                    closeFloat(worldGrid.fadeEnd, expected.fadeEnd) &&
-                   closeFloat(worldGrid.opacity, expected.opacity);
+                   closeFloat(worldGrid.opacity, expected.opacity) &&
+                   closeFloat(worldGrid.color[0], expected.color[0]) &&
+                   closeFloat(worldGrid.color[1], expected.color[1]) &&
+                   closeFloat(worldGrid.color[2], expected.color[2]) &&
+                   closeFloat(worldGrid.color[3], expected.color[3]);
         }
 
         [[nodiscard]] bool
@@ -259,7 +263,7 @@ namespace asharia::editor {
             }
             if (renderGraphPassTypeCount(scene.renderGraph,
                                          asharia::kBasicRenderViewWorldGridPassType) != 1U ||
-                renderGraphWorldGridCommandCount(scene.renderGraph) != 6U ||
+                renderGraphWorldGridCommandCount(scene.renderGraph) != 7U ||
                 renderGraphPassTypeCount(scene.renderGraph,
                                          asharia::kBasicRenderViewOverlayPassType) != 0U ||
                 renderGraphOverlayCommandCount(scene.renderGraph) != 0U) {
@@ -332,6 +336,7 @@ namespace asharia::editor {
                 .fadeStart = 8.0F,
                 .fadeEnd = 80.0F,
                 .opacity = 0.65F,
+                .color = {0.58F, 0.62F, 0.72F, 0.8F},
             };
             const asharia::BasicRenderViewDiagnostics& customScene =
                 customSceneDiagnostics->diagnostics;
@@ -343,7 +348,7 @@ namespace asharia::editor {
                 !hasSourceOverlayId(customScene.overlay, kEditorSceneGridOverlayId) ||
                 renderGraphPassTypeCount(customScene.renderGraph,
                                          asharia::kBasicRenderViewWorldGridPassType) != 1U ||
-                renderGraphWorldGridCommandCount(customScene.renderGraph) != 6U ||
+                renderGraphWorldGridCommandCount(customScene.renderGraph) != 7U ||
                 renderGraphPassTypeCount(customScene.renderGraph,
                                          asharia::kBasicRenderViewOverlayPassType) != 0U) {
                 asharia::logError(

@@ -357,10 +357,10 @@ Status: current.
 - Grid spacing、major spacing、fade 和 opacity 来自 editor user settings，并通过 Scene View request 进入
   renderer-owned world-grid intent；Scene grid overlay contribution 声明同一份 built-in 默认值，settings bootstrap
   使用该默认值处理新文件和旧文件迁移；built-in Scene View tool/overlay contribution 已先经过
-  `EditorExtensionRegistry` v0；external manifest loader、color 和热更新仍是后续工作。
+  `EditorExtensionRegistry` v0；color 已进入 settings/UI 到 RenderView 的最小路径，external manifest loader、完整设置 UI 和热更新仍是后续工作。
 - 当前 world-grid LOD 由 RenderView policy 只按 camera 到 grid plane 的垂直距离计算，再通过 `GridLodSettings`
   交给 shader；低高度锁定 base spacing，且低高度远水平距离不会改变 LOD，拉高后才在 1/2/5/10 spacing
-  间整帧平滑切换。默认不做距离淡出，高视角 readback smoke 覆盖网格不会像 depth fog 一样消失。下一步是 external manifest loader、color/settings UI 和热更新，而不是继续把 Vulkan
+  间整帧平滑切换。默认不做距离淡出，高视角 readback smoke 覆盖网格不会像 depth fog 一样消失。下一步是 external manifest loader、更多 settings UI 和热更新，而不是继续把 Vulkan
   绘制细节推回 editor。
 
 ## 非目标

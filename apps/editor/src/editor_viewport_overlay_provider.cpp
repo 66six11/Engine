@@ -10,6 +10,7 @@ namespace asharia::editor {
             .fadeStart = 0.0F,
             .fadeEnd = 0.0F,
             .opacity = 1.0F,
+            .color = {0.36F, 0.39F, 0.44F, 1.0F},
         };
     }
 

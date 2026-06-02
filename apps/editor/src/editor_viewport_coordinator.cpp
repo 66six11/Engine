@@ -184,6 +184,7 @@ namespace {
                     .fadeStart = worldGrid.fadeStart,
                     .fadeEnd = worldGrid.fadeEnd,
                     .opacity = worldGrid.opacity,
+                    .color = worldGrid.color,
                 },
             .sourceOverlayIds = sourceOverlayIds,
             .debugWorldLines = debugWorldLines,

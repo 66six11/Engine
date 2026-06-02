@@ -96,6 +96,9 @@
     "settings.language.enUs": "英语（美国）",
     "settings.language.zhHans": "简体中文",
     "settings.saved": "已保存",
-    "settings.saveFailed": "保存失败"
+    "settings.saveFailed": "保存失败",
+    "settings.viewport": "视口",
+    "settings.sceneGrid": "场景网格",
+    "settings.sceneGrid.color": "网格颜色"
   }
 }

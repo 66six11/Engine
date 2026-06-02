@@ -274,7 +274,7 @@ namespace asharia::editor {
                                              EditorViewportWorldGridSettings rhs) {
         return lhs.planeY == rhs.planeY && lhs.minorSpacing == rhs.minorSpacing &&
                lhs.majorSpacing == rhs.majorSpacing && lhs.fadeStart == rhs.fadeStart &&
-               lhs.fadeEnd == rhs.fadeEnd && lhs.opacity == rhs.opacity;
+               lhs.fadeEnd == rhs.fadeEnd && lhs.opacity == rhs.opacity && lhs.color == rhs.color;
     }
 
     EditorViewportOverlayFlags

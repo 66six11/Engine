@@ -1,6 +1,7 @@
 ﻿#include "editor_settings.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -149,6 +150,22 @@ namespace asharia::editor {
             }
         }
 
+        void readColorFloat4Member(const asharia::archive::ArchiveValue& object,
+                                   std::string_view key, std::array<float, 4>& output) {
+            const asharia::archive::ArchiveValue* value = object.findMemberValue(key);
+            if (value == nullptr || value->kind != asharia::archive::ArchiveValueKind::Array) {
+                return;
+            }
+            const std::size_t componentCount =
+                std::min<std::size_t>(output.size(), value->arrayValue.size());
+            for (std::size_t index = 0; index < componentCount; ++index) {
+                const std::optional<float> component = archiveFiniteFloat(value->arrayValue[index]);
+                if (component) {
+                    output.at(index) = std::clamp(*component, 0.0F, 1.0F);
+                }
+            }
+        }
+
         [[nodiscard]] EditorViewportWorldGridSettings
         normalizeSceneGridSettings(EditorViewportWorldGridSettings settings) {
             constexpr float kMinimumSpacing = 0.0001F;
@@ -157,6 +174,9 @@ namespace asharia::editor {
             settings.fadeStart = std::max(settings.fadeStart, 0.0F);
             settings.fadeEnd = std::max(settings.fadeEnd, 0.0F);
             settings.opacity = std::clamp(settings.opacity, 0.0F, 1.0F);
+            for (float& component : settings.color) {
+                component = std::clamp(component, 0.0F, 1.0F);
+            }
             return settings;
         }
 
@@ -178,6 +198,7 @@ namespace asharia::editor {
             readNonNegativeFloatMember(*sceneGridValue, "fadeStart", settings.fadeStart);
             readNonNegativeFloatMember(*sceneGridValue, "fadeEnd", settings.fadeEnd);
             readNonNegativeFloatMember(*sceneGridValue, "opacity", settings.opacity);
+            readColorFloat4Member(*sceneGridValue, "color", settings.color);
             return normalizeSceneGridSettings(settings);
         }
 
@@ -208,6 +229,15 @@ namespace asharia::editor {
                 asharia::archive::ArchiveMember{
                     .key = "opacity",
                     .value = asharia::archive::ArchiveValue::floating(settings.opacity),
+                },
+                asharia::archive::ArchiveMember{
+                    .key = "color",
+                    .value = asharia::archive::ArchiveValue::array({
+                        asharia::archive::ArchiveValue::floating(settings.color[0]),
+                        asharia::archive::ArchiveValue::floating(settings.color[1]),
+                        asharia::archive::ArchiveValue::floating(settings.color[2]),
+                        asharia::archive::ArchiveValue::floating(settings.color[3]),
+                    }),
                 },
             });
         }

@@ -36,7 +36,11 @@ namespace asharia::editor {
                    closeFloat(worldGrid.majorSpacing, expected.majorSpacing) &&
                    closeFloat(worldGrid.fadeStart, expected.fadeStart) &&
                    closeFloat(worldGrid.fadeEnd, expected.fadeEnd) &&
-                   closeFloat(worldGrid.opacity, expected.opacity);
+                   closeFloat(worldGrid.opacity, expected.opacity) &&
+                   closeFloat(worldGrid.color[0], expected.color[0]) &&
+                   closeFloat(worldGrid.color[1], expected.color[1]) &&
+                   closeFloat(worldGrid.color[2], expected.color[2]) &&
+                   closeFloat(worldGrid.color[3], expected.color[3]);
         }
 
     } // namespace

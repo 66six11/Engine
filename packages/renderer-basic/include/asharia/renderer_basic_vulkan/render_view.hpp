@@ -97,6 +97,7 @@ namespace asharia {
         float fadeStart{};
         float fadeEnd{};
         float opacity{1.0F};
+        std::array<float, 4> color{0.36F, 0.39F, 0.44F, 1.0F};
     };
 
     struct BasicRenderViewOverlayDesc {

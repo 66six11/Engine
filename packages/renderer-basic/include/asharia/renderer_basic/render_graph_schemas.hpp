@@ -63,6 +63,7 @@ namespace asharia {
         std::array<float, 4> viewportFade{};
         std::array<float, 4> gridSettings{};
         std::array<float, 4> gridLodSettings{};
+        std::array<float, 4> gridColor{};
         std::uint32_t viewKind{};
         std::uint32_t enabled{};
         std::uint32_t reserved0{};

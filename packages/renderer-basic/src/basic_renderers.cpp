@@ -48,10 +48,10 @@ namespace asharia {
             std::array<float, 4> inverseViewProjectionRow1{};
             std::array<float, 4> inverseViewProjectionRow2{};
             std::array<float, 4> inverseViewProjectionRow3{};
-            std::array<float, 4> cameraPositionNear{};
             std::array<float, 4> viewportFade{};
             std::array<float, 4> gridSettings{};
             std::array<float, 4> gridLodSettings{};
+            std::array<float, 4> gridColor{};
         };
 
         static_assert(sizeof(BasicRenderViewWorldGridPushConstants) <= 128);
@@ -261,6 +261,7 @@ namespace asharia {
                         grid.opacity,
                     },
                 .gridLodSettings = basicRenderViewWorldGridLodSettings(view),
+                .gridColor = grid.color,
                 .viewKind = basicRenderViewKindValue(view.viewKind),
                 .enabled = grid.enabled ? 1U : 0U,
                 .reserved0 = 0,
@@ -342,9 +343,9 @@ namespace asharia {
         [[nodiscard]] Result<void>
         validateBasicRenderViewWorldGridCommands(RenderGraphPassContext pass,
                                                  BasicRenderViewWorldGridParams params) {
-            if (pass.commands.size() != 6) {
+            if (pass.commands.size() != 7) {
                 return std::unexpected{
-                    renderGraphError("RenderView world grid pass expected exactly six commands")};
+                    renderGraphError("RenderView world grid pass expected exactly seven commands")};
             }
 
             const RenderGraphCommand& shader = pass.commands[0];
@@ -352,7 +353,8 @@ namespace asharia {
             const RenderGraphCommand& viewportFade = pass.commands[2];
             const RenderGraphCommand& gridSettings = pass.commands[3];
             const RenderGraphCommand& gridLodSettings = pass.commands[4];
-            const RenderGraphCommand& draw = pass.commands[5];
+            const RenderGraphCommand& gridColor = pass.commands[5];
+            const RenderGraphCommand& draw = pass.commands[6];
 
             auto shaderKind = expectCommandKind(shader, RenderGraphCommandKind::SetShader,
                                                 "RenderView world grid shader");
@@ -379,6 +381,11 @@ namespace asharia {
                                   "RenderView world grid LOD settings");
             if (!lodSettingsKind) {
                 return std::unexpected{std::move(lodSettingsKind.error())};
+            }
+            auto colorKind = expectCommandKind(gridColor, RenderGraphCommandKind::SetVec4,
+                                               "RenderView world grid color");
+            if (!colorKind) {
+                return std::unexpected{std::move(colorKind.error())};
             }
             auto drawKind = expectCommandKind(draw, RenderGraphCommandKind::DrawFullscreenTriangle,
                                               "RenderView world grid draw");
@@ -411,6 +418,10 @@ namespace asharia {
                 gridLodSettings.floatValues != params.gridLodSettings) {
                 return std::unexpected{renderGraphError(
                     "RenderView world grid LOD settings command does not match params")};
+            }
+            if (gridColor.name != "GridColor" || gridColor.floatValues != params.gridColor) {
+                return std::unexpected{
+                    renderGraphError("RenderView world grid color command does not match params")};
             }
 
             return {};
@@ -492,8 +503,10 @@ namespace asharia {
             return {};
         }
 
+// clang-format off
 #include "basic_renderers/shader_contracts.inl"
 #include "basic_renderers/pipeline_layouts.inl"
+// clang-format on
         void recordTransferClear(const VulkanFrameRecordContext& frame,
                                  VkClearColorValue clearColor) {
             VkImageSubresourceRange clearRange{};
@@ -845,10 +858,10 @@ namespace asharia {
                 .inverseViewProjectionRow1 = {inverse[4], inverse[5], inverse[6], inverse[7]},
                 .inverseViewProjectionRow2 = {inverse[8], inverse[9], inverse[10], inverse[11]},
                 .inverseViewProjectionRow3 = {inverse[12], inverse[13], inverse[14], inverse[15]},
-                .cameraPositionNear = params.cameraPositionNear,
                 .viewportFade = params.viewportFade,
                 .gridSettings = params.gridSettings,
                 .gridLodSettings = params.gridLodSettings,
+                .gridColor = params.gridColor,
             };
         }
 
@@ -1917,10 +1930,12 @@ namespace asharia {
             return {};
         }
 
+// clang-format off
 #include "basic_renderers/graph_recording.inl"
 #include "basic_renderers/render_view_targets.inl"
 #include "basic_renderers/debug_preview.inl"
 #include "basic_renderers/render_view_recording.inl"
+// clang-format on
         [[nodiscard]] Result<void>
         validateBasicDrawListItems(std::span<const BasicDrawListItem> drawItems) {
             if (drawItems.empty()) {
@@ -1993,6 +2008,7 @@ namespace asharia {
 
     // Keep the renderer implementations in private source parts. They share the helpers above
     // without promoting those helpers to a public or cross-translation-unit API.
+// clang-format off
 #include "basic_renderers/descriptor_layout_smoke.inl"
 #include "basic_renderers/fullscreen_texture_renderer.inl"
 #include "basic_renderers/mrt_renderer.inl"
@@ -2000,4 +2016,5 @@ namespace asharia {
 #include "basic_renderers/triangle_renderer.inl"
 #include "basic_renderers/mesh3d_renderer.inl"
 #include "basic_renderers/draw_list_renderer.inl"
+// clang-format on
 } // namespace asharia

@@ -46,7 +46,10 @@ namespace asharia::editor {
                    closeFloat(lhs.minorSpacing, rhs.minorSpacing) &&
                    closeFloat(lhs.majorSpacing, rhs.majorSpacing) &&
                    closeFloat(lhs.fadeStart, rhs.fadeStart) &&
-                   closeFloat(lhs.fadeEnd, rhs.fadeEnd) && closeFloat(lhs.opacity, rhs.opacity);
+                   closeFloat(lhs.fadeEnd, rhs.fadeEnd) && closeFloat(lhs.opacity, rhs.opacity) &&
+                   closeFloat(lhs.color[0], rhs.color[0]) &&
+                   closeFloat(lhs.color[1], rhs.color[1]) &&
+                   closeFloat(lhs.color[2], rhs.color[2]) && closeFloat(lhs.color[3], rhs.color[3]);
         }
 
         [[nodiscard]] EditorToolDesc smokeToolDesc(std::string toolId, std::string title) {
@@ -134,6 +137,7 @@ namespace asharia::editor {
                 .fadeStart = 12.0F,
                 .fadeEnd = 96.0F,
                 .opacity = 0.6F,
+                .color = {0.42F, 0.56F, 0.68F, 0.75F},
             };
             if (auto changed = settings.setSceneGrid(changedSceneGrid); !changed) {
                 asharia::logError(changed.error().message);
