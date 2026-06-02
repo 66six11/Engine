@@ -1,6 +1,6 @@
 # Editor 开发方案
 
-更新日期：2026-05-23
+更新日期：2026-06-02
 
 本文是 Asharia Editor 的独立开发文档，覆盖 editor host、ImGui integration、panel/action/event、
 viewport texture registry、输入路由和后续阶段拆分。全局阶段顺序仍以
@@ -41,8 +41,8 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
   `BasicDebugWorldLine` 时，RenderView 会记录 `builtin.render-view-overlay` pass，把 camera/frame/line-count
   作为 typed params 与 command summary 纳入 RenderGraph，并通过 renderer-owned debug-line shader/pipeline
   绘制 line-list。没有 debug line 时默认 flagged Scene View 不再产生空 overlay pass。visible gizmo /
-  selection outline 继续推进前，仍必须补 camera-aware grid policy、source overlay id diagnostics 和更完整 provider
-  contract。
+  selection outline 继续推进前，仍必须补 manifest-backed grid settings 和更完整 provider contract；camera-aware grid
+  visibility、source overlay id diagnostics 与高视角 readback 已有最小闭环。
 - `EditorFrameContext` 和任何 app-level service bundle 不能成为长期 service locator 或持久 mutation surface；
   过渡期 `EditorContext` 已删除；会被保存、undo/redo、script 或 collaboration 消费的状态，必须走
   command/transaction 或明确 owner。
@@ -1427,17 +1427,19 @@ Current implementation:
   `renderer_basic_vulkan` projects the line data to a line-list vertex buffer and draws visible lines through a
   renderer-owned debug-line shader/pipeline. Overlay intent without line data remains diagnostics-only.
 - `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
-  packet, camera diagnostics to match the Scene View request, center unproject ray stability, near-plane origin, viewport
-  corner orientation, invalid matrix rejection, resize aspect handling, RenderView diagnostics debug-world-line count,
-  and no empty overlay pass for the default flagged Scene View render.
-- This is not the final provider architecture: there is no manifest-backed provider, camera-aware range/fade policy,
-  source overlay id diagnostics, or pixel/readback camera-difference smoke yet.
+  packet, source overlay id diagnostics for Scene/debug flags, camera diagnostics to match the Scene View request,
+  center unproject ray stability, near-plane origin, viewport corner orientation, invalid matrix rejection, resize aspect
+  handling, RenderView diagnostics debug-world-line count, and no empty overlay pass for the default flagged Scene View
+  render.
+- This is not the final provider architecture: there is no manifest-backed provider/settings path yet, but camera-aware
+  grid spacing, source overlay id diagnostics, and pixel/readback camera-difference coverage are now present.
 
 Validation:
 
 - Current validation covers the provider contract, editor-to-RenderView packet bridge, diagnostics count, default empty
   overlay-pass suppression, and renderer debug-line overlay draw through `--smoke-fullscreen-texture`.
-- Future renderer-pass validation must prove camera movement changes visible grid output at the pixel/readback level.
+- Current renderer-pass validation proves camera movement and a high Scene View camera keep visible grid output at the
+  pixel/readback level.
 - Future renderer-pass validation must prove Game View graph does not contain the grid pass unless an explicit debug mode
   allows it.
 - Future Frame Debug/RG View diagnostics must expose the grid overlay pass, packet count and view kind.

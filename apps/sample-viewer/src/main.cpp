@@ -2958,6 +2958,7 @@ namespace {
     constexpr VkExtent2D kSmokeGridReadbackExtent{.width = 192, .height = 128};
     constexpr VkFormat kSmokeGridReadbackFormat = VK_FORMAT_B8G8R8A8_SRGB;
     constexpr std::uint64_t kSmokeGridReadbackBytesPerPixel = 4;
+    constexpr std::size_t kSmokeGridReadbackProbeCount = 3;
     constexpr std::uint64_t kMinimumVisibleGridSpread = 20000;
     constexpr std::uint64_t kMinimumCameraDifference = 40000;
 
@@ -3289,8 +3290,8 @@ namespace {
                                 .planeY = 0.0F,
                                 .minorSpacing = 1.0F,
                                 .majorSpacing = 10.0F,
-                                .fadeStart = 64.0F,
-                                .fadeEnd = 256.0F,
+                                .fadeStart = 0.0F,
+                                .fadeEnd = 0.0F,
                                 .opacity = 1.0F,
                             },
                     },
@@ -3332,26 +3333,34 @@ namespace {
     }
 
     [[nodiscard]] bool validateSmokeRenderViewGridPixels(
-        std::span<const SmokeRenderViewGridReadbackProbe, 2> probes) {
+        std::span<const SmokeRenderViewGridReadbackProbe, kSmokeGridReadbackProbeCount> probes) {
         const std::uint64_t firstSpread = smokePixelSpread(probes.front().pixels);
-        const std::uint64_t secondSpread = smokePixelSpread(probes.back().pixels);
+        const std::uint64_t secondSpread = smokePixelSpread(probes[1].pixels);
+        const std::uint64_t highViewSpread = smokePixelSpread(probes.back().pixels);
         const std::uint64_t cameraDifference =
+            smokePixelDifference(probes.front().pixels, probes[1].pixels);
+        const std::uint64_t highViewDifference =
             smokePixelDifference(probes.front().pixels, probes.back().pixels);
         if (firstSpread < kMinimumVisibleGridSpread ||
             secondSpread < kMinimumVisibleGridSpread ||
-            cameraDifference < kMinimumCameraDifference) {
+            highViewSpread < kMinimumVisibleGridSpread ||
+            cameraDifference < kMinimumCameraDifference ||
+            highViewDifference < kMinimumCameraDifference) {
             asharia::logError(
                 "RenderView grid readback smoke did not observe enough grid/camera pixel "
                 "difference: spread A " +
                 std::to_string(firstSpread) + ", spread B " + std::to_string(secondSpread) +
-                ", camera difference " + std::to_string(cameraDifference) + ".");
+                ", high-view spread " + std::to_string(highViewSpread) +
+                ", camera difference " + std::to_string(cameraDifference) +
+                ", high-view difference " + std::to_string(highViewDifference) + ".");
             return false;
         }
 
         std::cout << "RenderView grid readback: " << kSmokeGridReadbackExtent.width << 'x'
                   << kSmokeGridReadbackExtent.height << ", spread A " << firstSpread
-                  << ", spread B " << secondSpread << ", camera difference "
-                  << cameraDifference << '\n';
+                  << ", spread B " << secondSpread << ", high-view spread "
+                  << highViewSpread << ", camera difference " << cameraDifference
+                  << ", high-view difference " << highViewDifference << '\n';
         return true;
     }
 
@@ -3416,7 +3425,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        std::array<SmokeRenderViewGridReadbackProbe, 2> probes;
+        std::array<SmokeRenderViewGridReadbackProbe, kSmokeGridReadbackProbeCount> probes;
         for (SmokeRenderViewGridReadbackProbe& probe : probes) {
             auto createdProbe = createSmokeRenderViewGridReadbackProbe(*context);
             if (!createdProbe) {
@@ -3430,6 +3439,8 @@ namespace {
             smokeGridCamera({0.0F, 2.0F, -6.0F}, {0.0F, 0.0F, 0.0F},
                             kSmokeGridReadbackExtent),
             smokeGridCamera({2.8F, 2.4F, -4.2F}, {0.0F, 0.0F, 0.0F},
+                            kSmokeGridReadbackExtent),
+            smokeGridCamera({0.0F, 180.0F, -180.0F}, {0.0F, 0.0F, 0.0F},
                             kSmokeGridReadbackExtent),
         };
 

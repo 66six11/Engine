@@ -62,8 +62,8 @@ namespace {
             .planeY = 0.0F,
             .minorSpacing = 1.0F,
             .majorSpacing = 10.0F,
-            .fadeStart = 48.0F,
-            .fadeEnd = 160.0F,
+            .fadeStart = 0.0F,
+            .fadeEnd = 0.0F,
             .opacity = 1.0F,
         };
     }

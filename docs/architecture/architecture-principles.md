@@ -272,18 +272,19 @@ state；这是输入所有权，不是 renderer 矩阵旁路。Scene View reques
 也能收到 camera/view/projection 数据；`editorViewportCameraForExtent()` 负责 resize 后重算投影，
 `unprojectEditorViewportPoint()` 提供 viewport-local pixel（左上角原点，Y down）到 world ray 的后端无关语义；
 ray 由 inverse view-projection 计算，`origin`/`nearPoint` 是 near clipping plane 上的 world point，
-`farPoint` 是 far clipping plane 上的 world point。provider 仍只在 Scene View grid intent enabled 时生成
-原点附近固定 XZ `EditorViewportOverlayPacket`。`EditorViewportCoordinator` 只负责把 packet bridge 到
-`BasicRenderViewOverlayDesc`。`renderer_basic_vulkan` 已消费该 debug-line route 并绘制可见 line-list；这仍不是
-runtime camera system、manifest-backed provider、camera-aware grid policy 或 source overlay id diagnostics。
+`farPoint` 是 far clipping plane 上的 world point。默认 Scene View grid 已收敛为 renderer-owned
+fullscreen world-grid intent，不再由 provider 生成原点附近固定 XZ `EditorViewportOverlayPacket`。
+`EditorViewportCoordinator` 只负责把 provider packet bridge 到 `BasicDebugWorldLine`，并把有效 overlay flag /
+packet stable id 复制到 `BasicRenderViewOverlayDesc::sourceOverlayIds` 供 diagnostics 溯源。
+`renderer_basic_vulkan` 已消费 debug-line route 并绘制可见 line-list；world-grid shader 按 camera 到 grid plane 的
+垂直距离做 1/2/5/10 spacing LOD，默认不做距离淡出。这仍不是 runtime camera system 或 manifest-backed
+provider/settings。
 
 下一步顺序：
 
-1. 让 provider 参数来自 manifest/settings-ready 数据。
-2. 实现 camera-aware range/fade policy。
-3. 增加 source overlay id diagnostics。
-4. 补 pixel/readback camera-difference smoke。
-5. 让 Frame Debug / RG View 显示 pass、packet count、view kind 和 selected event 的更多细节。
+1. 让 grid/provider 参数来自 manifest/settings-ready 数据。
+2. 把 optional fade/color/spacing 暴露为可热更新设置。
+3. 继续完善 Frame Debug / RG View 的 pass、packet source、view kind 和 selected event 细节。
 
 ### Frame Debug
 

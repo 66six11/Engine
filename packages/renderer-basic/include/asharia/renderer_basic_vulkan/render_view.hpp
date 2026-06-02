@@ -94,8 +94,8 @@ namespace asharia {
         float planeY{};
         float minorSpacing{1.0F};
         float majorSpacing{10.0F};
-        float fadeStart{32.0F};
-        float fadeEnd{128.0F};
+        float fadeStart{};
+        float fadeEnd{};
         float opacity{1.0F};
     };
 

@@ -61,16 +61,46 @@ float axisLineAlpha(float value, float pixelWidth) {
     return 1.0 - saturate(abs(value) / max(derivative * max(pixelWidth, 0.5), 0.0001));
 }
 
-float worldGridUnitsPerPixel(float2 gridCoord) {
-    const float2 derivative = max(fwidth(gridCoord), float2(0.000001, 0.000001));
-    return max(derivative.x, derivative.y);
+float smoothWorldGridStep(float edge0, float edge1, float value) {
+    const float t = saturate((value - edge0) / max(edge1 - edge0, 0.0001));
+    return t * t * (3.0 - (2.0 * t));
 }
 
-float adaptiveGridSpacing(float baseSpacing, float unitsPerPixel) {
+struct WorldGridLod {
+    float spacing;
+    float nextSpacing;
+    float blend;
+};
+
+WorldGridLod adaptiveGridLod(float baseSpacing, float verticalDistance) {
     const float safeBase = max(baseSpacing, 0.0001);
-    const float targetSpacing = max(unitsPerPixel * 48.0, safeBase * 0.001);
-    const float scaleExponent = floor(log10(max(targetSpacing / safeBase, 0.001)));
-    return max(safeBase * pow(10.0, scaleExponent), safeBase * 0.001);
+    const float targetSpacing = max(verticalDistance / 16.0, safeBase);
+    const float normalized = max(targetSpacing / safeBase, 1.0);
+    const float decadeExponent = floor(log10(normalized));
+    const float decade = pow(10.0, decadeExponent);
+    const float local = normalized / max(decade, 0.0001);
+
+    float step = 1.0;
+    float nextStep = 2.0;
+    float transitionStart = 1.0;
+    float transitionEnd = 2.0;
+    if (local >= 5.0) {
+        step = 5.0;
+        nextStep = 10.0;
+        transitionStart = 5.0;
+        transitionEnd = 10.0;
+    } else if (local >= 2.0) {
+        step = 2.0;
+        nextStep = 5.0;
+        transitionStart = 2.0;
+        transitionEnd = 5.0;
+    }
+
+    WorldGridLod lod;
+    lod.spacing = safeBase * decade * step;
+    lod.nextSpacing = safeBase * decade * nextStep;
+    lod.blend = smoothWorldGridStep(transitionStart, transitionEnd, local);
+    return lod;
 }
 
 [shader("fragment")]
@@ -94,13 +124,15 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
     const float configuredMajorSpacing = max(gWorldGrid.gridSettings.y, minorSpacing);
     const float majorInterval =
         max(floor((configuredMajorSpacing / minorSpacing) + 0.5), 2.0);
-    const float adaptiveMinorSpacing =
-        adaptiveGridSpacing(minorSpacing, worldGridUnitsPerPixel(gridCoord));
-    const float adaptiveMajorSpacing = max(adaptiveMinorSpacing * majorInterval,
-        adaptiveMinorSpacing * 2.0);
+    const float verticalDistance =
+        abs(gWorldGrid.cameraPositionNear.y - planeY);
+    const WorldGridLod lod = adaptiveGridLod(minorSpacing, verticalDistance);
+    const float adaptiveMajorSpacing = max(lod.nextSpacing, lod.spacing * majorInterval);
     const float opacity = saturate(gWorldGrid.gridSettings.w);
 
-    const float minorAlpha = gridLineAlpha(gridCoord, adaptiveMinorSpacing, 1.15);
+    const float minorAlpha = max(
+        gridLineAlpha(gridCoord, lod.spacing, 1.15) * (1.0 - lod.blend),
+        gridLineAlpha(gridCoord, lod.nextSpacing, 1.2) * lod.blend);
     const float majorAlpha = gridLineAlpha(gridCoord, adaptiveMajorSpacing, 1.35);
     const float xAxisAlpha = axisLineAlpha(worldPosition.z, 1.7);
     const float zAxisAlpha = axisLineAlpha(worldPosition.x, 1.7);
@@ -125,12 +157,15 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
         color = zAxisColor;
     }
 
-    const float distanceToCamera =
-        length(worldPosition - gWorldGrid.cameraPositionNear.xyz);
     const float fadeStart = gWorldGrid.viewportFade.z;
-    const float fadeEnd = max(gWorldGrid.viewportFade.w, fadeStart + 0.0001);
-    const float distanceFade =
-        1.0 - saturate((distanceToCamera - fadeStart) / (fadeEnd - fadeStart));
+    const float fadeEnd = gWorldGrid.viewportFade.w;
+    float distanceFade = 1.0;
+    if (fadeEnd > fadeStart && fadeEnd > 0.0) {
+        const float distanceToCamera =
+            length(worldPosition - gWorldGrid.cameraPositionNear.xyz);
+        distanceFade =
+            1.0 - saturate((distanceToCamera - fadeStart) / (fadeEnd - fadeStart));
+    }
     alpha *= opacity * distanceFade;
     if (alpha <= 0.001) {
         discard;
