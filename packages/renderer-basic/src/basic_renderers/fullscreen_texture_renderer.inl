@@ -656,6 +656,18 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     view.overlay.debugWorldLines = std::span<const BasicDebugWorldLine>{debugWorldLines};
     const BasicRenderViewPassPolicy renderViewPassPolicy =
         basicRenderViewPassPolicy(view, debugWorldLines);
+    BasicRenderViewPassRecordingContext renderViewRecording{
+        .graph = graph,
+        .renderTarget = renderTarget,
+        .policy = renderViewPassPolicy,
+        .frame = frame,
+        .bindings = bindings,
+        .viewTarget = viewTarget,
+        .camera = view.camera,
+        .colorLoadOp = view.overlay.colorLoadOp,
+        .colorStoreOp = view.overlay.colorStoreOp,
+        .eventRecorder = eventRecorder,
+    };
     if (renderViewPassPolicy.worldGridEnabled) {
         auto worldGridPipeline =
             ensureWorldGridPipeline(view.target.format, view.overlay.blendMode);
@@ -692,7 +704,7 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     std::size_t renderViewPassIndex = 0;
     if (renderViewPassPolicy.sceneInputsEnabled) {
         ++renderViewPassIndex;
-        addBasicRenderViewSceneInputsPass(graph, renderViewPassPolicy, eventRecorder);
+        addBasicRenderViewSceneInputsPass(renderViewRecording);
     }
     const std::size_t clearPassIndex = renderViewPassIndex++;
     graph.addPass("ClearFullscreenSource", kBasicTransferClearPassType)
@@ -740,9 +752,7 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     if (renderViewPassPolicy.worldGridEnabled) {
         const std::size_t worldGridPassIndex = renderViewPassIndex++;
         addBasicRenderViewWorldGridPass(
-            graph, renderTarget, renderViewPassPolicy, frame, bindings, viewTarget, view.camera,
-            view.overlay.colorLoadOp, view.overlay.colorStoreOp, worldGridPipeline_.handle(),
-            worldGridPipelineLayout_.handle(), eventRecorder);
+            renderViewRecording, worldGridPipeline_.handle(), worldGridPipelineLayout_.handle());
         auto debugPreviewAfterWorldGrid = tryAddDebugPreviewAfterPass(worldGridPassIndex);
         if (!debugPreviewAfterWorldGrid) {
             return std::unexpected{std::move(debugPreviewAfterWorldGrid.error())};
@@ -752,9 +762,8 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     if (renderViewPassPolicy.debugLineOverlayEnabled) {
         const std::size_t overlayPassIndex = renderViewPassIndex++;
         addBasicRenderViewOverlayPass(
-            graph, renderTarget, renderViewPassPolicy, frame, bindings, viewTarget,
-            view.overlay.colorLoadOp, view.overlay.colorStoreOp, debugLinePipeline_.handle(),
-            debugLineVertexBuffer, debugLineVertexCount, eventRecorder);
+            renderViewRecording, debugLinePipeline_.handle(), debugLineVertexBuffer,
+            debugLineVertexCount);
         auto debugPreviewAfterOverlay = tryAddDebugPreviewAfterPass(overlayPassIndex);
         if (!debugPreviewAfterOverlay) {
             return std::unexpected{std::move(debugPreviewAfterOverlay.error())};

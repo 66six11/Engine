@@ -62,7 +62,8 @@
 - `render_view_targets.inl`
 - `render_view_diagnostics.inl`
 - `render_view_pass_policy.inl`
-- `render_view_recording.inl`
+- `render_view_recording.inl`：持有私有 `BasicRenderViewPassRecordingContext`，把 RenderView pass insertion 需要的
+  graph、target、policy、frame、bindings 和 event recorder 收拢在 renderer-basic-vulkan 内部。
 - `descriptor_layout_smoke.inl`
 - `fullscreen_texture_renderer.inl`
 - `mrt_renderer.inl`

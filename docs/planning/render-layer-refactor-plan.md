@@ -153,7 +153,7 @@
 
 ## Phase 3：Render View Recording Split
 
-状态：已完成第三版。已经拆出 target、diagnostics/event 支撑，并新增窄私有 `render_view_pass_policy.inl` / `render_view_recording.inl` 分别承载 RenderView overlay pass policy 和 pass insertion；`recordViewFrame()` 仍保留 fullscreen source/composite、descriptor、pipeline readiness、debug preview 调度和 graph compile/execute 编排。
+状态：已完成第四版。已经拆出 target、diagnostics/event 支撑，并新增窄私有 `render_view_pass_policy.inl` / `render_view_recording.inl` 分别承载 RenderView pass policy 和 pass insertion；`render_view_recording.inl` 通过私有 `BasicRenderViewPassRecordingContext` 收拢 graph、target、policy、frame、bindings 和 event recorder，避免 pass helper 继续暴露散装参数。`recordViewFrame()` 仍保留 fullscreen source/composite、descriptor、pipeline readiness、debug preview 调度和 graph compile/execute 编排。
 
 目标：把 RenderView target validation、diagnostics snapshot、execution event recorder 和 offscreen/swapchain target 转换的职责从 fullscreen renderer 中分离出来。
 
@@ -169,8 +169,9 @@
 - 从 `BasicRenderViewDesc` 和 copied debug-world-line span 推导 `BasicRenderViewPassPolicy`。
 - 封装 world-grid / overlay typed params。
 
-`render_view_recording.inl` 当前只做两件事：
+`render_view_recording.inl` 当前只做三件事：
 
+- 插入 `builtin.render-view-scene-inputs` marker pass，包括 typed draw-item count、command summary 和 renderer execution event。
 - 插入 `builtin.render-view-world-grid` pass，包括 typed params、command summary 和 Vulkan executor callback 绑定。
 - 插入 `builtin.render-view-overlay` pass，包括 typed params、command summary 和 Vulkan executor callback 绑定。
 
