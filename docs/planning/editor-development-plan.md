@@ -843,7 +843,7 @@ Validation:
 
 ### 16.13 Viewport Overlay Provider Contract
 
-Status: Deferred.
+Status: Current / partial.
 
 Depends on:
 
@@ -854,12 +854,15 @@ Depends on:
 Scope:
 
 - Split chrome overlay descriptors from world overlay providers.
-- Add backend-neutral overlay packets for future debug lines, gizmos, labels and selection outline data.
-- Do not draw Grid yet; provider v0 may output empty packets while wiring state and diagnostics.
+- Add built-in provider descriptors for provider id, source overlay id, Scene-only vs Scene/Game scope and enabled state.
+- Keep backend-neutral overlay packets for future debug lines, gizmos, labels and selection outline data.
+- Do not draw Grid from provider packets; Scene View grid stays in renderer-owned world-grid intent while the provider route
+  remains available for later debug/world-line overlays.
 
 Validation:
 
-- Smoke verifies provider enable/disable state and that Game/Preview do not receive Scene-only provider packets.
+- Smoke verifies provider descriptors, enable/disable state and that Game/Preview do not receive Scene-only providers or
+  provider packets.
 
 ## Phase 17: Editor Viewport Host
 

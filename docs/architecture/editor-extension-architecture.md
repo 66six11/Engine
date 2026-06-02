@@ -336,11 +336,13 @@ Status: current / partial.
 
 Status: current.
 
-- 已拆出 `EditorViewportOverlayProvider` v0。
-- Scene View grid toggle 通过 `EditorViewportOverlayFlags` 控制 provider enabled state；gizmo/selection-outline 仍是
-  后续 provider/tool intent。
+- 已拆出 `EditorViewportOverlayProvider` v0，并新增 built-in provider descriptors：provider id、source overlay id、
+  scope (`SceneOnly` / `SceneAndGame`) 和基于 `EditorViewportOverlayFlags` 的 enabled state。
+- Scene View grid/gizmo/selection-outline provider 只支持 Scene；debug overlay/debug gizmo provider 支持 Scene 和 Game；
+  Preview 不接收 built-in provider。
 - 默认 grid 不再由 provider 输出固定原点 `scene.grid` debug-line packet；Scene View grid flag 进入
   renderer-owned world-grid intent，provider packet route 只保留给后续 debug/world-line overlay。
+- `--smoke-editor-viewport` 验证 built-in provider metadata、enable/disable 状态和 Game/Preview filtering。
 
 ### Step 5: Debug Line Renderer Bridge
 

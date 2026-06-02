@@ -42,6 +42,109 @@ namespace asharia::editor {
                    lhs.debugGizmoVisible == rhs.debugGizmoVisible;
         }
 
+        struct BuiltInOverlayProviderSmokeDesc {
+            EditorViewportOverlayFlags sceneDefaults;
+            EditorViewportOverlayFlags allFlags;
+            EditorViewportOverlayFlags gameFlags;
+        };
+
+        [[nodiscard]] bool
+        validateBuiltInOverlayProviderSmoke(const BuiltInOverlayProviderSmokeDesc& desc) {
+            const auto providers = builtInEditorViewportOverlayProviders();
+            if (providers.size() != 5U ||
+                findBuiltInEditorViewportOverlayProvider(kEditorSceneGridOverlayProviderId) ==
+                    nullptr ||
+                findBuiltInEditorViewportOverlayProvider(
+                    kEditorSceneTransformGizmoOverlayProviderId) == nullptr ||
+                findBuiltInEditorViewportOverlayProvider(
+                    kEditorSceneSelectionOutlineOverlayProviderId) == nullptr ||
+                findBuiltInEditorViewportOverlayProvider(kEditorDebugOverlayProviderId) ==
+                    nullptr ||
+                findBuiltInEditorViewportOverlayProvider(kEditorDebugGizmoOverlayProviderId) ==
+                    nullptr) {
+                asharia::logError("Editor viewport smoke missed built-in overlay providers.");
+                return false;
+            }
+
+            bool sawSceneGrid = false;
+            bool sawSceneGizmo = false;
+            bool sawSceneSelection = false;
+            bool sawDebugOverlay = false;
+            bool sawDebugGizmo = false;
+            bool invalidProvider = false;
+            for (const EditorViewportOverlayProviderDesc& provider : providers) {
+                const bool supportsScene =
+                    editorViewportOverlayProviderSupports(provider, EditorViewportKind::Scene);
+                const bool supportsGame =
+                    editorViewportOverlayProviderSupports(provider, EditorViewportKind::Game);
+                const bool supportsPreview =
+                    editorViewportOverlayProviderSupports(provider, EditorViewportKind::Preview);
+                if (!supportsScene || supportsPreview || provider.providerId.empty() ||
+                    provider.overlayId.empty()) {
+                    invalidProvider = true;
+                }
+
+                const EditorViewportOverlayProviderContext sceneDefaultContext{
+                    .viewportKind = EditorViewportKind::Scene,
+                    .camera =
+                        defaultEditorSceneViewCamera(EditorExtent2D{.width = 320, .height = 240}),
+                    .overlayFlags = desc.sceneDefaults,
+                };
+                const EditorViewportOverlayProviderContext sceneAllContext{
+                    .viewportKind = EditorViewportKind::Scene,
+                    .camera = sceneDefaultContext.camera,
+                    .overlayFlags = desc.allFlags,
+                };
+                const EditorViewportOverlayProviderContext gameContext{
+                    .viewportKind = EditorViewportKind::Game,
+                    .camera = sceneDefaultContext.camera,
+                    .overlayFlags = desc.gameFlags,
+                };
+
+                if (provider.overlayId == kEditorSceneGridOverlayId) {
+                    sawSceneGrid =
+                        !supportsGame &&
+                        editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
+                        editorViewportOverlayProviderEnabled(provider, sceneAllContext) &&
+                        !editorViewportOverlayProviderEnabled(provider, gameContext);
+                } else if (provider.overlayId == kEditorSceneTransformGizmoOverlayId) {
+                    sawSceneGizmo =
+                        !supportsGame &&
+                        editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
+                        editorViewportOverlayProviderEnabled(provider, sceneAllContext) &&
+                        !editorViewportOverlayProviderEnabled(provider, gameContext);
+                } else if (provider.overlayId == kEditorSceneSelectionOutlineOverlayId) {
+                    sawSceneSelection =
+                        !supportsGame &&
+                        editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
+                        editorViewportOverlayProviderEnabled(provider, sceneAllContext) &&
+                        !editorViewportOverlayProviderEnabled(provider, gameContext);
+                } else if (provider.overlayId == kEditorDebugOverlayId) {
+                    sawDebugOverlay =
+                        supportsGame &&
+                        !editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
+                        editorViewportOverlayProviderEnabled(provider, sceneAllContext) &&
+                        editorViewportOverlayProviderEnabled(provider, gameContext);
+                } else if (provider.overlayId == kEditorDebugGizmoOverlayId) {
+                    sawDebugGizmo =
+                        supportsGame &&
+                        !editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
+                        editorViewportOverlayProviderEnabled(provider, sceneAllContext) &&
+                        editorViewportOverlayProviderEnabled(provider, gameContext);
+                } else {
+                    invalidProvider = true;
+                }
+            }
+
+            if (invalidProvider || !sawSceneGrid || !sawSceneGizmo || !sawSceneSelection ||
+                !sawDebugOverlay || !sawDebugGizmo) {
+                asharia::logError(
+                    "Editor viewport smoke found invalid overlay provider descriptors.");
+                return false;
+            }
+            return true;
+        }
+
         [[nodiscard]] std::uint64_t
         renderGraphPassTypeCount(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                                  std::string_view passType) {
@@ -450,6 +553,13 @@ namespace asharia::editor {
         if (anyEditorViewportOverlayFlagEnabled(
                 effectiveEditorViewportOverlayFlags(EditorViewportKind::Preview, allFlags))) {
             asharia::logError("Editor viewport smoke leaked overlay flags into Preview views.");
+            return false;
+        }
+        if (!validateBuiltInOverlayProviderSmoke(BuiltInOverlayProviderSmokeDesc{
+                .sceneDefaults = defaults,
+                .allFlags = allFlags,
+                .gameFlags = gameFlags,
+            })) {
             return false;
         }
         const EditorViewportOverlayPacketList scenePackets =

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,12 +12,18 @@
 namespace asharia::editor {
 
     inline constexpr std::string_view kEditorSceneGridOverlayId = "scene.grid";
-    inline constexpr std::string_view kEditorSceneTransformGizmoOverlayId =
-        "scene.transform-gizmo";
+    inline constexpr std::string_view kEditorSceneTransformGizmoOverlayId = "scene.transform-gizmo";
     inline constexpr std::string_view kEditorSceneSelectionOutlineOverlayId =
         "scene.selection-outline";
     inline constexpr std::string_view kEditorDebugOverlayId = "debug.overlay";
     inline constexpr std::string_view kEditorDebugGizmoOverlayId = "debug.gizmo";
+    inline constexpr std::string_view kEditorSceneGridOverlayProviderId = "provider.scene-grid";
+    inline constexpr std::string_view kEditorSceneTransformGizmoOverlayProviderId =
+        "provider.scene-transform-gizmo";
+    inline constexpr std::string_view kEditorSceneSelectionOutlineOverlayProviderId =
+        "provider.scene-selection-outline";
+    inline constexpr std::string_view kEditorDebugOverlayProviderId = "provider.debug-overlay";
+    inline constexpr std::string_view kEditorDebugGizmoOverlayProviderId = "provider.debug-gizmo";
 
     [[nodiscard]] EditorViewportWorldGridSettings defaultEditorSceneGridSettings();
 
@@ -30,6 +37,17 @@ namespace asharia::editor {
         EditorViewportKind viewportKind{EditorViewportKind::Scene};
         EditorViewportCamera camera;
         EditorViewportOverlayFlags overlayFlags;
+    };
+
+    enum class EditorViewportOverlayProviderScope {
+        SceneOnly,
+        SceneAndGame,
+    };
+
+    struct EditorViewportOverlayProviderDesc {
+        std::string_view providerId;
+        std::string_view overlayId;
+        EditorViewportOverlayProviderScope scope{EditorViewportOverlayProviderScope::SceneOnly};
     };
 
     struct EditorViewportOverlayPacket {
@@ -46,5 +64,15 @@ namespace asharia::editor {
 
     [[nodiscard]] EditorViewportOverlayPacketList
     collectBuiltInEditorViewportOverlayPackets(const EditorViewportOverlayProviderContext& context);
+    [[nodiscard]] std::span<const EditorViewportOverlayProviderDesc>
+    builtInEditorViewportOverlayProviders();
+    [[nodiscard]] const EditorViewportOverlayProviderDesc*
+    findBuiltInEditorViewportOverlayProvider(std::string_view providerId);
+    [[nodiscard]] bool
+    editorViewportOverlayProviderSupports(const EditorViewportOverlayProviderDesc& provider,
+                                          EditorViewportKind viewportKind);
+    [[nodiscard]] bool
+    editorViewportOverlayProviderEnabled(const EditorViewportOverlayProviderDesc& provider,
+                                         const EditorViewportOverlayProviderContext& context);
 
 } // namespace asharia::editor
