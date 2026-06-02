@@ -23,9 +23,10 @@
   `BasicRenderViewDiagnostics`；`BasicRenderViewOverlayDesc::worldGrid` enabled 时插入
   `builtin.render-view-world-grid`，由 `renderer_basic_vulkan` 用 fullscreen triangle、push constants 中的
   inverse view-projection / camera / optional fade / per-view LOD 参数绘制 XZ world grid；RenderView policy
-  根据 camera 到 grid plane 的垂直距离计算整帧统一的 1/2/5/10 world spacing LOD，低高度会锁定 base spacing，
+  只根据 camera 到 grid plane 的垂直距离计算整帧统一的 1/2/5/10 world spacing LOD，不根据水平距离或片元距离改变 LOD；低高度会锁定 base spacing，
   shader 只消费 `GridLodSettings`，`fadeStart == fadeEnd == 0` 时不做距离淡出，避免高视角像被 depth fog
-  裁掉。`BasicRenderViewOverlayDesc::sourceOverlayIds` 只作为 diagnostics 溯源元数据由 renderer 复制保存，
+  裁掉。`BasicRenderViewOverlayDesc::worldGrid` 和 `sourceOverlayIds` 都由 renderer 复制进 diagnostics；
+  Frame Debug replay 从 capture 里的 world-grid desc 恢复 overlay 参数，source id 只作为溯源元数据，
   不改变 graph/pass 执行语义。只有存在 debug-world-line 数据时才插入
   `builtin.render-view-overlay` pass，把 camera / frame / debug-world-line count 作为 typed params 与 command
   summary 进入 graph，并把 world line 投影成 line-list vertex buffer 绘制到目标 attachment。后续 scene mesh、

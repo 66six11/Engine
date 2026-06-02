@@ -76,6 +76,7 @@
                         .colorStoreOp = view.overlay.colorStoreOp,
                         .blendMode = view.overlay.blendMode,
                         .worldGridEnabled = view.overlay.worldGrid.enabled,
+                        .worldGrid = view.overlay.worldGrid,
                         .debugWorldLineCount =
                             static_cast<std::uint64_t>(view.overlay.debugWorldLines.size()),
                         .sourceOverlayIds = std::move(sourceOverlayIds),

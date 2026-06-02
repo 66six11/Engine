@@ -73,11 +73,21 @@ namespace asharia::editor {
             return commandCount;
         }
 
-        [[nodiscard]] bool hasSourceOverlayId(
-            const asharia::BasicRenderViewOverlayDiagnostics& overlay,
-            std::string_view sourceOverlayId) {
+        [[nodiscard]] bool
+        hasSourceOverlayId(const asharia::BasicRenderViewOverlayDiagnostics& overlay,
+                           std::string_view sourceOverlayId) {
             return std::ranges::find(overlay.sourceOverlayIds, sourceOverlayId) !=
                    overlay.sourceOverlayIds.end();
+        }
+
+        [[nodiscard]] bool
+        validSceneWorldGridDiagnostics(const asharia::BasicRenderViewOverlayDiagnostics& overlay) {
+            const asharia::BasicRenderViewWorldGridDesc& worldGrid = overlay.worldGrid;
+            return overlay.worldGridEnabled && worldGrid.enabled &&
+                   closeFloat(worldGrid.planeY, 0.0F) && closeFloat(worldGrid.minorSpacing, 1.0F) &&
+                   closeFloat(worldGrid.majorSpacing, 10.0F) &&
+                   closeFloat(worldGrid.fadeStart, 0.0F) && closeFloat(worldGrid.fadeEnd, 0.0F) &&
+                   closeFloat(worldGrid.opacity, 1.0F);
         }
 
         [[nodiscard]] bool
@@ -256,7 +266,8 @@ namespace asharia::editor {
             }
             if (scene.viewKind != asharia::BasicRenderViewKind::Scene ||
                 scene.frameParams.frameIndex == 0 || !scene.overlay.enabled ||
-                !scene.overlay.worldGridEnabled || scene.overlay.debugWorldLineCount != 0 ||
+                !validSceneWorldGridDiagnostics(scene.overlay) ||
+                scene.overlay.debugWorldLineCount != 0 ||
                 scene.overlay.sourceOverlayIds.size() != 3U ||
                 !hasSourceOverlayId(scene.overlay, kEditorSceneGridOverlayId) ||
                 !hasSourceOverlayId(scene.overlay, kEditorSceneTransformGizmoOverlayId) ||

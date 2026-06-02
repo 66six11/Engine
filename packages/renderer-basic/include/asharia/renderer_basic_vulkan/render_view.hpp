@@ -117,6 +117,7 @@ namespace asharia {
         BasicRenderViewOverlayColorStoreOp colorStoreOp{BasicRenderViewOverlayColorStoreOp::Store};
         BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
         bool worldGridEnabled{};
+        BasicRenderViewWorldGridDesc worldGrid;
         std::uint64_t debugWorldLineCount{};
         std::vector<std::string> sourceOverlayIds;
     };

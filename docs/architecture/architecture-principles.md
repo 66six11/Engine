@@ -277,7 +277,7 @@ fullscreen world-grid intent，不再由 provider 生成原点附近固定 XZ `E
 `EditorViewportCoordinator` 只负责把 provider packet bridge 到 `BasicDebugWorldLine`，并把有效 overlay flag /
 packet stable id 复制到 `BasicRenderViewOverlayDesc::sourceOverlayIds` 供 diagnostics 溯源。
 `renderer_basic_vulkan` 已消费 debug-line route 并绘制可见 line-list；world-grid LOD 由 RenderView policy
-按 camera 到 grid plane 的垂直距离计算为整帧统一的 `GridLodSettings`，低高度锁定 base spacing，拉高后在
+只按 camera 到 grid plane 的垂直距离计算为整帧统一的 `GridLodSettings`，不按水平距离或片元距离改变 LOD；低高度锁定 base spacing，拉高后在
 1/2/5/10 spacing 间平滑切换，默认不做距离淡出。这仍不是 runtime camera system 或 manifest-backed
 provider/settings。
 

@@ -1,6 +1,7 @@
 ﻿#include "editor_frame_debugger_smoke.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,11 +15,25 @@
 namespace asharia::editor {
     namespace {
 
-        [[nodiscard]] bool capturedSourceOverlayId(
-            const asharia::BasicRenderViewOverlayDiagnostics& overlay,
-            std::string_view sourceOverlayId) {
+        [[nodiscard]] bool
+        capturedSourceOverlayId(const asharia::BasicRenderViewOverlayDiagnostics& overlay,
+                                std::string_view sourceOverlayId) {
             return std::ranges::find(overlay.sourceOverlayIds, sourceOverlayId) !=
                    overlay.sourceOverlayIds.end();
+        }
+
+        [[nodiscard]] bool closeFloat(float lhs, float rhs) {
+            return std::fabs(lhs - rhs) < 0.0001F;
+        }
+
+        [[nodiscard]] bool
+        capturedWorldGridSettings(const asharia::BasicRenderViewOverlayDiagnostics& overlay) {
+            const asharia::BasicRenderViewWorldGridDesc& worldGrid = overlay.worldGrid;
+            return overlay.worldGridEnabled && worldGrid.enabled &&
+                   closeFloat(worldGrid.planeY, 0.0F) && closeFloat(worldGrid.minorSpacing, 1.0F) &&
+                   closeFloat(worldGrid.majorSpacing, 10.0F) &&
+                   closeFloat(worldGrid.fadeStart, 0.0F) && closeFloat(worldGrid.fadeEnd, 0.0F) &&
+                   closeFloat(worldGrid.opacity, 1.0F);
         }
 
     } // namespace
@@ -134,6 +149,11 @@ namespace asharia::editor {
                                      kEditorSceneSelectionOutlineOverlayId)) {
             asharia::logError(
                 "Editor frame debugger smoke did not preserve overlay source diagnostics.");
+            return false;
+        }
+        if (!capturedWorldGridSettings(capture->diagnostics.overlay)) {
+            asharia::logError(
+                "Editor frame debugger smoke did not preserve world-grid diagnostics.");
             return false;
         }
         if (frameDebugger.pausedCapture()) {

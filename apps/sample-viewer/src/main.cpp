@@ -13,8 +13,8 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
-#include <numeric>
 #include <numbers>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -2958,17 +2958,22 @@ namespace {
     constexpr VkExtent2D kSmokeGridReadbackExtent{.width = 192, .height = 128};
     constexpr VkFormat kSmokeGridReadbackFormat = VK_FORMAT_B8G8R8A8_SRGB;
     constexpr std::uint64_t kSmokeGridReadbackBytesPerPixel = 4;
-    constexpr std::size_t kSmokeGridReadbackProbeCount = 3;
+    constexpr std::size_t kSmokeGridReadbackProbeCount = 4;
+    constexpr std::size_t kSmokeGridHighViewProbeIndex = 2;
+    constexpr std::size_t kSmokeGridLowFarViewProbeIndex = 3;
     constexpr std::uint64_t kMinimumVisibleGridSpread = 20000;
     constexpr std::uint64_t kMinimumCameraDifference = 40000;
+
+    [[nodiscard]] constexpr bool smokeGridProbeUsesStableBaseLod(std::size_t probeIndex) {
+        return probeIndex != kSmokeGridHighViewProbeIndex;
+    }
 
     [[nodiscard]] constexpr VkDeviceSize smokeGridReadbackByteCount() {
         return static_cast<VkDeviceSize>(kSmokeGridReadbackExtent.width) *
                kSmokeGridReadbackExtent.height * kSmokeGridReadbackBytesPerPixel;
     }
 
-    [[nodiscard]] constexpr SmokeGridVec3 smokeGridSubtract(SmokeGridVec3 lhs,
-                                                            SmokeGridVec3 rhs) {
+    [[nodiscard]] constexpr SmokeGridVec3 smokeGridSubtract(SmokeGridVec3 lhs, SmokeGridVec3 rhs) {
         return SmokeGridVec3{
             lhs[0] - rhs[0],
             lhs[1] - rhs[1],
@@ -2980,8 +2985,7 @@ namespace {
         return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
     }
 
-    [[nodiscard]] constexpr SmokeGridVec3 smokeGridCross(SmokeGridVec3 lhs,
-                                                         SmokeGridVec3 rhs) {
+    [[nodiscard]] constexpr SmokeGridVec3 smokeGridCross(SmokeGridVec3 lhs, SmokeGridVec3 rhs) {
         return SmokeGridVec3{
             (lhs[1] * rhs[2]) - (lhs[2] * rhs[1]),
             (lhs[2] * rhs[0]) - (lhs[0] * rhs[2]),
@@ -3008,8 +3012,7 @@ namespace {
             for (std::size_t column = 0; column < 4U; ++column) {
                 float value = 0.0F;
                 for (std::size_t index = 0; index < 4U; ++index) {
-                    value += smokeGridMat4At(lhs, row, index) *
-                             smokeGridMat4At(rhs, index, column);
+                    value += smokeGridMat4At(lhs, row, index) * smokeGridMat4At(rhs, index, column);
                 }
                 result.at((row * 4U) + column) = value;
             }
@@ -3079,9 +3082,9 @@ namespace {
         };
     }
 
-    [[nodiscard]] asharia::Result<void> recordSmokeGridReadbackCopy(
-        const asharia::VulkanFrameRecordContext& frame, VkImage image, VkBuffer buffer,
-        VkExtent2D extent) {
+    [[nodiscard]] asharia::Result<void>
+    recordSmokeGridReadbackCopy(const asharia::VulkanFrameRecordContext& frame, VkImage image,
+                                VkBuffer buffer, VkExtent2D extent) {
         if (image == VK_NULL_HANDLE || buffer == VK_NULL_HANDLE || extent.width == 0 ||
             extent.height == 0) {
             return std::unexpected{
@@ -3092,8 +3095,7 @@ namespace {
         VkImageMemoryBarrier2 imageBarrier{};
         imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        imageBarrier.srcAccessMask =
-            VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
         imageBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
         imageBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -3194,16 +3196,22 @@ namespace {
             asharia::logError("RenderView grid readback smoke missed Scene View grid diagnostics.");
             return false;
         }
+        const asharia::BasicRenderViewWorldGridDesc& worldGrid = diagnostics.overlay.worldGrid;
+        if (!worldGrid.enabled || worldGrid.planeY != 0.0F || worldGrid.minorSpacing != 1.0F ||
+            worldGrid.majorSpacing != 10.0F || worldGrid.fadeStart != 0.0F ||
+            worldGrid.fadeEnd != 0.0F || worldGrid.opacity != 1.0F) {
+            asharia::logError(
+                "RenderView grid readback smoke captured invalid world-grid diagnostics.");
+            return false;
+        }
 
         const auto gridPass =
             std::ranges::find_if(diagnostics.renderGraph.passes,
                                  [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
-                                     return pass.type ==
-                                            asharia::kBasicRenderViewWorldGridPassType;
+                                     return pass.type == asharia::kBasicRenderViewWorldGridPassType;
                                  });
         if (gridPass == diagnostics.renderGraph.passes.end()) {
-            asharia::logError(
-                "RenderView grid readback smoke did not record the world-grid pass.");
+            asharia::logError("RenderView grid readback smoke did not record the world-grid pass.");
             return false;
         }
 
@@ -3233,15 +3241,15 @@ namespace {
 
         constexpr std::string_view kCloseGridLodSettings{
             "GridLodSettings = (1.000000, 1.000000, 0.000000, 10.000000)"};
-        const bool closeGridLod = lodCommand->detail == kCloseGridLodSettings;
-        if (probeIndex < 2U && !closeGridLod) {
+        const bool stableBaseGridLod = lodCommand->detail == kCloseGridLodSettings;
+        if (smokeGridProbeUsesStableBaseLod(probeIndex) && !stableBaseGridLod) {
             asharia::logError(
-                "RenderView grid readback smoke expected close cameras to use stable base LOD "
-                "but found '" +
+                "RenderView grid readback smoke expected low-height cameras to use stable base "
+                "LOD but found '" +
                 lodCommand->detail + "'.");
             return false;
         }
-        if (probeIndex >= 2U && closeGridLod) {
+        if (!smokeGridProbeUsesStableBaseLod(probeIndex) && stableBaseGridLod) {
             asharia::logError(
                 "RenderView grid readback smoke expected high camera to leave stable base LOD.");
             return false;
@@ -3269,24 +3277,23 @@ namespace {
     }
 
     [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
-    recordSmokeRenderViewGridReadbackFrame(
-        const asharia::VulkanFrameRecordContext& recordContext,
-        const asharia::VulkanContext& context,
-        asharia::BasicFullscreenTextureRenderer& renderer,
-        SmokeRenderViewGridReadbackProbe& probe,
-        const asharia::BasicRenderViewCamera& camera,
-        std::uint64_t frameIndex) {
-        auto targetReady = probe.target.ensure(
-            recordContext,
-            asharia::VulkanRenderTargetDesc{
-                .device = context.device(),
-                .allocator = context.allocator(),
-                .format = kSmokeGridReadbackFormat,
-                .extent = kSmokeGridReadbackExtent,
-                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            });
+    recordSmokeRenderViewGridReadbackFrame(const asharia::VulkanFrameRecordContext& recordContext,
+                                           const asharia::VulkanContext& context,
+                                           asharia::BasicFullscreenTextureRenderer& renderer,
+                                           SmokeRenderViewGridReadbackProbe& probe,
+                                           const asharia::BasicRenderViewCamera& camera,
+                                           std::uint64_t frameIndex) {
+        auto targetReady =
+            probe.target.ensure(recordContext, asharia::VulkanRenderTargetDesc{
+                                                   .device = context.device(),
+                                                   .allocator = context.allocator(),
+                                                   .format = kSmokeGridReadbackFormat,
+                                                   .extent = kSmokeGridReadbackExtent,
+                                                   .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                            VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                                   .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                               });
         if (!targetReady) {
             return std::unexpected{std::move(targetReady.error())};
         }
@@ -3332,9 +3339,8 @@ namespace {
         }
         probe.diagnosticsRecorded = true;
 
-        auto copied = recordSmokeGridReadbackCopy(recordContext, sampled.image,
-                                                  probe.readback.handle(),
-                                                  kSmokeGridReadbackExtent);
+        auto copied = recordSmokeGridReadbackCopy(
+            recordContext, sampled.image, probe.readback.handle(), kSmokeGridReadbackExtent);
         if (!copied) {
             return std::unexpected{std::move(copied.error())};
         }
@@ -3345,8 +3351,8 @@ namespace {
         return *presentReady;
     }
 
-    [[nodiscard]] bool readSmokeRenderViewGridReadbackProbes(
-        std::span<SmokeRenderViewGridReadbackProbe> probes) {
+    [[nodiscard]] bool
+    readSmokeRenderViewGridReadbackProbes(std::span<SmokeRenderViewGridReadbackProbe> probes) {
         std::size_t probeIndex = 0;
         for (SmokeRenderViewGridReadbackProbe& probe : probes) {
             if (!validateRenderViewGridReadbackDiagnostics(probe.diagnostics,
@@ -3367,31 +3373,37 @@ namespace {
         std::span<const SmokeRenderViewGridReadbackProbe, kSmokeGridReadbackProbeCount> probes) {
         const std::uint64_t firstSpread = smokePixelSpread(probes.front().pixels);
         const std::uint64_t secondSpread = smokePixelSpread(probes[1].pixels);
-        const std::uint64_t highViewSpread = smokePixelSpread(probes.back().pixels);
+        const SmokeRenderViewGridReadbackProbe& highViewProbe =
+            probes[kSmokeGridHighViewProbeIndex];
+        const SmokeRenderViewGridReadbackProbe& lowFarViewProbe =
+            probes[kSmokeGridLowFarViewProbeIndex];
+        const std::uint64_t highViewSpread = smokePixelSpread(highViewProbe.pixels);
+        const std::uint64_t lowFarViewSpread = smokePixelSpread(lowFarViewProbe.pixels);
         const std::uint64_t cameraDifference =
             smokePixelDifference(probes.front().pixels, probes[1].pixels);
         const std::uint64_t highViewDifference =
-            smokePixelDifference(probes.front().pixels, probes.back().pixels);
-        if (firstSpread < kMinimumVisibleGridSpread ||
-            secondSpread < kMinimumVisibleGridSpread ||
+            smokePixelDifference(probes.front().pixels, highViewProbe.pixels);
+        if (firstSpread < kMinimumVisibleGridSpread || secondSpread < kMinimumVisibleGridSpread ||
             highViewSpread < kMinimumVisibleGridSpread ||
+            lowFarViewSpread < kMinimumVisibleGridSpread ||
             cameraDifference < kMinimumCameraDifference ||
             highViewDifference < kMinimumCameraDifference) {
             asharia::logError(
                 "RenderView grid readback smoke did not observe enough grid/camera pixel "
                 "difference: spread A " +
                 std::to_string(firstSpread) + ", spread B " + std::to_string(secondSpread) +
-                ", high-view spread " + std::to_string(highViewSpread) +
-                ", camera difference " + std::to_string(cameraDifference) +
-                ", high-view difference " + std::to_string(highViewDifference) + ".");
+                ", high-view spread " + std::to_string(highViewSpread) + ", low-far-view spread " +
+                std::to_string(lowFarViewSpread) + ", camera difference " +
+                std::to_string(cameraDifference) + ", high-view difference " +
+                std::to_string(highViewDifference) + ".");
             return false;
         }
 
         std::cout << "RenderView grid readback: " << kSmokeGridReadbackExtent.width << 'x'
                   << kSmokeGridReadbackExtent.height << ", spread A " << firstSpread
-                  << ", spread B " << secondSpread << ", high-view spread "
-                  << highViewSpread << ", camera difference " << cameraDifference
-                  << ", high-view difference " << highViewDifference << '\n';
+                  << ", spread B " << secondSpread << ", high-view spread " << highViewSpread
+                  << ", low-far-view spread " << lowFarViewSpread << ", camera difference "
+                  << cameraDifference << ", high-view difference " << highViewDifference << '\n';
         return true;
     }
 
@@ -3467,12 +3479,10 @@ namespace {
         }
 
         const std::array cameras{
-            smokeGridCamera({0.0F, 2.0F, -6.0F}, {0.0F, 0.0F, 0.0F},
-                            kSmokeGridReadbackExtent),
-            smokeGridCamera({2.8F, 2.4F, -4.2F}, {0.0F, 0.0F, 0.0F},
-                            kSmokeGridReadbackExtent),
-            smokeGridCamera({0.0F, 180.0F, -180.0F}, {0.0F, 0.0F, 0.0F},
-                            kSmokeGridReadbackExtent),
+            smokeGridCamera({0.0F, 2.0F, -6.0F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
+            smokeGridCamera({2.8F, 2.4F, -4.2F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
+            smokeGridCamera({0.0F, 180.0F, -180.0F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
+            smokeGridCamera({120.0F, 2.2F, -120.0F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
         };
 
         std::uint64_t frameIndex = 1;
@@ -3482,10 +3492,10 @@ namespace {
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
-            auto status = frameLoop->renderFrame(
-                [&context, &renderer, &probe, &camera, frameIndex](
-                    const asharia::VulkanFrameRecordContext& recordContext)
-                    -> asharia::Result<asharia::VulkanFrameRecordResult> {
+            auto status =
+                frameLoop->renderFrame([&context, &renderer, &probe, &camera, frameIndex](
+                                           const asharia::VulkanFrameRecordContext& recordContext)
+                                           -> asharia::Result<asharia::VulkanFrameRecordResult> {
                     return recordSmokeRenderViewGridReadbackFrame(
                         recordContext, *context, *renderer, probe, *camera, frameIndex);
                 });
@@ -3504,9 +3514,8 @@ namespace {
 
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
-            asharia::logError(
-                "Failed to wait for Vulkan queue before RenderView grid readback: " +
-                asharia::vkResultName(idleResult));
+            asharia::logError("Failed to wait for Vulkan queue before RenderView grid readback: " +
+                              asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 

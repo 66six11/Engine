@@ -57,15 +57,9 @@ namespace {
 
     asharia::BasicRenderViewWorldGridDesc
     replayWorldGridDesc(const asharia::BasicRenderViewOverlayDiagnostics& overlay) {
-        return asharia::BasicRenderViewWorldGridDesc{
-            .enabled = overlay.worldGridEnabled,
-            .planeY = 0.0F,
-            .minorSpacing = 1.0F,
-            .majorSpacing = 10.0F,
-            .fadeStart = 0.0F,
-            .fadeEnd = 0.0F,
-            .opacity = 1.0F,
-        };
+        asharia::BasicRenderViewWorldGridDesc worldGrid = overlay.worldGrid;
+        worldGrid.enabled = overlay.worldGridEnabled;
+        return worldGrid;
     }
 
     asharia::BasicRenderViewOverlayDesc

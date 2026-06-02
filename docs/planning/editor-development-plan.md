@@ -42,7 +42,7 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
   作为 typed params 与 command summary 纳入 RenderGraph，并通过 renderer-owned debug-line shader/pipeline
   绘制 line-list。没有 debug line 时默认 flagged Scene View 不再产生空 overlay pass。visible gizmo /
   selection outline 继续推进前，仍必须补 manifest-backed grid settings 和更完整 provider contract；camera-aware grid
-  visibility、source overlay id diagnostics 与高视角 readback 已有最小闭环。
+  visibility、world-grid/source overlay diagnostics 与高视角 readback 已有最小闭环。
 - `EditorFrameContext` 和任何 app-level service bundle 不能成为长期 service locator 或持久 mutation surface；
   过渡期 `EditorContext` 已删除；会被保存、undo/redo、script 或 collaboration 消费的状态，必须走
   command/transaction 或明确 owner。
@@ -1427,12 +1427,12 @@ Current implementation:
   `renderer_basic_vulkan` projects the line data to a line-list vertex buffer and draws visible lines through a
   renderer-owned debug-line shader/pipeline. Overlay intent without line data remains diagnostics-only.
 - `--smoke-editor-viewport` now requires provider metadata to include `scene.grid`, Game View to receive no Scene-only
-  packet, source overlay id diagnostics for Scene/debug flags, camera diagnostics to match the Scene View request,
+  packet, world-grid/source overlay diagnostics for Scene/debug flags, camera diagnostics to match the Scene View request,
   center unproject ray stability, near-plane origin, viewport corner orientation, invalid matrix rejection, resize aspect
   handling, RenderView diagnostics debug-world-line count, and no empty overlay pass for the default flagged Scene View
   render.
 - This is not the final provider architecture: there is no manifest-backed provider/settings path yet, but camera-aware
-  grid spacing, source overlay id diagnostics, and pixel/readback camera-difference coverage are now present.
+  grid spacing, world-grid/source overlay diagnostics, and pixel/readback camera-difference coverage are now present.
 
 Validation:
 
