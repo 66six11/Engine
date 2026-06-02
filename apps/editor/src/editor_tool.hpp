@@ -30,6 +30,13 @@ namespace asharia::editor {
         Utility,
     };
 
+    enum class EditorToolActivationPolicy {
+        None,
+        Persistent,
+        Modal,
+        OneShot,
+    };
+
     struct EditorToolPanelContribution {
         std::string panelId;
     };
@@ -50,6 +57,8 @@ namespace asharia::editor {
         std::string title;
         std::string titleKey;
         EditorToolCategory category{EditorToolCategory::Core};
+        EditorToolActivationPolicy activationPolicy{EditorToolActivationPolicy::None};
+        std::vector<std::string> activationViewportIds;
         std::vector<EditorToolPanelContribution> panels;
         std::vector<EditorToolActionContribution> actions;
         std::vector<EditorToolViewportOverlayContribution> viewportOverlays;
@@ -70,6 +79,7 @@ namespace asharia::editor {
         [[nodiscard]] std::size_t actionContributionCount() const;
         [[nodiscard]] std::size_t toolbarActionContributionCount() const;
         [[nodiscard]] std::size_t viewportOverlayContributionCount() const;
+        [[nodiscard]] std::size_t viewportActivationToolCount() const;
         void visitTools(const EditorToolVisitor& visitor) const;
         void visitToolbarActions(EditorToolbarSlot slot,
                                  const EditorToolActionVisitor& visitor) const;

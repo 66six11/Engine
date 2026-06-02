@@ -7,6 +7,8 @@
 
 #include "asharia/core/result.hpp"
 
+#include "editor_tool.hpp"
+
 namespace asharia::editor {
 
     class EditorToolRegistry;
@@ -51,6 +53,8 @@ namespace asharia::editor {
     private:
         struct ToolState {
             std::string toolId;
+            EditorToolActivationPolicy activationPolicy{EditorToolActivationPolicy::None};
+            std::vector<std::string> activationViewportIds;
             EditorToolLifecycleState lifecycle{EditorToolLifecycleState::Available};
         };
 
@@ -63,6 +67,8 @@ namespace asharia::editor {
         [[nodiscard]] const ToolState* findToolState(std::string_view toolId) const;
         [[nodiscard]] ViewportToolState* findViewportState(std::string_view viewportId);
         [[nodiscard]] const ViewportToolState* findViewportState(std::string_view viewportId) const;
+        [[nodiscard]] static bool toolSupportsViewportActivation(const ToolState& tool,
+                                                                 std::string_view viewportId);
         [[nodiscard]] bool hasActiveViewportForTool(std::string_view toolId) const;
         [[nodiscard]] asharia::VoidResult validateKnownTool(std::string_view toolId) const;
         [[nodiscard]] asharia::VoidResult

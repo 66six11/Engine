@@ -55,10 +55,20 @@ namespace asharia::editor {
                 .title = std::move(title),
                 .titleKey = {},
                 .category = EditorToolCategory::Core,
+                .activationPolicy = EditorToolActivationPolicy::None,
+                .activationViewportIds = {},
                 .panels = {},
                 .actions = {},
                 .viewportOverlays = {},
             };
+        }
+
+        [[nodiscard]] EditorToolDesc smokeViewportToolDesc(std::string toolId, std::string title,
+                                                           std::string viewportId) {
+            EditorToolDesc desc = smokeToolDesc(std::move(toolId), std::move(title));
+            desc.activationPolicy = EditorToolActivationPolicy::Persistent;
+            desc.activationViewportIds.push_back(std::move(viewportId));
+            return desc;
         }
 
         [[nodiscard]] bool validateEditorSettingsSmoke(EditorRunMode mode,
@@ -377,27 +387,72 @@ namespace asharia::editor {
             return true;
         }
 
-        [[nodiscard]] bool validateToolRegistrySmoke(const EditorToolRegistry& toolRegistry,
-                                                     const EditorActionRegistry& actionRegistry,
-                                                     const EditorPanelRegistry& panelRegistry) {
-            constexpr std::size_t kExpectedToolCount = 7;
-            constexpr std::size_t kExpectedPanelContributions = 6;
-            constexpr std::size_t kExpectedActionContributions = 9;
-            constexpr std::size_t kExpectedToolbarActionContributions = 8;
-            constexpr std::size_t kExpectedViewportOverlayContributions = 3;
-
-            if (toolRegistry.toolCount() != kExpectedToolCount ||
-                toolRegistry.panelContributionCount() != kExpectedPanelContributions ||
-                toolRegistry.actionContributionCount() != kExpectedActionContributions ||
-                toolRegistry.toolbarActionContributionCount() !=
-                    kExpectedToolbarActionContributions ||
-                toolRegistry.viewportOverlayContributionCount() !=
-                    kExpectedViewportOverlayContributions) {
-                asharia::logError(
-                    "Editor tool registry smoke detected invalid contribution counts.");
-                return false;
+        [[nodiscard]] bool validateToolActivationDescriptorSmoke() {
+            {
+                EditorToolRegistry registry;
+                EditorToolDesc desc =
+                    smokeToolDesc("tool.invalid-activation-policy", "Invalid Activation Policy");
+                desc.activationViewportIds.emplace_back("scene-view");
+                if (registry.registerTool(std::move(desc))) {
+                    asharia::logError(
+                        "Editor tool registry smoke accepted activation ids without policy.");
+                    return false;
+                }
             }
+            {
+                EditorToolRegistry registry;
+                EditorToolDesc desc = smokeToolDesc("tool.invalid-activation-viewport",
+                                                    "Invalid Activation Viewport");
+                desc.activationPolicy = EditorToolActivationPolicy::Persistent;
+                if (registry.registerTool(std::move(desc))) {
+                    asharia::logError(
+                        "Editor tool registry smoke accepted activation policy without viewport.");
+                    return false;
+                }
+            }
+            {
+                EditorToolRegistry registry;
+                EditorToolDesc desc = smokeViewportToolDesc("tool.invalid-empty-viewport",
+                                                            "Invalid Empty Viewport", {});
+                if (registry.registerTool(std::move(desc))) {
+                    asharia::logError(
+                        "Editor tool registry smoke accepted an empty activation viewport.");
+                    return false;
+                }
+            }
+            {
+                EditorToolRegistry registry;
+                EditorToolDesc desc = smokeViewportToolDesc(
+                    "tool.invalid-duplicate-viewport", "Invalid Duplicate Viewport", "scene-view");
+                desc.activationViewportIds.emplace_back("scene-view");
+                if (registry.registerTool(std::move(desc))) {
+                    asharia::logError(
+                        "Editor tool registry smoke accepted duplicate activation viewports.");
+                    return false;
+                }
+            }
+            {
+                EditorToolRegistry registry;
+                if (auto registered = registry.registerTool(
+                        smokeViewportToolDesc("tool.valid-viewport-activation",
+                                              "Valid Viewport Activation", "scene-view"));
+                    !registered) {
+                    asharia::logError(registered.error().message);
+                    return false;
+                }
+                if (registry.viewportActivationToolCount() != 1U) {
+                    asharia::logError(
+                        "Editor tool registry smoke missed a viewport activation tool.");
+                    return false;
+                }
+            }
+            return true;
+        }
 
+        [[nodiscard]] bool
+        validateToolContributionTargets(const EditorToolRegistry& toolRegistry,
+                                        const EditorActionRegistry& actionRegistry,
+                                        const EditorPanelRegistry& panelRegistry) {
             bool referencesValid = true;
             toolRegistry.visitTools([&](const EditorToolDesc& tool) {
                 for (const EditorToolPanelContribution& panel : tool.panels) {
@@ -417,7 +472,36 @@ namespace asharia::editor {
                     "Editor tool registry smoke found an invalid contribution target.");
                 return false;
             }
+            return true;
+        }
 
+        [[nodiscard]] bool hasSceneViewActivation(const EditorToolDesc& tool) {
+            return tool.id.value == "tool.scene-view" && tool.activationViewportIds.size() == 1U &&
+                   tool.activationViewportIds.front() == "scene-view";
+        }
+
+        [[nodiscard]] bool validateToolActivationMetadata(const EditorToolRegistry& toolRegistry) {
+            bool sawSceneViewActivation = false;
+            bool sawUnexpectedViewportActivation = false;
+            toolRegistry.visitTools([&](const EditorToolDesc& tool) {
+                if (tool.activationPolicy == EditorToolActivationPolicy::None) {
+                    return;
+                }
+                if (hasSceneViewActivation(tool)) {
+                    sawSceneViewActivation = true;
+                    return;
+                }
+                sawUnexpectedViewportActivation = true;
+            });
+            if (!sawSceneViewActivation || sawUnexpectedViewportActivation) {
+                asharia::logError(
+                    "Editor tool registry smoke found invalid viewport activation metadata.");
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool validateToolToolbarSlotSmoke(const EditorToolRegistry& toolRegistry) {
             bool sawDebugToolbarAction = false;
             bool sawViewToolbarAction = false;
             bool sawUtilityToolbarAction = false;
@@ -446,7 +530,12 @@ namespace asharia::editor {
                 asharia::logError("Editor tool registry smoke missed a toolbar contribution slot.");
                 return false;
             }
+            return true;
+        }
 
+        [[nodiscard]] bool
+        validateToolViewportOverlayQuerySmoke(const EditorToolRegistry& toolRegistry,
+                                              std::size_t expectedViewportOverlayContributions) {
             std::size_t sceneOverlayCount = 0;
             bool sawSceneGrid = false;
             bool sawSceneGridDefault = false;
@@ -481,7 +570,7 @@ namespace asharia::editor {
                     static_cast<void>(overlay);
                     ++gameOverlayCount;
                 });
-            if (sceneOverlayCount != kExpectedViewportOverlayContributions ||
+            if (sceneOverlayCount != expectedViewportOverlayContributions ||
                 gameOverlayCount != 0 || !sawSceneGrid || !sawSceneGridDefault ||
                 sawUnexpectedWorldGridDefault || !sawSceneGizmo || !sawSceneSelectionOutline) {
                 asharia::logError("Editor tool registry smoke missed a viewport overlay query.");
@@ -491,12 +580,40 @@ namespace asharia::editor {
             return true;
         }
 
-        [[nodiscard]] bool validateToolManagerSmoke(const EditorToolRegistry& toolRegistry,
-                                                    const EditorToolManager& appToolManager,
-                                                    EditorWorkspaceController& workspace) {
+        [[nodiscard]] bool validateToolRegistrySmoke(const EditorToolRegistry& toolRegistry,
+                                                     const EditorActionRegistry& actionRegistry,
+                                                     const EditorPanelRegistry& panelRegistry) {
+            constexpr std::size_t kExpectedToolCount = 7;
+            constexpr std::size_t kExpectedPanelContributions = 6;
+            constexpr std::size_t kExpectedActionContributions = 9;
+            constexpr std::size_t kExpectedToolbarActionContributions = 8;
+            constexpr std::size_t kExpectedViewportOverlayContributions = 3;
+            constexpr std::size_t kExpectedViewportActivationTools = 1;
+
+            if (toolRegistry.toolCount() != kExpectedToolCount ||
+                toolRegistry.panelContributionCount() != kExpectedPanelContributions ||
+                toolRegistry.actionContributionCount() != kExpectedActionContributions ||
+                toolRegistry.toolbarActionContributionCount() !=
+                    kExpectedToolbarActionContributions ||
+                toolRegistry.viewportOverlayContributionCount() !=
+                    kExpectedViewportOverlayContributions ||
+                toolRegistry.viewportActivationToolCount() != kExpectedViewportActivationTools) {
+                asharia::logError(
+                    "Editor tool registry smoke detected invalid contribution counts.");
+                return false;
+            }
+
+            return validateToolContributionTargets(toolRegistry, actionRegistry, panelRegistry) &&
+                   validateToolActivationMetadata(toolRegistry) &&
+                   validateToolToolbarSlotSmoke(toolRegistry) &&
+                   validateToolViewportOverlayQuerySmoke(toolRegistry,
+                                                         kExpectedViewportOverlayContributions);
+        }
+
+        [[nodiscard]] bool validateToolManagerAppState(const EditorToolRegistry& toolRegistry,
+                                                       const EditorToolManager& appToolManager) {
             constexpr std::string_view kSceneViewportId = "scene-view";
             constexpr std::string_view kSceneToolId = "tool.scene-view";
-            constexpr std::string_view kFrameDebuggerToolId = "tool.frame-debugger";
 
             if (appToolManager.trackedToolCount() != toolRegistry.toolCount() ||
                 appToolManager.lifecycleState(kSceneToolId) !=
@@ -505,6 +622,13 @@ namespace asharia::editor {
                 asharia::logError("Editor tool manager smoke found invalid app tool state.");
                 return false;
             }
+            return true;
+        }
+
+        [[nodiscard]] bool
+        validateToolManagerActivationRejections(const EditorToolRegistry& toolRegistry) {
+            constexpr std::string_view kSceneViewportId = "scene-view";
+            constexpr std::string_view kFrameDebuggerToolId = "tool.frame-debugger";
 
             EditorToolManager toolManager;
             if (auto synced = toolManager.syncTools(toolRegistry); !synced) {
@@ -522,91 +646,134 @@ namespace asharia::editor {
                 asharia::logError("Editor tool manager smoke activated an unknown tool.");
                 return false;
             }
+            if (toolManager.beginActivateToolForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kFrameDebuggerToolId})) {
+                asharia::logError("Editor tool manager smoke activated a non-viewport tool.");
+                return false;
+            }
+            return true;
+        }
 
-            if (auto started = toolManager.beginActivateToolForViewport(
+        [[nodiscard]] bool validateToolManagerLifecycleSmoke(EditorWorkspaceController& workspace) {
+            constexpr std::string_view kSceneViewportId = "scene-view";
+            constexpr std::string_view kSceneToolId = "tool.scene-view";
+            constexpr std::string_view kSecondarySceneToolId = "tool.scene-smoke-alt";
+
+            EditorToolRegistry lifecycleRegistry;
+            if (auto registered = lifecycleRegistry.registerTool(smokeViewportToolDesc(
+                    std::string{kSceneToolId}, "Scene Tool", std::string{kSceneViewportId}));
+                !registered) {
+                asharia::logError(registered.error().message);
+                return false;
+            }
+            if (auto registered = lifecycleRegistry.registerTool(
+                    smokeViewportToolDesc(std::string{kSecondarySceneToolId}, "Scene Smoke Alt",
+                                          std::string{kSceneViewportId}));
+                !registered) {
+                asharia::logError(registered.error().message);
+                return false;
+            }
+
+            EditorToolManager lifecycleManager;
+            if (auto synced = lifecycleManager.syncTools(lifecycleRegistry); !synced) {
+                asharia::logError(synced.error().message);
+                return false;
+            }
+
+            if (auto started = lifecycleManager.beginActivateToolForViewport(
                     {.viewportId = kSceneViewportId, .toolId = kSceneToolId});
                 !started) {
                 asharia::logError(started.error().message);
                 return false;
             }
-            if (toolManager.lifecycleState(kSceneToolId) != EditorToolLifecycleState::Activating ||
-                toolManager.activeToolForViewport(kSceneViewportId) != kSceneToolId ||
-                toolManager.activeViewportCount() != 1U) {
+            if (lifecycleManager.lifecycleState(kSceneToolId) !=
+                    EditorToolLifecycleState::Activating ||
+                lifecycleManager.activeToolForViewport(kSceneViewportId) != kSceneToolId ||
+                lifecycleManager.activeViewportCount() != 1U) {
                 asharia::logError("Editor tool manager smoke missed activating state.");
                 return false;
             }
-            if (auto completed = toolManager.completeToolActivation(
+            if (auto completed = lifecycleManager.completeToolActivation(
                     {.viewportId = kSceneViewportId, .toolId = kSceneToolId});
                 !completed) {
                 asharia::logError(completed.error().message);
                 return false;
             }
-            if (toolManager.lifecycleState(kSceneToolId) != EditorToolLifecycleState::Active ||
-                !toolManager.isToolActiveForViewport(
+            if (lifecycleManager.lifecycleState(kSceneToolId) != EditorToolLifecycleState::Active ||
+                !lifecycleManager.isToolActiveForViewport(
                     {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
                 asharia::logError("Editor tool manager smoke missed active state.");
                 return false;
             }
-            if (toolManager.completeToolActivation(
+            if (lifecycleManager.completeToolActivation(
                     {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
                 asharia::logError("Editor tool manager smoke completed activation twice.");
                 return false;
             }
-            if (toolManager.completeToolDeactivation(
+            if (lifecycleManager.completeToolDeactivation(
                     {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
                 asharia::logError("Editor tool manager smoke deactivated without suspending.");
                 return false;
             }
 
             workspace.requestLayoutReset();
-            if (!toolManager.isToolActiveForViewport(
+            if (!lifecycleManager.isToolActiveForViewport(
                     {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
                 asharia::logError(
                     "Editor tool manager smoke lost active tool during layout reset.");
                 return false;
             }
 
-            if (auto switched = toolManager.activateToolForViewport(
-                    {.viewportId = kSceneViewportId, .toolId = kFrameDebuggerToolId});
+            if (auto switched = lifecycleManager.activateToolForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kSecondarySceneToolId});
                 !switched) {
                 asharia::logError(switched.error().message);
                 return false;
             }
-            if (toolManager.lifecycleState(kSceneToolId) != EditorToolLifecycleState::Inactive ||
-                toolManager.lifecycleState(kFrameDebuggerToolId) !=
+            if (lifecycleManager.lifecycleState(kSceneToolId) !=
+                    EditorToolLifecycleState::Inactive ||
+                lifecycleManager.lifecycleState(kSecondarySceneToolId) !=
                     EditorToolLifecycleState::Active ||
-                toolManager.activeToolForViewport(kSceneViewportId) != kFrameDebuggerToolId ||
-                toolManager.activeViewportCount() != 1U) {
+                lifecycleManager.activeToolForViewport(kSceneViewportId) != kSecondarySceneToolId ||
+                lifecycleManager.activeViewportCount() != 1U) {
                 asharia::logError("Editor tool manager smoke allowed multiple active tools.");
                 return false;
             }
 
-            if (auto started = toolManager.beginDeactivateToolForViewport(
-                    {.viewportId = kSceneViewportId, .toolId = kFrameDebuggerToolId});
+            if (auto started = lifecycleManager.beginDeactivateToolForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kSecondarySceneToolId});
                 !started) {
                 asharia::logError(started.error().message);
                 return false;
             }
-            if (toolManager.lifecycleState(kFrameDebuggerToolId) !=
+            if (lifecycleManager.lifecycleState(kSecondarySceneToolId) !=
                 EditorToolLifecycleState::Suspending) {
                 asharia::logError("Editor tool manager smoke missed suspending state.");
                 return false;
             }
-            if (auto completed = toolManager.completeToolDeactivation(
-                    {.viewportId = kSceneViewportId, .toolId = kFrameDebuggerToolId});
+            if (auto completed = lifecycleManager.completeToolDeactivation(
+                    {.viewportId = kSceneViewportId, .toolId = kSecondarySceneToolId});
                 !completed) {
                 asharia::logError(completed.error().message);
                 return false;
             }
-            if (toolManager.lifecycleState(kFrameDebuggerToolId) !=
+            if (lifecycleManager.lifecycleState(kSecondarySceneToolId) !=
                     EditorToolLifecycleState::Inactive ||
-                !toolManager.activeToolForViewport(kSceneViewportId).empty() ||
-                toolManager.activeViewportCount() != 0U) {
+                !lifecycleManager.activeToolForViewport(kSceneViewportId).empty() ||
+                lifecycleManager.activeViewportCount() != 0U) {
                 asharia::logError("Editor tool manager smoke missed inactive state.");
                 return false;
             }
 
             return true;
+        }
+
+        [[nodiscard]] bool validateToolManagerSmoke(const EditorToolRegistry& toolRegistry,
+                                                    const EditorToolManager& appToolManager,
+                                                    EditorWorkspaceController& workspace) {
+            return validateToolManagerAppState(toolRegistry, appToolManager) &&
+                   validateToolManagerActivationRejections(toolRegistry) &&
+                   validateToolManagerLifecycleSmoke(workspace);
         }
 
     } // namespace
@@ -622,7 +789,7 @@ namespace asharia::editor {
 
         return validatePanelRegistrySmoke(actionServices.panels) &&
                validateActionRegistrySmoke(actionRegistry, actionServices) &&
-               validateEditorExtensionRegistrySmoke() &&
+               validateEditorExtensionRegistrySmoke() && validateToolActivationDescriptorSmoke() &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, actionServices.panels) &&
                validateToolManagerSmoke(toolRegistry, toolManager, actionServices.workspace) &&
                validateEditorSettingsSmoke(mode, settings, i18n) &&

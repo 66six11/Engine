@@ -111,9 +111,11 @@ layout、stage、access 和 descriptor/resource 合同显式、可验证。
 
 E 补充（2026-06-02）: `EditorToolManager` 已作为 editor-only lifecycle owner 接入 `EditorAppServices`，从
 `EditorToolRegistry` 同步 built-in tools，按 viewport 记录 primary active tool，并通过 startup registration smoke
-验证 unknown-tool 拒绝、activate/deactivate begin-complete 前置条件、layout reset 稳定和同一 viewport tool 切换。Scene View
-overlay strip、tool property model、input behavior routing 和 scene/asset mutation 仍不视作完成，后续必须继续走
-capability-scoped context 与 command/transaction 边界。
+验证 unknown-tool 拒绝、activate/deactivate begin-complete 前置条件、layout reset 稳定和同一 viewport tool 切换；同日已让
+`EditorToolDesc` 声明 activation policy / activation viewport ids，manager 会拒绝 Frame Debugger 这类非 viewport tool
+激活到 Scene View，并用 descriptor 负例 smoke 锁住空、缺失和重复 viewport id。Scene View overlay strip、tool property
+model、input behavior routing 和 scene/asset mutation 仍不视作完成，后续必须继续走 capability-scoped context 与
+command/transaction 边界。
 
 F 补充（2026-06-01）: Phase 5-BA 已把 image slot validation 与 buffer slot validation 分别拆到 `render_graph_image_slot_validation.hpp/.cpp` 和 `render_graph_buffer_slot_validation.hpp/.cpp`，`render_graph_slot_validation.cpp` 只保留跨 image/buffer duplicate slot name check 与 pass-slot 编排，避免重新形成 validation 大实现单元。
 

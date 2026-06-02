@@ -31,6 +31,8 @@ namespace asharia::editor {
         toolRegistry.visitTools([&](const EditorToolDesc& tool) {
             ToolState* existing = findToolState(tool.id.value);
             if (existing != nullptr) {
+                existing->activationPolicy = tool.activationPolicy;
+                existing->activationViewportIds = tool.activationViewportIds;
                 if (existing->lifecycle == EditorToolLifecycleState::Unregistered) {
                     existing->lifecycle = EditorToolLifecycleState::Available;
                 }
@@ -38,6 +40,8 @@ namespace asharia::editor {
             }
             tools_.push_back(ToolState{
                 .toolId = tool.id.value,
+                .activationPolicy = tool.activationPolicy,
+                .activationViewportIds = tool.activationViewportIds,
                 .lifecycle = EditorToolLifecycleState::Available,
             });
         });
@@ -235,6 +239,15 @@ namespace asharia::editor {
         return &(*found);
     }
 
+    bool EditorToolManager::toolSupportsViewportActivation(const ToolState& tool,
+                                                           std::string_view viewportId) {
+        return tool.activationPolicy != EditorToolActivationPolicy::None &&
+               std::ranges::any_of(tool.activationViewportIds,
+                                   [viewportId](const std::string& viewportActivationId) {
+                                       return std::string_view{viewportActivationId} == viewportId;
+                                   });
+    }
+
     bool EditorToolManager::hasActiveViewportForTool(std::string_view toolId) const {
         return std::ranges::any_of(viewports_, [toolId](const ViewportToolState& viewport) {
             return std::string_view{viewport.activeToolId} == toolId;
@@ -258,7 +271,15 @@ namespace asharia::editor {
         if (binding.viewportId.empty()) {
             return std::unexpected{toolManagerError("Editor tool viewport id must not be empty")};
         }
-        return validateKnownTool(binding.toolId);
+        if (auto validated = validateKnownTool(binding.toolId); !validated) {
+            return validated;
+        }
+        const ToolState* tool = findToolState(binding.toolId);
+        if (tool == nullptr || !toolSupportsViewportActivation(*tool, binding.viewportId)) {
+            return std::unexpected{
+                toolManagerError("Editor tool does not support activation for viewport")};
+        }
+        return {};
     }
 
 } // namespace asharia::editor

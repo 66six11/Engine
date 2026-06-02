@@ -207,17 +207,18 @@ extension stable ids, rejects duplicate tool ids during a reload-style replace, 
 `EditorToolRegistry`. It does not load external JSON/script packages yet, and it does not own panel factories or action
 callbacks. Those remain in `EditorPanelRegistry` and `EditorActionRegistry`.
 
-`EditorToolRegistry` records the published tool view: panels, actions, toolbar buttons and viewport overlay intents. It does
-not own panel factories or invoke commands. The command bar is generated from tool toolbar contributions, so future tools can
-shape the editor chrome without adding more hard-coded button lists to `imgui_editor_shell`.
+`EditorToolRegistry` records the published tool view: panels, actions, toolbar buttons, viewport overlay intents and
+viewport activation metadata. It does not own panel factories or invoke commands. The command bar is generated from tool
+toolbar contributions, so future tools can shape the editor chrome without adding more hard-coded button lists to
+`imgui_editor_shell`.
 Viewport overlay contributions are queried by viewport id through `visitViewportOverlays()`. Scene View uses that query to
 draw its compact grid/gizmo/selection-outline strip over the sampled viewport while keeping overlay ids tool-owned.
 
 `EditorToolManager` owns the editor-only lifecycle state for those registered tools. It syncs from `EditorToolRegistry`,
-tracks one primary active tool per viewport, exposes begin/complete activation and deactivation states, and marks missing
-tools as `Unregistered` during reload-style sync. It does not execute tool behavior, mutate scene data, draw panel contents
-or decide renderer pass insertion; those remain command/transaction, panel, viewport coordinator and renderer-owned
-responsibilities.
+tracks one primary active tool per viewport, rejects activation when the tool did not declare support for that viewport,
+exposes begin/complete activation and deactivation states, and marks missing tools as `Unregistered` during reload-style
+sync. It does not execute tool behavior, mutate scene data, draw panel contents or decide renderer pass insertion; those
+remain command/transaction, panel, viewport coordinator and renderer-owned responsibilities.
 
 ### ImGui theme
 
@@ -306,13 +307,14 @@ Panel rules:
 
 Add built-in tool metadata through `EditorExtensionRegistry` manifest-like descriptors, then publish the tool view into
 `EditorToolRegistry` after registering the tool's panels and actions. A tool may contribute panel ids, action ids, toolbar
-slots and viewport overlay ids. Contribution ids must point at existing panel and action registries; overlay ids are
-editor-facing intent until a concrete viewport overlay renderer consumes them.
+slots, viewport overlay ids and viewport activation metadata. Contribution ids must point at existing panel and action
+registries; overlay ids are editor-facing intent until a concrete viewport overlay renderer consumes them.
 
 Tool rules:
 
 - Do not execute actions or draw panel contents from the tool registry.
 - Use `EditorToolManager` for active tool and lifecycle state; do not keep competing active-tool booleans in panels.
+- Declare activation policy and activation viewport ids before a tool can become a viewport's primary active tool.
 - Keep toolbar placement as metadata; the shell decides how toolbar slots are presented.
 - Keep viewport overlay ids backend-neutral and map them to RenderView/debug draw inputs through the viewport coordinator.
 - Query viewport overlays by viewport id when panel chrome needs controls; do not duplicate another tool's overlay list in a

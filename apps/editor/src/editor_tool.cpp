@@ -1,6 +1,7 @@
 ﻿#include "editor_tool.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 #include "asharia/core/error.hpp"
@@ -17,24 +18,44 @@ namespace asharia::editor {
             return action.actionId.empty();
         }
 
+        [[nodiscard]] bool emptyActivationViewportId(const std::string& viewportId) {
+            return viewportId.empty();
+        }
+
         [[nodiscard]] bool
         emptyViewportOverlayContribution(const EditorToolViewportOverlayContribution& overlay) {
             return overlay.overlayId.empty() || overlay.viewportId.empty();
         }
 
         [[nodiscard]] std::size_t toolbarActionCount(const EditorToolDesc& tool) {
-            return static_cast<std::size_t>(std::ranges::count_if(
-                tool.actions, [](const EditorToolActionContribution& action) {
+            return static_cast<std::size_t>(
+                std::ranges::count_if(tool.actions, [](const EditorToolActionContribution& action) {
                     return action.toolbarSlot != EditorToolbarSlot::None;
                 }));
+        }
+
+        [[nodiscard]] bool hasDuplicateActivationViewportIds(const EditorToolDesc& desc) {
+            for (auto viewport = desc.activationViewportIds.begin();
+                 viewport != desc.activationViewportIds.end(); ++viewport) {
+                const auto duplicate = std::ranges::find(
+                    std::next(viewport), desc.activationViewportIds.end(), *viewport);
+                if (duplicate != desc.activationViewportIds.end()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool hasViewportActivationPolicy(const EditorToolDesc& desc) {
+            return desc.activationPolicy != EditorToolActivationPolicy::None;
         }
 
     } // namespace
 
     asharia::VoidResult EditorToolRegistry::registerTool(EditorToolDesc desc) {
         if (desc.id.value.empty()) {
-            return std::unexpected{asharia::Error{asharia::ErrorDomain::Core, 0,
-                                                  "Editor tool id must not be empty"}};
+            return std::unexpected{
+                asharia::Error{asharia::ErrorDomain::Core, 0, "Editor tool id must not be empty"}};
         }
         if (desc.title.empty()) {
             return std::unexpected{asharia::Error{asharia::ErrorDomain::Core, 0,
@@ -53,10 +74,30 @@ namespace asharia::editor {
             return std::unexpected{asharia::Error{asharia::ErrorDomain::Core, 0,
                                                   "Editor tool action id must not be empty"}};
         }
-        if (std::ranges::any_of(desc.viewportOverlays, emptyViewportOverlayContribution)) {
+        if (!hasViewportActivationPolicy(desc) && !desc.activationViewportIds.empty()) {
             return std::unexpected{
                 asharia::Error{asharia::ErrorDomain::Core, 0,
-                               "Editor tool viewport overlay id and viewport id must not be empty"}};
+                               "Editor tool viewport activation ids require an activation policy"}};
+        }
+        if (hasViewportActivationPolicy(desc) && desc.activationViewportIds.empty()) {
+            return std::unexpected{
+                asharia::Error{asharia::ErrorDomain::Core, 0,
+                               "Editor tool viewport activation policy requires a viewport id"}};
+        }
+        if (std::ranges::any_of(desc.activationViewportIds, emptyActivationViewportId)) {
+            return std::unexpected{
+                asharia::Error{asharia::ErrorDomain::Core, 0,
+                               "Editor tool activation viewport id must not be empty"}};
+        }
+        if (hasDuplicateActivationViewportIds(desc)) {
+            return std::unexpected{
+                asharia::Error{asharia::ErrorDomain::Core, 0,
+                               "Editor tool activation viewport ids must be unique"}};
+        }
+        if (std::ranges::any_of(desc.viewportOverlays, emptyViewportOverlayContribution)) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::Core, 0,
+                "Editor tool viewport overlay id and viewport id must not be empty"}};
         }
 
         tools_.push_back(std::move(desc));
@@ -101,6 +142,11 @@ namespace asharia::editor {
             count += tool.viewportOverlays.size();
         }
         return count;
+    }
+
+    std::size_t EditorToolRegistry::viewportActivationToolCount() const {
+        return static_cast<std::size_t>(std::ranges::count_if(
+            tools_, [](const EditorToolDesc& tool) { return hasViewportActivationPolicy(tool); }));
     }
 
     void EditorToolRegistry::visitTools(const EditorToolVisitor& visitor) const {

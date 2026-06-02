@@ -242,6 +242,8 @@ namespace asharia::editor {
                         .title = "Scene View",
                         .titleKey = "tool.sceneView",
                         .category = EditorToolCategory::Viewport,
+                        .activationPolicy = EditorToolActivationPolicy::Persistent,
+                        .activationViewportIds = {"scene-view"},
                         .panels = {EditorToolPanelContribution{.panelId = "scene-view"}},
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.scene-view",
@@ -271,6 +273,8 @@ namespace asharia::editor {
                         .title = "RenderGraph Diagnostics",
                         .titleKey = "tool.renderGraph",
                         .category = EditorToolCategory::Diagnostics,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
                         .panels = {EditorToolPanelContribution{.panelId = "render-graph"}},
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.render-graph",
@@ -283,6 +287,8 @@ namespace asharia::editor {
                         .title = "Frame Debugger",
                         .titleKey = "tool.frameDebugger",
                         .category = EditorToolCategory::Diagnostics,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
                         .panels = {EditorToolPanelContribution{.panelId = "frame-debugger"}},
                         .actions =
                             {
@@ -306,6 +312,8 @@ namespace asharia::editor {
                         .title = "Log",
                         .titleKey = "tool.log",
                         .category = EditorToolCategory::Diagnostics,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
                         .panels = {EditorToolPanelContribution{.panelId = "log"}},
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.log",
@@ -318,6 +326,8 @@ namespace asharia::editor {
                         .title = "UI Style Preview",
                         .titleKey = "tool.uiStylePreview",
                         .category = EditorToolCategory::Styling,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
                         .panels = {EditorToolPanelContribution{.panelId = "ui-style-preview"}},
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.ui-style-preview",
@@ -330,6 +340,8 @@ namespace asharia::editor {
                         .title = "Editor Settings",
                         .titleKey = "tool.editorSettings",
                         .category = EditorToolCategory::Settings,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
                         .panels = {EditorToolPanelContribution{.panelId = "editor-settings"}},
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.editor-settings",
@@ -342,6 +354,8 @@ namespace asharia::editor {
                         .title = "Workspace Layout",
                         .titleKey = "tool.workspaceLayout",
                         .category = EditorToolCategory::Core,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
                         .panels = {},
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.reset-layout",
@@ -366,8 +380,7 @@ namespace asharia::editor {
     [[nodiscard]] asharia::VoidResult
     registerEditorAppRegistries(EditorPanelRegistry& panelRegistry,
                                 EditorActionRegistry& actionRegistry,
-                                EditorToolRegistry& toolRegistry,
-                                EditorEventQueue& eventQueue) {
+                                EditorToolRegistry& toolRegistry, EditorEventQueue& eventQueue) {
         panelRegistry.setEventQueue(&eventQueue);
 
         auto panels = registerEditorPanels(panelRegistry);

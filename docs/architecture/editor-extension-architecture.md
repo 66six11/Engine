@@ -142,10 +142,12 @@ Registered
 - contributed commands
 - contributed viewport overlays
 - activation policy: persistent, modal, one-shot
+- activation viewport ids
 
 Rules:
 
 - 同一 viewport 一次只有一个 primary active tool，但可以有多个 passive overlay provider。
+- 只有声明了 activation policy 和匹配 activation viewport id 的 tool 才能成为该 viewport 的 primary active tool。
 - 工具 property 是 editor state，不是 scene serialization。
 - 工具对 scene/asset 的持久修改必须通过 command/transaction。
 - 工具 input 从 `EditorInputRouter` 的 snapshot 消费，不直接读 GLFW/ImGui global state。
@@ -323,8 +325,10 @@ Status: current / partial.
 - 已新增 `EditorToolManager`，由 `EditorAppServices` 拥有，并在 built-in tools 发布到 `EditorToolRegistry` 后同步。
 - 已支持 per-viewport primary active tool、`Available -> Activating -> Active -> Suspending -> Inactive`
   生命周期、reload 后 missing tool 的 `Unregistered` 状态，以及 begin/complete 成对的 activate/deactivate 断言。
+- `EditorToolDesc` 已声明 activation policy 和 activation viewport ids；当前只有 Scene View tool 可激活到
+  `scene-view`，Frame Debugger 等 diagnostics tool 只贡献 panel/action，不会被 primary viewport activation 接收。
 - startup registration smoke 验证工具同步、未知 tool 拒绝、同一 viewport 切换时旧工具失活、layout reset 不丢失 active tool
-  和未经过 suspending 的 deactivation 拒绝。
+  和未经过 suspending 的 deactivation 拒绝，并验证非 viewport tool 不能被激活到 Scene View。
 - 未完成：Scene View overlay strip 读取 active/passive tool state、tool property model、input behavior routing、
   selection/gizmo mutation 和外部 manifest reload 后的 UI diagnostics。
 

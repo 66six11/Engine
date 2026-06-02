@@ -827,14 +827,19 @@ Implementation:
   published to `EditorToolRegistry`.
 - The manager tracks one primary active tool per viewport and exposes explicit begin/complete activation and deactivation
   states: `Available`, `Activating`, `Active`, `Suspending`, `Inactive` and `Unregistered`.
+- `EditorToolDesc` now carries activation policy and activation viewport ids; `EditorToolManager` rejects activation when a
+  tool did not declare support for the requested viewport, so diagnostics tools such as Frame Debugger stay panel/action
+  contributors rather than Scene View primary tools.
 - Startup registration smoke now verifies tool sync, unknown-tool rejection, activation completion, duplicate completion
-  rejection, deactivation precondition checks, layout reset stability and same-viewport tool switching.
+  rejection, deactivation precondition checks, layout reset stability, same-viewport tool switching, invalid activation
+  descriptors and non-viewport tool activation rejection.
 - Still deferred: Scene View overlay strip consumption of active/passive tool state, tool property models, input behavior
   routing and scene/asset mutation through commands.
 
 Validation:
 
-- Smoke verifies tool activation/deactivation state and that Scene View chrome remains stable across layout reset.
+- Smoke verifies tool activation/deactivation state, descriptor metadata validation, unsupported viewport activation rejection
+  and that Scene View chrome remains stable across layout reset.
 
 ### 16.13 Viewport Overlay Provider Contract
 
