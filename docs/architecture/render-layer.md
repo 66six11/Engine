@@ -51,6 +51,7 @@
 - `debug_preview.inl`
 - `render_view_targets.inl`
 - `render_view_diagnostics.inl`
+- `render_view_recording.inl`
 - `descriptor_layout_smoke.inl`
 - `fullscreen_texture_renderer.inl`
 - `mrt_renderer.inl`
@@ -59,7 +60,7 @@
 - `mesh3d_renderer.inl`
 - `draw_list_renderer.inl`
 
-这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 image-only graph compile、transient image preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态和 image copy pass；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder。fullscreen graph construction 和 compute buffer/readback 仍留在原调用点，避免抽象过早扩大。
+这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 image-only graph compile、transient image preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态和 image copy pass；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder；`render_view_recording.inl` 只覆盖 RenderView world-grid / debug-line overlay pass policy 与 graph pass insertion。fullscreen source/composite pass、descriptor set、pipeline readiness、debug preview 调度和 compute buffer/readback 仍留在原 owner，避免抽象过早扩大。
 
 ## 当前限制
 
@@ -74,6 +75,6 @@
 
 ## 下一步收敛
 
-1. 先判断是否值得继续拆 `recordViewFrame()` 的 graph construction 到 `render_view_recording.inl`；如果拆分只会移动单一调用点而不改善阅读，应暂停。
-2. 后续再评估是否把 RenderView 路径从 `BasicFullscreenTextureRenderer` 中独立成更明确的 view renderer，fullscreen composite 只保留为消费 sampled texture 的 pass。
+1. 后续再评估是否把 RenderView 路径从 `BasicFullscreenTextureRenderer` 中独立成更明确的 view renderer，fullscreen composite 只保留为消费 sampled texture 的 pass。
+2. 如果新增 scene mesh、selection 或 gizmo pass，先扩展 `render_view_recording.inl` 的 pass policy / insertion helper，再决定是否需要更正式的 RenderView recorder owner。
 3. 保持 `renderer_basic` 后端无关，把 Vulkan 录制和资源生命周期继续限制在 `renderer_basic_vulkan` / `rhi_vulkan`。

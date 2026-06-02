@@ -1839,6 +1839,7 @@ namespace asharia {
 #include "basic_renderers/graph_recording.inl"
 #include "basic_renderers/render_view_targets.inl"
 #include "basic_renderers/debug_preview.inl"
+#include "basic_renderers/render_view_recording.inl"
         [[nodiscard]] Result<void>
         validateBasicDrawListItems(std::span<const BasicDrawListItem> drawItems) {
             if (drawItems.empty()) {

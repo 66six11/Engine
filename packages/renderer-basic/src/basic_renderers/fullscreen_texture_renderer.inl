@@ -650,21 +650,19 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     std::vector<BasicDebugWorldLine> debugWorldLines(view.overlay.debugWorldLines.begin(),
                                                      view.overlay.debugWorldLines.end());
     view.overlay.debugWorldLines = std::span<const BasicDebugWorldLine>{debugWorldLines};
-    const bool worldGridEnabled = view.overlay.enabled && view.overlay.worldGrid.enabled;
-    if (worldGridEnabled) {
+    const BasicRenderViewPassPolicy renderViewPassPolicy =
+        basicRenderViewPassPolicy(view, debugWorldLines);
+    if (renderViewPassPolicy.worldGridEnabled) {
         auto worldGridPipeline =
             ensureWorldGridPipeline(view.target.format, view.overlay.blendMode);
         if (!worldGridPipeline) {
             return std::unexpected{std::move(worldGridPipeline.error())};
         }
     }
-    const BasicRenderViewWorldGridParams worldGridParams =
-        basicRenderViewWorldGridParams(view);
-    const BasicRenderViewOverlayParams overlayParams = basicRenderViewOverlayParams(view);
     std::vector<BasicDebugLineVertex> debugLineVertices;
     VkBuffer debugLineVertexBuffer = VK_NULL_HANDLE;
     std::uint32_t debugLineVertexCount = 0;
-    if (view.overlay.enabled && !debugWorldLines.empty()) {
+    if (renderViewPassPolicy.debugLineOverlayEnabled) {
         auto debugLinePipeline =
             ensureDebugLinePipeline(view.target.format, view.overlay.blendMode);
         if (!debugLinePipeline) {
@@ -731,55 +729,24 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
         return std::unexpected{std::move(debugPreviewAfterFullscreen.error())};
     }
 
-    if (worldGridEnabled) {
+    if (renderViewPassPolicy.worldGridEnabled) {
         const std::size_t worldGridPassIndex = renderViewPassIndex++;
-        graph.addPass("RenderViewWorldGrid", kBasicRenderViewWorldGridPassType)
-            .setParams(kBasicRenderViewWorldGridParamsType, worldGridParams)
-            .writeColor("target", renderTarget)
-            .recordCommands([worldGridParams](RenderGraphCommandList& commands) {
-                commands.setShader("Hidden/RenderViewWorldGrid", "Fullscreen")
-                    .setVec4("CameraPositionNear", worldGridParams.cameraPositionNear)
-                    .setVec4("ViewportFade", worldGridParams.viewportFade)
-                    .setVec4("GridSettings", worldGridParams.gridSettings)
-                    .drawFullscreenTriangle();
-            })
-            .execute([&frame, &bindings, viewTarget, camera = view.camera,
-                      colorLoadOp = view.overlay.colorLoadOp,
-                      colorStoreOp = view.overlay.colorStoreOp,
-                      worldGridPipeline = worldGridPipeline_.handle(),
-                      worldGridPipelineLayout = worldGridPipelineLayout_.handle(),
-                      &eventRecorder](RenderGraphPassContext pass) -> Result<void> {
-                return executeBasicRenderViewWorldGridPass(
-                    frame, pass, bindings, viewTarget.extent, camera, colorLoadOp, colorStoreOp,
-                    worldGridPipeline, worldGridPipelineLayout, &eventRecorder);
-            });
+        addBasicRenderViewWorldGridPass(
+            graph, renderTarget, renderViewPassPolicy, frame, bindings, viewTarget, view.camera,
+            view.overlay.colorLoadOp, view.overlay.colorStoreOp, worldGridPipeline_.handle(),
+            worldGridPipelineLayout_.handle(), eventRecorder);
         auto debugPreviewAfterWorldGrid = tryAddDebugPreviewAfterPass(worldGridPassIndex);
         if (!debugPreviewAfterWorldGrid) {
             return std::unexpected{std::move(debugPreviewAfterWorldGrid.error())};
         }
     }
 
-    if (view.overlay.enabled && !debugWorldLines.empty()) {
+    if (renderViewPassPolicy.debugLineOverlayEnabled) {
         const std::size_t overlayPassIndex = renderViewPassIndex++;
-        graph.addPass("RenderViewOverlayInputs", kBasicRenderViewOverlayPassType)
-            .setParams(kBasicRenderViewOverlayParamsType, overlayParams)
-            .writeColor("target", renderTarget)
-            .recordCommands([overlayParams](RenderGraphCommandList& commands) {
-                commands.setShader("Hidden/RenderViewOverlay", "Inputs")
-                    .setVec4("CameraPositionNear", overlayParams.cameraPositionNear)
-                    .setVec4("FrameTimeScale", overlayParams.frameTimeScale)
-                    .setInt("DebugWorldLineCount",
-                            static_cast<int>(overlayParams.debugWorldLineCount));
-            })
-            .execute([&frame, &bindings, viewTarget, colorLoadOp = view.overlay.colorLoadOp,
-                      colorStoreOp = view.overlay.colorStoreOp,
-                      debugLinePipeline = debugLinePipeline_.handle(), debugLineVertexBuffer,
-                      debugLineVertexCount,
-                      &eventRecorder](RenderGraphPassContext pass) -> Result<void> {
-                return executeBasicRenderViewOverlayPass(
-                    frame, pass, bindings, viewTarget.extent, colorLoadOp, colorStoreOp,
-                    debugLinePipeline, debugLineVertexBuffer, debugLineVertexCount, &eventRecorder);
-            });
+        addBasicRenderViewOverlayPass(
+            graph, renderTarget, renderViewPassPolicy, frame, bindings, viewTarget,
+            view.overlay.colorLoadOp, view.overlay.colorStoreOp, debugLinePipeline_.handle(),
+            debugLineVertexBuffer, debugLineVertexCount, eventRecorder);
         auto debugPreviewAfterOverlay = tryAddDebugPreviewAfterPass(overlayPassIndex);
         if (!debugPreviewAfterOverlay) {
             return std::unexpected{std::move(debugPreviewAfterOverlay.error())};

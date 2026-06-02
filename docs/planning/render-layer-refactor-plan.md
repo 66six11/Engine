@@ -153,7 +153,7 @@
 
 ## Phase 3：Render View Recording Split
 
-状态：已完成第一版。已经拆出 target 和 diagnostics/event 支撑；`recordViewFrame()` 的 graph construction 仍留在 fullscreen renderer 内，避免为了单一调用点过早抽出 `render_view_recording.inl`。
+状态：已完成第二版。已经拆出 target、diagnostics/event 支撑，并新增窄私有 `render_view_recording.inl` 来承载 RenderView overlay pass policy 和 pass insertion；`recordViewFrame()` 仍保留 fullscreen source/composite、descriptor、pipeline readiness、debug preview 调度和 graph compile/execute 编排。
 
 目标：把 RenderView target validation、diagnostics snapshot、execution event recorder 和 offscreen/swapchain target 转换的职责从 fullscreen renderer 中分离出来。
 
@@ -161,10 +161,18 @@
 
 - `render_view_targets.inl`
 - `render_view_diagnostics.inl`
+- `render_view_recording.inl`
 
-暂未新增：
+`render_view_recording.inl` 当前只做两件事：
 
-- `render_view_recording.inl`，因为当前 graph construction 仍与 fullscreen source、fullscreen pass、debug preview 候选和 descriptor update 紧密耦合。只有在能明确缩短 `recordViewFrame()` 或服务第二个 RenderView 调用方时再拆。
+- 从 `BasicRenderViewDesc` 和 copied debug-world-line span 推导 `BasicRenderViewPassPolicy`。
+- 插入 `builtin.render-view-world-grid` 和 `builtin.render-view-overlay` passes，包括 typed params、command summary 和 Vulkan executor callback 绑定。
+
+仍不迁移：
+
+- `ClearFullscreenSource` 和 `FullscreenTexture` pass，因为它们属于 `BasicFullscreenTextureRenderer` 的 source/composite 路径。
+- descriptor set acquisition、pipeline readiness 和 debug line vertex upload，因为它们是 renderer resource lifecycle。
+- debug preview candidate/after-pass 调度，因为它依赖当前 frame replay request 和 pass index。
 
 进入条件：
 
