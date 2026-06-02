@@ -3187,7 +3187,8 @@ namespace {
     }
 
     [[nodiscard]] bool validateRenderViewGridReadbackDiagnostics(
-        const asharia::BasicRenderViewDiagnostics& diagnostics, bool diagnosticsRecorded) {
+        const asharia::BasicRenderViewDiagnostics& diagnostics, bool diagnosticsRecorded,
+        std::size_t probeIndex) {
         if (!diagnosticsRecorded || diagnostics.viewKind != asharia::BasicRenderViewKind::Scene ||
             !diagnostics.overlay.enabled || !diagnostics.overlay.worldGridEnabled) {
             asharia::logError("RenderView grid readback smoke missed Scene View grid diagnostics.");
@@ -3215,6 +3216,34 @@ namespace {
         if (gridDraw == diagnostics.executionEvents.end() || gridDraw->draw.vertexCount != 3U) {
             asharia::logError(
                 "RenderView grid readback smoke did not record the world-grid draw event.");
+            return false;
+        }
+
+        const auto lodCommand = std::ranges::find_if(
+            diagnostics.renderGraph.commands,
+            [](const asharia::RenderGraphDiagnosticsCommandNode& command) {
+                return command.kind == asharia::RenderGraphCommandKind::SetVec4 &&
+                       command.detail.starts_with("GridLodSettings = ");
+            });
+        if (lodCommand == diagnostics.renderGraph.commands.end()) {
+            asharia::logError(
+                "RenderView grid readback smoke did not record world-grid LOD settings.");
+            return false;
+        }
+
+        constexpr std::string_view kCloseGridLodSettings{
+            "GridLodSettings = (1.000000, 1.000000, 0.000000, 10.000000)"};
+        const bool closeGridLod = lodCommand->detail == kCloseGridLodSettings;
+        if (probeIndex < 2U && !closeGridLod) {
+            asharia::logError(
+                "RenderView grid readback smoke expected close cameras to use stable base LOD "
+                "but found '" +
+                lodCommand->detail + "'.");
+            return false;
+        }
+        if (probeIndex >= 2U && closeGridLod) {
+            asharia::logError(
+                "RenderView grid readback smoke expected high camera to leave stable base LOD.");
             return false;
         }
         return true;
@@ -3318,9 +3347,10 @@ namespace {
 
     [[nodiscard]] bool readSmokeRenderViewGridReadbackProbes(
         std::span<SmokeRenderViewGridReadbackProbe> probes) {
+        std::size_t probeIndex = 0;
         for (SmokeRenderViewGridReadbackProbe& probe : probes) {
             if (!validateRenderViewGridReadbackDiagnostics(probe.diagnostics,
-                                                           probe.diagnosticsRecorded)) {
+                                                           probe.diagnosticsRecorded, probeIndex)) {
                 return false;
             }
             auto read = probe.readback.read(std::span<std::byte>{probe.pixels});
@@ -3328,6 +3358,7 @@ namespace {
                 asharia::logError(read.error().message);
                 return false;
             }
+            ++probeIndex;
         }
         return true;
     }

@@ -921,9 +921,9 @@ flowchart TD
     到 world ray 的后端无关语义；该 ray 用 inverse view-projection 计算，`origin`/`nearPoint` 位于
     near clipping plane，`farPoint` 位于 far clipping plane。当前 `recordViewFrame()` 会在
     `BasicRenderViewOverlayDesc::worldGrid` enabled 时插入 `builtin.render-view-world-grid` fullscreen
-    overlay pass，用 inverse view-projection / camera / optional fade push constants 绘制 XZ world grid；
-    `fadeStart == fadeEnd == 0` 时不做距离淡出，shader 按 camera 到 grid plane 的垂直距离在
-    1/2/5/10 spacing 间整帧平滑切换。
+    overlay pass，用 inverse view-projection / camera / optional fade / per-view LOD push constants 绘制
+    XZ world grid；`fadeStart == fadeEnd == 0` 时不做距离淡出，RenderView policy 按 camera 到 grid plane
+    的垂直距离计算整帧统一的 1/2/5/10 spacing，低高度锁定 base spacing，shader 只消费 `GridLodSettings`。
     overlay intent 和 source overlay id 会进入 RenderView diagnostics，但只有存在 `BasicDebugWorldLine` 时才插入
     `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 作为 typed params 与 command summary
     记录，并由 `renderer_basic_vulkan` 把 world line 投影为 line-list vertex buffer 绘制到目标 attachment。

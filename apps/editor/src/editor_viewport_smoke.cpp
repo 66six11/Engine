@@ -246,7 +246,7 @@ namespace asharia::editor {
             }
             if (renderGraphPassTypeCount(scene.renderGraph,
                                          asharia::kBasicRenderViewWorldGridPassType) != 1U ||
-                renderGraphWorldGridCommandCount(scene.renderGraph) != 5U ||
+                renderGraphWorldGridCommandCount(scene.renderGraph) != 6U ||
                 renderGraphPassTypeCount(scene.renderGraph,
                                          asharia::kBasicRenderViewOverlayPassType) != 0U ||
                 renderGraphOverlayCommandCount(scene.renderGraph) != 0U) {

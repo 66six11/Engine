@@ -22,8 +22,9 @@
 - `recordViewFrame()` 当前会构建 RenderGraph、记录 diagnostics 和 execution events。overlay intent 会进入
   `BasicRenderViewDiagnostics`；`BasicRenderViewOverlayDesc::worldGrid` enabled 时插入
   `builtin.render-view-world-grid`，由 `renderer_basic_vulkan` 用 fullscreen triangle、push constants 中的
-  inverse view-projection / camera / optional fade 参数绘制 XZ world grid；shader 根据 camera 到 grid plane 的垂直距离在
-  1/2/5/10 world spacing 间整帧平滑切换，`fadeStart == fadeEnd == 0` 时不做距离淡出，避免高视角像被 depth fog
+  inverse view-projection / camera / optional fade / per-view LOD 参数绘制 XZ world grid；RenderView policy
+  根据 camera 到 grid plane 的垂直距离计算整帧统一的 1/2/5/10 world spacing LOD，低高度会锁定 base spacing，
+  shader 只消费 `GridLodSettings`，`fadeStart == fadeEnd == 0` 时不做距离淡出，避免高视角像被 depth fog
   裁掉。`BasicRenderViewOverlayDesc::sourceOverlayIds` 只作为 diagnostics 溯源元数据由 renderer 复制保存，
   不改变 graph/pass 执行语义。只有存在 debug-world-line 数据时才插入
   `builtin.render-view-overlay` pass，把 camera / frame / debug-world-line count 作为 typed params 与 command

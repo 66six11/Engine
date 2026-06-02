@@ -51,11 +51,20 @@ namespace asharia {
             std::array<float, 4> cameraPositionNear{};
             std::array<float, 4> viewportFade{};
             std::array<float, 4> gridSettings{};
+            std::array<float, 4> gridLodSettings{};
         };
 
         static_assert(sizeof(BasicRenderViewWorldGridPushConstants) <= 128);
 
         constexpr std::uint32_t kBasicComputeValueCount = 4;
+        constexpr float kBasicWorldGridMinimumSpacing = 0.0001F;
+        constexpr float kBasicWorldGridStableBaseSpacings = 24.0F;
+        constexpr float kBasicWorldGridLodTransitionBaseSpacings = 16.0F;
+
+        struct BasicWorldGridSmoothStepRange {
+            float start{};
+            float end{};
+        };
 
         struct BasicFullscreenTexturePassMessages {
             std::string_view paramsContext;
@@ -168,6 +177,64 @@ namespace asharia {
             };
         }
 
+        [[nodiscard]] float basicSmoothWorldGridStep(BasicWorldGridSmoothStepRange range,
+                                                     float value) {
+            const float denominator =
+                std::max(range.end - range.start, kBasicWorldGridMinimumSpacing);
+            const float interpolation =
+                std::clamp((value - range.start) / denominator, 0.0F, 1.0F);
+            return interpolation * interpolation * (3.0F - (2.0F * interpolation));
+        }
+
+        [[nodiscard]] std::array<float, 4>
+        basicRenderViewWorldGridLodSettings(const BasicRenderViewDesc& view) {
+            const BasicRenderViewWorldGridDesc& grid = view.overlay.worldGrid;
+            const float minorSpacing = std::max(grid.minorSpacing, kBasicWorldGridMinimumSpacing);
+            const float configuredMajorSpacing = std::max(grid.majorSpacing, minorSpacing);
+            const float majorInterval =
+                std::max(std::floor((configuredMajorSpacing / minorSpacing) + 0.5F), 2.0F);
+            const float baseMajorSpacing = minorSpacing * majorInterval;
+            const float verticalDistance = std::abs(view.camera.position[1] - grid.planeY);
+            const float stableDistance = minorSpacing * kBasicWorldGridStableBaseSpacings;
+            if (verticalDistance <= stableDistance) {
+                return {minorSpacing, minorSpacing, 0.0F, baseMajorSpacing};
+            }
+
+            const float transitionDistance =
+                std::max(minorSpacing * kBasicWorldGridLodTransitionBaseSpacings,
+                         kBasicWorldGridMinimumSpacing);
+            const float normalized =
+                std::max(((verticalDistance - stableDistance) / transitionDistance) + 1.0F, 1.0F);
+            const float decadeExponent = std::floor(std::log10(normalized));
+            const float decade =
+                std::max(std::pow(10.0F, decadeExponent), kBasicWorldGridMinimumSpacing);
+            const float local = normalized / decade;
+
+            float step = 1.0F;
+            float nextStep = 2.0F;
+            float transitionStart = 1.0F;
+            float transitionEnd = 2.0F;
+            if (local >= 5.0F) {
+                step = 5.0F;
+                nextStep = 10.0F;
+                transitionStart = 5.0F;
+                transitionEnd = 10.0F;
+            } else if (local >= 2.0F) {
+                step = 2.0F;
+                nextStep = 5.0F;
+                transitionStart = 2.0F;
+                transitionEnd = 5.0F;
+            }
+
+            const float spacing = minorSpacing * decade * step;
+            const float nextSpacing = minorSpacing * decade * nextStep;
+            const float majorSpacing = spacing * majorInterval;
+            const float blend = basicSmoothWorldGridStep(
+                BasicWorldGridSmoothStepRange{.start = transitionStart, .end = transitionEnd},
+                local);
+            return {spacing, nextSpacing, blend, majorSpacing};
+        }
+
         [[nodiscard]] BasicRenderViewWorldGridParams
         basicRenderViewWorldGridParams(const BasicRenderViewDesc& view) {
             const BasicRenderViewWorldGridDesc& grid = view.overlay.worldGrid;
@@ -193,6 +260,7 @@ namespace asharia {
                         grid.planeY,
                         grid.opacity,
                     },
+                .gridLodSettings = basicRenderViewWorldGridLodSettings(view),
                 .viewKind = basicRenderViewKindValue(view.viewKind),
                 .enabled = grid.enabled ? 1U : 0U,
                 .reserved0 = 0,
@@ -274,16 +342,17 @@ namespace asharia {
         [[nodiscard]] Result<void>
         validateBasicRenderViewWorldGridCommands(RenderGraphPassContext pass,
                                                  BasicRenderViewWorldGridParams params) {
-            if (pass.commands.size() != 5) {
+            if (pass.commands.size() != 6) {
                 return std::unexpected{
-                    renderGraphError("RenderView world grid pass expected exactly five commands")};
+                    renderGraphError("RenderView world grid pass expected exactly six commands")};
             }
 
             const RenderGraphCommand& shader = pass.commands[0];
             const RenderGraphCommand& camera = pass.commands[1];
             const RenderGraphCommand& viewportFade = pass.commands[2];
             const RenderGraphCommand& gridSettings = pass.commands[3];
-            const RenderGraphCommand& draw = pass.commands[4];
+            const RenderGraphCommand& gridLodSettings = pass.commands[4];
+            const RenderGraphCommand& draw = pass.commands[5];
 
             auto shaderKind = expectCommandKind(shader, RenderGraphCommandKind::SetShader,
                                                 "RenderView world grid shader");
@@ -304,6 +373,12 @@ namespace asharia {
                                                   "RenderView world grid settings");
             if (!settingsKind) {
                 return std::unexpected{std::move(settingsKind.error())};
+            }
+            auto lodSettingsKind =
+                expectCommandKind(gridLodSettings, RenderGraphCommandKind::SetVec4,
+                                  "RenderView world grid LOD settings");
+            if (!lodSettingsKind) {
+                return std::unexpected{std::move(lodSettingsKind.error())};
             }
             auto drawKind = expectCommandKind(draw, RenderGraphCommandKind::DrawFullscreenTriangle,
                                               "RenderView world grid draw");
@@ -331,6 +406,11 @@ namespace asharia {
                 gridSettings.floatValues != params.gridSettings) {
                 return std::unexpected{renderGraphError(
                     "RenderView world grid settings command does not match params")};
+            }
+            if (gridLodSettings.name != "GridLodSettings" ||
+                gridLodSettings.floatValues != params.gridLodSettings) {
+                return std::unexpected{renderGraphError(
+                    "RenderView world grid LOD settings command does not match params")};
             }
 
             return {};
@@ -768,6 +848,7 @@ namespace asharia {
                 .cameraPositionNear = params.cameraPositionNear,
                 .viewportFade = params.viewportFade,
                 .gridSettings = params.gridSettings,
+                .gridLodSettings = params.gridLodSettings,
             };
         }
 

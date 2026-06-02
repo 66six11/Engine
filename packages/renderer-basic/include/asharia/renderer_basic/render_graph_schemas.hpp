@@ -25,8 +25,7 @@ namespace asharia {
     inline constexpr char kBasicRasterMrtParamsType[] = "builtin.raster-mrt.params";
     inline constexpr char kBasicRasterFullscreenPassType[] = "builtin.raster-fullscreen";
     inline constexpr char kBasicRasterFullscreenParamsType[] = "builtin.raster-fullscreen.params";
-    inline constexpr char kBasicRenderViewWorldGridPassType[] =
-        "builtin.render-view-world-grid";
+    inline constexpr char kBasicRenderViewWorldGridPassType[] = "builtin.render-view-world-grid";
     inline constexpr char kBasicRenderViewWorldGridParamsType[] =
         "builtin.render-view-world-grid.params";
     inline constexpr char kBasicRenderViewOverlayPassType[] = "builtin.render-view-overlay";
@@ -63,6 +62,7 @@ namespace asharia {
         std::array<float, 4> cameraPositionNear{};
         std::array<float, 4> viewportFade{};
         std::array<float, 4> gridSettings{};
+        std::array<float, 4> gridLodSettings{};
         std::uint32_t viewKind{};
         std::uint32_t enabled{};
         std::uint32_t reserved0{};

@@ -36,6 +36,7 @@ void addBasicRenderViewWorldGridPass(RenderGraph& graph, RenderGraphImageHandle 
                 .setVec4("CameraPositionNear", worldGridParams.cameraPositionNear)
                 .setVec4("ViewportFade", worldGridParams.viewportFade)
                 .setVec4("GridSettings", worldGridParams.gridSettings)
+                .setVec4("GridLodSettings", worldGridParams.gridLodSettings)
                 .drawFullscreenTriangle();
         })
         .execute([&frame, &bindings, viewTarget, camera, colorLoadOp, colorStoreOp,

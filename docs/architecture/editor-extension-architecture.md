@@ -338,8 +338,9 @@ Status: current.
 - 默认 Scene View grid 已改为 renderer-owned fullscreen world-grid pass，不再回退到 camera-aware XZ grid line
   packets。
 - Grid 参数来自 built-in manifest/settings，后续可热更新。
-- 当前 world-grid shader 按 camera 到 grid plane 的垂直距离做 1/2/5/10 spacing LOD；默认不做距离淡出，高视角 readback smoke
-  覆盖网格不会像 depth fog 一样消失。下一步是 manifest-backed spacing/color/settings，而不是继续把 Vulkan
+- 当前 world-grid LOD 由 RenderView policy 按 camera 到 grid plane 的垂直距离计算，再通过 `GridLodSettings`
+  交给 shader；低高度锁定 base spacing，拉高后才在 1/2/5/10 spacing 间整帧平滑切换。默认不做距离淡出，
+  高视角 readback smoke 覆盖网格不会像 depth fog 一样消失。下一步是 manifest-backed spacing/color/settings，而不是继续把 Vulkan
   绘制细节推回 editor。
 
 ## 非目标

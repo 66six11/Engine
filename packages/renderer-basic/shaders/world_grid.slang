@@ -6,6 +6,7 @@ struct WorldGridPushConstants {
     float4 cameraPositionNear;
     float4 viewportFade;
     float4 gridSettings;
+    float4 gridLodSettings;
 };
 
 [[vk::push_constant]]
@@ -61,48 +62,6 @@ float axisLineAlpha(float value, float pixelWidth) {
     return 1.0 - saturate(abs(value) / max(derivative * max(pixelWidth, 0.5), 0.0001));
 }
 
-float smoothWorldGridStep(float edge0, float edge1, float value) {
-    const float t = saturate((value - edge0) / max(edge1 - edge0, 0.0001));
-    return t * t * (3.0 - (2.0 * t));
-}
-
-struct WorldGridLod {
-    float spacing;
-    float nextSpacing;
-    float blend;
-};
-
-WorldGridLod adaptiveGridLod(float baseSpacing, float verticalDistance) {
-    const float safeBase = max(baseSpacing, 0.0001);
-    const float targetSpacing = max(verticalDistance / 16.0, safeBase);
-    const float normalized = max(targetSpacing / safeBase, 1.0);
-    const float decadeExponent = floor(log10(normalized));
-    const float decade = pow(10.0, decadeExponent);
-    const float local = normalized / max(decade, 0.0001);
-
-    float step = 1.0;
-    float nextStep = 2.0;
-    float transitionStart = 1.0;
-    float transitionEnd = 2.0;
-    if (local >= 5.0) {
-        step = 5.0;
-        nextStep = 10.0;
-        transitionStart = 5.0;
-        transitionEnd = 10.0;
-    } else if (local >= 2.0) {
-        step = 2.0;
-        nextStep = 5.0;
-        transitionStart = 2.0;
-        transitionEnd = 5.0;
-    }
-
-    WorldGridLod lod;
-    lod.spacing = safeBase * decade * step;
-    lod.nextSpacing = safeBase * decade * nextStep;
-    lod.blend = smoothWorldGridStep(transitionStart, transitionEnd, local);
-    return lod;
-}
-
 [shader("fragment")]
 float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
     const float3 nearWorld = unprojectWorldGridPoint(input.position.xy, 0.0);
@@ -120,19 +79,16 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
 
     const float3 worldPosition = nearWorld + (ray * rayT);
     const float2 gridCoord = worldPosition.xz;
-    const float minorSpacing = max(gWorldGrid.gridSettings.x, 0.0001);
-    const float configuredMajorSpacing = max(gWorldGrid.gridSettings.y, minorSpacing);
-    const float majorInterval =
-        max(floor((configuredMajorSpacing / minorSpacing) + 0.5), 2.0);
-    const float verticalDistance =
-        abs(gWorldGrid.cameraPositionNear.y - planeY);
-    const WorldGridLod lod = adaptiveGridLod(minorSpacing, verticalDistance);
-    const float adaptiveMajorSpacing = max(lod.nextSpacing, lod.spacing * majorInterval);
+    const float baseMinorSpacing = max(gWorldGrid.gridSettings.x, 0.0001);
+    const float lodSpacing = max(gWorldGrid.gridLodSettings.x, baseMinorSpacing);
+    const float lodNextSpacing = max(gWorldGrid.gridLodSettings.y, lodSpacing);
+    const float lodBlend = saturate(gWorldGrid.gridLodSettings.z);
+    const float adaptiveMajorSpacing = max(gWorldGrid.gridLodSettings.w, lodSpacing);
     const float opacity = saturate(gWorldGrid.gridSettings.w);
 
     const float minorAlpha = max(
-        gridLineAlpha(gridCoord, lod.spacing, 1.15) * (1.0 - lod.blend),
-        gridLineAlpha(gridCoord, lod.nextSpacing, 1.2) * lod.blend);
+        gridLineAlpha(gridCoord, lodSpacing, 1.15) * (1.0 - lodBlend),
+        gridLineAlpha(gridCoord, lodNextSpacing, 1.2) * lodBlend);
     const float majorAlpha = gridLineAlpha(gridCoord, adaptiveMajorSpacing, 1.35);
     const float xAxisAlpha = axisLineAlpha(worldPosition.z, 1.7);
     const float zAxisAlpha = axisLineAlpha(worldPosition.x, 1.7);
