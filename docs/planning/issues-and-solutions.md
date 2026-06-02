@@ -49,16 +49,16 @@
 **优先级**: P2-B | **状态**: Partially Fixed (2026-05-26)
 
 **根因**:
-`EditorViewportCoordinator` 已经把 camera 数据桥接到 `BasicRenderViewOverlayDesc`，overlay enabled 时会插入 `builtin.render-view-overlay` pass。但 `BasicMesh3DRenderer` 等 sample renderer 在 renderer 内部用 `basicMesh3DProjectionMatrix(extent)` 和硬编码的 `basicMesh3DModelMatrix()` 计算 MVP，不从 `BasicRenderViewCamera` 读取。
+`EditorViewportCoordinator` 已经把 camera 数据桥接到 `BasicRenderViewOverlayDesc`，存在 debug world-line 数据时会插入 `builtin.render-view-overlay` pass。但 `BasicMesh3DRenderer` 等 sample renderer 在 renderer 内部用 `basicMesh3DProjectionMatrix(extent)` 和硬编码的 `basicMesh3DModelMatrix()` 计算 MVP，不从 `BasicRenderViewCamera` 读取。
 
 **已修复 (B.2+B.3 renderer slice)**:
 1. `BasicMesh3DRendererDesc` 新增 `camera` + `useRenderViewCamera` 字段
 2. `BasicMesh3DRenderer` 存储 camera，`recordFrame` 在 camera 模式用 `camera.viewProjection * modelMatrix` 替代硬编码投影
 3. 新增 `basicMesh3DPushConstants(camera, model)` 重载
 4. `recordMesh3DDraw` 接受 optional camera 指针
-5. `builtin.render-view-overlay` pass 在存在 `BasicDebugWorldLine` 时创建 renderer-owned debug-line pipeline，以 `VK_PRIMITIVE_TOPOLOGY_LINE_LIST` 绘制 Scene View grid/world lines。
+5. `builtin.render-view-overlay` pass 在存在 `BasicDebugWorldLine` 时创建 renderer-owned debug-line pipeline，以 `VK_PRIMITIVE_TOPOLOGY_LINE_LIST` 绘制 world/debug lines。
 6. `BasicFullscreenTextureRenderer` 为 debug-line vertex upload 使用 per-frame buffer ring，避免同一帧多 RenderView / Frame Debug replay 复用正在录制的上传缓冲。
-7. `--smoke-editor-viewport` 验证 Scene View overlay pass 产生 `DrawDebugWorldLines` execution event，且 vertex count 等于 debug-world-line count × 2。
+7. `--smoke-fullscreen-texture` 验证存在 debug world-line 数据时 overlay pass 产生 `DrawDebugWorldLines` execution event，且 vertex count 等于 debug-world-line count × 2。
 8. `builtin.render-view-world-grid` pass 已新增为 renderer-owned fullscreen overlay pass；Scene View grid intent 通过 `BasicRenderViewOverlayDesc::worldGrid` 进入 RenderView，shader 使用 inverse view-projection / camera / fade push constants 直接绘制 XZ world grid，不再依赖固定原点 line packet。
 9. `--smoke-editor-viewport` 验证 Scene View graph 包含 `builtin.render-view-world-grid`，并产生 `DrawWorldGrid` execution event；Game/Preview 不隐式包含 Scene View grid pass。
 

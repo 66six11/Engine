@@ -222,9 +222,9 @@ namespace asharia::editor {
             }
 
             scene = sceneDiagnostics->diagnostics;
-            if (scene.renderGraph.passes.size() != 4U || scene.renderGraph.resources.size() != 2U ||
-                scene.renderGraph.accessEdges.size() != 5U ||
-                scene.renderGraph.dependencyEdges.size() != 3U ||
+            if (scene.renderGraph.passes.size() != 3U || scene.renderGraph.resources.size() != 2U ||
+                scene.renderGraph.accessEdges.size() != 4U ||
+                scene.renderGraph.dependencyEdges.size() != 2U ||
                 scene.renderGraph.transitions.size() != 4U || scene.executionEvents.empty()) {
                 asharia::logError(
                     "Editor viewport smoke recorded unexpected render view diagnostics counts: "
@@ -241,11 +241,10 @@ namespace asharia::editor {
                                          asharia::kBasicRenderViewWorldGridPassType) != 1U ||
                 renderGraphWorldGridCommandCount(scene.renderGraph) != 5U ||
                 renderGraphPassTypeCount(scene.renderGraph,
-                                         asharia::kBasicRenderViewOverlayPassType) != 1U ||
-                renderGraphOverlayCommandCount(scene.renderGraph) != 4U) {
+                                         asharia::kBasicRenderViewOverlayPassType) != 0U ||
+                renderGraphOverlayCommandCount(scene.renderGraph) != 0U) {
                 asharia::logError(
-                    "Editor viewport smoke did not record graph-visible RenderView grid/overlay "
-                    "inputs.");
+                    "Editor viewport smoke recorded invalid RenderView grid/overlay passes.");
                 return false;
             }
             if (scene.viewKind != asharia::BasicRenderViewKind::Scene ||
@@ -304,7 +303,7 @@ namespace asharia::editor {
                 renderGraphPassTypeCount(game.renderGraph,
                                          asharia::kBasicRenderViewWorldGridPassType) != 0U ||
                 renderGraphPassTypeCount(game.renderGraph,
-                                         asharia::kBasicRenderViewOverlayPassType) != 1U) {
+                                         asharia::kBasicRenderViewOverlayPassType) != 0U) {
                 asharia::logError("Editor viewport smoke recorded invalid Game View diagnostics.");
                 return false;
             }

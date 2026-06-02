@@ -2898,6 +2898,33 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    [[nodiscard]] bool validateFullscreenTextureOverlayDiagnostics(
+        const asharia::BasicRenderViewDiagnostics& diagnostics, bool diagnosticsRecorded) {
+        if (!diagnosticsRecorded) {
+            asharia::logError("Fullscreen texture smoke did not record overlay diagnostics.");
+            return false;
+        }
+        const auto overlayPass =
+            std::ranges::find_if(diagnostics.renderGraph.passes,
+                                 [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                                     return pass.type == asharia::kBasicRenderViewOverlayPassType;
+                                 });
+        if (overlayPass == diagnostics.renderGraph.passes.end()) {
+            asharia::logError("Fullscreen texture smoke did not record a debug-line overlay pass.");
+            return false;
+        }
+        const auto drawLines = std::ranges::find_if(
+            diagnostics.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
+                return event.kind == asharia::BasicRenderViewExecutionEventKind::Draw &&
+                       event.label == "DrawDebugWorldLines";
+            });
+        if (drawLines == diagnostics.executionEvents.end() || drawLines->draw.vertexCount != 2U) {
+            asharia::logError("Fullscreen texture smoke did not record a debug-line draw event.");
+            return false;
+        }
+        return true;
+    }
+
     int runSmokeFullscreenTexture() {
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
@@ -2959,13 +2986,16 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        asharia::BasicRenderViewDiagnostics overlayDiagnostics;
+        bool overlayDiagnosticsRecorded = false;
         for (int frame = 0; frame < 3; ++frame) {
             asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&renderer, frame](const asharia::VulkanFrameRecordContext& recordContext) {
+                [&renderer, &overlayDiagnostics, &overlayDiagnosticsRecorded,
+                 frame](const asharia::VulkanFrameRecordContext& recordContext) {
                     if (frame == 1) {
                         const std::array debugLines{
                             asharia::BasicDebugWorldLine{
@@ -2974,7 +3004,7 @@ namespace {
                                 .color = {0.18F, 0.78F, 0.95F, 0.65F},
                             },
                         };
-                        return renderer->recordViewFrame(
+                        auto recorded = renderer->recordViewFrame(
                             recordContext,
                             asharia::BasicRenderViewDesc{
                                 .target =
@@ -3002,7 +3032,12 @@ namespace {
                                         .debugWorldLines = debugLines,
                                     },
                                 .viewName = "FullscreenTextureAdditiveOverlaySmoke",
+                                .diagnostics = &overlayDiagnostics,
                             });
+                        if (recorded) {
+                            overlayDiagnosticsRecorded = true;
+                        }
+                        return recorded;
                     }
                     return renderer->recordFrame(recordContext);
                 });
@@ -3018,6 +3053,11 @@ namespace {
 
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(16ms);
+        }
+
+        if (!validateFullscreenTextureOverlayDiagnostics(overlayDiagnostics,
+                                                         overlayDiagnosticsRecorded)) {
+            return EXIT_FAILURE;
         }
 
         if (!validatePipelineCacheStats(renderer->pipelineCacheStats(),

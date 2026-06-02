@@ -19,14 +19,14 @@
 - `render_view.hpp` 位于 `renderer_basic_vulkan` public API，当前仍带有 `VkImage` / `VkImageView` /
   `VkFormat` / `VkExtent2D`，所以它是 Vulkan RenderView contract，不是 backend-neutral `renderer_basic`
   contract。
-- `recordViewFrame()` 当前会构建 RenderGraph、记录 diagnostics 和 execution events。overlay enabled 的
-  RenderView 会插入 `builtin.render-view-overlay` pass，把 camera / frame / debug-world-line count 作为 typed
-  params 与 command summary 进入 graph。`BasicRenderViewOverlayDesc::worldGrid` enabled 时会在 overlay
-  pass 前插入 `builtin.render-view-world-grid`，由 `renderer_basic_vulkan` 用 fullscreen triangle、push
-  constants 中的 inverse view-projection / camera / fade 参数绘制 XZ world grid。存在 debug-world-line 数据时，
-  overlay pass 仍会把 world line 投影成 line-list vertex buffer 并绘制到目标 attachment；没有 line 数据时保留
-  touch-only 路径，让 diagnostics 仍能解释 overlay input。后续 scene mesh、selection、gizmo 或更多 debug line
-  pass 必须继续把 per-view 数据作为 renderer-owned pass input，而不是从 diagnostics 读取。
+- `recordViewFrame()` 当前会构建 RenderGraph、记录 diagnostics 和 execution events。overlay intent 会进入
+  `BasicRenderViewDiagnostics`；`BasicRenderViewOverlayDesc::worldGrid` enabled 时插入
+  `builtin.render-view-world-grid`，由 `renderer_basic_vulkan` 用 fullscreen triangle、push constants 中的
+  inverse view-projection / camera / fade 参数绘制 XZ world grid。只有存在 debug-world-line 数据时才插入
+  `builtin.render-view-overlay` pass，把 camera / frame / debug-world-line count 作为 typed params 与 command
+  summary 进入 graph，并把 world line 投影成 line-list vertex buffer 绘制到目标 attachment。后续 scene mesh、
+  selection、gizmo 或更多 debug line pass 必须继续把 per-view 数据作为 renderer-owned pass input，而不是从
+  diagnostics 读取。
 
 ## Public Header 布局
 

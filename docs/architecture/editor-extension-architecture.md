@@ -251,7 +251,8 @@ Frame Debugger 和 RG View 不是可选后补 UI。它们是 overlay/render arch
 
 Grid 的验收条件不是“看起来有线”，而是：
 
-- Scene View grid enabled 时 diagnostics 里出现 grid/debug-line overlay pass。
+- Scene View grid enabled 时 diagnostics 里出现 `builtin.render-view-world-grid`。
+- 只有存在 debug world-line 数据时 diagnostics 里才出现 `builtin.render-view-overlay`。
 - Grid disabled 时 pass 不进入 graph，或者 active predicate 为 false 且 diagnostics 可解释。
 - Game View / Preview 不隐式出现 Scene View grid pass。
 
@@ -260,24 +261,26 @@ Grid 的验收条件不是“看起来有线”，而是：
 Grid 从 “next renderer feature” 调整为 “extension architecture sample”：
 
 1. `EditorViewportOverlayProvider` v0 已落地。
-2. Grid provider 读取 manifest/default settings，生成 backend-neutral line packet。
-3. Renderer bridge 把 packet 交给 renderer-owned debug line overlay path。
-4. Frame Debugger Frame/RenderGraph views 验证 pass 和 packet count。
+2. Grid provider 读取 manifest/default settings，生成 renderer-owned world-grid intent。
+3. Renderer bridge 把 world-grid intent 交给 renderer-owned fullscreen world-grid pass；debug line packets 仍走
+   overlay line path。
+4. Frame Debugger Frame/RenderGraph views 验证 grid pass、debug line pass 和 packet count。
 5. Scene View chrome overlay 只控制 provider enabled state，不直接操作 renderer flags。
 
 当前状态：
 
-- `EditorViewportOverlayProvider` v0 已经能在 Scene View grid intent enabled 时生成原点附近固定 XZ
-  `EditorViewportOverlayPacket`。
+- Scene View grid intent 已经通过 `BasicRenderViewOverlayDesc::worldGrid` 进入 renderer-owned
+  `builtin.render-view-world-grid` fullscreen pass；`EditorViewportOverlayProvider` v0 当前不再为默认 grid 生成固定
+  XZ line packet。
 - Scene View panel 已持有 editor-owned navigation/camera state；这是输入所有权，不是 renderer 矩阵旁路。
   Scene View request 携带 camera context，并在 coordinator 边界 bridge 到 `BasicRenderViewCamera`；
   provider context 可以读取 camera/view/projection 数据；`unprojectEditorViewportPoint()` 已提供 viewport-local
   pixel 到 near/far world ray 的后端无关 v0 语义，并基于 inverse view-projection 而不是单独重推 camera basis。
 - `EditorViewportCoordinator` 只负责把 provider packet bridge 成 `BasicDebugWorldLine` 并交给
-  `BasicRenderViewOverlayDesc`。
+  `BasicRenderViewOverlayDesc`；没有 debug line packet 时不会生成空 overlay pass。
 - `renderer_basic_vulkan` 已在 `builtin.render-view-overlay` pass 内消费 `BasicDebugWorldLine`，用
-  renderer-owned debug-line shader/pipeline 和 per-frame vertex upload buffer ring 绘制 Scene View grid/world
-  lines；Frame Debug execution events 会记录 `DrawDebugWorldLines`。
+  renderer-owned debug-line shader/pipeline 和 per-frame vertex upload buffer ring 绘制 world lines；Frame Debug
+  execution events 会记录 `DrawDebugWorldLines`。
 - 这一步证明 provider contract、editor-to-RenderView 数据桥、camera/unproject 基础、diagnostics count 和
   renderer-owned debug-line GPU path。它还不是 manifest-backed provider，也还没有 camera-aware grid
   range/fade policy、source overlay id diagnostics 或像素/readback 级 camera-difference smoke。
@@ -321,7 +324,7 @@ Status: current.
 
 - Done: `EditorViewportCoordinator` 从 overlay packets 构造 `BasicRenderViewOverlayDesc`。
 - Done: `renderer_basic_vulkan` 在 `builtin.render-view-overlay` pass 内增加可见 debug-line line-list draw。
-- Done: Frame Debug / viewport smoke 验证 pass、packet count 和 `DrawDebugWorldLines` execution event。
+- Done: Frame Debug / sample smoke 验证 pass、packet count 和 `DrawDebugWorldLines` execution event。
 - Deferred: source overlay id 进入 diagnostics，方便多个 provider/debug packet 溯源。
 
 ### Step 6: Grid Sample

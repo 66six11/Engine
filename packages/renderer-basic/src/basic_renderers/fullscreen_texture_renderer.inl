@@ -759,7 +759,7 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
         }
     }
 
-    if (view.overlay.enabled) {
+    if (view.overlay.enabled && !debugWorldLines.empty()) {
         const std::size_t overlayPassIndex = renderViewPassIndex++;
         graph.addPass("RenderViewOverlayInputs", kBasicRenderViewOverlayPassType)
             .setParams(kBasicRenderViewOverlayParamsType, overlayParams)

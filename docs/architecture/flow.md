@@ -922,9 +922,10 @@ flowchart TD
     near clipping plane，`farPoint` 位于 far clipping plane。当前 `recordViewFrame()` 会在
     `BasicRenderViewOverlayDesc::worldGrid` enabled 时插入 `builtin.render-view-world-grid` fullscreen
     overlay pass，用 inverse view-projection / camera / fade push constants 绘制 XZ world grid；overlay
-    enabled 时仍插入 `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 作为 typed params
-    与 command summary 记录；存在 `BasicDebugWorldLine` 时，`renderer_basic_vulkan` 会把 world line 投影为
-    line-list vertex buffer 并绘制到目标 attachment。mesh/draw-list smoke 仍在 renderer 内部构造 MVP。
+    intent 会进入 RenderView diagnostics，但只有存在 `BasicDebugWorldLine` 时才插入
+    `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 作为 typed params 与 command summary
+    记录，并由 `renderer_basic_vulkan` 把 world line 投影为 line-list vertex buffer 绘制到目标 attachment。
+    mesh/draw-list smoke 仍在 renderer 内部构造 MVP。
     后续 scene mesh、selection/gizmo 和更多 debug line pass 必须继续沿这条 RenderView route 接入。
 14. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
