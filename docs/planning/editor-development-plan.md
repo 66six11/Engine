@@ -778,7 +778,7 @@ Validation:
 
 ### 16.11 Built-in Extension Registry
 
-Status: Deferred.
+Status: Current / partial.
 
 Depends on:
 
@@ -787,13 +787,24 @@ Depends on:
 Scope:
 
 - Add `EditorExtensionRegistry` as the manifest-style contribution owner for built-in editor capabilities.
-- Register existing built-in panels, actions, tools, toolbar slots and viewport overlays through manifest-like descriptors.
-- Keep `EditorToolRegistry` as a query facade or fold it into the extension registry without changing panel/action behavior.
-- Add smoke coverage for contribution replacement by stable id.
+- Register existing built-in tools, toolbar slots and viewport overlays through manifest-like descriptors.
+- Keep `EditorToolRegistry` as a query facade without changing panel/action behavior.
+- Add smoke coverage for contribution replacement by stable id, duplicate tool id rejection, failed reload state
+  preservation and all-or-nothing publication to the tool facade.
+
+Implementation:
+
+- `editor_extension` now owns `EditorExtensionManifest` and `EditorExtensionRegistry`.
+- Built-in editor tools are declared as an `extension.asharia-editor-core` manifest, then published into
+  `EditorToolRegistry`; panel factories and action callbacks remain explicitly registered by their existing registries.
+- External JSON/script manifests, extension enable/disable, panel/action manifest migration and reload diagnostics UI remain
+  deferred.
 
 Validation:
 
-- Editor shell smoke verifies contribution counts, stable ids and query parity with the current tool registry.
+- Editor shell smoke verifies extension stable ids, reload-style replace behavior, duplicate tool id rejection, failed reload
+  state preservation, all-or-nothing tool facade publication, contribution counts and query parity with the current tool
+  registry.
 
 ### 16.12 Tool Manager Lifecycle
 

@@ -137,11 +137,14 @@ E 补充（2026-06-01）: Step 2b-z 已把 RenderGraph snapshot enum/name、reso
 
 E 补充（2026-06-01）: Step 2b-aa 已把 RenderGraph snapshot access events、resource、pass 与 dependency 明细表绘制从 `render_graph_snapshot_view.cpp` 拆到 `render_graph_snapshot_details.hpp/.cpp`；`render_graph_snapshot_view.cpp` 保留 summary、access timeline matrix 与 hover tooltip，后续不再为了行数继续强拆。
 
+B 补充（2026-06-02）: Scene View tool/overlay contribution 已先经过 `EditorExtensionRegistry` v0 再发布给
+`EditorToolRegistry` query facade；smoke 验证 stable id、reload-style replace、重复 tool id 拒绝、失败 reload 不改变旧状态，以及发布到 tool facade 时保持 all-or-nothing。它仍不是 external manifest loader，panel/action callback 也仍由现有 registries 显式注册。
+
 阻塞规则：
 
 - A 必须保持通过；扩大 swapchain/offscreen target format、material/pipeline format key 或 texture preview 范围时，先扩展 format helper、Vulkan adapter 映射和 negative smoke。
 - B 的可见 debug-line renderer pass、camera-aware grid visibility、world-grid/source overlay diagnostics、Scene View
-  `sceneGrid` settings bridge 和 built-in contribution default 已完成；external manifest loader、颜色/设置 UI 和更完整 provider 合同未完成前，不继续做复杂 gizmo、selection outline 或依赖 Scene-only authoring pass 的产品体验。C.1 keyed request model 已关闭单 request 覆盖问题，但真实 Game View、asset preview viewport 和
+  `sceneGrid` settings bridge、built-in contribution default 和 built-in extension registry v0 已完成；external manifest loader、颜色/设置 UI 和更完整 provider 合同未完成前，不继续做复杂 gizmo、selection outline 或依赖 Scene-only authoring pass 的产品体验。C.1 keyed request model 已关闭单 request 覆盖问题，但真实 Game View、asset preview viewport 和
   per-view profiler UI 仍必须复用该 keyed contract。
 - D 的 compute fill 已闭合；继续禁止新增 graph 外 compute/upload/copy 快捷路径。
 - E 未完成前，不进入 asset browser、material editor、脚本热更新、持久 editor layout 或复杂 inspector mutation。

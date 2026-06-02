@@ -7,9 +7,9 @@
 #include "asharia/core/result.hpp"
 
 #include "editor_action.hpp"
+#include "editor_extension.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_panel.hpp"
-#include "editor_tool.hpp"
 #include "editor_viewport_overlay_provider.hpp"
 #include "editor_workspace.hpp"
 #include "panels/editor_settings_panel.hpp"
@@ -231,142 +231,136 @@ namespace asharia::editor {
             });
     }
 
+    [[nodiscard]] EditorExtensionManifest builtInEditorCoreExtensionManifest() {
+        return EditorExtensionManifest{
+            .id = EditorId{.value = "extension.asharia-editor-core"},
+            .displayName = "Asharia Editor Core",
+            .tools =
+                {
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.scene-view"},
+                        .title = "Scene View",
+                        .titleKey = "tool.sceneView",
+                        .category = EditorToolCategory::Viewport,
+                        .panels = {EditorToolPanelContribution{.panelId = "scene-view"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.scene-view",
+                            .toolbarSlot = EditorToolbarSlot::View,
+                        }},
+                        .viewportOverlays =
+                            {
+                                EditorToolViewportOverlayContribution{
+                                    .overlayId = std::string{kEditorSceneGridOverlayId},
+                                    .viewportId = "scene-view",
+                                    .worldGrid = defaultEditorSceneGridSettings(),
+                                },
+                                EditorToolViewportOverlayContribution{
+                                    .overlayId = std::string{kEditorSceneTransformGizmoOverlayId},
+                                    .viewportId = "scene-view",
+                                    .worldGrid = std::nullopt,
+                                },
+                                EditorToolViewportOverlayContribution{
+                                    .overlayId = std::string{kEditorSceneSelectionOutlineOverlayId},
+                                    .viewportId = "scene-view",
+                                    .worldGrid = std::nullopt,
+                                },
+                            },
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.render-graph"},
+                        .title = "RenderGraph Diagnostics",
+                        .titleKey = "tool.renderGraph",
+                        .category = EditorToolCategory::Diagnostics,
+                        .panels = {EditorToolPanelContribution{.panelId = "render-graph"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.render-graph",
+                            .toolbarSlot = EditorToolbarSlot::View,
+                        }},
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.frame-debugger"},
+                        .title = "Frame Debugger",
+                        .titleKey = "tool.frameDebugger",
+                        .category = EditorToolCategory::Diagnostics,
+                        .panels = {EditorToolPanelContribution{.panelId = "frame-debugger"}},
+                        .actions =
+                            {
+                                EditorToolActionContribution{
+                                    .actionId = "debug.capture-frame",
+                                    .toolbarSlot = EditorToolbarSlot::Debug,
+                                },
+                                EditorToolActionContribution{
+                                    .actionId = "debug.resume-frame",
+                                    .toolbarSlot = EditorToolbarSlot::Debug,
+                                },
+                                EditorToolActionContribution{
+                                    .actionId = "view.frame-debugger",
+                                    .toolbarSlot = EditorToolbarSlot::View,
+                                },
+                            },
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.log"},
+                        .title = "Log",
+                        .titleKey = "tool.log",
+                        .category = EditorToolCategory::Diagnostics,
+                        .panels = {EditorToolPanelContribution{.panelId = "log"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.log",
+                            .toolbarSlot = EditorToolbarSlot::View,
+                        }},
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.ui-style-preview"},
+                        .title = "UI Style Preview",
+                        .titleKey = "tool.uiStylePreview",
+                        .category = EditorToolCategory::Styling,
+                        .panels = {EditorToolPanelContribution{.panelId = "ui-style-preview"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.ui-style-preview",
+                            .toolbarSlot = EditorToolbarSlot::Utility,
+                        }},
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.editor-settings"},
+                        .title = "Editor Settings",
+                        .titleKey = "tool.editorSettings",
+                        .category = EditorToolCategory::Settings,
+                        .panels = {EditorToolPanelContribution{.panelId = "editor-settings"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.editor-settings",
+                            .toolbarSlot = EditorToolbarSlot::Utility,
+                        }},
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.workspace-layout"},
+                        .title = "Workspace Layout",
+                        .titleKey = "tool.workspaceLayout",
+                        .category = EditorToolCategory::Core,
+                        .panels = {},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.reset-layout",
+                        }},
+                        .viewportOverlays = {},
+                    },
+                },
+        };
+    }
+
     [[nodiscard]] asharia::VoidResult registerEditorTools(EditorToolRegistry& toolRegistry) {
-        auto sceneView = toolRegistry.registerTool(EditorToolDesc{
-            .id = EditorId{.value = "tool.scene-view"},
-            .title = "Scene View",
-            .titleKey = "tool.sceneView",
-            .category = EditorToolCategory::Viewport,
-            .panels = {EditorToolPanelContribution{.panelId = "scene-view"}},
-            .actions = {EditorToolActionContribution{
-                .actionId = "view.scene-view",
-                .toolbarSlot = EditorToolbarSlot::View,
-            }},
-            .viewportOverlays =
-                {
-                    EditorToolViewportOverlayContribution{
-                        .overlayId = std::string{kEditorSceneGridOverlayId},
-                        .viewportId = "scene-view",
-                        .worldGrid = defaultEditorSceneGridSettings(),
-                    },
-                    EditorToolViewportOverlayContribution{
-                        .overlayId = std::string{kEditorSceneTransformGizmoOverlayId},
-                        .viewportId = "scene-view",
-                        .worldGrid = std::nullopt,
-                    },
-                    EditorToolViewportOverlayContribution{
-                        .overlayId = std::string{kEditorSceneSelectionOutlineOverlayId},
-                        .viewportId = "scene-view",
-                        .worldGrid = std::nullopt,
-                    },
-                },
-        });
-        if (!sceneView) {
-            return std::unexpected{std::move(sceneView.error())};
+        EditorExtensionRegistry extensionRegistry;
+        auto builtIns =
+            extensionRegistry.registerOrReplaceExtension(builtInEditorCoreExtensionManifest());
+        if (!builtIns) {
+            return std::unexpected{std::move(builtIns.error())};
         }
 
-        auto renderGraph = toolRegistry.registerTool(EditorToolDesc{
-            .id = EditorId{.value = "tool.render-graph"},
-            .title = "RenderGraph Diagnostics",
-            .titleKey = "tool.renderGraph",
-            .category = EditorToolCategory::Diagnostics,
-            .panels = {EditorToolPanelContribution{.panelId = "render-graph"}},
-            .actions = {EditorToolActionContribution{
-                .actionId = "view.render-graph",
-                .toolbarSlot = EditorToolbarSlot::View,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!renderGraph) {
-            return std::unexpected{std::move(renderGraph.error())};
-        }
-
-        auto frameDebugger = toolRegistry.registerTool(EditorToolDesc{
-            .id = EditorId{.value = "tool.frame-debugger"},
-            .title = "Frame Debugger",
-            .titleKey = "tool.frameDebugger",
-            .category = EditorToolCategory::Diagnostics,
-            .panels = {EditorToolPanelContribution{.panelId = "frame-debugger"}},
-            .actions =
-                {
-                    EditorToolActionContribution{
-                        .actionId = "debug.capture-frame",
-                        .toolbarSlot = EditorToolbarSlot::Debug,
-                    },
-                    EditorToolActionContribution{
-                        .actionId = "debug.resume-frame",
-                        .toolbarSlot = EditorToolbarSlot::Debug,
-                    },
-                    EditorToolActionContribution{
-                        .actionId = "view.frame-debugger",
-                        .toolbarSlot = EditorToolbarSlot::View,
-                    },
-                },
-            .viewportOverlays = {},
-        });
-        if (!frameDebugger) {
-            return std::unexpected{std::move(frameDebugger.error())};
-        }
-
-        auto log = toolRegistry.registerTool(EditorToolDesc{
-            .id = EditorId{.value = "tool.log"},
-            .title = "Log",
-            .titleKey = "tool.log",
-            .category = EditorToolCategory::Diagnostics,
-            .panels = {EditorToolPanelContribution{.panelId = "log"}},
-            .actions = {EditorToolActionContribution{
-                .actionId = "view.log",
-                .toolbarSlot = EditorToolbarSlot::View,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!log) {
-            return std::unexpected{std::move(log.error())};
-        }
-
-        auto style = toolRegistry.registerTool(EditorToolDesc{
-            .id = EditorId{.value = "tool.ui-style-preview"},
-            .title = "UI Style Preview",
-            .titleKey = "tool.uiStylePreview",
-            .category = EditorToolCategory::Styling,
-            .panels = {EditorToolPanelContribution{.panelId = "ui-style-preview"}},
-            .actions = {EditorToolActionContribution{
-                .actionId = "view.ui-style-preview",
-                .toolbarSlot = EditorToolbarSlot::Utility,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!style) {
-            return std::unexpected{std::move(style.error())};
-        }
-
-        auto settings = toolRegistry.registerTool(EditorToolDesc{
-            .id = EditorId{.value = "tool.editor-settings"},
-            .title = "Editor Settings",
-            .titleKey = "tool.editorSettings",
-            .category = EditorToolCategory::Settings,
-            .panels = {EditorToolPanelContribution{.panelId = "editor-settings"}},
-            .actions = {EditorToolActionContribution{
-                .actionId = "view.editor-settings",
-                .toolbarSlot = EditorToolbarSlot::Utility,
-            }},
-            .viewportOverlays = {},
-        });
-        if (!settings) {
-            return std::unexpected{std::move(settings.error())};
-        }
-
-        return toolRegistry.registerTool(EditorToolDesc{
-            .id = EditorId{.value = "tool.workspace-layout"},
-            .title = "Workspace Layout",
-            .titleKey = "tool.workspaceLayout",
-            .category = EditorToolCategory::Core,
-            .panels = {},
-            .actions = {EditorToolActionContribution{
-                .actionId = "view.reset-layout",
-            }},
-            .viewportOverlays = {},
-        });
+        return registerEditorExtensionTools(extensionRegistry, toolRegistry);
     }
 
     [[nodiscard]] asharia::VoidResult

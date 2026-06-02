@@ -80,6 +80,7 @@ add_executable(asharia-editor
     src/editor_command_smoke.cpp
     src/editor_dock_layout.cpp
     src/editor_event.cpp
+    src/editor_extension.cpp
     src/editor_frame_debugger.cpp
     src/editor_frame_debugger_replay.cpp
     src/editor_frame_debugger_smoke.cpp

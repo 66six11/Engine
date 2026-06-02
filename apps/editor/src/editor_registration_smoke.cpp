@@ -4,11 +4,14 @@
 #include <cmath>
 #include <cstddef>
 #include <span>
+#include <string>
+#include <utility>
 
 #include "asharia/core/log.hpp"
 
 #include "editor_action.hpp"
 #include "editor_event.hpp"
+#include "editor_extension.hpp"
 #include "editor_i18n.hpp"
 #include "editor_panel.hpp"
 #include "editor_settings.hpp"
@@ -43,6 +46,18 @@ namespace asharia::editor {
                    closeFloat(lhs.majorSpacing, rhs.majorSpacing) &&
                    closeFloat(lhs.fadeStart, rhs.fadeStart) &&
                    closeFloat(lhs.fadeEnd, rhs.fadeEnd) && closeFloat(lhs.opacity, rhs.opacity);
+        }
+
+        [[nodiscard]] EditorToolDesc smokeToolDesc(std::string toolId, std::string title) {
+            return EditorToolDesc{
+                .id = EditorId{.value = std::move(toolId)},
+                .title = std::move(title),
+                .titleKey = {},
+                .category = EditorToolCategory::Core,
+                .panels = {},
+                .actions = {},
+                .viewportOverlays = {},
+            };
         }
 
         [[nodiscard]] bool validateEditorSettingsSmoke(EditorRunMode mode,
@@ -255,6 +270,112 @@ namespace asharia::editor {
             return true;
         }
 
+        [[nodiscard]] bool validateEditorExtensionRegistrySmoke() {
+            EditorExtensionRegistry extensionRegistry;
+            if (extensionRegistry.registerOrReplaceExtension(EditorExtensionManifest{
+                    .id = EditorId{.value = "extension.invalid-empty-name"},
+                    .displayName = {},
+                    .tools = {},
+                })) {
+                asharia::logError(
+                    "Editor extension registry smoke accepted an empty display name.");
+                return false;
+            }
+
+            auto first = extensionRegistry.registerOrReplaceExtension(EditorExtensionManifest{
+                .id = EditorId{.value = "extension.smoke"},
+                .displayName = "Smoke Extension",
+                .tools = {smokeToolDesc("tool.smoke-a", "Smoke A")},
+            });
+            if (!first) {
+                asharia::logError(first.error().message);
+                return false;
+            }
+            if (extensionRegistry.extensionCount() != 1U ||
+                extensionRegistry.toolContributionCount() != 1U ||
+                extensionRegistry.findExtension("extension.smoke") == nullptr) {
+                asharia::logError("Editor extension registry smoke missed initial registration.");
+                return false;
+            }
+
+            auto replaced = extensionRegistry.registerOrReplaceExtension(EditorExtensionManifest{
+                .id = EditorId{.value = "extension.smoke"},
+                .displayName = "Smoke Extension Reloaded",
+                .tools =
+                    {
+                        smokeToolDesc("tool.smoke-a", "Smoke A"),
+                        smokeToolDesc("tool.smoke-b", "Smoke B"),
+                    },
+            });
+            if (!replaced) {
+                asharia::logError(replaced.error().message);
+                return false;
+            }
+            const EditorExtensionManifest* reloaded =
+                extensionRegistry.findExtension("extension.smoke");
+            if (extensionRegistry.extensionCount() != 1U ||
+                extensionRegistry.toolContributionCount() != 2U || reloaded == nullptr ||
+                reloaded->displayName != "Smoke Extension Reloaded") {
+                asharia::logError("Editor extension registry smoke did not replace by id.");
+                return false;
+            }
+
+            if (extensionRegistry.registerOrReplaceExtension(EditorExtensionManifest{
+                    .id = EditorId{.value = "extension.smoke-duplicate"},
+                    .displayName = "Smoke Duplicate",
+                    .tools =
+                        {
+                            smokeToolDesc("tool.duplicate", "Duplicate A"),
+                            smokeToolDesc("tool.duplicate", "Duplicate B"),
+                        },
+                })) {
+                asharia::logError("Editor extension registry smoke accepted duplicate tool ids.");
+                return false;
+            }
+            if (extensionRegistry.extensionCount() != 1U ||
+                extensionRegistry.toolContributionCount() != 2U) {
+                asharia::logError(
+                    "Editor extension registry smoke changed state after a failed reload.");
+                return false;
+            }
+
+            EditorToolRegistry toolRegistry;
+            auto tools = registerEditorExtensionTools(extensionRegistry, toolRegistry);
+            if (!tools) {
+                asharia::logError(tools.error().message);
+                return false;
+            }
+            if (toolRegistry.toolCount() != 2U ||
+                toolRegistry.findTool("tool.smoke-a") == nullptr ||
+                toolRegistry.findTool("tool.smoke-b") == nullptr) {
+                asharia::logError("Editor extension registry smoke did not publish tools.");
+                return false;
+            }
+
+            auto conflict = extensionRegistry.registerOrReplaceExtension(EditorExtensionManifest{
+                .id = EditorId{.value = "extension.smoke-conflict"},
+                .displayName = "Smoke Conflict",
+                .tools = {smokeToolDesc("tool.smoke-a", "Smoke A Conflict")},
+            });
+            if (!conflict) {
+                asharia::logError(conflict.error().message);
+                return false;
+            }
+            if (registerEditorExtensionTools(extensionRegistry, toolRegistry)) {
+                asharia::logError("Editor extension registry smoke published duplicate tool ids.");
+                return false;
+            }
+            if (toolRegistry.toolCount() != 2U ||
+                toolRegistry.findTool("tool.smoke-a") == nullptr ||
+                toolRegistry.findTool("tool.smoke-b") == nullptr) {
+                asharia::logError(
+                    "Editor extension registry smoke did not preserve the tool facade.");
+                return false;
+            }
+
+            return true;
+        }
+
         [[nodiscard]] bool validateToolRegistrySmoke(const EditorToolRegistry& toolRegistry,
                                                      const EditorActionRegistry& actionRegistry,
                                                      const EditorPanelRegistry& panelRegistry) {
@@ -381,6 +502,7 @@ namespace asharia::editor {
 
         return validatePanelRegistrySmoke(actionServices.panels) &&
                validateActionRegistrySmoke(actionRegistry, actionServices) &&
+               validateEditorExtensionRegistrySmoke() &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, actionServices.panels) &&
                validateEditorSettingsSmoke(mode, settings, i18n) &&
                validateShortcutRouterSmoke(actionRegistry, actionServices);

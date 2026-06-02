@@ -201,10 +201,14 @@ workspace describes the dock slots for Scene View, Live RG View, Frame Debugger,
 workspace when no dock node exists or when `View > Reset Layout` requests a reset. This keeps future layout presets and tool
 contributions out of panel widget code.
 
-`EditorToolRegistry` records which tools contribute panels, actions, toolbar buttons and viewport overlay intents. It does
-not own panel factories or invoke commands; those remain in `EditorPanelRegistry` and `EditorActionRegistry`. The command bar
-is generated from tool toolbar contributions, so future tools can shape the editor chrome without adding more hard-coded
-button lists to `imgui_editor_shell`.
+`EditorExtensionRegistry` is the first manifest-like owner for built-in editor tool contributions. It currently validates
+extension stable ids, rejects duplicate tool ids during a reload-style replace, and publishes tool contributions to
+`EditorToolRegistry`. It does not load external JSON/script packages yet, and it does not own panel factories or action
+callbacks. Those remain in `EditorPanelRegistry` and `EditorActionRegistry`.
+
+`EditorToolRegistry` records the published tool view: panels, actions, toolbar buttons and viewport overlay intents. It does
+not own panel factories or invoke commands. The command bar is generated from tool toolbar contributions, so future tools can
+shape the editor chrome without adding more hard-coded button lists to `imgui_editor_shell`.
 Viewport overlay contributions are queried by viewport id through `visitViewportOverlays()`. Scene View uses that query to
 draw its compact grid/gizmo/selection-outline strip over the sampled viewport while keeping overlay ids tool-owned.
 
@@ -293,9 +297,10 @@ Panel rules:
 
 ### Tool 扩展
 
-Add built-in tool metadata through `EditorToolRegistry` after registering the tool's panels and actions. A tool may
-contribute panel ids, action ids, toolbar slots and viewport overlay ids. Contribution ids must point at existing panel and
-action registries; overlay ids are editor-facing intent until a concrete viewport overlay renderer consumes them.
+Add built-in tool metadata through `EditorExtensionRegistry` manifest-like descriptors, then publish the tool view into
+`EditorToolRegistry` after registering the tool's panels and actions. A tool may contribute panel ids, action ids, toolbar
+slots and viewport overlay ids. Contribution ids must point at existing panel and action registries; overlay ids are
+editor-facing intent until a concrete viewport overlay renderer consumes them.
 
 Tool rules:
 
