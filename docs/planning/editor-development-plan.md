@@ -1318,6 +1318,8 @@ Validation:
 
 - `--smoke-editor-frame-debugger` verifies selecting a different pass changes Frame Debug replay state without resuming normal
   RenderView recording.
+- `--smoke-editor-frame-debugger` records the selected execution event id at preview time and verifies that it exists in the
+  frozen capture, is not a pass begin/end bookkeeping event and maps to the same pass that was replay-copied.
 - Replay must not call `vkDeviceWaitIdle`, must not expose backend handles to panels and must be driven by captured CPU-side
   frame inputs.
 
@@ -1377,6 +1379,8 @@ Validation:
 - `--smoke-rendergraph` or package-local rendergraph tests keep command-summary diagnostics intact.
 - `--smoke-editor-frame-debugger` verifies capture -> pause -> select execution event -> preview/replay request -> resume.
 - `--smoke-editor-frame-debugger` verifies captured diagnostics include renderer execution events.
+- `--smoke-editor-frame-debugger` verifies the selected renderer execution event id resolves back to the captured event stream
+  and to the pass used for the preview copy.
 - Encoding, doc sync and `git diff --check` remain required before committing.
 
 Exit criteria:

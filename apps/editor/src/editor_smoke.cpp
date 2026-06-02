@@ -79,6 +79,23 @@ namespace {
         return fallback;
     }
 
+    void captureFrameDebugPreviewSmokeState(
+        asharia::editor::EditorFrameDebuggerSmokeState& state,
+        const asharia::editor::EditorFrameDebugPreview& preview,
+        const asharia::editor::EditorViewportCoordinator& viewportHost,
+        const asharia::editor::EditorInspectedWorldScheduler& inspectedWorldScheduler) {
+        state.previewSelectedPassIndex = preview.selectedPassIndex;
+        state.previewSelectedExecutionEventId.reset();
+        if (preview.selectedExecutionEventId) {
+            state.previewSelectedExecutionEventId = preview.selectedExecutionEventId->value;
+        }
+        state.previewCopiedAfterPassIndex = preview.copiedAfterPassIndex;
+        state.viewportFramesAtPreview = viewportHost.viewportFramesRendered();
+        state.inspectedWorldFramesAtPreview =
+            inspectedWorldScheduler.stats().frameAdvanceSafePoints;
+        state.previewVisible = true;
+    }
+
 } // namespace
 
 namespace asharia::editor {
@@ -243,12 +260,8 @@ namespace asharia::editor {
                 if (preview.status == EditorFrameDebugPreviewStatus::Available &&
                     hasEditorViewportTexture(preview.texture) &&
                     stats.previewTextureFramesDrawn > 0) {
-                    state.previewSelectedPassIndex = preview.selectedPassIndex;
-                    state.previewCopiedAfterPassIndex = preview.copiedAfterPassIndex;
-                    state.viewportFramesAtPreview = viewportHost.viewportFramesRendered();
-                    state.inspectedWorldFramesAtPreview =
-                        inspectedWorldScheduler.stats().frameAdvanceSafePoints;
-                    state.previewVisible = true;
+                    captureFrameDebugPreviewSmokeState(state, preview, viewportHost,
+                                                       inspectedWorldScheduler);
                 }
                 return;
             }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -20,6 +21,24 @@ namespace asharia::editor {
                                 std::string_view sourceOverlayId) {
             return std::ranges::find(overlay.sourceOverlayIds, sourceOverlayId) !=
                    overlay.sourceOverlayIds.end();
+        }
+
+        [[nodiscard]] const asharia::BasicRenderViewExecutionEvent*
+        capturedExecutionEvent(const asharia::BasicRenderViewDiagnostics& diagnostics,
+                               std::uint64_t eventId) {
+            for (const asharia::BasicRenderViewExecutionEvent& event :
+                 diagnostics.executionEvents) {
+                if (event.id.value == eventId) {
+                    return &event;
+                }
+            }
+            return nullptr;
+        }
+
+        [[nodiscard]] bool
+        isInspectableExecutionEvent(asharia::BasicRenderViewExecutionEventKind kind) {
+            return kind != asharia::BasicRenderViewExecutionEventKind::BeginPass &&
+                   kind != asharia::BasicRenderViewExecutionEventKind::EndPass;
         }
 
         [[nodiscard]] bool closeFloat(float lhs, float rhs) {
@@ -83,6 +102,7 @@ namespace asharia::editor {
             return false;
         }
         if (!runResult.frameDebugPreviewSelectedPassIndex ||
+            !runResult.frameDebugPreviewSelectedExecutionEventId ||
             !runResult.frameDebugPreviewCopiedAfterPassIndex ||
             *runResult.frameDebugPreviewSelectedPassIndex !=
                 *runResult.frameDebugPreviewCopiedAfterPassIndex) {
@@ -147,6 +167,20 @@ namespace asharia::editor {
         }
         if (capture->diagnostics.executionEvents.empty()) {
             asharia::logError("Editor frame debugger smoke captured no renderer execution events.");
+            return false;
+        }
+        const asharia::BasicRenderViewExecutionEvent* selectedEvent = capturedExecutionEvent(
+            capture->diagnostics, *runResult.frameDebugPreviewSelectedExecutionEventId);
+        if (selectedEvent == nullptr) {
+            asharia::logError(
+                "Editor frame debugger smoke selected an event missing from the capture.");
+            return false;
+        }
+        if (!isInspectableExecutionEvent(selectedEvent->kind) ||
+            selectedEvent->passIndex != *runResult.frameDebugPreviewSelectedPassIndex) {
+            asharia::logError(
+                "Editor frame debugger smoke selected an event that does not map to the "
+                "previewed pass.");
             return false;
         }
         if (!capturedSourceOverlayId(capture->diagnostics.overlay, kEditorSceneGridOverlayId) ||

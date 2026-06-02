@@ -466,8 +466,9 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   image and registers that image through the existing `ImGuiTextureRegistry`. It supports color images with matching
   extent/format/mip/layer shape and reports `preview unavailable` for depth, buffer or unsupported resources. The primary
   Frame Debug panel now selects a renderer execution event first, resolves that event's pass to a previewable image output
-  from the frozen diagnostics snapshot, and serves the refresh without resuming normal RenderView recording. CPU readback,
-  export and draw-call precise replay remain deferred.
+  from the frozen diagnostics snapshot, and serves the refresh without resuming normal RenderView recording. Frame Debug
+  smoke preserves the selected execution event id at preview time and verifies that it resolves back to the frozen capture
+  and to the pass used for the preview copy. CPU readback, export and draw-call precise replay remain deferred.
 - `recordEditorImguiFrame()` 位于 `imgui_frame_renderer.cpp`，由 `editor_vulkan_host` 的一帧提交 helper
   调用。作为 host integration 现在可以接受；如果它超出 swapchain ImGui pass recording，应继续移动到
   `imgui_runtime` 或独立的 editor ImGui pass module。
