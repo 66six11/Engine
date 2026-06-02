@@ -58,7 +58,8 @@
 - `shader_contracts.inl`
 - `pipeline_layouts.inl`
 - `graph_recording.inl`
-- `debug_preview.inl`
+- `debug_preview.inl`：持有 Frame Debug replay preview 的候选图像、结果状态、image copy pass 和 source-pass
+  after-pass cursor；该 cursor 使用原始 RenderView pass index，不把 debug copy pass 计入 captured/replay pass 对齐。
 - `render_view_targets.inl`
 - `render_view_diagnostics.inl`
 - `render_view_pass_policy.inl`
@@ -72,7 +73,7 @@
 - `mesh3d_renderer.inl`
 - `draw_list_renderer.inl`
 
-这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 image-only graph compile、transient image preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态和 image copy pass；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder；`render_view_pass_policy.inl` 只覆盖 RenderView scene input、world-grid / debug-line overlay pass enablement 与 typed params 计算；`render_view_recording.inl` 只覆盖把该 policy 插入 RenderGraph pass。fullscreen source/composite pass、descriptor set、pipeline readiness、debug preview 调度和 compute buffer/readback 仍留在原 owner，避免抽象过早扩大。
+这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 image-only graph compile、transient image preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态、image copy pass 和 source-pass after-pass 调度；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder；`render_view_pass_policy.inl` 只覆盖 RenderView scene input、world-grid / debug-line overlay pass enablement 与 typed params 计算；`render_view_recording.inl` 只覆盖把该 policy 插入 RenderGraph pass。fullscreen source/composite pass、descriptor set、pipeline readiness、debug preview candidate 定义和 compute buffer/readback 仍留在原 owner，避免抽象过早扩大。
 
 ## 当前限制
 

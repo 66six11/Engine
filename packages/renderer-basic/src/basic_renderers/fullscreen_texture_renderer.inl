@@ -634,14 +634,13 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         },
     };
-    const auto tryAddDebugPreviewAfterPass = [&](std::size_t completedPassIndex) -> Result<void> {
-        auto debugPreviewAdded = tryAddBasicDebugPreviewPassAfterPass(
-            graph, view.debugPreview, debugPreviewCandidates, bindings, frame, &eventRecorder,
-            completedPassIndex);
-        if (!debugPreviewAdded) {
-            return std::unexpected{std::move(debugPreviewAdded.error())};
-        }
-        return {};
+    BasicDebugPreviewSourcePassCursor debugPreviewCursor{
+        .graph = graph,
+        .request = view.debugPreview,
+        .candidates = debugPreviewCandidates,
+        .bindings = bindings,
+        .frame = frame,
+        .eventRecorder = eventRecorder,
     };
 
     constexpr BasicTransferClearParams kClearParams{
@@ -701,12 +700,10 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
         }
     }
 
-    std::size_t renderViewPassIndex = 0;
     if (renderViewPassPolicy.sceneInputsEnabled) {
-        ++renderViewPassIndex;
+        debugPreviewCursor.advanceSourcePassWithoutPreview();
         addBasicRenderViewSceneInputsPass(renderViewRecording);
     }
-    const std::size_t clearPassIndex = renderViewPassIndex++;
     graph.addPass("ClearFullscreenSource", kBasicTransferClearPassType)
         .setParams(kBasicTransferClearParamsType, kClearParams)
         .writeTransfer("target", source)
@@ -716,12 +713,11 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
         .execute([&frame, &bindings, &eventRecorder](RenderGraphPassContext pass) -> Result<void> {
             return executeBasicFullscreenSourceClear(frame, pass, bindings, &eventRecorder);
         });
-    auto debugPreviewAfterClear = tryAddDebugPreviewAfterPass(clearPassIndex);
+    auto debugPreviewAfterClear = debugPreviewCursor.tryAddPreviewAfterSourcePass();
     if (!debugPreviewAfterClear) {
         return std::unexpected{std::move(debugPreviewAfterClear.error())};
     }
 
-    const std::size_t fullscreenPassIndex = renderViewPassIndex++;
     graph.addPass("FullscreenTexture", kBasicRasterFullscreenPassType)
         .setParams(kBasicRasterFullscreenParamsType, kFullscreenParams)
         .readTexture("source", source, RenderGraphShaderStage::Fragment)
@@ -744,45 +740,35 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
                 },
                 &eventRecorder);
         });
-    auto debugPreviewAfterFullscreen = tryAddDebugPreviewAfterPass(fullscreenPassIndex);
+    auto debugPreviewAfterFullscreen = debugPreviewCursor.tryAddPreviewAfterSourcePass();
     if (!debugPreviewAfterFullscreen) {
         return std::unexpected{std::move(debugPreviewAfterFullscreen.error())};
     }
 
     if (renderViewPassPolicy.worldGridEnabled) {
-        const std::size_t worldGridPassIndex = renderViewPassIndex++;
         addBasicRenderViewWorldGridPass(
             renderViewRecording, worldGridPipeline_.handle(), worldGridPipelineLayout_.handle());
-        auto debugPreviewAfterWorldGrid = tryAddDebugPreviewAfterPass(worldGridPassIndex);
+        auto debugPreviewAfterWorldGrid = debugPreviewCursor.tryAddPreviewAfterSourcePass();
         if (!debugPreviewAfterWorldGrid) {
             return std::unexpected{std::move(debugPreviewAfterWorldGrid.error())};
         }
     }
 
     if (renderViewPassPolicy.debugLineOverlayEnabled) {
-        const std::size_t overlayPassIndex = renderViewPassIndex++;
         addBasicRenderViewOverlayPass(
             renderViewRecording, debugLinePipeline_.handle(), debugLineVertexBuffer,
             debugLineVertexCount);
-        auto debugPreviewAfterOverlay = tryAddDebugPreviewAfterPass(overlayPassIndex);
+        auto debugPreviewAfterOverlay = debugPreviewCursor.tryAddPreviewAfterSourcePass();
         if (!debugPreviewAfterOverlay) {
             return std::unexpected{std::move(debugPreviewAfterOverlay.error())};
         }
     }
 
-    if (view.debugPreview != nullptr && !view.debugPreview->afterPassIndex) {
-        auto debugPreviewAdded = tryAddBasicDebugPreviewPass(
-            graph, view.debugPreview, debugPreviewCandidates, bindings, frame, &eventRecorder);
-        if (!debugPreviewAdded) {
-            return std::unexpected{std::move(debugPreviewAdded.error())};
-        }
+    auto debugPreviewAtEnd = debugPreviewCursor.tryAddEndOfGraphPreview();
+    if (!debugPreviewAtEnd) {
+        return std::unexpected{std::move(debugPreviewAtEnd.error())};
     }
-    if (view.debugPreview != nullptr && view.debugPreview->afterPassIndex &&
-        view.debugPreview->result != nullptr &&
-        view.debugPreview->result->status == BasicDebugPreviewStatus::NotRequested) {
-        setBasicDebugPreviewResult(view.debugPreview, BasicDebugPreviewStatus::Unavailable,
-                                   "Selected pass was not recorded during replay.");
-    }
+    debugPreviewCursor.markUnrecordedSelectedPassUnavailable();
 
     const RenderGraphSchemaRegistry schemas = basicRenderGraphSchemaRegistry();
     auto compiled = graph.compile(schemas);

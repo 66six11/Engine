@@ -164,3 +164,49 @@ tryAddBasicDebugPreviewPass(RenderGraph& graph, BasicDebugPreviewRequest* reques
 
     return tryAddBasicDebugPreviewPass(graph, request, candidates, bindings, frame, eventRecorder);
 }
+
+struct BasicDebugPreviewSourcePassCursor {
+    RenderGraph& graph;
+    BasicDebugPreviewRequest* request{};
+    std::span<const BasicRenderViewImageCandidate> candidates;
+    std::vector<VulkanRenderGraphImageBinding>& bindings;
+    const VulkanFrameRecordContext& frame;
+    BasicRenderViewExecutionEventRecorder& eventRecorder;
+    std::size_t nextSourcePassIndex{};
+
+    void advanceSourcePassWithoutPreview() {
+        ++nextSourcePassIndex;
+    }
+
+    [[nodiscard]] Result<void> tryAddPreviewAfterSourcePass() {
+        const std::size_t completedPassIndex = nextSourcePassIndex++;
+        auto debugPreviewAdded = tryAddBasicDebugPreviewPassAfterPass(
+            graph, request, candidates, bindings, frame, &eventRecorder, completedPassIndex);
+        if (!debugPreviewAdded) {
+            return std::unexpected{std::move(debugPreviewAdded.error())};
+        }
+        return {};
+    }
+
+    [[nodiscard]] Result<void> tryAddEndOfGraphPreview() {
+        if (request == nullptr || request->afterPassIndex) {
+            return {};
+        }
+
+        auto debugPreviewAdded =
+            tryAddBasicDebugPreviewPass(graph, request, candidates, bindings, frame,
+                                        &eventRecorder);
+        if (!debugPreviewAdded) {
+            return std::unexpected{std::move(debugPreviewAdded.error())};
+        }
+        return {};
+    }
+
+    void markUnrecordedSelectedPassUnavailable() {
+        if (request != nullptr && request->afterPassIndex && request->result != nullptr &&
+            request->result->status == BasicDebugPreviewStatus::NotRequested) {
+            setBasicDebugPreviewResult(request, BasicDebugPreviewStatus::Unavailable,
+                                       "Selected pass was not recorded during replay.");
+        }
+    }
+};

@@ -123,7 +123,7 @@
 
 ## Phase 2：Debug Preview Helper
 
-状态：已完成第一版。它仍是 renderer-owned recording path，不是 editor panel API，也不改变 frozen diagnostics 的消费模型。
+状态：已完成第二版。它仍是 renderer-owned recording path，不是 editor panel API，也不改变 frozen diagnostics 的消费模型。
 
 目标：把 debug preview 的 image candidate、preview result、copy pass 组织成私有模块，服务 Frame Debug replay，但不扩大为公共 API。
 
@@ -138,12 +138,15 @@
 - `sameRenderGraphExtent`
 - `setBasicDebugPreviewResult`
 - `tryAddBasicDebugPreviewPass`
+- `BasicDebugPreviewSourcePassCursor`
 - `executeBasicDebugImageCopyPass`
 
 合理性检查重点：
 
 - Frame Debug 是否仍只消费 frozen renderer diagnostics，不持有 Vulkan 对象。
 - preview copy 是否仍然是 renderer-owned recording path，不进入 editor panel。
+- source-pass cursor 是否继续使用 captured/replay 的原始 RenderView pass index，而不是 debug copy pass 插入后的 graph
+  declaration order。
 - 是否会影响 `recordViewFrame()` 的 diagnostics 生成顺序。
 
 验证：
@@ -153,7 +156,7 @@
 
 ## Phase 3：Render View Recording Split
 
-状态：已完成第四版。已经拆出 target、diagnostics/event 支撑，并新增窄私有 `render_view_pass_policy.inl` / `render_view_recording.inl` 分别承载 RenderView pass policy 和 pass insertion；`render_view_recording.inl` 通过私有 `BasicRenderViewPassRecordingContext` 收拢 graph、target、policy、frame、bindings 和 event recorder，避免 pass helper 继续暴露散装参数。`recordViewFrame()` 仍保留 fullscreen source/composite、descriptor、pipeline readiness、debug preview 调度和 graph compile/execute 编排。
+状态：已完成第五版。已经拆出 target、diagnostics/event 支撑，并新增窄私有 `render_view_pass_policy.inl` / `render_view_recording.inl` 分别承载 RenderView pass policy 和 pass insertion；`render_view_recording.inl` 通过私有 `BasicRenderViewPassRecordingContext` 收拢 graph、target、policy、frame、bindings 和 event recorder，避免 pass helper 继续暴露散装参数。`recordViewFrame()` 仍保留 fullscreen source/composite、descriptor、pipeline readiness、debug preview candidate 定义和 graph compile/execute 编排。
 
 目标：把 RenderView target validation、diagnostics snapshot、execution event recorder 和 offscreen/swapchain target 转换的职责从 fullscreen renderer 中分离出来。
 
@@ -179,7 +182,8 @@
 
 - `ClearFullscreenSource` 和 `FullscreenTexture` pass，因为它们属于 `BasicFullscreenTextureRenderer` 的 source/composite 路径。
 - descriptor set acquisition、pipeline readiness 和 debug line vertex upload，因为它们是 renderer resource lifecycle。
-- debug preview candidate/after-pass 调度，因为它依赖当前 frame replay request 和 pass index。
+- debug preview candidate 定义，因为 candidate 依赖本次 `recordViewFrame()` 创建的 render target/source resource；source-pass
+  after-pass 调度已由 `BasicDebugPreviewSourcePassCursor` 管理。
 
 进入条件：
 
