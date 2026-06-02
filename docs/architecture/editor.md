@@ -1,6 +1,6 @@
 # Editor 架构
 
-更新日期：2026-05-22
+更新日期：2026-06-02
 
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
 integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
@@ -63,6 +63,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
 | `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
+| `editor_tool_manager` | editor-local active tool state, per-viewport primary tool selection and activate/deactivate lifecycle | renderer pass policy, Vulkan resources, panel factories or persistent scene/asset mutation |
 | `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
@@ -212,6 +213,12 @@ shape the editor chrome without adding more hard-coded button lists to `imgui_ed
 Viewport overlay contributions are queried by viewport id through `visitViewportOverlays()`. Scene View uses that query to
 draw its compact grid/gizmo/selection-outline strip over the sampled viewport while keeping overlay ids tool-owned.
 
+`EditorToolManager` owns the editor-only lifecycle state for those registered tools. It syncs from `EditorToolRegistry`,
+tracks one primary active tool per viewport, exposes begin/complete activation and deactivation states, and marks missing
+tools as `Unregistered` during reload-style sync. It does not execute tool behavior, mutate scene data, draw panel contents
+or decide renderer pass insertion; those remain command/transaction, panel, viewport coordinator and renderer-owned
+responsibilities.
+
 ### ImGui theme
 
 `editor_ui` owns the editor-local Dear ImGui style tokens and the built-in editor theme catalog. The default theme is
@@ -305,6 +312,7 @@ editor-facing intent until a concrete viewport overlay renderer consumes them.
 Tool rules:
 
 - Do not execute actions or draw panel contents from the tool registry.
+- Use `EditorToolManager` for active tool and lifecycle state; do not keep competing active-tool booleans in panels.
 - Keep toolbar placement as metadata; the shell decides how toolbar slots are presented.
 - Keep viewport overlay ids backend-neutral and map them to RenderView/debug draw inputs through the viewport coordinator.
 - Query viewport overlays by viewport id when panel chrome needs controls; do not duplicate another tool's overlay list in a

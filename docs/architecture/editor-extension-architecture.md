@@ -1,6 +1,6 @@
 # Editor Extension Architecture
 
-更新日期：2026-05-22
+更新日期：2026-06-02
 
 本文定义 Asharia Editor 的工具、插件、viewport overlay 和脚本热更新边界。它补充
 `docs/architecture/editor.md` 和 `docs/architecture/editor-ui-scripting.md`：前者描述当前 `apps/editor`
@@ -318,10 +318,15 @@ Status: current / partial.
 
 ### Step 3: Tool Manager v0
 
-- 新增 active tool state。
-- 支持 activate/deactivate/suspend。
-- Scene View overlay strip 读取 active/passive tool state。
-- 不做 selection/gizmo mutation。
+Status: current / partial.
+
+- 已新增 `EditorToolManager`，由 `EditorAppServices` 拥有，并在 built-in tools 发布到 `EditorToolRegistry` 后同步。
+- 已支持 per-viewport primary active tool、`Available -> Activating -> Active -> Suspending -> Inactive`
+  生命周期、reload 后 missing tool 的 `Unregistered` 状态，以及 begin/complete 成对的 activate/deactivate 断言。
+- startup registration smoke 验证工具同步、未知 tool 拒绝、同一 viewport 切换时旧工具失活、layout reset 不丢失 active tool
+  和未经过 suspending 的 deactivation 拒绝。
+- 未完成：Scene View overlay strip 读取 active/passive tool state、tool property model、input behavior routing、
+  selection/gizmo mutation 和外部 manifest reload 后的 UI diagnostics。
 
 ### Step 4: Viewport Overlay Provider v0
 

@@ -7,16 +7,15 @@
 namespace asharia::editor {
     class EditorActionRegistry;
     class EditorSettingsController;
+    class EditorToolManager;
     class EditorToolRegistry;
     class ImGuiRuntime;
     struct EditorActionServices;
 
-    [[nodiscard]] bool validateEditorStartupGates(EditorRunMode mode, const ImGuiRuntime& imgui,
-                                                  EditorLocale locale, EditorUiThemeId theme,
-                                                  EditorActionRegistry& actionRegistry,
-                                                  EditorActionServices& actionServices,
-                                                  EditorSettingsController& settings,
-                                                  EditorI18n& i18n,
-                                                  const EditorToolRegistry& toolRegistry);
+    [[nodiscard]] bool validateEditorStartupGates(
+        EditorRunMode mode, const ImGuiRuntime& imgui, EditorLocale locale, EditorUiThemeId theme,
+        EditorActionRegistry& actionRegistry, EditorActionServices& actionServices,
+        EditorSettingsController& settings, EditorI18n& i18n,
+        const EditorToolRegistry& toolRegistry, const EditorToolManager& toolManager);
 
 } // namespace asharia::editor

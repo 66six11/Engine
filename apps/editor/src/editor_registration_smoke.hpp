@@ -6,14 +6,13 @@ namespace asharia::editor {
     class EditorActionRegistry;
     class EditorI18n;
     class EditorSettingsController;
+    class EditorToolManager;
     class EditorToolRegistry;
     struct EditorActionServices;
 
-    [[nodiscard]] bool validateEditorRegistrationSmoke(EditorRunMode mode,
-                                                       EditorActionRegistry& actionRegistry,
-                                                       EditorActionServices& actionServices,
-                                                       EditorSettingsController& settings,
-                                                       EditorI18n& i18n,
-                                                       const EditorToolRegistry& toolRegistry);
+    [[nodiscard]] bool validateEditorRegistrationSmoke(
+        EditorRunMode mode, EditorActionRegistry& actionRegistry,
+        EditorActionServices& actionServices, EditorSettingsController& settings, EditorI18n& i18n,
+        const EditorToolRegistry& toolRegistry, const EditorToolManager& toolManager);
 
 } // namespace asharia::editor

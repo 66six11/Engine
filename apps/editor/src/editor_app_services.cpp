@@ -1,5 +1,7 @@
 ﻿#include "editor_app_services.hpp"
 
+#include <utility>
+
 #include "editor_app_registration.hpp"
 
 namespace asharia::editor {
@@ -15,8 +17,13 @@ namespace asharia::editor {
           } {}
 
     asharia::VoidResult registerEditorAppServices(EditorAppServices& services) {
-        return registerEditorAppRegistries(services.panelRegistry, services.actionRegistry,
-                                           services.toolRegistry, services.eventQueue);
+        auto registered =
+            registerEditorAppRegistries(services.panelRegistry, services.actionRegistry,
+                                        services.toolRegistry, services.eventQueue);
+        if (!registered) {
+            return std::unexpected{std::move(registered.error())};
+        }
+        return services.toolManager.syncTools(services.toolRegistry);
     }
 
 } // namespace asharia::editor

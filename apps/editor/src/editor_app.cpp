@@ -91,19 +91,19 @@ namespace asharia::editor {
             return EXIT_FAILURE;
         }
 
-        if (!validateEditorStartupGates(mode, renderRuntime.imgui(), editorLocale,
-                                        settingsRun.settings.theme, services.actionRegistry,
-                                        services.actionServices, services.settingsController,
-                                        services.i18n, services.toolRegistry)) {
+        if (!validateEditorStartupGates(
+                mode, renderRuntime.imgui(), editorLocale, settingsRun.settings.theme,
+                services.actionRegistry, services.actionServices, services.settingsController,
+                services.i18n, services.toolRegistry, services.toolManager)) {
             return EXIT_FAILURE;
         }
 
-        auto runResult = runEditorLoop(*window, *frameLoop, renderRuntime.renderer(),
-                                       renderRuntime.viewportCoordinator(), services.frameDebugger,
-                                       services.actionRegistry, services.actionServices,
-                                       services.eventQueue, services.diagnosticsLog, services.i18n,
-                                       services.settingsController, services.panelRegistry,
-                                       services.toolRegistry, services.workspaceController, mode);
+        auto runResult = runEditorLoop(
+            *window, *frameLoop, renderRuntime.renderer(), renderRuntime.viewportCoordinator(),
+            services.frameDebugger, services.actionRegistry, services.actionServices,
+            services.eventQueue, services.diagnosticsLog, services.i18n,
+            services.settingsController, services.panelRegistry, services.toolRegistry,
+            services.toolManager, services.workspaceController, mode);
         if (!runResult) {
             asharia::logError(runResult.error().message);
             return EXIT_FAILURE;

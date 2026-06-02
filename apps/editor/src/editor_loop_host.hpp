@@ -18,17 +18,20 @@ namespace asharia::editor {
     class EditorI18n;
     class EditorPanelRegistry;
     class EditorSettingsController;
+    class EditorToolManager;
     class EditorToolRegistry;
     class EditorViewportCoordinator;
     class EditorWorkspaceController;
     struct EditorActionServices;
 
-    [[nodiscard]] Result<EditorSmokeRunResult> runEditorLoop(
-        GlfwWindow& window, VulkanFrameLoop& frameLoop, BasicFullscreenTextureRenderer& renderer,
-        EditorViewportCoordinator& viewportHost, EditorFrameDebugger& frameDebugger,
-        EditorActionRegistry& actionRegistry, EditorActionServices& actionServices,
-        EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
-        EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
-        EditorToolRegistry& toolRegistry, EditorWorkspaceController& workspace, EditorRunMode mode);
+    [[nodiscard]] Result<EditorSmokeRunResult>
+    runEditorLoop(GlfwWindow& window, VulkanFrameLoop& frameLoop,
+                  BasicFullscreenTextureRenderer& renderer, EditorViewportCoordinator& viewportHost,
+                  EditorFrameDebugger& frameDebugger, EditorActionRegistry& actionRegistry,
+                  EditorActionServices& actionServices, EditorEventQueue& eventQueue,
+                  EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
+                  EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
+                  EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
+                  EditorWorkspaceController& workspace, EditorRunMode mode);
 
 } // namespace asharia::editor

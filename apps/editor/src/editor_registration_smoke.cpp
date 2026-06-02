@@ -18,6 +18,7 @@
 #include "editor_shortcut_smoke.hpp"
 #include "editor_smoke.hpp"
 #include "editor_tool.hpp"
+#include "editor_tool_manager.hpp"
 #include "editor_ui.hpp"
 #include "editor_viewport_overlay_provider.hpp"
 #include "editor_workspace.hpp"
@@ -490,12 +491,131 @@ namespace asharia::editor {
             return true;
         }
 
+        [[nodiscard]] bool validateToolManagerSmoke(const EditorToolRegistry& toolRegistry,
+                                                    const EditorToolManager& appToolManager,
+                                                    EditorWorkspaceController& workspace) {
+            constexpr std::string_view kSceneViewportId = "scene-view";
+            constexpr std::string_view kSceneToolId = "tool.scene-view";
+            constexpr std::string_view kFrameDebuggerToolId = "tool.frame-debugger";
+
+            if (appToolManager.trackedToolCount() != toolRegistry.toolCount() ||
+                appToolManager.lifecycleState(kSceneToolId) !=
+                    EditorToolLifecycleState::Available ||
+                !appToolManager.activeToolForViewport(kSceneViewportId).empty()) {
+                asharia::logError("Editor tool manager smoke found invalid app tool state.");
+                return false;
+            }
+
+            EditorToolManager toolManager;
+            if (auto synced = toolManager.syncTools(toolRegistry); !synced) {
+                asharia::logError(synced.error().message);
+                return false;
+            }
+            if (toolManager.trackedToolCount() != toolRegistry.toolCount() ||
+                toolManager.lifecycleState("tool.missing") !=
+                    EditorToolLifecycleState::Unregistered) {
+                asharia::logError("Editor tool manager smoke did not sync registered tools.");
+                return false;
+            }
+            if (toolManager.beginActivateToolForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = "tool.missing"})) {
+                asharia::logError("Editor tool manager smoke activated an unknown tool.");
+                return false;
+            }
+
+            if (auto started = toolManager.beginActivateToolForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kSceneToolId});
+                !started) {
+                asharia::logError(started.error().message);
+                return false;
+            }
+            if (toolManager.lifecycleState(kSceneToolId) != EditorToolLifecycleState::Activating ||
+                toolManager.activeToolForViewport(kSceneViewportId) != kSceneToolId ||
+                toolManager.activeViewportCount() != 1U) {
+                asharia::logError("Editor tool manager smoke missed activating state.");
+                return false;
+            }
+            if (auto completed = toolManager.completeToolActivation(
+                    {.viewportId = kSceneViewportId, .toolId = kSceneToolId});
+                !completed) {
+                asharia::logError(completed.error().message);
+                return false;
+            }
+            if (toolManager.lifecycleState(kSceneToolId) != EditorToolLifecycleState::Active ||
+                !toolManager.isToolActiveForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
+                asharia::logError("Editor tool manager smoke missed active state.");
+                return false;
+            }
+            if (toolManager.completeToolActivation(
+                    {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
+                asharia::logError("Editor tool manager smoke completed activation twice.");
+                return false;
+            }
+            if (toolManager.completeToolDeactivation(
+                    {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
+                asharia::logError("Editor tool manager smoke deactivated without suspending.");
+                return false;
+            }
+
+            workspace.requestLayoutReset();
+            if (!toolManager.isToolActiveForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kSceneToolId})) {
+                asharia::logError(
+                    "Editor tool manager smoke lost active tool during layout reset.");
+                return false;
+            }
+
+            if (auto switched = toolManager.activateToolForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kFrameDebuggerToolId});
+                !switched) {
+                asharia::logError(switched.error().message);
+                return false;
+            }
+            if (toolManager.lifecycleState(kSceneToolId) != EditorToolLifecycleState::Inactive ||
+                toolManager.lifecycleState(kFrameDebuggerToolId) !=
+                    EditorToolLifecycleState::Active ||
+                toolManager.activeToolForViewport(kSceneViewportId) != kFrameDebuggerToolId ||
+                toolManager.activeViewportCount() != 1U) {
+                asharia::logError("Editor tool manager smoke allowed multiple active tools.");
+                return false;
+            }
+
+            if (auto started = toolManager.beginDeactivateToolForViewport(
+                    {.viewportId = kSceneViewportId, .toolId = kFrameDebuggerToolId});
+                !started) {
+                asharia::logError(started.error().message);
+                return false;
+            }
+            if (toolManager.lifecycleState(kFrameDebuggerToolId) !=
+                EditorToolLifecycleState::Suspending) {
+                asharia::logError("Editor tool manager smoke missed suspending state.");
+                return false;
+            }
+            if (auto completed = toolManager.completeToolDeactivation(
+                    {.viewportId = kSceneViewportId, .toolId = kFrameDebuggerToolId});
+                !completed) {
+                asharia::logError(completed.error().message);
+                return false;
+            }
+            if (toolManager.lifecycleState(kFrameDebuggerToolId) !=
+                    EditorToolLifecycleState::Inactive ||
+                !toolManager.activeToolForViewport(kSceneViewportId).empty() ||
+                toolManager.activeViewportCount() != 0U) {
+                asharia::logError("Editor tool manager smoke missed inactive state.");
+                return false;
+            }
+
+            return true;
+        }
+
     } // namespace
 
     bool validateEditorRegistrationSmoke(EditorRunMode mode, EditorActionRegistry& actionRegistry,
                                          EditorActionServices& actionServices,
                                          EditorSettingsController& settings, EditorI18n& i18n,
-                                         const EditorToolRegistry& toolRegistry) {
+                                         const EditorToolRegistry& toolRegistry,
+                                         const EditorToolManager& toolManager) {
         if (!isEditorSmokeMode(mode)) {
             return true;
         }
@@ -504,6 +624,7 @@ namespace asharia::editor {
                validateActionRegistrySmoke(actionRegistry, actionServices) &&
                validateEditorExtensionRegistrySmoke() &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, actionServices.panels) &&
+               validateToolManagerSmoke(toolRegistry, toolManager, actionServices.workspace) &&
                validateEditorSettingsSmoke(mode, settings, i18n) &&
                validateShortcutRouterSmoke(actionRegistry, actionServices);
     }

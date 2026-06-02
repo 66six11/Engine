@@ -197,7 +197,7 @@ namespace asharia::editor {
                 EditorSceneViewPanelDrawContext{
                     .ui = context.ui,
                     .settings = context.settings.controller.settings(),
-                    .tools = context.tools.registry,
+                    .tools = context.tools,
                     .inputRouter = context.input.router,
                     .viewportHost = context.viewport.host,
                 },

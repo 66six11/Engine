@@ -808,7 +808,7 @@ Validation:
 
 ### 16.12 Tool Manager Lifecycle
 
-Status: Deferred.
+Status: Current / partial.
 
 Depends on:
 
@@ -820,6 +820,17 @@ Scope:
 - Add active/passive tool lifecycle state: available, activating, active, suspending and inactive.
 - Route Scene View overlay strip state through tool/overlay descriptors rather than panel-local hard mapping.
 - Keep persistent scene mutations out of tools until command/transaction exists.
+
+Implementation:
+
+- `EditorToolManager` is now owned by `EditorAppServices` and synced immediately after built-in tool contributions are
+  published to `EditorToolRegistry`.
+- The manager tracks one primary active tool per viewport and exposes explicit begin/complete activation and deactivation
+  states: `Available`, `Activating`, `Active`, `Suspending`, `Inactive` and `Unregistered`.
+- Startup registration smoke now verifies tool sync, unknown-tool rejection, activation completion, duplicate completion
+  rejection, deactivation precondition checks, layout reset stability and same-viewport tool switching.
+- Still deferred: Scene View overlay strip consumption of active/passive tool state, tool property models, input behavior
+  routing and scene/asset mutation through commands.
 
 Validation:
 

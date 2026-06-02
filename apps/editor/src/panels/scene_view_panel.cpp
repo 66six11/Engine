@@ -37,7 +37,7 @@ namespace {
     struct SceneViewPanelContext {
         const asharia::editor::EditorFrameUiContext* ui{};
         const asharia::editor::EditorSettings* settings{};
-        const asharia::editor::EditorToolRegistry* tools{};
+        const asharia::editor::EditorFrameToolContext* tools{};
         asharia::editor::EditorInputRouter* inputRouter{};
         asharia::editor::EditorViewportPanelHost* viewportHost{};
     };
@@ -283,7 +283,7 @@ namespace asharia::editor {
         const bool viewportHovered = ImGui::IsItemHovered();
         const bool cameraChanged = handleCameraNavigation(viewportExtent);
         const SceneOverlayStripResult overlayStrip =
-            drawSceneOverlayStrip(*panelContext.ui, *panelContext.tools, desc_.id.value,
+            drawSceneOverlayStrip(*panelContext.ui, panelContext.tools->registry, desc_.id.value,
                                   viewportMin, viewportMax, overlayFlags_);
         panelContext.inputRouter->reportSceneView(EditorSceneViewInputState{
             .hovered = viewportHovered && !overlayStrip.hovered,

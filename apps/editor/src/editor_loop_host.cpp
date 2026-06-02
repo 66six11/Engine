@@ -23,6 +23,7 @@
 #include "editor_shell_host.hpp"
 #include "editor_shortcut_router.hpp"
 #include "editor_tool.hpp"
+#include "editor_tool_manager.hpp"
 #include "editor_viewport_coordinator.hpp"
 #include "editor_viewport_overlay_provider.hpp"
 #include "editor_vulkan_host.hpp"
@@ -42,8 +43,8 @@ namespace asharia::editor {
                   EditorActionServices& actionServices, EditorEventQueue& eventQueue,
                   EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
                   EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
-                  EditorToolRegistry& toolRegistry, EditorWorkspaceController& workspace,
-                  EditorRunMode mode) {
+                  EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
+                  EditorWorkspaceController& workspace, EditorRunMode mode) {
         const bool smokeMode = isEditorSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
         EditorFrameDebuggerSmokeState frameDebugSmoke;
@@ -100,7 +101,7 @@ namespace asharia::editor {
                         .frameDebugger = frameDebugger,
                     },
                 .settings = {.controller = settingsController},
-                .tools = {.registry = toolRegistry},
+                .tools = {.registry = toolRegistry, .manager = toolManager},
                 .input = {.router = inputRouter},
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},

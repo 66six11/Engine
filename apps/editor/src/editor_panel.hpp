@@ -38,6 +38,7 @@ namespace asharia::editor {
     class EditorInputRouter;
     struct EditorSettings;
     class EditorSettingsController;
+    class EditorToolManager;
     class EditorToolRegistry;
 
     struct EditorPanelDesc {
@@ -79,6 +80,7 @@ namespace asharia::editor {
 
     struct EditorFrameToolContext {
         const EditorToolRegistry& registry;
+        const EditorToolManager& manager;
     };
 
     struct EditorFrameInputContext {
@@ -96,7 +98,7 @@ namespace asharia::editor {
     struct EditorSceneViewPanelDrawContext {
         const EditorFrameUiContext& ui;
         const EditorSettings& settings;
-        const EditorToolRegistry& tools;
+        const EditorFrameToolContext& tools;
         EditorInputRouter& inputRouter;
         EditorViewportPanelHost& viewportHost;
     };

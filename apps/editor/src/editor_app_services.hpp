@@ -10,6 +10,7 @@
 #include "editor_panel.hpp"
 #include "editor_settings.hpp"
 #include "editor_tool.hpp"
+#include "editor_tool_manager.hpp"
 #include "editor_workspace.hpp"
 
 namespace asharia::editor {
@@ -30,6 +31,7 @@ namespace asharia::editor {
         EditorPanelRegistry panelRegistry;
         EditorActionRegistry actionRegistry;
         EditorToolRegistry toolRegistry;
+        EditorToolManager toolManager;
         EditorActionServices actionServices;
     };
 
