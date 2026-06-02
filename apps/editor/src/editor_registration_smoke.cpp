@@ -55,6 +55,11 @@ namespace asharia::editor {
             const EditorLocale initialLocale = settings.settings().locale;
             const EditorUiThemeId initialTheme = settings.settings().theme;
             const EditorViewportWorldGridSettings initialSceneGrid = settings.settings().sceneGrid;
+            if (!sameWorldGridSettings(initialSceneGrid, defaultEditorSceneGridSettings())) {
+                asharia::logError(
+                    "Editor settings smoke did not use the default Scene View grid settings.");
+                return false;
+            }
             const EditorLocale changedLocale = alternateLocale(initialLocale);
             if (auto changed = settings.setLocale(changedLocale); !changed) {
                 asharia::logError(changed.error().message);
@@ -322,6 +327,8 @@ namespace asharia::editor {
 
             std::size_t sceneOverlayCount = 0;
             bool sawSceneGrid = false;
+            bool sawSceneGridDefault = false;
+            bool sawUnexpectedWorldGridDefault = false;
             bool sawSceneGizmo = false;
             bool sawSceneSelectionOutline = false;
             toolRegistry.visitViewportOverlays(
@@ -329,10 +336,17 @@ namespace asharia::editor {
                                   const EditorToolViewportOverlayContribution& overlay) {
                     static_cast<void>(tool);
                     ++sceneOverlayCount;
-                    sawSceneGrid =
-                        sawSceneGrid || overlay.overlayId == kEditorSceneGridOverlayId;
-                    sawSceneGizmo = sawSceneGizmo ||
-                                    overlay.overlayId == kEditorSceneTransformGizmoOverlayId;
+                    if (overlay.overlayId == kEditorSceneGridOverlayId) {
+                        sawSceneGrid = true;
+                        sawSceneGridDefault =
+                            overlay.worldGrid.has_value() &&
+                            sameWorldGridSettings(*overlay.worldGrid,
+                                                  defaultEditorSceneGridSettings());
+                    } else if (overlay.worldGrid.has_value()) {
+                        sawUnexpectedWorldGridDefault = true;
+                    }
+                    sawSceneGizmo =
+                        sawSceneGizmo || overlay.overlayId == kEditorSceneTransformGizmoOverlayId;
                     sawSceneSelectionOutline =
                         sawSceneSelectionOutline ||
                         overlay.overlayId == kEditorSceneSelectionOutlineOverlayId;
@@ -346,8 +360,8 @@ namespace asharia::editor {
                     ++gameOverlayCount;
                 });
             if (sceneOverlayCount != kExpectedViewportOverlayContributions ||
-                gameOverlayCount != 0 || !sawSceneGrid || !sawSceneGizmo ||
-                !sawSceneSelectionOutline) {
+                gameOverlayCount != 0 || !sawSceneGrid || !sawSceneGridDefault ||
+                sawUnexpectedWorldGridDefault || !sawSceneGizmo || !sawSceneSelectionOutline) {
                 asharia::logError("Editor tool registry smoke missed a viewport overlay query.");
                 return false;
             }

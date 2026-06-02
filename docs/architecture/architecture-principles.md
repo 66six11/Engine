@@ -280,11 +280,12 @@ packet stable id 复制到 `BasicRenderViewOverlayDesc::sourceOverlayIds` 供 di
 只按 camera 到 grid plane 的垂直距离计算为整帧统一的 `GridLodSettings`，不按水平距离或片元距离改变 LOD；低高度锁定 base spacing，拉高后在
 1/2/5/10 spacing 间平滑切换，默认不做距离淡出。Scene View grid 的 plane、minor/major spacing、fade 和 opacity
 已经从 `EditorSettings::sceneGrid` 经 `EditorViewportRequest::worldGrid` bridge 到 `BasicRenderViewOverlayDesc::worldGrid`。
-这仍不是 runtime camera system，也还不是 manifest-backed provider、grid color 或 settings UI。
+Scene grid overlay contribution 已携带与 editor settings bootstrap 相同的 built-in 默认设置。这仍不是 runtime
+camera system，也还不是外部 manifest loader、grid color、settings UI 或 hot reload。
 
 下一步顺序：
 
-1. 让 grid/provider 默认值来自 manifest-backed contribution 数据。
+1. 把 built-in contribution default 迁移到真正 external manifest loader / reload path。
 2. 把 color、spacing/fade UI 和热更新设置接到同一 `sceneGrid` 数据合同。
 3. 继续完善 Frame Debug / RG View 的 pass、packet source、view kind 和 selected event 细节。
 

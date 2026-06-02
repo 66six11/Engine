@@ -29,11 +29,14 @@ namespace asharia::editor {
         [[nodiscard]] bool
         capturedWorldGridSettings(const asharia::BasicRenderViewOverlayDiagnostics& overlay) {
             const asharia::BasicRenderViewWorldGridDesc& worldGrid = overlay.worldGrid;
+            const EditorViewportWorldGridSettings expected = defaultEditorSceneGridSettings();
             return overlay.worldGridEnabled && worldGrid.enabled &&
-                   closeFloat(worldGrid.planeY, 0.0F) && closeFloat(worldGrid.minorSpacing, 1.0F) &&
-                   closeFloat(worldGrid.majorSpacing, 10.0F) &&
-                   closeFloat(worldGrid.fadeStart, 0.0F) && closeFloat(worldGrid.fadeEnd, 0.0F) &&
-                   closeFloat(worldGrid.opacity, 1.0F);
+                   closeFloat(worldGrid.planeY, expected.planeY) &&
+                   closeFloat(worldGrid.minorSpacing, expected.minorSpacing) &&
+                   closeFloat(worldGrid.majorSpacing, expected.majorSpacing) &&
+                   closeFloat(worldGrid.fadeStart, expected.fadeStart) &&
+                   closeFloat(worldGrid.fadeEnd, expected.fadeEnd) &&
+                   closeFloat(worldGrid.opacity, expected.opacity);
         }
 
     } // namespace

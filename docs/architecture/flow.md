@@ -926,7 +926,8 @@ flowchart TD
     的垂直距离计算整帧统一的 1/2/5/10 spacing，不按水平距离或片元距离改变 LOD，低高度锁定 base spacing，shader 只消费 `GridLodSettings`。
     Scene View panel 从 `EditorSettings::sceneGrid` 读取 plane、minor/major spacing、fade 和 opacity，
     经 `EditorViewportRequest::worldGrid` 交给 `EditorViewportCoordinator`，再转换为 renderer-owned
-    `BasicRenderViewWorldGridDesc`；settings 不拥有 renderer/Vulkan 类型。
+    `BasicRenderViewWorldGridDesc`；settings 缺省值来自 Scene grid overlay contribution 的 built-in 默认值，
+    不拥有 renderer/Vulkan 类型。
     overlay intent、world-grid desc 和 source overlay id 会进入 RenderView diagnostics；Frame Debug replay 会使用
     capture 中的 world-grid desc，而不是重新猜默认 grid 参数。只有存在 `BasicDebugWorldLine` 时才插入
     `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 作为 typed params 与 command summary

@@ -269,7 +269,7 @@ namespace asharia::editor {
             }
             if (scene.viewKind != asharia::BasicRenderViewKind::Scene ||
                 scene.frameParams.frameIndex == 0 || !scene.overlay.enabled ||
-                !matchesWorldGridSettings(scene.overlay, EditorViewportWorldGridSettings{}) ||
+                !matchesWorldGridSettings(scene.overlay, defaultEditorSceneGridSettings()) ||
                 scene.overlay.debugWorldLineCount != 0 ||
                 scene.overlay.sourceOverlayIds.size() != 3U ||
                 !hasSourceOverlayId(scene.overlay, kEditorSceneGridOverlayId) ||

@@ -18,6 +18,8 @@ namespace asharia::editor {
     inline constexpr std::string_view kEditorDebugOverlayId = "debug.overlay";
     inline constexpr std::string_view kEditorDebugGizmoOverlayId = "debug.gizmo";
 
+    [[nodiscard]] EditorViewportWorldGridSettings defaultEditorSceneGridSettings();
+
     struct EditorDebugWorldLine {
         std::array<float, 3> start{};
         std::array<float, 3> end{};

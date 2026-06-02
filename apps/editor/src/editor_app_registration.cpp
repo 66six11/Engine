@@ -1,6 +1,7 @@
 ﻿#include "editor_app_registration.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "asharia/core/result.hpp"
@@ -246,14 +247,17 @@ namespace asharia::editor {
                     EditorToolViewportOverlayContribution{
                         .overlayId = std::string{kEditorSceneGridOverlayId},
                         .viewportId = "scene-view",
+                        .worldGrid = defaultEditorSceneGridSettings(),
                     },
                     EditorToolViewportOverlayContribution{
                         .overlayId = std::string{kEditorSceneTransformGizmoOverlayId},
                         .viewportId = "scene-view",
+                        .worldGrid = std::nullopt,
                     },
                     EditorToolViewportOverlayContribution{
                         .overlayId = std::string{kEditorSceneSelectionOutlineOverlayId},
                         .viewportId = "scene-view",
+                        .worldGrid = std::nullopt,
                     },
                 },
         });

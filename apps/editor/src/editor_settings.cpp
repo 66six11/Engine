@@ -15,6 +15,8 @@
 #include "asharia/archive/json_archive.hpp"
 #include "asharia/core/error.hpp"
 
+#include "editor_viewport_overlay_provider.hpp"
+
 namespace asharia::editor {
 
     namespace {
@@ -225,7 +227,7 @@ namespace asharia::editor {
         EditorSettings settings{
             .locale = fallbackLocale,
             .theme = defaultEditorUiThemeId(),
-            .sceneGrid = {},
+            .sceneGrid = defaultEditorSceneGridSettings(),
         };
         if (path.empty()) {
             return settings;

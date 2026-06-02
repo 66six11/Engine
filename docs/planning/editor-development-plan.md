@@ -41,9 +41,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
   `BasicDebugWorldLine` 时，RenderView 会记录 `builtin.render-view-overlay` pass，把 camera/frame/line-count
   作为 typed params 与 command summary 纳入 RenderGraph，并通过 renderer-owned debug-line shader/pipeline
   绘制 line-list。没有 debug line 时默认 flagged Scene View 不再产生空 overlay pass。visible gizmo /
-  selection outline 继续推进前，仍必须补 manifest-backed grid defaults、grid color/settings UI、热更新和更完整
+  selection outline 继续推进前，仍必须补 external manifest loader、grid color/settings UI、热更新和更完整
   provider contract；camera-aware grid visibility、world-grid/source overlay diagnostics、Scene View `sceneGrid`
-  settings bridge 与高视角 readback 已有最小闭环。
+  settings bridge、built-in contribution default 与高视角 readback 已有最小闭环。
 - `EditorFrameContext` 和任何 app-level service bundle 不能成为长期 service locator 或持久 mutation surface；
   过渡期 `EditorContext` 已删除；会被保存、undo/redo、script 或 collaboration 消费的状态，必须走
   command/transaction 或明确 owner。
@@ -1433,9 +1433,9 @@ Current implementation:
   handling, RenderView diagnostics debug-world-line count, and no empty overlay pass for the default flagged Scene View
   render.
 - This is not the final provider architecture: Scene View grid spacing/fade/opacity now has an editor settings to
-  RenderView path, but there is no manifest-backed provider/defaults, color setting, hot reload, or settings UI yet.
-  Camera-aware grid spacing, world-grid/source overlay diagnostics, and pixel/readback camera-difference coverage are
-  now present.
+  RenderView path, and the built-in scene grid contribution declares the same default settings used by settings
+  bootstrap. There is still no external manifest loader, color setting, hot reload, or settings UI yet. Camera-aware grid
+  spacing, world-grid/source overlay diagnostics, and pixel/readback camera-difference coverage are now present.
 
 Validation:
 

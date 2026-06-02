@@ -2,6 +2,17 @@
 
 namespace asharia::editor {
 
+    EditorViewportWorldGridSettings defaultEditorSceneGridSettings() {
+        return EditorViewportWorldGridSettings{
+            .planeY = 0.0F,
+            .minorSpacing = 1.0F,
+            .majorSpacing = 10.0F,
+            .fadeStart = 0.0F,
+            .fadeEnd = 0.0F,
+            .opacity = 1.0F,
+        };
+    }
+
     std::size_t EditorViewportOverlayPacketList::debugWorldLineCount() const {
         std::size_t count = 0;
         for (const EditorViewportOverlayPacket& packet : packets) {

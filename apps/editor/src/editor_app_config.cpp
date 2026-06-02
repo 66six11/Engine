@@ -9,6 +9,8 @@
 
 #include "asharia/core/log.hpp"
 
+#include "editor_viewport_overlay_provider.hpp"
+
 namespace asharia::editor {
     namespace {
 
@@ -67,7 +69,7 @@ namespace asharia::editor {
                 EditorSettings{
                     .locale = fallbackLocale,
                     .theme = defaultEditorUiThemeId(),
-                    .sceneGrid = {},
+                    .sceneGrid = defaultEditorSceneGridSettings(),
                 },
             .path = editorSettingsPathForRun(smokeMode),
         };

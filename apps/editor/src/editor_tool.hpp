@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "asharia/core/result.hpp"
 
 #include "editor_id.hpp"
+#include "editor_viewport.hpp"
 
 namespace asharia::editor {
 
@@ -40,6 +42,7 @@ namespace asharia::editor {
     struct EditorToolViewportOverlayContribution {
         std::string overlayId;
         std::string viewportId;
+        std::optional<EditorViewportWorldGridSettings> worldGrid;
     };
 
     struct EditorToolDesc {
