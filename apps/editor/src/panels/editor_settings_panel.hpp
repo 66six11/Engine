@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <string>
+
 #include "editor_panel.hpp"
 
 namespace asharia::editor {
@@ -22,6 +24,7 @@ namespace asharia::editor {
             .category = EditorPanelCategory::Settings,
             .preferredDock = EditorDockSlot::RightTop,
         };
+        std::string selectedCategoryId_{"settings.general"};
     };
 
 } // namespace asharia::editor

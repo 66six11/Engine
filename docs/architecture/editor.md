@@ -435,8 +435,8 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   renderer-side view pass work. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
   camera-height LOD/fade, source overlay diagnostics, Frame Debug replay preservation and a `sceneGrid` settings bridge
   for plane, spacing, fade, opacity and color. The Scene grid overlay contribution declares the same built-in default used by
-  settings bootstrap, and Editor Settings exposes a left-nav/right-content settings UI for General and Scene Grid
-  controls.
+  settings bootstrap, and Editor Settings consumes built-in category contributions for the left-nav/right-content General
+  and Viewport pages. External settings manifests and reload remain deferred to the script/plugin boundary.
 - Renderer prerequisites still pending for richer overlays are a more complete debug/world-line draw route for
   gizmo/selection shapes. External manifest loading, hot update behavior and reload diagnostics belong to the later
   script/plugin system boundary, not to renderer pass ownership.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <span>
 #include <string>
 #include <utility>
@@ -15,6 +16,7 @@
 #include "editor_i18n.hpp"
 #include "editor_panel.hpp"
 #include "editor_settings.hpp"
+#include "editor_settings_contribution.hpp"
 #include "editor_shortcut_smoke.hpp"
 #include "editor_smoke.hpp"
 #include "editor_tool.hpp"
@@ -187,6 +189,39 @@ namespace asharia::editor {
                 return false;
             }
 
+            return true;
+        }
+
+        [[nodiscard]] bool validateEditorSettingsContributionSmoke() {
+            const std::span<const EditorSettingsCategoryContribution> contributions =
+                builtInEditorSettingsCategoryContributions();
+            if (contributions.size() != 2U ||
+                findBuiltInEditorSettingsCategoryContribution("settings.general") == nullptr ||
+                findBuiltInEditorSettingsCategoryContribution("settings.viewport") == nullptr) {
+                asharia::logError("Editor settings contribution smoke missed built-in categories.");
+                return false;
+            }
+
+            bool validDescriptors = true;
+            bool duplicateIds = false;
+            for (auto contribution = contributions.begin(); contribution != contributions.end();
+                 ++contribution) {
+                validDescriptors = validDescriptors && !contribution->id.empty() &&
+                                   !contribution->labelKey.empty() &&
+                                   !contribution->stableId.empty() &&
+                                   !contribution->fallback.empty() && contribution->draw != nullptr;
+                duplicateIds =
+                    duplicateIds ||
+                    std::ranges::any_of(std::next(contribution), contributions.end(),
+                                        [&](const EditorSettingsCategoryContribution& other) {
+                                            return other.id == contribution->id;
+                                        });
+            }
+            if (!validDescriptors || duplicateIds) {
+                asharia::logError(
+                    "Editor settings contribution smoke found invalid category descriptors.");
+                return false;
+            }
             return true;
         }
 
@@ -794,6 +829,7 @@ namespace asharia::editor {
         return validatePanelRegistrySmoke(actionServices.panels) &&
                validateActionRegistrySmoke(actionRegistry, actionServices) &&
                validateEditorExtensionRegistrySmoke() && validateToolActivationDescriptorSmoke() &&
+               validateEditorSettingsContributionSmoke() &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, actionServices.panels) &&
                validateToolManagerSmoke(toolRegistry, toolManager, actionServices.workspace) &&
                validateEditorSettingsSmoke(mode, settings, i18n) &&
