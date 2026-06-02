@@ -48,16 +48,29 @@ float3 unprojectWorldGridPoint(float2 pixelPosition, float clipZ) {
     return world.xyz / safeW;
 }
 
-float gridLineAlpha(float2 worldCoord, float spacing) {
+float gridLineAlpha(float2 worldCoord, float spacing, float pixelWidth) {
     const float2 scaled = worldCoord / max(spacing, 0.0001);
     const float2 derivative = max(fwidth(scaled), float2(0.0001, 0.0001));
-    const float2 centered = abs(frac(scaled - 0.5) - 0.5) / derivative;
+    const float2 centered = abs(frac(scaled - 0.5) - 0.5) /
+        max(derivative * max(pixelWidth, 0.5), float2(0.0001, 0.0001));
     return 1.0 - saturate(min(centered.x, centered.y));
 }
 
-float axisLineAlpha(float value) {
+float axisLineAlpha(float value, float pixelWidth) {
     const float derivative = max(fwidth(value), 0.0001);
-    return 1.0 - saturate(abs(value) / derivative);
+    return 1.0 - saturate(abs(value) / max(derivative * max(pixelWidth, 0.5), 0.0001));
+}
+
+float worldGridUnitsPerPixel(float2 gridCoord) {
+    const float2 derivative = max(fwidth(gridCoord), float2(0.000001, 0.000001));
+    return max(derivative.x, derivative.y);
+}
+
+float adaptiveGridSpacing(float baseSpacing, float unitsPerPixel) {
+    const float safeBase = max(baseSpacing, 0.0001);
+    const float targetSpacing = max(unitsPerPixel * 48.0, safeBase * 0.001);
+    const float scaleExponent = floor(log10(max(targetSpacing / safeBase, 0.001)));
+    return max(safeBase * pow(10.0, scaleExponent), safeBase * 0.001);
 }
 
 [shader("fragment")]
@@ -78,13 +91,19 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
     const float3 worldPosition = nearWorld + (ray * rayT);
     const float2 gridCoord = worldPosition.xz;
     const float minorSpacing = max(gWorldGrid.gridSettings.x, 0.0001);
-    const float majorSpacing = max(gWorldGrid.gridSettings.y, minorSpacing);
+    const float configuredMajorSpacing = max(gWorldGrid.gridSettings.y, minorSpacing);
+    const float majorInterval =
+        max(floor((configuredMajorSpacing / minorSpacing) + 0.5), 2.0);
+    const float adaptiveMinorSpacing =
+        adaptiveGridSpacing(minorSpacing, worldGridUnitsPerPixel(gridCoord));
+    const float adaptiveMajorSpacing = max(adaptiveMinorSpacing * majorInterval,
+        adaptiveMinorSpacing * 2.0);
     const float opacity = saturate(gWorldGrid.gridSettings.w);
 
-    const float minorAlpha = gridLineAlpha(gridCoord, minorSpacing);
-    const float majorAlpha = gridLineAlpha(gridCoord, majorSpacing);
-    const float xAxisAlpha = axisLineAlpha(worldPosition.z);
-    const float zAxisAlpha = axisLineAlpha(worldPosition.x);
+    const float minorAlpha = gridLineAlpha(gridCoord, adaptiveMinorSpacing, 1.15);
+    const float majorAlpha = gridLineAlpha(gridCoord, adaptiveMajorSpacing, 1.35);
+    const float xAxisAlpha = axisLineAlpha(worldPosition.z, 1.7);
+    const float zAxisAlpha = axisLineAlpha(worldPosition.x, 1.7);
 
     const float3 minorColor = float3(0.22, 0.25, 0.30);
     const float3 majorColor = float3(0.36, 0.39, 0.44);
