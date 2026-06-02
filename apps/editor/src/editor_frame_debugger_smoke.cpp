@@ -41,6 +41,45 @@ namespace asharia::editor {
                    kind != asharia::BasicRenderViewExecutionEventKind::EndPass;
         }
 
+        [[nodiscard]] bool validateSelectedPreviewEventMapping(
+            const EditorSmokeRunResult& runResult,
+            const asharia::BasicRenderViewDiagnostics& diagnostics) {
+            if (!runResult.frameDebugPreviewSelectedPassIndex ||
+                !runResult.frameDebugPreviewSelectedExecutionEventId ||
+                !runResult.frameDebugPreviewSelectedImageResourceIndex ||
+                !runResult.frameDebugPreviewCopiedAfterPassIndex ||
+                *runResult.frameDebugPreviewSelectedPassIndex !=
+                    *runResult.frameDebugPreviewCopiedAfterPassIndex) {
+                asharia::logError(
+                    "Editor frame debugger smoke did not copy preview after the selected pass.");
+                return false;
+            }
+
+            const asharia::BasicRenderViewExecutionEvent* selectedEvent = capturedExecutionEvent(
+                diagnostics, *runResult.frameDebugPreviewSelectedExecutionEventId);
+            if (selectedEvent == nullptr) {
+                asharia::logError(
+                    "Editor frame debugger smoke selected an event missing from the capture.");
+                return false;
+            }
+            if (!isInspectableExecutionEvent(selectedEvent->kind) ||
+                selectedEvent->passIndex != *runResult.frameDebugPreviewSelectedPassIndex) {
+                asharia::logError(
+                    "Editor frame debugger smoke selected an event that does not map to the "
+                    "previewed pass.");
+                return false;
+            }
+            if (!selectedEvent->targetImageResourceIndex ||
+                *selectedEvent->targetImageResourceIndex !=
+                    *runResult.frameDebugPreviewSelectedImageResourceIndex) {
+                asharia::logError(
+                    "Editor frame debugger smoke selected an event whose target image does not "
+                    "map to the previewed resource.");
+                return false;
+            }
+            return true;
+        }
+
         [[nodiscard]] bool closeFloat(float lhs, float rhs) {
             return std::fabs(lhs - rhs) < 0.0001F;
         }
@@ -99,15 +138,6 @@ namespace asharia::editor {
             runResult.viewportFramesAtFrameDebugPause) {
             asharia::logError(
                 "Editor frame debugger smoke recorded a normal RenderView while previewing.");
-            return false;
-        }
-        if (!runResult.frameDebugPreviewSelectedPassIndex ||
-            !runResult.frameDebugPreviewSelectedExecutionEventId ||
-            !runResult.frameDebugPreviewCopiedAfterPassIndex ||
-            *runResult.frameDebugPreviewSelectedPassIndex !=
-                *runResult.frameDebugPreviewCopiedAfterPassIndex) {
-            asharia::logError(
-                "Editor frame debugger smoke did not copy preview after the selected pass.");
             return false;
         }
         if (runResult.inspectedWorldFramesAtFrameDebugPreview !=
@@ -169,18 +199,7 @@ namespace asharia::editor {
             asharia::logError("Editor frame debugger smoke captured no renderer execution events.");
             return false;
         }
-        const asharia::BasicRenderViewExecutionEvent* selectedEvent = capturedExecutionEvent(
-            capture->diagnostics, *runResult.frameDebugPreviewSelectedExecutionEventId);
-        if (selectedEvent == nullptr) {
-            asharia::logError(
-                "Editor frame debugger smoke selected an event missing from the capture.");
-            return false;
-        }
-        if (!isInspectableExecutionEvent(selectedEvent->kind) ||
-            selectedEvent->passIndex != *runResult.frameDebugPreviewSelectedPassIndex) {
-            asharia::logError(
-                "Editor frame debugger smoke selected an event that does not map to the "
-                "previewed pass.");
+        if (!validateSelectedPreviewEventMapping(runResult, capture->diagnostics)) {
             return false;
         }
         if (!capturedSourceOverlayId(capture->diagnostics.overlay, kEditorSceneGridOverlayId) ||

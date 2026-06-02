@@ -31,6 +31,7 @@ namespace asharia::editor {
         bool frameDebugPreviewVisible{};
         std::optional<std::size_t> frameDebugPreviewSelectedPassIndex;
         std::optional<std::uint64_t> frameDebugPreviewSelectedExecutionEventId;
+        std::optional<std::uint32_t> frameDebugPreviewSelectedImageResourceIndex;
         std::optional<std::size_t> frameDebugPreviewCopiedAfterPassIndex;
         bool frameDebugResumeRequested{};
         bool frameDebugRenderedAfterResume{};
@@ -63,6 +64,7 @@ namespace asharia::editor {
         bool previewVisible{};
         std::optional<std::size_t> previewSelectedPassIndex;
         std::optional<std::uint64_t> previewSelectedExecutionEventId;
+        std::optional<std::uint32_t> previewSelectedImageResourceIndex;
         std::optional<std::size_t> previewCopiedAfterPassIndex;
         bool resumeRequested{};
         bool renderedAfterResume{};

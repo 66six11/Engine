@@ -89,6 +89,7 @@ namespace {
         if (preview.selectedExecutionEventId) {
             state.previewSelectedExecutionEventId = preview.selectedExecutionEventId->value;
         }
+        state.previewSelectedImageResourceIndex = preview.selectedImageResourceIndex;
         state.previewCopiedAfterPassIndex = preview.copiedAfterPassIndex;
         state.viewportFramesAtPreview = viewportHost.viewportFramesRendered();
         state.inspectedWorldFramesAtPreview =
