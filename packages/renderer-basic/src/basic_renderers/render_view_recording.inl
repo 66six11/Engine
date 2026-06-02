@@ -30,6 +30,21 @@
         });
 }
 
+void addBasicRenderViewSceneInputsPass(RenderGraph& graph, const BasicRenderViewPassPolicy& policy,
+                                       BasicRenderViewExecutionEventRecorder& eventRecorder) {
+    graph.addPass("RenderViewSceneInputs", kBasicRenderViewSceneInputsPassType)
+        .setParams(kBasicRenderViewSceneInputsParamsType, policy.sceneInputsParams)
+        .hasSideEffects()
+        .recordCommands(
+            [sceneInputsParams = policy.sceneInputsParams](RenderGraphCommandList& commands) {
+                commands.setInt("SceneDrawItemCount",
+                                static_cast<int>(sceneInputsParams.drawItemCount));
+            })
+        .execute([&eventRecorder](RenderGraphPassContext pass) -> Result<void> {
+            return executeBasicRenderViewSceneInputsPass(pass, &eventRecorder);
+        });
+}
+
 void addBasicRenderViewOverlayPass(
     RenderGraph& graph, RenderGraphImageHandle renderTarget,
     const BasicRenderViewPassPolicy& policy, const VulkanFrameRecordContext& frame,

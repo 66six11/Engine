@@ -2910,6 +2910,42 @@ namespace {
             asharia::logError("Fullscreen texture smoke did not record overlay diagnostics.");
             return false;
         }
+        constexpr auto expectedDrawItems = asharia::basicDrawListSmokeItems();
+        if (diagnostics.scene.drawItemCount != expectedDrawItems.size()) {
+            asharia::logError("Fullscreen texture smoke did not record scene input diagnostics.");
+            return false;
+        }
+        const auto sceneInputPass = std::ranges::find_if(
+            diagnostics.renderGraph.passes,
+            [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                return pass.type == asharia::kBasicRenderViewSceneInputsPassType;
+            });
+        if (sceneInputPass == diagnostics.renderGraph.passes.end() ||
+            !sceneInputPass->hasSideEffects || sceneInputPass->commandCount != 1U) {
+            asharia::logError("Fullscreen texture smoke did not record a scene input marker pass.");
+            return false;
+        }
+        const auto sceneInputCommand = std::ranges::find_if(
+            diagnostics.renderGraph.commands,
+            [sceneInputPass](const asharia::RenderGraphDiagnosticsCommandNode& command) {
+                return command.passName == sceneInputPass->name &&
+                       command.kind == asharia::RenderGraphCommandKind::SetInt &&
+                       command.detail == "SceneDrawItemCount = 2";
+            });
+        if (sceneInputCommand == diagnostics.renderGraph.commands.end()) {
+            asharia::logError(
+                "Fullscreen texture smoke did not record scene input command diagnostics.");
+            return false;
+        }
+        const auto sceneInputEvent = std::ranges::find_if(
+            diagnostics.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
+                return event.kind == asharia::BasicRenderViewExecutionEventKind::RenderViewInput &&
+                       event.label == "BindRenderViewSceneInputs";
+            });
+        if (sceneInputEvent == diagnostics.executionEvents.end()) {
+            asharia::logError("Fullscreen texture smoke did not record a scene input event.");
+            return false;
+        }
         const auto overlayPass =
             std::ranges::find_if(diagnostics.renderGraph.passes,
                                  [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
@@ -3317,6 +3353,7 @@ namespace {
                     asharia::BasicRenderViewFrameParams{
                         .frameIndex = frameIndex,
                     },
+                .scene = {},
                 .overlay =
                     asharia::BasicRenderViewOverlayDesc{
                         .enabled = true,
@@ -3601,6 +3638,7 @@ namespace {
                 [&renderer, &overlayDiagnostics, &overlayDiagnosticsRecorded,
                  frame](const asharia::VulkanFrameRecordContext& recordContext) {
                     if (frame == 1) {
+                        constexpr auto drawItems = asharia::basicDrawListSmokeItems();
                         const std::array debugLines{
                             asharia::BasicDebugWorldLine{
                                 .start = {-0.65F, 0.0F, 0.0F},
@@ -3626,6 +3664,10 @@ namespace {
                                 .frameParams =
                                     asharia::BasicRenderViewFrameParams{
                                         .frameIndex = static_cast<std::uint64_t>(frame + 1),
+                                    },
+                                .scene =
+                                    asharia::BasicRenderViewSceneDesc{
+                                        .drawItems = drawItems,
                                     },
                                 .overlay =
                                     asharia::BasicRenderViewOverlayDesc{
@@ -4454,6 +4496,7 @@ namespace {
         RasterMrt,
         RasterFullscreen,
         RenderViewWorldGrid,
+        RenderViewSceneInputs,
         RenderViewOverlay,
         RasterDrawList,
         ComputeDispatch,
@@ -4625,6 +4668,8 @@ namespace {
         case BuiltinSchemaSmokePass::RenderViewOverlay:
             writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
+        case BuiltinSchemaSmokePass::RenderViewSceneInputs:
+            break;
         case BuiltinSchemaSmokePass::TransientPresent:
             readTextureSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
             writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
@@ -4678,18 +4723,20 @@ namespace {
 
     bool validateBuiltinSchemaSmokeCase(const asharia::RenderGraphSchemaRegistry& builtinSchemas,
                                         const BuiltinSchemaSmokeCase& testCase) {
-        if (!expectRenderGraphCompileFailure(
-                compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
-                                              BuiltinSchemaSmokeCompileOptions{
-                                                  .paramsType = testCase.paramsType,
-                                                  .omittedSlot = testCase.missingSlot,
-                                                  .addUnexpectedSlot = false,
-                                              }),
-                ExpectedRenderGraphCompileFailure{
-                    .message = "is missing required slot",
-                    .context = testCase.context,
-                })) {
-            return false;
+        if (!testCase.missingSlot.empty()) {
+            if (!expectRenderGraphCompileFailure(
+                    compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
+                                                  BuiltinSchemaSmokeCompileOptions{
+                                                      .paramsType = testCase.paramsType,
+                                                      .omittedSlot = testCase.missingSlot,
+                                                      .addUnexpectedSlot = false,
+                                                  }),
+                    ExpectedRenderGraphCompileFailure{
+                        .message = "is missing required slot",
+                        .context = testCase.context,
+                    })) {
+                return false;
+            }
         }
         if (!expectRenderGraphCompileFailure(
                 compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
@@ -4787,6 +4834,13 @@ namespace {
                 .paramsType = asharia::kBasicRenderViewWorldGridParamsType,
                 .missingSlot = "target",
                 .context = "builtin render view world grid",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RenderViewSceneInputs,
+                .type = asharia::kBasicRenderViewSceneInputsPassType,
+                .paramsType = asharia::kBasicRenderViewSceneInputsParamsType,
+                .missingSlot = {},
+                .context = "builtin render view scene inputs",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RenderViewOverlay,

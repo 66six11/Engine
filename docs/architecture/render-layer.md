@@ -33,13 +33,19 @@
   summary 进入 graph，并把 world line 投影成 line-list vertex buffer 绘制到目标 attachment。后续 scene mesh、
   selection、gizmo 或更多 debug line pass 必须继续把 per-view 数据作为 renderer-owned pass input，而不是从
   diagnostics 读取。
+- `BasicRenderViewDesc::scene` 是 scene/asset/SRP 接入的当前最小入口。它只接收 `renderer_basic` 的
+  backend-neutral `BasicDrawListItem` span；`recordViewFrame()` 在 draw item 非空时插入
+  `builtin.render-view-scene-inputs` marker pass，把 draw item count 作为 typed params 与 command summary 放入
+  RenderGraph，并记录 `BindRenderViewSceneInputs` execution event。该 pass 暂不绘制 mesh、上传 GPU 资源或读取
+  asset/editor object；真实 scene mesh pass 后续必须消费同一类 renderer-owned input，再显式声明 color/depth/buffer
+  resource usage。
 
 ## Public Header 布局
 
 - `basic_renderers.hpp` 是兼容聚合头，保留旧调用方的单入口。
 - `basic_renderer_descs.hpp` 放 renderer create desc。
 - `basic_renderer_stats.hpp` 放 pipeline、viewport、compute 等统计结构。
-- `render_view.hpp` 放 RenderView target、camera、frame params、overlay、diagnostics、execution event 和 debug preview contract。
+- `render_view.hpp` 放 RenderView target、camera、frame params、scene input、overlay、diagnostics、execution event 和 debug preview contract。
 - `descriptor_layout_smoke.hpp` 放 descriptor layout smoke 验证入口。
 - `fullscreen_texture_renderer.hpp` 放 fullscreen texture、RenderView、offscreen viewport renderer。
 - `basic_scene_renderers.hpp` 放 MRT、compute、triangle、mesh 3D 和 draw-list sample renderers。
@@ -64,7 +70,7 @@
 - `mesh3d_renderer.inl`
 - `draw_list_renderer.inl`
 
-这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 image-only graph compile、transient image preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态和 image copy pass；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder；`render_view_pass_policy.inl` 只覆盖 RenderView world-grid / debug-line overlay pass enablement 与 typed params 计算；`render_view_recording.inl` 只覆盖把该 policy 插入 RenderGraph pass。fullscreen source/composite pass、descriptor set、pipeline readiness、debug preview 调度和 compute buffer/readback 仍留在原 owner，避免抽象过早扩大。
+这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 image-only graph compile、transient image preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态和 image copy pass；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder；`render_view_pass_policy.inl` 只覆盖 RenderView scene input、world-grid / debug-line overlay pass enablement 与 typed params 计算；`render_view_recording.inl` 只覆盖把该 policy 插入 RenderGraph pass。fullscreen source/composite pass、descriptor set、pipeline readiness、debug preview 调度和 compute buffer/readback 仍留在原 owner，避免抽象过早扩大。
 
 ## 当前限制
 

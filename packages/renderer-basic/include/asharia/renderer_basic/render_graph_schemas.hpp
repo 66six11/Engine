@@ -28,6 +28,10 @@ namespace asharia {
     inline constexpr char kBasicRenderViewWorldGridPassType[] = "builtin.render-view-world-grid";
     inline constexpr char kBasicRenderViewWorldGridParamsType[] =
         "builtin.render-view-world-grid.params";
+    inline constexpr char kBasicRenderViewSceneInputsPassType[] =
+        "builtin.render-view-scene-inputs";
+    inline constexpr char kBasicRenderViewSceneInputsParamsType[] =
+        "builtin.render-view-scene-inputs.params";
     inline constexpr char kBasicRenderViewOverlayPassType[] = "builtin.render-view-overlay";
     inline constexpr char kBasicRenderViewOverlayParamsType[] =
         "builtin.render-view-overlay.params";
@@ -66,6 +70,13 @@ namespace asharia {
         std::array<float, 4> gridColor{};
         std::uint32_t viewKind{};
         std::uint32_t enabled{};
+        std::uint32_t reserved0{};
+        std::uint32_t reserved1{};
+    };
+
+    struct BasicRenderViewSceneInputsParams {
+        std::uint32_t drawItemCount{};
+        std::uint32_t viewKind{};
         std::uint32_t reserved0{};
         std::uint32_t reserved1{};
     };
@@ -278,6 +289,17 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicRenderViewSceneInputsSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewSceneInputsPassType,
+            .paramsType = kBasicRenderViewSceneInputsParamsType,
+            .resourceSlots = {},
+            .allowedCommands = {RenderGraphCommandKind::SetInt},
+            .allowCulling = false,
+            .hasSideEffects = true,
+        });
+    }
+
     inline void registerBasicRenderViewOverlaySchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicRenderViewOverlayPassType,
@@ -418,6 +440,7 @@ namespace asharia {
         registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRenderViewWorldGridSchema(schemas);
+        registerBasicRenderViewSceneInputsSchema(schemas);
         registerBasicRenderViewOverlaySchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
         registerBasicTransferFillBufferSchema(schemas);

@@ -177,6 +177,29 @@ namespace asharia {
             };
         }
 
+        [[nodiscard]] Result<void>
+        validateBasicRenderViewSceneInputs(const BasicRenderViewDesc& view) {
+            if (view.scene.drawItems.size() >
+                static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene draw item count exceeds command summary limits",
+                }};
+            }
+            return {};
+        }
+
+        [[nodiscard]] BasicRenderViewSceneInputsParams
+        basicRenderViewSceneInputsParams(const BasicRenderViewDesc& view) {
+            return BasicRenderViewSceneInputsParams{
+                .drawItemCount = static_cast<std::uint32_t>(view.scene.drawItems.size()),
+                .viewKind = basicRenderViewKindValue(view.viewKind),
+                .reserved0 = 0,
+                .reserved1 = 0,
+            };
+        }
+
         [[nodiscard]] float basicSmoothWorldGridStep(BasicWorldGridSmoothStepRange range,
                                                      float value) {
             const float denominator =
@@ -481,6 +504,29 @@ namespace asharia {
                 return std::unexpected{
                     renderGraphError("RenderView overlay line count command does not match "
                                      "params")};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateBasicRenderViewSceneInputsCommands(RenderGraphPassContext pass,
+                                                   BasicRenderViewSceneInputsParams params) {
+            if (pass.commands.size() != 1) {
+                return std::unexpected{
+                    renderGraphError("RenderView scene inputs pass expected exactly one command")};
+            }
+
+            const RenderGraphCommand& drawCount = pass.commands.front();
+            auto countKind = expectCommandKind(drawCount, RenderGraphCommandKind::SetInt,
+                                               "RenderView scene input draw count");
+            if (!countKind) {
+                return std::unexpected{std::move(countKind.error())};
+            }
+            if (drawCount.name != "SceneDrawItemCount" ||
+                drawCount.intValue != static_cast<int>(params.drawItemCount)) {
+                return std::unexpected{renderGraphError(
+                    "RenderView scene input draw count command does not match params")};
             }
 
             return {};
@@ -1564,6 +1610,31 @@ namespace asharia {
                         .instanceCount = 1,
                     },
                     {}, sourceBinding->image.index, targetBinding->image.index);
+                eventRecorder->endPass(pass);
+            }
+            return {};
+        }
+
+        [[nodiscard]] Result<void> executeBasicRenderViewSceneInputsPass(
+            RenderGraphPassContext pass, BasicRenderViewExecutionEventRecorder* eventRecorder) {
+            if (eventRecorder != nullptr) {
+                eventRecorder->beginPass(pass);
+            }
+
+            auto sceneParams = readPassParams<BasicRenderViewSceneInputsParams>(
+                pass, kBasicRenderViewSceneInputsParamsType, "RenderView scene inputs pass");
+            if (!sceneParams) {
+                return std::unexpected{std::move(sceneParams.error())};
+            }
+            auto commands = validateBasicRenderViewSceneInputsCommands(pass, *sceneParams);
+            if (!commands) {
+                return std::unexpected{std::move(commands.error())};
+            }
+
+            if (eventRecorder != nullptr) {
+                eventRecorder->append(pass, BasicRenderViewExecutionEventKind::RenderViewInput,
+                                      "BindRenderViewSceneInputs",
+                                      firstCommandIndex(pass, RenderGraphCommandKind::SetInt));
                 eventRecorder->endPass(pass);
             }
             return {};

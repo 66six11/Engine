@@ -599,6 +599,7 @@ namespace asharia::editor {
                 .viewKind = basicRenderViewKind(request.kind),
                 .camera = basicRenderViewCamera(request.camera),
                 .frameParams = basicRenderViewFrameParams(viewportFrameIndex),
+                .scene = {},
                 .overlay = basicRenderViewOverlay(request.overlayFlags, request.worldGrid,
                                                   debugWorldLines, sourceOverlayIds),
                 .viewName = editorViewportKindName(request.kind),

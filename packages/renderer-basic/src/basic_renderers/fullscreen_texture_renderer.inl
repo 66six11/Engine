@@ -587,6 +587,10 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};
     }
+    auto sceneInputsValidated = validateBasicRenderViewSceneInputs(view);
+    if (!sceneInputsValidated) {
+        return std::unexpected{std::move(sceneInputsValidated.error())};
+    }
     const VkDescriptorSet fullscreenDescriptorSet = acquireFullscreenDescriptorSet(frame);
     if (fullscreenDescriptorSet == VK_NULL_HANDLE) {
         return std::unexpected{
@@ -686,6 +690,10 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     }
 
     std::size_t renderViewPassIndex = 0;
+    if (renderViewPassPolicy.sceneInputsEnabled) {
+        ++renderViewPassIndex;
+        addBasicRenderViewSceneInputsPass(graph, renderViewPassPolicy, eventRecorder);
+    }
     const std::size_t clearPassIndex = renderViewPassIndex++;
     graph.addPass("ClearFullscreenSource", kBasicTransferClearPassType)
         .setParams(kBasicTransferClearParamsType, kClearParams)

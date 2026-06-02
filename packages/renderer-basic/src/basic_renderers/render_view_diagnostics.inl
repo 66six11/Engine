@@ -69,6 +69,11 @@
                 .viewKind = view.viewKind,
                 .camera = view.camera,
                 .frameParams = view.frameParams,
+                .scene =
+                    BasicRenderViewSceneDiagnostics{
+                        .drawItemCount =
+                            static_cast<std::uint64_t>(view.scene.drawItems.size()),
+                    },
                 .overlay =
                     BasicRenderViewOverlayDiagnostics{
                         .enabled = view.overlay.enabled,

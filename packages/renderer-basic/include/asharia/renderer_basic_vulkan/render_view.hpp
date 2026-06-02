@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "asharia/renderer_basic/draw_item.hpp"
 #include "asharia/rendergraph/render_graph_diagnostics.hpp"
 
 namespace asharia {
@@ -72,6 +73,14 @@ namespace asharia {
         std::array<float, 3> start{};
         std::array<float, 3> end{};
         std::array<float, 4> color{1.0F, 1.0F, 1.0F, 1.0F};
+    };
+
+    struct BasicRenderViewSceneDesc {
+        std::span<const BasicDrawListItem> drawItems{};
+    };
+
+    struct BasicRenderViewSceneDiagnostics {
+        std::uint64_t drawItemCount{};
     };
 
     enum class BasicRenderViewOverlayColorLoadOp {
@@ -177,6 +186,7 @@ namespace asharia {
         BasicRenderViewKind viewKind{BasicRenderViewKind::Game};
         BasicRenderViewCamera camera;
         BasicRenderViewFrameParams frameParams;
+        BasicRenderViewSceneDiagnostics scene;
         BasicRenderViewOverlayDiagnostics overlay;
         RenderGraphDiagnosticsSnapshot renderGraph;
         std::vector<BasicRenderViewExecutionEvent> executionEvents;
@@ -208,6 +218,7 @@ namespace asharia {
         BasicRenderViewKind viewKind{BasicRenderViewKind::Game};
         BasicRenderViewCamera camera;
         BasicRenderViewFrameParams frameParams;
+        BasicRenderViewSceneDesc scene;
         BasicRenderViewOverlayDesc overlay;
         std::string_view viewName{"RenderView"};
         BasicRenderViewDiagnostics* diagnostics{};

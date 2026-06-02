@@ -1622,6 +1622,31 @@ Validation:
 
 - Debug draw packet is data-only and does not capture editor object pointers.
 
+### 21.16 RenderView Scene Input Contract
+
+Status: Current / partial.
+
+Depends on:
+
+- 21.9 Render View Overlay Prerequisites.
+- Existing `renderer_basic` backend-neutral `BasicDrawListItem`.
+
+Scope:
+
+- Add `BasicRenderViewDesc::scene` as the narrow scene/asset/SRP input surface for this phase.
+- Keep the input backend-neutral: no entity pointer, editor selection state, asset source path, Vulkan buffer or material
+  object crosses this contract.
+- When scene draw items are present, record a graph-visible `builtin.render-view-scene-inputs` marker pass with typed draw
+  item count and a `BindRenderViewSceneInputs` execution event.
+- Do not draw scene mesh from this pass yet; real mesh rendering, resource upload, material keys and depth/color resource
+  declarations remain later renderer/asset slices.
+
+Validation:
+
+- `--smoke-fullscreen-texture` verifies scene input diagnostics, the scene input marker pass, command summary and renderer
+  execution event.
+- Builtin schema smoke covers the no-resource scene input schema through wrong params and unexpected slot failures.
+
 ## Phase 24: Asset Browser And Material Editor
 
 ### 24.1 Asset Catalog View
