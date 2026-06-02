@@ -285,9 +285,12 @@ camera system，也还不是外部 manifest loader 或 hot reload。
 
 下一步顺序：
 
-1. 把 built-in contribution default 迁移到真正 external manifest loader / reload path。
-2. 把 external manifest reload / hot reload 设置接到同一 `sceneGrid` 数据合同。
-3. 继续完善 Frame Debug / RG View 的 pass、packet source、view kind 和 selected event 细节。
+1. 继续完善 Frame Debug / RG View 的 pass、packet source、view kind 和 selected event 细节，保持当前
+   built-in contribution default 作为 `sceneGrid` 默认值的单一来源。
+2. 在脚本/插件系统边界、enable/disable 语义和 reload diagnostics 明确后，再把 built-in contribution default
+   迁移到真正 external manifest / reload path。
+3. 真正的 external manifest reload / hot reload 落地时，必须复用同一 `sceneGrid` 数据合同，而不是新增
+   editor-to-renderer 旁路。
 
 ### Frame Debug
 

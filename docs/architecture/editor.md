@@ -437,8 +437,9 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   for plane, spacing, fade, opacity and color. The Scene grid overlay contribution declares the same built-in default used by
   settings bootstrap, and Editor Settings exposes a left-nav/right-content settings UI for General and Scene Grid
   controls.
-- Renderer prerequisites still pending for richer overlays are: external manifest loading, hot update behavior, and a more
-  complete debug/world-line draw route for gizmo/selection shapes.
+- Renderer prerequisites still pending for richer overlays are a more complete debug/world-line draw route for
+  gizmo/selection shapes. External manifest loading, hot update behavior and reload diagnostics belong to the later
+  script/plugin system boundary, not to renderer pass ownership.
 - `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects.
   `EditorInspectedWorldScheduler` is the current counter-based seam for future runtime/script integration: it runs frame
   advance、game update 和 script update safe-point counters while allowed, and records skipped counters while Frame Debug is

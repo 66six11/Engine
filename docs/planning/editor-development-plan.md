@@ -41,9 +41,9 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
   `BasicDebugWorldLine` 时，RenderView 会记录 `builtin.render-view-overlay` pass，把 camera/frame/line-count
   作为 typed params 与 command summary 纳入 RenderGraph，并通过 renderer-owned debug-line shader/pipeline
   绘制 line-list。没有 debug line 时默认 flagged Scene View 不再产生空 overlay pass。visible gizmo /
-  selection outline 继续推进前，仍必须补 external manifest loader、热更新和更完整
-  provider contract；camera-aware grid visibility、world-grid/source overlay diagnostics、Scene View `sceneGrid`
-  settings bridge、grid settings UI v0、built-in contribution default 与高视角 readback 已有最小闭环。
+  selection outline 继续推进前，仍必须先定义脚本/插件扩展边界、provider contract、enable/disable 语义和真实
+  external manifest/reload path；camera-aware grid visibility、world-grid/source overlay diagnostics、Scene View
+  `sceneGrid` settings bridge、grid settings UI v0、built-in contribution default 与高视角 readback 已有最小闭环。
 - `EditorFrameContext` 和任何 app-level service bundle 不能成为长期 service locator 或持久 mutation surface；
   过渡期 `EditorContext` 已删除；会被保存、undo/redo、script 或 collaboration 消费的状态，必须走
   command/transaction 或明确 owner。
@@ -1467,12 +1467,13 @@ Current implementation:
 Validation:
 
 - Current validation covers the provider contract, editor-to-RenderView packet bridge, diagnostics count, default empty
-  overlay-pass suppression, and renderer debug-line overlay draw through `--smoke-fullscreen-texture`.
+  overlay-pass suppression, Game/Preview grid filtering, and renderer debug-line overlay draw through
+  `--smoke-editor-viewport` and `--smoke-fullscreen-texture`.
 - Current renderer-pass validation proves camera movement and a high Scene View camera keep visible grid output at the
   pixel/readback level.
-- Future renderer-pass validation must prove Game View graph does not contain the grid pass unless an explicit debug mode
-  allows it.
-- Future Frame Debug/RG View diagnostics must expose the grid overlay pass, packet count and view kind.
+- Current Frame Debug diagnostics validation preserves world-grid settings and source overlay ids across capture/replay.
+- Future renderer-pass validation must cover any new Scene-only provider-driven authoring pass with the same Game/Preview
+  filtering rule.
 
 ### 21.11 Scene View Camera State / Viewport Unproject v0
 
