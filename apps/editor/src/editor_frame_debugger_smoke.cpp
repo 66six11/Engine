@@ -41,6 +41,24 @@ namespace asharia::editor {
                    kind != asharia::BasicRenderViewExecutionEventKind::EndPass;
         }
 
+        [[nodiscard]] bool isPreviewableWriteAccess(asharia::RenderGraphSlotAccess access) {
+            return access == asharia::RenderGraphSlotAccess::ColorWrite ||
+                   access == asharia::RenderGraphSlotAccess::TransferWrite;
+        }
+
+        [[nodiscard]] bool
+        capturedWriteAccessForPassResource(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
+                                           std::size_t passIndex, std::uint32_t resourceIndex) {
+            return std::ranges::any_of(
+                snapshot.accessEdges,
+                [passIndex, resourceIndex](const asharia::RenderGraphDiagnosticsAccessEdge& edge) {
+                    return edge.passIndex == passIndex &&
+                           edge.resourceKind == asharia::RenderGraphResourceKind::Image &&
+                           edge.resourceIndex == resourceIndex &&
+                           isPreviewableWriteAccess(edge.access);
+                });
+        }
+
         [[nodiscard]] bool validateSelectedPreviewEventMapping(
             const EditorSmokeRunResult& runResult,
             const asharia::BasicRenderViewDiagnostics& diagnostics) {
@@ -75,6 +93,14 @@ namespace asharia::editor {
                 asharia::logError(
                     "Editor frame debugger smoke selected an event whose target image does not "
                     "map to the previewed resource.");
+                return false;
+            }
+            if (!capturedWriteAccessForPassResource(diagnostics.renderGraph,
+                                                    selectedEvent->passIndex,
+                                                    *selectedEvent->targetImageResourceIndex)) {
+                asharia::logError(
+                    "Editor frame debugger smoke selected an event whose target image is not a "
+                    "captured RenderGraph write output for the pass.");
                 return false;
             }
             return true;

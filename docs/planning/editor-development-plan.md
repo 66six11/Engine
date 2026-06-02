@@ -1320,7 +1320,8 @@ Validation:
   RenderView recording.
 - `--smoke-editor-frame-debugger` records the selected execution event id and preview image resource at preview time, then
   verifies that the event exists in the frozen capture, is not a pass begin/end bookkeeping event, maps to the same pass that
-  was replay-copied and targets the same image resource that was previewed.
+  was replay-copied, targets the same image resource that was previewed and that the target is a captured RenderGraph write
+  output for that pass.
 - Replay must not call `vkDeviceWaitIdle`, must not expose backend handles to panels and must be driven by captured CPU-side
   frame inputs.
 
@@ -1381,7 +1382,8 @@ Validation:
 - `--smoke-editor-frame-debugger` verifies capture -> pause -> select execution event -> preview/replay request -> resume.
 - `--smoke-editor-frame-debugger` verifies captured diagnostics include renderer execution events.
 - `--smoke-editor-frame-debugger` verifies the selected renderer execution event id resolves back to the captured event stream,
-  the pass used for the preview copy and the target image resource copied into the preview texture.
+  the pass used for the preview copy, the target image resource copied into the preview texture and the corresponding
+  RenderGraph write access edge.
 - Encoding, doc sync and `git diff --check` remain required before committing.
 
 Exit criteria:
