@@ -44,6 +44,16 @@
             return std::nullopt;
         }
 
+        [[nodiscard]] std::vector<std::string>
+        basicRenderViewSourceOverlayIds(std::span<const std::string_view> ids) {
+            std::vector<std::string> copied;
+            copied.reserve(ids.size());
+            for (std::string_view id : ids) {
+                copied.emplace_back(id);
+            }
+            return copied;
+        }
+
         void setBasicRenderViewDiagnostics(
             const BasicRenderViewDesc& view, const RenderGraph& graph,
             const RenderGraphCompileResult& compiled,
@@ -52,6 +62,8 @@
                 return;
             }
 
+            std::vector<std::string> sourceOverlayIds =
+                basicRenderViewSourceOverlayIds(view.overlay.sourceOverlayIds);
             *view.diagnostics = BasicRenderViewDiagnostics{
                 .viewName = std::string{view.viewName},
                 .viewKind = view.viewKind,
@@ -66,6 +78,7 @@
                         .worldGridEnabled = view.overlay.worldGrid.enabled,
                         .debugWorldLineCount =
                             static_cast<std::uint64_t>(view.overlay.debugWorldLines.size()),
+                        .sourceOverlayIds = std::move(sourceOverlayIds),
                     },
                 .renderGraph = graph.diagnosticsSnapshot(compiled),
                 .executionEvents = std::move(eventRecorder.events),

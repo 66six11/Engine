@@ -15,6 +15,7 @@
 #include "editor_smoke.hpp"
 #include "editor_tool.hpp"
 #include "editor_ui.hpp"
+#include "editor_viewport_overlay_provider.hpp"
 #include "editor_workspace.hpp"
 
 namespace asharia::editor {
@@ -275,10 +276,13 @@ namespace asharia::editor {
                                   const EditorToolViewportOverlayContribution& overlay) {
                     static_cast<void>(tool);
                     ++sceneOverlayCount;
-                    sawSceneGrid = sawSceneGrid || overlay.overlayId == "scene.grid";
-                    sawSceneGizmo = sawSceneGizmo || overlay.overlayId == "scene.transform-gizmo";
+                    sawSceneGrid =
+                        sawSceneGrid || overlay.overlayId == kEditorSceneGridOverlayId;
+                    sawSceneGizmo = sawSceneGizmo ||
+                                    overlay.overlayId == kEditorSceneTransformGizmoOverlayId;
                     sawSceneSelectionOutline =
-                        sawSceneSelectionOutline || overlay.overlayId == "scene.selection-outline";
+                        sawSceneSelectionOutline ||
+                        overlay.overlayId == kEditorSceneSelectionOutlineOverlayId;
                 });
             std::size_t gameOverlayCount = 0;
             toolRegistry.visitViewportOverlays(

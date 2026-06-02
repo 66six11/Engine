@@ -73,6 +73,13 @@ namespace asharia::editor {
             return commandCount;
         }
 
+        [[nodiscard]] bool hasSourceOverlayId(
+            const asharia::BasicRenderViewOverlayDiagnostics& overlay,
+            std::string_view sourceOverlayId) {
+            return std::ranges::find(overlay.sourceOverlayIds, sourceOverlayId) !=
+                   overlay.sourceOverlayIds.end();
+        }
+
         [[nodiscard]] bool
         validateRenderViewCameraSmoke(const asharia::BasicRenderViewDiagnostics& diagnostics) {
             if (!closeFloat(diagnostics.camera.position[0], 0.0F) ||
@@ -249,7 +256,11 @@ namespace asharia::editor {
             }
             if (scene.viewKind != asharia::BasicRenderViewKind::Scene ||
                 scene.frameParams.frameIndex == 0 || !scene.overlay.enabled ||
-                !scene.overlay.worldGridEnabled || scene.overlay.debugWorldLineCount != 0) {
+                !scene.overlay.worldGridEnabled || scene.overlay.debugWorldLineCount != 0 ||
+                scene.overlay.sourceOverlayIds.size() != 3U ||
+                !hasSourceOverlayId(scene.overlay, kEditorSceneGridOverlayId) ||
+                !hasSourceOverlayId(scene.overlay, kEditorSceneTransformGizmoOverlayId) ||
+                !hasSourceOverlayId(scene.overlay, kEditorSceneSelectionOutlineOverlayId)) {
                 asharia::logError(
                     "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
                 return false;
@@ -300,6 +311,9 @@ namespace asharia::editor {
             const asharia::BasicRenderViewDiagnostics& game = gameDiagnostics->diagnostics;
             if (game.viewKind != asharia::BasicRenderViewKind::Game || !game.overlay.enabled ||
                 game.overlay.worldGridEnabled || game.overlay.debugWorldLineCount != 0 ||
+                game.overlay.sourceOverlayIds.size() != 2U ||
+                !hasSourceOverlayId(game.overlay, kEditorDebugOverlayId) ||
+                !hasSourceOverlayId(game.overlay, kEditorDebugGizmoOverlayId) ||
                 renderGraphPassTypeCount(game.renderGraph,
                                          asharia::kBasicRenderViewWorldGridPassType) != 0U ||
                 renderGraphPassTypeCount(game.renderGraph,
@@ -310,7 +324,7 @@ namespace asharia::editor {
 
             const asharia::BasicRenderViewDiagnostics& preview = previewDiagnostics->diagnostics;
             if (preview.viewKind != asharia::BasicRenderViewKind::Preview ||
-                preview.overlay.enabled ||
+                preview.overlay.enabled || !preview.overlay.sourceOverlayIds.empty() ||
                 renderGraphPassTypeCount(preview.renderGraph,
                                          asharia::kBasicRenderViewWorldGridPassType) != 0U ||
                 renderGraphPassTypeCount(preview.renderGraph,

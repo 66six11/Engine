@@ -1,14 +1,28 @@
 ﻿#include "editor_frame_debugger_smoke.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "asharia/core/log.hpp"
 
 #include "editor_frame_debugger.hpp"
 #include "editor_smoke.hpp"
+#include "editor_viewport_overlay_provider.hpp"
 
 namespace asharia::editor {
+    namespace {
+
+        [[nodiscard]] bool capturedSourceOverlayId(
+            const asharia::BasicRenderViewOverlayDiagnostics& overlay,
+            std::string_view sourceOverlayId) {
+            return std::ranges::find(overlay.sourceOverlayIds, sourceOverlayId) !=
+                   overlay.sourceOverlayIds.end();
+        }
+
+    } // namespace
+
     [[nodiscard]] bool validateFrameDebuggerSmoke(EditorRunMode mode,
                                                   const EditorSmokeRunResult& runResult,
                                                   const EditorFrameDebugger& frameDebugger) {
@@ -111,6 +125,15 @@ namespace asharia::editor {
         }
         if (capture->diagnostics.executionEvents.empty()) {
             asharia::logError("Editor frame debugger smoke captured no renderer execution events.");
+            return false;
+        }
+        if (!capturedSourceOverlayId(capture->diagnostics.overlay, kEditorSceneGridOverlayId) ||
+            !capturedSourceOverlayId(capture->diagnostics.overlay,
+                                     kEditorSceneTransformGizmoOverlayId) ||
+            !capturedSourceOverlayId(capture->diagnostics.overlay,
+                                     kEditorSceneSelectionOutlineOverlayId)) {
+            asharia::logError(
+                "Editor frame debugger smoke did not preserve overlay source diagnostics.");
             return false;
         }
         if (frameDebugger.pausedCapture()) {

@@ -12,6 +12,7 @@
 #include "editor_tool.hpp"
 #include "editor_ui.hpp"
 #include "editor_viewport.hpp"
+#include "editor_viewport_overlay_provider.hpp"
 
 namespace {
 
@@ -41,26 +42,26 @@ namespace {
 
     [[nodiscard]] bool* sceneOverlayFlagForId(asharia::editor::EditorViewportOverlayFlags& flags,
                                               std::string_view overlayId) {
-        if (overlayId == "scene.grid") {
+        if (overlayId == asharia::editor::kEditorSceneGridOverlayId) {
             return &flags.gridVisible;
         }
-        if (overlayId == "scene.transform-gizmo") {
+        if (overlayId == asharia::editor::kEditorSceneTransformGizmoOverlayId) {
             return &flags.gizmoVisible;
         }
-        if (overlayId == "scene.selection-outline") {
+        if (overlayId == asharia::editor::kEditorSceneSelectionOutlineOverlayId) {
             return &flags.selectionOutlineVisible;
         }
         return nullptr;
     }
 
     [[nodiscard]] SceneOverlayLabel sceneOverlayLabelForId(std::string_view overlayId) {
-        if (overlayId == "scene.grid") {
+        if (overlayId == asharia::editor::kEditorSceneGridOverlayId) {
             return SceneOverlayLabel{.key = "scene.overlay.grid", .fallback = "Grid"};
         }
-        if (overlayId == "scene.transform-gizmo") {
+        if (overlayId == asharia::editor::kEditorSceneTransformGizmoOverlayId) {
             return SceneOverlayLabel{.key = "scene.overlay.gizmo", .fallback = "Gizmo"};
         }
-        if (overlayId == "scene.selection-outline") {
+        if (overlayId == asharia::editor::kEditorSceneSelectionOutlineOverlayId) {
             return SceneOverlayLabel{.key = "scene.overlay.selection", .fallback = "Select"};
         }
         return SceneOverlayLabel{.key = {}, .fallback = overlayId};

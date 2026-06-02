@@ -3,11 +3,20 @@
 #include <array>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "editor_viewport.hpp"
 
 namespace asharia::editor {
+
+    inline constexpr std::string_view kEditorSceneGridOverlayId = "scene.grid";
+    inline constexpr std::string_view kEditorSceneTransformGizmoOverlayId =
+        "scene.transform-gizmo";
+    inline constexpr std::string_view kEditorSceneSelectionOutlineOverlayId =
+        "scene.selection-outline";
+    inline constexpr std::string_view kEditorDebugOverlayId = "debug.overlay";
+    inline constexpr std::string_view kEditorDebugGizmoOverlayId = "debug.gizmo";
 
     struct EditorDebugWorldLine {
         std::array<float, 3> start{};

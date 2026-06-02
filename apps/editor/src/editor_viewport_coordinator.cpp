@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -128,9 +129,46 @@ namespace {
         return lines;
     }
 
+    void appendUniqueSourceOverlayId(std::vector<std::string_view>& ids,
+                                     std::string_view overlayId) {
+        if (overlayId.empty() || std::ranges::find(ids, overlayId) != ids.end()) {
+            return;
+        }
+        ids.push_back(overlayId);
+    }
+
+    std::vector<std::string_view> basicRenderViewSourceOverlayIds(
+        asharia::editor::EditorViewportOverlayFlags flags,
+        std::span<const asharia::editor::EditorViewportOverlayPacket> packets) {
+        std::vector<std::string_view> ids;
+        ids.reserve(5U + packets.size());
+        if (flags.gridVisible) {
+            appendUniqueSourceOverlayId(ids, asharia::editor::kEditorSceneGridOverlayId);
+        }
+        if (flags.gizmoVisible) {
+            appendUniqueSourceOverlayId(ids,
+                                        asharia::editor::kEditorSceneTransformGizmoOverlayId);
+        }
+        if (flags.selectionOutlineVisible) {
+            appendUniqueSourceOverlayId(ids,
+                                        asharia::editor::kEditorSceneSelectionOutlineOverlayId);
+        }
+        if (flags.debugOverlayVisible) {
+            appendUniqueSourceOverlayId(ids, asharia::editor::kEditorDebugOverlayId);
+        }
+        if (flags.debugGizmoVisible) {
+            appendUniqueSourceOverlayId(ids, asharia::editor::kEditorDebugGizmoOverlayId);
+        }
+        for (const asharia::editor::EditorViewportOverlayPacket& packet : packets) {
+            appendUniqueSourceOverlayId(ids, packet.overlayId);
+        }
+        return ids;
+    }
+
     asharia::BasicRenderViewOverlayDesc
     basicRenderViewOverlay(asharia::editor::EditorViewportOverlayFlags flags,
-                           std::span<const asharia::BasicDebugWorldLine> debugWorldLines) {
+                           std::span<const asharia::BasicDebugWorldLine> debugWorldLines,
+                           std::span<const std::string_view> sourceOverlayIds) {
         return asharia::BasicRenderViewOverlayDesc{
             .enabled = asharia::editor::anyEditorViewportOverlayFlagEnabled(flags),
             .colorLoadOp = asharia::BasicRenderViewOverlayColorLoadOp::LoadSceneColor,
@@ -146,6 +184,7 @@ namespace {
                     .fadeEnd = 160.0F,
                     .opacity = 1.0F,
                 },
+            .sourceOverlayIds = sourceOverlayIds,
             .debugWorldLines = debugWorldLines,
         };
     }
@@ -532,6 +571,8 @@ namespace asharia::editor {
             });
         const std::vector<asharia::BasicDebugWorldLine> debugWorldLines =
             basicDebugWorldLines(overlayPackets.packets);
+        const std::vector<std::string_view> sourceOverlayIds =
+            basicRenderViewSourceOverlayIds(request.overlayFlags, overlayPackets.packets);
 
         auto recorded = renderer.recordViewFrame(
             frame,
@@ -548,7 +589,9 @@ namespace asharia::editor {
                 .viewKind = basicRenderViewKind(request.kind),
                 .camera = basicRenderViewCamera(request.camera),
                 .frameParams = basicRenderViewFrameParams(viewportFrameIndex),
-                .overlay = basicRenderViewOverlay(request.overlayFlags, debugWorldLines),
+                .overlay =
+                    basicRenderViewOverlay(request.overlayFlags, debugWorldLines,
+                                           sourceOverlayIds),
                 .viewName = editorViewportKindName(request.kind),
                 .diagnostics = &diagnostics,
             });
