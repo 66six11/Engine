@@ -281,12 +281,12 @@ packet stable id 复制到 `BasicRenderViewOverlayDesc::sourceOverlayIds` 供 di
 1/2/5/10 spacing 间平滑切换，默认不做距离淡出。Scene View grid 的 plane、minor/major spacing、fade、opacity 和 color
 已经从 `EditorSettings::sceneGrid` 经 `EditorViewportRequest::worldGrid` bridge 到 `BasicRenderViewOverlayDesc::worldGrid`。
 Scene grid overlay contribution 已携带与 editor settings bootstrap 相同的 built-in 默认设置。这仍不是 runtime
-camera system，也还不是外部 manifest loader、完整 spacing/fade UI 或 hot reload。
+camera system，也还不是外部 manifest loader 或 hot reload。
 
 下一步顺序：
 
 1. 把 built-in contribution default 迁移到真正 external manifest loader / reload path。
-2. 把 spacing/fade UI 和热更新设置接到同一 `sceneGrid` 数据合同。
+2. 把 external manifest reload / hot reload 设置接到同一 `sceneGrid` 数据合同。
 3. 继续完善 Frame Debug / RG View 的 pass、packet source、view kind 和 selected event 细节。
 
 ### Frame Debug

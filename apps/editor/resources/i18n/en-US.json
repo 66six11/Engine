@@ -91,6 +91,7 @@
     "scene.swapchain": "Swapchain",
     "scene.viewport": "Viewport",
     "scene.viewportFrame": "Viewport Frame",
+    "settings.categories": "Categories",
     "settings.general": "General",
     "settings.language": "Language",
     "settings.language.enUs": "English (US)",
@@ -99,6 +100,12 @@
     "settings.saveFailed": "Save failed",
     "settings.viewport": "Viewport",
     "settings.sceneGrid": "Scene Grid",
+    "settings.sceneGrid.planeY": "Plane Y",
+    "settings.sceneGrid.minorSpacing": "Minor Spacing",
+    "settings.sceneGrid.majorSpacing": "Major Spacing",
+    "settings.sceneGrid.fadeStart": "Fade Start",
+    "settings.sceneGrid.fadeEnd": "Fade End",
+    "settings.sceneGrid.opacity": "Opacity",
     "settings.sceneGrid.color": "Grid Color"
   }
 }

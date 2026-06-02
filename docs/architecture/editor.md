@@ -435,9 +435,10 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   renderer-side view pass work. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
   camera-height LOD/fade, source overlay diagnostics, Frame Debug replay preservation and a `sceneGrid` settings bridge
   for plane, spacing, fade, opacity and color. The Scene grid overlay contribution declares the same built-in default used by
-  settings bootstrap, and Editor Settings exposes the first grid color control.
-- Renderer prerequisites still pending for richer overlays are: external manifest loading, broader grid spacing/fade UI, hot
-  update behavior, and a more complete debug/world-line draw route for gizmo/selection shapes.
+  settings bootstrap, and Editor Settings exposes a left-nav/right-content settings UI for General and Scene Grid
+  controls.
+- Renderer prerequisites still pending for richer overlays are: external manifest loading, hot update behavior, and a more
+  complete debug/world-line draw route for gizmo/selection shapes.
 - `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects.
   `EditorInspectedWorldScheduler` is the current counter-based seam for future runtime/script integration: it runs frame
   advance、game update 和 script update safe-point counters while allowed, and records skipped counters while Frame Debug is

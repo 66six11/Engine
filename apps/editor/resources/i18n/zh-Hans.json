@@ -91,6 +91,7 @@
     "scene.swapchain": "交换链",
     "scene.viewport": "视口",
     "scene.viewportFrame": "视口帧",
+    "settings.categories": "目录",
     "settings.general": "通用",
     "settings.language": "语言",
     "settings.language.enUs": "英语（美国）",
@@ -99,6 +100,12 @@
     "settings.saveFailed": "保存失败",
     "settings.viewport": "视口",
     "settings.sceneGrid": "场景网格",
+    "settings.sceneGrid.planeY": "平面 Y",
+    "settings.sceneGrid.minorSpacing": "次级间距",
+    "settings.sceneGrid.majorSpacing": "主级间距",
+    "settings.sceneGrid.fadeStart": "淡出起点",
+    "settings.sceneGrid.fadeEnd": "淡出终点",
+    "settings.sceneGrid.opacity": "不透明度",
     "settings.sceneGrid.color": "网格颜色"
   }
 }
