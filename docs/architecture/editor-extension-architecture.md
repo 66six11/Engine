@@ -361,7 +361,7 @@ Status: current.
   loader 和热更新仍是后续工作。
 - 当前 world-grid LOD 由 RenderView policy 只按 camera 到 grid plane 的垂直距离计算，再通过 `GridLodSettings`
   交给 shader；低高度锁定 base spacing，且低高度远水平距离不会改变 LOD，拉高后才在 1/2/5/10 spacing
-  间整帧平滑切换。默认不做距离淡出，高视角 readback smoke 覆盖网格不会像 depth fog 一样消失。下一步是 external manifest loader 和热更新，而不是继续把 Vulkan
+  间整帧平滑切换。默认不做距离淡出，高视角 readback smoke 覆盖网格不会像 depth fog 一样消失。下一步先定义脚本/插件系统扩展边界，再接真实 external manifest/reload path，而不是继续把 Vulkan
   绘制细节推回 editor。
 
 ## 非目标

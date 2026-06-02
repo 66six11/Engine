@@ -27,6 +27,8 @@ set(ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS
     src/basic_renderers/mrt_renderer.inl
     src/basic_renderers/pipeline_layouts.inl
     src/basic_renderers/render_view_diagnostics.inl
+    src/basic_renderers/render_view_pass_policy.inl
+    src/basic_renderers/render_view_recording.inl
     src/basic_renderers/render_view_targets.inl
     src/basic_renderers/shader_contracts.inl
     src/basic_renderers/triangle_renderer.inl
