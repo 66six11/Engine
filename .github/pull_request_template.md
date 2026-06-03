@@ -1,3 +1,11 @@
+## Project tracking
+
+- Linked issue: #
+- [ ] The linked issue is in the Engine Project.
+- [ ] PR-sized work has a `[Slice]` issue, or this PR explains why the parent `[Epic]` is enough.
+- [ ] Project `Status`, `Priority`, and `Size` are current.
+- [ ] This PR will close or update the linked issue after validation.
+
 ## 变更范围
 
 - [ ] Vulkan / RHI / frame loop / swapchain
