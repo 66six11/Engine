@@ -78,6 +78,30 @@ body:
         - docs/workflow/review.md
     validations:
       required: true
+  - type: textarea
+    id: status-updates
+    attributes:
+      label: 状态更新约定
+      description: Epic 进入 In progress 后，按需用 issue comment 更新进展。
+      value: |
+        - TL;DR:
+        - Since last update:
+        - Next:
+        - Blocked: None
+    validations:
+      required: false
+  - type: textarea
+    id: done-evidence
+    attributes:
+      label: Done 前完成证据
+      description: Issue 移到 Done 前，用 comment 或正文更新这些证据。
+      value: |
+        - Closing PR / commit:
+        - Validation gates run:
+        - Docs updated or not needed:
+        - Follow-up / blocking issues:
+    validations:
+      required: false
   - type: dropdown
     id: priority
     attributes:

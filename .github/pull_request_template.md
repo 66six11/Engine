@@ -6,6 +6,13 @@
 - [ ] Project `Status`、`Priority`、`Size` 已同步。
 - [ ] 验证完成后，本 PR 会关闭或更新关联 Issue。
 
+## 完成证据
+
+- [ ] Closing PR / commit 已写入关联 Issue。
+- [ ] 验证门禁结果已写入 PR 或关联 Issue。
+- [ ] 文档更新已完成，或无需更新的原因已说明。
+- [ ] Follow-up / blocking issue 已创建；没有扩大原 Issue scope。
+
 ## 变更范围
 
 - [ ] Vulkan / RHI / frame loop / swapchain
