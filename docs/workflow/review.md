@@ -1,16 +1,25 @@
 # 审查流程规范
 
-本文档定义每次代码审查、修复和提交前必须执行的门禁。目标是让代码正确性、Vulkan 同步安全、包边界、文档同步和下一步开发判断保持一致。
+本文档定义每次代码审查、修复和提交前必须执行的门禁。目标是让代码正确性、内部代码设计、Vulkan 同步安全、包边界、文档同步和下一步开发判断保持一致。
 
 ## 适用范围
 
 - 用户要求“审查代码”“审查并提交”“再次审查”时，必须执行本文档。
+- 用户要求“架构审查”“代码架构审查”或“内部设计审查”时，内部代码设计审查是必选项，不能只检查 package、target、include 或 Vulkan/RHI 边界。
 - 用户给出 review findings 时，先判断每条 finding 是否仍适用，再修复。
-- 涉及 Vulkan、RenderGraph、renderer、shader、构建脚本或包依赖的改动，必须增加设计审查门禁。
+- 涉及 Vulkan、RenderGraph、renderer、shader、构建脚本或包依赖的改动，必须增加设计审查门禁；涉及 editor、renderer、runtime、RenderGraph 或 RHI 的改动，还必须执行内部代码设计审查门禁。
 
 ## 审查输出顺序
 
-审查回复必须先列 findings，再列验证与总结。
+审查回复必须先列 findings，再列验证与总结。架构或代码审查回复还必须显式写出：
+
+```text
+设计审查：通过 / 未通过 / 不适用
+内部设计审查：通过 / 未通过 / 不适用
+参考资料：...
+```
+
+若内部设计审查为“不适用”，必须说明原因；只检查边界而没有检查内部对象职责、数据合同、生命周期和状态模型，不允许标为通过。
 
 若发现问题：
 
@@ -133,7 +142,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 - frame loop 是否只管理 acquire、submit、present、swapchain 生命周期，而不承载 renderer 策略。
 - frame callback 是否声明 acquire semaphore 的正确 wait stage。
 - `renderer-basic` 和 `renderer-basic-vulkan` 是否分层清楚。
-- CMake target 依赖、package manifest 依赖和源码 include 是否一致。
+- CMake target 依赖、package manifest 的 `dependencies` / `targetDependencies` 和源码 include 是否一致；多 target package 不能用 package-level dependency 代替 target-level 边界。
 - swapchain recreate、image view、semaphore、fence、command buffer 的生命周期是否闭合。
 - 文档是否同步更新了真实流程。
 
@@ -141,10 +150,41 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 
 ```text
 设计审查：通过
+内部设计审查：通过
 参考资料：...
 ```
 
 若未通过，必须列出设计 finding，并优先修复 P1/P2。
+
+## 内部代码设计审查门禁
+
+架构审查不得只验证 package、target、include 或 Vulkan 边界。每次 review 至少要抽样检查被改动代码及其直接调用者/被调用者的内部设计；涉及 editor、renderer、runtime、RenderGraph 或 RHI 的改动必须完整覆盖下列问题：
+
+- 职责边界：类、manager、coordinator、registry、context 是否同时承担创建、调度、渲染、状态变更、诊断和 UI；超过一个稳定职责时必须说明拆分计划或当前保留理由。
+- 数据合同：跨层输入是否真的被消费，而不是只进入 diagnostics；camera、overlay、format、descriptor、frame params、pass params 和 resource access 必须能追到实际执行点或明确标注为 planned。
+- 生命周期：create/update/reload/resize/shutdown、GPU deferred deletion、descriptor retire、frame fence、command buffer、persistent/transient resource 是否形成闭环；不能靠隐式全局状态或 render loop 中的 wait idle 掩盖。
+- 状态模型：功能是单实例还是多实例；viewport、view、panel、world、document、selection、capture、refresh reason 等状态必须有 owner，不能用最后一次请求覆盖多视图需求。
+- 隐式执行：GPU work、上传、clear、copy、barrier、descriptor update 或 debug probe 是否藏在声明式 graph / frame loop 之外；若保留 external pre-pass，必须在 diagnostics 和审查结论中显式暴露。
+- 错误与能力合同：format、feature、queue capability、shader reflection、resource signature、descriptor layout 和 material/pipeline key 不匹配时，是否能 fail early 并保留上下文。
+- Editor 内部设计：panel 不直接修改持久状态；持久 mutation 应通过 command/transaction 或明确 owner；宽 `Context` / service locator 只能作为过渡，并需要 capability-scoped 收敛计划。
+- Public API 与实现：大型 header-only 组件、public inline 实现、app-level glue 文件和 god object 必须审查 API/implementation split；暂不拆时要记录触发拆分的阈值。
+- 测试与 smoke：新增或修改的内部语义必须有 smoke、package test、counter、diagnostics snapshot 或负向测试证明；只靠编译通过不算内部设计通过。
+
+快速抽样命令：
+
+```powershell
+rg -n "class |struct |Manager|Coordinator|Registry|Context|State|TODO|FIXME|temporary|MVP|for now" apps engine packages -g "*.hpp" -g "*.cpp" -g "*.inl"
+rg -n "vkCmd|vkQueue|vkDeviceWaitIdle|vkQueueWaitIdle|vkUpdateDescriptorSets" apps packages -g "*.hpp" -g "*.cpp" -g "*.inl"
+rg -n "debugWorldLines|camera|viewProjection|requestedViewport_|RenderGraphImageFormat::Undefined|basicRenderGraphImageFormat" apps packages -g "*.hpp" -g "*.cpp" -g "*.inl"
+```
+
+审查发现必须用本地事实举证：给出文件、行号、调用路径和触发场景。若结合网络资料，必须说明资料只支持哪条设计判断，不能用泛泛 best practice 替代仓库证据。
+
+### Renderer format contract gate
+
+修改 swapchain format、RenderView target format、RenderGraph image format 或 Vulkan image create 入口时，必须检查 renderer format contract。若改动引入或修改 `--smoke-renderer-format-contract`，该 smoke 必须在 PR 描述和审查回复中列为验证门禁。
+
+在 #33 落地前，`--smoke-renderer-format-contract` 是 planned gate，不加入全量 smoke 循环；#33 合并时应把该命令加入对应 smoke list，并用负向路径证明 unsupported format 会在 renderer / RenderGraph import 前 fail early。
 
 ## Vulkan 同步审查重点
 
