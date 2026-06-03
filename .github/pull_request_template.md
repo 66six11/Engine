@@ -1,10 +1,17 @@
-## Project tracking
+## Project 跟踪
 
-- Linked issue: #
-- [ ] The linked issue is in the Engine Project.
-- [ ] PR-sized work has a `[Slice]` issue, or this PR explains why the parent `[Epic]` is enough.
-- [ ] Project `Status`, `Priority`, and `Size` are current.
-- [ ] This PR will close or update the linked issue after validation.
+- 关联 Issue: #
+- [ ] 关联 Issue 已加入 Engine Project。
+- [ ] PR 粒度工作已有 `[Slice]` issue；或本 PR 说明为什么直接关联父 `[Epic]` 足够。
+- [ ] Project `Status`、`Priority`、`Size` 已同步。
+- [ ] 验证完成后，本 PR 会关闭或更新关联 Issue。
+
+## 完成证据
+
+- [ ] Closing PR / commit 已写入关联 Issue。
+- [ ] 验证门禁结果已写入 PR 或关联 Issue。
+- [ ] 文档更新已完成，或无需更新的原因已说明。
+- [ ] Follow-up / blocking issue 已创建；没有扩大原 Issue scope。
 
 ## 变更范围
 
