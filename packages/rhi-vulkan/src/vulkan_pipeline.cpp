@@ -515,7 +515,7 @@ namespace asharia {
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssembly.topology = desc.topology;
 
         VkPipelineViewportStateCreateInfo viewportState{};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -536,6 +536,13 @@ namespace asharia {
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
         colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.blendEnable = desc.colorBlendEnable;
+        colorBlendAttachment.srcColorBlendFactor = desc.colorSrcBlendFactor;
+        colorBlendAttachment.dstColorBlendFactor = desc.colorDstBlendFactor;
+        colorBlendAttachment.colorBlendOp = desc.colorBlendOp;
+        colorBlendAttachment.srcAlphaBlendFactor = desc.alphaSrcBlendFactor;
+        colorBlendAttachment.dstAlphaBlendFactor = desc.alphaDstBlendFactor;
+        colorBlendAttachment.alphaBlendOp = desc.alphaBlendOp;
 
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

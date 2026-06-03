@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_types.hpp"
 
 namespace asharia {
 
@@ -67,6 +67,8 @@ namespace asharia {
             return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         case RenderGraphImageState::DepthSampledRead:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        case RenderGraphImageState::TransferSrc:
+            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         case RenderGraphImageState::TransferDst:
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         case RenderGraphImageState::Present:
@@ -121,6 +123,11 @@ namespace asharia {
             return VulkanRenderGraphImageUsage{
                 .stageMask = vulkanShaderStage(shaderStage),
                 .accessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+            };
+        case RenderGraphImageState::TransferSrc:
+            return VulkanRenderGraphImageUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .accessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
             };
         case RenderGraphImageState::TransferDst:
             return VulkanRenderGraphImageUsage{

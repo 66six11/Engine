@@ -1,13 +1,13 @@
 ﻿#pragma once
 
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_types.hpp"
 
 namespace asharia {
 
-    [[nodiscard]] inline RenderGraphImageDesc backbufferDesc(
-        RenderGraphImageFormat format, RenderGraphExtent2D extent,
-        RenderGraphImageState initialState = RenderGraphImageState::Undefined,
-        RenderGraphImageState finalState = RenderGraphImageState::Present) {
+    [[nodiscard]] inline RenderGraphImageDesc
+    backbufferDesc(RenderGraphImageFormat format, RenderGraphExtent2D extent,
+                   RenderGraphImageState initialState = RenderGraphImageState::Undefined,
+                   RenderGraphImageState finalState = RenderGraphImageState::Present) {
         return RenderGraphImageDesc{
             .name = "Backbuffer",
             .format = format,

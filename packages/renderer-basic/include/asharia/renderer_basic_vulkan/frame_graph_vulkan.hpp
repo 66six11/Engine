@@ -11,8 +11,9 @@
 #include <utility>
 
 #include "asharia/core/error.hpp"
+#include "asharia/core/result.hpp"
 #include "asharia/renderer_basic/clear_frame_graph.hpp"
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_execution.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
 
@@ -45,12 +46,36 @@ namespace asharia {
         }
     }
 
-    [[nodiscard]] inline RenderGraphImageFormat basicRenderGraphImageFormat(VkFormat format) {
+    [[nodiscard]] inline std::string basicVulkanFormatDebugName(VkFormat format) {
+        switch (format) {
+        case VK_FORMAT_UNDEFINED:
+            return "VK_FORMAT_UNDEFINED";
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return "VK_FORMAT_B8G8R8A8_SRGB";
+        case VK_FORMAT_B8G8R8A8_UNORM:
+            return "VK_FORMAT_B8G8R8A8_UNORM";
+        case VK_FORMAT_R8G8B8A8_SRGB:
+            return "VK_FORMAT_R8G8B8A8_SRGB";
+        case VK_FORMAT_R8G8B8A8_UNORM:
+            return "VK_FORMAT_R8G8B8A8_UNORM";
+        default:
+            return "VkFormat(" + std::to_string(static_cast<int>(format)) + ")";
+        }
+    }
+
+    [[nodiscard]] inline Result<RenderGraphImageFormat>
+    basicRenderGraphImageFormat(VkFormat format, std::string_view context) {
         switch (format) {
         case VK_FORMAT_B8G8R8A8_SRGB:
             return RenderGraphImageFormat::B8G8R8A8Srgb;
         default:
-            return RenderGraphImageFormat::Undefined;
+            return std::unexpected{Error{
+                ErrorDomain::RenderGraph,
+                0,
+                std::string{context} + " uses unsupported Vulkan image format " +
+                    basicVulkanFormatDebugName(format) +
+                    "; supported renderer format is VK_FORMAT_B8G8R8A8_SRGB",
+            }};
         }
     }
 
@@ -61,10 +86,13 @@ namespace asharia {
         };
     }
 
-    [[nodiscard]] inline RenderGraphImageDesc
+    [[nodiscard]] inline Result<RenderGraphImageDesc>
     basicBackbufferDesc(const VulkanFrameRecordContext& frame) {
-        return backbufferDesc(basicRenderGraphImageFormat(frame.format),
-                              basicRenderGraphExtent(frame.extent));
+        auto format = basicRenderGraphImageFormat(frame.format, "Backbuffer");
+        if (!format) {
+            return std::unexpected{std::move(format.error())};
+        }
+        return backbufferDesc(*format, basicRenderGraphExtent(frame.extent));
     }
 
     [[nodiscard]] inline VulkanRenderGraphImageBinding
@@ -204,6 +232,12 @@ namespace asharia {
         return findVulkanRenderGraphImageSlot(pass.transferWriteSlots, slotName, pass, bindings);
     }
 
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphTransferRead(RenderGraphPassContext pass, std::string_view slotName,
+                                      std::span<const VulkanRenderGraphImageBinding> bindings) {
+        return findVulkanRenderGraphImageSlot(pass.transferReadSlots, slotName, pass, bindings);
+    }
+
     [[nodiscard]] inline Result<VulkanRenderGraphBufferBinding>
     findVulkanRenderGraphBufferTransferRead(
         RenderGraphPassContext pass, std::string_view slotName,
@@ -243,8 +277,8 @@ namespace asharia {
         return "Buffer#" + std::to_string(buffer.index);
     }
 
-    [[nodiscard]] inline std::string renderGraphImageStateLabel(RenderGraphImageState state,
-                                                                RenderGraphShaderStage shaderStage) {
+    [[nodiscard]] inline std::string
+    renderGraphImageStateLabel(RenderGraphImageState state, RenderGraphShaderStage shaderStage) {
         std::string label;
         switch (state) {
         case RenderGraphImageState::Undefined:
@@ -264,6 +298,9 @@ namespace asharia {
             break;
         case RenderGraphImageState::DepthSampledRead:
             label = "DepthSampledRead";
+            break;
+        case RenderGraphImageState::TransferSrc:
+            label = "TransferSrc";
             break;
         case RenderGraphImageState::TransferDst:
             label = "TransferDst";
@@ -286,8 +323,8 @@ namespace asharia {
         return label;
     }
 
-    [[nodiscard]] inline std::string renderGraphBufferStateLabel(
-        RenderGraphBufferState state, RenderGraphShaderStage shaderStage) {
+    [[nodiscard]] inline std::string
+    renderGraphBufferStateLabel(RenderGraphBufferState state, RenderGraphShaderStage shaderStage) {
         std::string label;
         switch (state) {
         case RenderGraphBufferState::TransferRead:
@@ -324,10 +361,10 @@ namespace asharia {
         return label;
     }
 
-    inline void appendRenderGraphImageSlotLabels(
-        std::string& label, std::string_view group,
-        std::span<const RenderGraphImageSlot> slots,
-        std::span<const VulkanRenderGraphImageBinding> bindings) {
+    inline void
+    appendRenderGraphImageSlotLabels(std::string& label, std::string_view group,
+                                     std::span<const RenderGraphImageSlot> slots,
+                                     std::span<const VulkanRenderGraphImageBinding> bindings) {
         for (const RenderGraphImageSlot& slot : slots) {
             label += " ";
             label += group;
@@ -338,10 +375,10 @@ namespace asharia {
         }
     }
 
-    inline void appendRenderGraphBufferSlotLabels(
-        std::string& label, std::string_view group,
-        std::span<const RenderGraphBufferSlot> slots,
-        std::span<const VulkanRenderGraphBufferBinding> bindings) {
+    inline void
+    appendRenderGraphBufferSlotLabels(std::string& label, std::string_view group,
+                                      std::span<const RenderGraphBufferSlot> slots,
+                                      std::span<const VulkanRenderGraphBufferBinding> bindings) {
         for (const RenderGraphBufferSlot& slot : slots) {
             label += " ";
             label += group;
@@ -367,23 +404,26 @@ namespace asharia {
         appendRenderGraphImageSlotLabels(label, "read", pass.shaderReadSlots, bindings);
         appendRenderGraphImageSlotLabels(label, "depthRead", pass.depthReadSlots, bindings);
         appendRenderGraphImageSlotLabels(label, "depthWrite", pass.depthWriteSlots, bindings);
-        appendRenderGraphImageSlotLabels(label, "depthSample", pass.depthSampledReadSlots, bindings);
-        appendRenderGraphImageSlotLabels(label, "transfer", pass.transferWriteSlots, bindings);
+        appendRenderGraphImageSlotLabels(label, "depthSample", pass.depthSampledReadSlots,
+                                         bindings);
+        appendRenderGraphImageSlotLabels(label, "transferRead", pass.transferReadSlots, bindings);
+        appendRenderGraphImageSlotLabels(label, "transferWrite", pass.transferWriteSlots, bindings);
         return label;
     }
 
-    [[nodiscard]] inline std::string renderGraphPassDebugLabel(
-        RenderGraphPassContext pass, std::span<const VulkanRenderGraphImageBinding> imageBindings,
-        std::span<const VulkanRenderGraphBufferBinding> bufferBindings) {
+    [[nodiscard]] inline std::string
+    renderGraphPassDebugLabel(RenderGraphPassContext pass,
+                              std::span<const VulkanRenderGraphImageBinding> imageBindings,
+                              std::span<const VulkanRenderGraphBufferBinding> bufferBindings) {
         std::string label = renderGraphPassDebugLabel(pass, imageBindings);
         appendRenderGraphBufferSlotLabels(label, "bufferRead", pass.bufferReadSlots,
                                           bufferBindings);
-        appendRenderGraphBufferSlotLabels(label, "bufferTransferRead",
-                                          pass.bufferTransferReadSlots, bufferBindings);
+        appendRenderGraphBufferSlotLabels(label, "bufferTransferRead", pass.bufferTransferReadSlots,
+                                          bufferBindings);
         appendRenderGraphBufferSlotLabels(label, "bufferWrite", pass.bufferWriteSlots,
                                           bufferBindings);
-        appendRenderGraphBufferSlotLabels(label, "bufferStorage",
-                                          pass.bufferStorageReadWriteSlots, bufferBindings);
+        appendRenderGraphBufferSlotLabels(label, "bufferStorage", pass.bufferStorageReadWriteSlots,
+                                          bufferBindings);
         return label;
     }
 
@@ -418,9 +458,9 @@ namespace asharia {
             return {};
         }
 
-        auto namedImage = frame.setDebugObjectName(
-            VK_OBJECT_TYPE_IMAGE, vulkanDebugObjectHandle(binding.vulkanImage),
-            "RG.Image." + binding.debugName);
+        auto namedImage = frame.setDebugObjectName(VK_OBJECT_TYPE_IMAGE,
+                                                   vulkanDebugObjectHandle(binding.vulkanImage),
+                                                   "RG.Image." + binding.debugName);
         if (!namedImage) {
             return std::unexpected{std::move(namedImage.error())};
         }

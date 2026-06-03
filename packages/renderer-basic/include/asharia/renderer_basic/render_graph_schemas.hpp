@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "asharia/renderer_basic/draw_item.hpp"
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_execution.hpp"
 
 namespace asharia {
 
@@ -25,11 +25,25 @@ namespace asharia {
     inline constexpr char kBasicRasterMrtParamsType[] = "builtin.raster-mrt.params";
     inline constexpr char kBasicRasterFullscreenPassType[] = "builtin.raster-fullscreen";
     inline constexpr char kBasicRasterFullscreenParamsType[] = "builtin.raster-fullscreen.params";
+    inline constexpr char kBasicRenderViewWorldGridPassType[] = "builtin.render-view-world-grid";
+    inline constexpr char kBasicRenderViewWorldGridParamsType[] =
+        "builtin.render-view-world-grid.params";
+    inline constexpr char kBasicRenderViewSceneInputsPassType[] =
+        "builtin.render-view-scene-inputs";
+    inline constexpr char kBasicRenderViewSceneInputsParamsType[] =
+        "builtin.render-view-scene-inputs.params";
+    inline constexpr char kBasicRenderViewOverlayPassType[] = "builtin.render-view-overlay";
+    inline constexpr char kBasicRenderViewOverlayParamsType[] =
+        "builtin.render-view-overlay.params";
     inline constexpr char kBasicRasterDrawListPassType[] = "builtin.raster-draw-list";
     inline constexpr char kBasicRasterDrawListParamsType[] = "builtin.raster-draw-list.params";
     inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
     inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
     inline constexpr char kBasicComputeReadbackPassType[] = "builtin.compute-readback";
+    inline constexpr char kBasicTransferFillBufferPassType[] = "builtin.transfer-fill-buffer";
+    inline constexpr char kBasicTransferFillBufferParamsType[] =
+        "builtin.transfer-fill-buffer.params";
+    inline constexpr char kBasicDebugImageCopyPassType[] = "builtin.debug-image-copy";
 
     struct BasicTransferClearParams {
         std::array<float, 4> color{};
@@ -39,8 +53,40 @@ namespace asharia {
         std::array<float, 4> tint{};
     };
 
+    struct BasicRenderViewOverlayParams {
+        std::array<float, 4> cameraPositionNear{};
+        std::array<float, 4> frameTimeScale{};
+        std::uint32_t debugWorldLineCount{};
+        std::uint32_t viewKind{};
+        std::uint32_t overlayEnabled{};
+        std::uint32_t reserved{};
+    };
+
+    struct BasicRenderViewWorldGridParams {
+        std::array<float, 4> cameraPositionNear{};
+        std::array<float, 4> viewportFade{};
+        std::array<float, 4> gridSettings{};
+        std::array<float, 4> gridLodSettings{};
+        std::array<float, 4> gridColor{};
+        std::uint32_t viewKind{};
+        std::uint32_t enabled{};
+        std::uint32_t reserved0{};
+        std::uint32_t reserved1{};
+    };
+
+    struct BasicRenderViewSceneInputsParams {
+        std::uint32_t drawItemCount{};
+        std::uint32_t viewKind{};
+        std::uint32_t reserved0{};
+        std::uint32_t reserved1{};
+    };
+
     struct BasicDrawListParams {
         std::uint32_t drawCount{};
+    };
+
+    struct BasicTransferFillBufferParams {
+        std::uint32_t value{};
     };
 
     struct BasicComputeDispatchParams {
@@ -221,6 +267,61 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicRenderViewWorldGridSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewWorldGridPassType,
+            .paramsType = kBasicRenderViewWorldGridParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::SetVec4,
+                    RenderGraphCommandKind::DrawFullscreenTriangle,
+                },
+        });
+    }
+
+    inline void registerBasicRenderViewSceneInputsSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewSceneInputsPassType,
+            .paramsType = kBasicRenderViewSceneInputsParamsType,
+            .resourceSlots = {},
+            .allowedCommands = {RenderGraphCommandKind::SetInt},
+            .allowCulling = false,
+            .hasSideEffects = true,
+        });
+    }
+
+    inline void registerBasicRenderViewOverlaySchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewOverlayPassType,
+            .paramsType = kBasicRenderViewOverlayParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::SetVec4,
+                    RenderGraphCommandKind::SetInt,
+                },
+        });
+    }
+
     inline void registerBasicRasterDrawListSchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicRasterDrawListPassType,
@@ -241,6 +342,23 @@ namespace asharia {
                     },
                 },
             .allowedCommands = {},
+        });
+    }
+
+    inline void registerBasicTransferFillBufferSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicTransferFillBufferPassType,
+            .paramsType = kBasicTransferFillBufferParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {RenderGraphCommandKind::FillBuffer},
         });
     }
 
@@ -288,6 +406,29 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicDebugImageCopySchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicDebugImageCopyPassType,
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = RenderGraphSlotAccess::TransferRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::TransferWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {RenderGraphCommandKind::CopyImage},
+        });
+    }
+
     [[nodiscard]] inline RenderGraphSchemaRegistry basicRenderGraphSchemaRegistry() {
         RenderGraphSchemaRegistry schemas;
         registerBasicTransferClearSchema(schemas);
@@ -298,9 +439,14 @@ namespace asharia {
         registerBasicRasterMesh3DSchema(schemas);
         registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
+        registerBasicRenderViewWorldGridSchema(schemas);
+        registerBasicRenderViewSceneInputsSchema(schemas);
+        registerBasicRenderViewOverlaySchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
+        registerBasicTransferFillBufferSchema(schemas);
         registerBasicComputeDispatchSchema(schemas);
         registerBasicComputeReadbackSchema(schemas);
+        registerBasicDebugImageCopySchema(schemas);
         return schemas;
     }
 

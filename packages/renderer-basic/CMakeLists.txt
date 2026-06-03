@@ -16,8 +16,30 @@ asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
 
 add_library(asharia-renderer-basic INTERFACE)
 add_library(asharia::renderer_basic ALIAS asharia-renderer-basic)
+set(ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS
+    src/basic_renderers/compute_dispatch_renderer.inl
+    src/basic_renderers/debug_preview.inl
+    src/basic_renderers/descriptor_layout_smoke.inl
+    src/basic_renderers/draw_list_renderer.inl
+    src/basic_renderers/fullscreen_texture_renderer.inl
+    src/basic_renderers/graph_recording.inl
+    src/basic_renderers/mesh3d_renderer.inl
+    src/basic_renderers/mrt_renderer.inl
+    src/basic_renderers/pipeline_layouts.inl
+    src/basic_renderers/render_view_diagnostics.inl
+    src/basic_renderers/render_view_pass_policy.inl
+    src/basic_renderers/render_view_recording.inl
+    src/basic_renderers/render_view_targets.inl
+    src/basic_renderers/shader_contracts.inl
+    src/basic_renderers/triangle_renderer.inl
+)
+set_source_files_properties(
+    ${ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS}
+    PROPERTIES HEADER_FILE_ONLY TRUE
+)
 add_library(asharia-renderer-basic-vulkan
-    src/basic_triangle_renderer.cpp
+    src/basic_renderers.cpp
+    ${ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS}
 )
 add_library(asharia::renderer_basic_vulkan ALIAS asharia-renderer-basic-vulkan)
 
@@ -93,6 +115,54 @@ set(ASHARIA_RENDERER_BASIC_MESH3D_FRAG_METADATA
 )
 set(ASHARIA_RENDERER_BASIC_MESH3D_FRAG_REFLECTION
     "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_mesh3d.frag.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.slang"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_grid.slang"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_grid.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.vert.spv"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.vert.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.vert.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.frag.spv"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.frag.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/world_grid.frag.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.vert.spv"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.vert.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.vert.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.frag.spv"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.frag.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/debug_line.frag.reflection.json"
 )
 set(ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_SOURCE
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/basic_compute.slang"
@@ -170,6 +240,46 @@ asharia_add_slang_shader(asharia-renderer-basic-mesh3d-frag
     DEPENDS "${ASHARIA_RENDERER_BASIC_MESH3D_SHADER_MANIFEST}"
 )
 
+asharia_add_slang_shader(asharia-renderer-basic-debug-line-vert
+    SOURCE "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_SOURCE}"
+    ENTRY debugLineVertexMain
+    STAGE vertex
+    OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_VERT_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST}"
+)
+
+asharia_add_slang_shader(asharia-renderer-basic-debug-line-frag
+    SOURCE "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_SOURCE}"
+    ENTRY debugLineFragmentMain
+    STAGE fragment
+    OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_FRAG_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_DEBUG_LINE_SHADER_MANIFEST}"
+)
+
+asharia_add_slang_shader(asharia-renderer-basic-world-grid-vert
+    SOURCE "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_SOURCE}"
+    ENTRY worldGridVertexMain
+    STAGE vertex
+    OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_VERT_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_MANIFEST}"
+)
+
+asharia_add_slang_shader(asharia-renderer-basic-world-grid-frag
+    SOURCE "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_SOURCE}"
+    ENTRY worldGridFragmentMain
+    STAGE fragment
+    OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_WORLD_GRID_FRAG_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_WORLD_GRID_SHADER_MANIFEST}"
+)
+
 asharia_add_slang_shader(asharia-renderer-basic-compute-comp
     SOURCE "${ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_SOURCE}"
     ENTRY computeMain
@@ -188,6 +298,10 @@ add_custom_target(asharia-renderer-basic-shaders
         asharia-renderer-basic-descriptor-frag
         asharia-renderer-basic-mesh3d-vert
         asharia-renderer-basic-mesh3d-frag
+        asharia-renderer-basic-debug-line-vert
+        asharia-renderer-basic-debug-line-frag
+        asharia-renderer-basic-world-grid-vert
+        asharia-renderer-basic-world-grid-frag
         asharia-renderer-basic-compute-comp
 )
 

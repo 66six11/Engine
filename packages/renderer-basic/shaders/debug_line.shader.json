@@ -1,0 +1,10 @@
+{
+  "name": "DebugLine",
+  "passes": [
+    {
+      "name": "Overlay",
+      "vertex": "debugLineVertexMain",
+      "fragment": "debugLineFragmentMain"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "WorldGrid",
+  "passes": [
+    {
+      "name": "Fullscreen",
+      "vertex": "worldGridVertexMain",
+      "fragment": "worldGridFragmentMain"
+    }
+  ]
+}

@@ -12,19 +12,43 @@
 #include "asharia/core/result.hpp"
 
 #include "editor_id.hpp"
+#include "editor_render_graph_snapshot.hpp"
 #include "editor_viewport.hpp"
 
 namespace asharia::editor {
 
+    enum class EditorPanelCategory {
+        Viewport,
+        Diagnostics,
+        Tools,
+        Settings,
+    };
+
+    enum class EditorDockSlot {
+        Center,
+        RightTop,
+        RightBottom,
+        Bottom,
+    };
+
     class EditorDiagnosticsLog;
     class EditorEventQueue;
+    class EditorFrameDebugger;
+    class EditorI18n;
     class EditorInputRouter;
+    struct EditorSettings;
+    class EditorSettingsController;
+    class EditorToolManager;
+    class EditorToolRegistry;
 
     struct EditorPanelDesc {
         EditorId id;
         std::string title;
+        std::string titleKey;
         bool defaultOpen{true};
         bool singleton{true};
+        EditorPanelCategory category{EditorPanelCategory::Tools};
+        EditorDockSlot preferredDock{EditorDockSlot::Center};
     };
 
     struct EditorPanelState {
@@ -34,14 +58,86 @@ namespace asharia::editor {
         std::uint32_t contentHeight{1};
     };
 
-    struct EditorFrameContext {
+    struct EditorFrameUiContext {
         int frameIndex{};
         EditorExtent2D swapchainExtent;
         bool smokeMode{};
-        EditorEventQueue& eventQueue;
-        EditorDiagnosticsLog& diagnosticsLog;
+        EditorI18n& i18n;
+    };
+
+    struct EditorPanelWindowContext {
+        const EditorFrameUiContext& ui;
+    };
+
+    struct EditorFrameDiagnosticsContext {
+        EditorDiagnosticsLog& log;
+        EditorFrameDebugger& frameDebugger;
+    };
+
+    struct EditorFrameSettingsContext {
+        EditorSettingsController& controller;
+    };
+
+    struct EditorFrameToolContext {
+        const EditorToolRegistry& registry;
+        const EditorToolManager& manager;
+    };
+
+    struct EditorFrameInputContext {
+        EditorInputRouter& router;
+    };
+
+    struct EditorFrameRenderGraphContext {
+        EditorRenderGraphSnapshotProvider& snapshots;
+    };
+
+    struct EditorFrameViewportContext {
+        EditorViewportPanelHost& host;
+    };
+
+    struct EditorSceneViewPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        const EditorSettings& settings;
+        const EditorFrameToolContext& tools;
         EditorInputRouter& inputRouter;
         EditorViewportPanelHost& viewportHost;
+    };
+
+    struct EditorLogPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        EditorDiagnosticsLog& diagnosticsLog;
+        EditorInputRouter& inputRouter;
+    };
+
+    struct EditorRenderGraphPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        EditorRenderGraphSnapshotProvider& snapshots;
+    };
+
+    struct EditorFrameDebuggerPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        EditorFrameDebugger& frameDebugger;
+    };
+
+    struct EditorSettingsPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        EditorSettingsController& settings;
+    };
+
+    struct EditorUiStylePreviewPanelDrawContext {
+        EditorSettingsController& settings;
+    };
+
+    struct EditorPanelDrawContext;
+
+    struct EditorFrameContext {
+        EditorFrameUiContext ui;
+        EditorFrameDiagnosticsContext diagnostics;
+        EditorFrameSettingsContext settings;
+        EditorFrameToolContext tools;
+        EditorFrameInputContext input;
+        EditorFrameRenderGraphContext renderGraph;
+        EditorFrameViewportContext viewport;
     };
 
     class ImGuiEditorPanel {
@@ -54,8 +150,61 @@ namespace asharia::editor {
         virtual ~ImGuiEditorPanel() = default;
 
         [[nodiscard]] virtual const EditorPanelDesc& desc() const = 0;
-        virtual void prepareWindow(EditorFrameContext& context, EditorPanelState& state);
-        virtual void draw(EditorFrameContext& context, EditorPanelState& state) = 0;
+        virtual void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state);
+        virtual void draw(EditorPanelDrawContext& context, EditorPanelState& state) = 0;
+    };
+
+    class ImGuiSceneViewEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
+                                        EditorPanelState& state) = 0;
+    };
+
+    class ImGuiLogEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawLogPanel(EditorLogPanelDrawContext& context, EditorPanelState& state) = 0;
+    };
+
+    class ImGuiRenderGraphEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawRenderGraphPanel(EditorRenderGraphPanelDrawContext& context,
+                                          EditorPanelState& state) = 0;
+    };
+
+    class ImGuiFrameDebuggerEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawFrameDebuggerPanel(EditorFrameDebuggerPanelDrawContext& context,
+                                            EditorPanelState& state) = 0;
+    };
+
+    class ImGuiEditorSettingsPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawEditorSettingsPanel(EditorSettingsPanelDrawContext& context,
+                                             EditorPanelState& state) = 0;
+    };
+
+    class ImGuiUiStylePreviewEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawUiStylePreviewPanel(EditorUiStylePreviewPanelDrawContext& context,
+                                             EditorPanelState& state) = 0;
     };
 
     enum class EditorPanelLifecycleEventKind {
@@ -78,8 +227,11 @@ namespace asharia::editor {
         [[nodiscard]] bool closePanel(std::string_view panelId);
         [[nodiscard]] bool focusPanel(std::string_view panelId);
         [[nodiscard]] bool isOpen(std::string_view panelId) const;
+        [[nodiscard]] const EditorPanelDesc* findPanelDesc(std::string_view panelId) const;
         [[nodiscard]] std::size_t panelCount() const;
         [[nodiscard]] std::size_t openPanelCount() const;
+        [[nodiscard]] std::string panelWindowTitle(std::string_view panelId,
+                                                   const EditorI18n& i18n) const;
 
         void setEventQueue(EditorEventQueue* eventQueue);
         void drawPanels(EditorFrameContext& context);

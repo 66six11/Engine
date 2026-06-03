@@ -27,7 +27,8 @@
       "asharia-renderer-basic-descriptor-vert",
       "asharia-renderer-basic-descriptor-frag",
       "asharia-renderer-basic-mesh3d-vert",
-      "asharia-renderer-basic-mesh3d-frag"
+      "asharia-renderer-basic-mesh3d-frag",
+      "asharia-renderer-basic-compute-comp"
     ]
   }
 }

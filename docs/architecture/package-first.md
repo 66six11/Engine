@@ -109,6 +109,16 @@ package 用来承载可选能力：
 manifest 的第一阶段用途是文档化边界、shipping target、test target 和 target-level dependency；
 当前 CMake 仍以显式 `CMakeLists.txt` 为准，后续再评估由脚本或 CMake helper 读取 manifest。
 
+当前 manifest 已包含 `targetDependencies` 字段。审查时需要同时看两层：
+
+- `dependencies` 是 package-level 粗粒度边界，表达“这个 package 中至少一个 target 需要这些 package”。
+- `targetDependencies` 才能表达多 target package 内的真实 target 边界。例如
+  `packages/rhi-vulkan` 的 package-level dependencies 可以包含 `com.asharia.rendergraph`，但
+  `asharia-rhi-vulkan` target 仍只能依赖 `asharia-core`；RenderGraph 只属于
+  `asharia-rhi-vulkan-rendergraph` adapter target。
+- CMake 的 `target_link_libraries()` 和 `add_dependencies()` 仍是构建真相；manifest 更新滞后时，以
+  CMake 为准并修正文档或 manifest，不能用 package-level dependency 推断 base target 已经合法依赖上层。
+
 ## CMake 组织原则
 
 - 每个 package 映射为一个或多个 CMake target。

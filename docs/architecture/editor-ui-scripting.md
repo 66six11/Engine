@@ -9,7 +9,8 @@ viewport texture lifetime。
 
 本文是脚本扩展边界约束，不替代 `docs/architecture/editor.md` 的当前 editor 架构说明，
 不替代 `docs/planning/editor-development-plan.md` 的阶段拆分，也不替代
-`docs/systems/scripting.md` 的脚本系统 ABI 设计。
+`docs/systems/scripting.md` 的脚本系统 ABI 设计。工具、插件、viewport overlay、renderer bridge 和 hot reload
+的分层 contract 见 `docs/architecture/editor-extension-architecture.md`。
 
 ## 目标
 
