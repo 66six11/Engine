@@ -96,3 +96,9 @@
 2. 如果新增 scene mesh、selection 或 gizmo pass，先扩展 `render_view_pass_policy.inl` 的 pass policy 和 `render_view_recording.inl` 的 insertion helper，再决定是否需要更正式的 RenderView recorder owner。
 3. 保持 `renderer_basic` 后端无关，把 Vulkan 录制和资源生命周期继续限制在 `renderer_basic_vulkan` / `rhi_vulkan`。
 4. SRP 相关设计只作为依赖方向和 API 余量检查；当前 RenderView/Grid/Frame Debug/overlay 阶段完成不以实现 SRP 为条件。
+
+## 后续接入门禁
+
+- Scene mesh 接入前必须把 mesh/draw packet 变成 renderer-owned input，新增 RenderView pass policy、pass insertion、typed params、execution event 和 smoke；不能从 editor object 或 diagnostics 读取 mesh。
+- Asset upload 接入前必须定义 asset-core source/product owner、renderer/RHI resource handle 或 upload request、GPU lifetime/deferred deletion 以及失败上下文；新增上传、copy 或 buffer 写入时必须进入 RenderGraph command/diagnostics，或作为命名 external pre-pass 出现在 Frame Debug/review 输出中。
+- SRP 接入前必须先把 pipeline authoring 限定为 RenderGraph 声明和 renderer-owned pass input 的前端；脚本或 editor tool 不能在 execute / Vulkan command recording 阶段回调，也不能绕过现有 RenderView target、scene input 和 smoke gate。
