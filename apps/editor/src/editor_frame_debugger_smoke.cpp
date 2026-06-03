@@ -41,6 +41,17 @@ namespace asharia::editor {
                    kind != asharia::BasicRenderViewExecutionEventKind::EndPass;
         }
 
+        [[nodiscard]] const asharia::BasicRenderViewExecutionEvent*
+        capturedStructuralExecutionEvent(const asharia::BasicRenderViewDiagnostics& diagnostics) {
+            for (const asharia::BasicRenderViewExecutionEvent& event :
+                 diagnostics.executionEvents) {
+                if (!isInspectableExecutionEvent(event.kind)) {
+                    return &event;
+                }
+            }
+            return nullptr;
+        }
+
         [[nodiscard]] bool isPreviewableWriteAccess(asharia::RenderGraphSlotAccess access) {
             return access == asharia::RenderGraphSlotAccess::ColorWrite ||
                    access == asharia::RenderGraphSlotAccess::TransferWrite;
@@ -101,6 +112,48 @@ namespace asharia::editor {
                 asharia::logError(
                     "Editor frame debugger smoke selected an event whose target image is not a "
                     "captured RenderGraph write output for the pass.");
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool
+        validateStructuralEventReplayUnavailable(const EditorFrameDebugCapture& capture) {
+            const asharia::BasicRenderViewExecutionEvent* structuralEvent =
+                capturedStructuralExecutionEvent(capture.diagnostics);
+            if (structuralEvent == nullptr) {
+                asharia::logError(
+                    "Editor frame debugger smoke captured no structural execution event.");
+                return false;
+            }
+
+            EditorFrameDebugger debugger;
+            if (!debugger.requestCapture()) {
+                asharia::logError(
+                    "Editor frame debugger smoke could not request temporary capture.");
+                return false;
+            }
+            debugger.beginFrame(capture.frameIndex);
+            debugger.captureRecordedView(EditorFrameDebugCaptureDesc{
+                .frameIndex = capture.frameIndex,
+                .submittedFrameEpoch = capture.submittedFrameEpoch,
+                .viewKind = capture.viewKind,
+                .requestedExtent = capture.requestedExtent,
+                .diagnostics = capture.diagnostics,
+            });
+            debugger.endSubmittedFrame(capture.submittedFrameEpoch);
+            if (debugger.state() != EditorFrameDebuggerState::PausedFrameDebug ||
+                !debugger.selectReplayEvent(structuralEvent->id)) {
+                asharia::logError(
+                    "Editor frame debugger smoke could not select a structural event.");
+                return false;
+            }
+
+            const EditorFrameDebugPreview& preview = debugger.preview();
+            if (preview.status != EditorFrameDebugPreviewStatus::Unavailable || preview.dirty ||
+                preview.selectedImageResourceIndex || debugger.consumePreviewRequest()) {
+                asharia::logError(
+                    "Editor frame debugger smoke allowed a structural event preview request.");
                 return false;
             }
             return true;
@@ -226,6 +279,9 @@ namespace asharia::editor {
             return false;
         }
         if (!validateSelectedPreviewEventMapping(runResult, capture->diagnostics)) {
+            return false;
+        }
+        if (!validateStructuralEventReplayUnavailable(*capture)) {
             return false;
         }
         if (!capturedSourceOverlayId(capture->diagnostics.overlay, kEditorSceneGridOverlayId) ||

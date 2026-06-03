@@ -31,6 +31,12 @@ namespace asharia::editor {
             ImGui::TextUnformatted(text.data(), text.data() + text.size());
         }
 
+        void disabledText(std::string_view text) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            textUnformatted(text);
+            ImGui::PopStyleColor();
+        }
+
         [[nodiscard]] const char* imageFormatName(asharia::RenderGraphImageFormat format) {
             switch (format) {
             case asharia::RenderGraphImageFormat::B8G8R8A8Srgb:
@@ -155,6 +161,12 @@ namespace asharia::editor {
             return label;
         }
 
+        [[nodiscard]] bool
+        previewableExecutionEventKind(asharia::BasicRenderViewExecutionEventKind kind) {
+            return kind != asharia::BasicRenderViewExecutionEventKind::BeginPass &&
+                   kind != asharia::BasicRenderViewExecutionEventKind::EndPass;
+        }
+
         [[nodiscard]] const asharia::RenderGraphDiagnosticsPassNode*
         selectedPassNode(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                          const EditorFrameDebugPreview& preview) {
@@ -224,6 +236,10 @@ namespace asharia::editor {
                 const bool selected = preview.selectedExecutionEventId &&
                                       *preview.selectedExecutionEventId == event.id;
                 const std::string label = executionEventLabel(event);
+                if (!previewableExecutionEventKind(event.kind)) {
+                    disabledText(label);
+                    continue;
+                }
                 if (ImGui::Selectable(label.c_str(), selected)) {
                     static_cast<void>(context.frameDebugger->selectReplayEvent(event.id));
                 }

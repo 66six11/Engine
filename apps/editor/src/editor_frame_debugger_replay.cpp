@@ -42,6 +42,12 @@ namespace asharia::editor {
             return nullptr;
         }
 
+        [[nodiscard]] bool
+        previewableExecutionEventKind(asharia::BasicRenderViewExecutionEventKind kind) {
+            return kind != asharia::BasicRenderViewExecutionEventKind::BeginPass &&
+                   kind != asharia::BasicRenderViewExecutionEventKind::EndPass;
+        }
+
         [[nodiscard]] bool passExists(const asharia::RenderGraphDiagnosticsSnapshot& snapshot,
                                       std::size_t passIndex) {
             return std::ranges::any_of(
@@ -183,6 +189,17 @@ namespace asharia::editor {
         preview_.texture = {};
         preview_.message.clear();
         ++stats_.replayEventRequests;
+
+        if (!previewableExecutionEventKind(event->kind)) {
+            preview_.status = EditorFrameDebugPreviewStatus::Unavailable;
+            preview_.message = "Selected event is structural and has no preview.";
+            preview_.dirty = false;
+            ++stats_.replayPassUnavailableRequests;
+            if (changed) {
+                ++stats_.replayEventSelections;
+            }
+            return true;
+        }
 
         std::string message;
         const std::optional<std::uint32_t> previewImage = previewableImageOutputForPass(

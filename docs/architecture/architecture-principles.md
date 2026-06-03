@@ -316,6 +316,7 @@ flowchart LR
   scheduler seam 验证被检查 world 的 frame/game/script safe point 不推进；后续真实 runtime/script scheduler 必须接到同一 gate。
 - Frame Debug 和 Frame Debug RG View 是同一面板的两个 tab，不是两个独立数据源。
 - Frame view 以 pass / execution event 列表驱动右侧详情和图形预览。
+- BeginPass / EndPass 等结构事件只提供上下文，不作为 preview source；UI 以 disabled 展示，replay 选择时必须返回 unavailable。
 
 ## 功能进入前检查
 
