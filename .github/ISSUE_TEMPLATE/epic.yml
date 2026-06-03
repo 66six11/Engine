@@ -1,34 +1,34 @@
-name: Roadmap Epic
-description: Create a stage-level roadmap issue for the Engine Project.
-title: "[Epic] subsystem: stage goal"
+name: 路线图 Epic
+description: 为 Engine Project 创建阶段级路线图 issue。
+title: "[Epic] 子系统: 阶段目标"
 labels:
   - type:epic
 body:
   - type: markdown
     attributes:
       value: |
-        Use this for stage-level roadmap work. Add the issue to the Engine Project, then set Status, Priority, and Size there. Do not fill Estimate, Iteration, Start date, or Target date until there is a real schedule.
+        用于阶段级路线图任务。创建前先查重；创建后加入 Engine Project，并在 Project 中设置 Status、Priority、Size。Estimate、Iteration、Start date、Target date 暂不填写，直到有真实排期。
   - type: input
     id: parent-roadmap
     attributes:
-      label: Roadmap source
-      description: Link the source plan, roadmap section, or parent GitHub issue.
-      placeholder: "docs/planning/editor-development-plan.md, docs/rendergraph/roadmap.md, or #20"
+      label: 来源文档
+      description: 填写来源计划、路线图章节或上级 GitHub issue。
+      placeholder: "docs/planning/editor-development-plan.md、docs/rendergraph/roadmap.md 或 #20"
     validations:
       required: true
   - type: textarea
     id: goal
     attributes:
-      label: Goal
-      description: State the stage outcome in one or two sentences.
-      placeholder: Define the stable contract or capability this epic should finish.
+      label: 目标
+      description: 用一到两句话说明这个阶段要完成的结果。
+      placeholder: 说明这个 Epic 要冻结的契约、能力或工程边界。
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
-      label: Scope
-      description: List what this epic includes.
+      label: 范围
+      description: 列出这个 Epic 包含的工作。
       placeholder: |
         - ...
         - ...
@@ -37,18 +37,18 @@ body:
   - type: textarea
     id: non-goals
     attributes:
-      label: Non-goals
-      description: List what must not be pulled into this epic.
+      label: 不做事项
+      description: 列出不能被塞进这个 Epic 的工作。
       placeholder: |
-        - Do not ...
-        - Defer ...
+        - 不做 ...
+        - 延后 ...
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance criteria
-      description: Describe the evidence that proves the epic is done.
+      label: 验收标准
+      description: 描述证明这个 Epic 完成的证据。
       placeholder: |
         - ...
         - ...
@@ -57,22 +57,22 @@ body:
   - type: textarea
     id: validation-gates
     attributes:
-      label: Validation gates
-      description: List build, smoke, doc-sync, and review gates that apply.
+      label: 验证门禁
+      description: 列出适用的构建、smoke、文档同步和 review 门禁。
       value: |
-        - Run tools\check-text-encoding.ps1.
-        - Run tools\check-doc-sync.ps1.
-        - Run git diff --check.
+        - 运行 tools\check-text-encoding.ps1。
+        - 运行 tools\check-doc-sync.ps1。
+        - 运行 git diff --check。
       placeholder: |
-        - Run ...
-        - Run ...
+        - 运行 ...
+        - 运行 ...
     validations:
       required: true
   - type: textarea
     id: source-docs
     attributes:
-      label: Source documents
-      description: List authoritative files or issues.
+      label: 来源文档列表
+      description: 列出权威文件或 issue。
       placeholder: |
         - docs/planning/editor-development-plan.md
         - docs/workflow/review.md
@@ -81,8 +81,8 @@ body:
   - type: dropdown
     id: priority
     attributes:
-      label: Project priority
-      description: Set the matching Priority field after adding this issue to the Project.
+      label: Project Priority
+      description: 加入 Project 后，将 Priority 字段设置为这里选择的值。
       options:
         - P0
         - P1
@@ -92,8 +92,8 @@ body:
   - type: dropdown
     id: size
     attributes:
-      label: Project size
-      description: Set the matching Size field after adding this issue to the Project.
+      label: Project Size
+      description: 加入 Project 后，将 Size 字段设置为这里选择的值。
       options:
         - XS
         - S
@@ -105,11 +105,11 @@ body:
   - type: checkboxes
     id: project-rules
     attributes:
-      label: Project rules
+      label: Project 规则
       options:
-        - label: I checked for an existing issue before creating this epic.
+        - label: 创建这个 Epic 前已经查重。
           required: true
-        - label: This is stage-level work; PR-sized work will be split into [Slice] issues.
+        - label: 这是阶段级任务；PR 粒度工作会拆成 [Slice] issue。
           required: true
-        - label: If blockers appear, they will be created as blocking issues instead of expanding this epic.
+        - label: 如果出现前置依赖，会创建 blocking issue，而不是把这个 Epic 扩成无边界任务。
           required: true

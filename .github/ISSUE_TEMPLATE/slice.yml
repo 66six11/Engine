@@ -1,42 +1,42 @@
 name: PR Slice
-description: Create a PR-sized issue under one or more roadmap epics.
-title: "[Slice] subsystem: PR-sized goal"
+description: 在一个或多个路线图 Epic 下创建 PR 粒度 issue。
+title: "[Slice] 子系统: PR 目标"
 labels:
   - type:slice
 body:
   - type: markdown
     attributes:
       value: |
-        Use this for work that can reasonably close through one PR. Link the parent Epic, add the issue to the Engine Project, then set Status, Priority, and Size there.
+        用于可以通过一个 PR 合理关闭的工作。创建前先查重；创建后关联父 Epic，加入 Engine Project，并在 Project 中设置 Status、Priority、Size。
   - type: input
     id: parent-epic
     attributes:
-      label: Parent epic
-      description: Link the parent roadmap epic.
+      label: 关联 Epic
+      description: 链接父路线图 Epic。
       placeholder: "#20"
     validations:
       required: true
   - type: input
     id: branch
     attributes:
-      label: Branch or PR
-      description: Link the current branch or PR if it already exists.
-      placeholder: codex/editor-shell-viewport or PR URL
+      label: 当前分支或 PR
+      description: 如果已经存在分支或 PR，在这里填写。
+      placeholder: codex/editor-shell-viewport 或 PR URL
     validations:
       required: false
   - type: textarea
     id: goal
     attributes:
-      label: Goal
-      description: State the PR-sized outcome in one or two sentences.
-      placeholder: Define the focused change this slice will land.
+      label: 目标
+      description: 用一到两句话说明这个 PR 粒度任务要完成的结果。
+      placeholder: 说明这个 Slice 要落地的聚焦改动。
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
-      label: Scope
-      description: List what this slice includes.
+      label: 范围
+      description: 列出这个 Slice 包含的工作。
       placeholder: |
         - ...
         - ...
@@ -45,18 +45,18 @@ body:
   - type: textarea
     id: non-goals
     attributes:
-      label: Non-goals
-      description: List what must remain outside this slice.
+      label: 不做事项
+      description: 列出必须留在这个 Slice 之外的工作。
       placeholder: |
-        - Do not ...
-        - Defer ...
+        - 不做 ...
+        - 延后 ...
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance criteria
-      description: Describe the evidence that proves this slice is complete.
+      label: 验收标准
+      description: 描述证明这个 Slice 完成的证据。
       placeholder: |
         - ...
         - ...
@@ -65,22 +65,22 @@ body:
   - type: textarea
     id: validation-gates
     attributes:
-      label: Validation gates
-      description: List build, smoke, doc-sync, and review gates that apply.
+      label: 验证门禁
+      description: 列出适用的构建、smoke、文档同步和 review 门禁。
       value: |
-        - Run tools\check-text-encoding.ps1.
-        - Run tools\check-doc-sync.ps1 if tracked code, docs, build, tool, shader, or workflow files changed.
-        - Run git diff --check.
+        - 运行 tools\check-text-encoding.ps1。
+        - 如果 tracked code、docs、build、tool、shader 或 workflow 文件变更，运行 tools\check-doc-sync.ps1。
+        - 运行 git diff --check。
       placeholder: |
-        - Run ...
-        - Run ...
+        - 运行 ...
+        - 运行 ...
     validations:
       required: true
   - type: textarea
     id: current-evidence
     attributes:
-      label: Current evidence
-      description: List commits, files, docs, or issue comments that justify this slice.
+      label: 当前证据
+      description: 列出支持这个 Slice 的 commits、files、docs 或 issue comments。
       placeholder: |
         - Commit ...
         - File ...
@@ -89,8 +89,8 @@ body:
   - type: dropdown
     id: priority
     attributes:
-      label: Project priority
-      description: Set the matching Priority field after adding this issue to the Project.
+      label: Project Priority
+      description: 加入 Project 后，将 Priority 字段设置为这里选择的值。
       options:
         - P0
         - P1
@@ -100,8 +100,8 @@ body:
   - type: dropdown
     id: size
     attributes:
-      label: Project size
-      description: Set the matching Size field after adding this issue to the Project.
+      label: Project Size
+      description: 加入 Project 后，将 Size 字段设置为这里选择的值。
       options:
         - XS
         - S
@@ -113,11 +113,11 @@ body:
   - type: checkboxes
     id: project-rules
     attributes:
-      label: Project rules
+      label: Project 规则
       options:
-        - label: I checked for an existing issue before creating this slice.
+        - label: 创建这个 Slice 前已经查重。
           required: true
-        - label: This slice is small enough to complete through one PR.
+        - label: 这个 Slice 足够小，可以通过一个 PR 完成。
           required: true
-        - label: If blockers appear, they will be created as blocking issues instead of expanding this slice.
+        - label: 如果出现前置依赖，会创建 blocking issue，而不是把这个 Slice 扩成无边界任务。
           required: true
