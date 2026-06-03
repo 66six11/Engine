@@ -28,9 +28,13 @@ namespace asharia::editor {
 
     struct ImGuiTextureRegistration {
         std::string_view ownerId;
+        EditorId panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D requestedExtent;
+        EditorViewportOverlayFlags overlayFlags;
         asharia::VulkanSampledTextureView texture;
+        EditorUiTextureColorSpace colorSpace{EditorUiTextureColorSpace::LinearColor};
+        std::uint64_t frameIndex{};
         std::uint64_t submittedFrameEpoch{};
     };
 
@@ -59,13 +63,17 @@ namespace asharia::editor {
     private:
         struct Entry {
             std::string ownerId;
+            EditorId panelId;
             EditorViewportKind kind{EditorViewportKind::Scene};
             EditorExtent2D requestedExtent;
+            EditorViewportOverlayFlags overlayFlags;
             VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
             VkImageView imageView{VK_NULL_HANDLE};
             VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
             VkFormat format{VK_FORMAT_UNDEFINED};
             EditorExtent2D extent;
+            EditorUiTextureColorSpace colorSpace{EditorUiTextureColorSpace::LinearColor};
+            std::uint64_t frameIndex{};
             std::uint64_t lastUsedFrameEpoch{};
             std::uint64_t retireFrameEpoch{};
         };
@@ -85,5 +93,7 @@ namespace asharia::editor {
         std::vector<Entry> retired_;
         ImGuiTextureRegistryStats stats_;
     };
+
+    [[nodiscard]] EditorUiTextureColorSpace editorUiTextureColorSpaceFromVkFormat(VkFormat format);
 
 } // namespace asharia::editor

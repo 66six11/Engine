@@ -8,6 +8,8 @@
 #include "asharia/core/error.hpp"
 
 #include "editor_event.hpp"
+#include "editor_i18n.hpp"
+#include "editor_settings.hpp"
 
 namespace asharia::editor {
 
@@ -27,9 +29,46 @@ namespace asharia::editor {
 
     } // namespace
 
-    void ImGuiEditorPanel::prepareWindow(EditorFrameContext& context, EditorPanelState& state) {
+    struct EditorPanelDrawContext {
+        EditorSceneViewPanelDrawContext sceneView;
+        EditorLogPanelDrawContext log;
+        EditorRenderGraphPanelDrawContext renderGraph;
+        EditorFrameDebuggerPanelDrawContext frameDebugger;
+        EditorSettingsPanelDrawContext editorSettings;
+        EditorUiStylePreviewPanelDrawContext uiStylePreview;
+    };
+
+    void ImGuiEditorPanel::prepareWindow(EditorPanelWindowContext& context,
+                                         EditorPanelState& state) {
         static_cast<void>(context);
         static_cast<void>(state);
+    }
+
+    void ImGuiSceneViewEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawSceneViewPanel(context.sceneView, state);
+    }
+
+    void ImGuiLogEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawLogPanel(context.log, state);
+    }
+
+    void ImGuiRenderGraphEditorPanel::draw(EditorPanelDrawContext& context,
+                                           EditorPanelState& state) {
+        drawRenderGraphPanel(context.renderGraph, state);
+    }
+
+    void ImGuiFrameDebuggerEditorPanel::draw(EditorPanelDrawContext& context,
+                                             EditorPanelState& state) {
+        drawFrameDebuggerPanel(context.frameDebugger, state);
+    }
+
+    void ImGuiEditorSettingsPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
+        drawEditorSettingsPanel(context.editorSettings, state);
+    }
+
+    void ImGuiUiStylePreviewEditorPanel::draw(EditorPanelDrawContext& context,
+                                              EditorPanelState& state) {
+        drawUiStylePreviewPanel(context.uiStylePreview, state);
     }
 
     asharia::VoidResult EditorPanelRegistry::registerPanel(EditorPanelFactory factory) {
@@ -117,6 +156,14 @@ namespace asharia::editor {
         return entry != nullptr && entry->state.open;
     }
 
+    const EditorPanelDesc* EditorPanelRegistry::findPanelDesc(std::string_view panelId) const {
+        const PanelEntry* entry = findPanel(panelId);
+        if (entry == nullptr) {
+            return nullptr;
+        }
+        return &entry->desc;
+    }
+
     std::size_t EditorPanelRegistry::panelCount() const {
         return panels_.size();
     }
@@ -126,24 +173,74 @@ namespace asharia::editor {
             panels_, [](const PanelEntry& entry) { return entry.state.open; }));
     }
 
+    std::string EditorPanelRegistry::panelWindowTitle(std::string_view panelId,
+                                                      const EditorI18n& i18n) const {
+        const PanelEntry* entry = findPanel(panelId);
+        if (entry == nullptr) {
+            return std::string{panelId};
+        }
+        return i18n.label(EditorI18nLabelDesc{.key = entry->desc.titleKey,
+                                              .stableId = entry->desc.id.value,
+                                              .fallback = entry->desc.title});
+    }
+
     void EditorPanelRegistry::setEventQueue(EditorEventQueue* eventQueue) {
         eventQueue_ = eventQueue;
     }
 
     void EditorPanelRegistry::drawPanels(EditorFrameContext& context) {
+        EditorPanelWindowContext windowContext{
+            .ui = context.ui,
+        };
+        EditorPanelDrawContext drawContext{
+            .sceneView =
+                EditorSceneViewPanelDrawContext{
+                    .ui = context.ui,
+                    .settings = context.settings.controller.settings(),
+                    .tools = context.tools,
+                    .inputRouter = context.input.router,
+                    .viewportHost = context.viewport.host,
+                },
+            .log =
+                EditorLogPanelDrawContext{
+                    .ui = context.ui,
+                    .diagnosticsLog = context.diagnostics.log,
+                    .inputRouter = context.input.router,
+                },
+            .renderGraph =
+                EditorRenderGraphPanelDrawContext{
+                    .ui = context.ui,
+                    .snapshots = context.renderGraph.snapshots,
+                },
+            .frameDebugger =
+                EditorFrameDebuggerPanelDrawContext{
+                    .ui = context.ui,
+                    .frameDebugger = context.diagnostics.frameDebugger,
+                },
+            .editorSettings =
+                EditorSettingsPanelDrawContext{
+                    .ui = context.ui,
+                    .settings = context.settings.controller,
+                },
+            .uiStylePreview =
+                EditorUiStylePreviewPanelDrawContext{
+                    .settings = context.settings.controller,
+                },
+        };
         for (PanelEntry& entry : panels_) {
             if (!entry.state.open || entry.panel == nullptr) {
                 continue;
             }
 
-            entry.panel->prepareWindow(context, entry.state);
+            entry.panel->prepareWindow(windowContext, entry.state);
             if (entry.focusRequested) {
                 ImGui::SetNextWindowFocus();
                 entry.focusRequested = false;
             }
 
             bool open = entry.state.open;
-            const bool visible = ImGui::Begin(entry.desc.title.c_str(), &open);
+            const std::string windowTitle = panelWindowTitle(entry.desc.id.value, context.ui.i18n);
+            const bool visible = ImGui::Begin(windowTitle.c_str(), &open);
             const bool wasOpen = entry.state.open;
             entry.state.open = open;
             if (wasOpen && !entry.state.open) {
@@ -163,7 +260,7 @@ namespace asharia::editor {
                 std::max(1U, static_cast<std::uint32_t>(std::max(available.y, 1.0F)));
 
             if (visible && entry.state.open) {
-                entry.panel->draw(context, entry.state);
+                entry.panel->draw(drawContext, entry.state);
             }
             ImGui::End();
         }

@@ -18,6 +18,14 @@ flowchart TD
     Platform["engine/platform"]
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
+    Schema["packages/schema"]
+    Archive["packages/archive"]
+    CppBinding["packages/cpp-binding"]
+    Persistence["packages/persistence"]
+    Reflection["packages/reflection"]
+    Serialization["packages/serialization"]
+    SceneCore["packages/scene-core"]
+    AssetCore["packages/asset-core"]
     RG["packages/rendergraph"]
     RhiVk["packages/rhi-vulkan<br/>asharia::rhi_vulkan"]
     RhiVkRG["packages/rhi-vulkan<br/>asharia::rhi_vulkan_rendergraph"]
@@ -29,6 +37,19 @@ flowchart TD
     Platform --> Core
     Window --> Core
     Window --> Platform
+    Schema --> Core
+    Archive --> Core
+    CppBinding --> Core
+    CppBinding --> Schema
+    Persistence --> Core
+    Persistence --> Schema
+    Persistence --> Archive
+    Persistence --> CppBinding
+    Reflection --> Core
+    Serialization --> Core
+    Serialization --> Reflection
+    SceneCore --> Core
+    AssetCore --> Core
     RG --> Core
     RhiVk --> Core
     RhiVkRG --> RhiVk
@@ -41,6 +62,8 @@ flowchart TD
     RendererVk --> RhiVkRG
     App --> Core
     App --> Profiling
+    App --> Reflection
+    App --> Serialization
     App --> Window
     App --> RG
     App -->|current MVP/smoke wiring| RhiVk
@@ -48,19 +71,26 @@ flowchart TD
     App -->|CPU-only benchmark schemas| Renderer
     App -->|selected sample renderer| RendererVk
     EditorApp --> Core
+    EditorApp --> Archive
     EditorApp --> Window
     EditorApp --> RhiVk
     EditorApp --> RendererVk
+    EditorApp -->|shader build helper| Shader
     EditorApp --> ImGui
 ```
 
 当前约束：
 
+- 这张图按 CMake target 事实和已落地 package manifests 的 `targetDependencies` 校准；`dependencies`
+  是 package-level 粗粒度边界，不能替代 target-level 依赖审查。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
 - `renderer-basic-vulkan` 组合 RenderGraph、Vulkan frame callback 和 Vulkan adapter，承载当前 clear frame orchestration。
 - `profiling` 提供后端无关 CPU scope、frame profile 和 JSONL 输出；当前只由 sample-viewer benchmark 使用。
+- `schema`、`archive`、`cpp-binding` 和 `persistence` 是新的 schema-first persistence 路线；
+  `reflection` / `serialization` 仍作为过渡兼容路径由 sample-viewer smoke 覆盖。
+- `scene-core` 和 `asset-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor。
 - `sample-viewer` 当前同时承担 app host 和 smoke harness，所以会直接创建 `VulkanContext` /
   `VulkanFrameLoop`。这是当前 MVP 事实，不是目标产品边界；后续应收敛到 runtime/engine host。
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把
@@ -68,8 +98,9 @@ flowchart TD
 - `apps/editor` 当前承担 editor host 和 editor smoke harness。它可以直接链接 ImGui、`window-glfw`、
   `rhi-vulkan` 和 `renderer_basic_vulkan`，因为这些都属于 host integration；未来
   `packages/editor-core` 只能保留 backend-neutral editor state。
-- Editor panels 只通过 `EditorFrameContext`、`EditorPanelRegistry` 和 `EditorViewportPanelHost`
-  消费服务。Scene View panel 不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
+- Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
+  panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
+  不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
 
 ## 当前架构总览
 
@@ -154,6 +185,7 @@ flowchart TD
     DescriptorSmoke["--smoke-descriptor-layout"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
     ComputeDispatchSmoke["--smoke-compute-dispatch"]
+    FormatContractSmoke["--smoke-renderer-format-contract"]
     DeferredDeletionSmoke["--smoke-deferred-deletion"]
     GLFW["GlfwInstance / GlfwWindow"]
     Ext["glfwRequiredVulkanInstanceExtensions"]
@@ -180,6 +212,7 @@ flowchart TD
     Args --> DescriptorSmoke
     Args --> FullscreenTextureSmoke
     Args --> ComputeDispatchSmoke
+    Args --> FormatContractSmoke
     Args --> DeferredDeletionSmoke
     WindowSmoke --> GLFW
     VulkanSmoke --> GLFW
@@ -271,7 +304,10 @@ flowchart TD
   `ShaderRead(fragment)` 并由 fullscreen composite pass 采样写回 backbuffer；smoke 验证 viewport
   extent 可独立于 swapchain extent、resize 后旧 target 进入 deferred deletion、renderer 对外暴露
   sampled target handle/layout、render target 多帧复用、descriptor bind、debug label 和 timestamp readback。
-- `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译和 Vulkan adapter 字段验证入口。
+- `--smoke-renderer-format-contract` 是 CPU-only renderer/RG format contract 负向入口：验证
+  `VK_FORMAT_B8G8R8A8_SRGB` 能映射到 `RenderGraphImageFormat::B8G8R8A8Srgb`，unsupported format 会在
+  backbuffer / RenderView graph import 前返回带 format 上下文的错误。
+- `--smoke-rendergraph` 是 RenderGraph CPU 编译、schema 负向编译、image copy command 和 Vulkan adapter 字段验证入口。
 - `--bench-rendergraph` 是 CPU-only RenderGraph benchmark 入口；它使用 `packages/profiling`
   记录 RecordGraph/CompileGraph scope 和 graph counters，输出 JSONL，不改变 smoke 语义。
 - `--smoke-transient` 已接入真实 Vulkan 路径：根据 compiled transient plan 创建 VMA-backed image、
@@ -347,8 +383,11 @@ sequenceDiagram
 ## Editor Host 当前流程
 
 `apps/editor` 是当前 editor shell 和 editor smoke 的真实入口。它复用 `VulkanContext` /
-`VulkanFrameLoop`，通过 `BasicFullscreenTextureRenderer::recordViewFrame()` 生成 Scene View sampled
-target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Panel 只提交请求和消费 texture id，不持有
+`VulkanFrameLoop`，通过 `BasicFullscreenTextureRenderer::recordViewFrame()` 生成 sampled viewport
+target，再由 `ImGuiTextureRegistry` 注册为 ImGui texture。Scene/debug viewport flags 和 refresh intent 随 request/result
+流动；viewport coordinator 按 `panelId + EditorViewportKind` 收集 keyed slot，所以同帧 Scene/Game/Preview
+请求不会互相覆盖。Scene View 默认 on-demand，coordinator 只有在初始纹理、resize、overlay/debug event 或
+`AlwaysRefresh` 等 repaint reason 存在时才录制新的 RenderView。coordinator 会清掉 Scene-only authoring flags，同时保留显式 Game debug overlay/debug gizmo intent。Panel 只提交请求和消费 texture id，不持有
 Vulkan image、descriptor set 或 command buffer。完整 editor 架构见 `docs/architecture/editor.md`。
 
 ```mermaid
@@ -363,6 +402,7 @@ sequenceDiagram
     participant Shortcuts as EditorShortcutRouter
     participant Panels as EditorPanelRegistry
     participant Viewport as EditorViewportCoordinator
+    participant FrameDebug as EditorFrameDebugger
     participant RendererVk as BasicFullscreenTextureRenderer
     participant TextureRegistry as ImGuiTextureRegistry
     participant Vulkan as Vulkan API
@@ -377,8 +417,9 @@ sequenceDiagram
         Main->>ImGui: NewFrame
         Main->>Input: beginFrame(ImGui capture flags)
         Main->>Viewport: beginImguiFrame(completed/submitted epochs)
+        Main->>FrameDebug: beginFrame / optional capture or resume action
         Main->>Panels: drawPanels(EditorFrameContext)
-        Panels->>Viewport: requestViewport(Scene View extent)
+        Panels->>Viewport: requestViewport(Scene View extent + flags + refresh intent)
         Panels->>Input: report Scene View hover/focus
         Main->>Input: finalizeFrame
         Main->>Shortcuts: beginFrame(input snapshot)
@@ -387,10 +428,21 @@ sequenceDiagram
         Viewport->>TextureRegistry: acquire latest completed ImTextureID
         Main->>ImGui: Render
         Main->>FrameLoop: renderFrame(record callback)
-        FrameLoop->>Viewport: recordRequestedViews(frame, renderer)
-        Viewport->>RendererVk: recordViewFrame(sampled target)
-        Viewport->>TextureRegistry: registerOrUpdate(sampled image view)
+        alt repaint reason present and Frame Debug allows recording
+            FrameLoop->>Viewport: recordRequestedViews(frame, renderer, repaint reasons)
+            loop keyed requested viewport slot
+                Viewport->>RendererVk: recordViewFrame(sampled target)
+                Viewport->>TextureRegistry: registerOrUpdate(sampled image view)
+            end
+            Viewport->>FrameDebug: capture view-local diagnostics snapshot
+        else idle on-demand Scene View
+            FrameLoop->>Viewport: process retired viewport textures and reuse presented texture
+        else Frame Debug waiting or paused
+            FrameLoop->>Viewport: process retired viewport textures only
+            FrameLoop->>FrameDebug: skip RenderView recording
+        end
         FrameLoop->>Vulkan: record ImGui draw data / submit / present
+        Main->>FrameDebug: observe completed frame epoch
         Main->>Main: append diagnostics and clear frame-local events
     end
 ```
@@ -399,14 +451,29 @@ sequenceDiagram
 
 - `EditorViewportPanelHost` 是 panel-facing API；它只暴露 `EditorViewportRequest` 和
   `EditorViewportResult`。
-- `EditorViewportCoordinator` 是 editor-side Vulkan bridge；它拥有 pending/presented/retired
-  viewport render targets，并通过 frame-loop deferred deletion 延迟释放旧 target。
+- `EditorViewportCoordinator` 是 editor-side Vulkan bridge；它按 `panelId + EditorViewportKind` 拥有 keyed
+  pending/presented viewport render targets 和 keyed diagnostics snapshot，并通过 frame-loop deferred deletion 延迟释放旧
+  target。Frame callback 仍返回一个合并后的 acquire wait-stage mask。
+- `EditorViewportOverlayFlags` 是当前 viewport overlay intent。Scene View 请求保留 grid、transform gizmo、wire、
+  selection outline、debug overlay 和 debug gizmo flags；Game View 请求会清空 Scene-only authoring flags，但可保留
+  显式 debug overlay/debug gizmo flags；Preview View 当前清空全部 overlay flags。
+- `EditorViewportRefreshPolicy` / `EditorViewportRepaintReason` 是当前 viewport refresh intent。Scene View 默认
+  `OnDemand`，没有 repaint reason 时复用上一张 presented texture；Game View 和未来 Play Session 仍可用
+  `Continuous`/`AlwaysRefresh` 维持持续渲染。
+- Scene View 的 grid、gizmo、wire 和 selection outline flag 当前只作为 editor view-local intent 保存在 request/result
+  metadata 中；它们尚未映射为 renderer pass。Game View 只允许显式 debug overlay/debug gizmo intent 进入后续 graph。
 - `ImGuiTextureRegistry` 只拥有 ImGui descriptor lifetime，不拥有 `VulkanRenderTarget`、
   `VkImage` 或 `VkImageView`。descriptor retirement 使用 frame epoch，避免 resize 后释放仍被
   submitted ImGui draw data 引用的 descriptor。
 - `recordEditorImguiFrame()` 当前在 `apps/editor` host integration 层录制 ImGui swapchain pass。
   这是 editor backend integration，不是 panel 或 renderer core 逻辑；若继续增长，应抽到
   `imgui_runtime` 或单独的 editor ImGui pass module。
+- `EditorFrameDebugger` 属于 editor-side transient tooling state。CaptureRequested 只影响下一次 successful
+  RenderView recording；capture/resume 会向 viewport coordinator 提供 `FrameDebugEventChanged` repaint reason。
+  WaitingGpuFence/PausedFrameDebug 会跳过新的 RenderView recording，但继续允许 ImGui
+  host frame 提交，以便 UI 可以显示或恢复。它只保存 `BasicRenderViewDiagnostics` 的 CPU snapshot，不保存 Vulkan
+  handles，不使用 `vkDeviceWaitIdle` 作为普通 capture 机制。`EditorInspectedWorldScheduler` 在同一状态下跳过
+  frame advance、game update 和 script update safe-point counter，作为未来 runtime/script scheduler 接入前的验证 seam。
 
 Editor smoke 入口：
 
@@ -414,6 +481,7 @@ Editor smoke 入口：
 asharia-editor --smoke-editor-shell
 asharia-editor --smoke-editor-viewport
 asharia-editor --smoke-editor-viewport-resize
+asharia-editor --smoke-editor-frame-debugger
 ```
 
 ## 当前 Frame Loop 流程
@@ -601,11 +669,17 @@ flowchart TD
     ViewLocal --> PrepareView
 ```
 
-- 当前 sample 只有一个 game view / swapchain target，但后续 editor 需要允许一帧多个 view graph。
+- 当前 sample 只有一个 game view / swapchain target；editor viewport coordinator 已先在 editor host 侧支持一帧多个
+  keyed view request，作为后续 Game View / asset preview / multi-view diagnostics 的小闭环。
 - Game View、Scene View、Preview View 共享 renderer、RenderGraph 和 Vulkan backend caches，但各自拥有
-  view-local camera params、descriptor sets、transient resources 和 compiled graph。
-- Scene View 可以额外 record grid、gizmos、selection outline、wire overlay、debug overlay 等 editor-only
-  pass；这些 pass 不能污染 Game View graph。
+  view-local camera constants、render target、view flags、culling/layer mask、descriptor sets、transient resources
+  和 compiled graph。Scene View camera state 可以由 editor viewport 拥有，但进入 renderer 后必须变成普通
+  RenderView camera/per-view constants；差异只落在 view kind、overlay/debug/show flags、filtering 和 refresh
+  intent 上。
+- Scene/debug viewport flags 已先作为 view-local intent 接入 editor viewport request/result，并完成 flagged texture
+  metadata 的 acquire roundtrip。后续 grid、transform gizmos、selection outline、wire overlay、debug overlay/debug gizmo
+  等 pass 继续沿用该 view-local intent。Scene-only authoring pass 不能污染 Game View graph；Game debug pass 必须显式
+  opt in。
 - RenderGraph handle 只在单个 view graph 内有效；跨 view 共享资源必须由 resource manager 拥有并 import。
 
 ## RenderGraph 编译与执行流程
@@ -653,6 +727,10 @@ flowchart TD
 
 - `RecordGraph` 可以每帧运行，并允许普通 C++ 控制流决定哪些动态 feature 进入当前帧 graph。未来脚本
   VM 也只应运行在这一段。
+- `Frame input` 中的 camera/view/projection、render target、culling/filtering、show/debug flags、visible draw
+  packets 和 model/material 数据必须在 `RecordGraph` 前归约成 renderer-owned 数据合同；需要这些数据的 pass
+  通过 typed params、buffer/descriptor、push constants 或等价 binding 显式消费。diagnostics 只能记录结果，
+  不能作为下一段渲染输入。
 - `compile()` 负责校验 pass/resource 声明、构建 read/write dependency、根据 `allowCulling` /
   `hasSideEffects` 计算 active pass、稳定拓扑排序、resource lifetime、final transitions、
   barrier/layout plan、transient allocation plan 和调试表信息。
@@ -673,6 +751,7 @@ flowchart TD
 - `DepthAttachmentRead`
 - `DepthAttachmentWrite`
 - `DepthSampledRead(fragment/compute)`
+- `TransferSrc`
 - `TransferDst`
 - `Present`
 
@@ -682,6 +761,10 @@ flowchart TD
   无 slot API 暂时等价于 `"target"`。
 - `writeTransfer("target", image)` / `writeTransfer(image)` 会要求 image 进入 `TransferDst`；旧的
   无 slot API 暂时等价于 `"target"`。
+- `readTransfer("source", image)` / `readTransfer(image)` 会要求 image 进入 `TransferSrc`，用于显式
+  GPU-side copy/read 操作；旧的无 slot API 暂时等价于 `"source"`。
+- `copyImage("source", "target")` 只描述同一 pass 内从 `TransferRead` source 到 `TransferWrite` target 的
+  RenderGraph command；实际 Vulkan copy 仍由后端执行器基于 slot binding 录制。
 - `readTexture("source", image, shaderStage)` 会要求 image 进入 `ShaderRead(shaderStage)`；当前 smoke
   已验证 fragment shader-read，fullscreen texture 路径已执行真实 descriptor sampling。
 - `writeDepth("depth", image)` 会要求 image 进入 `DepthAttachmentWrite`。
@@ -734,6 +817,9 @@ flowchart TD
 
 - `vulkanImageTransition` 已实现。
 - `vulkanImageBarrier` 已实现。
+- `vulkanImageUsage`、`vulkanImageTransition` 和 `vulkanImageBarrier` 已覆盖 `TransferSrc`，映射到
+  `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`、`VK_PIPELINE_STAGE_2_TRANSFER_BIT` 和
+  `VK_ACCESS_2_TRANSFER_READ_BIT`。
 - `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferRead`、
   `TransferWrite`、`HostRead`、`ShaderRead(fragment/compute)` 和 `StorageReadWrite(compute)`。
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
@@ -741,6 +827,8 @@ flowchart TD
 - `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
   `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`、`VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT` 和
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
+- `--smoke-rendergraph` 已验证 `TransferRead`/`TransferSrc` dependency、diagnostics、`copyImage` command schema、
+  missing/invalid slot 失败路径，以及 `TransferSrc -> TransferDst` copy 准备 barrier 的 Vulkan 字段。
 - `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)`、
   `ShaderRead(compute)` usage、`TransferWrite -> StorageReadWrite(compute)`、
   `StorageReadWrite(compute) -> TransferRead` 和 `TransferWrite -> HostRead` 映射到
@@ -761,7 +849,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>ShaderRead(fragment/compute)<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor viewport on-demand refresh<br/>editor overlay texture metadata roundtrip<br/>RenderView view params + overlay contract<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>Frame Debug capture/pause state<br/>Live RG View<br/>FrameDebuggerPanel Frame/RenderGraph views<br/>Frame Debug image preview copy<br/>ShaderRead(fragment/compute)<br/>TransferSrc/TransferRead + copyImage<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
     Step2["之后:<br/>upstream systems<br/>scene-core / editor-core / asset-core"]
 
@@ -805,12 +893,52 @@ flowchart TD
 6. Scene/world、selection、asset import/cache、inspector 和 Play Mode 状态不属于 render 层。它们由
    `scene-core`、`editor-core`、`asset-core` 或 app/editor host 拥有；render 侧只消费 immutable snapshot、
    draw packet、resource handle、material/resource signature 和 RenderView target。
-7. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 grab/copy 语义进入，不放开模糊的 `readTexture + writeColor`。
+7. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 `readTransfer` + `copyImage` 语义进入，不放开模糊的 `readTexture + writeColor`。
 8. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
 9. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
 10. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续 asset-core 拥有 GUID/import/cache，
     renderer/RHI 只消费 resource handle、product data 和 upload request，不提前暴露逐 object 脚本 draw loop。
-11. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
+11. RenderGraph diagnostics snapshot 已提供结构化、后端无关的 pass/resource/access edge/dependency/transition/lifetime
+    数据，并已挂到 `BasicRenderViewDesc` 的可选 `BasicRenderViewDiagnostics` 输出槽。`RenderGraphPanel` 作为
+    Live RG View 显示最近一次 RenderView compile 后已经确定的数据；`FrameDebuggerPanel` 在同一面板内提供 Frame
+    和 RenderGraph 两个切换视图，Frame 视图按左 pass/execution event、右详情/预览组织，RenderGraph 视图显示
+    `EditorFrameDebugger` 捕获并冻结的一帧 snapshot。Frame Debug 的主选择 id 来自 renderer execution event
+    stream；RenderGraph command summary 只作为来源说明和 RG View 辅助诊断。pass graph visualization 只是 snapshot
+    的只读节点表现，不能成为可编辑 RenderGraph authoring UI。editor UI 不应解析 `formatDebugTables()` 文本。
+12. Frame Debug intermediate image preview v1 只在 paused Frame Debug 中通过 editor-controlled replay/copy 录制
+    `builtin.debug-image-copy`，把 captured snapshot 中选中的 graph-local color image copy 到 editor-owned sampled
+    preview target。Frame Debug 主面板现在先选择 renderer execution event，并从冻结 diagnostics snapshot 中解析
+    该 event 所属 pass 的 previewable color 输出；pass/event 预览会在 replay graph 中继承 captured view
+    kind、camera、frame params 和 overlay intent，并把 debug image copy 插入选中 RenderView pass 之后，避免只看到最终
+    RenderViewTarget。graph-local image 选择仍作为 resource override；没有 pass 约束时按最终资源图 preview。normal
+    RenderView recording 继续暂停；不调用 `vkDeviceWaitIdle`，不做 CPU readback/export。
+13. RenderView 现在携带 renderer-owned view kind、camera/view/projection params、per-view frame params、overlay
+    color load/store、blend mode 和 data-only debug world-line route。Scene View panel 现在持有 editor-owned
+    navigation/camera state；这是输入所有权，不是 renderer 矩阵旁路。Scene View request 携带 camera context，
+    并在 `EditorViewportCoordinator` 边界 bridge 到 `BasicRenderViewCamera`；renderer/basic 不消费
+    `EditorViewportOverlayFlags`、ImGui state 或 editor navigation state。`editorViewportCameraForExtent()`
+    负责 resize 后重算投影，`unprojectEditorViewportPoint()` 提供 viewport-local pixel（左上角原点，Y down）
+    到 world ray 的后端无关语义；该 ray 用 inverse view-projection 计算，`origin`/`nearPoint` 位于
+    near clipping plane，`farPoint` 位于 far clipping plane。当前 `recordViewFrame()` 会在
+    `BasicRenderViewOverlayDesc::worldGrid` enabled 时插入 `builtin.render-view-world-grid` fullscreen
+    overlay pass，用 inverse view-projection / optional fade / per-view LOD / grid color push constants 绘制
+    XZ world grid；`fadeStart == fadeEnd == 0` 时不做距离淡出，RenderView policy 只按 camera 到 grid plane
+    的垂直距离计算整帧统一的 1/2/5/10 spacing，不按水平距离或片元距离改变 LOD，低高度锁定 base spacing，shader 只消费 `GridLodSettings`。
+    `CameraPositionNear` 仍记录在 RenderGraph command summary 里作为 diagnostics。Scene View panel 从 `EditorSettings::sceneGrid`
+    读取 plane、minor/major spacing、fade、opacity 和 color，
+    经 `EditorViewportRequest::worldGrid` 交给 `EditorViewportCoordinator`，再转换为 renderer-owned
+    `BasicRenderViewWorldGridDesc`；settings 缺省值来自 Scene grid overlay contribution 的 built-in 默认值，
+    不拥有 renderer/Vulkan 类型。
+    overlay intent、world-grid desc 和 source overlay id 会进入 RenderView diagnostics；Frame Debug replay 会使用
+    capture 中的 world-grid desc，而不是重新猜默认 grid 参数。只有存在 `BasicDebugWorldLine` 时才插入
+    `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 作为 typed params 与 command summary
+    记录，并由 `renderer_basic_vulkan` 把 world line 投影为 line-list vertex buffer 绘制到目标 attachment。
+    mesh/draw-list smoke 仍在 renderer 内部构造 MVP。
+    后续 scene mesh、selection/gizmo 和更多 debug line pass 必须继续沿这条 RenderView route 接入。
+14. SRP 不是当前 RenderView/Grid/Frame Debug/overlay 基础阶段的交付项；它只作为后续消费者约束。
+    当前阶段的验收是保持依赖方向、scene/pass input 和 RenderGraph 声明路线不阻塞未来 SRP，而不是实现
+    RenderPipelineAsset、RendererFeature、RendererList 或脚本化 pipeline authoring。
+15. RenderGraph compiler 已能根据同一 image 的 producer/read 关系做稳定拓扑排序，并已用负向 smoke
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的
     culling 策略。

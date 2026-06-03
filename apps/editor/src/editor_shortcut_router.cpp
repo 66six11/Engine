@@ -7,7 +7,6 @@
 #include <string_view>
 
 #include "editor_action.hpp"
-#include "editor_context.hpp"
 
 namespace asharia::editor {
 
@@ -52,11 +51,11 @@ namespace asharia::editor {
                 const char character = token.front();
                 if (character >= 'A' && character <= 'Z') {
                     return static_cast<ImGuiKey>(static_cast<int>(ImGuiKey_A) +
-                                                static_cast<int>(character - 'A'));
+                                                 static_cast<int>(character - 'A'));
                 }
                 if (character >= '0' && character <= '9') {
                     return static_cast<ImGuiKey>(static_cast<int>(ImGuiKey_0) +
-                                                static_cast<int>(character - '0'));
+                                                 static_cast<int>(character - '0'));
                 }
             }
 
@@ -83,8 +82,8 @@ namespace asharia::editor {
             return std::nullopt;
         }
 
-        [[nodiscard]] std::optional<ImGuiKeyChord> shortcutChordFromText(
-            std::string_view shortcut) {
+        [[nodiscard]] std::optional<ImGuiKeyChord>
+        shortcutChordFromText(std::string_view shortcut) {
             if (shortcut.empty()) {
                 return std::nullopt;
             }
@@ -95,9 +94,8 @@ namespace asharia::editor {
             while (tokenStart <= shortcut.size()) {
                 const std::size_t tokenEnd = shortcut.find('+', tokenStart);
                 const std::string token = normalizeShortcutToken(shortcut.substr(
-                    tokenStart, tokenEnd == std::string_view::npos
-                                    ? std::string_view::npos
-                                    : tokenEnd - tokenStart));
+                    tokenStart, tokenEnd == std::string_view::npos ? std::string_view::npos
+                                                                   : tokenEnd - tokenStart));
                 if (token.empty()) {
                     return std::nullopt;
                 }
@@ -143,7 +141,7 @@ namespace asharia::editor {
     }
 
     bool EditorShortcutRouter::routeImGuiShortcuts(EditorActionRegistry& actionRegistry,
-                                                   EditorContext& context) {
+                                                   EditorActionInvokeContext context) {
         bool invoked = false;
         actionRegistry.visitActions([&](const EditorActionDesc& action) {
             if (invoked || action.shortcut.empty()) {
@@ -166,8 +164,8 @@ namespace asharia::editor {
     }
 
     bool EditorShortcutRouter::routeShortcut(EditorActionRegistry& actionRegistry,
-                                             EditorContext& context, std::string_view actionId,
-                                             bool pressed) {
+                                             EditorActionInvokeContext context,
+                                             std::string_view actionId, bool pressed) {
         if (!shortcutsEnabled_ || !pressed) {
             return false;
         }

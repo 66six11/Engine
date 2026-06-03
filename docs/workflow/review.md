@@ -74,8 +74,10 @@ $smokes = @(
     "--smoke-mrt",
     "--smoke-descriptor-layout",
     "--smoke-fullscreen-texture",
+    "--smoke-render-view-grid-readback",
     "--smoke-offscreen-viewport",
     "--smoke-compute-dispatch",
+    "--smoke-renderer-format-contract",
     "--smoke-deferred-deletion",
     "--smoke-reflection-registry",
     "--smoke-reflection-transform",
@@ -110,7 +112,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
-涉及 editor viewport rendering、sampled texture registration、descriptor lifetime 或 resize flow 时，还必须跑：
+涉及 editor viewport rendering、sampled texture registration、descriptor lifetime、Frame Debug capture/preview state、Live RG View、FrameDebuggerPanel RenderGraph view 或 resize flow 时，还必须跑：
 
 ```powershell
 foreach ($preset in @("clangcl-debug", "msvc-debug")) {
@@ -122,6 +124,10 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
     & $exe --smoke-editor-viewport-resize
     if ($LASTEXITCODE -ne 0) {
         throw "$preset --smoke-editor-viewport-resize failed with exit code $LASTEXITCODE"
+    }
+    & $exe --smoke-editor-frame-debugger
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-frame-debugger failed with exit code $LASTEXITCODE"
     }
 }
 ```
@@ -142,7 +148,8 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 - frame loop 是否只管理 acquire、submit、present、swapchain 生命周期，而不承载 renderer 策略。
 - frame callback 是否声明 acquire semaphore 的正确 wait stage。
 - `renderer-basic` 和 `renderer-basic-vulkan` 是否分层清楚。
-- CMake target 依赖、package manifest 的 `dependencies` / `targetDependencies` 和源码 include 是否一致；多 target package 不能用 package-level dependency 代替 target-level 边界。
+- CMake target 依赖、package manifest 的 `dependencies` / `targetDependencies` 和源码 include 是否一致；
+  多 target package 不能用 package-level dependency 代替 target-level 边界。
 - swapchain recreate、image view、semaphore、fence、command buffer 的生命周期是否闭合。
 - 文档是否同步更新了真实流程。
 
@@ -175,7 +182,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 ```powershell
 rg -n "class |struct |Manager|Coordinator|Registry|Context|State|TODO|FIXME|temporary|MVP|for now" apps engine packages -g "*.hpp" -g "*.cpp" -g "*.inl"
 rg -n "vkCmd|vkQueue|vkDeviceWaitIdle|vkQueueWaitIdle|vkUpdateDescriptorSets" apps packages -g "*.hpp" -g "*.cpp" -g "*.inl"
-rg -n "debugWorldLines|camera|viewProjection|requestedViewport_|RenderGraphImageFormat::Undefined|basicRenderGraphImageFormat" apps packages -g "*.hpp" -g "*.cpp" -g "*.inl"
+rg -n "debugWorldLines|camera|viewProjection|viewportSlots_|requestedViewport_|RenderGraphImageFormat::Undefined|basicRenderGraphImageFormat" apps packages -g "*.hpp" -g "*.cpp" -g "*.inl"
 ```
 
 审查发现必须用本地事实举证：给出文件、行号、调用路径和触发场景。若结合网络资料，必须说明资料只支持哪条设计判断，不能用泛泛 best practice 替代仓库证据。
@@ -184,7 +191,7 @@ rg -n "debugWorldLines|camera|viewProjection|requestedViewport_|RenderGraphImage
 
 修改 swapchain format、RenderView target format、RenderGraph image format 或 Vulkan image create 入口时，必须检查 renderer format contract。若改动引入或修改 `--smoke-renderer-format-contract`，该 smoke 必须在 PR 描述和审查回复中列为验证门禁。
 
-在 #33 落地前，`--smoke-renderer-format-contract` 是 planned gate，不加入全量 smoke 循环；#33 合并时应把该命令加入对应 smoke list，并用负向路径证明 unsupported format 会在 renderer / RenderGraph import 前 fail early。
+当前 `--smoke-renderer-format-contract` 已进入 frame loop / RenderGraph / renderer / Vulkan adapter smoke 清单；后续新增 format、offscreen target、material/pipeline format key 或 texture preview 范围时，必须继续证明 unsupported format 会在 renderer / RenderGraph import 前 fail early，不能重新引入 `RenderGraphImageFormat::Undefined` fallback。
 
 ## Vulkan 同步审查重点
 

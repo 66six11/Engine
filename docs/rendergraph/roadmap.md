@@ -41,6 +41,9 @@
 当前项目已经具备这些前提：
 
 - `rendergraph` public API 不暴露 Vulkan 类型。
+- `asharia::rendergraph` 已是 STATIC target；`RenderGraphCommandList`、schema/executor registry、
+  非模板 `PassBuilder` / resource declaration API、RenderGraph facade、compile / execute 和
+  diagnostics formatting 实现已进入 `src/`，并按职责拆分到独立编译单元。
 - `asharia::rhi_vulkan` 与 `asharia::rhi_vulkan_rendergraph` 已分离。
 - graph transition 使用 `vkCmdPipelineBarrier2`。
 - frame loop 使用 `vkQueueSubmit2`。
@@ -287,7 +290,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 实现建议：
 
-- 提取 `renderer_basic` 的 schema registry helper，避免 `basic_triangle_renderer.cpp` 继续膨胀。
+- 提取 `renderer_basic` 的 schema registry helper，避免 `basic_renderers.cpp` 继续膨胀。
 - 第一阶段仍可使用 C++ callback 执行，但 compile 必须走 schema registry。
 - callback 中用 `RenderGraphPassContext` 的 typed slots 查找 binding，不直接捕获“我知道是哪张图”的假设。
 - pass params 继续要求 trivially copyable，后续再升级为 typed id + alignment/version。
@@ -296,7 +299,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 - 已新增 `asharia/renderer_basic/render_graph_schemas.hpp`，集中定义 builtin pass type、params type、POD params 和 schema registry helper。
 - `recordBasicClearFrame`、`recordBasicDynamicClearFrame`、`BasicTransientFrameRecorder`、`BasicTriangleRenderer::recordFrame`、`recordFrameWithDepth`、`BasicMesh3DRenderer`、`BasicDrawListRenderer` 和 `BasicFullscreenTextureRenderer` 现在都通过共享 schema compile。
-- `basic_triangle_renderer.cpp` 中 fullscreen / draw-list 的局部 schema registry 已移除，避免同一 pass schema 在多个位置漂移。
+- `basic_renderers.cpp` 中 fullscreen / draw-list 的局部 schema registry 已移除，避免同一 pass schema 在多个位置漂移。
 - fullscreen、transient、depth、mesh 和 draw-list 的 Vulkan callbacks 已通过 `RenderGraphPassContext` named slots 查询 binding，不再直接捕获 `source` / `depth` / `transientColor` image handle。
 - `--smoke-rendergraph` 已对每个 builtin pass 覆盖 invalid slot、missing slot 和 wrong params type 负向编译路径。
 
@@ -304,7 +307,7 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 
 - 所有 renderer smoke 都通过 schema compile。
 - invalid slot / missing slot / wrong params type 都有负向 smoke。
-- `basic_triangle_renderer.cpp` 至少拆出 schema/helper 文件或命名空间区域，降低继续堆叠风险。
+- `basic_renderers.cpp` 至少拆出 schema/helper 文件或命名空间区域，降低继续堆叠风险。
 
 ## P3：Compiler diagnostics v2
 
@@ -389,6 +392,70 @@ pass.readTexture("source", image, RenderGraphShaderStage::Fragment)
 - `--bench-rendergraph` 已接入 CPU-only benchmark，支持 warmup、measured frames 和 output path。
 - RenderGraph compile result 已暴露 declared image count，benchmark 输出 pass/image/dependency/transition/culled/transient counters。
 - GPU timestamp query pool、editor panel、capture orchestration 和 profiler UI 仍保持暂缓。
+
+## P3.6：RenderGraph diagnostics snapshot
+
+目标：把现有 `formatDebugTables()` 的文本诊断提升为结构化、后端无关的数据源。该数据源用于 smoke、Live
+Diagnostics、Frame Debug、RG View 和 pass graph visualization；它不是 editor UI，也不是可编辑 RenderGraph。
+
+当前状态：第一版已由 `RenderGraph::diagnosticsSnapshot()` 提供。`BasicRenderViewDesc` 已能通过可选的
+`BasicRenderViewDiagnostics` 输出槽把 snapshot 挂到一次成功的 view recording 上。`EditorViewportCoordinator` 已能把
+最近一次成功 recording 的 snapshot 作为 Live RG View 数据源发布。`EditorFrameDebugger` 已能捕获并冻结这份
+view-local snapshot，并在 WaitingGpuFence/PausedFrameDebug 阶段暂停新的 RenderView recording；
+`EditorInspectedWorldScheduler` 作为当前 counter-based scheduler seam，验证被检查 world 后续 frame advance、
+game update 和 script update safe points 在 paused capture 期间不会推进。`RenderGraphPanel` 作为 Live RG View 消费最新编译 snapshot；
+`FrameDebuggerPanel` 在同一面板内提供 Frame 和 RenderGraph 两个切换视图，Frame 视图按左 pass/execution event、
+右详情/预览组织，RenderGraph 视图消费冻结捕获 snapshot。两个 RenderGraph 入口复用同一个只读 snapshot renderer，
+显示 pass、command summary、resource、access edge、dependency、transition 和图列表。Frame Debug 的主选择 id 来自
+renderer execution event stream，RenderGraph command summary 只作为来源说明和 RG View 辅助诊断。
+`formatDebugTables()` 仍保留为文本诊断输出；editor 和后续工具应优先消费 snapshot，而不是解析 Markdown 表格。
+
+第一版数据：
+
+- pass nodes：compiled order、declaration index、name、type、params type、culling flags、side-effect flag、command count
+  和 transition count。
+- command nodes：pass index、declaration index、command index、command kind 和可读 detail，用于解释 RenderGraph
+  声明意图；不作为 Frame Debug 的真实 draw-call/event id。
+- execution events：renderer recording 路径产生的 pass begin/end、clear、draw、dispatch、copy 等事件，带稳定
+  `BasicRenderViewExecutionEventId`、pass/declaration index、可选 command index 和图像资源索引；不暴露 Vulkan handle。
+- resource nodes：image/buffer、imported/transient lifetime、format/bytes、extent、initial/final access。
+- access edges：pass/resource 双向依赖，标注 `ColorWrite`、`ShaderRead`、`DepthAttachmentWrite`、
+  `BufferStorageReadWrite` 等 RenderGraph access。
+- dependency edges：producer declaration index、consumer declaration index、resource 和 reason。
+- transitions：before/final image 与 buffer transition 的 old/new access。
+- culled passes and transient lifetime summary。
+
+约束：
+
+- `packages/rendergraph` 只输出抽象 handle、state、stage、slot 和 pass metadata，不输出 Vulkan handle、layout、
+  access mask 或 pipeline stage。
+- snapshot 必须能从 `RenderGraphCompileResult` 和 graph 声明数据派生，不能回调 Vulkan backend 或 editor。
+- Live RG View 的结构数据在 RenderGraph compile 后即可确定：pass/resource 拓扑、依赖顺序、culling 结果、transition
+  plan 和 resource lifetime 都来自 compile result 派生的 diagnostics snapshot。
+- Live RG View 不等待 GPU execute 才推断图结构；execute 后才可能补充 GPU timing、实际中间纹理内容、readback 或
+  pass preview 等执行态数据。
+- Frame Debugger 的 RenderGraph view 只读取 Frame Debug 冻结捕获；Live Diagnostics / Live RG View 只读取最近完成帧
+  或上一帧 snapshot。
+- Frame Debug capture 不使用 `vkDeviceWaitIdle` 作为普通机制，不读取 transient GPU resource。Capture 本身不序列化
+  脚本 VM 对象；当前代码通过 `EditorInspectedWorldScheduler` 的 counter-based seam 验证 normal RenderView recording、
+  frame advance、game update 和 script update safe points 在 paused Frame Debug 期间都被 gate。
+- Frame Debug replay 第一阶段只选择 pass/event 并触发受控 debug refresh；中间纹理预览必须等显式 debug
+  preservation/copy 路径存在后再接入。
+- transient resource 在普通 graph 执行完成后视为不可读取；若要预览，必须在 recording 前标记 preserve/copy，并把结果放入
+  debug-owned sampled image 或后续 readback buffer。
+- pass node graph 只是 snapshot 的可视化表现，不是 graph authoring。
+
+验收：
+
+- Done: `--smoke-rendergraph` 验证 snapshot 的 pass/command/resource/access edge/dependency/transition 数量和关键名称。
+- Done: package-local rendergraph compile test 验证 snapshot 的 declared counts、compiled pass order、resource nodes、
+  command nodes、access edge、dependency edge 和 final transition。
+- Done: `--smoke-editor-viewport` 验证 recorded RenderView diagnostics 的 pass/resource/access/dependency/transition
+  数量，验证 idle Scene View 复用上一张 texture 时 diagnostics snapshot 仍可作为最近一次 view-local 结果保留，并验证
+  Live RG View 无需 Frame Debug capture 也能消费 compile snapshot。
+- Done: `--smoke-editor-frame-debugger` 验证 capture、fence wait、paused RenderView recording、inspected-world safe-point
+  gate、Frame Debugger RenderGraph view frozen snapshot consumption 和 resume。
+- Done: `formatDebugTables()` 继续可用，便于 issue/PR 文本诊断。
 
 ## P4：Backend lifetime and caches
 

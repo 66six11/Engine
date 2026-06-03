@@ -13,24 +13,49 @@
 
 namespace asharia::editor {
 
-    class EditorContext;
+    class EditorEventQueue;
+    class EditorFrameDebugger;
+    class EditorPanelRegistry;
+    class EditorWorkspaceController;
+
+    struct EditorActionContext {
+        EditorPanelRegistry& panels;
+        EditorFrameDebugger& frameDebugger;
+        EditorWorkspaceController& workspace;
+    };
+
+    struct EditorActionInvokeContext {
+        EditorEventQueue& eventQueue;
+        EditorActionContext actions;
+    };
+
+    struct EditorActionServices {
+        EditorEventQueue& eventQueue;
+        EditorPanelRegistry& panels;
+        EditorFrameDebugger& frameDebugger;
+        EditorWorkspaceController& workspace;
+    };
+
+    [[nodiscard]] EditorActionInvokeContext
+    makeEditorActionInvokeContext(EditorActionServices& services);
 
     struct EditorActionDesc {
         EditorId id;
         std::string menuPath;
         std::string label;
+        std::string labelKey;
         std::string shortcut;
         bool enabled{true};
     };
 
-    using EditorActionCallback = std::function<void(EditorContext&)>;
+    using EditorActionCallback = std::function<void(EditorActionContext&)>;
     using EditorActionVisitor = std::function<void(const EditorActionDesc&)>;
 
     class EditorActionRegistry {
     public:
         [[nodiscard]] asharia::VoidResult registerAction(EditorActionDesc desc,
                                                          EditorActionCallback callback = {});
-        [[nodiscard]] bool invoke(std::string_view actionId, EditorContext& context);
+        [[nodiscard]] bool invoke(std::string_view actionId, EditorActionInvokeContext context);
         [[nodiscard]] const EditorActionDesc* findAction(std::string_view actionId) const;
         [[nodiscard]] bool isEnabled(std::string_view actionId) const;
         [[nodiscard]] std::size_t actionCount() const;

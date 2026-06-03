@@ -1,0 +1,35 @@
+﻿#pragma once
+
+#include <array>
+#include <cstddef>
+
+#include "editor_panel.hpp"
+
+namespace asharia::editor {
+
+    class UiStylePreviewPanel final : public ImGuiUiStylePreviewEditorPanel {
+    public:
+        [[nodiscard]] const EditorPanelDesc& desc() const override;
+        void prepareWindow(EditorPanelWindowContext& context, EditorPanelState& state) override;
+
+    private:
+        void drawUiStylePreviewPanel(EditorUiStylePreviewPanelDrawContext& context,
+                                     EditorPanelState& state) override;
+
+        EditorPanelDesc desc_{
+            .id = EditorId{.value = "ui-style-preview"},
+            .title = "UI Style Preview",
+            .titleKey = "panel.uiStylePreview",
+            .defaultOpen = false,
+            .singleton = true,
+            .category = EditorPanelCategory::Tools,
+            .preferredDock = EditorDockSlot::RightBottom,
+        };
+        std::array<char, 64> textBuffer_{{'A', 's', 'h', 'a', 'r', 'i', 'a', '\0'}};
+        bool checkboxValue_{true};
+        float sliderValue_{0.42F};
+        int comboIndex_{0};
+        std::size_t selectedTokenIndex_{0};
+    };
+
+} // namespace asharia::editor

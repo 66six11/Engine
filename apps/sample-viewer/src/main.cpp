@@ -2,6 +2,8 @@
 #include <array>
 #include <charconv>
 #include <chrono>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -11,6 +13,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <span>
@@ -28,12 +31,14 @@
 #include "asharia/reflection/context_view.hpp"
 #include "asharia/reflection/type_builder.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
-#include "asharia/renderer_basic_vulkan/basic_triangle_renderer.hpp"
+#include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/renderer_basic_vulkan/clear_frame.hpp"
 #include "asharia/rendergraph/render_graph.hpp"
 #include "asharia/rhi_vulkan/deferred_deletion_queue.hpp"
+#include "asharia/rhi_vulkan/vulkan_buffer.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "asharia/rhi_vulkan/vulkan_image.hpp"
 #include "asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
 #include "asharia/serialization/migration.hpp"
 #include "asharia/serialization/serializer.hpp"
@@ -67,14 +72,15 @@ namespace {
 
     void printUsage() {
         std::cout << "Usage: asharia-sample-viewer [--help] [--version] [--smoke-window] "
-                      "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
-                      "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
-                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
-                      "[--smoke-mesh-3d] [--smoke-draw-list] "
-                      "[--smoke-mrt [--frames N] [--hold]] "
-                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                     "[--smoke-vulkan] [--smoke-frame] [--smoke-rendergraph] "
+                     "[--smoke-transient] [--smoke-dynamic-rendering] [--smoke-resize] "
+                     "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
+                     "[--smoke-mesh-3d] [--smoke-draw-list] "
+                     "[--smoke-mrt [--frames N] [--hold]] "
+                     "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                     "[--smoke-render-view-grid-readback] "
                      "[--smoke-offscreen-viewport] [--smoke-compute-dispatch] "
-                     "[--smoke-deferred-deletion] "
+                     "[--smoke-renderer-format-contract] [--smoke-deferred-deletion] "
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
                      "[--smoke-reflection-attributes] [--smoke-serialization-roundtrip] "
                      "[--smoke-serialization-json-archive] [--smoke-serialization-migration] "
@@ -1433,10 +1439,10 @@ namespace {
     }
 
     bool validateComputeBufferStats(asharia::VulkanBufferStats stats, std::string_view context) {
-        if (stats.created != 2 || stats.deviceLocalCreated != 1 ||
-            stats.hostReadbackCreated != 1 || stats.allocatedBytes == 0) {
+        if (stats.created != 2 || stats.deviceLocalCreated != 1 || stats.hostReadbackCreated != 1 ||
+            stats.allocatedBytes == 0) {
             asharia::logError(std::string{context} +
-                          " did not create the expected storage and readback buffers.");
+                              " did not create the expected storage and readback buffers.");
             return false;
         }
         return true;
@@ -1444,9 +1450,9 @@ namespace {
 
     bool validateComputeDispatchStats(asharia::BasicComputeDispatchStats stats,
                                       std::string_view context) {
-        if (stats.dispatchesRecorded != 1) {
+        if (stats.bufferFillsRecorded != 1 || stats.dispatchesRecorded != 1) {
             asharia::logError(std::string{context} +
-                          " did not record exactly one compute dispatch.");
+                              " did not record exactly one buffer fill and compute dispatch.");
             return false;
         }
         return true;
@@ -1838,6 +1844,50 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    int runSmokeRendererFormatContract() {
+        auto supported = asharia::basicRenderGraphImageFormat(VK_FORMAT_B8G8R8A8_SRGB,
+                                                              "Renderer format contract smoke");
+        if (!supported || *supported != asharia::RenderGraphImageFormat::B8G8R8A8Srgb) {
+            asharia::logError("Renderer format contract smoke did not accept B8G8R8A8 SRGB.");
+            return EXIT_FAILURE;
+        }
+
+        auto unsupported = asharia::basicRenderGraphImageFormat(VK_FORMAT_R8G8B8A8_UNORM,
+                                                                "Renderer format contract smoke");
+        if (unsupported) {
+            asharia::logError("Renderer format contract smoke accepted an unsupported format.");
+            return EXIT_FAILURE;
+        }
+        if (unsupported.error().message.find("VK_FORMAT_R8G8B8A8_UNORM") == std::string::npos) {
+            asharia::logError("Renderer format contract smoke lost unsupported format context.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanFrameRecordContext unsupportedFrame{
+            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .extent = VkExtent2D{.width = 16, .height = 16},
+        };
+        auto unsupportedBackbuffer = asharia::basicBackbufferDesc(unsupportedFrame);
+        if (unsupportedBackbuffer) {
+            asharia::logError("Renderer format contract smoke imported an unsupported backbuffer.");
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanFrameRecordContext supportedFrame{
+            .format = VK_FORMAT_B8G8R8A8_SRGB,
+            .extent = VkExtent2D{.width = 16, .height = 16},
+        };
+        auto supportedBackbuffer = asharia::basicBackbufferDesc(supportedFrame);
+        if (!supportedBackbuffer ||
+            supportedBackbuffer->format != asharia::RenderGraphImageFormat::B8G8R8A8Srgb) {
+            asharia::logError("Renderer format contract smoke did not create a supported desc.");
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Renderer format contract smoke rejected unsupported Vulkan formats.\n";
+        return EXIT_SUCCESS;
+    }
+
     int runSmokeWindow() {
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
@@ -2196,9 +2246,9 @@ namespace {
 
         const asharia::VulkanTransientImagePoolStats transientPoolStats =
             renderer->transientPoolStats();
-        if (renderedFrames >= 3 && (transientPoolStats.created < 2 ||
-                                    transientPoolStats.reused < 2 ||
-                                    transientPoolStats.retired < 2)) {
+        if (renderedFrames >= 3 &&
+            (transientPoolStats.created < 2 || transientPoolStats.reused < 2 ||
+             transientPoolStats.retired < 2)) {
             asharia::logError("MRT smoke did not reuse both transient color attachments.");
             return EXIT_FAILURE;
         }
@@ -2555,13 +2605,12 @@ namespace {
         }
 
         const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
-        auto renderer = asharia::BasicComputeDispatchRenderer::create(
-            asharia::BasicComputeDispatchRendererDesc{
+        auto renderer =
+            asharia::BasicComputeDispatchRenderer::create(asharia::BasicComputeDispatchRendererDesc{
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
-                .graphicsQueueSupportsCompute =
-                    context->deviceInfo().graphicsQueueSupportsCompute,
+                .graphicsQueueSupportsCompute = context->deviceInfo().graphicsQueueSupportsCompute,
             });
         if (!renderer) {
             asharia::logError(renderer.error().message);
@@ -2588,7 +2637,7 @@ namespace {
         const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
         if (idleResult != VK_SUCCESS) {
             asharia::logError("Failed to wait for Vulkan queue before compute readback: " +
-                          asharia::vkResultName(idleResult));
+                              asharia::vkResultName(idleResult));
             return EXIT_FAILURE;
         }
 
@@ -2855,6 +2904,802 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    [[nodiscard]] bool validateFullscreenTextureOverlayDiagnostics(
+        const asharia::BasicRenderViewDiagnostics& diagnostics, bool diagnosticsRecorded) {
+        if (!diagnosticsRecorded) {
+            asharia::logError("Fullscreen texture smoke did not record overlay diagnostics.");
+            return false;
+        }
+        constexpr auto expectedDrawItems = asharia::basicDrawListSmokeItems();
+        if (diagnostics.scene.drawItemCount != expectedDrawItems.size()) {
+            asharia::logError("Fullscreen texture smoke did not record scene input diagnostics.");
+            return false;
+        }
+        const auto sceneInputPass = std::ranges::find_if(
+            diagnostics.renderGraph.passes,
+            [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                return pass.type == asharia::kBasicRenderViewSceneInputsPassType;
+            });
+        if (sceneInputPass == diagnostics.renderGraph.passes.end() ||
+            !sceneInputPass->hasSideEffects || sceneInputPass->commandCount != 1U) {
+            asharia::logError("Fullscreen texture smoke did not record a scene input marker pass.");
+            return false;
+        }
+        const auto sceneInputCommand = std::ranges::find_if(
+            diagnostics.renderGraph.commands,
+            [sceneInputPass](const asharia::RenderGraphDiagnosticsCommandNode& command) {
+                return command.passName == sceneInputPass->name &&
+                       command.kind == asharia::RenderGraphCommandKind::SetInt &&
+                       command.detail == "SceneDrawItemCount = 2";
+            });
+        if (sceneInputCommand == diagnostics.renderGraph.commands.end()) {
+            asharia::logError(
+                "Fullscreen texture smoke did not record scene input command diagnostics.");
+            return false;
+        }
+        const auto sceneInputEvent = std::ranges::find_if(
+            diagnostics.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
+                return event.kind == asharia::BasicRenderViewExecutionEventKind::RenderViewInput &&
+                       event.label == "BindRenderViewSceneInputs";
+            });
+        if (sceneInputEvent == diagnostics.executionEvents.end()) {
+            asharia::logError("Fullscreen texture smoke did not record a scene input event.");
+            return false;
+        }
+        const auto overlayPass =
+            std::ranges::find_if(diagnostics.renderGraph.passes,
+                                 [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                                     return pass.type == asharia::kBasicRenderViewOverlayPassType;
+                                 });
+        if (overlayPass == diagnostics.renderGraph.passes.end()) {
+            asharia::logError("Fullscreen texture smoke did not record a debug-line overlay pass.");
+            return false;
+        }
+        const auto drawLines = std::ranges::find_if(
+            diagnostics.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
+                return event.kind == asharia::BasicRenderViewExecutionEventKind::Draw &&
+                       event.label == "DrawDebugWorldLines";
+            });
+        if (drawLines == diagnostics.executionEvents.end() || drawLines->draw.vertexCount != 2U) {
+            asharia::logError("Fullscreen texture smoke did not record a debug-line draw event.");
+            return false;
+        }
+        return true;
+    }
+
+    constexpr std::string_view kInvalidSceneInputSmokeExpectedError =
+        "RenderView scene input item must declare vertices or indices and a non-zero instance "
+        "count";
+
+    struct SmokeFullscreenTextureState {
+        asharia::BasicRenderViewDiagnostics overlayDiagnostics;
+        bool overlayDiagnosticsRecorded{};
+        bool invalidSceneInputRejected{};
+    };
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeFullscreenTextureOverlayFrame(
+        const asharia::VulkanFrameRecordContext& recordContext,
+        asharia::BasicFullscreenTextureRenderer& renderer,
+        SmokeFullscreenTextureState& state, int frame) {
+        constexpr auto drawItems = asharia::basicDrawListSmokeItems();
+        const std::array debugLines{
+            asharia::BasicDebugWorldLine{
+                .start = {-0.65F, 0.0F, 0.0F},
+                .end = {0.65F, 0.0F, 0.0F},
+                .color = {0.18F, 0.78F, 0.95F, 0.65F},
+            },
+        };
+        auto recorded = renderer.recordViewFrame(
+            recordContext,
+            asharia::BasicRenderViewDesc{
+                .target =
+                    asharia::BasicRenderViewTarget{
+                        .image = recordContext.image,
+                        .imageView = recordContext.imageView,
+                        .format = recordContext.format,
+                        .extent = recordContext.extent,
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .finalUsage = asharia::BasicRenderViewTargetFinalUsage::Present,
+                    },
+                .viewKind = asharia::BasicRenderViewKind::Game,
+                .camera = asharia::BasicRenderViewCamera{},
+                .frameParams =
+                    asharia::BasicRenderViewFrameParams{
+                        .frameIndex = static_cast<std::uint64_t>(frame + 1),
+                    },
+                .scene =
+                    asharia::BasicRenderViewSceneDesc{
+                        .drawItems = drawItems,
+                    },
+                .overlay =
+                    asharia::BasicRenderViewOverlayDesc{
+                        .enabled = true,
+                        .blendMode = asharia::BasicRenderViewOverlayBlendMode::Additive,
+                        .worldGrid = {},
+                        .debugWorldLines = debugLines,
+                    },
+                .viewName = "FullscreenTextureAdditiveOverlaySmoke",
+                .diagnostics = &state.overlayDiagnostics,
+            });
+        if (recorded) {
+            state.overlayDiagnosticsRecorded = true;
+        }
+        return recorded;
+    }
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeFullscreenTextureInvalidSceneFrame(
+        const asharia::VulkanFrameRecordContext& recordContext,
+        asharia::BasicFullscreenTextureRenderer& renderer,
+        SmokeFullscreenTextureState& state, int frame) {
+        constexpr std::array invalidDrawItems{
+            asharia::BasicDrawListItem{
+                .drawItem =
+                    asharia::BasicDrawItem{
+                        .vertexCount = 0,
+                        .indexCount = 0,
+                        .instanceCount = 1,
+                    },
+                .modelMatrix = asharia::basicIdentityTransform3D(),
+            },
+        };
+        auto rejected = renderer.recordViewFrame(
+            recordContext,
+            asharia::BasicRenderViewDesc{
+                .target =
+                    asharia::BasicRenderViewTarget{
+                        .image = recordContext.image,
+                        .imageView = recordContext.imageView,
+                        .format = recordContext.format,
+                        .extent = recordContext.extent,
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .finalUsage = asharia::BasicRenderViewTargetFinalUsage::Present,
+                    },
+                .viewKind = asharia::BasicRenderViewKind::Game,
+                .camera = asharia::BasicRenderViewCamera{},
+                .frameParams =
+                    asharia::BasicRenderViewFrameParams{
+                        .frameIndex = static_cast<std::uint64_t>(frame + 1),
+                    },
+                .scene =
+                    asharia::BasicRenderViewSceneDesc{
+                        .drawItems = invalidDrawItems,
+                    },
+                .overlay = {},
+                .viewName = "FullscreenTextureInvalidSceneInputSmoke",
+            });
+        if (rejected) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
+                0,
+                "Fullscreen texture smoke accepted invalid scene input",
+            }};
+        }
+
+        state.invalidSceneInputRejected =
+            rejected.error().message.find(kInvalidSceneInputSmokeExpectedError) !=
+            std::string::npos;
+        if (!state.invalidSceneInputRejected) {
+            return std::unexpected{std::move(rejected.error())};
+        }
+        return renderer.recordFrame(recordContext);
+    }
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeFullscreenTextureFrame(
+        const asharia::VulkanFrameRecordContext& recordContext,
+        asharia::BasicFullscreenTextureRenderer& renderer,
+        SmokeFullscreenTextureState& state, int frame) {
+        if (frame == 1) {
+            return recordSmokeFullscreenTextureOverlayFrame(recordContext, renderer, state, frame);
+        }
+        if (frame == 2) {
+            return recordSmokeFullscreenTextureInvalidSceneFrame(recordContext, renderer, state,
+                                                                frame);
+        }
+        return renderer.recordFrame(recordContext);
+    }
+
+    using SmokeGridVec3 = std::array<float, 3>;
+    using SmokeGridMat4 = std::array<float, 16>;
+
+    struct SmokeGridLookAtDesc {
+        SmokeGridVec3 position{};
+        SmokeGridVec3 target{};
+        SmokeGridVec3 up{0.0F, 1.0F, 0.0F};
+    };
+
+    struct SmokeGridPerspectiveDesc {
+        float verticalFovRadians{};
+        float aspectRatio{1.0F};
+        float nearPlane{0.1F};
+        float farPlane{1000.0F};
+    };
+
+    struct SmokeRenderViewGridReadbackProbe {
+        asharia::VulkanRenderTarget target;
+        asharia::VulkanBuffer readback;
+        std::vector<std::byte> pixels;
+        asharia::BasicRenderViewDiagnostics diagnostics;
+        bool diagnosticsRecorded{};
+    };
+
+    constexpr VkExtent2D kSmokeGridReadbackExtent{.width = 192, .height = 128};
+    constexpr VkFormat kSmokeGridReadbackFormat = VK_FORMAT_B8G8R8A8_SRGB;
+    constexpr std::uint64_t kSmokeGridReadbackBytesPerPixel = 4;
+    constexpr std::size_t kSmokeGridReadbackProbeCount = 4;
+    constexpr std::size_t kSmokeGridHighViewProbeIndex = 2;
+    constexpr std::size_t kSmokeGridLowFarViewProbeIndex = 3;
+    constexpr std::uint64_t kMinimumVisibleGridSpread = 20000;
+    constexpr std::uint64_t kMinimumCameraDifference = 40000;
+
+    [[nodiscard]] constexpr bool smokeGridProbeUsesStableBaseLod(std::size_t probeIndex) {
+        return probeIndex != kSmokeGridHighViewProbeIndex;
+    }
+
+    [[nodiscard]] constexpr VkDeviceSize smokeGridReadbackByteCount() {
+        return static_cast<VkDeviceSize>(kSmokeGridReadbackExtent.width) *
+               kSmokeGridReadbackExtent.height * kSmokeGridReadbackBytesPerPixel;
+    }
+
+    [[nodiscard]] constexpr SmokeGridVec3 smokeGridSubtract(SmokeGridVec3 lhs, SmokeGridVec3 rhs) {
+        return SmokeGridVec3{
+            lhs[0] - rhs[0],
+            lhs[1] - rhs[1],
+            lhs[2] - rhs[2],
+        };
+    }
+
+    [[nodiscard]] constexpr float smokeGridDot(SmokeGridVec3 lhs, SmokeGridVec3 rhs) {
+        return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
+    }
+
+    [[nodiscard]] constexpr SmokeGridVec3 smokeGridCross(SmokeGridVec3 lhs, SmokeGridVec3 rhs) {
+        return SmokeGridVec3{
+            (lhs[1] * rhs[2]) - (lhs[2] * rhs[1]),
+            (lhs[2] * rhs[0]) - (lhs[0] * rhs[2]),
+            (lhs[0] * rhs[1]) - (lhs[1] * rhs[0]),
+        };
+    }
+
+    [[nodiscard]] SmokeGridVec3 smokeGridNormalize(SmokeGridVec3 value) {
+        const float length = std::sqrt(smokeGridDot(value, value));
+        if (length <= 0.0F) {
+            return SmokeGridVec3{};
+        }
+        return SmokeGridVec3{value[0] / length, value[1] / length, value[2] / length};
+    }
+
+    [[nodiscard]] constexpr float smokeGridMat4At(const SmokeGridMat4& matrix, std::size_t row,
+                                                  std::size_t column) {
+        return matrix.at((row * 4U) + column);
+    }
+
+    [[nodiscard]] SmokeGridMat4 smokeGridMultiply(SmokeGridMat4 lhs, SmokeGridMat4 rhs) {
+        SmokeGridMat4 result{};
+        for (std::size_t row = 0; row < 4U; ++row) {
+            for (std::size_t column = 0; column < 4U; ++column) {
+                float value = 0.0F;
+                for (std::size_t index = 0; index < 4U; ++index) {
+                    value += smokeGridMat4At(lhs, row, index) * smokeGridMat4At(rhs, index, column);
+                }
+                result.at((row * 4U) + column) = value;
+            }
+        }
+        return result;
+    }
+
+    [[nodiscard]] SmokeGridMat4 smokeGridLookAt(const SmokeGridLookAtDesc& desc) {
+        const SmokeGridVec3 forward =
+            smokeGridNormalize(smokeGridSubtract(desc.target, desc.position));
+        const SmokeGridVec3 right = smokeGridNormalize(smokeGridCross(desc.up, forward));
+        const SmokeGridVec3 cameraUp = smokeGridCross(forward, right);
+
+        return SmokeGridMat4{
+            right[0],    right[1],    right[2],    -smokeGridDot(right, desc.position),
+            cameraUp[0], cameraUp[1], cameraUp[2], -smokeGridDot(cameraUp, desc.position),
+            forward[0],  forward[1],  forward[2],  -smokeGridDot(forward, desc.position),
+            0.0F,        0.0F,        0.0F,        1.0F,
+        };
+    }
+
+    [[nodiscard]] SmokeGridMat4 smokeGridPerspective(const SmokeGridPerspectiveDesc& desc) {
+        const float focalLength = 1.0F / std::tan(desc.verticalFovRadians * 0.5F);
+        return SmokeGridMat4{
+            focalLength / desc.aspectRatio,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F,
+            focalLength,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F,
+            desc.farPlane / (desc.farPlane - desc.nearPlane),
+            (-desc.nearPlane * desc.farPlane) / (desc.farPlane - desc.nearPlane),
+            0.0F,
+            0.0F,
+            1.0F,
+            0.0F,
+        };
+    }
+
+    [[nodiscard]] asharia::BasicRenderViewCamera
+    smokeGridCamera(SmokeGridVec3 position, SmokeGridVec3 target, VkExtent2D extent) {
+        constexpr float kVerticalFovRadians = 60.0F * std::numbers::pi_v<float> / 180.0F;
+        const float aspectRatio = static_cast<float>(std::max(extent.width, 1U)) /
+                                  static_cast<float>(std::max(extent.height, 1U));
+        const SmokeGridMat4 view = smokeGridLookAt(SmokeGridLookAtDesc{
+            .position = position,
+            .target = target,
+            .up = {0.0F, 1.0F, 0.0F},
+        });
+        const SmokeGridMat4 projection = smokeGridPerspective(SmokeGridPerspectiveDesc{
+            .verticalFovRadians = kVerticalFovRadians,
+            .aspectRatio = aspectRatio,
+            .nearPlane = 0.1F,
+            .farPlane = 1000.0F,
+        });
+        return asharia::BasicRenderViewCamera{
+            .view = view,
+            .projection = projection,
+            .viewProjection = smokeGridMultiply(projection, view),
+            .position = position,
+            .nearPlane = 0.1F,
+            .farPlane = 1000.0F,
+        };
+    }
+
+    [[nodiscard]] asharia::Result<void>
+    recordSmokeGridReadbackCopy(const asharia::VulkanFrameRecordContext& frame, VkImage image,
+                                VkBuffer buffer, VkExtent2D extent) {
+        if (image == VK_NULL_HANDLE || buffer == VK_NULL_HANDLE || extent.width == 0 ||
+            extent.height == 0) {
+            return std::unexpected{
+                asharia::Error{asharia::ErrorDomain::Vulkan, 0,
+                               "Cannot record grid readback copy with incomplete resources"}};
+        }
+
+        VkImageMemoryBarrier2 imageBarrier{};
+        imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        imageBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrier.image = image;
+        imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageBarrier.subresourceRange.baseMipLevel = 0;
+        imageBarrier.subresourceRange.levelCount = 1;
+        imageBarrier.subresourceRange.baseArrayLayer = 0;
+        imageBarrier.subresourceRange.layerCount = 1;
+
+        VkDependencyInfo imageDependency{};
+        imageDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        imageDependency.imageMemoryBarrierCount = 1;
+        imageDependency.pImageMemoryBarriers = &imageBarrier;
+        vkCmdPipelineBarrier2(frame.commandBuffer, &imageDependency);
+
+        VkBufferImageCopy copy{};
+        copy.bufferOffset = 0;
+        copy.bufferRowLength = 0;
+        copy.bufferImageHeight = 0;
+        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy.imageSubresource.mipLevel = 0;
+        copy.imageSubresource.baseArrayLayer = 0;
+        copy.imageSubresource.layerCount = 1;
+        copy.imageExtent = VkExtent3D{
+            .width = extent.width,
+            .height = extent.height,
+            .depth = 1,
+        };
+        vkCmdCopyImageToBuffer(frame.commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               buffer, 1, &copy);
+
+        VkBufferMemoryBarrier2 bufferBarrier{};
+        bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        bufferBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        bufferBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        bufferBarrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+        bufferBarrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+        bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bufferBarrier.buffer = buffer;
+        bufferBarrier.offset = 0;
+        bufferBarrier.size = VK_WHOLE_SIZE;
+
+        VkDependencyInfo bufferDependency{};
+        bufferDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        bufferDependency.bufferMemoryBarrierCount = 1;
+        bufferDependency.pBufferMemoryBarriers = &bufferBarrier;
+        vkCmdPipelineBarrier2(frame.commandBuffer, &bufferDependency);
+        return {};
+    }
+
+    [[nodiscard]] std::uint64_t smokePixelSpread(std::span<const std::byte> pixels) {
+        if (pixels.size() < 4U) {
+            return 0;
+        }
+        std::uint64_t spread = 0;
+        for (std::size_t index = 4; index + 3 < pixels.size(); index += 4) {
+            spread += static_cast<std::uint64_t>(
+                std::abs(static_cast<int>(std::to_integer<unsigned char>(pixels[index])) -
+                         static_cast<int>(std::to_integer<unsigned char>(pixels[0]))));
+            spread += static_cast<std::uint64_t>(
+                std::abs(static_cast<int>(std::to_integer<unsigned char>(pixels[index + 1])) -
+                         static_cast<int>(std::to_integer<unsigned char>(pixels[1]))));
+            spread += static_cast<std::uint64_t>(
+                std::abs(static_cast<int>(std::to_integer<unsigned char>(pixels[index + 2])) -
+                         static_cast<int>(std::to_integer<unsigned char>(pixels[2]))));
+        }
+        return spread;
+    }
+
+    [[nodiscard]] std::uint64_t smokePixelDifference(std::span<const std::byte> lhs,
+                                                     std::span<const std::byte> rhs) {
+        const std::size_t count = std::min(lhs.size(), rhs.size());
+        std::uint64_t difference = 0;
+        for (std::size_t index = 0; index + 3 < count; index += 4) {
+            difference += static_cast<std::uint64_t>(
+                std::abs(static_cast<int>(std::to_integer<unsigned char>(lhs[index])) -
+                         static_cast<int>(std::to_integer<unsigned char>(rhs[index]))));
+            difference += static_cast<std::uint64_t>(
+                std::abs(static_cast<int>(std::to_integer<unsigned char>(lhs[index + 1])) -
+                         static_cast<int>(std::to_integer<unsigned char>(rhs[index + 1]))));
+            difference += static_cast<std::uint64_t>(
+                std::abs(static_cast<int>(std::to_integer<unsigned char>(lhs[index + 2])) -
+                         static_cast<int>(std::to_integer<unsigned char>(rhs[index + 2]))));
+        }
+        return difference;
+    }
+
+    [[nodiscard]] bool validateRenderViewGridReadbackDiagnostics(
+        const asharia::BasicRenderViewDiagnostics& diagnostics, bool diagnosticsRecorded,
+        std::size_t probeIndex) {
+        if (!diagnosticsRecorded || diagnostics.viewKind != asharia::BasicRenderViewKind::Scene ||
+            !diagnostics.overlay.enabled || !diagnostics.overlay.worldGridEnabled) {
+            asharia::logError("RenderView grid readback smoke missed Scene View grid diagnostics.");
+            return false;
+        }
+        const asharia::BasicRenderViewWorldGridDesc& worldGrid = diagnostics.overlay.worldGrid;
+        if (!worldGrid.enabled || worldGrid.planeY != 0.0F || worldGrid.minorSpacing != 1.0F ||
+            worldGrid.majorSpacing != 10.0F || worldGrid.fadeStart != 0.0F ||
+            worldGrid.fadeEnd != 0.0F || worldGrid.opacity != 1.0F) {
+            asharia::logError(
+                "RenderView grid readback smoke captured invalid world-grid diagnostics.");
+            return false;
+        }
+
+        const auto gridPass =
+            std::ranges::find_if(diagnostics.renderGraph.passes,
+                                 [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
+                                     return pass.type == asharia::kBasicRenderViewWorldGridPassType;
+                                 });
+        if (gridPass == diagnostics.renderGraph.passes.end()) {
+            asharia::logError("RenderView grid readback smoke did not record the world-grid pass.");
+            return false;
+        }
+
+        const auto gridDraw = std::ranges::find_if(
+            diagnostics.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
+                return event.kind ==
+                           asharia::BasicRenderViewExecutionEventKind::DrawFullscreenTriangle &&
+                       event.label == "DrawWorldGrid";
+            });
+        if (gridDraw == diagnostics.executionEvents.end() || gridDraw->draw.vertexCount != 3U) {
+            asharia::logError(
+                "RenderView grid readback smoke did not record the world-grid draw event.");
+            return false;
+        }
+
+        const auto lodCommand = std::ranges::find_if(
+            diagnostics.renderGraph.commands,
+            [](const asharia::RenderGraphDiagnosticsCommandNode& command) {
+                return command.kind == asharia::RenderGraphCommandKind::SetVec4 &&
+                       command.detail.starts_with("GridLodSettings = ");
+            });
+        if (lodCommand == diagnostics.renderGraph.commands.end()) {
+            asharia::logError(
+                "RenderView grid readback smoke did not record world-grid LOD settings.");
+            return false;
+        }
+
+        constexpr std::string_view kCloseGridLodSettings{
+            "GridLodSettings = (1.000000, 1.000000, 0.000000, 10.000000)"};
+        const bool stableBaseGridLod = lodCommand->detail == kCloseGridLodSettings;
+        if (smokeGridProbeUsesStableBaseLod(probeIndex) && !stableBaseGridLod) {
+            asharia::logError(
+                "RenderView grid readback smoke expected low-height cameras to use stable base "
+                "LOD but found '" +
+                lodCommand->detail + "'.");
+            return false;
+        }
+        if (!smokeGridProbeUsesStableBaseLod(probeIndex) && stableBaseGridLod) {
+            asharia::logError(
+                "RenderView grid readback smoke expected high camera to leave stable base LOD.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] asharia::Result<SmokeRenderViewGridReadbackProbe>
+    createSmokeRenderViewGridReadbackProbe(const asharia::VulkanContext& context) {
+        auto readbackBuffer = asharia::VulkanBuffer::create(asharia::VulkanBufferDesc{
+            .device = context.device(),
+            .allocator = context.allocator(),
+            .size = smokeGridReadbackByteCount(),
+            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .memoryUsage = asharia::VulkanBufferMemoryUsage::HostReadback,
+        });
+        if (!readbackBuffer) {
+            return std::unexpected{std::move(readbackBuffer.error())};
+        }
+
+        SmokeRenderViewGridReadbackProbe probe;
+        probe.readback = std::move(*readbackBuffer);
+        probe.pixels.resize(static_cast<std::size_t>(smokeGridReadbackByteCount()));
+        return probe;
+    }
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeRenderViewGridReadbackFrame(const asharia::VulkanFrameRecordContext& recordContext,
+                                           const asharia::VulkanContext& context,
+                                           asharia::BasicFullscreenTextureRenderer& renderer,
+                                           SmokeRenderViewGridReadbackProbe& probe,
+                                           const asharia::BasicRenderViewCamera& camera,
+                                           std::uint64_t frameIndex) {
+        auto targetReady =
+            probe.target.ensure(recordContext, asharia::VulkanRenderTargetDesc{
+                                                   .device = context.device(),
+                                                   .allocator = context.allocator(),
+                                                   .format = kSmokeGridReadbackFormat,
+                                                   .extent = kSmokeGridReadbackExtent,
+                                                   .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                            VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                                   .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                               });
+        if (!targetReady) {
+            return std::unexpected{std::move(targetReady.error())};
+        }
+
+        const asharia::VulkanSampledTextureView sampled = probe.target.sampledTextureView();
+        auto recorded = renderer.recordViewFrame(
+            recordContext,
+            asharia::BasicRenderViewDesc{
+                .target =
+                    asharia::BasicRenderViewTarget{
+                        .image = sampled.image,
+                        .imageView = sampled.imageView,
+                        .format = sampled.format,
+                        .extent = sampled.extent,
+                        .aspectMask = sampled.aspectMask,
+                        .finalUsage = asharia::BasicRenderViewTargetFinalUsage::SampledTexture,
+                    },
+                .viewKind = asharia::BasicRenderViewKind::Scene,
+                .camera = camera,
+                .frameParams =
+                    asharia::BasicRenderViewFrameParams{
+                        .frameIndex = frameIndex,
+                    },
+                .scene = {},
+                .overlay =
+                    asharia::BasicRenderViewOverlayDesc{
+                        .enabled = true,
+                        .worldGrid =
+                            asharia::BasicRenderViewWorldGridDesc{
+                                .enabled = true,
+                                .planeY = 0.0F,
+                                .minorSpacing = 1.0F,
+                                .majorSpacing = 10.0F,
+                                .fadeStart = 0.0F,
+                                .fadeEnd = 0.0F,
+                                .opacity = 1.0F,
+                            },
+                    },
+                .viewName = "RenderViewGridReadbackSmoke",
+                .diagnostics = &probe.diagnostics,
+            });
+        if (!recorded) {
+            return std::unexpected{std::move(recorded.error())};
+        }
+        probe.diagnosticsRecorded = true;
+
+        auto copied = recordSmokeGridReadbackCopy(
+            recordContext, sampled.image, probe.readback.handle(), kSmokeGridReadbackExtent);
+        if (!copied) {
+            return std::unexpected{std::move(copied.error())};
+        }
+        auto presentReady = asharia::recordBasicClearFrame(recordContext);
+        if (!presentReady) {
+            return std::unexpected{std::move(presentReady.error())};
+        }
+        return *presentReady;
+    }
+
+    [[nodiscard]] bool
+    readSmokeRenderViewGridReadbackProbes(std::span<SmokeRenderViewGridReadbackProbe> probes) {
+        std::size_t probeIndex = 0;
+        for (SmokeRenderViewGridReadbackProbe& probe : probes) {
+            if (!validateRenderViewGridReadbackDiagnostics(probe.diagnostics,
+                                                           probe.diagnosticsRecorded, probeIndex)) {
+                return false;
+            }
+            auto read = probe.readback.read(std::span<std::byte>{probe.pixels});
+            if (!read) {
+                asharia::logError(read.error().message);
+                return false;
+            }
+            ++probeIndex;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool validateSmokeRenderViewGridPixels(
+        std::span<const SmokeRenderViewGridReadbackProbe, kSmokeGridReadbackProbeCount> probes) {
+        const std::uint64_t firstSpread = smokePixelSpread(probes.front().pixels);
+        const std::uint64_t secondSpread = smokePixelSpread(probes[1].pixels);
+        const SmokeRenderViewGridReadbackProbe& highViewProbe =
+            probes[kSmokeGridHighViewProbeIndex];
+        const SmokeRenderViewGridReadbackProbe& lowFarViewProbe =
+            probes[kSmokeGridLowFarViewProbeIndex];
+        const std::uint64_t highViewSpread = smokePixelSpread(highViewProbe.pixels);
+        const std::uint64_t lowFarViewSpread = smokePixelSpread(lowFarViewProbe.pixels);
+        const std::uint64_t cameraDifference =
+            smokePixelDifference(probes.front().pixels, probes[1].pixels);
+        const std::uint64_t highViewDifference =
+            smokePixelDifference(probes.front().pixels, highViewProbe.pixels);
+        if (firstSpread < kMinimumVisibleGridSpread || secondSpread < kMinimumVisibleGridSpread ||
+            highViewSpread < kMinimumVisibleGridSpread ||
+            lowFarViewSpread < kMinimumVisibleGridSpread ||
+            cameraDifference < kMinimumCameraDifference ||
+            highViewDifference < kMinimumCameraDifference) {
+            asharia::logError(
+                "RenderView grid readback smoke did not observe enough grid/camera pixel "
+                "difference: spread A " +
+                std::to_string(firstSpread) + ", spread B " + std::to_string(secondSpread) +
+                ", high-view spread " + std::to_string(highViewSpread) + ", low-far-view spread " +
+                std::to_string(lowFarViewSpread) + ", camera difference " +
+                std::to_string(cameraDifference) + ", high-view difference " +
+                std::to_string(highViewDifference) + ".");
+            return false;
+        }
+
+        std::cout << "RenderView grid readback: " << kSmokeGridReadbackExtent.width << 'x'
+                  << kSmokeGridReadbackExtent.height << ", spread A " << firstSpread
+                  << ", spread B " << secondSpread << ", high-view spread " << highViewSpread
+                  << ", low-far-view spread " << lowFarViewSpread << ", camera difference "
+                  << cameraDifference << ", high-view difference " << highViewDifference << '\n';
+        return true;
+    }
+
+    int runSmokeRenderViewGridReadback() {
+        auto glfw = asharia::GlfwInstance::create();
+        if (!glfw) {
+            asharia::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            asharia::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine RenderView Grid Readback Smoke"});
+        if (!window) {
+            asharia::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine RenderView Grid Readback Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
+                },
+            .debugLabels = kSmokeDebugLabels,
+        };
+
+        auto context = asharia::VulkanContext::create(contextDesc);
+        if (!context) {
+            asharia::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        asharia::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.0F, 0.0F, 0.0F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            asharia::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto renderer = asharia::BasicFullscreenTextureRenderer::create(
+            asharia::BasicFullscreenTextureRendererDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+            });
+        if (!renderer) {
+            asharia::logError(renderer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        std::array<SmokeRenderViewGridReadbackProbe, kSmokeGridReadbackProbeCount> probes;
+        for (SmokeRenderViewGridReadbackProbe& probe : probes) {
+            auto createdProbe = createSmokeRenderViewGridReadbackProbe(*context);
+            if (!createdProbe) {
+                asharia::logError(createdProbe.error().message);
+                return EXIT_FAILURE;
+            }
+            probe = std::move(*createdProbe);
+        }
+
+        const std::array cameras{
+            smokeGridCamera({0.0F, 2.0F, -6.0F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
+            smokeGridCamera({2.8F, 2.4F, -4.2F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
+            smokeGridCamera({0.0F, 180.0F, -180.0F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
+            smokeGridCamera({120.0F, 2.2F, -120.0F}, {0.0F, 0.0F, 0.0F}, kSmokeGridReadbackExtent),
+        };
+
+        std::uint64_t frameIndex = 1;
+        auto camera = cameras.begin();
+        for (SmokeRenderViewGridReadbackProbe& probe : probes) {
+            asharia::GlfwWindow::pollEvents();
+            const auto currentFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+
+            auto status =
+                frameLoop->renderFrame([&context, &renderer, &probe, &camera, frameIndex](
+                                           const asharia::VulkanFrameRecordContext& recordContext)
+                                           -> asharia::Result<asharia::VulkanFrameRecordResult> {
+                    return recordSmokeRenderViewGridReadbackFrame(
+                        recordContext, *context, *renderer, probe, *camera, frameIndex);
+                });
+            if (!status) {
+                asharia::logError(status.error().message);
+                return EXIT_FAILURE;
+            }
+            if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+                asharia::logError(
+                    "Swapchain remained out of date during RenderView grid readback smoke.");
+                return EXIT_FAILURE;
+            }
+            ++camera;
+            ++frameIndex;
+        }
+
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            asharia::logError("Failed to wait for Vulkan queue before RenderView grid readback: " +
+                              asharia::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
+        if (!readSmokeRenderViewGridReadbackProbes(probes)) {
+            return EXIT_FAILURE;
+        }
+        if (!validateSmokeRenderViewGridPixels(std::span{probes})) {
+            return EXIT_FAILURE;
+        }
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
     int runSmokeFullscreenTexture() {
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
@@ -2916,14 +3761,18 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        SmokeFullscreenTextureState smokeState;
         for (int frame = 0; frame < 3; ++frame) {
             asharia::GlfwWindow::pollEvents();
             const auto currentFramebuffer = window->framebufferExtent();
             frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
 
             auto status = frameLoop->renderFrame(
-                [&renderer](const asharia::VulkanFrameRecordContext& recordContext) {
-                    return renderer->recordFrame(recordContext);
+                [&renderer, &smokeState,
+                 frame](const asharia::VulkanFrameRecordContext& recordContext)
+                    -> asharia::Result<asharia::VulkanFrameRecordResult> {
+                    return recordSmokeFullscreenTextureFrame(
+                        recordContext, *renderer, smokeState, frame);
                 });
             if (!status) {
                 asharia::logError(status.error().message);
@@ -2939,15 +3788,24 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
+        if (!validateFullscreenTextureOverlayDiagnostics(smokeState.overlayDiagnostics,
+                                                         smokeState.overlayDiagnosticsRecorded)) {
+            return EXIT_FAILURE;
+        }
+        if (!smokeState.invalidSceneInputRejected) {
+            asharia::logError("Fullscreen texture smoke did not reject invalid scene input.");
+            return EXIT_FAILURE;
+        }
+
         if (!validatePipelineCacheStats(renderer->pipelineCacheStats(),
                                         "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                              "Fullscreen texture smoke", 2)) {
+                                              "Fullscreen texture smoke", 32)) {
             return EXIT_FAILURE;
         }
-        if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Fullscreen texture smoke")) {
+        if (!validateBufferUploadStats(renderer->bufferStats(), 2, "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Fullscreen texture smoke")) {
@@ -3090,7 +3948,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                              "Offscreen viewport smoke", 2)) {
+                                              "Offscreen viewport smoke", 32)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Offscreen viewport smoke")) {
@@ -3363,6 +4221,109 @@ namespace {
         return true;
     }
 
+    bool validateSmokeRenderGraphDiagnostics(const asharia::RenderGraph& graph,
+                                             const asharia::RenderGraphCompileResult& compiled) {
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(compiled);
+        if (snapshot.declaredPassCount != 6 || snapshot.declaredImageCount != 3 ||
+            snapshot.declaredBufferCount != 0 || snapshot.passes.size() != 6 ||
+            snapshot.commands.size() != 9 || snapshot.resources.size() != 3 ||
+            snapshot.accessEdges.size() != 6 || snapshot.dependencyEdges.size() != 3 ||
+            snapshot.transitions.size() != 7 || snapshot.transientImages.size() != 1 ||
+            !snapshot.transientBuffers.empty() || !snapshot.culledPasses.empty()) {
+            asharia::logError("Render graph diagnostics snapshot produced unexpected counts.");
+            return false;
+        }
+        if (snapshot.passes[4].name != "WriteTransientColor" ||
+            snapshot.passes[4].declarationIndex != 5 ||
+            snapshot.passes[5].name != "SampleTransientColor" ||
+            snapshot.passes[5].declarationIndex != 4) {
+            asharia::logError(
+                "Render graph diagnostics snapshot did not preserve compiled pass order.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsCommandNode& clearCommand = snapshot.commands.front();
+        if (clearCommand.passIndex != 0 || clearCommand.declarationIndex != 0 ||
+            clearCommand.commandIndex != 0 || clearCommand.passName != "ClearColor" ||
+            clearCommand.kind != asharia::RenderGraphCommandKind::ClearColor ||
+            clearCommand.detail.find("target") == std::string::npos) {
+            asharia::logError("Render graph diagnostics snapshot missed the clear command node.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsCommandNode& sampleShaderCommand =
+            snapshot.commands[1];
+        if (sampleShaderCommand.passIndex != 1 || sampleShaderCommand.declarationIndex != 1 ||
+            sampleShaderCommand.commandIndex != 0 ||
+            sampleShaderCommand.passName != "SampleColor" ||
+            sampleShaderCommand.kind != asharia::RenderGraphCommandKind::SetShader ||
+            sampleShaderCommand.detail != "Hidden/SmokeSample -> Fragment") {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the sample shader command node.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsCommandNode& transientDrawCommand =
+            snapshot.commands.back();
+        if (transientDrawCommand.passIndex != 5 || transientDrawCommand.declarationIndex != 4 ||
+            transientDrawCommand.commandIndex != 3 ||
+            transientDrawCommand.passName != "SampleTransientColor" ||
+            transientDrawCommand.kind != asharia::RenderGraphCommandKind::DrawFullscreenTriangle ||
+            transientDrawCommand.detail != "-") {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the transient draw command node.");
+            return false;
+        }
+
+        bool foundTransientReadEdge = false;
+        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+            if (edge.passName == "SampleTransientColor" && edge.resourceName == "TransientColor" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::ShaderRead &&
+                edge.shaderStage == asharia::RenderGraphShaderStage::Fragment) {
+                foundTransientReadEdge = true;
+            }
+        }
+        if (!foundTransientReadEdge) {
+            asharia::logError("Render graph diagnostics snapshot missed a transient read edge.");
+            return false;
+        }
+
+        bool foundTransientDependency = false;
+        for (const asharia::RenderGraphDiagnosticsDependencyEdge& edge : snapshot.dependencyEdges) {
+            if (edge.fromPassIndex == 4 && edge.toPassIndex == 5 &&
+                edge.fromDeclarationIndex == 5 && edge.toDeclarationIndex == 4 &&
+                edge.resourceName == "TransientColor" && edge.reason == "producer read") {
+                foundTransientDependency = true;
+            }
+        }
+        if (!foundTransientDependency) {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the transient dependency edge.");
+            return false;
+        }
+
+        bool foundFinalBackbufferTransition = false;
+        for (const asharia::RenderGraphDiagnosticsTransition& transition : snapshot.transitions) {
+            if (transition.phase == asharia::RenderGraphDiagnosticsTransitionPhase::Final &&
+                transition.resourceName == "Backbuffer" &&
+                transition.oldImageAccess.state == asharia::RenderGraphImageState::ShaderRead &&
+                transition.oldImageAccess.shaderStage ==
+                    asharia::RenderGraphShaderStage::Fragment &&
+                transition.newImageAccess.state == asharia::RenderGraphImageState::Present) {
+                foundFinalBackbufferTransition = true;
+            }
+        }
+        if (!foundFinalBackbufferTransition) {
+            asharia::logError(
+                "Render graph diagnostics snapshot missed the final backbuffer transition.");
+            return false;
+        }
+
+        return true;
+    }
+
     bool validateSmokeRenderGraphCommands(const asharia::RenderGraphCompileResult& compiled) {
         if (compiled.passes.size() != 6) {
             asharia::logError("Render graph command smoke received an unexpected pass count.");
@@ -3625,9 +4586,14 @@ namespace {
         RasterMesh3D,
         RasterMrt,
         RasterFullscreen,
+        RenderViewWorldGrid,
+        RenderViewSceneInputs,
+        RenderViewOverlay,
         RasterDrawList,
         ComputeDispatch,
         ComputeReadback,
+        TransferFillBuffer,
+        DebugImageCopy,
     };
 
     struct BuiltinSchemaSmokeCase {
@@ -3721,66 +4687,111 @@ namespace {
         };
     }
 
+    void writeTransferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                        std::string_view omittedSlot, std::string_view slot,
+                                        asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.writeTransfer(std::string{slot}, image);
+        }
+    }
+
+    void readTransferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                       std::string_view omittedSlot, std::string_view slot,
+                                       asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.readTransfer(std::string{slot}, image);
+        }
+    }
+
+    void writeColorSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                     std::string_view omittedSlot, std::string_view slot,
+                                     asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.writeColor(std::string{slot}, image);
+        }
+    }
+
+    void readTextureSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                      std::string_view omittedSlot, std::string_view slot,
+                                      asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.readTexture(std::string{slot}, image, asharia::RenderGraphShaderStage::Fragment);
+        }
+    }
+
+    void writeDepthSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                     std::string_view omittedSlot, std::string_view slot,
+                                     asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.writeDepth(std::string{slot}, image);
+        }
+    }
+
+    void readWriteStorageBufferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                                 std::string_view omittedSlot,
+                                                 std::string_view slot,
+                                                 asharia::RenderGraphBufferHandle buffer) {
+        if (omittedSlot != slot) {
+            pass.readWriteStorageBuffer(std::string{slot}, buffer,
+                                        asharia::RenderGraphShaderStage::Compute);
+        }
+    }
+
+    void writeBufferSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                      std::string_view omittedSlot, std::string_view slot,
+                                      asharia::RenderGraphBufferHandle buffer) {
+        if (omittedSlot != slot) {
+            pass.writeBuffer(std::string{slot}, buffer);
+        }
+    }
+
     void addBuiltinSchemaSmokeSlots(BuiltinSchemaSmokePass passKind,
                                     asharia::RenderGraph::PassBuilder& pass,
                                     BuiltinSchemaSmokeImages images,
                                     std::string_view omittedSlot = {}) {
         switch (passKind) {
         case BuiltinSchemaSmokePass::TransferClear:
-            if (omittedSlot != "target") {
-                pass.writeTransfer("target", images.colorTarget);
-            }
+            writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::DynamicClear:
         case BuiltinSchemaSmokePass::RasterTriangle:
-            if (omittedSlot != "target") {
-                pass.writeColor("target", images.colorTarget);
-            }
+        case BuiltinSchemaSmokePass::RenderViewWorldGrid:
+        case BuiltinSchemaSmokePass::RenderViewOverlay:
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            break;
+        case BuiltinSchemaSmokePass::RenderViewSceneInputs:
             break;
         case BuiltinSchemaSmokePass::TransientPresent:
-            if (omittedSlot != "source") {
-                pass.readTexture("source", images.colorSource,
-                                 asharia::RenderGraphShaderStage::Fragment);
-            }
-            if (omittedSlot != "target") {
-                pass.writeTransfer("target", images.colorTarget);
-            }
+            readTextureSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
+            writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::RasterDepthTriangle:
         case BuiltinSchemaSmokePass::RasterMesh3D:
         case BuiltinSchemaSmokePass::RasterDrawList:
-            if (omittedSlot != "target") {
-                pass.writeColor("target", images.colorTarget);
-            }
-            if (omittedSlot != "depth") {
-                pass.writeDepth("depth", images.depthTarget);
-            }
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            writeDepthSlotUnlessOmitted(pass, omittedSlot, "depth", images.depthTarget);
             break;
         case BuiltinSchemaSmokePass::RasterMrt:
-            if (omittedSlot != "color0") {
-                pass.writeColor("color0", images.colorTarget);
-            }
-            if (omittedSlot != "color1") {
-                pass.writeColor("color1", images.colorTarget1);
-            }
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "color0", images.colorTarget);
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "color1", images.colorTarget1);
             break;
         case BuiltinSchemaSmokePass::RasterFullscreen:
-            if (omittedSlot != "source") {
-                pass.readTexture("source", images.colorSource,
-                                 asharia::RenderGraphShaderStage::Fragment);
-            }
-            if (omittedSlot != "target") {
-                pass.writeColor("target", images.colorTarget);
-            }
+            readTextureSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::ComputeDispatch:
-            if (omittedSlot != "target") {
-                pass.readWriteStorageBuffer("target", images.storageTarget,
-                                            asharia::RenderGraphShaderStage::Compute);
-            }
+            readWriteStorageBufferSlotUnlessOmitted(pass, omittedSlot, "target",
+                                                    images.storageTarget);
             break;
         case BuiltinSchemaSmokePass::ComputeReadback:
             addBuiltinComputeReadbackSmokeSlots(pass, images, omittedSlot);
+            break;
+        case BuiltinSchemaSmokePass::TransferFillBuffer:
+            writeBufferSlotUnlessOmitted(pass, omittedSlot, "target", images.storageTarget);
+            break;
+        case BuiltinSchemaSmokePass::DebugImageCopy:
+            readTransferSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
+            writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         }
     }
@@ -3803,18 +4814,20 @@ namespace {
 
     bool validateBuiltinSchemaSmokeCase(const asharia::RenderGraphSchemaRegistry& builtinSchemas,
                                         const BuiltinSchemaSmokeCase& testCase) {
-        if (!expectRenderGraphCompileFailure(
-                compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
-                                              BuiltinSchemaSmokeCompileOptions{
-                                                  .paramsType = testCase.paramsType,
-                                                  .omittedSlot = testCase.missingSlot,
-                                                  .addUnexpectedSlot = false,
-                                              }),
-                ExpectedRenderGraphCompileFailure{
-                    .message = "is missing required slot",
-                    .context = testCase.context,
-                })) {
-            return false;
+        if (!testCase.missingSlot.empty()) {
+            if (!expectRenderGraphCompileFailure(
+                    compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
+                                                  BuiltinSchemaSmokeCompileOptions{
+                                                      .paramsType = testCase.paramsType,
+                                                      .omittedSlot = testCase.missingSlot,
+                                                      .addUnexpectedSlot = false,
+                                                  }),
+                    ExpectedRenderGraphCompileFailure{
+                        .message = "is missing required slot",
+                        .context = testCase.context,
+                    })) {
+                return false;
+            }
         }
         if (!expectRenderGraphCompileFailure(
                 compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
@@ -3907,6 +4920,27 @@ namespace {
                 .context = "builtin raster fullscreen",
             },
             BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RenderViewWorldGrid,
+                .type = asharia::kBasicRenderViewWorldGridPassType,
+                .paramsType = asharia::kBasicRenderViewWorldGridParamsType,
+                .missingSlot = "target",
+                .context = "builtin render view world grid",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RenderViewSceneInputs,
+                .type = asharia::kBasicRenderViewSceneInputsPassType,
+                .paramsType = asharia::kBasicRenderViewSceneInputsParamsType,
+                .missingSlot = {},
+                .context = "builtin render view scene inputs",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::RenderViewOverlay,
+                .type = asharia::kBasicRenderViewOverlayPassType,
+                .paramsType = asharia::kBasicRenderViewOverlayParamsType,
+                .missingSlot = "target",
+                .context = "builtin render view overlay",
+            },
+            BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RasterDrawList,
                 .type = asharia::kBasicRasterDrawListPassType,
                 .paramsType = asharia::kBasicRasterDrawListParamsType,
@@ -3926,6 +4960,20 @@ namespace {
                 .paramsType = {},
                 .missingSlot = "source",
                 .context = "builtin compute readback",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::TransferFillBuffer,
+                .type = asharia::kBasicTransferFillBufferPassType,
+                .paramsType = asharia::kBasicTransferFillBufferParamsType,
+                .missingSlot = "target",
+                .context = "builtin transfer fill buffer",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::DebugImageCopy,
+                .type = asharia::kBasicDebugImageCopyPassType,
+                .paramsType = {},
+                .missingSlot = "source",
+                .context = "builtin debug image copy",
             },
         };
 
@@ -4379,10 +5427,11 @@ namespace {
 
     bool validateSmokeRenderGraphCompute(const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph computeGraph;
-        const auto storageBuffer = computeGraph.createTransientBuffer(asharia::RenderGraphBufferDesc{
-            .name = "ComputeStorageBuffer",
-            .byteSize = 4096,
-        });
+        const auto storageBuffer =
+            computeGraph.createTransientBuffer(asharia::RenderGraphBufferDesc{
+                .name = "ComputeStorageBuffer",
+                .byteSize = 4096,
+            });
         const auto readbackBuffer = computeGraph.importBuffer(asharia::RenderGraphBufferDesc{
             .name = "ComputeReadbackBuffer",
             .byteSize = 4096,
@@ -4396,24 +5445,29 @@ namespace {
         computeGraph.addPass("SeedComputeStorage", "basic.buffer-transfer-write")
             .setParamsType("basic.buffer-transfer-write.params")
             .writeBuffer("target", storageBuffer)
-            .execute(
-                [&seedCallbackCount](asharia::RenderGraphPassContext context) -> asharia::Result<void> {
-                    if (context.name != "SeedComputeStorage" ||
-                        context.bufferWrites.size() != 1 ||
-                        !context.bufferTransferReads.empty() ||
-                        !context.bufferStorageReadWrites.empty() ||
-                        context.bufferTransitionsBefore.size() != 1 ||
-                        context.bufferTransitionsBefore.front().newState !=
-                            asharia::RenderGraphBufferState::TransferWrite) {
-                        return std::unexpected{asharia::Error{
-                            asharia::ErrorDomain::RenderGraph,
-                            0,
-                            "Render graph compute seed executor received unexpected context.",
-                        }};
-                    }
-                    ++seedCallbackCount;
-                    return {};
-                });
+            .recordCommands(
+                [](asharia::RenderGraphCommandList& commands) { commands.fillBuffer("target", 0); })
+            .execute([&seedCallbackCount](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                if (context.name != "SeedComputeStorage" || context.bufferWrites.size() != 1 ||
+                    !context.bufferTransferReads.empty() ||
+                    !context.bufferStorageReadWrites.empty() ||
+                    context.bufferTransitionsBefore.size() != 1 ||
+                    context.bufferTransitionsBefore.front().newState !=
+                        asharia::RenderGraphBufferState::TransferWrite ||
+                    context.commands.size() != 1 ||
+                    context.commands.front().kind != asharia::RenderGraphCommandKind::FillBuffer ||
+                    context.commands.front().name != "target" ||
+                    context.commands.front().uintValues[0] != 0) {
+                    return std::unexpected{asharia::Error{
+                        asharia::ErrorDomain::RenderGraph,
+                        0,
+                        "Render graph compute seed executor received unexpected context.",
+                    }};
+                }
+                ++seedCallbackCount;
+                return {};
+            });
         computeGraph.addPass("ComputeDispatch", "basic.compute-dispatch")
             .setParamsType("basic.compute-dispatch.params")
             .readWriteStorageBuffer("target", storageBuffer,
@@ -4423,12 +5477,10 @@ namespace {
             })
             .execute([&dispatchCallbackCount](
                          asharia::RenderGraphPassContext context) -> asharia::Result<void> {
-                if (context.name != "ComputeDispatch" ||
-                    context.type != "basic.compute-dispatch" ||
+                if (context.name != "ComputeDispatch" || context.type != "basic.compute-dispatch" ||
                     context.paramsType != "basic.compute-dispatch.params" ||
                     !context.bufferReads.empty() || !context.bufferTransferReads.empty() ||
-                    !context.bufferWrites.empty() ||
-                    context.bufferStorageReadWrites.size() != 1 ||
+                    !context.bufferWrites.empty() || context.bufferStorageReadWrites.size() != 1 ||
                     context.bufferStorageReadWriteSlots.size() != 1 ||
                     context.bufferStorageReadWriteSlots.front().name != "target" ||
                     context.bufferStorageReadWriteSlots.front().shaderStage !=
@@ -4484,6 +5536,9 @@ namespace {
             return false;
         }
         if (compiled->passes.size() != 3 || compiled->passes[0].name != "SeedComputeStorage" ||
+            compiled->passes[0].commands.size() != 1 ||
+            compiled->passes[0].commands.front().kind !=
+                asharia::RenderGraphCommandKind::FillBuffer ||
             compiled->passes[1].name != "ComputeDispatch" ||
             compiled->passes[2].name != "ComputeReadbackCopy" ||
             compiled->dependencies.size() != 2 || compiled->transientBuffers.size() != 1 ||
@@ -4532,8 +5587,7 @@ namespace {
             asharia::logError(executed.error().message);
             return false;
         }
-        if (seedCallbackCount != 1 || dispatchCallbackCount != 1 ||
-            readbackCallbackCount != 1) {
+        if (seedCallbackCount != 1 || dispatchCallbackCount != 1 || readbackCallbackCount != 1) {
             asharia::logError("Render graph compute dispatch smoke invoked unexpected callbacks.");
             return false;
         }
@@ -4777,6 +5831,176 @@ namespace {
                                                });
     }
 
+    bool validateSmokeRenderGraphImageCopy(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto copySource = graph.createTransientImage(asharia::RenderGraphImageDesc{
+            .name = "CopySource",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+        });
+        const auto copyTarget = graph.importImage(asharia::RenderGraphImageDesc{
+            .name = "CopyTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+
+        graph.addPass("CopyImage", "basic.image-copy")
+            .readTransfer("source", copySource)
+            .writeTransfer("target", copyTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImage("source", "target");
+            });
+        graph.addPass("WriteCopySource", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", copySource);
+
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            asharia::logError(compiled.error().message);
+            return false;
+        }
+        if (compiled->passes.size() != 2 || compiled->passes[0].name != "WriteCopySource" ||
+            compiled->passes[1].name != "CopyImage" || compiled->dependencies.size() != 1) {
+            asharia::logError("Render graph image copy smoke produced an unexpected pass plan.");
+            return false;
+        }
+
+        const asharia::RenderGraphCompiledPass& copyPass = compiled->passes[1];
+        if (copyPass.commands.size() != 1 ||
+            copyPass.commands.front().kind != asharia::RenderGraphCommandKind::CopyImage ||
+            copyPass.commands.front().name != "source" ||
+            copyPass.commands.front().secondaryName != "target" ||
+            copyPass.transferReadSlots.size() != 1 || copyPass.transferWriteSlots.size() != 1) {
+            asharia::logError("Render graph image copy smoke lost command or slot metadata.");
+            return false;
+        }
+
+        bool foundTransferSrcTransition = false;
+        for (const asharia::RenderGraphImageTransition& transition : copyPass.transitionsBefore) {
+            if (transition.image == copySource &&
+                transition.oldState == asharia::RenderGraphImageState::ColorAttachment &&
+                transition.newState == asharia::RenderGraphImageState::TransferSrc) {
+                foundTransferSrcTransition = true;
+            }
+        }
+        if (!foundTransferSrcTransition) {
+            asharia::logError("Render graph image copy smoke missed the TransferSrc transition.");
+            return false;
+        }
+
+        const auto vulkanCopySourceTransition =
+            asharia::vulkanImageTransition(copyPass.transitionsBefore.front());
+        if (vulkanCopySourceTransition.newLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ||
+            vulkanCopySourceTransition.dstStageMask != VK_PIPELINE_STAGE_2_TRANSFER_BIT ||
+            vulkanCopySourceTransition.dstAccessMask != VK_ACCESS_2_TRANSFER_READ_BIT) {
+            asharia::logError("Render graph image copy Vulkan mapping was unexpected.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(*compiled);
+        bool foundTransferReadEdge = false;
+        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+            if (edge.passName == "CopyImage" && edge.resourceName == "CopySource" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::TransferRead) {
+                foundTransferReadEdge = true;
+            }
+        }
+        if (!foundTransferReadEdge) {
+            asharia::logError("Render graph image copy diagnostics missed TransferRead.");
+            return false;
+        }
+
+        asharia::RenderGraph missingSlotGraph;
+        const auto missingSource =
+            missingSlotGraph.createTransientImage(asharia::RenderGraphImageDesc{
+                .name = "MissingCopySource",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            });
+        const auto missingTarget = missingSlotGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "MissingCopyTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+        missingSlotGraph.addPass("WriteMissingCopySource", "basic.transient-color")
+            .setParamsType("basic.transient-color.params")
+            .writeColor("target", missingSource);
+        missingSlotGraph.addPass("CopyMissingSource", "basic.image-copy")
+            .writeTransfer("target", missingTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImage("source", "target");
+            });
+        if (!expectRenderGraphCompileFailure(missingSlotGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "is missing required slot",
+                                                 .context = "image copy missing source slot",
+                                             })) {
+            return false;
+        }
+
+        asharia::RenderGraph invalidSlotGraph;
+        const auto invalidSource = invalidSlotGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCopySource",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::TransferSrc,
+            .finalState = asharia::RenderGraphImageState::TransferSrc,
+        });
+        const auto invalidTarget = invalidSlotGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCopyTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+        invalidSlotGraph.addPass("CopyInvalidSlot", "basic.image-copy")
+            .readTransfer("unexpected", invalidSource)
+            .writeTransfer("target", invalidTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImage("source", "target");
+            });
+        if (!expectRenderGraphCompileFailure(invalidSlotGraph.compile(schemas),
+                                             ExpectedRenderGraphCompileFailure{
+                                                 .message = "that is not allowed by schema",
+                                                 .context = "image copy invalid slot",
+                                             })) {
+            return false;
+        }
+
+        asharia::RenderGraph invalidCommandGraph;
+        const auto commandSource = invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCommandSource",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::TransferSrc,
+            .finalState = asharia::RenderGraphImageState::TransferSrc,
+        });
+        const auto commandTarget = invalidCommandGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "InvalidCommandTarget",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+        invalidCommandGraph.addPass("CopyInvalidCommand", "basic.image-copy")
+            .readTransfer("source", commandSource)
+            .writeTransfer("target", commandTarget)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.clearColor("target", std::array{0.0F, 0.0F, 0.0F, 1.0F});
+            });
+        return expectRenderGraphCompileFailure(invalidCommandGraph.compile(schemas),
+                                               ExpectedRenderGraphCompileFailure{
+                                                   .message = "is not allowed by schema",
+                                                   .context = "image copy invalid command",
+                                               });
+    }
+
     int runSmokeRenderGraph() {
         asharia::RenderGraph graph;
         const auto backbuffer = graph.importImage(asharia::RenderGraphImageDesc{
@@ -4933,6 +6157,26 @@ namespace {
                 },
         });
         schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "basic.image-copy",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::TransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::TransferWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyImage},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.cycle-read-write",
             .paramsType = "basic.cycle-read-write.params",
             .resourceSlots =
@@ -4972,7 +6216,7 @@ namespace {
                         .optional = false,
                     },
                 },
-            .allowedCommands = {},
+            .allowedCommands = {asharia::RenderGraphCommandKind::FillBuffer},
         });
         schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = "basic.buffer-read-fragment",
@@ -5069,6 +6313,10 @@ namespace {
             return EXIT_FAILURE;
         }
 
+        if (!validateSmokeRenderGraphDiagnostics(graph, *compiled)) {
+            return EXIT_FAILURE;
+        }
+
         if (!validateSmokeRenderGraphCommands(*compiled)) {
             return EXIT_FAILURE;
         }
@@ -5090,6 +6338,10 @@ namespace {
         }
 
         if (!validateSmokeRenderGraphBuffers(schemas)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!validateSmokeRenderGraphImageCopy(schemas)) {
             return EXIT_FAILURE;
         }
 
@@ -5180,8 +6432,12 @@ namespace {
             SmokeCommand{.option = "--smoke-draw-list", .run = runSmokeDrawList},
             SmokeCommand{.option = "--smoke-descriptor-layout", .run = runSmokeDescriptorLayout},
             SmokeCommand{.option = "--smoke-fullscreen-texture", .run = runSmokeFullscreenTexture},
+            SmokeCommand{.option = "--smoke-render-view-grid-readback",
+                         .run = runSmokeRenderViewGridReadback},
             SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},
             SmokeCommand{.option = "--smoke-compute-dispatch", .run = runSmokeComputeDispatch},
+            SmokeCommand{.option = "--smoke-renderer-format-contract",
+                         .run = runSmokeRendererFormatContract},
             SmokeCommand{.option = "--smoke-deferred-deletion", .run = runSmokeDeferredDeletion},
             SmokeCommand{.option = "--smoke-reflection-registry",
                          .run = runSmokeReflectionRegistry},

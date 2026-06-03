@@ -156,7 +156,7 @@ enum class ScriptExecutionKind {
 struct ScriptExecutionContext {
     ScriptExecutionKind kind;
     WorldId world;
-    EditorContext* editor;
+    EditorScriptServices* editor;
     AssetDatabaseView* assets;
     FrameTime time;
     PermissionSet permissions;
@@ -165,7 +165,8 @@ struct ScriptExecutionContext {
 
 技术点：
 
-- `EditorContext*` 只能在 editor context 非空；runtime host 不能构造 editor context。
+- `EditorScriptServices*` 只能在 editor host 中非空；它应暴露 command/transaction/capability services，
+  不能重新聚合为完整 editor app context。
 - `PermissionSet` 第一版可以只做枚举检查，后续再加强 sandbox。
 - `WorldId` 区分 Edit World、Play World、Preview World。
 - Context 必须进入 diagnostic，便于错误定位。

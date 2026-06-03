@@ -5,9 +5,21 @@
 
 #include "asharia/core/error.hpp"
 
-#include "editor_context.hpp"
+#include "editor_event.hpp"
 
 namespace asharia::editor {
+
+    EditorActionInvokeContext makeEditorActionInvokeContext(EditorActionServices& services) {
+        return EditorActionInvokeContext{
+            .eventQueue = services.eventQueue,
+            .actions =
+                {
+                    .panels = services.panels,
+                    .frameDebugger = services.frameDebugger,
+                    .workspace = services.workspace,
+                },
+        };
+    }
 
     asharia::VoidResult EditorActionRegistry::registerAction(EditorActionDesc desc,
                                                              EditorActionCallback callback) {
@@ -41,17 +53,18 @@ namespace asharia::editor {
         return {};
     }
 
-    bool EditorActionRegistry::invoke(std::string_view actionId, EditorContext& context) {
+    bool EditorActionRegistry::invoke(std::string_view actionId,
+                                      EditorActionInvokeContext context) {
         ActionEntry* entry = findActionEntry(actionId);
         if (entry == nullptr || !entry->desc.enabled || !entry->callback) {
             return false;
         }
 
-        context.eventQueue().push(EditorEvent{
+        context.eventQueue.push(EditorEvent{
             .kind = EditorEventKind::ActionInvoked,
             .sourceId = EditorId{.value = entry->desc.id.value},
         });
-        entry->callback(context);
+        entry->callback(context.actions);
         ++entry->invokeCount;
         return true;
     }

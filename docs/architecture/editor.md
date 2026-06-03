@@ -1,11 +1,12 @@
 # Editor 架构
 
-更新日期：2026-05-20
+更新日期：2026-06-02
 
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
 integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
 阶段拆分见 `docs/planning/editor-development-plan.md`；脚本扩展和 C++/脚本协作边界见
-`docs/architecture/editor-ui-scripting.md`。
+`docs/architecture/editor-ui-scripting.md`；工具、插件、viewport overlay 和 hot reload 的后续 contract 见
+`docs/architecture/editor-extension-architecture.md`。
 
 ## 目的
 
@@ -35,6 +36,8 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 - `asharia::window_glfw`
 - `asharia::rhi_vulkan`
 - `asharia::renderer_basic_vulkan`
+- `asharia::archive`
+- `asharia::shader_slang`
 - `imgui::imgui`
 - ImGui GLFW/Vulkan backend source files from the Conan ImGui package
 
@@ -48,18 +51,28 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 
 | 模块 | 拥有 | 不能拥有 |
 | --- | --- | --- |
-| `editor_app` | startup、window/context/frame-loop wiring、main editor loop、frame order、smoke modes、shutdown order | panel widget details becoming feature-specific renderer logic |
-| `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle | panel registry、editor state、viewport target ownership |
-| `imgui_editor_shell` | dockspace、main menu、action menu binding | renderer command recording、panel object ownership |
+| `editor_i18n` | editor-local text catalog, locale selection and stable ImGui label formatting | runtime localization, asset text localization or renderer-facing strings |
+| `editor_ui` | small editor-local ImGui style primitives, built-in editor theme tokens and component preview helpers used by panels | a generic UI framework or runtime-facing widget abstraction |
+| `editor_settings` | editor-local user settings persistence plus runtime editor locale/theme switching | scene data, asset import settings or runtime/game configuration |
+| `editor_app_config` | editor run paths, smoke layout/settings isolation, i18n resource directory and locale environment parsing | service aggregation, panel registry ownership or GPU/window lifecycle |
+| `editor_vulkan_host` | editor window renderability wait, Vulkan context/frame-loop creation, swapchain extent readiness and one-frame RenderView/ImGui submission glue | panel registry ownership、action dispatch、persistent editor state or generic RHI abstraction |
+| `editor_loop_host` | main editor loop, per-frame frame-context construction, ImGui frame begin/end order, input/shortcut routing and smoke loop state | app service lifetime、window/GPU object creation、shutdown order or broad service aggregation |
+| `editor_shell_host` | per-frame shell capability context adaptation and panel draw dispatch | app service lifetime、renderer command recording、persistent editor state or broad service aggregation |
+| `editor_app` | startup orchestration、service lifetime、startup smoke gates and shutdown order | main loop internals、shell capability adaptation、panel widget details becoming feature-specific renderer logic、low-level Vulkan frame submission helpers |
+| `imgui_runtime` | ImGui context、GLFW backend、Vulkan backend lifecycle and the editor ImGui fragment shader contract | panel registry、editor state、viewport target ownership |
+| `editor_workspace` | active editor workspace preset, dock slot list, layout reset request state | ImGui DockBuilder calls, saved scene/layout data, panel widget drawing |
+| `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
+| `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
+| `editor_tool_manager` | editor-local active tool state, per-viewport primary tool selection and activate/deactivate lifecycle | renderer pass policy, Vulkan resources, panel factories or persistent scene/asset mutation |
+| `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
-| `editor_action` | action descriptor、enabled state、callback invocation、stable action ids | command transaction semantics before transaction exists |
+| `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
-| `editor_context` | references to current editor services passed to actions | GPU resources、long-lived document ownership |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
-| `editor_viewport` | backend-neutral viewport request/result structs and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
-| `editor_viewport_coordinator` | viewport request collection、RenderView recording bridge、pending/presented/retired viewport targets | panel widgets、ImGui backend lifecycle |
-| `imgui_texture_registry` | `ImTextureID` / descriptor registration and delayed descriptor retirement | `VulkanRenderTarget`、`VkImage`、`VkImageView` ownership |
+| `editor_viewport` | backend-neutral viewport request/result structs、Scene/debug viewport flags and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
+| `editor_viewport_coordinator` | viewport request collection、Scene-only flag filtering、explicit Game debug flag retention、RenderView recording bridge、pending/presented/retired viewport targets | panel widgets、ImGui backend lifecycle |
+| `imgui_texture_registry` | `ImTextureID` / descriptor registration、Scene View flag metadata and delayed descriptor retirement | `VulkanRenderTarget`、`VkImage`、`VkImageView` ownership |
 | `panels/*` | concrete ImGui panel controls | Vulkan commands、descriptor registration、renderer resource lifetime |
 
 ## 数据流
@@ -74,6 +87,7 @@ main()
     GlfwWindow::create()
     VulkanContext::create(required GLFW extensions)
     VulkanFrameLoop::create(context, framebuffer extent)
+    load editor i18n catalog and editor settings
     ImGuiRuntime::create(window, context, frameLoop)
     BasicFullscreenTextureRenderer::create()
     EditorViewportCoordinator::create(context)
@@ -125,19 +139,27 @@ fences and completed frame epochs.
 ```text
 SceneViewPanel::draw()
   compute content extent
-  viewportHost.requestViewport(EditorViewportRequest)
+  viewportHost.requestViewport(EditorViewportRequest with overlay flags)
   viewportHost.acquireViewportTextureForDraw(panel id)
   ImGui::Image(ImTextureID) if a completed texture exists
 
 EditorViewportCoordinator::recordRequestedViews()
+  keep effective viewport flags as view-local render intent
   ensure or reuse VulkanRenderTarget for requested extent
+  map editor flags to BasicRenderViewDesc view/camera/frame/overlay contract
   BasicFullscreenTextureRenderer::recordViewFrame()
-  ImGuiTextureRegistry::registerOrUpdate(sampled texture view)
+  ImGuiTextureRegistry::registerOrUpdate(sampled texture view + flag metadata)
   keep pending/presented/retired viewport texture state
 ```
 
 The display is intentionally one frame delayed. This keeps panel drawing simple and avoids two-phase panel rendering until
 same-frame presentation is required and measured.
+
+Scene View overlay state remains editor-owned until the coordinator translates it into renderer-owned data. Renderer-facing
+`BasicRenderViewDesc` uses `BasicRenderViewKind`, camera matrices, per-view frame params, explicit overlay color load/store
+and blend policy, plus a data-only debug world-line span. It does not use `EditorViewportKind`,
+`EditorViewportOverlayFlags`, ImGui ids or Vulkan handles from panels. Grid, gizmo and debug draw passes must consume this
+contract in later slices instead of reading editor panel state directly.
 
 ## 生命周期
 
@@ -145,8 +167,11 @@ same-frame presentation is required and measured.
 
 `EditorViewportCoordinator` owns the editor viewport target state:
 
-- `presentedTexture_` is the last texture safe for panels to draw.
-- `pendingTexture_` receives a newly rendered or resized target.
+- Viewport state is keyed by `panelId + EditorViewportKind`.
+- Each keyed slot owns the last presented texture safe for panels to draw and a pending texture that receives a newly
+  rendered or resized target.
+- Each keyed slot stores its latest `EditorRecordedRenderViewDiagnostics` snapshot so Live RG / smoke validation can inspect
+  a specific Scene/Game/Preview view without relying on a global "last request wins" value.
 - `retiredTextures_` holds replaced targets until they are deferred through the frame loop.
 
 旧 render target 通过 `VulkanFrameRecordContext::deferDeletion()` 销毁，让 frame loop 用 fence/epoch
@@ -160,8 +185,86 @@ same-frame presentation is required and measured.
 - `acquireForDraw()` records the submitted frame epoch that may reference the descriptor.
 - `collectGarbage(completedFrameEpoch)` calls `ImGui_ImplVulkan_RemoveTexture()` only after the frame loop reports the
   relevant submitted frame complete.
+- Descriptor owner keys are internal registry keys; viewport results still return the panel-facing `EditorId`. This lets a
+  future panel host Scene/Game/Preview textures without descriptor-key collisions.
 
 The registry does not own the underlying image or image view. It only owns ImGui's descriptor handle and retirement state.
+
+### ImGui workspace and layout persistence
+
+`ImGuiRuntime` owns Dear ImGui layout persistence. It resolves a user-local `imgui-layout.ini` path under the editor app
+state directory, assigns `ImGuiIO::IniFilename` during ImGui context creation and flushes the layout before ImGui shutdown.
+This state stores editor window/docking layout only; it is not scene data, asset data or runtime configuration.
+
+`EditorWorkspaceController` owns the current editor workspace preset and transient layout reset requests. The default
+workspace describes the dock slots for Scene View, Live RG View, Frame Debugger, UI Style Preview, Editor Settings and Log.
+`editor_dock_layout` is the only editor module that calls ImGui DockBuilder APIs; the shell asks it to apply the active
+workspace when no dock node exists or when `View > Reset Layout` requests a reset. This keeps future layout presets and tool
+contributions out of panel widget code.
+
+`EditorExtensionRegistry` is the first manifest-like owner for built-in editor tool contributions. It currently validates
+extension stable ids, rejects duplicate tool ids during a reload-style replace, and publishes tool contributions to
+`EditorToolRegistry`. It does not load external JSON/script packages yet, and it does not own panel factories or action
+callbacks. Those remain in `EditorPanelRegistry` and `EditorActionRegistry`.
+
+`EditorToolRegistry` records the published tool view: panels, actions, toolbar buttons, viewport overlay intents and
+viewport activation metadata. It does not own panel factories or invoke commands. The command bar is generated from tool
+toolbar contributions, so future tools can shape the editor chrome without adding more hard-coded button lists to
+`imgui_editor_shell`.
+Viewport overlay contributions are queried by viewport id through `visitViewportOverlays()`. Scene View uses that query to
+draw its compact grid/gizmo/selection-outline strip over the sampled viewport while keeping overlay ids tool-owned.
+
+`EditorToolManager` owns the editor-only lifecycle state for those registered tools. It syncs from `EditorToolRegistry`,
+tracks one primary active tool per viewport, rejects activation when the tool did not declare support for that viewport,
+exposes begin/complete activation and deactivation states, and marks missing tools as `Unregistered` during reload-style
+sync. It does not execute tool behavior, mutate scene data, draw panel contents or decide renderer pass insertion; those
+remain command/transaction, panel, viewport coordinator and renderer-owned responsibilities.
+
+### ImGui theme
+
+`editor_ui` owns the editor-local Dear ImGui style tokens and the built-in editor theme catalog. The default theme is
+`black-default` (Black Default); `classic-blue-gray-2` remains available, and the legacy `classic-blue-gray` settings value
+is still accepted as an alias. Alternate themes include warm graphite amber, forest green slate, purple electric, carbon
+copper, cool gray teal and light graphite orange. `ImGuiRuntime::create()` applies the startup theme from editor settings, and runtime theme
+changes are applied through `EditorSettingsController`. This is editor shell presentation state only; renderer, RHI and
+runtime packages do not depend on theme colors, rounding values or component preview helpers.
+
+Theme colors are authored as display-referred sRGB bytes. `EditorUiTheme` stores `ColorSrgba8` values such as `#171D24`;
+it does not store `ImVec4` or linear floats. `editor_ui` converts those bytes to encoded sRGB `ImVec4` / `ImU32` values only
+at the Dear ImGui adapter boundary. Helper names use `EncodedSrgb` to make this transport contract explicit.
+
+The editor ImGui Vulkan pass always expects linear shader output. ImGui vertex colors are transported as encoded sRGB
+8-bit values, and `apps/editor/shaders/imgui_srgb_color.slang` decodes vertex `rgb` to linear in the fragment shader before
+writing to the swapchain or an LDR editor target. The final encode is handled by an `_SRGB` color attachment or a later
+presentation pass; the decode switch is therefore tied to the UI pass output contract, not just to the current target
+format.
+
+Texture color space is tracked separately from vertex color. `ImGuiTextureRegistry` records `EditorUiTextureColorSpace`
+metadata for registered editor viewport and preview textures. Color images that are authored/stored as sRGB must be exposed
+through `_SRGB` image views so Vulkan sampling linearizes `rgb`; linear render textures, alpha coverage textures, masks,
+data and debug textures must keep linear/UNORM/FLOAT semantics. The ImGui fragment shader assumes sampled `texel.rgb` is
+already in the pass working space.
+
+### Editor i18n
+
+`editor_i18n` owns the first editor-local text catalog. The catalog is key-based, loaded from
+`apps/editor/resources/i18n/*.json`, and currently covers `en-US` and `zh-Hans` for menus, panel titles and the core Scene
+View / Log / RG View / Frame Debug labels. It is deliberately scoped to `apps/editor`; runtime, renderer and asset text
+localization are separate future concerns.
+
+Dear ImGui labels must preserve stable IDs when visible text changes. Editor UI code should use `EditorI18n::label()` for
+menus, actions, panel windows and other stateful controls so labels are emitted as `translated text###stable-id`. This keeps
+layout ini, docking state and widget identity stable across locale changes.
+
+`editor_settings` persists the interactive editor locale and UI theme in a user-local `settings.json` beside the ImGui
+layout state. `ASHARIA_EDITOR_LOCALE` remains a startup fallback when no saved setting exists. The Editor Settings panel
+switches locale and theme at runtime through `EditorSettingsController`, updates the active `EditorI18n` service or ImGui
+style, and saves the setting immediately.
+
+`ImGuiRuntime` requests CJK glyph coverage during editor startup so runtime switches to `zh-Hans` do not require rebuilding
+the ImGui font atlas. It uses `ASHARIA_EDITOR_CJK_FONT` or a small list of common system font locations. This keeps the
+first localization path usable during development, but bundled editor font assets and license-reviewed packaging remain a
+later distribution task.
 
 ### 关闭
 
@@ -186,11 +289,38 @@ Add built-in panels by implementing `ImGuiEditorPanel` under `apps/editor/src/pa
 
 Panel rules:
 
-- Use `EditorFrameContext` services.
+- Use the capability groups on `EditorFrameContext` (`ui`, `diagnostics`, `settings`, `tools`,
+  `input`, `renderGraph`, `viewport`) instead of adding new flat service-locator fields.
+- Panel `draw()` implementations should immediately adapt the frame context into a panel-local
+  context before calling helpers. Panel-local helpers should accept the smallest capability group
+  they need; keep the top-level `ImGuiEditorPanel` virtual entry point as the adapter boundary until
+  the panel API is narrowed further.
+- Declare category and preferred dock metadata in `EditorPanelDesc`; workspace presets can use that metadata or explicitly
+  list panel ids for default layouts.
 - Keep persistent scene/asset edits out of `draw()` until transactions exist.
 - Do not allocate ImGui Vulkan textures directly.
 - Do not record Vulkan commands.
 - Report hover/focus state to `EditorInputRouter` instead of making global input routing decisions locally.
+- Reuse `editor_ui` helpers for repeated editor styling primitives, but do not hide raw ImGui behind a broad widget clone.
+
+### Tool 扩展
+
+Add built-in tool metadata through `EditorExtensionRegistry` manifest-like descriptors, then publish the tool view into
+`EditorToolRegistry` after registering the tool's panels and actions. A tool may contribute panel ids, action ids, toolbar
+slots, viewport overlay ids and viewport activation metadata. Contribution ids must point at existing panel and action
+registries; overlay ids are editor-facing intent until a concrete viewport overlay renderer consumes them.
+
+Tool rules:
+
+- Do not execute actions or draw panel contents from the tool registry.
+- Use `EditorToolManager` for active tool and lifecycle state; do not keep competing active-tool booleans in panels.
+- Declare activation policy and activation viewport ids before a tool can become a viewport's primary active tool.
+- Keep toolbar placement as metadata; the shell decides how toolbar slots are presented.
+- Keep viewport overlay ids backend-neutral and map them to RenderView/debug draw inputs through the viewport coordinator.
+- Query viewport overlays by viewport id when panel chrome needs controls; do not duplicate another tool's overlay list in a
+  panel.
+- Use `editor_i18n` keys for user-facing labels and keep technical names such as pass, resource and shader identifiers
+  untranslated.
 
 ### Actions 扩展
 
@@ -202,6 +332,8 @@ Action rules:
 - Use stable action ids such as `view.scene-view`.
 - Keep `shortcut` strings in action descriptors; `EditorShortcutRouter` is the only per-frame ImGui shortcut poller.
 - Emit `ActionInvoked` through the event queue.
+- Keep callbacks on `EditorActionContext`; `EditorActionInvokeContext` owns event emission for
+  dispatch, and broad app service bundles should not enter command handlers.
 - 未来状态修改必须通过 command/transaction services。
 
 ### Input 扩展
@@ -221,7 +353,13 @@ registered action shortcuts 转为 ImGui key chord，并调用 `EditorActionRegi
 Add new viewport consumers through `EditorViewportKind` and the `EditorViewportPanelHost` request/result API. Scene View,
 Game View and Preview View should share renderer/RHI caches but own view-local request state.
 
-Game View 不能包含 grid、gizmo、wire overlay、selection outline 这类 Scene View-only pass，除非它们被明确标记为 debug overlay。
+`EditorViewportOverlayFlags` currently carries grid、transform gizmo、wire、selection outline、debug overlay and debug gizmo intent.
+The Scene View panel owns the current grid, transform gizmo and selection-outline toggle state through its viewport overlay
+strip and submits those flags with each on-demand request. `EditorViewportCoordinator` strips Scene-only authoring flags from
+Game/Preview requests, but Game View may retain explicitly requested debug overlay/debug gizmo flags for future runtime
+diagnostics.
+
+Game View 不能隐式包含 grid、transform gizmo、wire overlay、selection outline 这类 Scene View authoring pass；如果用户需要在 Game View 里看 runtime debug gizmo，必须通过明确的 debug overlay/debug gizmo flag 进入 graph。
 
 ### 未来 `editor-core`
 
@@ -268,14 +406,71 @@ Viewport、descriptor lifetime 或 resize 相关改动还必须运行：
 ```powershell
 build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 ```
+
+`--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
+Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent, verifies that a flagged Scene View
+texture is rendered and acquired back through the panel-facing texture result, and checks that the recorded RenderView exposes
+a view-local diagnostics snapshot. It also validates the editor-only Scene View camera bridge, center viewport unproject ray,
+near-plane origin, viewport corner orientation, invalid matrix rejection and resize aspect handling. It also verifies idle
+Scene View on-demand reuse by checking that UI frames can reuse the last completed texture without incrementing
+`viewportFramesRendered` every frame.
+`--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
+WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
+but skips normal RenderView recording, so the captured render inputs and diagnostics snapshot stay frozen until Resume. The
+paused-state owner also gates the editor-owned inspected-world scheduler seam: frame advance, game update and script update
+safe-point counters do not advance while the capture is waiting/paused, then resume afterward. The same smoke also verifies
+that the Frame Debugger panel's RenderGraph view consumes the captured snapshot, requests a selected image resource preview,
+records only the debug replay/copy path, and displays the resulting sampled preview texture.
 
 ## 当前缺口
 
 - Selection, transaction, dirty state, inspector and asset browser are blocked on scene/asset/schema ownership becoming
   concrete enough.
-- `recordEditorImguiFrame()` 当前位于 `editor_app.cpp`。作为 host integration 现在可以接受；如果它
-  超出 swapchain ImGui pass recording，应移动到 `imgui_runtime` 或独立的 editor ImGui pass module。
+- World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
+  renderer-side view pass work. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
+  camera-height LOD/fade, source overlay diagnostics, Frame Debug replay preservation and a `sceneGrid` settings bridge
+  for plane, spacing, fade, opacity and color. The Scene grid overlay contribution declares the same built-in default used by
+  settings bootstrap, and Editor Settings consumes built-in category contributions for the left-nav/right-content General
+  and Viewport pages. External settings manifests and reload remain deferred to the script/plugin boundary.
+- Renderer prerequisites still pending for richer overlays are a more complete debug/world-line draw route for
+  gizmo/selection shapes. External manifest loading, hot update behavior and reload diagnostics belong to the later
+  script/plugin system boundary, not to renderer pass ownership.
+- `EditorFrameDebugger` now owns capture/pause/resume state. A capture does not serialize script VM objects.
+  `EditorInspectedWorldScheduler` is the current counter-based seam for future runtime/script integration: it runs frame
+  advance、game update 和 script update safe-point counters while allowed, and records skipped counters while Frame Debug is
+  waiting/paused.
+- `RenderGraphPanel` is the Live RG View: it browses the latest compiled RenderView diagnostics snapshot as
+  pass/resource/access/dependency/transition data without requiring Frame Debug capture.
+- `FrameDebuggerPanel` owns Frame Debug inspection. It exposes a Unity-style Frame view and a RenderGraph view as switchable
+  tabs in the same panel; the RenderGraph view browses the frozen captured snapshot, while the Frame view selects
+  pass/execution-event rows and displays selected-event details plus preview imagery. RenderGraph command-summary rows remain
+  supporting context, not draw-call identity.
+- Scene View uses an editor-owned on-demand refresh policy. The panel still submits a viewport request every UI frame, but
+  `EditorViewportCoordinator` only records a new RenderView when it derives a repaint reason such as initial texture,
+  resize, overlay flag change, frame-debug event or `AlwaysRefresh`; otherwise ImGui redraws the previous texture.
+- Frame Debug, Live RG View and pass graph visualization are separate editor concepts:
+  - Frame Debug owns capture, pause/resume and fixed-frame inspection. It does not use `vkDeviceWaitIdle` for normal capture
+    and does not read transient GPU resources after normal execution. Its primary view uses a left pass/command list and a
+    right details/preview pane; its RenderGraph diagnostics are a tab inside the same `FrameDebuggerPanel`.
+  - Live RG View displays the latest diagnostics snapshot derived after RenderGraph compile. The graph topology, dependency
+    order, culling result, transition plan and resource lifetime are known at compile time; panel `draw()` does not record
+    Vulkan commands or infer graph structure from GPU execution.
+  - Pass graph visualization is a read-only node view derived from one of those snapshots, not an editable graph authoring
+    system.
+- Intermediate texture preview v1 is GPU-side only: Frame Debug records a controlled replay/copy into a debug-owned sampled
+  image and registers that image through the existing `ImGuiTextureRegistry`. It supports color images with matching
+  extent/format/mip/layer shape and reports `preview unavailable` for depth, buffer or unsupported resources. The primary
+  Frame Debug panel now selects a renderer execution event first, resolves that event's pass to a previewable image output
+  from the frozen diagnostics snapshot, and serves the refresh without resuming normal RenderView recording. Frame Debug
+  smoke preserves the selected execution event id and preview image resource at preview time, then verifies that they resolve
+  back to the frozen capture, the pass used for the preview copy, the event's target image resource and the corresponding
+  RenderGraph write access edge. CPU readback, export and draw-call precise replay remain deferred.
+- `recordEditorImguiFrame()` 位于 `imgui_frame_renderer.cpp`，由 `editor_vulkan_host` 的一帧提交 helper
+  调用。作为 host integration 现在可以接受；如果它超出 swapchain ImGui pass recording，应继续移动到
+  `imgui_runtime` 或独立的 editor ImGui pass module。
 - There is no `packages/editor-core` yet by design.

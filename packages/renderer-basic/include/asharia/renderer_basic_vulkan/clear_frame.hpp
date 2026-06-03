@@ -11,7 +11,7 @@
 #include "asharia/core/result.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp"
-#include "asharia/rendergraph/render_graph.hpp"
+#include "asharia/rendergraph/render_graph_builder.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vulkan_image.hpp"
 
@@ -19,7 +19,11 @@ namespace asharia {
     [[nodiscard]] inline Result<VulkanFrameRecordResult>
     recordBasicClearFrame(const VulkanFrameRecordContext& frame) {
         RenderGraph graph;
-        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        auto backbufferDesc = basicBackbufferDesc(frame);
+        if (!backbufferDesc) {
+            return std::unexpected{std::move(backbufferDesc.error())};
+        }
+        const auto backbuffer = graph.importImage(*backbufferDesc);
         const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
         const BasicTransferClearParams clearParams{
             .color =
@@ -85,7 +89,11 @@ namespace asharia {
     [[nodiscard]] inline Result<VulkanFrameRecordResult>
     recordBasicDynamicClearFrame(const VulkanFrameRecordContext& frame) {
         RenderGraph graph;
-        const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+        auto backbufferDesc = basicBackbufferDesc(frame);
+        if (!backbufferDesc) {
+            return std::unexpected{std::move(backbufferDesc.error())};
+        }
+        const auto backbuffer = graph.importImage(*backbufferDesc);
         const std::array bindings{basicBackbufferBinding(backbuffer, frame)};
         const BasicTransferClearParams clearParams{
             .color =
@@ -178,10 +186,18 @@ namespace asharia {
             }
 
             RenderGraph graph;
-            const auto backbuffer = graph.importImage(basicBackbufferDesc(frame));
+            auto backbufferDesc = basicBackbufferDesc(frame);
+            if (!backbufferDesc) {
+                return std::unexpected{std::move(backbufferDesc.error())};
+            }
+            auto colorFormat = basicRenderGraphImageFormat(frame.format, "Transient color image");
+            if (!colorFormat) {
+                return std::unexpected{std::move(colorFormat.error())};
+            }
+            const auto backbuffer = graph.importImage(*backbufferDesc);
             const auto transientColor = graph.createTransientImage(RenderGraphImageDesc{
                 .name = "TransientColor",
-                .format = basicRenderGraphImageFormat(frame.format),
+                .format = *colorFormat,
                 .extent = basicRenderGraphExtent(frame.extent),
             });
 
@@ -300,7 +316,8 @@ namespace asharia {
         }
 
     private:
-        [[nodiscard]] Result<void> releaseTransientResources(const VulkanFrameRecordContext& frame) {
+        [[nodiscard]] Result<void>
+        releaseTransientResources(const VulkanFrameRecordContext& frame) {
             for (VulkanTransientImageResource& resource : transientImages_) {
                 auto released = transientImagePool_.release(frame, resource);
                 if (!released) {
