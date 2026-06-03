@@ -1,0 +1,123 @@
+name: PR Slice
+description: Create a PR-sized issue under one or more roadmap epics.
+title: "[Slice] subsystem: PR-sized goal"
+labels:
+  - type:slice
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for work that can reasonably close through one PR. Link the parent Epic, add the issue to the Engine Project, then set Status, Priority, and Size there.
+  - type: input
+    id: parent-epic
+    attributes:
+      label: Parent epic
+      description: Link the parent roadmap epic.
+      placeholder: "#20"
+    validations:
+      required: true
+  - type: input
+    id: branch
+    attributes:
+      label: Branch or PR
+      description: Link the current branch or PR if it already exists.
+      placeholder: codex/editor-shell-viewport or PR URL
+    validations:
+      required: false
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: State the PR-sized outcome in one or two sentences.
+      placeholder: Define the focused change this slice will land.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List what this slice includes.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: List what must remain outside this slice.
+      placeholder: |
+        - Do not ...
+        - Defer ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Describe the evidence that proves this slice is complete.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: validation-gates
+    attributes:
+      label: Validation gates
+      description: List build, smoke, doc-sync, and review gates that apply.
+      value: |
+        - Run tools\check-text-encoding.ps1.
+        - Run tools\check-doc-sync.ps1 if tracked code, docs, build, tool, shader, or workflow files changed.
+        - Run git diff --check.
+      placeholder: |
+        - Run ...
+        - Run ...
+    validations:
+      required: true
+  - type: textarea
+    id: current-evidence
+    attributes:
+      label: Current evidence
+      description: List commits, files, docs, or issue comments that justify this slice.
+      placeholder: |
+        - Commit ...
+        - File ...
+    validations:
+      required: false
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Project priority
+      description: Set the matching Priority field after adding this issue to the Project.
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Project size
+      description: Set the matching Size field after adding this issue to the Project.
+      options:
+        - XS
+        - S
+        - M
+        - L
+        - XL
+    validations:
+      required: true
+  - type: checkboxes
+    id: project-rules
+    attributes:
+      label: Project rules
+      options:
+        - label: I checked for an existing issue before creating this slice.
+          required: true
+        - label: This slice is small enough to complete through one PR.
+          required: true
+        - label: If blockers appear, they will be created as blocking issues instead of expanding this slice.
+          required: true

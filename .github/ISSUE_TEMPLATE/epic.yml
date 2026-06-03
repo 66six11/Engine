@@ -1,0 +1,115 @@
+name: Roadmap Epic
+description: Create a stage-level roadmap issue for the Engine Project.
+title: "[Epic] subsystem: stage goal"
+labels:
+  - type:epic
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for stage-level roadmap work. Add the issue to the Engine Project, then set Status, Priority, and Size there. Do not fill Estimate, Iteration, Start date, or Target date until there is a real schedule.
+  - type: input
+    id: parent-roadmap
+    attributes:
+      label: Roadmap source
+      description: Link the source plan, roadmap section, or parent GitHub issue.
+      placeholder: "docs/planning/editor-development-plan.md, docs/rendergraph/roadmap.md, or #20"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: State the stage outcome in one or two sentences.
+      placeholder: Define the stable contract or capability this epic should finish.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List what this epic includes.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: List what must not be pulled into this epic.
+      placeholder: |
+        - Do not ...
+        - Defer ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Describe the evidence that proves the epic is done.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: validation-gates
+    attributes:
+      label: Validation gates
+      description: List build, smoke, doc-sync, and review gates that apply.
+      value: |
+        - Run tools\check-text-encoding.ps1.
+        - Run tools\check-doc-sync.ps1.
+        - Run git diff --check.
+      placeholder: |
+        - Run ...
+        - Run ...
+    validations:
+      required: true
+  - type: textarea
+    id: source-docs
+    attributes:
+      label: Source documents
+      description: List authoritative files or issues.
+      placeholder: |
+        - docs/planning/editor-development-plan.md
+        - docs/workflow/review.md
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Project priority
+      description: Set the matching Priority field after adding this issue to the Project.
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Project size
+      description: Set the matching Size field after adding this issue to the Project.
+      options:
+        - XS
+        - S
+        - M
+        - L
+        - XL
+    validations:
+      required: true
+  - type: checkboxes
+    id: project-rules
+    attributes:
+      label: Project rules
+      options:
+        - label: I checked for an existing issue before creating this epic.
+          required: true
+        - label: This is stage-level work; PR-sized work will be split into [Slice] issues.
+          required: true
+        - label: If blockers appear, they will be created as blocking issues instead of expanding this epic.
+          required: true

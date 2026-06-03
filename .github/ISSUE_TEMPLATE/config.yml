@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: VkEngine Project board
+    url: https://github.com/users/66six11/projects/2
+    about: Use the Engine Project for roadmap status, priority, size, and active slices.
+  - name: Project management workflow epic
+    url: https://github.com/66six11/Engine/issues/20
+    about: Canonical issue for Project rules, roadmap sync, labels, and template upkeep.
