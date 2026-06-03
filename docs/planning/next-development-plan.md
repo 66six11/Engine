@@ -2,7 +2,7 @@
 
 研究日期：2026-04-29
 
-更新日期：2026-05-20
+更新日期：2026-06-03
 
 RenderGraph 后续专项路线图见 `docs/rendergraph/roadmap.md`。本文保留全项目阶段计划和当前基线，RenderGraph 语义修正、typed pass 收敛、compiler diagnostics、后端生命周期和缓存的执行顺序以专项路线图为准。
 性能诊断底座和未来编辑器性能面板的技术细节见 `docs/systems/performance-profiling.md`；当前
@@ -87,6 +87,33 @@ smoke、显式 culling/side-effect 标记、renderer-basic 共享 builtin schema
 deferred destruction、descriptor/transient/pipeline cache 和 multi-view 边界。
 不要在下一阶段提前接入脚本 VM、完整 asset database、bindless 或 async compute。
 在进入 cache 和 lifetime 优化前，先插入轻量性能诊断底座：CPU scope、benchmark CLI、RenderGraph compile counters 和后续 Vulkan timestamp/debug label 的生命周期设计。这样 P4 的 deferred deletion、descriptor allocator、pipeline cache 和 transient pool 能用数据验证，而不是凭感觉优化。
+
+## 2026-06-03 内部设计审查门禁
+
+2026-05-23 的内部设计审查把内部代码设计提升为与 package boundary 同级的前置门禁。依据来自本地代码审查和
+`docs/research/sources.md` 中的一手资料：Unity / Unreal RenderGraph 强调 pass data 与资源使用声明先于执行；
+O3DE Atom RPI 把 Scene、Render Pipeline 和 View 分开建模；Khronos/Vulkan 资料要求 format、feature、
+layout、stage、access 和 descriptor/resource 合同显式、可验证。
+
+以下门禁插入阶段 21 后续和阶段 22 之前；它们不是新产品功能，而是防止 editor、renderer、RenderGraph
+和 RHI 在内部设计上继续累积隐式状态。除非表中写明已完成，否则这些都是 route control gate，不代表实现已经落地。
+
+| 门禁 | 必须先解决的问题 | 当前本地事实依据 | 验收标准 |
+| --- | --- | --- | --- |
+| A. Format / capability contract | swapchain format、RenderView target format、RenderGraph image format 和 Vulkan image create 必须统一；不支持的 format 要早失败或完整映射 | 当前路线将 #33 作为 code-only renderer format contract Slice；#40 只先补 review/docs gate | #33 中 `basicRenderGraphImageFormat()` 等入口必须 fail early，新增 `--smoke-renderer-format-contract` 负向路径，并在 #33 合并后加入 review smoke list |
+| B. RenderView real input contract | camera、overlay、debug line、frame params 不能只进入 diagnostics；需要 renderer-owned per-view constants / pass input 和可见 debug-line/grid pass | Scene View request 已携带 camera 与 overlay intent，provider 可生成 debug/world-line packet；可见 renderer pass 仍在后续 #34/#36/#37/#38/#39 链条中拆分 | `recordViewFrame()` 产生 per-view constants 或等价绑定；debug-line/grid pass 进入 RenderGraph 或明确 typed pass；smoke 能验证 camera/overlay 输入被真实渲染路径消费 |
+| C. Multi-view request model | viewport request 不能是单个 optional；Scene/Game/Preview/多面板同帧需要 per-view id、结果、diagnostics 和 refresh reason | 当前 Project 以 #37/#39 跟踪 ViewportSlot texture publication 和 per-view diagnostics/stats | coordinator 收集 keyed request list；同帧多 RenderView 有独立 texture result、diagnostics snapshot、execution events 和 failure context |
+| D. Graph-visible GPU work | clear、fill、upload、copy、barrier 不能长期藏在 graph 外；外部 pre-pass 必须显式进入 diagnostics | RenderGraph/renderer 路线继续要求新增 GPU work 进入 graph pass/command，或作为 named external pre-pass 出现在 diagnostics | fill/clear/upload/copy/barrier 新路径有 RenderGraph command、execution event、diagnostics 或明确 external pre-pass 证据 |
+| E. Editor state and command model | panel、context、app bootstrap 不能继续膨胀为 service locator / god object；持久 mutation 需要 command/transaction 或 capability-scoped context | `docs/planning/editor-development-plan.md` 细化 editor host、panel/action/event、viewport texture registry 和后续 editor-core 边界 | 新增 asset browser、material editor、persistent layout、script hot reload 或 complex inspector mutation 前，先定义 command/transaction owner 和 capability-scoped context |
+| F. RenderGraph API / implementation split | 大型 public API 在继续扩展 cache、alias、multi-queue 或 unsafe/native pass 前需要拆分策略 | RenderGraph 专项路线由 `docs/rendergraph/roadmap.md` 维护，Project 用 Epic/Slice 跟踪具体阶段 | 新增复杂 graph feature 前，public API / implementation split 有 issue、ADR 或 PR 证据，并用 package test 锁住 public contract |
+
+阻塞规则：
+
+- A 是 #33 的直接前置门禁；#40 先补 review/docs gate，#33 再补 code/smoke。
+- B 和 C 未完成前，不继续做可见 gizmo、selection outline、多视图诊断、Scene/Game 同帧编辑体验或 asset preview viewport。
+- D 未完成前，不增加新的 graph 外 compute/upload/copy 快捷路径。
+- E 未完成前，不进入 asset browser、material editor、脚本热更新、持久 editor layout 或复杂 inspector mutation。
+- F 未完成前，不推进 async compute、transient alias、unsafe/native pass 或多队列 RenderGraph。
 
 ## 后续总路线
 

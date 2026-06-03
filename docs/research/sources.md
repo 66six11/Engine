@@ -1,10 +1,37 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-05-15
+最近核对日期：2026-06-03
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
+
+## Internal code design gate
+
+本次核对日期：2026-06-03
+
+一手资料：
+
+- Unity Render Graph fundamentals：https://docs.unity.cn/Packages/com.unity.render-pipelines.core%4017.0/manual/render-graph-fundamentals.html
+- Unreal Render Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine
+- O3DE Atom RPI overview：https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/rpi/
+- Vulkan formats：https://docs.vulkan.org/spec/latest/chapters/formats.html
+- Vulkan synchronization：https://github.khronos.org/Vulkan-Site/spec/latest/chapters/synchronization.html
+- Vulkan descriptor sets：https://docs.vulkan.org/spec/latest/chapters/descriptors.html
+
+仓库事实依据：
+
+- `docs/workflow/review.md` 是提交前 review gate 的 authority。
+- `docs/planning/next-development-plan.md` 维护阶段顺序和跨 editor / renderer / RenderGraph / RHI 的 route control。
+- `docs/planning/editor-development-plan.md` 维护 editor host、panel/action/event、viewport texture registry 和后续 editor-core 边界。
+- GitHub Project #40 先跟踪 workflow / review gate 文档；#33 再跟踪 renderer format contract 的 code-only slice。
+
+结论：
+
+- Unity / Unreal RenderGraph 资料支持把 pass data、resource access 和执行函数分开审查；Asharia Engine 不能只因为 package 边界正确就接受 hidden pre-pass 或 diagnostics-only data path。
+- O3DE RPI 的 Scene / Render Pipeline / View 分离支持把 Scene View、Game View 和 Preview View 统一建模为 RenderView 输入；单 optional viewport request 只能作为过渡实现，不能作为多视图架构基础。
+- Vulkan format、descriptor 和 synchronization 资料支持把 format/capability、layout/stage/access、descriptor signature 作为 fail-early 合同；fallback format、undefined RenderGraph format 或 descriptor mismatch 不能留到 GPU recording 时才失败。
+- 因此 `docs/workflow/review.md` 必须把内部代码设计审查列为架构审查必选项，`docs/planning/next-development-plan.md` 必须在继续推进 gizmo、selection、asset preview、material editor、multi-view diagnostics 前加入内部设计门禁。
 
 ## 引擎系统架构与线程设计
 
