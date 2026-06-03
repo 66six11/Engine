@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-05-23
+最近核对日期：2026-06-03
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -48,9 +48,9 @@
   base `asharia::rhi_vulkan` target 公开链接 RenderGraph；已知缺口是 `renderer_basic_vulkan` 的 RenderView
   camera 仍停留在 diagnostics，per-view constants / pass input 合同尚未落地。
 
-## Internal code design audit adjustment
+## Internal code design gate
 
-本次核对日期：2026-05-23
+本次核对日期：2026-06-03
 
 一手资料：
 
@@ -63,6 +63,10 @@
 
 仓库事实依据：
 
+- `docs/workflow/review.md` 是提交前 review gate 的 authority。
+- `docs/planning/next-development-plan.md` 维护阶段顺序和跨 editor / renderer / RenderGraph / RHI 的 route control。
+- `docs/planning/editor-development-plan.md` 维护 editor host、panel/action/event、viewport texture registry 和后续 editor-core 边界。
+- GitHub Project #31 / draft PR #43 跟踪当前 shell integration baseline；#40 只保留为 workflow / review gate 文档历史证据。
 - `packages/rhi-vulkan/src/vulkan_frame_loop.cpp` 的 surface format 选择仍可 fallback 到 surface 首项；
   `packages/renderer-basic/include/asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp` 已把
   `basicRenderGraphImageFormat()` 收敛为 `Result<RenderGraphImageFormat>`，unsupported format 会在

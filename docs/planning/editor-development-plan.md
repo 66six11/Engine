@@ -1,6 +1,6 @@
 # Editor 开发方案
 
-更新日期：2026-06-02
+更新日期：2026-06-03
 
 本文是 Asharia Editor 的独立开发文档，覆盖 editor host、ImGui integration、panel/action/event、
 viewport texture registry、输入路由和后续阶段拆分。全局阶段顺序仍以

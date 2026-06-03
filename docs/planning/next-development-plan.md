@@ -2,7 +2,7 @@
 
 研究日期：2026-04-29
 
-更新日期：2026-06-02
+更新日期：2026-06-03
 
 RenderGraph 后续专项路线图见 `docs/rendergraph/roadmap.md`。本文保留全项目阶段计划和当前基线，RenderGraph 语义修正、typed pass 收敛、compiler diagnostics、后端生命周期和缓存的执行顺序以专项路线图为准。
 性能诊断底座和未来编辑器性能面板的技术细节见 `docs/systems/performance-profiling.md`；当前
@@ -90,15 +90,15 @@ deferred destruction、descriptor/transient/pipeline cache 和 multi-view 边界
 不要在下一阶段提前接入脚本 VM、完整 asset database、bindless 或 async compute。
 在进入 cache 和 lifetime 优化前，先插入轻量性能诊断底座：CPU scope、benchmark CLI、RenderGraph compile counters 和后续 Vulkan timestamp/debug label 的生命周期设计。这样 P4 的 deferred deletion、descriptor allocator、pipeline cache 和 transient pool 能用数据验证，而不是凭感觉优化。
 
-## 2026-05-23 内部设计审查后的计划调整
+## 2026-06-03 内部设计审查门禁
 
-本次调整把内部代码设计提升为与 package boundary 同级的前置门禁。依据来自本地代码审查和
+2026-05-23 的内部设计审查把内部代码设计提升为与 package boundary 同级的前置门禁。依据来自本地代码审查和
 `docs/research/sources.md` 中的一手资料：Unity / Unreal RenderGraph 强调 pass data 与资源使用声明先于执行；
 O3DE Atom RPI 把 Scene、Render Pipeline 和 View 分开建模；Khronos/Vulkan 资料要求 format、feature、
 layout、stage、access 和 descriptor/resource 合同显式、可验证。
 
 以下门禁插入阶段 21 后续和阶段 22 之前；它们不是新产品功能，而是防止 editor、renderer、RenderGraph
-和 RHI 在内部设计上继续累积隐式状态：
+和 RHI 在内部设计上继续累积隐式状态。除非表中写明已完成，否则这些都是 route control gate，不代表实现已经落地：
 
 | 门禁 | 必须先解决的问题 | 本地事实依据 | 验收标准 |
 | --- | --- | --- | --- |

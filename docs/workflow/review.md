@@ -187,6 +187,12 @@ rg -n "debugWorldLines|camera|viewProjection|viewportSlots_|requestedViewport_|R
 
 审查发现必须用本地事实举证：给出文件、行号、调用路径和触发场景。若结合网络资料，必须说明资料只支持哪条设计判断，不能用泛泛 best practice 替代仓库证据。
 
+### Renderer format contract gate
+
+修改 swapchain format、RenderView target format、RenderGraph image format 或 Vulkan image create 入口时，必须检查 renderer format contract。若改动引入或修改 `--smoke-renderer-format-contract`，该 smoke 必须在 PR 描述和审查回复中列为验证门禁。
+
+当前 `--smoke-renderer-format-contract` 已进入 frame loop / RenderGraph / renderer / Vulkan adapter smoke 清单；后续新增 format、offscreen target、material/pipeline format key 或 texture preview 范围时，必须继续证明 unsupported format 会在 renderer / RenderGraph import 前 fail early，不能重新引入 `RenderGraphImageFormat::Undefined` fallback。
+
 ## Vulkan 同步审查重点
 
 - 使用 `vkQueueSubmit2` 时，`VkSemaphoreSubmitInfo::stageMask` 必须覆盖等待资源的首次实际使用阶段。
