@@ -40,6 +40,10 @@
   每个 item 至少声明 vertex 或 index，且 instance count 非零。该 pass 暂不绘制 mesh、上传 GPU 资源或读取
   asset/editor object；真实 scene mesh pass 后续必须消费同一类 renderer-owned input，再显式声明 color/depth/buffer
   resource usage。
+- 当前阶段不交付 SRP 接入。SRP 只作为后续消费者约束：RenderView policy / recording 的职责划分不能把
+  pipeline authoring、asset upload、script callback 或 editor state 塞进 `rendergraph`、`rhi_vulkan`
+  或 `apps/editor` 的捷径；未来 SRP 应通过 renderer-owned scene/pass input 和 RenderGraph 声明接到同一
+  RenderView route。
 
 ## Public Header 布局
 
@@ -91,3 +95,4 @@
 1. 后续再评估是否把 RenderView 路径从 `BasicFullscreenTextureRenderer` 中独立成更明确的 view renderer，fullscreen composite 只保留为消费 sampled texture 的 pass。
 2. 如果新增 scene mesh、selection 或 gizmo pass，先扩展 `render_view_pass_policy.inl` 的 pass policy 和 `render_view_recording.inl` 的 insertion helper，再决定是否需要更正式的 RenderView recorder owner。
 3. 保持 `renderer_basic` 后端无关，把 Vulkan 录制和资源生命周期继续限制在 `renderer_basic_vulkan` / `rhi_vulkan`。
+4. SRP 相关设计只作为依赖方向和 API 余量检查；当前 RenderView/Grid/Frame Debug/overlay 阶段完成不以实现 SRP 为条件。
