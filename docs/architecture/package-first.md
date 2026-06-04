@@ -29,6 +29,7 @@ AshariaEngine/
     schema/
     archive/
     asset-core/
+    asset-pipeline/
     scene-core/
     cpp-binding/
     persistence/
@@ -87,6 +88,9 @@ package 用来承载可选能力：
 - `asset-core` 提供最小资产身份、asset type、runtime-safe handle/reference、source metadata model、
   product/cache key、dependency 和 catalog；`.ameta` metadata IO 位于可选 `asharia::asset_core_io`
   target，依赖 `archive` facade，不把 JSON/persistence 依赖强加给 identity/handle API。
+- `asset-pipeline` 第一阶段提供 CPU-only metadata discovery baseline：读取显式 source/.ameta 条目，
+  产出 deterministic manifest / catalog 输入和诊断；不拥有 watcher、import 调度、product cache、
+  GPU upload 或 editor UI。
 - `editor-core` 未来提供 editor service、selection、inspector、package browser。
 
 ## Package Manifest

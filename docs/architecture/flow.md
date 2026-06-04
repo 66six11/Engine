@@ -27,6 +27,7 @@ flowchart TD
     SceneCore["packages/scene-core"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
+    AssetPipeline["packages/asset-pipeline"]
     RG["packages/rendergraph"]
     RhiVk["packages/rhi-vulkan<br/>asharia::rhi_vulkan"]
     RhiVkRG["packages/rhi-vulkan<br/>asharia::rhi_vulkan_rendergraph"]
@@ -53,6 +54,8 @@ flowchart TD
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
+    AssetPipeline --> AssetCore
+    AssetPipeline -.metadata read.-> AssetCoreIo
     RG --> Core
     RhiVk --> Core
     RhiVkRG --> RhiVk
@@ -95,6 +98,9 @@ flowchart TD
   `reflection` / `serialization` 仍作为过渡兼容路径由 sample-viewer smoke 覆盖。
 - `scene-core` 和 `asset-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor；
   `.ameta` 文本 IO 位于可选 `asharia::asset_core_io` target，只额外依赖 `archive` strict JSON facade。
+- `asset-pipeline` 当前只做 CPU-only metadata discovery：显式 source/.ameta 条目进入 discovery facade，
+  输出 deterministic manifest、`AssetCatalog` 输入和 diagnostics；它不做 watcher、import 调度、product
+  cache manifest、GPU upload 或 editor UI。
 - `sample-viewer` 当前同时承担 app host 和 smoke harness，所以会直接创建 `VulkanContext` /
   `VulkanFrameLoop`。这是当前 MVP 事实，不是目标产品边界；后续应收敛到 runtime/engine host。
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把

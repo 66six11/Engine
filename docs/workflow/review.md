@@ -140,6 +140,8 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 2. VMA、Slang、SPIR-V、shader toolchain 官方文档。
 3. 成熟案例：Frostbite FrameGraph、Granite、Diligent Engine、RenderDoc/Nsight 的资源视图思路。
 4. 本仓库文档：`docs/architecture/flow.md`、`docs/rendergraph/rhi-boundary.md`、`docs/architecture/package-first.md`、`docs/planning/next-development-plan.md`。
+5. C++ Core Guidelines、Game Programming Patterns、Unity DOTS / Entities 和 Data-Oriented Design 资料，用于内部代码设计、
+   设计模式和数据导向审查。
 
 设计审查必须覆盖：
 
@@ -167,6 +169,17 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 
 架构审查不得只验证 package、target、include 或 Vulkan 边界。每次 review 至少要抽样检查被改动代码及其直接调用者/被调用者的内部设计；涉及 editor、renderer、runtime、RenderGraph 或 RHI 的改动必须完整覆盖下列问题：
 
+- 范式选择：先判断改动主要采用直接过程式、面向对象、数据导向、组件式/ECS 或某个明确设计模式。模式不是目标；
+  只有当它对应真实变化点、所有权、生命周期或批处理需求，并且比直接函数/数据结构更清楚时才通过。
+- OOP 与类不变量：`class` 应封装明确不变量、资源生命周期或稳定接口；仅把相关字段打包且成员可独立变化时优先
+  `struct`、值对象或自由函数。`virtual` 边界必须说明调用方向、ownership、copy/move/slicing 策略和测试方式。
+- 设计模式使用：采用 Component、Command、Observer/Event Queue、Factory/Builder、Registry、Strategy、State 等模式时，
+  必须点名参与者、owner、注册/注销、执行顺序、错误路径和线程/帧边界；只出现 `Manager`、`Context` 或全局访问不算模式落地。
+- 数据导向设计：热路径、批处理、资产/渲染/导入数据应审查数据布局、排序/迭代确定性、stable id/handle、SoA/AoS
+  或紧凑 `std::vector` 选择、`reserve`/erase 策略、cache locality 和批量 transform；不能把每元素 work 隐藏在虚调用、
+  `std::function` 或无序遍历后面。
+- 抽象阈值：新增 facade、registry、polymorphic interface 或 PImpl 必须写出变化点、第二实现/调用方或降低复杂度的本地证据；
+  否则以直接函数、局部 helper 或 package-private 类型收敛。
 - 职责边界：类、manager、coordinator、registry、context 是否同时承担创建、调度、渲染、状态变更、诊断和 UI；超过一个稳定职责时必须说明拆分计划或当前保留理由。
 - 数据合同：跨层输入是否真的被消费，而不是只进入 diagnostics；camera、overlay、format、descriptor、frame params、pass params 和 resource access 必须能追到实际执行点或明确标注为 planned。
 - 生命周期：create/update/reload/resize/shutdown、GPU deferred deletion、descriptor retire、frame fence、command buffer、persistent/transient resource 是否形成闭环；不能靠隐式全局状态或 render loop 中的 wait idle 掩盖。
@@ -177,10 +190,20 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 - Public API 与实现：大型 header-only 组件、public inline 实现、app-level glue 文件和 god object 必须审查 API/implementation split；暂不拆时要记录触发拆分的阈值。
 - 测试与 smoke：新增或修改的内部语义必须有 smoke、package test、counter、diagnostics snapshot 或负向测试证明；只靠编译通过不算内部设计通过。
 
+审查回复中若内部设计适用，必须额外写出：
+
+```text
+内部设计范式：direct / OOP / data-oriented / pattern-name / mixed，理由：...
+模式/抽象判断：通过 / 未通过 / 不适用，依据：...
+数据布局与迭代判断：通过 / 未通过 / 不适用，依据：...
+```
+
 快速抽样命令：
 
 ```powershell
 rg -n "class |struct |Manager|Coordinator|Registry|Context|State|TODO|FIXME|temporary|MVP|for now" apps engine packages -g "*.hpp" -g "*.cpp" -g "*.inl"
+rg -n "virtual|override|final|interface|Strategy|Factory|Builder|Observer|Command|Visitor|ServiceLocator|Singleton|Manager|Coordinator|Registry|Context|State" apps engine packages -g "*.hpp" -g "*.cpp" -g "*.inl"
+rg -n "std::vector|std::span|std::array|std::unordered|std::map|std::function|std::variant|shared_ptr|unique_ptr|new |delete |reserve\(|erase\(|stable_sort|sort\(" apps engine packages -g "*.hpp" -g "*.cpp" -g "*.inl"
 rg -n "vkCmd|vkQueue|vkDeviceWaitIdle|vkQueueWaitIdle|vkUpdateDescriptorSets" apps packages -g "*.hpp" -g "*.cpp" -g "*.inl"
 rg -n "debugWorldLines|camera|viewProjection|viewportSlots_|requestedViewport_|RenderGraphImageFormat::Undefined|basicRenderGraphImageFormat" apps packages -g "*.hpp" -g "*.cpp" -g "*.inl"
 ```

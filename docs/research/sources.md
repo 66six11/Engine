@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-06-03
+最近核对日期：2026-06-04
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -50,7 +50,7 @@
 
 ## Internal code design gate
 
-本次核对日期：2026-06-03
+本次核对日期：2026-06-04
 
 一手资料：
 
@@ -60,6 +60,14 @@
 - Vulkan formats：https://docs.vulkan.org/spec/latest/chapters/formats.html
 - Vulkan synchronization：https://github.khronos.org/Vulkan-Site/spec/latest/chapters/synchronization.html
 - Vulkan descriptor sets：https://docs.vulkan.org/spec/latest/chapters/descriptors.html
+- C++ Core Guidelines：https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines
+- Game Programming Patterns：https://gameprogrammingpatterns.com/contents.html
+- Game Programming Patterns Component：https://gameprogrammingpatterns.com/component.html
+- Game Programming Patterns Data Locality：https://gameprogrammingpatterns.com/data-locality.html
+- Game Programming Patterns Service Locator：https://gameprogrammingpatterns.com/service-locator.html
+- Unity DOTS overview：https://unity.com/dots
+- Unity Entities concepts：https://docs.unity3d.com/Packages/com.unity.entities%401.0/manual/concepts-intro.html
+- Data-Oriented Design online book：https://www.dataorienteddesign.com/dodbook/
 
 仓库事实依据：
 
@@ -97,6 +105,12 @@
 - Vulkan format、descriptor 和 synchronization 资料支持把 format/capability、layout/stage/access、descriptor
   signature 作为 fail-early 合同；fallback format、undefined RenderGraph format 或 descriptor mismatch 不能留到
   GPU recording 时才失败。
+- C++ Core Guidelines 支持把接口、类不变量、所有权和资源生命周期作为审查对象；这不意味着每个改动都要新增类层次，
+  反而要求 `class`、`virtual`、RAII owner 和全局访问边界有明确语义。
+- Game Programming Patterns 支持按真实问题选择 Component、Command、Event Queue、State 等模式；同一资料也提醒
+  Service Locator / Singleton 这类全局访问会隐藏依赖，因此只出现 `Manager`、`Context` 或全局 facade 不能算设计通过。
+- Unity DOTS / Entities 和 Data-Oriented Design 资料支持把热路径、批处理、资产/渲染数据流按数据布局、迭代顺序、
+  stable id/handle、cache locality 和批量 transform 审查；不能只按对象名或设计模式名判断。
 - 因此 `docs/workflow/review.md` 必须把内部代码设计审查列为架构审查必选项，`docs/planning/next-development-plan.md`
   必须在继续推进 gizmo、selection、asset preview、material editor、multi-view diagnostics 前加入内部设计门禁。
 
