@@ -9,10 +9,12 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 
 add_library(asharia-asset-pipeline STATIC
+    src/asset_product_manifest_io.cpp
     src/asset_source_discovery.cpp
     src/asset_source_snapshot.cpp
 )
@@ -28,6 +30,7 @@ target_link_libraries(asharia-asset-pipeline
     PUBLIC
         asharia::asset_core
     PRIVATE
+        asharia::archive
         asharia::asset_core_io
 )
 
@@ -40,13 +43,27 @@ if(ASHARIA_BUILD_TESTS)
       tests/asset_pipeline_smoke_tests.cpp
   )
 
+  add_executable(asharia-asset-pipeline-header-tests
+      tests/asset_pipeline_header_tests.cpp
+      tests/asset_product_manifest_io_header_test.cpp
+      tests/asset_source_discovery_header_test.cpp
+      tests/asset_source_snapshot_header_test.cpp
+  )
+
   target_link_libraries(asharia-asset-pipeline-smoke-tests
       PRIVATE
           asharia::asset_pipeline
           asharia::asset_core_io
   )
 
+  target_link_libraries(asharia-asset-pipeline-header-tests
+      PRIVATE
+          asharia::asset_pipeline
+  )
+
   asharia_configure_target(asharia-asset-pipeline-smoke-tests)
+  asharia_configure_target(asharia-asset-pipeline-header-tests)
 
   add_test(NAME asharia-asset-pipeline-smoke-tests COMMAND asharia-asset-pipeline-smoke-tests)
+  add_test(NAME asharia-asset-pipeline-header-tests COMMAND asharia-asset-pipeline-header-tests)
 endif()
