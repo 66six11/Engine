@@ -10,6 +10,7 @@ endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
+asharia_require_package_target(asharia::archive packages/archive)
 
 add_library(asharia-asset-core STATIC
     src/asset_catalog.cpp
@@ -20,6 +21,12 @@ add_library(asharia-asset-core STATIC
 )
 
 add_library(asharia::asset_core ALIAS asharia-asset-core)
+
+add_library(asharia-asset-core-io STATIC
+    src/asset_metadata_io.cpp
+)
+
+add_library(asharia::asset_core_io ALIAS asharia-asset-core-io)
 
 target_include_directories(asharia-asset-core
     PUBLIC
@@ -33,6 +40,20 @@ target_link_libraries(asharia-asset-core
 
 asharia_configure_target(asharia-asset-core)
 
+target_include_directories(asharia-asset-core-io
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+target_link_libraries(asharia-asset-core-io
+    PUBLIC
+        asharia::asset_core
+    PRIVATE
+        asharia::archive
+)
+
+asharia_configure_target(asharia-asset-core-io)
+
 if(ASHARIA_BUILD_TESTS)
   enable_testing()
 
@@ -42,7 +63,7 @@ if(ASHARIA_BUILD_TESTS)
 
   target_link_libraries(asharia-asset-core-smoke-tests
       PRIVATE
-          asharia::asset_core
+          asharia::asset_core_io
   )
 
   asharia_configure_target(asharia-asset-core-smoke-tests)

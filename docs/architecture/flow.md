@@ -26,6 +26,7 @@ flowchart TD
     Serialization["packages/serialization"]
     SceneCore["packages/scene-core"]
     AssetCore["packages/asset-core"]
+    AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
     RG["packages/rendergraph"]
     RhiVk["packages/rhi-vulkan<br/>asharia::rhi_vulkan"]
     RhiVkRG["packages/rhi-vulkan<br/>asharia::rhi_vulkan_rendergraph"]
@@ -50,6 +51,8 @@ flowchart TD
     Serialization --> Reflection
     SceneCore --> Core
     AssetCore --> Core
+    AssetCoreIo --> AssetCore
+    AssetCoreIo --> Archive
     RG --> Core
     RhiVk --> Core
     RhiVkRG --> RhiVk
@@ -90,7 +93,8 @@ flowchart TD
 - `profiling` 提供后端无关 CPU scope、frame profile 和 JSONL 输出；当前只由 sample-viewer benchmark 使用。
 - `schema`、`archive`、`cpp-binding` 和 `persistence` 是新的 schema-first persistence 路线；
   `reflection` / `serialization` 仍作为过渡兼容路径由 sample-viewer smoke 覆盖。
-- `scene-core` 和 `asset-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor。
+- `scene-core` 和 `asset-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor；
+  `.ameta` 文本 IO 位于可选 `asharia::asset_core_io` target，只额外依赖 `archive` strict JSON facade。
 - `sample-viewer` 当前同时承担 app host 和 smoke harness，所以会直接创建 `VulkanContext` /
   `VulkanFrameLoop`。这是当前 MVP 事实，不是目标产品边界；后续应收敛到 runtime/engine host。
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把

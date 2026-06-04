@@ -84,7 +84,9 @@ package 用来承载可选能力：
 - `renderer-basic` 提供后端无关 renderer contract 和共享 RenderGraph pass schema。
 - `renderer-basic-vulkan` target 负责 Vulkan 命令录制、descriptor/pipeline/resource 绑定和 sample renderer。
 - `shader-slang` 提供 Slang 编译、SPIR-V validation、metadata 和 reflection JSON。
-- `asset-core` 提供最小资产身份、asset type、runtime-safe handle/reference 和 source metadata model；product/cache key、dependency、catalog 和 metadata IO 继续按 `docs/systems/asset-architecture.md` 分阶段补齐。
+- `asset-core` 提供最小资产身份、asset type、runtime-safe handle/reference、source metadata model、
+  product/cache key、dependency 和 catalog；`.ameta` metadata IO 位于可选 `asharia::asset_core_io`
+  target，依赖 `archive` facade，不把 JSON/persistence 依赖强加给 identity/handle API。
 - `editor-core` 未来提供 editor service、selection、inspector、package browser。
 
 ## Package Manifest
