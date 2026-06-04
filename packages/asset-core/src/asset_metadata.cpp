@@ -35,6 +35,19 @@ namespace asharia::asset {
             return hash;
         }
 
+        [[nodiscard]] bool isAsciiAlpha(char character) noexcept {
+            return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
+        }
+
+        [[nodiscard]] Error sourcePathError(std::string_view sourcePath, std::string_view reason) {
+            return Error{
+                ErrorDomain::Asset,
+                3,
+                "Invalid asset source path source=\"" + std::string{sourcePath} +
+                    "\": " + std::string{reason},
+            };
+        }
+
         [[nodiscard]] Error sourceAssetRecordError(const SourceAssetRecord& record,
                                                    std::string_view reason) {
             return Error{
@@ -78,6 +91,53 @@ namespace asharia::asset {
         return hash;
     }
 
+    VoidResult validateAssetSourcePath(std::string_view sourcePath) {
+        if (sourcePath.empty()) {
+            return std::unexpected{sourcePathError(sourcePath, "source path is missing")};
+        }
+
+        if (sourcePath.find('\\') != std::string_view::npos) {
+            return std::unexpected{
+                sourcePathError(sourcePath, "source path must use '/' separators")};
+        }
+
+        if (sourcePath.front() == '/') {
+            return std::unexpected{
+                sourcePathError(sourcePath, "source path must be project-relative")};
+        }
+
+        if (sourcePath.size() >= 2 && isAsciiAlpha(sourcePath[0]) && sourcePath[1] == ':') {
+            return std::unexpected{
+                sourcePathError(sourcePath, "source path must not use a drive prefix")};
+        }
+
+        std::size_t segmentStart = 0;
+        while (segmentStart <= sourcePath.size()) {
+            const std::size_t segmentEnd = sourcePath.find('/', segmentStart);
+            const std::size_t clampedEnd =
+                segmentEnd == std::string_view::npos ? sourcePath.size() : segmentEnd;
+            const std::string_view segment =
+                sourcePath.substr(segmentStart, clampedEnd - segmentStart);
+
+            if (segment.empty()) {
+                return std::unexpected{
+                    sourcePathError(sourcePath, "source path contains an empty segment")};
+            }
+
+            if (segment == "." || segment == "..") {
+                return std::unexpected{sourcePathError(
+                    sourcePath, "source path must not contain '.' or '..' segments")};
+            }
+
+            if (segmentEnd == std::string_view::npos) {
+                break;
+            }
+            segmentStart = segmentEnd + 1;
+        }
+
+        return {};
+    }
+
     VoidResult validateSourceAssetRecord(const SourceAssetRecord& record) {
         if (!record.guid) {
             return std::unexpected{sourceAssetRecordError(record, "asset GUID is invalid")};
@@ -91,8 +151,8 @@ namespace asharia::asset {
             return std::unexpected{sourceAssetRecordError(record, "asset type name is missing")};
         }
 
-        if (record.sourcePath.empty()) {
-            return std::unexpected{sourceAssetRecordError(record, "source path is missing")};
+        if (auto validSourcePath = validateAssetSourcePath(record.sourcePath); !validSourcePath) {
+            return std::unexpected{sourceAssetRecordError(record, validSourcePath.error().message)};
         }
 
         if (!record.importerId) {

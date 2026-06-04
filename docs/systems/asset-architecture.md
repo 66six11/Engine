@@ -229,7 +229,11 @@ struct AssetHandle {
 规则：
 
 - `.ameta` path 与 source path 一一对应，建议命名为 `<source-file>.ameta`。
-- `sourcePath` 用于诊断和 relocation，不作为引用 ID；真实引用以 GUID 为准。
+- `sourcePath` 用于诊断、catalog 查询和 relocation，不作为引用 ID；真实引用以 GUID 为准。
+- `sourcePath` 必须是 project-relative generic path，例如 `Content/Textures/Crate.png`。它不能为空，
+  不能是 drive/UNC/absolute path，不能包含反斜杠、`.` / `..` segment、空 segment 或尾随 slash。
+  未来 source scanner 必须先把文件系统路径转换为该 canonical 字符串，再写入 `.ameta` 或交给
+  `asset-pipeline` discovery。
 - `sourceHash` 和 `settingsHash` 在当前 v1 IO facade 中使用 16 位小写十六进制 `uint64` 文本；完整
   SHA-256 或平台化 content hash 等后续 asset-pipeline 再扩。
 - `settings` v1 只接受 string key/value，并按文件顺序计算 deterministic settings hash；typed import
@@ -522,11 +526,14 @@ struct AssetLoadResult {
 - IO 使用 `packages/archive` strict JSON facade；`asset_core` identity/catalog target 仍只依赖 core。
 - `.ameta` v1 保存 schema、schemaVersion、guid、assetType、sourcePath、sourceHash、settingsHash、
   importer id/version 和 string settings。
+- `sourcePath` validation 已收敛到 `asset-core` 的单一 canonical contract，`.ameta` IO、catalog record
+  validation 和 `asset-pipeline` discovery 共用该规则。
 
 验收：
 
 - `asharia-asset-core-smoke-tests` 覆盖 `.ameta` deterministic round-trip、file round-trip、
-  settings hash mismatch、malformed input、missing field、unknown member 和 non-string setting value。
+  settings hash mismatch、malformed input、missing field、unknown member、non-string setting value 和
+  非规范 `sourcePath`。
 
 ### 切片 H：Asset-pipeline metadata discovery baseline
 
@@ -543,7 +550,7 @@ struct AssetLoadResult {
 - 已落地 `asharia::asset_pipeline` target，public API 只依赖 `asset-core`，实现内部通过 `asset_core_io`
   读取 `.ameta`。
 - 已覆盖 valid discovery、missing metadata、malformed metadata、source path mismatch、duplicate GUID、
-  duplicate source path 和 invalid entry。
+  duplicate source path、invalid entry、entry 非规范 `sourcePath` 和 metadata 非规范 `sourcePath`。
 - 仍不做 watcher、import 调度、product cache manifest、具体 importer、GPU upload、Asset Browser 或
   Material Editor。
 

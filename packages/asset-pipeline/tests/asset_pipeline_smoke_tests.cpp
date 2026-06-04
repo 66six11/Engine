@@ -337,7 +337,60 @@ namespace {
         return result.manifest.records.empty() &&
                expectSingleDiagnostic(
                    result, asharia::asset::AssetSourceDiscoveryDiagnosticCode::InvalidEntry,
-                   "missing a source path");
+                   "source path is missing");
+    }
+
+    [[nodiscard]] bool smokeInvalidEntrySourcePath() {
+        const std::array entries{
+            asharia::asset::AssetSourceDiscoveryEntry{
+                .sourcePath = "Content\\Textures\\Crate.png",
+                .metadataPath = "unused-crate.png.ameta",
+            },
+        };
+        const asharia::asset::AssetSourceDiscoveryResult result =
+            asharia::asset::discoverAssetSources(entries);
+        return result.manifest.records.empty() &&
+               expectSingleDiagnostic(
+                   result, asharia::asset::AssetSourceDiscoveryDiagnosticCode::InvalidEntry,
+                   "'/' separators");
+    }
+
+    [[nodiscard]] bool smokeInvalidMetadataSourcePath() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-invalid-metadata-source-path");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path metadataPath = root / "crate.png.ameta";
+        const std::string invalidMetadata = R"json({
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetType": "com.asharia.asset.Texture2D",
+  "sourcePath": "Content//Textures/Crate.png",
+  "sourceHash": "1000f00d1234cafe",
+  "settingsHash": "1111111111111111",
+  "importer": {"id": "com.asharia.importer.texture", "version": 1},
+  "settings": {}
+}
+)json";
+        if (!writeTextFile(metadataPath, invalidMetadata)) {
+            return false;
+        }
+
+        const std::array entries{
+            asharia::asset::AssetSourceDiscoveryEntry{
+                .sourcePath = "Content/Textures/Crate.png",
+                .metadataPath = metadataPath,
+            },
+        };
+        const asharia::asset::AssetSourceDiscoveryResult result =
+            asharia::asset::discoverAssetSources(entries);
+        return result.manifest.records.empty() &&
+               expectSingleDiagnostic(
+                   result, asharia::asset::AssetSourceDiscoveryDiagnosticCode::MetadataReadFailed,
+                   "empty segment");
     }
 
 } // namespace
@@ -345,6 +398,7 @@ namespace {
 int main() {
     const bool passed = smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
                         smokeMalformedMetadata() && smokeSourcePathMismatch() &&
-                        smokeDuplicateGuid() && smokeDuplicateSourcePath() && smokeInvalidEntry();
+                        smokeDuplicateGuid() && smokeDuplicateSourcePath() && smokeInvalidEntry() &&
+                        smokeInvalidEntrySourcePath() && smokeInvalidMetadataSourcePath();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
