@@ -121,11 +121,12 @@ flowchart TD
 
 为了避免后续 editor 文件修改更新逻辑散落到 UI 或 runtime，单独记录未来 owner：
 
-- `packages/asset-pipeline`：当前已落地 metadata discovery baseline。它消费显式给定的 source/.ameta
-  条目，复用 `asset_core_io` 读取 `.ameta`，校验 duplicate GUID、duplicate source path、missing/malformed
-  metadata 和 source path mismatch，并产出 deterministic manifest / `AssetCatalog` 输入。后续再扩展
-  source scan、source hash、import request、product manifest、cache hit/miss 判断和 dependency invalidation
-  规则。
+- `packages/asset-pipeline`：当前已落地 metadata discovery baseline 和显式 source file snapshot/hash
+  baseline。它消费显式给定的 source/.ameta 条目，复用 `asset_core_io` 读取 `.ameta`，校验 duplicate
+  GUID、duplicate source path、missing/malformed metadata 和 source path mismatch，并产出 deterministic
+  manifest / `AssetCatalog` 输入；source snapshot 只消费显式 sourcePath + source file path，校验缺失、
+  非普通文件、非规范 sourcePath 和重复 source path，并产出确定性 v1 `sourceHash`。后续再扩展 source
+  scan、import request、product manifest、cache hit/miss 判断和 dependency invalidation 规则。
 - `tools/asset-processor`：开发期/后台进程或 CLI host。它可以使用文件 watcher 调用 `asset-pipeline`，
   执行具体 importer，写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向 editor/resource runtime
   发布 product 更新通知。
@@ -558,7 +559,31 @@ struct AssetLoadResult {
 
 - `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic discovery 和 discovery negative paths。
 
-### 切片 I：Resource upload baseline
+### 切片 I：Asset-pipeline source snapshot baseline
+
+进入条件：metadata discovery baseline 和 canonical `sourcePath` 合同稳定。
+
+交付：
+
+- `packages/asset-pipeline` 增加显式 source file snapshot/hash facade。
+- 输入为 canonical sourcePath + source file path；不扫描目录、不推断 source tree。
+- 校验 sourcePath、缺失 source 文件、非普通文件和重复 source path。
+- 对 source 文件字节计算确定性 v1 `sourceHash`，供后续 import plan / product key 使用。
+- source snapshot 与 `.ameta` metadata IO 保持分离，不写 `.ameta`。
+
+当前状态：
+
+- 已落地 `AssetSourceSnapshotEntry` / `AssetSourceSnapshot` / `AssetSourceSnapshotDiagnostic` 和
+  `snapshotAssetSourceFiles()`。
+- 仍不做 watcher、import 调度、product cache manifest、具体 importer、GPU upload、Asset Browser 或
+  Material Editor。
+
+验收：
+
+- `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic hash、content change、missing source file、
+  non-regular source file、invalid sourcePath 和 duplicate source path。
+
+### 切片 J：Resource upload baseline
 
 进入条件：RenderGraph storage/MRT/compute 和 resource lifetime 相关分支合并。
 
@@ -581,12 +606,13 @@ struct AssetLoadResult {
 | metadata schema 文档和 `.ameta` 示例 | 纯文档，可和 schema/archive/persistence 分支并行。 | 不把 runtime pointer、GPU handle 或 absolute build path 写进 `.ameta`。 |
 | product key / dependency hash 数据模型 | 可独立验证 hash/key 变化规则。 | 不接真实 importer，不读写 generated product。 |
 | asset-pipeline metadata discovery | 只消费显式 source/.ameta 条目，可用 package-local tests 验证。 | 不做 watcher、import 调度、product cache 或 editor UI。 |
+| asset-pipeline source snapshot/hash | 只消费显式 sourcePath + source file path，可用 package-local tests 验证。 | 不做 source tree scan、watcher、import 调度、product cache 或 editor UI。 |
 
 等待后再做：
 
 | 工作 | 等待项 |
 | --- | --- |
-| `tools/asset-processor` / 完整 import 调度 | 等 asset-pipeline discovery、source hash、import request 和 product manifest 逐步稳定。 |
+| `tools/asset-processor` / 完整 import 调度 | 等 asset-pipeline import request 和 product manifest 逐步稳定。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset / pipeline key | 等 material signature 和 descriptor contract 进入计划阶段。 |
@@ -609,8 +635,8 @@ Package-local tests：
 - `asharia-asset-core-smoke-tests --catalog`：add/find、重复 GUID/path 失败。
 - `asharia-asset-core-smoke-tests --product-key`：source/settings/tool/target 改变会改变 key。
 - `asharia-asset-core-smoke-tests --dependency`：dependency hash 和 missing dependency diagnostics。
-- `asharia-asset-pipeline-smoke-tests`：显式 source/.ameta discovery、缺失/坏 metadata、路径不匹配和重复
-  GUID/path diagnostics。
+- `asharia-asset-pipeline-smoke-tests`：显式 source/.ameta discovery、source snapshot/hash、缺失/坏
+  metadata、路径不匹配、重复 GUID/path、缺失/非普通 source file 和非规范 sourcePath diagnostics。
 
 未来 CLI smoke：
 
