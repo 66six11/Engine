@@ -11,7 +11,7 @@
 | `architecture/` | 当前架构、真实流程、package 边界和线程边界 | [overview.md](architecture/overview.md)、[architecture-principles.md](architecture/architecture-principles.md)、[flow.md](architecture/flow.md)、[package-first.md](architecture/package-first.md)、[render-layer.md](architecture/render-layer.md)、[editor.md](architecture/editor.md)、[editor-extension-architecture.md](architecture/editor-extension-architecture.md)、[engine-systems.md](architecture/engine-systems.md)、[frame-loop-threading.md](architecture/frame-loop-threading.md)、[editor-ui-scripting.md](architecture/editor-ui-scripting.md) |
 | `rendergraph/` | RenderGraph MVP、RHI 边界和专项路线图 | [mvp.md](rendergraph/mvp.md)、[rhi-boundary.md](rendergraph/rhi-boundary.md)、[roadmap.md](rendergraph/roadmap.md) |
 | `systems/` | schema/持久化、资产、场景、脚本、性能诊断等系统设计 | [reflection-serialization.md](systems/reflection-serialization.md)、[reflection-serialization-plan.md](systems/reflection-serialization-plan.md)、[asset-architecture.md](systems/asset-architecture.md)、[scene-world.md](systems/scene-world.md)、[scripting.md](systems/scripting.md)、[performance-profiling.md](systems/performance-profiling.md) |
-| `planning/` | 项目管理、阶段顺序、Definition of Done、专项开发方案 | [project-management.md](planning/project-management.md)、[next-development-plan.md](planning/next-development-plan.md)、[editor-development-plan.md](planning/editor-development-plan.md)、[render-layer-refactor-plan.md](planning/render-layer-refactor-plan.md) |
+| `planning/` | GitHub Project 管理、阶段顺序、Definition of Done、专项开发方案 | [project-management.md](planning/project-management.md)、[next-development-plan.md](planning/next-development-plan.md)、[editor-development-plan.md](planning/editor-development-plan.md)、[render-layer-refactor-plan.md](planning/render-layer-refactor-plan.md) |
 | `research/` | 一手资料索引和技术依据 | [sources.md](research/sources.md) |
 
 ## 快速阅读路径
@@ -31,8 +31,9 @@
 11. [architecture/editor-extension-architecture.md](architecture/editor-extension-architecture.md) - Editor extension、tool lifecycle、viewport overlay、hot reload 和 renderer bridge 边界。
 12. [architecture/editor-ui-scripting.md](architecture/editor-ui-scripting.md) - Editor UI 的 C++ 主实现、脚本扩展面、transaction 和 safe point 边界。
 13. [workflow/review.md](workflow/review.md) - 每次审查、修复和提交前必须执行的门禁。
-14. [planning/render-layer-refactor-plan.md](planning/render-layer-refactor-plan.md) - render 层整理的持久计划、合理性检查和分阶段验证入口。
-15. [planning/next-development-plan.md](planning/next-development-plan.md) - 下一阶段 RenderTarget、RenderView、editor viewport、RenderGraph resource、asset/material 和 scene 路线。
+14. [planning/project-management.md](planning/project-management.md) - GitHub Project、Issue、PR、Epic/Slice、blocker 和 Done evidence 管理规则。
+15. [planning/render-layer-refactor-plan.md](planning/render-layer-refactor-plan.md) - render 层整理的持久计划、合理性检查和分阶段验证入口。
+16. [planning/next-development-plan.md](planning/next-development-plan.md) - 下一阶段 RenderTarget、RenderView、editor viewport、RenderGraph resource、asset/material 和 scene 路线。
 
 ## 当前门禁状态
 
@@ -47,6 +48,7 @@
 - 根目录 `README.md` 只保留项目简介、快速开始、常用命令和文档入口。
 - 当前真实流程以 [architecture/flow.md](architecture/flow.md) 为准；新增 smoke、包依赖、frame loop、RenderGraph 语义或 Vulkan 生命周期变化时必须同步更新。
 - 提交门禁以 [workflow/review.md](workflow/review.md) 为准；新增 smoke 或审查规则时优先改这里。
+- GitHub Project、Issue、PR、Epic/Slice、blocker 和 Done evidence 管理以 [planning/project-management.md](planning/project-management.md) 为准；AI/agent 行为入口同步在根目录 `AGENTS.md`。
 - 全局阶段顺序以 [planning/next-development-plan.md](planning/next-development-plan.md) 为准；专项文档只能补约束，不维护第二套总路线。Editor 子阶段以 [planning/editor-development-plan.md](planning/editor-development-plan.md) 细化，不改全局阶段编号。
 - Markdown 文件按 [standards/encoding.md](standards/encoding.md) 使用 UTF-8 without BOM。
 - 维护脚本入口记录在 [workflow/build.md](workflow/build.md)；新增 `tools/` 脚本时必须同步工具用途、默认统计范围或门禁语义。

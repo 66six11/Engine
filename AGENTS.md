@@ -1,5 +1,17 @@
 # AGENTS.md
 
+## GitHub Project workflow
+
+- The Engine Project is the long-term roadmap board: <https://github.com/users/66six11/projects/2>.
+- Before creating or editing GitHub Issues, PR links, labels, dependencies, or Project fields, read `docs/planning/project-management.md`.
+- Use GitHub Issues as the task source of truth. Use `[Epic]` for stage-level roadmap work and `[Slice]` for PR-sized work.
+- Search first, then create or update. Do not duplicate issues, labels, Project items, sub-issues, or dependency edges.
+- Every Project item must have `Status`, `Priority`, and `Size`. Leave `Estimate`, `Iteration`, `Start date`, and `Target date` empty until there is a real schedule.
+- Existing long branches are tracked with an integration Slice that records current facts, validation, and remaining gaps. Do not retroactively split old branch history into artificial blockers.
+- PRs use `Closes #N` only when the PR fully satisfies the linked issue acceptance criteria and Done evidence is recorded. Use `Refs #N` for partial work, blocked work, or external counterparts.
+- Blocked PRs must stay draft, keep `Refs #N`, and state the blocker plus the validation that must be refreshed before merge.
+- After any Project maintenance pass, run a Project audit and write a short sync comment to #20 `[Epic] Workflow: roadmap, docs, and Project sync`.
+
 ## Build system
 
 - **Conan must run before CMake.** Run `.\scripts\bootstrap-conan.ps1` first — it generates toolchain files under `build/conan/` that CMake presets depend on.
@@ -63,6 +75,7 @@ For frame-loop/swapchain/render-graph changes, also run all smoke commands on bo
 - `docs/architecture/overview.md` — module boundaries, ownership, lifetime ordering
 - `docs/architecture/flow.md` — real dependency graph and frame loop data flow (must be updated when these change)
 - `docs/architecture/package-first.md` — package-first rules and CMake conventions
+- `docs/planning/project-management.md` — GitHub Project, Issue, PR, Slice/Epic, blocker, and Done evidence rules
 - `docs/standards/coding.md` — C++23, Vulkan lifecycle, sync rules
 - `docs/workflow/review.md` — full pre-commit checklist
 - `docs/standards/encoding.md` — BOM rules (with known toolchain quirks)
