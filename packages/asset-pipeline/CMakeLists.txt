@@ -14,6 +14,7 @@ asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 
 add_library(asharia-asset-pipeline STATIC
     src/asset_source_discovery.cpp
+    src/asset_source_snapshot.cpp
 )
 
 add_library(asharia::asset_pipeline ALIAS asharia-asset-pipeline)

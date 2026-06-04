@@ -12,6 +12,7 @@
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_pipeline/asset_source_discovery.hpp"
+#include "asharia/asset_pipeline/asset_source_snapshot.hpp"
 
 namespace {
 
@@ -126,6 +127,220 @@ namespace {
         }
 
         return true;
+    }
+
+    [[nodiscard]] bool
+    expectSingleSnapshotDiagnostic(const asharia::asset::AssetSourceSnapshotResult& result,
+                                   asharia::asset::AssetSourceSnapshotDiagnosticCode expectedCode,
+                                   std::string_view expectedToken) {
+        if (result.succeeded() || result.diagnostics.size() != 1) {
+            logFailure("Asset pipeline smoke expected exactly one source snapshot diagnostic.");
+            return false;
+        }
+
+        const asharia::asset::AssetSourceSnapshotDiagnostic& diagnostic =
+            result.diagnostics.front();
+        if (diagnostic.code != expectedCode ||
+            !messageContains(diagnostic.message, expectedToken)) {
+            logFailure("Asset pipeline smoke produced an unexpected source snapshot diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeSourceSnapshotValidAndDeterministic() {
+        const std::filesystem::path root = smokeRoot("asharia-asset-pipeline-smoke-snapshot-valid");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path crateSource = root / "crate.png";
+        const std::filesystem::path decalSource = root / "decal.png";
+        if (!writeTextFile(crateSource, "crate source bytes") ||
+            !writeTextFile(decalSource, "decal source bytes")) {
+            return false;
+        }
+
+        const std::array entries{
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Textures/Crate.png",
+                .sourceFilePath = crateSource,
+            },
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Textures/Decal.png",
+                .sourceFilePath = decalSource,
+            },
+        };
+
+        const asharia::asset::AssetSourceSnapshotResult first =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+        const asharia::asset::AssetSourceSnapshotResult second =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+
+        if (!first.succeeded() || !second.succeeded()) {
+            logFailure(first.diagnostics.empty() ? "Asset pipeline source snapshot smoke failed."
+                                                 : first.diagnostics.front().message);
+            return false;
+        }
+
+        if (first.snapshots.size() != 2 || first.snapshots != second.snapshots ||
+            first.snapshots[0].sourcePath != "Content/Textures/Crate.png" ||
+            first.snapshots[0].sourceFilePath != crateSource ||
+            first.snapshots[0].sourceHash == 0 || first.snapshots[1].sourceHash == 0 ||
+            first.snapshots[0].sourceHash == first.snapshots[1].sourceHash) {
+            logFailure("Asset pipeline source snapshot smoke failed deterministic hashing.");
+            return false;
+        }
+
+        std::cout << "Asset pipeline source snapshots: " << first.snapshots.size() << '\n';
+        return true;
+    }
+
+    [[nodiscard]] bool smokeSourceSnapshotContentChange() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-snapshot-change");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path crateSource = root / "crate.png";
+        const std::array entries{
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Textures/Crate.png",
+                .sourceFilePath = crateSource,
+            },
+        };
+
+        if (!writeTextFile(crateSource, "crate source bytes v1")) {
+            return false;
+        }
+        const asharia::asset::AssetSourceSnapshotResult before =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+
+        if (!writeTextFile(crateSource, "crate source bytes v2")) {
+            return false;
+        }
+        const asharia::asset::AssetSourceSnapshotResult after =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+
+        if (!before.succeeded() || !after.succeeded() || before.snapshots.size() != 1 ||
+            after.snapshots.size() != 1 ||
+            before.snapshots.front().sourceHash == after.snapshots.front().sourceHash) {
+            logFailure("Asset pipeline source snapshot smoke missed a content hash change.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeSourceSnapshotMissingFile() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-snapshot-missing");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::array entries{
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Textures/Missing.png",
+                .sourceFilePath = root / "missing.png",
+            },
+        };
+        const asharia::asset::AssetSourceSnapshotResult result =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+        return result.snapshots.empty() &&
+               expectSingleSnapshotDiagnostic(
+                   result, asharia::asset::AssetSourceSnapshotDiagnosticCode::MissingSourceFile,
+                   "could not find source file");
+    }
+
+    [[nodiscard]] bool smokeSourceSnapshotDirectory() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-snapshot-directory");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path sourceDirectory = root / "crate-directory";
+        std::error_code createError;
+        std::filesystem::create_directories(sourceDirectory, createError);
+        if (createError) {
+            logFailure("Asset pipeline smoke could not create source directory: " +
+                       createError.message());
+            return false;
+        }
+
+        const std::array entries{
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Textures/Crate.png",
+                .sourceFilePath = sourceDirectory,
+            },
+        };
+        const asharia::asset::AssetSourceSnapshotResult result =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+        return result.snapshots.empty() &&
+               expectSingleSnapshotDiagnostic(
+                   result, asharia::asset::AssetSourceSnapshotDiagnosticCode::SourceFileNotRegular,
+                   "regular file");
+    }
+
+    [[nodiscard]] bool smokeSourceSnapshotInvalidSourcePath() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-snapshot-invalid-source-path");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path crateSource = root / "crate.png";
+        if (!writeTextFile(crateSource, "crate source bytes")) {
+            return false;
+        }
+
+        const std::array entries{
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content\\Textures\\Crate.png",
+                .sourceFilePath = crateSource,
+            },
+        };
+        const asharia::asset::AssetSourceSnapshotResult result =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+        return result.snapshots.empty() &&
+               expectSingleSnapshotDiagnostic(
+                   result, asharia::asset::AssetSourceSnapshotDiagnosticCode::InvalidEntry,
+                   "'/' separators");
+    }
+
+    [[nodiscard]] bool smokeSourceSnapshotDuplicateSourcePath() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-snapshot-duplicate-path");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path crateA = root / "crate-a.png";
+        const std::filesystem::path crateB = root / "crate-b.png";
+        if (!writeTextFile(crateA, "crate source bytes a") ||
+            !writeTextFile(crateB, "crate source bytes b")) {
+            return false;
+        }
+
+        const std::array entries{
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Textures/Crate.png",
+                .sourceFilePath = crateA,
+            },
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Textures/Crate.png",
+                .sourceFilePath = crateB,
+            },
+        };
+        const asharia::asset::AssetSourceSnapshotResult result =
+            asharia::asset::snapshotAssetSourceFiles(entries);
+        return result.snapshots.size() == 1 &&
+               expectSingleSnapshotDiagnostic(
+                   result, asharia::asset::AssetSourceSnapshotDiagnosticCode::DuplicateSourcePath,
+                   "duplicate source path");
     }
 
     [[nodiscard]] bool smokeDiscoveryValidAndDeterministic() {
@@ -396,7 +611,11 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
+    const bool passed = smokeSourceSnapshotValidAndDeterministic() &&
+                        smokeSourceSnapshotContentChange() && smokeSourceSnapshotMissingFile() &&
+                        smokeSourceSnapshotDirectory() && smokeSourceSnapshotInvalidSourcePath() &&
+                        smokeSourceSnapshotDuplicateSourcePath() &&
+                        smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
                         smokeMalformedMetadata() && smokeSourcePathMismatch() &&
                         smokeDuplicateGuid() && smokeDuplicateSourcePath() && smokeInvalidEntry() &&
                         smokeInvalidEntrySourcePath() && smokeInvalidMetadataSourcePath();
