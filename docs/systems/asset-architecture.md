@@ -9,7 +9,7 @@ AssetDatabase、不做 editor UI、不做 GPU resource owner。
 
 核心结论：`asset-core` 先负责稳定身份、source metadata、import settings、product/cache key、依赖摘要和
 runtime-safe asset handle。文件修改监听、source hash、metadata IO、import 调度、product cache manifest
-和 dependency invalidation 后续由独立 `asset-pipeline` / `asset-processor` 承担；真实 importer、GPU upload、
+和 dependency invalidation 由独立 `asset-pipeline` / `asset-processor` 逐步承担；真实 importer、GPU upload、
 shader/material pipeline key、editor browser 和热重载分别在后续 package 或工具层接入，不能反向污染
 `asset-core`。
 
@@ -78,6 +78,9 @@ packages/asset-core/
 - `.ameta` 文本 IO 放在同 package 的可选 `asharia::asset_core_io` target 中；该 target 依赖
   `asharia::asset_core` 和 `asharia::archive`，但 identity/handle/catalog 头文件不强制依赖 JSON 或
   persistence 实现。
+- `asharia::asset_pipeline` 第一阶段只提供显式 source/.ameta 条目的 metadata discovery 和诊断；
+  public API 只依赖 `asset-core`，实现内部通过 `asset_core_io` 读取 `.ameta`，不拥有 watcher、importer、
+  product cache 或 GPU upload。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
 - `apps/editor`、`packages/scene-core`、`packages/material` 和 `packages/scripting` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
@@ -94,7 +97,7 @@ flowchart TD
     Archive["packages/archive"]
     Scene["packages/scene-core"]
     Material["future packages/material"]
-    AssetPipeline["future packages/asset-pipeline"]
+    AssetPipeline["packages/asset-pipeline"]
     ImportTool["future tools/asset-processor"]
     ResourceRuntime["future resource runtime"]
     Editor["apps/editor / editor-core"]
@@ -114,13 +117,15 @@ flowchart TD
     AssetCore -.optional reflected settings.-> Reflection
 ```
 
-### 后续 asset-pipeline / asset-processor
+### asset-pipeline / asset-processor
 
 为了避免后续 editor 文件修改更新逻辑散落到 UI 或 runtime，单独记录未来 owner：
 
-- `packages/asset-pipeline`：库化的 asset import pipeline。它消费 `asset-core` 的 GUID、metadata、
-  product key 和 dependency 数据，负责 source scan、source hash、metadata IO facade、import request、
-  product manifest、cache hit/miss 判断和 dependency invalidation 规则。
+- `packages/asset-pipeline`：当前已落地 metadata discovery baseline。它消费显式给定的 source/.ameta
+  条目，复用 `asset_core_io` 读取 `.ameta`，校验 duplicate GUID、duplicate source path、missing/malformed
+  metadata 和 source path mismatch，并产出 deterministic manifest / `AssetCatalog` 输入。后续再扩展
+  source scan、source hash、import request、product manifest、cache hit/miss 判断和 dependency invalidation
+  规则。
 - `tools/asset-processor`：开发期/后台进程或 CLI host。它可以使用文件 watcher 调用 `asset-pipeline`，
   执行具体 importer，写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向 editor/resource runtime
   发布 product 更新通知。
@@ -131,8 +136,9 @@ flowchart TD
 进入条件：
 
 - `asset-core` 至少完成 metadata model、product key、dependency 和 catalog 切片。
-- `.ameta` IO facade 已有确定性读写方案，或 `asset-pipeline` 明确依赖后续 serialization package。
-- editor 需要真实文件变更刷新，或 mesh/texture/material product smoke 需要稳定 import/cache 流程。
+- `.ameta` IO facade 已有确定性读写方案；metadata discovery baseline 可依赖 `asset_core_io`。
+- editor 需要真实文件变更刷新，或 mesh/texture/material product smoke 需要稳定 import/cache 流程时，再进入
+  watcher/import 调度和 product cache manifest。
 
 ## 数据边界
 
@@ -522,7 +528,30 @@ struct AssetLoadResult {
 - `asharia-asset-core-smoke-tests` 覆盖 `.ameta` deterministic round-trip、file round-trip、
   settings hash mismatch、malformed input、missing field、unknown member 和 non-string setting value。
 
-### 切片 H：Resource upload baseline
+### 切片 H：Asset-pipeline metadata discovery baseline
+
+进入条件：`asset-core` metadata、catalog 和 `.ameta` IO 边界稳定。
+
+交付：
+
+- `packages/asset-pipeline` package 骨架。
+- 显式 source/.ameta 条目 discovery facade。
+- deterministic manifest / `AssetCatalog` 输入和结构化 diagnostics。
+
+当前状态：
+
+- 已落地 `asharia::asset_pipeline` target，public API 只依赖 `asset-core`，实现内部通过 `asset_core_io`
+  读取 `.ameta`。
+- 已覆盖 valid discovery、missing metadata、malformed metadata、source path mismatch、duplicate GUID、
+  duplicate source path 和 invalid entry。
+- 仍不做 watcher、import 调度、product cache manifest、具体 importer、GPU upload、Asset Browser 或
+  Material Editor。
+
+验收：
+
+- `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic discovery 和 discovery negative paths。
+
+### 切片 I：Resource upload baseline
 
 进入条件：RenderGraph storage/MRT/compute 和 resource lifetime 相关分支合并。
 
@@ -542,15 +571,15 @@ struct AssetLoadResult {
 | 工作 | 原因 | 注意事项 |
 | --- | --- | --- |
 | `asset-core` GUID / handle / catalog 头文件和 tests | 只依赖 `core`，不抢 RenderGraph 或 schema/archive/persistence worktree。 | 优先 package-local tests，少碰 sample-viewer。 |
-| metadata schema 文档和 `.ameta` 示例 | 纯文档，可和 schema/archive/persistence 分支并行。 | 不实现 parser 前不要承诺最终 JSON facade。 |
+| metadata schema 文档和 `.ameta` 示例 | 纯文档，可和 schema/archive/persistence 分支并行。 | 不把 runtime pointer、GPU handle 或 absolute build path 写进 `.ameta`。 |
 | product key / dependency hash 数据模型 | 可独立验证 hash/key 变化规则。 | 不接真实 importer，不读写 generated product。 |
+| asset-pipeline metadata discovery | 只消费显式 source/.ameta 条目，可用 package-local tests 验证。 | 不做 watcher、import 调度、product cache 或 editor UI。 |
 
 等待后再做：
 
 | 工作 | 等待项 |
 | --- | --- |
-| `.ameta` read/write | 等 `packages/archive` / `packages/persistence` 分支完成 migration/text archive 细节。 |
-| `packages/asset-pipeline` / `tools/asset-processor` | 等 `asset-core` metadata、product key、dependency、catalog 和 `.ameta` IO 边界稳定。 |
+| `tools/asset-processor` / 完整 import 调度 | 等 asset-pipeline discovery、source hash、import request 和 product manifest 逐步稳定。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset / pipeline key | 等 material signature 和 descriptor contract 进入计划阶段。 |
@@ -573,6 +602,8 @@ Package-local tests：
 - `asharia-asset-core-smoke-tests --catalog`：add/find、重复 GUID/path 失败。
 - `asharia-asset-core-smoke-tests --product-key`：source/settings/tool/target 改变会改变 key。
 - `asharia-asset-core-smoke-tests --dependency`：dependency hash 和 missing dependency diagnostics。
+- `asharia-asset-pipeline-smoke-tests`：显式 source/.ameta discovery、缺失/坏 metadata、路径不匹配和重复
+  GUID/path diagnostics。
 
 未来 CLI smoke：
 

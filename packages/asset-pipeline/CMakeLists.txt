@@ -1,0 +1,51 @@
+cmake_minimum_required(VERSION 3.28)
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(AshariaEngineAssetPipeline VERSION 0.1.0 LANGUAGES CXX)
+endif()
+
+if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
+  get_filename_component(ASHARIA_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+endif()
+include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
+asharia_package_init()
+asharia_require_package_target(asharia::asset_core packages/asset-core)
+asharia_require_package_target(asharia::asset_core_io packages/asset-core)
+
+add_library(asharia-asset-pipeline STATIC
+    src/asset_source_discovery.cpp
+)
+
+add_library(asharia::asset_pipeline ALIAS asharia-asset-pipeline)
+
+target_include_directories(asharia-asset-pipeline
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+target_link_libraries(asharia-asset-pipeline
+    PUBLIC
+        asharia::asset_core
+    PRIVATE
+        asharia::asset_core_io
+)
+
+asharia_configure_target(asharia-asset-pipeline)
+
+if(ASHARIA_BUILD_TESTS)
+  enable_testing()
+
+  add_executable(asharia-asset-pipeline-smoke-tests
+      tests/asset_pipeline_smoke_tests.cpp
+  )
+
+  target_link_libraries(asharia-asset-pipeline-smoke-tests
+      PRIVATE
+          asharia::asset_pipeline
+          asharia::asset_core_io
+  )
+
+  asharia_configure_target(asharia-asset-pipeline-smoke-tests)
+
+  add_test(NAME asharia-asset-pipeline-smoke-tests COMMAND asharia-asset-pipeline-smoke-tests)
+endif()
