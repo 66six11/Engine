@@ -64,6 +64,7 @@ namespace asharia::asset {
     [[nodiscard]] std::uint64_t
     hashAssetImportSettings(std::span<const AssetImportSetting> settings) noexcept;
 
+    [[nodiscard]] VoidResult validateAssetSourcePath(std::string_view sourcePath);
     [[nodiscard]] VoidResult validateSourceAssetRecord(const SourceAssetRecord& record);
     [[nodiscard]] VoidResult validateSourceAssetRecords(std::span<const SourceAssetRecord> records);
 

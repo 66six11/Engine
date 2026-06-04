@@ -101,6 +101,47 @@ namespace {
         return message.find(token) != std::string_view::npos;
     }
 
+    bool expectInvalidSourcePath(std::string_view sourcePath, std::string_view expectedReason) {
+        auto validated = asharia::asset::validateAssetSourcePath(sourcePath);
+        if (validated) {
+            logFailure("Asset source path smoke accepted an invalid path.");
+            return false;
+        }
+
+        const std::string& message = validated.error().message;
+        if (validated.error().domain != asharia::ErrorDomain::Asset ||
+            !messageContains(message, sourcePath) || !messageContains(message, expectedReason)) {
+            logFailure("Asset source path smoke produced an incomplete diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeAssetSourcePath() {
+        if (!asharia::asset::validateAssetSourcePath("Content/Textures/Crate.png") ||
+            !asharia::asset::validateAssetSourcePath("Content/Meshes/Crate.v1.fbx") ||
+            !asharia::asset::validateAssetSourcePath("Packages/Test.Asset/Asset.file")) {
+            logFailure("Asset source path smoke rejected a valid canonical path.");
+            return false;
+        }
+
+        if (!expectInvalidSourcePath("", "source path is missing") ||
+            !expectInvalidSourcePath("Content\\Textures\\Crate.png", "'/' separators") ||
+            !expectInvalidSourcePath("/Content/Textures/Crate.png", "project-relative") ||
+            !expectInvalidSourcePath("//Server/Share/Crate.png", "project-relative") ||
+            !expectInvalidSourcePath("C:/Content/Textures/Crate.png", "drive prefix") ||
+            !expectInvalidSourcePath("Content/./Crate.png", "'.' or '..'") ||
+            !expectInvalidSourcePath("Content/../Crate.png", "'.' or '..'") ||
+            !expectInvalidSourcePath("Content//Textures/Crate.png", "empty segment") ||
+            !expectInvalidSourcePath("Content/Textures/", "empty segment")) {
+            return false;
+        }
+
+        std::cout << "Asset source path canonical contract validated.\n";
+        return true;
+    }
+
     bool expectInvalidReference(asharia::asset::AssetReference reference,
                                 asharia::asset::AssetTypeId actualType, std::string_view sourcePath,
                                 std::string_view expectedTypeName, std::string_view actualTypeName,
@@ -455,13 +496,26 @@ namespace {
   "runtimePointer": "forbidden"
 }
 )json";
+        const std::string invalidSourcePath = R"json({
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetType": "com.asharia.asset.Texture2D",
+  "sourcePath": "Content\\Textures\\Crate.png",
+  "sourceHash": "1000f00d1234cafe",
+  "settingsHash": "1111111111111111",
+  "importer": {"id": "com.asharia.importer.texture", "version": 1},
+  "settings": {}
+}
+)json";
 
         if (!expectInvalidMetadataRead("{", "byte") ||
             !expectInvalidMetadataRead(missingGuid, "guid") ||
             !expectInvalidMetadataRead(boolSetting, "string value") ||
             !expectInvalidMetadataRead(duplicateGuid, "duplicate key") ||
             !expectInvalidMetadataRead(uppercaseHash, "lowercase hex") ||
-            !expectInvalidMetadataRead(unknownMember, "unknown member")) {
+            !expectInvalidMetadataRead(unknownMember, "unknown member") ||
+            !expectInvalidMetadataRead(invalidSourcePath, "'/' separators")) {
             return false;
         }
 
@@ -683,8 +737,9 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetHandleAndReference() &&
-                        smokeAssetMetadata() && smokeAssetMetadataIo() &&
-                        smokeAssetProductKeyAndDependency() && smokeAssetCatalog();
+    const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetSourcePath() &&
+                        smokeAssetHandleAndReference() && smokeAssetMetadata() &&
+                        smokeAssetMetadataIo() && smokeAssetProductKeyAndDependency() &&
+                        smokeAssetCatalog();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

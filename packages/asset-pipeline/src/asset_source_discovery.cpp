@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "asharia/asset_core/asset_guid.hpp"
+#include "asharia/asset_core/asset_metadata.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
 
 namespace asharia::asset {
@@ -45,9 +46,11 @@ namespace asharia::asset {
 
         [[nodiscard]] bool validateEntry(AssetSourceDiscoveryResult& result,
                                          const AssetSourceDiscoveryEntry& entry) {
-            if (entry.sourcePath.empty()) {
+            if (auto validSourcePath = validateAssetSourcePath(entry.sourcePath);
+                !validSourcePath) {
                 addDiagnostic(result, AssetSourceDiscoveryDiagnosticCode::InvalidEntry, entry,
-                              "Asset source discovery entry is missing a source path.");
+                              "Asset source discovery entry has invalid source path: " +
+                                  validSourcePath.error().message);
                 return false;
             }
 
