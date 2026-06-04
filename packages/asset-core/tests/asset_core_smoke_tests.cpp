@@ -1,15 +1,18 @@
 ﻿#include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "asharia/asset_core/asset_catalog.hpp"
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_handle.hpp"
 #include "asharia/asset_core/asset_metadata.hpp"
+#include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_core/asset_product.hpp"
 #include "asharia/asset_core/asset_reference.hpp"
 #include "asharia/asset_core/asset_type.hpp"
@@ -302,6 +305,170 @@ namespace {
         return true;
     }
 
+    bool expectInvalidMetadataRead(std::string_view text, std::string_view expectedReason) {
+        auto document = asharia::asset::readAssetMetadataText(text);
+        if (document) {
+            logFailure("Asset metadata IO smoke accepted invalid .ameta text.");
+            return false;
+        }
+
+        const std::string& message = document.error().message;
+        if (document.error().domain != asharia::ErrorDomain::Asset ||
+            !messageContains(message, expectedReason)) {
+            logFailure("Asset metadata IO smoke produced an incomplete diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeAssetMetadataIo() {
+        constexpr std::string_view kTextureGuidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21";
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+        constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
+
+        auto textureGuid = asharia::asset::parseAssetGuid(kTextureGuidText);
+        if (!textureGuid) {
+            logFailure("Asset metadata IO smoke could not parse fixture GUID.");
+            return false;
+        }
+
+        const std::array settings{
+            asharia::asset::AssetImportSetting{.key = "colorSpace", .value = "srgb"},
+            asharia::asset::AssetImportSetting{.key = "generateMipmaps", .value = "true"},
+            asharia::asset::AssetImportSetting{.key = "compression", .value = "auto"},
+        };
+        const asharia::asset::AssetMetadataDocument document{
+            .source =
+                asharia::asset::SourceAssetRecord{
+                    .guid = *textureGuid,
+                    .assetType = asharia::asset::makeAssetTypeId(kTextureTypeName),
+                    .assetTypeName = std::string{kTextureTypeName},
+                    .sourcePath = "Content/Textures/Crate.png",
+                    .importerId = asharia::asset::makeImporterId(kTextureImporterName),
+                    .importerName = std::string{kTextureImporterName},
+                    .importerVersion = asharia::asset::ImporterVersion{1},
+                    .sourceHash = 0x1000F00D1234CAFEULL,
+                    .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+                },
+            .settings =
+                std::vector<asharia::asset::AssetImportSetting>{settings.begin(), settings.end()},
+        };
+
+        auto firstText = asharia::asset::writeAssetMetadataText(document);
+        auto secondText = asharia::asset::writeAssetMetadataText(document);
+        if (!firstText || !secondText || *firstText != *secondText) {
+            logFailure("Asset metadata IO smoke failed deterministic .ameta write.");
+            return false;
+        }
+
+        auto parsed = asharia::asset::readAssetMetadataText(*firstText);
+        if (!parsed || *parsed != document) {
+            logFailure(parsed ? "Asset metadata IO smoke failed .ameta round-trip."
+                              : parsed.error().message);
+            return false;
+        }
+
+        const std::filesystem::path metadataPath =
+            std::filesystem::temp_directory_path() / "asharia-asset-core-smoke.ameta";
+        if (auto written = asharia::asset::writeAssetMetadataFile(metadataPath, document);
+            !written) {
+            logFailure(written.error().message);
+            return false;
+        }
+        auto fileParsed = asharia::asset::readAssetMetadataFile(metadataPath);
+        std::error_code removeError;
+        std::filesystem::remove(metadataPath, removeError);
+        if (!fileParsed || *fileParsed != document) {
+            logFailure(fileParsed ? "Asset metadata IO smoke failed file round-trip."
+                                  : fileParsed.error().message);
+            return false;
+        }
+
+        asharia::asset::AssetMetadataDocument mismatchedSettings = document;
+        mismatchedSettings.source.settingsHash ^= 0x1ULL;
+        auto mismatchedWrite = asharia::asset::writeAssetMetadataText(mismatchedSettings);
+        if (mismatchedWrite ||
+            !messageContains(mismatchedWrite.error().message, "settings hash mismatch")) {
+            logFailure("Asset metadata IO smoke accepted mismatched settings hash.");
+            return false;
+        }
+
+        const std::string missingGuid = R"json({
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "assetType": "com.asharia.asset.Texture2D",
+  "sourcePath": "Content/Textures/Crate.png",
+  "sourceHash": "1000f00d1234cafe",
+  "settingsHash": "1111111111111111",
+  "importer": {"id": "com.asharia.importer.texture", "version": 1},
+  "settings": {}
+}
+)json";
+        const std::string boolSetting = R"json({
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetType": "com.asharia.asset.Texture2D",
+  "sourcePath": "Content/Textures/Crate.png",
+  "sourceHash": "1000f00d1234cafe",
+  "settingsHash": "1111111111111111",
+  "importer": {"id": "com.asharia.importer.texture", "version": 1},
+  "settings": {"generateMipmaps": true}
+}
+)json";
+        const std::string duplicateGuid = R"json({
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "guid": "785e2474-65c4-4f28-a8fb-ff8a21449a61",
+  "assetType": "com.asharia.asset.Texture2D",
+  "sourcePath": "Content/Textures/Crate.png",
+  "sourceHash": "1000f00d1234cafe",
+  "settingsHash": "1111111111111111",
+  "importer": {"id": "com.asharia.importer.texture", "version": 1},
+  "settings": {}
+}
+)json";
+        const std::string uppercaseHash = R"json({
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetType": "com.asharia.asset.Texture2D",
+  "sourcePath": "Content/Textures/Crate.png",
+  "sourceHash": "1000F00D1234CAFE",
+  "settingsHash": "1111111111111111",
+  "importer": {"id": "com.asharia.importer.texture", "version": 1},
+  "settings": {}
+}
+)json";
+        const std::string unknownMember = R"json({
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetType": "com.asharia.asset.Texture2D",
+  "sourcePath": "Content/Textures/Crate.png",
+  "sourceHash": "1000f00d1234cafe",
+  "settingsHash": "1111111111111111",
+  "importer": {"id": "com.asharia.importer.texture", "version": 1},
+  "settings": {},
+  "runtimePointer": "forbidden"
+}
+)json";
+
+        if (!expectInvalidMetadataRead("{", "byte") ||
+            !expectInvalidMetadataRead(missingGuid, "guid") ||
+            !expectInvalidMetadataRead(boolSetting, "string value") ||
+            !expectInvalidMetadataRead(duplicateGuid, "duplicate key") ||
+            !expectInvalidMetadataRead(uppercaseHash, "lowercase hex") ||
+            !expectInvalidMetadataRead(unknownMember, "unknown member")) {
+            return false;
+        }
+
+        std::cout << "Asset metadata IO bytes: " << firstText->size() << '\n';
+        return true;
+    }
+
     bool smokeAssetProductKeyAndDependency() {
         constexpr std::string_view kTextureGuidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21";
         constexpr std::string_view kShaderGuidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61";
@@ -517,7 +684,7 @@ namespace {
 
 int main() {
     const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetHandleAndReference() &&
-                        smokeAssetMetadata() && smokeAssetProductKeyAndDependency() &&
-                        smokeAssetCatalog();
+                        smokeAssetMetadata() && smokeAssetMetadataIo() &&
+                        smokeAssetProductKeyAndDependency() && smokeAssetCatalog();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

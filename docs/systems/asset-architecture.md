@@ -60,13 +60,14 @@ packages/asset-core/
     asset_type.hpp
     asset_handle.hpp
     asset_metadata.hpp
+    asset_metadata_io.hpp
     asset_catalog.hpp
-    product_key.hpp
-    dependency.hpp
+    asset_product.hpp
   src/
     asset_guid.cpp
+    asset_metadata_io.cpp
     asset_catalog.cpp
-    product_key.cpp
+    asset_product.cpp
   tests/
     asset_core_smoke_tests.cpp
 ```
@@ -74,8 +75,9 @@ packages/asset-core/
 依赖原则：
 
 - `asharia::asset_core` 第一阶段只依赖 `asharia::core`。
-- 如果要读写 `.ameta` 文本文件，优先放在后续 `asharia::asset_core_persistence` 或同 package 的可选源文件中，
-  并按职责依赖 `asharia::archive` / `asharia::persistence`；不要让 identity/handle 头文件强制依赖 JSON 或 persistence 实现。
+- `.ameta` 文本 IO 放在同 package 的可选 `asharia::asset_core_io` target 中；该 target 依赖
+  `asharia::asset_core` 和 `asharia::archive`，但 identity/handle/catalog 头文件不强制依赖 JSON 或
+  persistence 实现。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
 - `apps/editor`、`packages/scene-core`、`packages/material` 和 `packages/scripting` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
@@ -88,6 +90,8 @@ flowchart TD
     Reflection["packages/schema<br/>target; reflection spike legacy"]
     Serialization["packages/persistence<br/>target; serialization spike legacy"]
     AssetCore["packages/asset-core"]
+    AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
+    Archive["packages/archive"]
     Scene["packages/scene-core"]
     Material["future packages/material"]
     AssetPipeline["future packages/asset-pipeline"]
@@ -96,6 +100,8 @@ flowchart TD
     Editor["apps/editor / editor-core"]
 
     AssetCore --> Core
+    AssetCoreIo --> AssetCore
+    AssetCoreIo --> Archive
     Scene --> AssetCore
     Material --> AssetCore
     AssetPipeline --> AssetCore
@@ -103,7 +109,8 @@ flowchart TD
     ImportTool --> AssetCore
     ResourceRuntime --> AssetCore
     Editor --> AssetCore
-    AssetCore -.optional metadata IO.-> Serialization
+    AssetPipeline -.metadata IO.-> AssetCoreIo
+    ImportTool -.metadata IO.-> AssetCoreIo
     AssetCore -.optional reflected settings.-> Reflection
 ```
 
@@ -199,14 +206,15 @@ struct AssetHandle {
   "guid": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
   "assetType": "com.asharia.asset.Texture2D",
   "sourcePath": "Content/Textures/Crate.png",
-  "sourceHash": "sha256:...",
+  "sourceHash": "1000f00d1234cafe",
+  "settingsHash": "0a43b95e39b77b67",
   "importer": {
     "id": "com.asharia.importer.texture2d",
     "version": 1
   },
   "settings": {
     "colorSpace": "srgb",
-    "generateMipmaps": true,
+    "generateMipmaps": "true",
     "compression": "auto"
   }
 }
@@ -216,7 +224,11 @@ struct AssetHandle {
 
 - `.ameta` path 与 source path 一一对应，建议命名为 `<source-file>.ameta`。
 - `sourcePath` 用于诊断和 relocation，不作为引用 ID；真实引用以 GUID 为准。
-- `sourceHash`、`settings` 和 `importer.version` 共同影响 product key。
+- `sourceHash` 和 `settingsHash` 在当前 v1 IO facade 中使用 16 位小写十六进制 `uint64` 文本；完整
+  SHA-256 或平台化 content hash 等后续 asset-pipeline 再扩。
+- `settings` v1 只接受 string key/value，并按文件顺序计算 deterministic settings hash；typed import
+  settings 留给后续 editor/importer settings schema。
+- `sourceHash`、`settingsHash` 和 `importer.version` 共同影响 product key。
 - `.ameta` 可包含 editor-only import settings，但 cooked/runtime manifest 必须剥离 editor-only 字段。
 - `.ameta` 不保存 runtime pointer、GPU handle、absolute build path 或 transient cache path。
 
@@ -498,9 +510,17 @@ struct AssetLoadResult {
 - strict parse diagnostics。
 - byte-for-byte deterministic write。
 
+当前状态：
+
+- 已落地 `asharia::asset_core_io` 可选 target，提供 `.ameta` text/file read-write facade。
+- IO 使用 `packages/archive` strict JSON facade；`asset_core` identity/catalog target 仍只依赖 core。
+- `.ameta` v1 保存 schema、schemaVersion、guid、assetType、sourcePath、sourceHash、settingsHash、
+  importer id/version 和 string settings。
+
 验收：
 
-- `--smoke-asset-metadata-roundtrip` 或 package-local test 覆盖 `.ameta` round-trip 和 malformed input。
+- `asharia-asset-core-smoke-tests` 覆盖 `.ameta` deterministic round-trip、file round-trip、
+  settings hash mismatch、malformed input、missing field、unknown member 和 non-string setting value。
 
 ### 切片 H：Resource upload baseline
 
