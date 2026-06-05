@@ -28,6 +28,7 @@ AshariaEngine/
     rendergraph/
     schema/
     archive/
+    project-core/
     asset-core/
     asset-pipeline/
     scene-core/
@@ -81,6 +82,9 @@ package 用来承载可选能力：
 - `cpp-binding` 提供 C++ object/member 与 schema field 的读写绑定。
 - `persistence` 组合 schema、archive 和 binding，提供 save/load/default/migration。
 - `scene-core` 提供 headless World、runtime EntityId 和 local Transform baseline。
+- `project-core` 提供最小 Asharia project descriptor。当前只保存 project identity、asset source roots、
+  asset cache root policy 和 discovery ignore policy；不保存 target profiles、asset profiles、
+  package/export 设置、editor workspace 或 runtime/GPU state。
 - `reflection` / `serialization` 是过渡兼容 package，不再承载新 editor、script、asset 或 migration 语义。
 - `renderer-basic` 提供后端无关 renderer contract 和共享 RenderGraph pass schema。
 - `renderer-basic-vulkan` target 负责 Vulkan 命令录制、descriptor/pipeline/resource 绑定和 sample renderer。

@@ -70,10 +70,27 @@ packages/asset-core/
     asset_product.cpp
   tests/
     asset_core_smoke_tests.cpp
+
+packages/project-core/
+  CMakeLists.txt
+  asharia.package.json
+  include/asharia/project/
+    project_descriptor.hpp
+    project_descriptor_io.hpp
+  src/
+    project_descriptor.cpp
+    project_descriptor_io.cpp
+  tests/
+    project_core_smoke_tests.cpp
 ```
 
 依赖原则：
 
+- `asharia::project_core` 只依赖 `asharia::core`，当前只定义 Asharia project identity、
+  `assetSourceRoots`、`assetCacheRoot` 和 asset discovery ignore policy；不保存 cook/package profiles、
+  target profiles、asset profiles、editor workspace 或 runtime state。
+- `asharia::project_core_io` 依赖 `asharia::project_core` 和 `asharia::archive`，使用 strict JSON facade
+  读写 `asharia.project.json`；JSON 类型不进入 public descriptor model。
 - `asharia::asset_core` 第一阶段只依赖 `asharia::core`。
 - `.ameta` 文本 IO 放在同 package 的可选 `asharia::asset_core_io` target 中；该 target 依赖
   `asharia::asset_core` 和 `asharia::archive`，但 identity/handle/catalog 头文件不强制依赖 JSON 或
@@ -92,6 +109,8 @@ flowchart TD
     Core["engine/core"]
     Reflection["packages/schema<br/>target; reflection spike legacy"]
     Serialization["packages/persistence<br/>target; serialization spike legacy"]
+    ProjectCore["packages/project-core"]
+    ProjectCoreIo["packages/project-core<br/>asharia::project_core_io"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
     Archive["packages/archive"]
@@ -102,6 +121,9 @@ flowchart TD
     ResourceRuntime["future resource runtime"]
     Editor["apps/editor / editor-core"]
 
+    ProjectCore --> Core
+    ProjectCoreIo --> ProjectCore
+    ProjectCoreIo --> Archive
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
@@ -110,6 +132,7 @@ flowchart TD
     AssetPipeline --> AssetCore
     ImportTool --> AssetPipeline
     ImportTool --> AssetCore
+    ImportTool -.project descriptor.-> ProjectCoreIo
     ResourceRuntime --> AssetCore
     Editor --> AssetCore
     AssetPipeline -.metadata IO.-> AssetCoreIo
@@ -134,8 +157,9 @@ flowchart TD
   或 import request；scan-to-planning bridge 只顺序复用 scan、discovery、snapshot 和 planning，并保留分阶段
   diagnostics，供 dry-run CLI 报告。后续再扩展 import scheduling、product execution 和 dependency invalidation
   规则。
-- `tools/asset-processor`：当前只提供 read-only dry-run CLI，读取显式 source root、可选 product manifest，
-  调用 `asset-pipeline` 的 scan-to-planning bridge，并输出稳定文本报告；它不执行 importer、不写 product
+- `tools/asset-processor`：当前只提供 read-only dry-run CLI，可读取显式 source root，或读取
+  `asharia.project.json` 中的 `assetSourceRoots` / `assetDiscovery.ignoredDirectories`，再使用显式
+  `--target-profile` 和可选 product manifest 输出稳定文本报告；它不执行 importer、不写 product
   manifest/blob/cache、不做 watcher 或热重载。未来可扩展为开发期/后台进程或 CLI host，使用文件 watcher
   调用 `asset-pipeline`，执行具体 importer，写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向
   editor/resource runtime 发布 product 更新通知。
@@ -210,6 +234,43 @@ struct AssetHandle {
 - `AssetTypeId` 来自稳定 type name hash，例如 `com.asharia.asset.Texture2D`。
 - `AssetHandle<T>` 只携带 GUID；类型约束由 `T`、metadata 和 load policy 共同校验。
 - 错误诊断必须同时输出 GUID、source path、expected type 和 actual type，不能只输出 hash。
+
+## Project descriptor
+
+第一版 `asharia.project.json` 只描述项目身份和资产源发现入口，不是完整工程系统、打包 profile 或
+editor workspace：
+
+```json
+{
+  "schema": "com.asharia.project",
+  "schemaVersion": 1,
+  "projectName": "SampleProject",
+  "projectId": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetSourceRoots": [
+    {
+      "rootName": "project-assets",
+      "directory": "Assets",
+      "sourcePathPrefix": "Assets"
+    }
+  ],
+  "assetCacheRoot": ".asharia/cache/assets",
+  "assetDiscovery": {
+    "ignoredDirectories": [".git", ".asharia", "Derived"]
+  }
+}
+```
+
+规则：
+
+- `assetSourceRoots` 只告诉 scanner 从哪些 project-relative 目录查找 source asset 和 `.ameta` sidecar。
+- `rootName` 用于日志/诊断；`directory` 是相对 project descriptor 的真实目录；`sourcePathPrefix` 是写入
+  `.ameta` 和 pipeline 诊断的 canonical source path 前缀。
+- `assetCacheRoot` 只表示 generated asset cache root policy；第一版不在 descriptor 中固定
+  `productManifestPath`。
+- `targetProfile` 仍由 `asset-processor dry-run --target-profile` 或未来 cook/package 命令显式提供，不写入
+  project descriptor。
+- 不写 `targetProfiles`、`assetProfiles`、package/export/signing/staging 设置、watcher 状态、dirty queue、
+  Asset Browser state、Material Editor state、editor dock layout、runtime resource handle 或 GPU upload state。
 
 ## Metadata 文件
 
@@ -717,13 +778,14 @@ scan-to-planning bridge baseline 稳定。
 - `tools/asset-processor` 增加 root build 可生成的 `asharia-asset-processor` executable。
 - `dry-run` 命令接受 source root、sourcePath prefix、target profile、可选 product manifest 和 ignored
   directory names。
-- dry-run 只调用 `planScannedAssetImports()`，输出 scan/discovery/snapshot/planning summary、import
-  requests、cache hits 和 staged diagnostics。
+- dry-run 只复用 source scan、metadata discovery、source snapshot/hash 和 import planning facade，输出
+  scan/discovery/snapshot/planning summary、import requests、cache hits 和 staged diagnostics。
 - product manifest 缺省时使用 empty manifest；manifest read failure 带路径上下文报错。
 
 当前状态：
 
 - 已落地 `asharia-asset-processor dry-run ...` 和 `--smoke-dry-run`。
+- `dry-run --project <path> --target-profile <name>` 已由 project descriptor slice 接入。
 - 仍不做 watcher、importer execution、product manifest/blob/cache 写入、dependency invalidation、
   GPU upload、Asset Browser 或 Material Editor。
 
@@ -732,6 +794,32 @@ scan-to-planning bridge baseline 稳定。
 - root CMake build 生成 `asharia-asset-processor`。
 - `asharia-asset-processor --smoke-dry-run` 覆盖 request/cache-hit 报告、scan diagnostic 和 product
   manifest read diagnostic。
+
+### 切片 N.5：Project descriptor for asset source discovery
+
+进入条件：asset-processor dry-run CLI baseline 稳定。
+
+交付：
+
+- `packages/project-core` 增加最小 Asharia project descriptor model 和 deterministic JSON IO facade。
+- `asharia.project.json` v1 只记录 `projectName`、`projectId`、`assetSourceRoots`、`assetCacheRoot` 和
+  `assetDiscovery.ignoredDirectories`。
+- `assetSourceRoots` 使用清晰字段名：`rootName`、`directory`、`sourcePathPrefix`。
+- `asharia-asset-processor dry-run --project <path> --target-profile <name>` 读取 descriptor，解析
+  project-relative source root，并沿用 read-only dry-run 报告。
+
+不做：
+
+- 不在 descriptor 中加入 `targetProfiles`、`assetProfiles`、cook/package/export 设置或固定
+  `productManifestPath`。
+- 不做 watcher、import 调度、product manifest/blob/cache 写入、hot reload、Asset Browser、Material Editor、
+  editor project browser、runtime resource loading、GPU upload、RenderGraph、RHI 或 renderer changes。
+
+验收：
+
+- `asharia-project-core-smoke-tests` 覆盖 descriptor round-trip、malformed input、duplicate/missing
+  fields、invalid project id、invalid source root 和 duplicate root/ignored directory negative paths。
+- `asharia-asset-processor --smoke-dry-run` 覆盖 project descriptor 输入模式。
 
 ### 切片 O：Resource upload baseline
 

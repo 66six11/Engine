@@ -21,6 +21,7 @@ namespace asharia::asset_processor {
         };
 
         enum class DryRunOptionKind : std::uint8_t {
+            Project,
             SourceRoot,
             SourcePathPrefix,
             TargetProfile,
@@ -61,6 +62,9 @@ namespace asharia::asset_processor {
         }
 
         [[nodiscard]] DryRunOptionKind classifyDryRunOption(std::string_view option) noexcept {
+            if (option == "--project") {
+                return DryRunOptionKind::Project;
+            }
             if (option == "--source-root") {
                 return DryRunOptionKind::SourceRoot;
             }
@@ -82,6 +86,11 @@ namespace asharia::asset_processor {
         [[nodiscard]] bool applyDryRunOption(DryRunOptions& options, DryRunOptionKind option,
                                              std::string value) {
             switch (option) {
+            case DryRunOptionKind::Project:
+                if (!value.empty()) {
+                    options.projectPath = std::filesystem::path{value};
+                }
+                return true;
             case DryRunOptionKind::SourceRoot:
                 options.sourceRoot = std::filesystem::path{value};
                 return true;
@@ -132,9 +141,13 @@ namespace asharia::asset_processor {
                 }
             }
 
-            if (parsed.dryRun.sourceRoot.empty()) {
+            if (parsed.dryRun.projectPath &&
+                (!parsed.dryRun.sourceRoot.empty() || !parsed.dryRun.sourcePathPrefix.empty())) {
+                parsed.error = "dry-run --project cannot be combined with --source-root or "
+                               "--source-path-prefix.";
+            } else if (!parsed.dryRun.projectPath && parsed.dryRun.sourceRoot.empty()) {
                 parsed.error = "dry-run requires --source-root.";
-            } else if (parsed.dryRun.sourcePathPrefix.empty()) {
+            } else if (!parsed.dryRun.projectPath && parsed.dryRun.sourcePathPrefix.empty()) {
                 parsed.error = "dry-run requires --source-path-prefix.";
             } else if (parsed.dryRun.targetProfile.empty()) {
                 parsed.error = "dry-run requires --target-profile.";
@@ -177,6 +190,9 @@ namespace asharia::asset_processor {
                    << "  asharia-asset-processor dry-run --source-root <path> "
                       "--source-path-prefix <path> --target-profile <name> "
                       "[--product-manifest <path>] [--ignore-dir <name> ...]\n"
+                   << "  asharia-asset-processor dry-run --project <path> "
+                      "--target-profile <name> [--product-manifest <path>] "
+                      "[--ignore-dir <name> ...]\n"
                    << "  asharia-asset-processor --smoke-dry-run\n";
         }
 

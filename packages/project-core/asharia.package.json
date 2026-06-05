@@ -1,0 +1,14 @@
+{
+  "name": "com.asharia.project-core",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Project Core",
+  "description": "Minimal Asharia project descriptor model and deterministic IO for asset source discovery.",
+  "dependencies": ["com.asharia.core", "com.asharia.archive"],
+  "targets": ["asharia-project-core", "asharia-project-core-io"],
+  "testTargets": ["asharia-project-core-smoke-tests"],
+  "targetDependencies": {
+    "asharia-project-core": ["asharia-core"],
+    "asharia-project-core-io": ["asharia-project-core", "asharia-archive"],
+    "asharia-project-core-smoke-tests": ["asharia-project-core-io"]
+  }
+}

@@ -51,6 +51,8 @@ RenderGraph 资料。
 - `packages/cpp-binding`：C++ object/member 与 schema field 的读写绑定。
 - `packages/persistence`：组合 schema、archive 和 binding，提供 save/load/default/migration。
 - `packages/scene-core`：headless World、runtime `EntityId` 和 local `Transform` baseline。
+- `packages/project-core`：最小 Asharia project descriptor，当前只描述 project identity、asset source roots
+  和 asset discovery ignore policy；不拥有 cook/package profiles、editor workspace 或 runtime state。
 - `packages/asset-core`：asset GUID、type、handle/reference、metadata、product/cache/dependency/catalog
   的 CPU 数据模型；不拥有 GPU resource 或 editor UI。
 - `packages/reflection` / `packages/serialization`：过渡兼容 package，不再承载新 editor、script、asset 或

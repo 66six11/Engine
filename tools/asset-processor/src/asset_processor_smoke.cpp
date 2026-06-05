@@ -1,8 +1,8 @@
 ﻿#include "asset_processor_smoke.hpp"
 
 #include <chrono>
-#include <cstdlib>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -13,8 +13,6 @@
 #include <utility>
 #include <vector>
 
-#include "asset_processor_dry_run.hpp"
-#include "asset_processor_text.hpp"
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
@@ -22,6 +20,10 @@
 #include "asharia/asset_core/asset_type.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
+#include "asharia/project/project_descriptor_io.hpp"
+
+#include "asset_processor_dry_run.hpp"
+#include "asset_processor_text.hpp"
 
 namespace asharia::asset_processor {
     namespace {
@@ -77,8 +79,8 @@ namespace asharia::asset_processor {
 
             for (std::uint64_t attempt = 0; attempt < 32; ++attempt) {
                 const std::filesystem::path candidate =
-                    tempRoot / ("asharia-asset-processor-smoke-dry-run-" +
-                                formatHash64(seed + attempt));
+                    tempRoot /
+                    ("asharia-asset-processor-smoke-dry-run-" + formatHash64(seed + attempt));
                 std::error_code createError;
                 if (std::filesystem::create_directory(candidate, createError)) {
                     SmokeWorkspace workspace;
@@ -95,8 +97,7 @@ namespace asharia::asset_processor {
             return std::nullopt;
         }
 
-        [[nodiscard]] bool writeTextFile(const std::filesystem::path& path,
-                                         std::string_view text) {
+        [[nodiscard]] bool writeTextFile(const std::filesystem::path& path, std::string_view text) {
             std::ofstream stream{path, std::ios::binary};
             if (!stream) {
                 std::cerr << "Failed to open smoke file " << pathText(path) << ".\n";
@@ -183,6 +184,40 @@ namespace asharia::asset_processor {
             return true;
         }
 
+        [[nodiscard]] bool writeSmokeProjectDescriptor(const std::filesystem::path& projectPath) {
+            auto projectId =
+                asharia::project::parseProjectId("f65d07f1-f0d6-4f4b-9834-13c2bd4d32aa");
+            if (!projectId) {
+                std::cerr << projectId.error().message << '\n';
+                return false;
+            }
+
+            auto written = asharia::project::writeAshariaProjectDescriptorFile(
+                projectPath, asharia::project::AshariaProjectDescriptor{
+                                 .projectName = "AssetProcessorSmoke",
+                                 .projectId = *projectId,
+                                 .assetSourceRoots =
+                                     {
+                                         asharia::project::AssetSourceRootDesc{
+                                             .rootName = "project-assets",
+                                             .directory = "Content",
+                                             .sourcePathPrefix = "Content",
+                                         },
+                                     },
+                                 .assetCacheRoot = ".asharia/cache/assets",
+                                 .assetDiscovery =
+                                     asharia::project::AssetDiscoveryDesc{
+                                         .ignoredDirectoryNames = {"Ignored"},
+                                     },
+                             });
+            if (!written) {
+                std::cerr << written.error().message << '\n';
+                return false;
+            }
+
+            return true;
+        }
+
         [[nodiscard]] asharia::asset::AssetProductRecord
         makeProductRecord(const asharia::asset::AssetImportRequest& request) {
             return asharia::asset::AssetProductRecord{
@@ -243,11 +278,34 @@ namespace asharia::asset_processor {
         const DryRunExecution emptyManifestDryRun = runDryRun(emptyManifestOptions);
         if (emptyManifestDryRun.exitCode != EXIT_SUCCESS ||
             !expectReportText(emptyManifestDryRun, "ignoredDirectories=1 \"Ignored\"") ||
+            !expectReportText(emptyManifestDryRun, "sourceRoots=1") ||
             !expectReportText(emptyManifestDryRun, "planning requests=2 cacheHits=0") ||
             !expectReportText(emptyManifestDryRun,
                               "import-request source=\"Content/Textures/Crate.png\"") ||
             !expectReportText(emptyManifestDryRun,
                               "import-request source=\"Content/Textures/Decal.png\"")) {
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path projectPath =
+            workspace->root / std::string{asharia::project::kDefaultAshariaProjectFileName};
+        if (!writeSmokeProjectDescriptor(projectPath)) {
+            return EXIT_FAILURE;
+        }
+
+        const DryRunExecution projectDryRun = runDryRun(DryRunOptions{
+            .projectPath = projectPath,
+            .sourceRoot = {},
+            .sourcePathPrefix = {},
+            .targetProfile = "windows-msvc-debug",
+            .productManifestPath = std::nullopt,
+            .ignoredDirectoryNames = {},
+        });
+        if (projectDryRun.exitCode != EXIT_SUCCESS ||
+            !expectReportText(projectDryRun, "projectName=\"AssetProcessorSmoke\"") ||
+            !expectReportText(projectDryRun, "source-root rootName=\"project-assets\"") ||
+            !expectReportText(projectDryRun, "ignoredDirectories=1 \"Ignored\"") ||
+            !expectReportText(projectDryRun, "planning requests=2 cacheHits=0")) {
             return EXIT_FAILURE;
         }
 
