@@ -121,15 +121,17 @@ flowchart TD
 
 为了避免后续 editor 文件修改更新逻辑散落到 UI 或 runtime，单独记录未来 owner：
 
-- `packages/asset-pipeline`：当前已落地 metadata discovery baseline、显式 source file snapshot/hash
-  baseline、product manifest IO baseline 和 import planning baseline。它消费显式给定的 source/.ameta 条目，复用 `asset_core_io`
-  读取 `.ameta`，校验 duplicate GUID、duplicate source path、missing/malformed metadata 和 source path
-  mismatch，并产出 deterministic manifest / `AssetCatalog` 输入；source snapshot 只消费显式 sourcePath +
-  source file path，校验缺失、非普通文件、非规范 sourcePath 和重复 source path，并产出确定性 v1
-  `sourceHash`；product manifest IO 复用 `archive` deterministic JSON facade，记录 product key、product
-  key hash、relative product path、product size 和 product hash；import planning 比较 discovered source、
-  current source snapshot、target profile 和 existing product manifest，产出 cache hit 或 import request。
-  后续再扩展 source scan、asset-processor 调度和 dependency invalidation 规则。
+- `packages/asset-pipeline`：当前已落地 deterministic source tree scan baseline、metadata discovery baseline、
+  显式 source file snapshot/hash baseline、product manifest IO baseline 和 import planning baseline。source scan
+  只遍历显式 source root，配对 `<source-file>.ameta` sidecar，产出 canonical sourcePath、source file path
+  和 metadata path；discovery 消费显式 source/.ameta 条目，复用 `asset_core_io` 读取 `.ameta`，校验
+  duplicate GUID、duplicate source path、missing/malformed metadata 和 source path mismatch，并产出
+  deterministic manifest / `AssetCatalog` 输入；source snapshot 只消费显式 sourcePath + source file path，
+  校验缺失、非普通文件、非规范 sourcePath 和重复 source path，并产出确定性 v1 `sourceHash`；product
+  manifest IO 复用 `archive` deterministic JSON facade，记录 product key、product key hash、relative product
+  path、product size 和 product hash；import planning 比较 discovered source、current source snapshot、target
+  profile 和 existing product manifest，产出 cache hit 或 import request。后续再扩展 scan-to-planning bridge、
+  asset-processor dry-run/product execution 和 dependency invalidation 规则。
 - `tools/asset-processor`：开发期/后台进程或 CLI host。它可以使用文件 watcher 调用 `asset-pipeline`，
   执行具体 importer，写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向 editor/resource runtime
   发布 product 更新通知。
@@ -652,7 +654,31 @@ struct AssetLoadResult {
   import settings change、missing snapshot、duplicate source、duplicate snapshot 和 invalid target profile。
 - `asharia-asset-pipeline-header-tests` 覆盖 import planning public header self-contained include。
 
-### 切片 L：Resource upload baseline
+### 切片 L：Asset-pipeline source tree scan baseline
+
+进入条件：metadata discovery、source snapshot/hash、product manifest IO 和 import planning baseline 稳定。
+
+交付：
+
+- `packages/asset-pipeline` 增加 deterministic source tree scan facade。
+- 输入为显式 source root、可选 sourcePath prefix、metadata sidecar suffix 和 ignored directory names。
+- 输出 canonical sourcePath、source file path 和 metadata path；`.ameta` 只作为 metadata sidecar，不作为 source asset。
+- 诊断 invalid root、invalid sourcePath prefix / sourcePath、missing metadata、orphan metadata 和 metadata path collision。
+- 保持输出按 canonical sourcePath 确定性排序。
+
+当前状态：
+
+- 已落地 `AssetSourceScanRequest`、`AssetSourceScanEntry`、`AssetSourceScanResult` 和 `scanAssetSourceTree()`。
+- 仍不读取 `.ameta`、不 hash source bytes、不桥接 import planning、不执行 importer、不写 product blob/cache、
+  不做 watcher、GPU upload、Asset Browser 或 Material Editor。
+
+验收：
+
+- `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic scan、ignored directory、missing metadata、orphan
+  metadata、invalid root 和 invalid sourcePath prefix。
+- `asharia-asset-pipeline-header-tests` 覆盖 source scan public header self-contained include。
+
+### 切片 M：Resource upload baseline
 
 进入条件：RenderGraph storage/MRT/compute 和 resource lifetime 相关分支合并。
 
@@ -678,12 +704,13 @@ struct AssetLoadResult {
 | asset-pipeline source snapshot/hash | 只消费显式 sourcePath + source file path，可用 package-local tests 验证。 | 不做 source tree scan、watcher、import 调度、product cache 或 editor UI。 |
 | asset-pipeline product manifest IO | 只读写 product manifest 文档，可用 package-local tests 验证。 | 不做 importer、product blob/cache execution、GPU upload 或 editor UI。 |
 | asset-pipeline import planning | 只比较 source/snapshot/manifest 并产出 plan，可用 package-local tests 验证。 | 不做 watcher、importer 执行、product blob/cache execution、GPU upload 或 editor UI。 |
+| asset-pipeline source scan | 只扫描显式 source root 并配对 `.ameta` sidecar，可用 package-local tests 验证。 | 不读取 metadata、不 hash bytes、不桥接 plan、不执行 importer、不做 watcher 或 editor UI。 |
 
 等待后再做：
 
 | 工作 | 等待项 |
 | --- | --- |
-| `tools/asset-processor` / 完整 import 调度 | 等 asset-pipeline import planning 后续接入真实 product execution。 |
+| `tools/asset-processor` / 完整 import 调度 | 等 asset-pipeline source scan bridge 和 dry-run CLI 后续接入真实 product execution。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset / pipeline key | 等 material signature 和 descriptor contract 进入计划阶段。 |
@@ -706,10 +733,10 @@ Package-local tests：
 - `asharia-asset-core-smoke-tests --catalog`：add/find、重复 GUID/path 失败。
 - `asharia-asset-core-smoke-tests --product-key`：source/settings/tool/target 改变会改变 key。
 - `asharia-asset-core-smoke-tests --dependency`：dependency hash 和 missing dependency diagnostics。
-- `asharia-asset-pipeline-smoke-tests`：显式 source/.ameta discovery、source snapshot/hash、product manifest
-  IO、import planning、缺失/坏 metadata、路径不匹配、重复 GUID/path、缺失/非普通 source file、非规范
-  sourcePath、malformed product manifest、duplicate product key/path、product key hash mismatch 和 import
-  planning diagnostics。
+- `asharia-asset-pipeline-smoke-tests`：source tree scan、显式 source/.ameta discovery、source snapshot/hash、
+  product manifest IO、import planning、缺失/坏 metadata、路径不匹配、重复 GUID/path、缺失/非普通 source
+  file、非规范 sourcePath、malformed product manifest、duplicate product key/path、product key hash mismatch
+  和 import planning diagnostics。
 
 未来 CLI smoke：
 
