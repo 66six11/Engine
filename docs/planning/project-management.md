@@ -130,9 +130,11 @@ AshariaEngine/
   packages/
     archive/
     asset-core/
+    asset-pipeline/
     cpp-binding/
     persistence/
     profiling/
+    project-core/
     reflection/
     rendergraph/
     renderer-basic/

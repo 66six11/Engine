@@ -8,6 +8,7 @@
 namespace asharia::asset_processor {
 
     struct DryRunOptions {
+        std::optional<std::filesystem::path> projectPath;
         std::filesystem::path sourceRoot;
         std::string sourcePathPrefix;
         std::string targetProfile;

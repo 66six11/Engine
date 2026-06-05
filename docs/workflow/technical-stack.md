@@ -63,6 +63,8 @@ Vulkan loader/binding 策略：
 - `engine/core` 只放稳定基础设施，不依赖 Vulkan、GLFW、Slang 或 editor。
 - `packages/rhi-vulkan`、`packages/rendergraph`、`packages/shader-slang` 等功能包可以独立
   被 app/editor 引入。
+- `packages/project-core` 只保存最小 project descriptor 和 asset source discovery roots；cook/package
+  profiles、editor workspace 和 runtime state 不放进该 package。
 - 每个已落地的 engine/package/app 入口维护 `asharia.package.json` manifest，记录名称、版本、依赖、
   CMake target、test target 和 target-level dependency。
 - editor 是 host，不是 engine 核心的一部分；runtime app 不链接 editor packages。

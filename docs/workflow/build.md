@@ -78,6 +78,7 @@ product/cache：
 ```powershell
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe --smoke-dry-run
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe dry-run --source-root Content --source-path-prefix Content --target-profile windows-msvc-debug
+build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe dry-run --project asharia.project.json --target-profile windows-msvc-debug
 ```
 
 ## 仓库维护工具

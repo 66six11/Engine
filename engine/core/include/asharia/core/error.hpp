@@ -19,6 +19,7 @@ namespace asharia {
         CppBinding,
         Persistence,
         Scene,
+        Project,
     };
 
     struct Error {
