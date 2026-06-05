@@ -13,6 +13,7 @@
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_pipeline/asset_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
+#include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_source_discovery.hpp"
 #include "asharia/asset_pipeline/asset_source_scan.hpp"
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
@@ -819,6 +820,165 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool writeScannedPlanningSource(const std::filesystem::path& contentRoot,
+                                                  std::string_view relativePath,
+                                                  std::string_view bytes, std::string_view guidText,
+                                                  std::uint64_t sourceHash) {
+        const std::filesystem::path sourceFile =
+            contentRoot / std::filesystem::path{std::string{relativePath}};
+        if (!createDirectories(sourceFile.parent_path()) || !writeTextFile(sourceFile, bytes)) {
+            return false;
+        }
+
+        const std::string sourcePath =
+            "Content/" + std::filesystem::path{std::string{relativePath}}.generic_string();
+        const asharia::asset::AssetMetadataDocument document =
+            makeDocument(guidText, sourcePath, sourceHash);
+        return writeDocument(metadataSidecarPath(sourceFile), document);
+    }
+
+    [[nodiscard]] asharia::asset::AssetScannedImportPlanRequest
+    makeScannedPlanningRequest(const std::filesystem::path& contentRoot,
+                               asharia::asset::AssetProductManifestDocument productManifest,
+                               std::string_view targetProfile) {
+        return asharia::asset::AssetScannedImportPlanRequest{
+            .scan =
+                asharia::asset::AssetSourceScanRequest{
+                    .sourceRoot = contentRoot,
+                    .sourcePathPrefix = "Content",
+                    .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
+                },
+            .productManifest = std::move(productManifest),
+            .targetProfile = std::string{targetProfile},
+        };
+    }
+
+    [[nodiscard]] bool smokeScannedImportPlanningRequestsAndCacheHits() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-scanned-planning");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path contentRoot = root / "Content";
+        if (!writeScannedPlanningSource(contentRoot, "Textures/Decal.png", "decal bytes",
+                                        "785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                        0x2000F00D1234CAFEULL) ||
+            !writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
+                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                        0x1000F00D1234CAFEULL)) {
+            return false;
+        }
+
+        const asharia::asset::AssetScannedImportPlanResult first =
+            asharia::asset::planScannedAssetImports(makeScannedPlanningRequest(
+                contentRoot, asharia::asset::AssetProductManifestDocument{}, "windows-msvc-debug"));
+        if (!first.succeeded() || first.scan.entries.size() != 2 ||
+            first.discovery.manifest.records.size() != 2 || first.snapshot.snapshots.size() != 2 ||
+            first.plan.requests.size() != 2 || !first.plan.cacheHits.empty() ||
+            first.plan.requests[0].source.sourcePath != "Content/Textures/Crate.png" ||
+            first.plan.requests[1].source.sourcePath != "Content/Textures/Decal.png" ||
+            first.plan.requests[0].reason !=
+                asharia::asset::AssetImportRequestReason::MissingProduct ||
+            first.plan.requests[1].reason !=
+                asharia::asset::AssetImportRequestReason::MissingProduct) {
+            logFailure("Asset scanned import planning smoke failed request planning.");
+            return false;
+        }
+
+        const asharia::asset::AssetProductManifestDocument manifest{
+            .products = {makeProductFromImportRequest(first.plan.requests.front())},
+        };
+        const asharia::asset::AssetScannedImportPlanResult second =
+            asharia::asset::planScannedAssetImports(
+                makeScannedPlanningRequest(contentRoot, manifest, "windows-msvc-debug"));
+        if (!second.succeeded() || second.scan != first.scan || second.plan.cacheHits.size() != 1 ||
+            second.plan.requests.size() != 1 ||
+            second.plan.cacheHits.front().source.sourcePath != "Content/Textures/Crate.png" ||
+            second.plan.requests.front().source.sourcePath != "Content/Textures/Decal.png") {
+            logFailure("Asset scanned import planning smoke failed cache-hit planning.");
+            return false;
+        }
+
+        std::cout << "Asset scanned import plan requests: " << first.plan.requests.size() << '\n';
+        return true;
+    }
+
+    [[nodiscard]] bool smokeScannedImportPlanningStopsOnScanDiagnostics() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-scanned-planning-scan-diagnostic");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path contentRoot = root / "Content";
+        const std::filesystem::path sourceFile = contentRoot / "Textures" / "Crate.png";
+        if (!createDirectories(sourceFile.parent_path()) || !writeTextFile(sourceFile, "crate")) {
+            return false;
+        }
+
+        const asharia::asset::AssetScannedImportPlanResult result =
+            asharia::asset::planScannedAssetImports(makeScannedPlanningRequest(
+                contentRoot, asharia::asset::AssetProductManifestDocument{}, "windows-msvc-debug"));
+        return !result.succeeded() && result.discovery.manifest.records.empty() &&
+               result.snapshot.snapshots.empty() && result.plan.requests.empty() &&
+               result.plan.cacheHits.empty() && result.plan.diagnostics.empty() &&
+               expectScanDiagnostic(result.scan,
+                                    asharia::asset::AssetSourceScanDiagnosticCode::MissingMetadata,
+                                    "missing metadata");
+    }
+
+    [[nodiscard]] bool smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-scanned-planning-discovery-diagnostic");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path contentRoot = root / "Content";
+        const std::filesystem::path sourceFile = contentRoot / "Textures" / "Broken.png";
+        if (!createDirectories(sourceFile.parent_path()) || !writeTextFile(sourceFile, "broken") ||
+            !writeTextFile(metadataSidecarPath(sourceFile), "{")) {
+            return false;
+        }
+
+        const asharia::asset::AssetScannedImportPlanResult result =
+            asharia::asset::planScannedAssetImports(makeScannedPlanningRequest(
+                contentRoot, asharia::asset::AssetProductManifestDocument{}, "windows-msvc-debug"));
+        return !result.succeeded() && result.scan.succeeded() &&
+               result.snapshot.snapshots.empty() && result.plan.requests.empty() &&
+               result.plan.cacheHits.empty() && result.plan.diagnostics.empty() &&
+               expectSingleDiagnostic(
+                   result.discovery,
+                   asharia::asset::AssetSourceDiscoveryDiagnosticCode::MetadataReadFailed,
+                   "failed to read metadata");
+    }
+
+    [[nodiscard]] bool smokeScannedImportPlanningPlanDiagnostics() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-scanned-planning-plan-diagnostic");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path contentRoot = root / "Content";
+        if (!writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
+                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                        0x1000F00D1234CAFEULL)) {
+            return false;
+        }
+
+        const asharia::asset::AssetScannedImportPlanResult result =
+            asharia::asset::planScannedAssetImports(makeScannedPlanningRequest(
+                contentRoot, asharia::asset::AssetProductManifestDocument{},
+                "windows-msvc-debug\\bad"));
+        return !result.succeeded() && result.scan.succeeded() && result.discovery.succeeded() &&
+               result.snapshot.succeeded() &&
+               expectPlanDiagnostic(
+                   result.plan, asharia::asset::AssetImportPlanDiagnosticCode::InvalidTargetProfile,
+                   "target profile must be a single path segment");
+    }
+
     [[nodiscard]] bool smokeSourceSnapshotValidAndDeterministic() {
         const std::filesystem::path root = smokeRoot("asharia-asset-pipeline-smoke-snapshot-valid");
         if (root.empty() || !prepareWorkspace(root)) {
@@ -1284,7 +1444,10 @@ int main() {
     const bool passed =
         smokeSourceScanValidAndDeterministic() && smokeSourceScanMissingMetadata() &&
         smokeSourceScanOrphanMetadata() && smokeSourceScanInvalidRoot() &&
-        smokeSourceScanInvalidPrefix() && smokeImportPlanningCacheHitAndMiss() &&
+        smokeSourceScanInvalidPrefix() && smokeScannedImportPlanningRequestsAndCacheHits() &&
+        smokeScannedImportPlanningStopsOnScanDiagnostics() &&
+        smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
+        smokeScannedImportPlanningPlanDiagnostics() && smokeImportPlanningCacheHitAndMiss() &&
         smokeImportPlanningSourceChanged() && smokeImportPlanningSettingsChanged() &&
         smokeImportPlanningMissingSnapshot() && smokeImportPlanningDuplicateSource() &&
         smokeImportPlanningDuplicateSnapshot() && smokeImportPlanningInvalidTargetProfile() &&
