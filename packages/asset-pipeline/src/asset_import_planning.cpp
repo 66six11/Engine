@@ -1,0 +1,359 @@
+﻿#include "asharia/asset_pipeline/asset_import_planning.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "asharia/asset_core/asset_guid.hpp"
+
+namespace asharia::asset {
+    namespace {
+
+        [[nodiscard]] std::string formatHash64(std::uint64_t value) {
+            constexpr std::string_view kHexDigits = "0123456789abcdef";
+            std::string text(16, '0');
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                const auto shift = static_cast<std::uint32_t>((text.size() - index - 1) * 4);
+                text[index] = kHexDigits[(value >> shift) & 0xFU];
+            }
+            return text;
+        }
+
+        [[nodiscard]] bool isAsciiAlpha(char character) noexcept {
+            return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
+        }
+
+        [[nodiscard]] bool isValidTargetProfile(std::string_view targetProfile,
+                                                std::string& reason) {
+            if (targetProfile.empty()) {
+                reason = "target profile is missing";
+                return false;
+            }
+
+            if (targetProfile.find('\\') != std::string_view::npos ||
+                targetProfile.find('/') != std::string_view::npos) {
+                reason = "target profile must be a single path segment";
+                return false;
+            }
+
+            if (targetProfile == "." || targetProfile == "..") {
+                reason = "target profile must not be '.' or '..'";
+                return false;
+            }
+
+            if (targetProfile.size() >= 2 && isAsciiAlpha(targetProfile[0]) &&
+                targetProfile[1] == ':') {
+                reason = "target profile must not use a drive prefix";
+                return false;
+            }
+
+            return true;
+        }
+
+        void addDiagnostic(AssetImportPlanResult& result, AssetImportPlanDiagnosticCode code,
+                           std::string sourcePath, std::string message) {
+            result.diagnostics.push_back(AssetImportPlanDiagnostic{
+                .code = code,
+                .sourcePath = std::move(sourcePath),
+                .message = std::move(message),
+            });
+        }
+
+        [[nodiscard]] std::string sourceLabel(const SourceAssetRecord& source) {
+            return "guid=\"" + formatAssetGuid(source.guid) + "\" source=\"" + source.sourcePath +
+                   "\"";
+        }
+
+        [[nodiscard]] bool sourceIndexOrdersBefore(std::span<const DiscoveredSourceAsset> sources,
+                                                   std::size_t leftIndex, std::size_t rightIndex) {
+            const DiscoveredSourceAsset& left = sources[leftIndex];
+            const DiscoveredSourceAsset& right = sources[rightIndex];
+            if (left.source.sourcePath != right.source.sourcePath) {
+                return left.source.sourcePath < right.source.sourcePath;
+            }
+            return formatAssetGuid(left.source.guid) < formatAssetGuid(right.source.guid);
+        }
+
+        [[nodiscard]] std::optional<std::size_t>
+        findSnapshotIndex(std::span<const AssetSourceSnapshot> snapshots,
+                          std::string_view sourcePath) {
+            for (std::size_t index = 0; index < snapshots.size(); ++index) {
+                if (snapshots[index].sourcePath == sourcePath) {
+                    return index;
+                }
+            }
+            return std::nullopt;
+        }
+
+        [[nodiscard]] std::optional<std::size_t>
+        findProductIndex(std::span<const AssetProductRecord> products,
+                         const AssetProductKey& productKey) {
+            for (std::size_t index = 0; index < products.size(); ++index) {
+                if (products[index].key == productKey) {
+                    return index;
+                }
+            }
+            return std::nullopt;
+        }
+
+        [[nodiscard]] AssetImportRequestReason
+        classifyMissReason(std::span<const AssetProductRecord> products,
+                           const AssetProductKey& productKey) {
+            bool sawGuid = false;
+            bool sawTargetProfile = false;
+            for (const AssetProductRecord& product : products) {
+                if (product.key.guid != productKey.guid) {
+                    continue;
+                }
+
+                sawGuid = true;
+                if (product.key.targetProfileHash != productKey.targetProfileHash) {
+                    continue;
+                }
+
+                sawTargetProfile = true;
+                if (product.key.sourceHash != productKey.sourceHash) {
+                    return AssetImportRequestReason::SourceChanged;
+                }
+                if (product.key.settingsHash != productKey.settingsHash) {
+                    return AssetImportRequestReason::SettingsChanged;
+                }
+                if (product.key.importerId != productKey.importerId ||
+                    product.key.importerVersion != productKey.importerVersion) {
+                    return AssetImportRequestReason::ImporterChanged;
+                }
+                if (product.key.assetType != productKey.assetType) {
+                    return AssetImportRequestReason::AssetTypeChanged;
+                }
+                if (product.key.dependencyHash != productKey.dependencyHash) {
+                    return AssetImportRequestReason::DependencyChanged;
+                }
+            }
+
+            return sawGuid && !sawTargetProfile ? AssetImportRequestReason::TargetProfileChanged
+                                                : AssetImportRequestReason::MissingProduct;
+        }
+
+        [[nodiscard]] std::vector<AssetDependency>
+        makeImportDependencies(const SourceAssetRecord& source) {
+            return {
+                AssetDependency{
+                    .owner = source.guid,
+                    .kind = AssetDependencyKind::SourceFile,
+                    .path = source.sourcePath,
+                    .hash = source.sourceHash,
+                },
+                AssetDependency{
+                    .owner = source.guid,
+                    .kind = AssetDependencyKind::ImportSettings,
+                    .path = {},
+                    .hash = source.settingsHash,
+                },
+            };
+        }
+
+        [[nodiscard]] bool validatePlanSources(AssetImportPlanResult& result,
+                                               std::span<const DiscoveredSourceAsset> sources) {
+            bool valid = true;
+            for (std::size_t index = 0; index < sources.size(); ++index) {
+                const DiscoveredSourceAsset& source = sources[index];
+                if (auto sourceValid = validateSourceAssetRecord(source.source); !sourceValid) {
+                    addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidSource,
+                                  source.source.sourcePath,
+                                  "Asset import planning rejected source[" + std::to_string(index) +
+                                      "] " + sourceLabel(source.source) + ": " +
+                                      sourceValid.error().message);
+                    valid = false;
+                    continue;
+                }
+
+                const std::uint64_t computedSettingsHash = hashAssetImportSettings(source.settings);
+                if (computedSettingsHash != source.source.settingsHash) {
+                    addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidSource,
+                                  source.source.sourcePath,
+                                  "Asset import planning source[" + std::to_string(index) + "] " +
+                                      sourceLabel(source.source) +
+                                      " has a settings hash mismatch.");
+                    valid = false;
+                }
+
+                for (std::size_t otherIndex = index + 1; otherIndex < sources.size();
+                     ++otherIndex) {
+                    const DiscoveredSourceAsset& other = sources[otherIndex];
+                    if (source.source.guid == other.source.guid) {
+                        addDiagnostic(result, AssetImportPlanDiagnosticCode::DuplicateSource,
+                                      source.source.sourcePath,
+                                      "Asset import planning source[" + std::to_string(index) +
+                                          "] " + sourceLabel(source.source) +
+                                          " duplicates source[" + std::to_string(otherIndex) +
+                                          "] guid=\"" + formatAssetGuid(other.source.guid) + "\".");
+                        valid = false;
+                    }
+
+                    if (source.source.sourcePath == other.source.sourcePath) {
+                        addDiagnostic(result, AssetImportPlanDiagnosticCode::DuplicateSource,
+                                      source.source.sourcePath,
+                                      "Asset import planning source[" + std::to_string(index) +
+                                          "] " + sourceLabel(source.source) +
+                                          " duplicates source path with source[" +
+                                          std::to_string(otherIndex) + "].");
+                        valid = false;
+                    }
+                }
+            }
+
+            return valid;
+        }
+
+        [[nodiscard]] bool validatePlanSnapshots(AssetImportPlanResult& result,
+                                                 std::span<const AssetSourceSnapshot> snapshots) {
+            bool valid = true;
+            for (std::size_t index = 0; index < snapshots.size(); ++index) {
+                const AssetSourceSnapshot& snapshot = snapshots[index];
+                if (auto sourcePathValid = validateAssetSourcePath(snapshot.sourcePath);
+                    !sourcePathValid) {
+                    addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidSourceSnapshot,
+                                  snapshot.sourcePath,
+                                  "Asset import planning rejected snapshot[" +
+                                      std::to_string(index) +
+                                      "]: " + sourcePathValid.error().message);
+                    valid = false;
+                }
+
+                if (snapshot.sourceHash == 0) {
+                    addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidSourceSnapshot,
+                                  snapshot.sourcePath,
+                                  "Asset import planning snapshot[" + std::to_string(index) +
+                                      "] is missing a source hash.");
+                    valid = false;
+                }
+
+                for (std::size_t otherIndex = index + 1; otherIndex < snapshots.size();
+                     ++otherIndex) {
+                    if (snapshot.sourcePath == snapshots[otherIndex].sourcePath) {
+                        addDiagnostic(result,
+                                      AssetImportPlanDiagnosticCode::DuplicateSourceSnapshot,
+                                      snapshot.sourcePath,
+                                      "Asset import planning snapshot[" + std::to_string(index) +
+                                          "] duplicates source path with snapshot[" +
+                                          std::to_string(otherIndex) + "].");
+                        valid = false;
+                    }
+                }
+            }
+
+            return valid;
+        }
+
+    } // namespace
+
+    std::string makeAssetImportProductPath(const AssetProductKey& productKey,
+                                           std::string_view targetProfile) {
+        return std::string{targetProfile} + "/products/" + formatAssetGuid(productKey.guid) + "/" +
+               formatHash64(hashAssetProductKey(productKey)) + ".aproduct";
+    }
+
+    AssetImportPlanResult planAssetImports(std::span<const DiscoveredSourceAsset> sources,
+                                           std::span<const AssetSourceSnapshot> snapshots,
+                                           const AssetProductManifestDocument& productManifest,
+                                           std::string_view targetProfile) {
+        AssetImportPlanResult result{
+            .targetProfile = std::string{targetProfile},
+            .targetProfileHash = makeAssetTargetProfileHash(targetProfile),
+            .requests = {},
+            .cacheHits = {},
+            .diagnostics = {},
+        };
+
+        std::string invalidTargetReason;
+        if (!isValidTargetProfile(targetProfile, invalidTargetReason)) {
+            addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidTargetProfile, {},
+                          "Asset import planning rejected target profile '" +
+                              std::string{targetProfile} + "': " + invalidTargetReason + ".");
+            return result;
+        }
+
+        if (auto validManifest = validateAssetProductManifestDocument(productManifest);
+            !validManifest) {
+            addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidProductManifest, {},
+                          "Asset import planning rejected product manifest: " +
+                              validManifest.error().message);
+            return result;
+        }
+
+        const bool validSources = validatePlanSources(result, sources);
+        const bool validSnapshots = validatePlanSnapshots(result, snapshots);
+        if (!validSources || !validSnapshots) {
+            return result;
+        }
+
+        std::vector<std::size_t> orderedSourceIndices;
+        orderedSourceIndices.reserve(sources.size());
+        for (std::size_t sourceIndex = 0; sourceIndex < sources.size(); ++sourceIndex) {
+            orderedSourceIndices.push_back(sourceIndex);
+        }
+        std::ranges::sort(orderedSourceIndices,
+                          [sources](std::size_t leftIndex, std::size_t rightIndex) {
+                              return sourceIndexOrdersBefore(sources, leftIndex, rightIndex);
+                          });
+
+        for (std::size_t sourceIndex : orderedSourceIndices) {
+            const DiscoveredSourceAsset& discovered = sources[sourceIndex];
+            const std::optional<std::size_t> snapshotIndex =
+                findSnapshotIndex(snapshots, discovered.source.sourcePath);
+            if (!snapshotIndex) {
+                addDiagnostic(result, AssetImportPlanDiagnosticCode::MissingSourceSnapshot,
+                              discovered.source.sourcePath,
+                              "Asset import planning source " + sourceLabel(discovered.source) +
+                                  " is missing a source snapshot.");
+                continue;
+            }
+
+            SourceAssetRecord plannedSource = discovered.source;
+            plannedSource.sourceHash = snapshots[*snapshotIndex].sourceHash;
+            plannedSource.settingsHash = hashAssetImportSettings(discovered.settings);
+
+            std::vector<AssetDependency> dependencies = makeImportDependencies(plannedSource);
+            const std::uint64_t dependencyHash = hashAssetDependencies(dependencies);
+            AssetProductKey productKey =
+                makeAssetProductKey(plannedSource, dependencyHash, result.targetProfileHash);
+            const std::string productPath = makeAssetImportProductPath(productKey, targetProfile);
+            if (auto validPath = validateAssetProductPath(productPath); !validPath) {
+                addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidProductManifest,
+                              plannedSource.sourcePath,
+                              "Asset import planning generated invalid product path for " +
+                                  sourceLabel(plannedSource) + ": " + validPath.error().message);
+                continue;
+            }
+
+            const std::optional<std::size_t> productIndex =
+                findProductIndex(productManifest.products, productKey);
+            if (productIndex) {
+                result.cacheHits.push_back(AssetImportCacheHit{
+                    .source = std::move(plannedSource),
+                    .dependencies = std::move(dependencies),
+                    .product = productManifest.products[*productIndex],
+                });
+                continue;
+            }
+
+            result.requests.push_back(AssetImportRequest{
+                .source = std::move(plannedSource),
+                .settings = discovered.settings,
+                .dependencies = std::move(dependencies),
+                .productKey = productKey,
+                .relativeProductPath = productPath,
+                .reason = classifyMissReason(productManifest.products, productKey),
+            });
+        }
+
+        return result;
+    }
+
+} // namespace asharia::asset

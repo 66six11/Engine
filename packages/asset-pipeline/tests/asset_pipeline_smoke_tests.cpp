@@ -11,6 +11,7 @@
 
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
+#include "asharia/asset_pipeline/asset_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_source_discovery.hpp"
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
@@ -58,6 +59,18 @@ namespace {
         };
     }
 
+    [[nodiscard]] std::vector<asharia::asset::AssetImportSetting>
+    textureSettings(std::string_view compression) {
+        return {
+            asharia::asset::AssetImportSetting{.key = "colorSpace", .value = "srgb"},
+            asharia::asset::AssetImportSetting{.key = "generateMipmaps", .value = "true"},
+            asharia::asset::AssetImportSetting{
+                .key = "compression",
+                .value = std::string{compression},
+            },
+        };
+    }
+
     [[nodiscard]] asharia::asset::AssetMetadataDocument
     makeDocument(std::string_view guidText, std::string_view sourcePath, std::uint64_t sourceHash) {
         constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
@@ -80,6 +93,23 @@ namespace {
                     .settingsHash = settingsHash,
                 },
             .settings = std::move(settings),
+        };
+    }
+
+    [[nodiscard]] asharia::asset::DiscoveredSourceAsset
+    makeDiscoveredSource(std::string_view guidText, std::string_view sourcePath,
+                         std::uint64_t sourceHash, std::string_view compression = "auto") {
+        auto document = makeDocument(guidText, sourcePath, sourceHash);
+        document.settings = textureSettings(compression);
+        document.source.settingsHash = asharia::asset::hashAssetImportSettings(document.settings);
+        return asharia::asset::DiscoveredSourceAsset{
+            .entry =
+                asharia::asset::AssetSourceDiscoveryEntry{
+                    .sourcePath = std::string{sourcePath},
+                    .metadataPath = {},
+                },
+            .source = std::move(document.source),
+            .settings = std::move(document.settings),
         };
     }
 
@@ -197,6 +227,213 @@ namespace {
         const std::size_t hashOffset = keyOffset + kKey.size();
         text.replace(hashOffset, 16, "0000000000000001");
         return true;
+    }
+
+    [[nodiscard]] asharia::asset::AssetSourceSnapshot
+    makeSourceSnapshot(std::string_view sourcePath, std::uint64_t sourceHash) {
+        return asharia::asset::AssetSourceSnapshot{
+            .sourcePath = std::string{sourcePath},
+            .sourceFilePath = std::filesystem::path{sourcePath},
+            .sourceHash = sourceHash,
+        };
+    }
+
+    [[nodiscard]] asharia::asset::AssetProductRecord
+    makeProductFromImportRequest(const asharia::asset::AssetImportRequest& request) {
+        return asharia::asset::AssetProductRecord{
+            .key = request.productKey,
+            .relativeProductPath = request.relativeProductPath,
+            .productSizeBytes = 4096,
+            .productHash = asharia::asset::hashAssetProductKey(request.productKey),
+        };
+    }
+
+    [[nodiscard]] asharia::asset::AssetImportRequest
+    makePlannedImportRequest(const asharia::asset::DiscoveredSourceAsset& source,
+                             const asharia::asset::AssetSourceSnapshot& snapshot,
+                             std::string_view targetProfile) {
+        const std::array sources{source};
+        const std::array snapshots{snapshot};
+        const auto plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{}, targetProfile);
+        return plan.requests.empty() ? asharia::asset::AssetImportRequest{} : plan.requests.front();
+    }
+
+    [[nodiscard]] bool
+    expectPlanDiagnostic(const asharia::asset::AssetImportPlanResult& result,
+                         asharia::asset::AssetImportPlanDiagnosticCode expectedCode,
+                         std::string_view expectedToken) {
+        for (const asharia::asset::AssetImportPlanDiagnostic& diagnostic : result.diagnostics) {
+            if (diagnostic.code == expectedCode &&
+                messageContains(diagnostic.message, expectedToken)) {
+                return true;
+            }
+        }
+
+        logFailure("Asset import planning smoke did not find the expected diagnostic.");
+        return false;
+    }
+
+    [[nodiscard]] bool smokeImportPlanningCacheHitAndMiss() {
+        const auto crate =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL);
+        const auto decal =
+            makeDiscoveredSource("785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                 "Content/Textures/Decal.png", 0x2000F00D1234CAFEULL);
+        const auto crateSnapshot =
+            makeSourceSnapshot(crate.source.sourcePath, 0x1000F00D1234CAFEULL);
+        const auto decalSnapshot =
+            makeSourceSnapshot(decal.source.sourcePath, 0x2000F00D1234CAFEULL);
+        const auto crateRequest =
+            makePlannedImportRequest(crate, crateSnapshot, "windows-msvc-debug");
+        const asharia::asset::AssetProductManifestDocument manifest{
+            .products = {makeProductFromImportRequest(crateRequest)},
+        };
+
+        const std::array sources{crate, decal};
+        const std::array snapshots{crateSnapshot, decalSnapshot};
+        const auto first =
+            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug");
+        const auto second =
+            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug");
+
+        if (!first.succeeded() || first != second || first.cacheHits.size() != 1 ||
+            first.requests.size() != 1 ||
+            first.cacheHits.front().product.key != crateRequest.productKey ||
+            first.requests.front().source.sourcePath != decal.source.sourcePath ||
+            first.requests.front().reason !=
+                asharia::asset::AssetImportRequestReason::MissingProduct ||
+            first.requests.front().relativeProductPath.find("windows-msvc-debug/products/") != 0) {
+            logFailure("Asset import planning smoke failed cache hit/miss planning.");
+            return false;
+        }
+
+        std::cout << "Asset import planning hits: " << first.cacheHits.size()
+                  << " requests: " << first.requests.size() << '\n';
+        return true;
+    }
+
+    [[nodiscard]] bool smokeImportPlanningSourceChanged() {
+        const auto source =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL);
+        const auto oldSnapshot =
+            makeSourceSnapshot(source.source.sourcePath, 0x1000F00D1234CAFEULL);
+        const auto changedSnapshot =
+            makeSourceSnapshot(source.source.sourcePath, 0x1000F00D1234CAFFULL);
+        const auto oldRequest = makePlannedImportRequest(source, oldSnapshot, "windows-msvc-debug");
+        const asharia::asset::AssetProductManifestDocument manifest{
+            .products = {makeProductFromImportRequest(oldRequest)},
+        };
+        const std::array sources{source};
+        const std::array snapshots{changedSnapshot};
+        const auto plan =
+            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug");
+
+        if (!plan.succeeded() || !plan.cacheHits.empty() || plan.requests.size() != 1 ||
+            plan.requests.front().reason !=
+                asharia::asset::AssetImportRequestReason::SourceChanged ||
+            plan.requests.front().source.sourceHash != changedSnapshot.sourceHash) {
+            logFailure("Asset import planning smoke missed a source hash change.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeImportPlanningSettingsChanged() {
+        const auto base =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL, "auto");
+        const auto changed =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL, "bc7");
+        const auto snapshot = makeSourceSnapshot(base.source.sourcePath, 0x1000F00D1234CAFEULL);
+        const auto baseRequest = makePlannedImportRequest(base, snapshot, "windows-msvc-debug");
+        const asharia::asset::AssetProductManifestDocument manifest{
+            .products = {makeProductFromImportRequest(baseRequest)},
+        };
+        const std::array sources{changed};
+        const std::array snapshots{snapshot};
+        const auto plan =
+            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug");
+
+        if (!plan.succeeded() || !plan.cacheHits.empty() || plan.requests.size() != 1 ||
+            plan.requests.front().reason !=
+                asharia::asset::AssetImportRequestReason::SettingsChanged) {
+            logFailure("Asset import planning smoke missed an import settings change.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeImportPlanningMissingSnapshot() {
+        const auto source =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL);
+        const std::array sources{source};
+        const std::array<asharia::asset::AssetSourceSnapshot, 0> snapshots{};
+        const auto plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug");
+        return plan.requests.empty() && plan.cacheHits.empty() &&
+               expectPlanDiagnostic(
+                   plan, asharia::asset::AssetImportPlanDiagnosticCode::MissingSourceSnapshot,
+                   "missing a source snapshot");
+    }
+
+    [[nodiscard]] bool smokeImportPlanningDuplicateSource() {
+        const auto source =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL);
+        const std::array sources{source, source};
+        const std::array snapshots{
+            makeSourceSnapshot(source.source.sourcePath, 0x1000F00D1234CAFEULL),
+        };
+        const auto plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug");
+        return plan.requests.empty() && plan.cacheHits.empty() &&
+               expectPlanDiagnostic(plan,
+                                    asharia::asset::AssetImportPlanDiagnosticCode::DuplicateSource,
+                                    "duplicates source");
+    }
+
+    [[nodiscard]] bool smokeImportPlanningDuplicateSnapshot() {
+        const auto source =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL);
+        const std::array sources{source};
+        const std::array snapshots{
+            makeSourceSnapshot(source.source.sourcePath, 0x1000F00D1234CAFEULL),
+            makeSourceSnapshot(source.source.sourcePath, 0x2000F00D1234CAFEULL),
+        };
+        const auto plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug");
+        return plan.requests.empty() && plan.cacheHits.empty() &&
+               expectPlanDiagnostic(
+                   plan, asharia::asset::AssetImportPlanDiagnosticCode::DuplicateSourceSnapshot,
+                   "duplicates source path");
+    }
+
+    [[nodiscard]] bool smokeImportPlanningInvalidTargetProfile() {
+        const auto source =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL);
+        const std::array sources{source};
+        const std::array snapshots{
+            makeSourceSnapshot(source.source.sourcePath, 0x1000F00D1234CAFEULL),
+        };
+        const auto plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug\\bad");
+        return plan.requests.empty() && plan.cacheHits.empty() &&
+               expectPlanDiagnostic(
+                   plan, asharia::asset::AssetImportPlanDiagnosticCode::InvalidTargetProfile,
+                   "single path segment");
     }
 
     [[nodiscard]] bool smokeProductManifestRoundTrip() {
@@ -862,16 +1099,20 @@ namespace {
 
 int main() {
     const bool passed =
-        smokeProductManifestRoundTrip() && smokeProductManifestMalformedInput() &&
-        smokeProductManifestDuplicateField() && smokeProductManifestMissingField() &&
-        smokeProductManifestUnknownField() && smokeProductManifestDuplicateProductKey() &&
-        smokeProductManifestDuplicateProductPath() && smokeProductManifestInvalidProductPath() &&
-        smokeProductManifestProductKeyHashMismatch() && smokeSourceSnapshotValidAndDeterministic() &&
-        smokeSourceSnapshotContentChange() && smokeSourceSnapshotMissingFile() &&
-        smokeSourceSnapshotDirectory() && smokeSourceSnapshotInvalidSourcePath() &&
-        smokeSourceSnapshotDuplicateSourcePath() && smokeDiscoveryValidAndDeterministic() &&
-        smokeMissingMetadata() && smokeMalformedMetadata() && smokeSourcePathMismatch() &&
-        smokeDuplicateGuid() && smokeDuplicateSourcePath() && smokeInvalidEntry() &&
-        smokeInvalidEntrySourcePath() && smokeInvalidMetadataSourcePath();
+        smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
+        smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&
+        smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
+        smokeImportPlanningInvalidTargetProfile() && smokeProductManifestRoundTrip() &&
+        smokeProductManifestMalformedInput() && smokeProductManifestDuplicateField() &&
+        smokeProductManifestMissingField() && smokeProductManifestUnknownField() &&
+        smokeProductManifestDuplicateProductKey() && smokeProductManifestDuplicateProductPath() &&
+        smokeProductManifestInvalidProductPath() && smokeProductManifestProductKeyHashMismatch() &&
+        smokeSourceSnapshotValidAndDeterministic() && smokeSourceSnapshotContentChange() &&
+        smokeSourceSnapshotMissingFile() && smokeSourceSnapshotDirectory() &&
+        smokeSourceSnapshotInvalidSourcePath() && smokeSourceSnapshotDuplicateSourcePath() &&
+        smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
+        smokeMalformedMetadata() && smokeSourcePathMismatch() && smokeDuplicateGuid() &&
+        smokeDuplicateSourcePath() && smokeInvalidEntry() && smokeInvalidEntrySourcePath() &&
+        smokeInvalidMetadataSourcePath();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
