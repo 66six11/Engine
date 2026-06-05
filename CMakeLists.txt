@@ -42,6 +42,8 @@ add_subdirectory(packages/rhi-vulkan)
 add_subdirectory(packages/shader-slang)
 add_subdirectory(packages/renderer-basic)
 
+add_subdirectory(tools/asset-processor)
+
 if(ASHARIA_BUILD_APPS)
     add_subdirectory(apps/editor)
     add_subdirectory(apps/sample-viewer)
