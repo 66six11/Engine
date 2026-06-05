@@ -1,0 +1,33 @@
+cmake_minimum_required(VERSION 3.28)
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(AshariaEngineAssetProcessor VERSION 0.1.0 LANGUAGES CXX)
+endif()
+
+if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
+  get_filename_component(ASHARIA_REPOSITORY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+endif()
+include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
+asharia_package_init()
+asharia_require_package_target(asharia::asset_core_io packages/asset-core)
+asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
+
+add_executable(asharia-asset-processor
+    src/main.cpp
+)
+
+target_link_libraries(asharia-asset-processor
+    PRIVATE
+        asharia::asset_core_io
+        asharia::asset_pipeline
+)
+
+asharia_configure_target(asharia-asset-processor)
+
+if(ASHARIA_BUILD_TESTS)
+  enable_testing()
+
+  add_test(NAME asharia-asset-processor-smoke-dry-run
+      COMMAND asharia-asset-processor --smoke-dry-run
+  )
+endif()
