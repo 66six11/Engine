@@ -3,14 +3,22 @@
   "version": "0.1.0",
   "displayName": "Asharia Engine Asset Pipeline",
   "description": "CPU-only asset metadata discovery and validation pipeline baseline.",
-  "dependencies": ["com.asharia.asset-core"],
+  "dependencies": ["com.asharia.archive", "com.asharia.asset-core"],
   "targets": ["asharia-asset-pipeline"],
-  "testTargets": ["asharia-asset-pipeline-smoke-tests"],
+  "testTargets": [
+    "asharia-asset-pipeline-smoke-tests",
+    "asharia-asset-pipeline-header-tests"
+  ],
   "targetDependencies": {
-    "asharia-asset-pipeline": ["asharia-asset-core", "asharia-asset-core-io"],
+    "asharia-asset-pipeline": [
+      "asharia-archive",
+      "asharia-asset-core",
+      "asharia-asset-core-io"
+    ],
     "asharia-asset-pipeline-smoke-tests": [
       "asharia-asset-pipeline",
       "asharia-asset-core-io"
-    ]
+    ],
+    "asharia-asset-pipeline-header-tests": ["asharia-asset-pipeline"]
   }
 }

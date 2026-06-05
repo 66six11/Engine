@@ -11,6 +11,7 @@
 
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
+#include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_source_discovery.hpp"
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
 
@@ -107,6 +108,255 @@ namespace {
         }
 
         return true;
+    }
+
+    [[nodiscard]] asharia::asset::AssetProductRecord
+    makeProductRecord(std::string_view guidText, std::string_view productPath,
+                      std::uint64_t sourceHash, std::string_view targetProfile) {
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+        constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
+
+        auto guid = asharia::asset::parseAssetGuid(guidText);
+        const auto settings = defaultSettings();
+        const asharia::asset::SourceAssetRecord source{
+            .guid = guid ? *guid : asharia::asset::AssetGuid{},
+            .assetType = asharia::asset::makeAssetTypeId(kTextureTypeName),
+            .assetTypeName = std::string{kTextureTypeName},
+            .sourcePath = "Content/Textures/Crate.png",
+            .importerId = asharia::asset::makeImporterId(kTextureImporterName),
+            .importerName = std::string{kTextureImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = sourceHash,
+            .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+        };
+        const std::array dependencies{
+            asharia::asset::AssetDependency{
+                .owner = source.guid,
+                .kind = asharia::asset::AssetDependencyKind::SourceFile,
+                .path = source.sourcePath,
+                .hash = source.sourceHash,
+            },
+        };
+        const std::uint64_t dependencyHash = asharia::asset::hashAssetDependencies(dependencies);
+        const std::uint64_t targetProfileHash =
+            asharia::asset::makeAssetTargetProfileHash(targetProfile);
+        const asharia::asset::AssetProductKey productKey =
+            asharia::asset::makeAssetProductKey(source, dependencyHash, targetProfileHash);
+
+        return asharia::asset::AssetProductRecord{
+            .key = productKey,
+            .relativeProductPath = std::string{productPath},
+            .productSizeBytes = 4096,
+            .productHash = asharia::asset::hashAssetProductKey(productKey),
+        };
+    }
+
+    [[nodiscard]] bool expectInvalidProductManifestRead(std::string_view text,
+                                                        std::string_view expectedToken) {
+        auto document = asharia::asset::readAssetProductManifestText(text);
+        if (document) {
+            logFailure("Asset product manifest smoke accepted invalid manifest text.");
+            return false;
+        }
+
+        if (document.error().domain != asharia::ErrorDomain::Asset ||
+            !messageContains(document.error().message, expectedToken)) {
+            logFailure("Asset product manifest smoke produced an incomplete read diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool
+    expectInvalidProductManifestWrite(const asharia::asset::AssetProductManifestDocument& document,
+                                      std::string_view expectedToken) {
+        auto text = asharia::asset::writeAssetProductManifestText(document);
+        if (text) {
+            logFailure("Asset product manifest smoke accepted invalid manifest document.");
+            return false;
+        }
+
+        if (text.error().domain != asharia::ErrorDomain::Asset ||
+            !messageContains(text.error().message, expectedToken)) {
+            logFailure("Asset product manifest smoke produced an incomplete write diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool corruptFirstProductKeyHash(std::string& text) {
+        constexpr std::string_view kKey = "\"productKeyHash\": \"";
+        const std::size_t keyOffset = text.find(kKey);
+        if (keyOffset == std::string::npos) {
+            logFailure("Asset product manifest smoke could not find productKeyHash.");
+            return false;
+        }
+
+        const std::size_t hashOffset = keyOffset + kKey.size();
+        text.replace(hashOffset, 16, "0000000000000001");
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductManifestRoundTrip() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-product-manifest-roundtrip");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const asharia::asset::AssetProductManifestDocument document{
+            .products =
+                {
+                    makeProductRecord("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                      "windows-msvc-debug/textures/crate.texture.bin",
+                                      0x1000F00D1234CAFEULL, "windows-msvc-debug"),
+                    makeProductRecord("785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                      "windows-msvc-debug/textures/decal.texture.bin",
+                                      0x2000F00D1234CAFEULL, "windows-msvc-debug"),
+                },
+        };
+
+        const auto firstText = asharia::asset::writeAssetProductManifestText(document);
+        const auto secondText = asharia::asset::writeAssetProductManifestText(document);
+        if (!firstText || !secondText || *firstText != *secondText) {
+            logFailure(firstText ? "Asset product manifest smoke failed deterministic write."
+                                 : firstText.error().message);
+            return false;
+        }
+
+        const auto parsed = asharia::asset::readAssetProductManifestText(*firstText);
+        if (!parsed || *parsed != document) {
+            logFailure(parsed ? "Asset product manifest smoke failed text round-trip."
+                              : parsed.error().message);
+            return false;
+        }
+
+        const std::filesystem::path manifestPath = root / "products.aproducts";
+        if (auto written = asharia::asset::writeAssetProductManifestFile(manifestPath, document);
+            !written) {
+            logFailure(written.error().message);
+            return false;
+        }
+        const auto fileParsed = asharia::asset::readAssetProductManifestFile(manifestPath);
+        if (!fileParsed || *fileParsed != document) {
+            logFailure(fileParsed ? "Asset product manifest smoke failed file round-trip."
+                                  : fileParsed.error().message);
+            return false;
+        }
+
+        std::cout << "Asset product manifest products: " << document.products.size() << '\n';
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductManifestMalformedInput() {
+        return expectInvalidProductManifestRead("{", "Failed to read asset product manifest");
+    }
+
+    [[nodiscard]] bool smokeProductManifestDuplicateField() {
+        const std::string duplicateSchema = R"json({
+  "schema": "com.asharia.asset.product-manifest",
+  "schema": "com.asharia.asset.product-manifest",
+  "schemaVersion": 1,
+  "products": []
+}
+)json";
+        return expectInvalidProductManifestRead(duplicateSchema, "duplicate key");
+    }
+
+    [[nodiscard]] bool smokeProductManifestMissingField() {
+        const std::string missingGuid = R"json({
+  "schema": "com.asharia.asset.product-manifest",
+  "schemaVersion": 1,
+  "products": [
+    {
+      "assetType": "1111111111111111",
+      "importerId": "2222222222222222",
+      "importerVersion": 1,
+      "sourceHash": "3333333333333333",
+      "settingsHash": "4444444444444444",
+      "dependencyHash": "5555555555555555",
+      "targetProfileHash": "6666666666666666",
+      "productKeyHash": "7777777777777777",
+      "productPath": "windows-msvc-debug/textures/crate.texture.bin",
+      "productSizeBytes": 4096,
+      "productHash": "8888888888888888"
+    }
+  ]
+}
+)json";
+        return expectInvalidProductManifestRead(missingGuid, "guid");
+    }
+
+    [[nodiscard]] bool smokeProductManifestUnknownField() {
+        const auto product = makeProductRecord("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                               "windows-msvc-debug/textures/crate.texture.bin",
+                                               0x1000F00D1234CAFEULL, "windows-msvc-debug");
+        auto text = asharia::asset::writeAssetProductManifestText(
+            asharia::asset::AssetProductManifestDocument{.products = {product}});
+        if (!text) {
+            logFailure(text.error().message);
+            return false;
+        }
+
+        const std::size_t fieldOffset = text->find("\"productPath\"");
+        if (fieldOffset == std::string::npos) {
+            logFailure("Asset product manifest smoke could not find productPath.");
+            return false;
+        }
+        text->replace(fieldOffset, std::string_view{"\"productPath\""}.size(),
+                      "\"runtimePointer\"");
+        return expectInvalidProductManifestRead(*text, "unknown member");
+    }
+
+    [[nodiscard]] bool smokeProductManifestDuplicateProductKey() {
+        const auto product = makeProductRecord("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                               "windows-msvc-debug/textures/crate.texture.bin",
+                                               0x1000F00D1234CAFEULL, "windows-msvc-debug");
+        auto duplicate = product;
+        duplicate.relativeProductPath = "windows-msvc-debug/textures/crate-copy.texture.bin";
+        return expectInvalidProductManifestWrite(
+            asharia::asset::AssetProductManifestDocument{.products = {product, duplicate}},
+            "duplicates product key");
+    }
+
+    [[nodiscard]] bool smokeProductManifestDuplicateProductPath() {
+        const auto productA = makeProductRecord("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                                "windows-msvc-debug/textures/crate.texture.bin",
+                                                0x1000F00D1234CAFEULL, "windows-msvc-debug");
+        auto productB = makeProductRecord("785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                          "windows-msvc-debug/textures/decal.texture.bin",
+                                          0x2000F00D1234CAFEULL, "windows-msvc-debug");
+        productB.relativeProductPath = productA.relativeProductPath;
+        return expectInvalidProductManifestWrite(
+            asharia::asset::AssetProductManifestDocument{.products = {productA, productB}},
+            "duplicates product path");
+    }
+
+    [[nodiscard]] bool smokeProductManifestInvalidProductPath() {
+        auto product = makeProductRecord("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                         "windows-msvc-debug\\textures\\crate.texture.bin",
+                                         0x1000F00D1234CAFEULL, "windows-msvc-debug");
+        return expectInvalidProductManifestWrite(
+            asharia::asset::AssetProductManifestDocument{.products = {product}}, "'/' separators");
+    }
+
+    [[nodiscard]] bool smokeProductManifestProductKeyHashMismatch() {
+        const auto product = makeProductRecord("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                               "windows-msvc-debug/textures/crate.texture.bin",
+                                               0x1000F00D1234CAFEULL, "windows-msvc-debug");
+        auto text = asharia::asset::writeAssetProductManifestText(
+            asharia::asset::AssetProductManifestDocument{.products = {product}});
+        if (!text) {
+            logFailure(text.error().message);
+            return false;
+        }
+
+        if (!corruptFirstProductKeyHash(*text)) {
+            return false;
+        }
+        return expectInvalidProductManifestRead(*text, "product key hash mismatch");
     }
 
     [[nodiscard]] bool
@@ -611,13 +861,17 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeSourceSnapshotValidAndDeterministic() &&
-                        smokeSourceSnapshotContentChange() && smokeSourceSnapshotMissingFile() &&
-                        smokeSourceSnapshotDirectory() && smokeSourceSnapshotInvalidSourcePath() &&
-                        smokeSourceSnapshotDuplicateSourcePath() &&
-                        smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
-                        smokeMalformedMetadata() && smokeSourcePathMismatch() &&
-                        smokeDuplicateGuid() && smokeDuplicateSourcePath() && smokeInvalidEntry() &&
-                        smokeInvalidEntrySourcePath() && smokeInvalidMetadataSourcePath();
+    const bool passed =
+        smokeProductManifestRoundTrip() && smokeProductManifestMalformedInput() &&
+        smokeProductManifestDuplicateField() && smokeProductManifestMissingField() &&
+        smokeProductManifestUnknownField() && smokeProductManifestDuplicateProductKey() &&
+        smokeProductManifestDuplicateProductPath() && smokeProductManifestInvalidProductPath() &&
+        smokeProductManifestProductKeyHashMismatch() && smokeSourceSnapshotValidAndDeterministic() &&
+        smokeSourceSnapshotContentChange() && smokeSourceSnapshotMissingFile() &&
+        smokeSourceSnapshotDirectory() && smokeSourceSnapshotInvalidSourcePath() &&
+        smokeSourceSnapshotDuplicateSourcePath() && smokeDiscoveryValidAndDeterministic() &&
+        smokeMissingMetadata() && smokeMalformedMetadata() && smokeSourcePathMismatch() &&
+        smokeDuplicateGuid() && smokeDuplicateSourcePath() && smokeInvalidEntry() &&
+        smokeInvalidEntrySourcePath() && smokeInvalidMetadataSourcePath();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

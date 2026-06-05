@@ -103,8 +103,9 @@ namespace asharia::asset {
                 addDiagnostic(result, AssetSourceDiscoveryDiagnosticCode::DuplicateGuid, entry,
                               "Asset source discovery duplicate GUID guid=\"" +
                                   formatAssetGuid(source.guid) + "\" existing source=\"" +
-                                  existing->sourcePath + "\" new source=\"" + source.sourcePath +
-                                  "\" metadata=\"" + metadataPathText(entry.metadataPath) + "\".");
+                                  existing->sourcePath + "\" candidate source=\"" +
+                                  source.sourcePath + "\" metadata=\"" +
+                                  metadataPathText(entry.metadataPath) + "\".");
                 return false;
             }
 
@@ -113,8 +114,8 @@ namespace asharia::asset {
                 addDiagnostic(
                     result, AssetSourceDiscoveryDiagnosticCode::DuplicateSourcePath, entry,
                     "Asset source discovery duplicate source path source=\"" + source.sourcePath +
-                        "\" existing guid=\"" + formatAssetGuid(existing->guid) + "\" new guid=\"" +
-                        formatAssetGuid(source.guid) + "\" metadata=\"" +
+                        "\" existing guid=\"" + formatAssetGuid(existing->guid) +
+                        "\" candidate guid=\"" + formatAssetGuid(source.guid) + "\" metadata=\"" +
                         metadataPathText(entry.metadataPath) + "\".");
                 return false;
             }

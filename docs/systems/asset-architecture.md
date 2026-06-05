@@ -121,12 +121,14 @@ flowchart TD
 
 为了避免后续 editor 文件修改更新逻辑散落到 UI 或 runtime，单独记录未来 owner：
 
-- `packages/asset-pipeline`：当前已落地 metadata discovery baseline 和显式 source file snapshot/hash
-  baseline。它消费显式给定的 source/.ameta 条目，复用 `asset_core_io` 读取 `.ameta`，校验 duplicate
-  GUID、duplicate source path、missing/malformed metadata 和 source path mismatch，并产出 deterministic
-  manifest / `AssetCatalog` 输入；source snapshot 只消费显式 sourcePath + source file path，校验缺失、
-  非普通文件、非规范 sourcePath 和重复 source path，并产出确定性 v1 `sourceHash`。后续再扩展 source
-  scan、import request、product manifest、cache hit/miss 判断和 dependency invalidation 规则。
+- `packages/asset-pipeline`：当前已落地 metadata discovery baseline、显式 source file snapshot/hash
+  baseline 和 product manifest IO baseline。它消费显式给定的 source/.ameta 条目，复用 `asset_core_io`
+  读取 `.ameta`，校验 duplicate GUID、duplicate source path、missing/malformed metadata 和 source path
+  mismatch，并产出 deterministic manifest / `AssetCatalog` 输入；source snapshot 只消费显式 sourcePath +
+  source file path，校验缺失、非普通文件、非规范 sourcePath 和重复 source path，并产出确定性 v1
+  `sourceHash`；product manifest IO 复用 `archive` deterministic JSON facade，记录 product key、product
+  key hash、relative product path、product size 和 product hash。后续再扩展 source scan、import request、
+  cache hit/miss 判断和 dependency invalidation 规则。
 - `tools/asset-processor`：开发期/后台进程或 CLI host。它可以使用文件 watcher 调用 `asset-pipeline`，
   执行具体 importer，写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向 editor/resource runtime
   发布 product 更新通知。
@@ -285,6 +287,10 @@ Cache 规则：
 - Product path 由 product key 派生，避免同名 source 文件冲突。
 - Cache miss 可以重新 import；cache hit 必须仍校验 product key 和 product hash。
 - Product record 可写入 generated manifest，不能替代 source `.ameta`。
+- Product manifest v1 属于 `asset-pipeline` IO 边界，记录 `schema`、`schemaVersion` 和 `products`。
+  每个 product 记录保存 GUID、asset type id、importer id/version、source/settings/dependency/target
+  hash、computed product key hash、relative product path、product size 和 product hash；它不保存 editor-only
+  import settings、不保存 runtime pointer 或 GPU handle。
 
 ## Catalog 与查询
 
@@ -485,8 +491,9 @@ struct AssetLoadResult {
 当前状态：
 
 - 已落地 `AssetProductKey`、`AssetProductRecord`、`AssetDependency`、dependency hash、
-  target profile hash 和 product key hash helper。真实 product path 生成、cache manifest 和
-  invalidation 调度仍由后续 catalog / asset-pipeline 切片实现。
+  target profile hash 和 product key hash helper。Product manifest IO 已由 `asset-pipeline`
+  拥有；真实 product path 生成、cache hit/miss 和 invalidation 调度仍由后续 catalog /
+  asset-pipeline 切片实现。
 
 验收：
 
@@ -583,7 +590,37 @@ struct AssetLoadResult {
 - `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic hash、content change、missing source file、
   non-regular source file、invalid sourcePath 和 duplicate source path。
 
-### 切片 J：Resource upload baseline
+### 切片 J：Asset-pipeline product manifest IO baseline
+
+进入条件：product key/dependency 数据模型、metadata discovery baseline 和 source snapshot baseline 稳定。
+
+交付：
+
+- `packages/asset-pipeline` 增加 product manifest document 和 text/file read-write facade。
+- IO 使用 `packages/archive` deterministic JSON facade；`asset-core` identity/product headers 不依赖 JSON。
+- Product manifest v1 保存 schema、schemaVersion 和 products array。
+- 每个 product 记录保存 GUID、asset type id、importer id/version、source hash、settings hash、
+  dependency hash、target profile hash、computed product key hash、relative product path、product size 和
+  product hash。
+- 校验 schema/schemaVersion、malformed input、duplicate/missing/unknown fields、non-zero key/hash 字段、
+  canonical product path、duplicate product key/key-hash/path 和 product key hash mismatch。
+
+当前状态：
+
+- 已落地 `AssetProductManifestDocument`、`validateAssetProductPath()`、
+  `validateAssetProductManifestDocument()` 和 product manifest text/file read-write facade。
+- `asharia::asset_pipeline` 通过 private `asharia::archive` 依赖实现 IO，public API 仍只暴露 product
+  manifest 数据和 Result，不把 JSON 类型带进 asset-core。
+- 仍不做 source scan、watcher、import 调度、product blob 生成、cache hit/miss scheduling、GPU upload、
+  Asset Browser 或 Material Editor。
+
+验收：
+
+- `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic text/file round-trip、malformed input、
+  duplicate/missing/unknown fields、duplicate product key/path、invalid product path 和 product key hash
+  mismatch。
+
+### 切片 K：Resource upload baseline
 
 进入条件：RenderGraph storage/MRT/compute 和 resource lifetime 相关分支合并。
 
@@ -607,12 +644,13 @@ struct AssetLoadResult {
 | product key / dependency hash 数据模型 | 可独立验证 hash/key 变化规则。 | 不接真实 importer，不读写 generated product。 |
 | asset-pipeline metadata discovery | 只消费显式 source/.ameta 条目，可用 package-local tests 验证。 | 不做 watcher、import 调度、product cache 或 editor UI。 |
 | asset-pipeline source snapshot/hash | 只消费显式 sourcePath + source file path，可用 package-local tests 验证。 | 不做 source tree scan、watcher、import 调度、product cache 或 editor UI。 |
+| asset-pipeline product manifest IO | 只读写 product manifest 文档，可用 package-local tests 验证。 | 不做 importer、product blob/cache execution、GPU upload 或 editor UI。 |
 
 等待后再做：
 
 | 工作 | 等待项 |
 | --- | --- |
-| `tools/asset-processor` / 完整 import 调度 | 等 asset-pipeline import request 和 product manifest 逐步稳定。 |
+| `tools/asset-processor` / 完整 import 调度 | 等 asset-pipeline import request 和 cache hit/miss planning 稳定。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset / pipeline key | 等 material signature 和 descriptor contract 进入计划阶段。 |
@@ -635,8 +673,9 @@ Package-local tests：
 - `asharia-asset-core-smoke-tests --catalog`：add/find、重复 GUID/path 失败。
 - `asharia-asset-core-smoke-tests --product-key`：source/settings/tool/target 改变会改变 key。
 - `asharia-asset-core-smoke-tests --dependency`：dependency hash 和 missing dependency diagnostics。
-- `asharia-asset-pipeline-smoke-tests`：显式 source/.ameta discovery、source snapshot/hash、缺失/坏
-  metadata、路径不匹配、重复 GUID/path、缺失/非普通 source file 和非规范 sourcePath diagnostics。
+- `asharia-asset-pipeline-smoke-tests`：显式 source/.ameta discovery、source snapshot/hash、product manifest
+  IO、缺失/坏 metadata、路径不匹配、重复 GUID/path、缺失/非普通 source file、非规范 sourcePath、
+  malformed product manifest、duplicate product key/path 和 product key hash mismatch diagnostics。
 
 未来 CLI smoke：
 
