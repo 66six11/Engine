@@ -31,6 +31,7 @@ AshariaEngine/
     project-core/
     asset-core/
     asset-pipeline/
+    material-core/
     scene-core/
     cpp-binding/
     persistence/
@@ -95,6 +96,8 @@ package 用来承载可选能力：
 - `asset-pipeline` 第一阶段提供 CPU-only metadata discovery baseline：读取显式 source/.ameta 条目，
   产出 deterministic manifest / catalog 输入和诊断；不拥有 watcher、import 调度、product cache、
   GPU upload 或 editor UI。
+- `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
+  当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
 - `editor-core` 未来提供 editor service、selection、inspector、package browser。
 
 ## Package Manifest

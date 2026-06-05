@@ -20,6 +20,7 @@ namespace asharia {
         Persistence,
         Scene,
         Project,
+        Material,
     };
 
     struct Error {

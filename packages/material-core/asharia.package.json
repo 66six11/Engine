@@ -1,0 +1,13 @@
+{
+  "name": "com.asharia.material-core",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Material Core",
+  "description": "CPU-only material resource signature and pipeline key contracts.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-material-core"],
+  "testTargets": ["asharia-material-core-smoke-tests"],
+  "targetDependencies": {
+    "asharia-material-core": ["asharia-core"],
+    "asharia-material-core-smoke-tests": ["asharia-material-core"]
+  }
+}

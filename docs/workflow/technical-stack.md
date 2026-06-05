@@ -65,6 +65,8 @@ Vulkan loader/binding 策略：
   被 app/editor 引入。
 - `packages/project-core` 只保存最小 project descriptor 和 asset source discovery roots；cook/package
   profiles、editor workspace 和 runtime state 不放进该 package。
+- `packages/material-core` 只保存 CPU-side material resource signature、shader/signature compatibility 和
+  pipeline key 数据合同；`.amat` IO、GPU upload、Vulkan pipeline/cache 和 editor UI 不放进该 package。
 - 每个已落地的 engine/package/app 入口维护 `asharia.package.json` manifest，记录名称、版本、依赖、
   CMake target、test target 和 target-level dependency。
 - editor 是 host，不是 engine 核心的一部分；runtime app 不链接 editor packages。

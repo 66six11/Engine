@@ -55,6 +55,9 @@ RenderGraph 资料。
   和 asset discovery ignore policy；不拥有 cook/package profiles、editor workspace 或 runtime state。
 - `packages/asset-core`：asset GUID、type、handle/reference、metadata、product/cache/dependency/catalog
   的 CPU 数据模型；不拥有 GPU resource 或 editor UI。
+- `packages/material-core`：material resource signature、descriptor contract、shader/signature compatibility
+  validation 和 pipeline key hash 的 CPU 数据模型；不拥有 `.amat` IO、GPU resource、Vulkan pipeline/cache
+  或 editor UI。
 - `packages/reflection` / `packages/serialization`：过渡兼容 package，不再承载新 editor、script、asset 或
   migration 语义。
 - `packages/rendergraph`：后端无关 graph model、resource/pass/slot/schema、command summary、编译结果、
@@ -148,8 +151,8 @@ RenderGraph 资料。
 - dynamic rendering 是主路径，不回退到传统 render pass/framebuffer 抽象。
 - 使用单 graphics queue；async compute 和 transfer queue 在明确 queue ownership 与 smoke 前暂缓。
 - 每新增一个 RenderGraph resource state，必须同步定义 abstract semantics、Vulkan translation 和 smoke。
-- descriptor allocator、bindless/resource table、material/pipeline key 在 shader reflection 与 resource upload
-  合同更稳定后再扩大。
+- descriptor allocator、bindless/resource table 和 material pipeline cache 仍在后续扩大；当前
+  `material-core` 只提供 CPU-side signature/key 合同。
 
 ## 同步策略
 
@@ -175,6 +178,7 @@ RenderGraph 资料。
 - 在现有 renderer-owned overlay pass input 合同上继续接入 pixel/readback grid smoke、scene mesh、selection、
   gizmo 和更完整 debug line/source diagnostics。
 - asset-pipeline / resource upload 把 source asset、product cache 和 runtime GPU resource 分开。
-- material/pipeline key、descriptor/resource signature 和 shader reflection JSON 形成可审查合同。
+- `material-core` 的 descriptor/resource signature、pipeline key 和 shader reflection JSON 形成可审查合同；
+  backend pipeline/cache 实现仍由 renderer/RHI 后续 slice 承担。
 - `editor-core` 只保留 selection、commands、undo/redo、workspace 和 backend-neutral viewport state。
 - CPU worker、RenderThread、async compute、bindless 和 hot reload 都必须先有 ownership、fallback 和 smoke。
