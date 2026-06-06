@@ -475,6 +475,8 @@ struct AssetLoadResult {
 - Editor UI 不直接修改 product cache；它只请求 import、展示状态和诊断。
 - 当前 Asset Browser shell 只使用 editor-local synthetic rows 和 `EditorAssetIconRegistry` 验证面板、菜单、dock
   和 Lucide icon resolver 合同；它不是完整 catalog view，不扫描 source tree、不写 product cache、不触发 import。
+- #78 将该 shell 推进到 public `asset-core` catalog view model：editor 可消费排序稳定的 source/product
+  诊断 rows，但仍不从 panel 执行扫描、读取 manifest 文件、写 product cache 或触发 import。
 
 ### Scripting
 
@@ -901,7 +903,7 @@ scan-to-planning bridge baseline 稳定。
 | --- | --- |
 | `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 importer、dependency invalidation 和调度策略。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等基础 `--smoke-buffer-upload` 和 deterministic product execution 之后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
-| Full Asset Browser / import settings UI | 第一版 shell/icon contract 已在 editor 层启动；完整 catalog view、import settings 编辑和 reimport request 仍等 `editor-core` transaction 和 catalog view 稳定。 |
+| Full Asset Browser / import settings UI | 第一版 shell/icon contract 已在 editor 层落地；#78 正在补 public catalog view model。import settings 编辑和 reimport request 仍等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 
 不建议现在做：

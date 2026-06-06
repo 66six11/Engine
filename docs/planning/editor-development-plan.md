@@ -1653,7 +1653,7 @@ Validation:
 
 ### 24.0 Asset Browser Shell And Icon Contract
 
-Status: In progress.
+Status: Done via #76 / PR #77.
 
 Scope:
 
@@ -1675,7 +1675,7 @@ Validation:
 
 ### 24.1 Asset Catalog View
 
-Status: Deferred.
+Status: In progress via #78.
 
 Depends on:
 
@@ -1683,12 +1683,15 @@ Depends on:
 
 Scope:
 
-- Editor displays asset catalog through public asset API.
+- Add a public `asset-core` catalog view model that turns catalog sources and product records into sorted, read-only rows.
+- Editor displays asset catalog rows through the public catalog view API.
+- Expose product state diagnostics such as current, missing, stale and invalid product record.
 - No direct source path mutation from UI.
 
 Validation:
 
 - Asset Browser can list known assets and diagnostics from asset-core.
+- Package-local asset-core smoke covers deterministic view ordering and product diagnostics.
 
 ### 24.2 Import Settings Editing
 

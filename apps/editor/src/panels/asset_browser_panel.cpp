@@ -3,9 +3,15 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <imgui.h>
 #include <string>
 #include <string_view>
+
+#include "asharia/asset_core/asset_catalog_view.hpp"
+#include "asharia/asset_core/asset_guid.hpp"
+#include "asharia/asset_core/asset_metadata.hpp"
+#include "asharia/asset_core/asset_product.hpp"
 
 #include "editor_asset_icon.hpp"
 #include "editor_i18n.hpp"
@@ -13,111 +19,9 @@
 
 namespace {
 
-    constexpr ImGuiTableFlags kAssetTableFlags = ImGuiTableFlags_RowBg |
-                                                 ImGuiTableFlags_BordersInnerH |
-                                                 ImGuiTableFlags_SizingStretchProp |
-                                                 ImGuiTableFlags_Resizable;
-
-    struct AssetBrowserRow {
-        std::string_view name;
-        std::string_view path;
-        std::string_view assetType;
-        std::string_view importerId;
-        std::string_view extension;
-        bool folder{};
-        asharia::editor::EditorAssetIconDiagnosticState diagnostic{
-            asharia::editor::EditorAssetIconDiagnosticState::None};
-        std::string_view stateKey;
-        std::string_view stateFallback;
-        asharia::editor::EditorUiTone stateTone{asharia::editor::EditorUiTone::Muted};
-    };
-
-    constexpr std::array<AssetBrowserRow, 7> kSyntheticAssetRows{{
-        AssetBrowserRow{
-            .name = "Materials",
-            .path = "Assets/Materials",
-            .assetType = "folder",
-            .importerId = {},
-            .extension = {},
-            .folder = true,
-            .diagnostic = asharia::editor::EditorAssetIconDiagnosticState::None,
-            .stateKey = "assetBrowser.state.folder",
-            .stateFallback = "folder",
-            .stateTone = asharia::editor::EditorUiTone::Muted,
-        },
-        AssetBrowserRow{
-            .name = "brushed_metal.amat",
-            .path = "Assets/Materials/brushed_metal.amat",
-            .assetType = "material",
-            .importerId = "asharia.material",
-            .extension = ".amat",
-            .folder = false,
-            .diagnostic = asharia::editor::EditorAssetIconDiagnosticState::None,
-            .stateKey = "assetBrowser.state.ready",
-            .stateFallback = "ready",
-            .stateTone = asharia::editor::EditorUiTone::Success,
-        },
-        AssetBrowserRow{
-            .name = "grid.slang",
-            .path = "Assets/Shaders/grid.slang",
-            .assetType = "shader",
-            .importerId = "asharia.shader-slang",
-            .extension = ".slang",
-            .folder = false,
-            .diagnostic = asharia::editor::EditorAssetIconDiagnosticState::None,
-            .stateKey = "assetBrowser.state.ready",
-            .stateFallback = "ready",
-            .stateTone = asharia::editor::EditorUiTone::Success,
-        },
-        AssetBrowserRow{
-            .name = "cube.mesh",
-            .path = "Assets/Meshes/cube.mesh",
-            .assetType = "mesh",
-            .importerId = "asharia.mesh-placeholder",
-            .extension = ".mesh",
-            .folder = false,
-            .diagnostic = asharia::editor::EditorAssetIconDiagnosticState::None,
-            .stateKey = "assetBrowser.state.synthetic",
-            .stateFallback = "synthetic",
-            .stateTone = asharia::editor::EditorUiTone::Info,
-        },
-        AssetBrowserRow{
-            .name = "checker.png",
-            .path = "Assets/Textures/checker.png",
-            .assetType = "texture",
-            .importerId = "asharia.texture-placeholder",
-            .extension = ".png",
-            .folder = false,
-            .diagnostic = asharia::editor::EditorAssetIconDiagnosticState::None,
-            .stateKey = "assetBrowser.state.synthetic",
-            .stateFallback = "synthetic",
-            .stateTone = asharia::editor::EditorUiTone::Info,
-        },
-        AssetBrowserRow{
-            .name = "readme.md",
-            .path = "Assets/readme.md",
-            .assetType = "text",
-            .importerId = {},
-            .extension = ".md",
-            .folder = false,
-            .diagnostic = asharia::editor::EditorAssetIconDiagnosticState::None,
-            .stateKey = "assetBrowser.state.ready",
-            .stateFallback = "ready",
-            .stateTone = asharia::editor::EditorUiTone::Success,
-        },
-        AssetBrowserRow{
-            .name = "missing-source",
-            .path = "Assets/Missing/missing-source",
-            .assetType = {},
-            .importerId = {},
-            .extension = {},
-            .folder = false,
-            .diagnostic = asharia::editor::EditorAssetIconDiagnosticState::Missing,
-            .stateKey = "assetBrowser.state.missing",
-            .stateFallback = "missing",
-            .stateTone = asharia::editor::EditorUiTone::Warning,
-        },
-    }};
+    constexpr ImGuiTableFlags kAssetTableFlags =
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp |
+        ImGuiTableFlags_Resizable;
 
     void text(std::string_view value) {
         ImGui::TextUnformatted(value.data(), value.data() + value.size());
@@ -133,31 +37,209 @@ namespace {
         return lowered;
     }
 
-    [[nodiscard]] bool rowMatchesFilter(const AssetBrowserRow& row, std::string_view filter) {
+    struct FixtureSourceDesc {
+        std::string_view guidText;
+        std::string_view assetTypeName;
+        std::string_view sourcePath;
+        std::string_view importerName;
+        std::uint64_t sourceHash{};
+        std::uint64_t settingsHash{};
+    };
+
+    [[nodiscard]] asharia::asset::SourceAssetRecord sourceRecord(const FixtureSourceDesc& desc) {
+        auto guid = asharia::asset::parseAssetGuid(desc.guidText);
+        return asharia::asset::SourceAssetRecord{
+            .guid = guid ? *guid : asharia::asset::AssetGuid{},
+            .assetType = asharia::asset::makeAssetTypeId(desc.assetTypeName),
+            .assetTypeName = std::string{desc.assetTypeName},
+            .sourcePath = std::string{desc.sourcePath},
+            .importerId = asharia::asset::makeImporterId(desc.importerName),
+            .importerName = std::string{desc.importerName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = desc.sourceHash,
+            .settingsHash = desc.settingsHash,
+        };
+    }
+
+    [[nodiscard]] asharia::asset::AssetProductRecord
+    productRecord(const asharia::asset::SourceAssetRecord& source, std::uint64_t dependencyHash,
+                  std::uint64_t targetProfileHash, std::string_view relativeProductPath,
+                  std::uint64_t productSizeBytes) {
+        const asharia::asset::AssetProductKey productKey =
+            asharia::asset::makeAssetProductKey(source, dependencyHash, targetProfileHash);
+        return asharia::asset::AssetProductRecord{
+            .key = productKey,
+            .relativeProductPath = std::string{relativeProductPath},
+            .productSizeBytes = productSizeBytes,
+            .productHash = asharia::asset::hashAssetProductKey(productKey),
+        };
+    }
+
+    [[nodiscard]] asharia::asset::AssetCatalogView makeAssetBrowserCatalogView() {
+        constexpr std::string_view kMaterialTypeName = "com.asharia.asset.Material";
+        constexpr std::string_view kMeshTypeName = "com.asharia.asset.Mesh";
+        constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+        constexpr std::string_view kTextTypeName = "com.asharia.asset.Text";
+        const asharia::asset::SourceAssetRecord material = sourceRecord(FixtureSourceDesc{
+            .guidText = "b8373128-8e46-44e1-a5a4-df4c2ef9d2ad",
+            .assetTypeName = kMaterialTypeName,
+            .sourcePath = "Assets/Materials/brushed_metal.amat",
+            .importerName = "asharia.material",
+            .sourceHash = 0x1001ULL,
+            .settingsHash = 0x2001ULL,
+        });
+        const asharia::asset::SourceAssetRecord shader = sourceRecord(FixtureSourceDesc{
+            .guidText = "13a10d4b-6987-48d1-ad27-ae4055e5a936",
+            .assetTypeName = kShaderTypeName,
+            .sourcePath = "Assets/Shaders/grid.slang",
+            .importerName = "asharia.shader-slang",
+            .sourceHash = 0x1002ULL,
+            .settingsHash = 0x2002ULL,
+        });
+        asharia::asset::SourceAssetRecord staleMesh = sourceRecord(FixtureSourceDesc{
+            .guidText = "1135c477-65aa-4d44-92f1-f208fc6142ad",
+            .assetTypeName = kMeshTypeName,
+            .sourcePath = "Assets/Meshes/cube.mesh",
+            .importerName = "asharia.mesh-placeholder",
+            .sourceHash = 0x1003ULL,
+            .settingsHash = 0x2003ULL,
+        });
+        const asharia::asset::SourceAssetRecord texture = sourceRecord(FixtureSourceDesc{
+            .guidText = "cd9c0f3d-20e2-4028-a3e9-c3f42d3fd515",
+            .assetTypeName = kTextureTypeName,
+            .sourcePath = "Assets/Textures/checker.png",
+            .importerName = "asharia.texture-placeholder",
+            .sourceHash = 0x1004ULL,
+            .settingsHash = 0x2004ULL,
+        });
+        const asharia::asset::SourceAssetRecord note = sourceRecord(FixtureSourceDesc{
+            .guidText = "f98f9d88-237f-4e8a-a4b6-9977d3a1fc2b",
+            .assetTypeName = kTextTypeName,
+            .sourcePath = "Assets/readme.md",
+            .importerName = "asharia.text-placeholder",
+            .sourceHash = 0x1005ULL,
+            .settingsHash = 0x2005ULL,
+        });
+
+        asharia::asset::AssetCatalog catalog;
+        if (!catalog.addSource(shader) || !catalog.addSource(note) || !catalog.addSource(texture) ||
+            !catalog.addSource(material) || !catalog.addSource(staleMesh)) {
+            return {};
+        }
+
+        const std::uint64_t targetProfile =
+            asharia::asset::makeAssetTargetProfileHash("editor-preview");
+        asharia::asset::SourceAssetRecord oldMesh = staleMesh;
+        oldMesh.sourceHash ^= 0x40ULL;
+        const std::array<asharia::asset::AssetProductRecord, 4> products{
+            productRecord(material, 0x3001ULL, targetProfile, "materials/brushed_metal.product",
+                          512),
+            productRecord(shader, 0x3002ULL, targetProfile, "shaders/grid.product", 256),
+            productRecord(texture, 0x3004ULL, targetProfile, "textures/checker.product", 1024),
+            productRecord(oldMesh, 0x3003ULL, targetProfile, "meshes/cube.old.product", 2048),
+        };
+
+        return asharia::asset::buildAssetCatalogView(
+            catalog, products, asharia::asset::AssetCatalogViewOptions{.requireProducts = true});
+    }
+
+    [[nodiscard]] const asharia::asset::AssetCatalogView& assetBrowserCatalogView() {
+        static const asharia::asset::AssetCatalogView view = makeAssetBrowserCatalogView();
+        return view;
+    }
+
+    [[nodiscard]] bool rowMatchesFilter(const asharia::asset::AssetCatalogViewEntry& row,
+                                        std::string_view filter) {
         if (filter.empty()) {
             return true;
         }
         const std::string needle = lower(filter);
-        const std::string name = lower(row.name);
-        const std::string path = lower(row.path);
-        const std::string type = lower(row.assetType);
-        return name.contains(needle) || path.contains(needle) || type.contains(needle);
+        const std::string name = lower(row.displayName);
+        const std::string path = lower(row.sourcePath);
+        const std::string type = lower(row.assetTypeName);
+        const std::string importer = lower(row.importerName);
+        return name.contains(needle) || path.contains(needle) || type.contains(needle) ||
+               importer.contains(needle);
     }
 
-    [[nodiscard]] asharia::editor::EditorAssetIconQuery iconQueryForRow(
-        const AssetBrowserRow& row) {
+    [[nodiscard]] asharia::editor::EditorAssetIconDiagnosticState
+    diagnosticStateForRow(const asharia::asset::AssetCatalogViewEntry& row) {
+        switch (row.productState) {
+        case asharia::asset::AssetCatalogProductState::MissingProduct:
+            return asharia::editor::EditorAssetIconDiagnosticState::Missing;
+        case asharia::asset::AssetCatalogProductState::StaleProduct:
+            return asharia::editor::EditorAssetIconDiagnosticState::Warning;
+        case asharia::asset::AssetCatalogProductState::InvalidProduct:
+            return asharia::editor::EditorAssetIconDiagnosticState::Invalid;
+        case asharia::asset::AssetCatalogProductState::NotTracked:
+        case asharia::asset::AssetCatalogProductState::Ready:
+            return asharia::editor::EditorAssetIconDiagnosticState::None;
+        }
+        return asharia::editor::EditorAssetIconDiagnosticState::None;
+    }
+
+    [[nodiscard]] asharia::editor::EditorAssetIconQuery
+    iconQueryForRow(const asharia::asset::AssetCatalogViewEntry& row) {
         return asharia::editor::EditorAssetIconQuery{
-            .folder = row.folder,
-            .assetType = std::string{row.assetType},
-            .importerId = std::string{row.importerId},
-            .extension = std::string{row.extension},
-            .diagnostic = row.diagnostic,
+            .folder = false,
+            .assetType = row.assetTypeName,
+            .importerId = row.importerName,
+            .extension = row.extension,
+            .diagnostic = diagnosticStateForRow(row),
         };
     }
 
-    [[nodiscard]] std::string label(const asharia::editor::EditorI18n& i18n,
-                                    std::string_view key, std::string_view stableId,
-                                    std::string_view fallback) {
+    [[nodiscard]] asharia::editor::EditorUiTone
+    toneForState(asharia::asset::AssetCatalogProductState state) {
+        switch (state) {
+        case asharia::asset::AssetCatalogProductState::Ready:
+            return asharia::editor::EditorUiTone::Success;
+        case asharia::asset::AssetCatalogProductState::MissingProduct:
+        case asharia::asset::AssetCatalogProductState::StaleProduct:
+            return asharia::editor::EditorUiTone::Warning;
+        case asharia::asset::AssetCatalogProductState::InvalidProduct:
+            return asharia::editor::EditorUiTone::Danger;
+        case asharia::asset::AssetCatalogProductState::NotTracked:
+            return asharia::editor::EditorUiTone::Info;
+        }
+        return asharia::editor::EditorUiTone::Muted;
+    }
+
+    [[nodiscard]] std::string_view stateTextKey(asharia::asset::AssetCatalogProductState state) {
+        switch (state) {
+        case asharia::asset::AssetCatalogProductState::Ready:
+            return "assetBrowser.state.ready";
+        case asharia::asset::AssetCatalogProductState::MissingProduct:
+            return "assetBrowser.state.missingProduct";
+        case asharia::asset::AssetCatalogProductState::StaleProduct:
+            return "assetBrowser.state.staleProduct";
+        case asharia::asset::AssetCatalogProductState::InvalidProduct:
+            return "assetBrowser.state.invalidProduct";
+        case asharia::asset::AssetCatalogProductState::NotTracked:
+            return "assetBrowser.state.notTracked";
+        }
+        return "assetBrowser.state.notTracked";
+    }
+
+    [[nodiscard]] std::string_view stateFallback(asharia::asset::AssetCatalogProductState state) {
+        switch (state) {
+        case asharia::asset::AssetCatalogProductState::Ready:
+            return "ready";
+        case asharia::asset::AssetCatalogProductState::MissingProduct:
+            return "missing product";
+        case asharia::asset::AssetCatalogProductState::StaleProduct:
+            return "stale product";
+        case asharia::asset::AssetCatalogProductState::InvalidProduct:
+            return "invalid product";
+        case asharia::asset::AssetCatalogProductState::NotTracked:
+            return "not tracked";
+        }
+        return "not tracked";
+    }
+
+    [[nodiscard]] std::string label(const asharia::editor::EditorI18n& i18n, std::string_view key,
+                                    std::string_view stableId, std::string_view fallback) {
         return i18n.label(asharia::editor::EditorI18nLabelDesc{
             .key = key,
             .stableId = stableId,
@@ -174,7 +256,7 @@ namespace {
     }
 
     void drawAssetRowIcon(const asharia::editor::EditorAssetIconRegistry& icons,
-                          const AssetBrowserRow& row) {
+                          const asharia::asset::AssetCatalogViewEntry& row) {
         const asharia::editor::EditorIconDescriptor descriptor =
             icons.resolveAssetIcon(iconQueryForRow(row));
         asharia::editor::drawEditorIconGlyph(descriptor, 16.0F);
@@ -195,11 +277,11 @@ namespace {
         ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.50F);
         ImGui::TableSetupColumn(typeColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.18F);
         ImGui::TableSetupColumn(importerColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.20F);
-        ImGui::TableSetupColumn(stateColumn.c_str(), ImGuiTableColumnFlags_WidthFixed, 88.0F);
+        ImGui::TableSetupColumn(stateColumn.c_str(), ImGuiTableColumnFlags_WidthFixed, 104.0F);
         ImGui::TableHeadersRow();
 
         std::size_t visibleRows = 0;
-        for (const AssetBrowserRow& row : kSyntheticAssetRows) {
+        for (const asharia::asset::AssetCatalogViewEntry& row : assetBrowserCatalogView().entries) {
             if (!rowMatchesFilter(row, filter)) {
                 continue;
             }
@@ -208,30 +290,25 @@ namespace {
             ImGui::TableSetColumnIndex(0);
             drawAssetRowIcon(context.icons, row);
             ImGui::SameLine();
-            text(row.name);
+            text(row.displayName);
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
-                text(row.path);
+                text(row.sourcePath);
                 ImGui::EndTooltip();
             }
 
             ImGui::TableSetColumnIndex(1);
-            if (row.folder) {
-                text(textValue(i18n, "assetBrowser.type.folder", "folder"));
-            } else {
-                text(row.assetType);
-            }
+            text(row.assetTypeName);
 
             ImGui::TableSetColumnIndex(2);
-            text(row.importerId.empty() ? "-" : row.importerId);
+            text(row.importerName.empty() ? "-" : row.importerName);
 
             ImGui::TableSetColumnIndex(3);
-            asharia::editor::drawEditorUiStatusPill(
-                i18n.text(asharia::editor::EditorI18nTextQuery{
-                    .key = row.stateKey,
-                    .fallback = row.stateFallback,
-                }),
-                row.stateTone);
+            asharia::editor::drawEditorUiStatusPill(i18n.text(asharia::editor::EditorI18nTextQuery{
+                                                        .key = stateTextKey(row.productState),
+                                                        .fallback = stateFallback(row.productState),
+                                                    }),
+                                                    toneForState(row.productState));
         }
 
         if (visibleRows == 0U) {
