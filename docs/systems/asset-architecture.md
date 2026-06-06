@@ -146,7 +146,7 @@ flowchart TD
 
 - `packages/asset-pipeline`：当前已落地 deterministic source tree scan baseline、metadata discovery baseline、
   显式 source file snapshot/hash baseline、product manifest IO baseline、import planning baseline 和
-  scan-to-planning bridge baseline。source scan 只遍历显式 source root，配对 `<source-file>.ameta`
+  scan-to-planning bridge baseline，以及 deterministic product execution baseline。source scan 只遍历显式 source root，配对 `<source-file>.ameta`
   sidecar，产出 canonical sourcePath、source file path 和 metadata path；discovery 消费显式 source/.ameta
   条目，复用 `asset_core_io` 读取 `.ameta`，校验 duplicate GUID、duplicate source path、missing/malformed
   metadata 和 source path mismatch，并产出 deterministic manifest / `AssetCatalog` 输入；source snapshot
@@ -155,13 +155,16 @@ flowchart TD
   product key、product key hash、relative product path、product size 和 product hash；import planning 比较
   discovered source、current source snapshot、target profile 和 existing product manifest，产出 cache hit
   或 import request；scan-to-planning bridge 只顺序复用 scan、discovery、snapshot 和 planning，并保留分阶段
-  diagnostics，供 dry-run CLI 报告。后续再扩展 import scheduling、product execution 和 dependency invalidation
-  规则。
-- `tools/asset-processor`：当前只提供 read-only dry-run CLI，可读取显式 source root，或读取
+  diagnostics，供 dry-run CLI 报告；product execution 消费已有 import request 和显式 source bytes，写入
+  deterministic placeholder product blob 与 product manifest，用作真实 importer 前的稳定 product/cache 输出基线。
+  后续再扩展具体 importer、import scheduling 和 dependency invalidation 规则。
+- `tools/asset-processor`：当前提供 read-only dry-run CLI 和受控 `execute` CLI。dry-run 可读取显式 source root，或读取
   `asharia.project.json` 中的 `assetSourceRoots` / `assetDiscovery.ignoredDirectories`，再使用显式
-  `--target-profile` 和可选 product manifest 输出稳定文本报告；它不执行 importer、不写 product
-  manifest/blob/cache、不做 watcher 或热重载。未来可扩展为开发期/后台进程或 CLI host，使用文件 watcher
-  调用 `asset-pipeline`，执行具体 importer，写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向
+  `--target-profile` 和可选 product manifest 输出稳定文本报告；execute 可读取显式 source root、target
+  profile、输出根目录和可选旧 product manifest，执行 placeholder product writer 并写出 product blob/cache
+  与 product manifest。它仍不接真实 importer、watcher、后台 worker、热重载、GPU upload 或 editor UI。
+  未来可扩展为开发期/后台进程或 CLI host，使用文件 watcher 调用 `asset-pipeline`，执行具体 importer，
+  写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向
   editor/resource runtime 发布 product 更新通知。
 - `apps/editor` / 未来 `editor-core`：只发出 reimport、rename、move、import settings 修改等命令，并展示
   pipeline 状态和诊断；不直接扫描 source tree，不直接写 product cache。
@@ -564,7 +567,8 @@ struct AssetLoadResult {
 - 已落地 `AssetProductKey`、`AssetProductRecord`、`AssetDependency`、dependency hash、
   target profile hash 和 product key hash helper。Product manifest IO 已由 `asset-pipeline`
   拥有；import planning 已由 `asset-pipeline` 负责生成 deterministic product path proposal、
-  cache hit/miss 和 import request。真实 importer 执行、product blob 写入和 invalidation 调度仍由后续
+  cache hit/miss 和 import request；deterministic placeholder product execution 已由 `asset-pipeline`
+  负责把 import request + explicit source bytes 写成 product blob 与 manifest。真实 importer 执行和 invalidation 调度仍由后续
   asset-processor / asset-pipeline 切片实现。
 
 验收：
@@ -824,6 +828,34 @@ scan-to-planning bridge baseline 稳定。
   fields、invalid project id、invalid source root 和 duplicate root/ignored directory negative paths。
 - `asharia-asset-processor --smoke-dry-run` 覆盖 project descriptor 输入模式。
 
+### 切片 N.75：Deterministic product execution baseline
+
+进入条件：asset-processor dry-run CLI、project descriptor discovery 和 graph-visible buffer upload baseline 稳定。
+
+交付：
+
+- `packages/asset-pipeline` 增加 `AssetProductExecutionRequest` / `AssetProductExecutionResult`，
+  消费已有 import plan、旧 product manifest、显式 source bytes、product output root 和 manifest output path。
+- 第一版只提供 deterministic placeholder product writer：输出记录 source/product/importer/settings/hash
+  上下文和原始 source bytes，不接 glTF、PNG、DDS、shader、material 或 texture importer。
+- Product manifest 继续使用既有 manifest IO；product path 仍由 product key 派生，写入输出根目录下的
+  manifest-relative path，不保存绝对 source path 或 machine-local cache path。
+- `tools/asset-processor execute ...` 写入 product blob/cache 与 product manifest；`--smoke-product-execution`
+  覆盖首次写入、带 manifest 的 unchanged-input cache hit、source bytes 变化后的新 product 输出。
+
+当前状态：
+
+- 已落地 `executeAssetProducts()` 和 `asharia-asset-processor execute`。
+- 仍不做真实 source-format importer、watcher、background worker、dependency invalidation、hot reload、
+  Asset Browser、Material Editor、runtime resource loading、RenderGraph、RHI、renderer 或 GPU upload changes。
+
+验收：
+
+- `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic product write、unchanged-input cache hit rerun
+  和 source-bytes/hash mismatch diagnostic。
+- `asharia-asset-processor --smoke-product-execution` 覆盖 CLI product output、manifest output、rerun cache hit
+  和 source bytes change 触发的新 product 输出。
+
 ### 切片 O：Resource upload baseline
 
 进入条件：RenderGraph storage/MRT/compute 和 resource lifetime 相关分支合并。
@@ -858,14 +890,15 @@ scan-to-planning bridge baseline 稳定。
 | asset-pipeline source scan | 只扫描显式 source root 并配对 `.ameta` sidecar，可用 package-local tests 验证。 | 不读取 metadata、不 hash bytes、不桥接 plan、不执行 importer、不做 watcher 或 editor UI。 |
 | asset-pipeline scan-to-planning bridge | 只组合既有 scan/discovery/snapshot/planning 阶段，可用 package-local tests 验证。 | 不做 CLI、不执行 importer、不写 manifest/blob/cache、不做 watcher 或 editor UI。 |
 | asset-processor dry-run CLI | 只做 read-only CLI reporting，可用 `--smoke-dry-run` 验证。 | 不执行 importer、不写 manifest/blob/cache、不做 watcher、hot reload、editor UI 或 GPU upload。 |
+| asset-pipeline / asset-processor product execution | 只消费已有 import plan 和显式 source bytes，写 deterministic placeholder product blob/manifest。 | 不接真实 importer、不做 watcher、dependency invalidation、runtime resource loading 或 GPU upload。 |
 | material-core signature / pipeline key | 只定义 CPU-side material resource signature、compatibility diagnostics 和 deterministic pipeline key hash，可用 package-local tests 验证。 | 不做 `.amat` IO、不执行 importer、不写 product cache、不创建 Vulkan pipeline/cache、不做 editor UI。 |
 
 等待后再做：
 
 | 工作 | 等待项 |
 | --- | --- |
-| `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 product execution。 |
-| `--smoke-mesh-resource` / `--smoke-texture-upload` | 等基础 `--smoke-buffer-upload` 之后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
+| `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 importer、dependency invalidation 和调度策略。 |
+| `--smoke-mesh-resource` / `--smoke-texture-upload` | 等基础 `--smoke-buffer-upload` 和 deterministic product execution 之后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 
@@ -890,12 +923,14 @@ Package-local tests：
 - `asharia-asset-pipeline-smoke-tests`：source tree scan、scan-to-planning bridge、显式 source/.ameta
   discovery、source snapshot/hash、product manifest IO、import planning、缺失/坏 metadata、路径不匹配、重复
   GUID/path、缺失/非普通 source file、非规范 sourcePath、malformed product manifest、duplicate product key/path、
-  product key hash mismatch 和 import planning diagnostics。
+  product key hash mismatch、import planning diagnostics 和 deterministic product execution。
 
 未来 CLI smoke：
 
 - `asharia-asset-processor --smoke-dry-run`：read-only dry-run 覆盖 request/cache-hit 报告、scan diagnostic
   和 product manifest read diagnostic。
+- `asharia-asset-processor --smoke-product-execution`：product execution 覆盖 product blob/manifest 写入、
+  unchanged-input cache hit rerun 和 source bytes change 后的新 product 输出。
 - `--smoke-asset-metadata-roundtrip`：`.ameta` deterministic round-trip。
 - `--smoke-buffer-upload`：显式 upload payload 通过 RenderGraph `CopyBuffer` 进入 device-local buffer 并读回。
 - `--smoke-mesh-resource`：mesh product 解析为 runtime draw resource，不依赖 source path。
