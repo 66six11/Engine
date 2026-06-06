@@ -309,6 +309,9 @@ BasicComputeDispatchRenderer::recordFrame(const VulkanFrameRecordContext& frame)
     graph.addPass("ComputeReadbackCopy", kBasicComputeReadbackPassType)
         .readTransferBuffer("source", storage)
         .writeBuffer("target", readback)
+        .recordCommands([](RenderGraphCommandList& commands) {
+            commands.copyBuffer("source", "target");
+        })
         .execute(
             [&frame, &imageBindings, &bufferBindings](RenderGraphPassContext pass) -> Result<void> {
                 return executeBasicComputeReadbackPass(frame, pass, imageBindings, bufferBindings);

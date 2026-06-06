@@ -85,6 +85,10 @@
 - `renderer_basic_vulkan` 仍包含 sample renderer、editor viewport renderer 和 debug preview 支撑，后续需要继续按 RenderView pipeline、scene sample renderer、debug capture support 拆分。
 - Frame Debug 的 execution event 目前是 renderer diagnostics 的轻量事件流，不等价于完整 GPU command capture。
 - Debug-line overlay 的 vertex upload 仍是 renderer-owned per-frame upload buffer ring，尚未建模为 RenderGraph buffer resource；当前 RenderGraph 只观察 color target write、pass params 和 execution event。
+- Buffer upload baseline 已新增 `builtin.transfer-copy-buffer` 和 `CopyBuffer` command summary；
+  `--smoke-buffer-upload` 只验证显式 payload 经 staging buffer 复制到 device-local buffer 再复制到 readback
+  buffer，不读取 source path、`.ameta`、importer 或 product cache。真实 mesh/texture runtime resource owner
+  仍是后续切片。
 
 ## 执行计划
 
@@ -101,4 +105,7 @@
 
 - Scene mesh 接入前必须把 mesh/draw packet 变成 renderer-owned input，新增 RenderView pass policy、pass insertion、typed params、execution event 和 smoke；不能从 editor object 或 diagnostics 读取 mesh。
 - Asset upload 接入前必须定义 asset-core source/product owner、renderer/RHI resource handle 或 upload request、GPU lifetime/deferred deletion 以及失败上下文；新增上传、copy 或 buffer 写入时必须进入 RenderGraph command/diagnostics，或作为命名 external pre-pass 出现在 Frame Debug/review 输出中。
+- 资源上传第一步只允许 renderer/RHI 消费显式 payload 或未来 product data；`asset-core` / `project-core`
+  不得持有 GPU handle、RenderGraph pass 或 Vulkan upload state。后续 mesh/texture upload 必须继续保留同样
+  的 source/product/runtime resource 分层。
 - SRP 接入前必须先把 pipeline authoring 限定为 RenderGraph 声明和 renderer-owned pass input 的前端；脚本或 editor tool 不能在 execute / Vulkan command recording 阶段回调，也不能绕过现有 RenderView target、scene input 和 smoke gate。

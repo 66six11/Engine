@@ -119,6 +119,8 @@ namespace asharia::editor {
                 return "FillBuffer";
             case asharia::RenderGraphCommandKind::CopyImage:
                 return "CopyImage";
+            case asharia::RenderGraphCommandKind::CopyBuffer:
+                return "CopyBuffer";
             case asharia::RenderGraphCommandKind::Dispatch:
                 return "Dispatch";
             }

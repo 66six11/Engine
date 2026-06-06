@@ -33,6 +33,7 @@
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/renderer_basic_vulkan/clear_frame.hpp"
+#include "asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "asharia/rendergraph/render_graph.hpp"
 #include "asharia/rhi_vulkan/deferred_deletion_queue.hpp"
 #include "asharia/rhi_vulkan/vulkan_buffer.hpp"
@@ -80,6 +81,7 @@ namespace {
                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
                      "[--smoke-render-view-grid-readback] "
                      "[--smoke-offscreen-viewport] [--smoke-compute-dispatch] "
+                     "[--smoke-buffer-upload] "
                      "[--smoke-renderer-format-contract] [--smoke-deferred-deletion] "
                      "[--smoke-reflection-registry] [--smoke-reflection-transform] "
                      "[--smoke-reflection-attributes] [--smoke-serialization-roundtrip] "
@@ -237,6 +239,10 @@ namespace {
 
     asharia::Error smokeSerializationError(std::string message) {
         return asharia::Error{asharia::ErrorDomain::Serialization, 0, std::move(message)};
+    }
+
+    asharia::Error smokeRenderGraphError(std::string message) {
+        return asharia::Error{asharia::ErrorDomain::RenderGraph, 0, std::move(message)};
     }
 
     bool containsAll(std::string_view text, std::initializer_list<std::string_view> needles) {
@@ -2682,6 +2688,388 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    constexpr std::size_t kSmokeBufferUploadByteCount = 256;
+
+    [[nodiscard]] std::array<std::byte, kSmokeBufferUploadByteCount>
+    smokeBufferUploadPayload() {
+        std::array<std::byte, kSmokeBufferUploadByteCount> bytes{};
+        std::size_t index = 0;
+        for (std::byte& byte : bytes) {
+            byte = std::byte{static_cast<unsigned char>((index * 37U + 11U) & 0xFFU)};
+            ++index;
+        }
+        return bytes;
+    }
+
+    [[nodiscard]] asharia::Result<void> recordSmokeBufferCopyPass(
+        const asharia::VulkanFrameRecordContext& frame, asharia::RenderGraphPassContext pass,
+        std::span<const asharia::VulkanRenderGraphBufferBinding> bufferBindings) {
+        [[maybe_unused]] const auto timestamp = asharia::VulkanTimestampScope::begin(frame,
+                                                                                     pass.name);
+        [[maybe_unused]] const auto debugLabel = asharia::VulkanDebugLabelScope::begin(
+            frame, asharia::renderGraphPassDebugLabel(pass, {}, bufferBindings));
+
+        auto transitions = asharia::recordRenderGraphBufferTransitions(
+            frame, pass.bufferTransitionsBefore, bufferBindings);
+        if (!transitions) {
+            return std::unexpected{std::move(transitions.error())};
+        }
+        if (pass.type != asharia::kBasicTransferCopyBufferPassType || pass.commands.size() != 1) {
+            return std::unexpected{
+                smokeRenderGraphError("Buffer upload copy pass received an invalid context.")};
+        }
+
+        const asharia::RenderGraphCommand& copy = pass.commands.front();
+        if (copy.kind != asharia::RenderGraphCommandKind::CopyBuffer ||
+            copy.name != "source" || copy.secondaryName != "target") {
+            return std::unexpected{
+                smokeRenderGraphError("Buffer upload copy command does not match its slots.")};
+        }
+
+        auto source =
+            asharia::findVulkanRenderGraphBufferTransferRead(pass, copy.name, bufferBindings);
+        if (!source) {
+            return std::unexpected{std::move(source.error())};
+        }
+        auto target = asharia::findVulkanRenderGraphBufferTransferWrite(pass, copy.secondaryName,
+                                                                        bufferBindings);
+        if (!target) {
+            return std::unexpected{std::move(target.error())};
+        }
+        if (source->size == VK_WHOLE_SIZE || target->size == VK_WHOLE_SIZE ||
+            source->size > target->size) {
+            return std::unexpected{smokeRenderGraphError(
+                "Buffer upload copy bindings have invalid source or target sizes.")};
+        }
+
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = source->offset;
+        copyRegion.dstOffset = target->offset;
+        copyRegion.size = source->size;
+        vkCmdCopyBuffer(frame.commandBuffer, source->vulkanBuffer, target->vulkanBuffer, 1,
+                        &copyRegion);
+        return {};
+    }
+
+    [[nodiscard]] bool validateSmokeBufferUploadPlan(
+        const asharia::RenderGraph& graph, const asharia::RenderGraphCompileResult& compiled) {
+        if (compiled.passes.size() != 2 || compiled.passes[0].name != "UploadToDeviceLocal" ||
+            compiled.passes[1].name != "ReadbackDeviceLocal" ||
+            compiled.passes[0].commands.size() != 1 ||
+            compiled.passes[1].commands.size() != 1 ||
+            compiled.passes[0].commands.front().kind !=
+                asharia::RenderGraphCommandKind::CopyBuffer ||
+            compiled.passes[1].commands.front().kind !=
+                asharia::RenderGraphCommandKind::CopyBuffer ||
+            compiled.dependencies.size() != 1 || compiled.finalBufferTransitions.size() != 1 ||
+            compiled.finalBufferTransitions.front().newState !=
+                asharia::RenderGraphBufferState::HostRead) {
+            asharia::logError("Buffer upload smoke produced an unexpected RenderGraph plan.");
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot diagnostics =
+            graph.diagnosticsSnapshot(compiled);
+        const auto copyCommandCount = std::ranges::count_if(
+            diagnostics.commands, [](const asharia::RenderGraphDiagnosticsCommandNode& command) {
+                return command.kind == asharia::RenderGraphCommandKind::CopyBuffer &&
+                       command.detail == "source -> target";
+            });
+        if (copyCommandCount != 2) {
+            asharia::logError(
+                "Buffer upload smoke diagnostics did not expose both CopyBuffer commands.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
+    recordSmokeBufferUploadFrame(const asharia::VulkanFrameRecordContext& frame,
+                                 asharia::VulkanBuffer& stagingBuffer,
+                                 asharia::VulkanBuffer& deviceBuffer,
+                                 asharia::VulkanBuffer& readbackBuffer) {
+        auto clear = asharia::recordBasicClearFrame(frame);
+        if (!clear) {
+            return std::unexpected{std::move(clear.error())};
+        }
+
+        asharia::RenderGraph graph;
+        const auto staging = graph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "SmokeUploadStagingBuffer",
+            .byteSize = stagingBuffer.size(),
+            .initialState = asharia::RenderGraphBufferState::TransferRead,
+            .finalState = asharia::RenderGraphBufferState::TransferRead,
+        });
+        const auto device = graph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "SmokeDeviceLocalBuffer",
+            .byteSize = deviceBuffer.size(),
+            .initialState = asharia::RenderGraphBufferState::Undefined,
+            .finalState = asharia::RenderGraphBufferState::TransferRead,
+        });
+        const auto readback = graph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "SmokeUploadReadbackBuffer",
+            .byteSize = readbackBuffer.size(),
+            .initialState = asharia::RenderGraphBufferState::Undefined,
+            .finalState = asharia::RenderGraphBufferState::HostRead,
+        });
+
+        const std::array bufferBindings{
+            asharia::VulkanRenderGraphBufferBinding{
+                .buffer = staging,
+                .vulkanBuffer = stagingBuffer.handle(),
+                .offset = 0,
+                .size = stagingBuffer.size(),
+                .debugName = "SmokeUploadStagingBuffer",
+            },
+            asharia::VulkanRenderGraphBufferBinding{
+                .buffer = device,
+                .vulkanBuffer = deviceBuffer.handle(),
+                .offset = 0,
+                .size = deviceBuffer.size(),
+                .debugName = "SmokeDeviceLocalBuffer",
+            },
+            asharia::VulkanRenderGraphBufferBinding{
+                .buffer = readback,
+                .vulkanBuffer = readbackBuffer.handle(),
+                .offset = 0,
+                .size = readbackBuffer.size(),
+                .debugName = "SmokeUploadReadbackBuffer",
+            },
+        };
+        const std::span<const asharia::VulkanRenderGraphBufferBinding> bufferBindingSpan{
+            bufferBindings.data(),
+            bufferBindings.size(),
+        };
+
+        int copyCallbackCount = 0;
+        graph.addPass("UploadToDeviceLocal", asharia::kBasicTransferCopyBufferPassType)
+            .readTransferBuffer("source", staging)
+            .writeBuffer("target", device)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyBuffer("source", "target");
+            })
+            .execute([&frame, bufferBindingSpan,
+                      &copyCallbackCount](asharia::RenderGraphPassContext pass) {
+                ++copyCallbackCount;
+                return recordSmokeBufferCopyPass(frame, pass, bufferBindingSpan);
+            });
+        graph.addPass("ReadbackDeviceLocal", asharia::kBasicTransferCopyBufferPassType)
+            .readTransferBuffer("source", device)
+            .writeBuffer("target", readback)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyBuffer("source", "target");
+            })
+            .execute([&frame, bufferBindingSpan,
+                      &copyCallbackCount](asharia::RenderGraphPassContext pass) {
+                ++copyCallbackCount;
+                return recordSmokeBufferCopyPass(frame, pass, bufferBindingSpan);
+            });
+
+        const asharia::RenderGraphSchemaRegistry schemas = asharia::basicRenderGraphSchemaRegistry();
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            return std::unexpected{std::move(compiled.error())};
+        }
+        if (!validateSmokeBufferUploadPlan(graph, *compiled)) {
+            return std::unexpected{smokeRenderGraphError(
+                "Buffer upload smoke failed RenderGraph plan validation.")};
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            return std::unexpected{std::move(executed.error())};
+        }
+        if (copyCallbackCount != 2) {
+            return std::unexpected{
+                smokeRenderGraphError("Buffer upload smoke did not execute both copy passes.")};
+        }
+
+        auto finalTransitions = asharia::recordRenderGraphBufferTransitions(
+            frame, compiled->finalBufferTransitions, bufferBindingSpan);
+        if (!finalTransitions) {
+            return std::unexpected{std::move(finalTransitions.error())};
+        }
+
+        return asharia::VulkanFrameRecordResult{
+            .waitStageMask = clear->waitStageMask | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        };
+    }
+
+    struct SmokeBufferUploadStats {
+        asharia::VulkanBufferStats staging;
+        asharia::VulkanBufferStats device;
+        asharia::VulkanBufferStats readback;
+        VkDeviceSize byteCount{};
+    };
+
+    [[nodiscard]] bool validateSmokeBufferUploadStats(SmokeBufferUploadStats stats) {
+        if (stats.staging.hostUploadCreated != 1 || stats.staging.uploadCalls != 1 ||
+            stats.staging.uploadedBytes != stats.byteCount) {
+            asharia::logError("Buffer upload smoke staging buffer stats were unexpected.");
+            return false;
+        }
+        if (stats.device.deviceLocalCreated != 1 ||
+            stats.device.allocatedBytes != stats.byteCount) {
+            asharia::logError("Buffer upload smoke device-local buffer stats were unexpected.");
+            return false;
+        }
+        if (stats.readback.hostReadbackCreated != 1 ||
+            stats.readback.allocatedBytes != stats.byteCount) {
+            asharia::logError("Buffer upload smoke readback buffer stats were unexpected.");
+            return false;
+        }
+        return true;
+    }
+
+    int runSmokeBufferUpload() {
+        auto glfw = asharia::GlfwInstance::create();
+        if (!glfw) {
+            asharia::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            asharia::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Buffer Upload Smoke"});
+        if (!window) {
+            asharia::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Buffer Upload Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
+                },
+            .debugLabels = kSmokeDebugLabels,
+        };
+
+        auto context = asharia::VulkanContext::create(contextDesc);
+        if (!context) {
+            asharia::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::array<std::byte, kSmokeBufferUploadByteCount> uploadBytes =
+            smokeBufferUploadPayload();
+        constexpr auto kUploadByteCount =
+            static_cast<VkDeviceSize>(kSmokeBufferUploadByteCount);
+        auto stagingBuffer = asharia::VulkanBuffer::create(asharia::VulkanBufferDesc{
+            .device = context->device(),
+            .allocator = context->allocator(),
+            .size = kUploadByteCount,
+            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            .memoryUsage = asharia::VulkanBufferMemoryUsage::HostUpload,
+        });
+        if (!stagingBuffer) {
+            asharia::logError(stagingBuffer.error().message);
+            return EXIT_FAILURE;
+        }
+        auto deviceBuffer = asharia::VulkanBuffer::create(asharia::VulkanBufferDesc{
+            .device = context->device(),
+            .allocator = context->allocator(),
+            .size = kUploadByteCount,
+            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .memoryUsage = asharia::VulkanBufferMemoryUsage::DeviceLocal,
+        });
+        if (!deviceBuffer) {
+            asharia::logError(deviceBuffer.error().message);
+            return EXIT_FAILURE;
+        }
+        auto readbackBuffer = asharia::VulkanBuffer::create(asharia::VulkanBufferDesc{
+            .device = context->device(),
+            .allocator = context->allocator(),
+            .size = kUploadByteCount,
+            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .memoryUsage = asharia::VulkanBufferMemoryUsage::HostReadback,
+        });
+        if (!readbackBuffer) {
+            asharia::logError(readbackBuffer.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto uploaded = stagingBuffer->upload(
+            std::span<const std::byte>{uploadBytes.data(), uploadBytes.size()});
+        if (!uploaded) {
+            asharia::logError(uploaded.error().message);
+            return EXIT_FAILURE;
+        }
+
+        asharia::GlfwWindow::pollEvents();
+        const auto framebuffer = window->framebufferExtent();
+        auto frameLoop = asharia::VulkanFrameLoop::create(
+            *context, asharia::VulkanFrameLoopDesc{
+                          .width = framebuffer.width,
+                          .height = framebuffer.height,
+                          .clearColor = VkClearColorValue{{0.02F, 0.025F, 0.03F, 1.0F}},
+                      });
+        if (!frameLoop) {
+            asharia::logError(frameLoop.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const auto currentFramebuffer = window->framebufferExtent();
+        frameLoop->setTargetExtent(currentFramebuffer.width, currentFramebuffer.height);
+        auto status = frameLoop->renderFrame(
+            [&stagingBuffer, &deviceBuffer, &readbackBuffer](
+                const asharia::VulkanFrameRecordContext& recordContext) {
+                return recordSmokeBufferUploadFrame(recordContext, *stagingBuffer, *deviceBuffer,
+                                                    *readbackBuffer);
+            });
+        if (!status) {
+            asharia::logError(status.error().message);
+            return EXIT_FAILURE;
+        }
+        if (*status == asharia::VulkanFrameStatus::OutOfDate) {
+            asharia::logError("Swapchain remained out of date during buffer upload smoke.");
+            return EXIT_FAILURE;
+        }
+
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            asharia::logError("Failed to wait for Vulkan queue before buffer upload readback: " +
+                              asharia::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
+        std::array<std::byte, kSmokeBufferUploadByteCount> readbackBytes{};
+        auto readback = readbackBuffer->read(
+            std::span<std::byte>{readbackBytes.data(), readbackBytes.size()});
+        if (!readback) {
+            asharia::logError(readback.error().message);
+            return EXIT_FAILURE;
+        }
+        if (readbackBytes != uploadBytes) {
+            asharia::logError(
+                "Buffer upload smoke read back data that does not match the upload payload.");
+            return EXIT_FAILURE;
+        }
+        if (!validateSmokeBufferUploadStats(SmokeBufferUploadStats{
+                .staging = stagingBuffer->stats(),
+                .device = deviceBuffer->stats(),
+                .readback = readbackBuffer->stats(),
+                .byteCount = kUploadByteCount,
+            })) {
+            return EXIT_FAILURE;
+        }
+        if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Buffer upload smoke")) {
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Buffer upload bytes copied through RenderGraph: " << kUploadByteCount
+                  << '\n';
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
     int runSmokeMesh3D() {
         auto glfw = asharia::GlfwInstance::create();
         if (!glfw) {
@@ -4593,6 +4981,7 @@ namespace {
         ComputeDispatch,
         ComputeReadback,
         TransferFillBuffer,
+        TransferCopyBuffer,
         DebugImageCopy,
     };
 
@@ -4623,6 +5012,17 @@ namespace {
     void addBuiltinComputeReadbackSmokeSlots(asharia::RenderGraph::PassBuilder& pass,
                                              BuiltinSchemaSmokeImages images,
                                              std::string_view omittedSlot) {
+        if (omittedSlot != "source") {
+            pass.readTransferBuffer("source", images.storageTarget);
+        }
+        if (omittedSlot != "target") {
+            pass.writeBuffer("target", images.readbackTarget);
+        }
+    }
+
+    void addBuiltinTransferCopyBufferSmokeSlots(asharia::RenderGraph::PassBuilder& pass,
+                                                BuiltinSchemaSmokeImages images,
+                                                std::string_view omittedSlot) {
         if (omittedSlot != "source") {
             pass.readTransferBuffer("source", images.storageTarget);
         }
@@ -4788,6 +5188,9 @@ namespace {
             break;
         case BuiltinSchemaSmokePass::TransferFillBuffer:
             writeBufferSlotUnlessOmitted(pass, omittedSlot, "target", images.storageTarget);
+            break;
+        case BuiltinSchemaSmokePass::TransferCopyBuffer:
+            addBuiltinTransferCopyBufferSmokeSlots(pass, images, omittedSlot);
             break;
         case BuiltinSchemaSmokePass::DebugImageCopy:
             readTransferSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
@@ -4967,6 +5370,13 @@ namespace {
                 .paramsType = asharia::kBasicTransferFillBufferParamsType,
                 .missingSlot = "target",
                 .context = "builtin transfer fill buffer",
+            },
+            BuiltinSchemaSmokeCase{
+                .pass = BuiltinSchemaSmokePass::TransferCopyBuffer,
+                .type = asharia::kBasicTransferCopyBufferPassType,
+                .paramsType = {},
+                .missingSlot = "source",
+                .context = "builtin transfer copy buffer",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::DebugImageCopy,
@@ -5509,6 +5919,9 @@ namespace {
         computeGraph.addPass("ComputeReadbackCopy", asharia::kBasicComputeReadbackPassType)
             .readTransferBuffer("source", storageBuffer)
             .writeBuffer("target", readbackBuffer)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyBuffer("source", "target");
+            })
             .execute([&readbackCallbackCount](
                          asharia::RenderGraphPassContext context) -> asharia::Result<void> {
                 if (context.name != "ComputeReadbackCopy" ||
@@ -5519,7 +5932,11 @@ namespace {
                     context.bufferWrites.size() != 1 || context.bufferWriteSlots.size() != 1 ||
                     context.bufferWriteSlots.front().name != "target" ||
                     !context.bufferStorageReadWrites.empty() ||
-                    context.bufferTransitionsBefore.size() != 2) {
+                    context.bufferTransitionsBefore.size() != 2 || context.commands.size() != 1 ||
+                    context.commands.front().kind !=
+                        asharia::RenderGraphCommandKind::CopyBuffer ||
+                    context.commands.front().name != "source" ||
+                    context.commands.front().secondaryName != "target") {
                     return std::unexpected{asharia::Error{
                         asharia::ErrorDomain::RenderGraph,
                         0,
@@ -5541,6 +5958,9 @@ namespace {
                 asharia::RenderGraphCommandKind::FillBuffer ||
             compiled->passes[1].name != "ComputeDispatch" ||
             compiled->passes[2].name != "ComputeReadbackCopy" ||
+            compiled->passes[2].commands.size() != 1 ||
+            compiled->passes[2].commands.front().kind !=
+                asharia::RenderGraphCommandKind::CopyBuffer ||
             compiled->dependencies.size() != 2 || compiled->transientBuffers.size() != 1 ||
             compiled->transientBuffers.front().finalState !=
                 asharia::RenderGraphBufferState::TransferRead ||
@@ -6268,7 +6688,7 @@ namespace {
                         .optional = false,
                     },
                 },
-            .allowedCommands = {},
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyBuffer},
         });
 
         auto compiled = graph.compile(schemas);
@@ -6436,6 +6856,7 @@ namespace {
                          .run = runSmokeRenderViewGridReadback},
             SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},
             SmokeCommand{.option = "--smoke-compute-dispatch", .run = runSmokeComputeDispatch},
+            SmokeCommand{.option = "--smoke-buffer-upload", .run = runSmokeBufferUpload},
             SmokeCommand{.option = "--smoke-renderer-format-contract",
                          .run = runSmokeRendererFormatContract},
             SmokeCommand{.option = "--smoke-deferred-deletion", .run = runSmokeDeferredDeletion},
