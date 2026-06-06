@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "asset_processor_dry_run.hpp"
+#include "asset_processor_execute.hpp"
 #include "asset_processor_smoke.hpp"
 
 namespace asharia::asset_processor {
@@ -17,7 +18,9 @@ namespace asharia::asset_processor {
         enum class CommandKind : std::uint8_t {
             Help,
             DryRun,
+            Execute,
             SmokeDryRun,
+            SmokeProductExecution,
         };
 
         enum class DryRunOptionKind : std::uint8_t {
@@ -30,9 +33,21 @@ namespace asharia::asset_processor {
             Unknown,
         };
 
+        enum class ExecuteOptionKind : std::uint8_t {
+            SourceRoot,
+            SourcePathPrefix,
+            TargetProfile,
+            OutputRoot,
+            ProductManifest,
+            ManifestOutput,
+            IgnoreDirectory,
+            Unknown,
+        };
+
         struct ParsedArguments {
             CommandKind command{CommandKind::Help};
             DryRunOptions dryRun;
+            ProductExecutionOptions execute;
             std::string error;
         };
 
@@ -83,6 +98,31 @@ namespace asharia::asset_processor {
             return DryRunOptionKind::Unknown;
         }
 
+        [[nodiscard]] ExecuteOptionKind classifyExecuteOption(std::string_view option) noexcept {
+            if (option == "--source-root") {
+                return ExecuteOptionKind::SourceRoot;
+            }
+            if (option == "--source-path-prefix") {
+                return ExecuteOptionKind::SourcePathPrefix;
+            }
+            if (option == "--target-profile") {
+                return ExecuteOptionKind::TargetProfile;
+            }
+            if (option == "--output-root") {
+                return ExecuteOptionKind::OutputRoot;
+            }
+            if (option == "--product-manifest") {
+                return ExecuteOptionKind::ProductManifest;
+            }
+            if (option == "--manifest-output") {
+                return ExecuteOptionKind::ManifestOutput;
+            }
+            if (option == "--ignore-dir") {
+                return ExecuteOptionKind::IgnoreDirectory;
+            }
+            return ExecuteOptionKind::Unknown;
+        }
+
         [[nodiscard]] bool applyDryRunOption(DryRunOptions& options, DryRunOptionKind option,
                                              std::string value) {
             switch (option) {
@@ -114,10 +154,43 @@ namespace asharia::asset_processor {
             return false;
         }
 
+        [[nodiscard]] bool applyExecuteOption(ProductExecutionOptions& options,
+                                              ExecuteOptionKind option, std::string value) {
+            switch (option) {
+            case ExecuteOptionKind::SourceRoot:
+                options.sourceRoot = std::filesystem::path{value};
+                return true;
+            case ExecuteOptionKind::SourcePathPrefix:
+                options.sourcePathPrefix = std::move(value);
+                return true;
+            case ExecuteOptionKind::TargetProfile:
+                options.targetProfile = std::move(value);
+                return true;
+            case ExecuteOptionKind::OutputRoot:
+                options.outputRoot = std::filesystem::path{value};
+                return true;
+            case ExecuteOptionKind::ProductManifest:
+                if (!value.empty()) {
+                    options.productManifestPath = std::filesystem::path{value};
+                }
+                return true;
+            case ExecuteOptionKind::ManifestOutput:
+                options.productManifestOutputPath = std::filesystem::path{value};
+                return true;
+            case ExecuteOptionKind::IgnoreDirectory:
+                options.ignoredDirectoryNames.push_back(std::move(value));
+                return true;
+            case ExecuteOptionKind::Unknown:
+                return false;
+            }
+            return false;
+        }
+
         [[nodiscard]] ParsedArguments parseDryRunArguments(std::span<char* const> arguments) {
             ParsedArguments parsed{
                 .command = CommandKind::DryRun,
                 .dryRun = {},
+                .execute = {},
                 .error = {},
             };
 
@@ -156,20 +229,81 @@ namespace asharia::asset_processor {
             return parsed;
         }
 
+        [[nodiscard]] ParsedArguments parseExecuteArguments(std::span<char* const> arguments) {
+            ParsedArguments parsed{
+                .command = CommandKind::Execute,
+                .dryRun = {},
+                .execute = {},
+                .error = {},
+            };
+
+            for (std::size_t index = 2; index < arguments.size(); ++index) {
+                const std::string_view option = arguments[index];
+                const ExecuteOptionKind optionKind = classifyExecuteOption(option);
+                if (optionKind == ExecuteOptionKind::Unknown) {
+                    parsed.error = "Unknown execute option " + std::string{option} + ".";
+                    return parsed;
+                }
+
+                ArgumentValueResult value = readArgumentValue(arguments, index, option);
+                if (!value.succeeded) {
+                    parsed.error = std::move(value.error);
+                    return parsed;
+                }
+
+                if (!applyExecuteOption(parsed.execute, optionKind, std::move(value.value))) {
+                    parsed.error = "Unknown execute option " + std::string{option} + ".";
+                    return parsed;
+                }
+            }
+
+            if (parsed.execute.sourceRoot.empty()) {
+                parsed.error = "execute requires --source-root.";
+            } else if (parsed.execute.sourcePathPrefix.empty()) {
+                parsed.error = "execute requires --source-path-prefix.";
+            } else if (parsed.execute.targetProfile.empty()) {
+                parsed.error = "execute requires --target-profile.";
+            } else if (parsed.execute.outputRoot.empty()) {
+                parsed.error = "execute requires --output-root.";
+            }
+
+            return parsed;
+        }
+
         [[nodiscard]] ParsedArguments parseArguments(std::span<char* const> arguments) {
             if (arguments.size() <= 1) {
-                return ParsedArguments{.command = CommandKind::Help, .dryRun = {}, .error = {}};
+                return ParsedArguments{
+                    .command = CommandKind::Help,
+                    .dryRun = {},
+                    .execute = {},
+                    .error = {},
+                };
             }
 
             const std::string_view command = arguments[1];
             if (command == "--help" || command == "-h" || command == "help") {
-                return ParsedArguments{.command = CommandKind::Help, .dryRun = {}, .error = {}};
+                return ParsedArguments{
+                    .command = CommandKind::Help,
+                    .dryRun = {},
+                    .execute = {},
+                    .error = {},
+                };
             }
 
             if (command == "--smoke-dry-run") {
                 return ParsedArguments{
                     .command = CommandKind::SmokeDryRun,
                     .dryRun = {},
+                    .execute = {},
+                    .error = {},
+                };
+            }
+
+            if (command == "--smoke-product-execution") {
+                return ParsedArguments{
+                    .command = CommandKind::SmokeProductExecution,
+                    .dryRun = {},
+                    .execute = {},
                     .error = {},
                 };
             }
@@ -178,9 +312,14 @@ namespace asharia::asset_processor {
                 return parseDryRunArguments(arguments);
             }
 
+            if (command == "execute") {
+                return parseExecuteArguments(arguments);
+            }
+
             return ParsedArguments{
                 .command = CommandKind::Help,
                 .dryRun = {},
+                .execute = {},
                 .error = "Unknown command " + std::string{command} + ".",
             };
         }
@@ -193,7 +332,12 @@ namespace asharia::asset_processor {
                    << "  asharia-asset-processor dry-run --project <path> "
                       "--target-profile <name> [--product-manifest <path>] "
                       "[--ignore-dir <name> ...]\n"
-                   << "  asharia-asset-processor --smoke-dry-run\n";
+                   << "  asharia-asset-processor execute --source-root <path> "
+                      "--source-path-prefix <path> --target-profile <name> "
+                      "--output-root <path> [--product-manifest <path>] "
+                      "[--manifest-output <path>] [--ignore-dir <name> ...]\n"
+                   << "  asharia-asset-processor --smoke-dry-run\n"
+                   << "  asharia-asset-processor --smoke-product-execution\n";
         }
 
         [[nodiscard]] int runMain(std::span<char* const> arguments) {
@@ -213,8 +357,15 @@ namespace asharia::asset_processor {
                 std::cout << execution.text;
                 return execution.exitCode;
             }
+            case CommandKind::Execute: {
+                const ProductExecution execution = runProductExecution(parsed.execute);
+                std::cout << execution.text;
+                return execution.exitCode;
+            }
             case CommandKind::SmokeDryRun:
                 return runSmokeDryRun();
+            case CommandKind::SmokeProductExecution:
+                return runSmokeProductExecution();
             }
 
             return EXIT_FAILURE;

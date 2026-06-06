@@ -72,13 +72,16 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe
 
 需要自动验证时使用 `--smoke-*` 入口。完整提交前 smoke 清单见 `docs/workflow/review.md`。
 
-根构建也会生成开发期工具。当前 `tools/asset-processor` 只提供 read-only dry-run，不执行 importer，也不写
-product/cache：
+根构建也会生成开发期工具。当前 `tools/asset-processor` 提供 read-only dry-run 和受控 product
+execution baseline；`execute` 只写 deterministic placeholder product blob/manifest，不接真实 importer、watcher、
+GPU upload 或 editor UI：
 
 ```powershell
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe --smoke-dry-run
+build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe --smoke-product-execution
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe dry-run --source-root Content --source-path-prefix Content --target-profile windows-msvc-debug
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe dry-run --project asharia.project.json --target-profile windows-msvc-debug
+build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe execute --source-root Content --source-path-prefix Content --target-profile windows-msvc-debug --output-root build\asset-cache
 ```
 
 ## 仓库维护工具

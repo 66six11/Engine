@@ -2,7 +2,7 @@
   "name": "com.asharia.asset-pipeline",
   "version": "0.1.0",
   "displayName": "Asharia Engine Asset Pipeline",
-  "description": "CPU-only asset metadata discovery and validation pipeline baseline.",
+  "description": "CPU-only asset metadata discovery, planning, and deterministic product execution baseline.",
   "dependencies": ["com.asharia.archive", "com.asharia.asset-core"],
   "targets": ["asharia-asset-pipeline"],
   "testTargets": [

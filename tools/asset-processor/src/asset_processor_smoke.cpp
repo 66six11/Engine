@@ -23,6 +23,7 @@
 #include "asharia/project/project_descriptor_io.hpp"
 
 #include "asset_processor_dry_run.hpp"
+#include "asset_processor_execute.hpp"
 #include "asset_processor_text.hpp"
 
 namespace asharia::asset_processor {
@@ -232,14 +233,12 @@ namespace asharia::asset_processor {
             return text.find(token) != std::string_view::npos;
         }
 
-        [[nodiscard]] bool expectReportText(const DryRunExecution& execution,
-                                            std::string_view token) {
-            if (containsText(execution.text, token)) {
+        [[nodiscard]] bool expectReportText(std::string_view report, std::string_view token) {
+            if (containsText(report, token)) {
                 return true;
             }
 
-            std::cerr << "asset-processor smoke missing report token: " << token << "\n"
-                      << execution.text;
+            std::cerr << "asset-processor smoke missing report token: " << token << "\n" << report;
             return false;
         }
 
@@ -269,6 +268,7 @@ namespace asharia::asset_processor {
         }
 
         const DryRunOptions emptyManifestOptions{
+            .projectPath = std::nullopt,
             .sourceRoot = contentRoot,
             .sourcePathPrefix = "Content",
             .targetProfile = "windows-msvc-debug",
@@ -277,12 +277,12 @@ namespace asharia::asset_processor {
         };
         const DryRunExecution emptyManifestDryRun = runDryRun(emptyManifestOptions);
         if (emptyManifestDryRun.exitCode != EXIT_SUCCESS ||
-            !expectReportText(emptyManifestDryRun, "ignoredDirectories=1 \"Ignored\"") ||
-            !expectReportText(emptyManifestDryRun, "sourceRoots=1") ||
-            !expectReportText(emptyManifestDryRun, "planning requests=2 cacheHits=0") ||
-            !expectReportText(emptyManifestDryRun,
+            !expectReportText(emptyManifestDryRun.text, "ignoredDirectories=1 \"Ignored\"") ||
+            !expectReportText(emptyManifestDryRun.text, "sourceRoots=1") ||
+            !expectReportText(emptyManifestDryRun.text, "planning requests=2 cacheHits=0") ||
+            !expectReportText(emptyManifestDryRun.text,
                               "import-request source=\"Content/Textures/Crate.png\"") ||
-            !expectReportText(emptyManifestDryRun,
+            !expectReportText(emptyManifestDryRun.text,
                               "import-request source=\"Content/Textures/Decal.png\"")) {
             return EXIT_FAILURE;
         }
@@ -302,10 +302,10 @@ namespace asharia::asset_processor {
             .ignoredDirectoryNames = {},
         });
         if (projectDryRun.exitCode != EXIT_SUCCESS ||
-            !expectReportText(projectDryRun, "projectName=\"AssetProcessorSmoke\"") ||
-            !expectReportText(projectDryRun, "source-root rootName=\"project-assets\"") ||
-            !expectReportText(projectDryRun, "ignoredDirectories=1 \"Ignored\"") ||
-            !expectReportText(projectDryRun, "planning requests=2 cacheHits=0")) {
+            !expectReportText(projectDryRun.text, "projectName=\"AssetProcessorSmoke\"") ||
+            !expectReportText(projectDryRun.text, "source-root rootName=\"project-assets\"") ||
+            !expectReportText(projectDryRun.text, "ignoredDirectories=1 \"Ignored\"") ||
+            !expectReportText(projectDryRun.text, "planning requests=2 cacheHits=0")) {
             return EXIT_FAILURE;
         }
 
@@ -337,6 +337,7 @@ namespace asharia::asset_processor {
         }
 
         const DryRunExecution manifestDryRun = runDryRun(DryRunOptions{
+            .projectPath = std::nullopt,
             .sourceRoot = contentRoot,
             .sourcePathPrefix = "Content",
             .targetProfile = "windows-msvc-debug",
@@ -344,12 +345,14 @@ namespace asharia::asset_processor {
             .ignoredDirectoryNames = {},
         });
         if (manifestDryRun.exitCode != EXIT_SUCCESS ||
-            !expectReportText(manifestDryRun, "planning requests=1 cacheHits=1") ||
-            !expectReportText(manifestDryRun, "cache-hit source=\"Content/Textures/Crate.png\"")) {
+            !expectReportText(manifestDryRun.text, "planning requests=1 cacheHits=1") ||
+            !expectReportText(manifestDryRun.text,
+                              "cache-hit source=\"Content/Textures/Crate.png\"")) {
             return EXIT_FAILURE;
         }
 
         const DryRunExecution invalidRootDryRun = runDryRun(DryRunOptions{
+            .projectPath = std::nullopt,
             .sourceRoot = workspace->root / "MissingContent",
             .sourcePathPrefix = "Content",
             .targetProfile = "windows-msvc-debug",
@@ -357,7 +360,7 @@ namespace asharia::asset_processor {
             .ignoredDirectoryNames = {},
         });
         if (invalidRootDryRun.exitCode == EXIT_SUCCESS ||
-            !expectReportText(invalidRootDryRun, "diagnostic stage=scan")) {
+            !expectReportText(invalidRootDryRun.text, "diagnostic stage=scan")) {
             return EXIT_FAILURE;
         }
 
@@ -366,6 +369,7 @@ namespace asharia::asset_processor {
             return EXIT_FAILURE;
         }
         const DryRunExecution badManifestDryRun = runDryRun(DryRunOptions{
+            .projectPath = std::nullopt,
             .sourceRoot = contentRoot,
             .sourcePathPrefix = "Content",
             .targetProfile = "windows-msvc-debug",
@@ -373,11 +377,116 @@ namespace asharia::asset_processor {
             .ignoredDirectoryNames = {},
         });
         if (badManifestDryRun.exitCode == EXIT_SUCCESS ||
-            !expectReportText(badManifestDryRun, "diagnostic stage=product-manifest")) {
+            !expectReportText(badManifestDryRun.text, "diagnostic stage=product-manifest")) {
             return EXIT_FAILURE;
         }
 
         std::cout << "asset-processor dry-run smoke passed\n";
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeProductExecution() {
+        std::optional<SmokeWorkspace> workspace = makeSmokeWorkspace();
+        if (!workspace) {
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path contentRoot = workspace->root / "Content";
+        if (!writeSmokeSource(contentRoot,
+                              SmokeSourceFixture{
+                                  .relativePath = "Textures/Crate.png",
+                                  .bytes = "crate bytes",
+                                  .guidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                  .metadataSourceHash = 0x1000f00d1234cafeULL,
+                              }) ||
+            !writeSmokeSource(contentRoot, SmokeSourceFixture{
+                                               .relativePath = "Textures/Decal.png",
+                                               .bytes = "decal bytes",
+                                               .guidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                               .metadataSourceHash = 0x2000f00d1234cafeULL,
+                                           })) {
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path outputRoot = workspace->root / "ProductCache";
+        const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
+        const ProductExecution firstExecution = runProductExecution(ProductExecutionOptions{
+            .sourceRoot = contentRoot,
+            .sourcePathPrefix = "Content",
+            .targetProfile = "windows-msvc-debug",
+            .outputRoot = outputRoot,
+            .productManifestPath = std::nullopt,
+            .productManifestOutputPath = manifestPath,
+            .ignoredDirectoryNames = {},
+        });
+        if (firstExecution.exitCode != EXIT_SUCCESS ||
+            !expectReportText(firstExecution.text, "asset-processor execute") ||
+            !expectReportText(firstExecution.text, "planning requests=2 cacheHits=0") ||
+            !expectReportText(firstExecution.text,
+                              "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
+                              "manifestWritten=true") ||
+            !expectReportText(firstExecution.text,
+                              "product-written source=\"Content/Textures/Crate.png\"") ||
+            !expectReportText(firstExecution.text,
+                              "product-written source=\"Content/Textures/Decal.png\"")) {
+            return EXIT_FAILURE;
+        }
+
+        auto manifest = asharia::asset::readAssetProductManifestFile(manifestPath);
+        if (!manifest || manifest->products.size() != 2) {
+            std::cerr << "asset-processor product execution smoke could not read output "
+                         "manifest.\n";
+            return EXIT_FAILURE;
+        }
+
+        const ProductExecution cacheHitExecution = runProductExecution(ProductExecutionOptions{
+            .sourceRoot = contentRoot,
+            .sourcePathPrefix = "Content",
+            .targetProfile = "windows-msvc-debug",
+            .outputRoot = outputRoot,
+            .productManifestPath = manifestPath,
+            .productManifestOutputPath = manifestPath,
+            .ignoredDirectoryNames = {},
+        });
+        if (cacheHitExecution.exitCode != EXIT_SUCCESS ||
+            !expectReportText(cacheHitExecution.text, "planning requests=0 cacheHits=2") ||
+            !expectReportText(cacheHitExecution.text,
+                              "execution written=0 cacheHits=2 diagnostics=0 manifestProducts=2 "
+                              "manifestWritten=true") ||
+            !expectReportText(cacheHitExecution.text,
+                              "cache-hit source=\"Content/Textures/Crate.png\"") ||
+            !expectReportText(cacheHitExecution.text,
+                              "cache-hit source=\"Content/Textures/Decal.png\"")) {
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path cratePath = contentRoot / "Textures" / "Crate.png";
+        if (!writeTextFile(cratePath, "crate bytes v2")) {
+            return EXIT_FAILURE;
+        }
+
+        const ProductExecution changedExecution = runProductExecution(ProductExecutionOptions{
+            .sourceRoot = contentRoot,
+            .sourcePathPrefix = "Content",
+            .targetProfile = "windows-msvc-debug",
+            .outputRoot = outputRoot,
+            .productManifestPath = manifestPath,
+            .productManifestOutputPath = manifestPath,
+            .ignoredDirectoryNames = {},
+        });
+        if (changedExecution.exitCode != EXIT_SUCCESS ||
+            !expectReportText(changedExecution.text, "planning requests=1 cacheHits=1") ||
+            !expectReportText(changedExecution.text,
+                              "execution written=1 cacheHits=1 diagnostics=0 manifestProducts=3 "
+                              "manifestWritten=true") ||
+            !expectReportText(changedExecution.text,
+                              "product-written source=\"Content/Textures/Crate.png\"") ||
+            !expectReportText(changedExecution.text,
+                              "cache-hit source=\"Content/Textures/Decal.png\"")) {
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "asset-processor product execution smoke passed\n";
         return EXIT_SUCCESS;
     }
 

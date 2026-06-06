@@ -12,6 +12,7 @@
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_pipeline/asset_import_planning.hpp"
+#include "asharia/asset_pipeline/asset_product_execution.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_source_discovery.hpp"
@@ -140,6 +141,15 @@ namespace {
         }
 
         return true;
+    }
+
+    [[nodiscard]] std::vector<std::uint8_t> bytesFromText(std::string_view text) {
+        std::vector<std::uint8_t> bytes;
+        bytes.reserve(text.size());
+        for (const char character : text) {
+            bytes.push_back(static_cast<std::uint8_t>(character));
+        }
+        return bytes;
     }
 
     [[nodiscard]] bool createDirectories(const std::filesystem::path& path) {
@@ -979,6 +989,168 @@ namespace {
                    "target profile must be a single path segment");
     }
 
+    [[nodiscard]] bool
+    expectExecutionDiagnostic(const asharia::asset::AssetProductExecutionResult& result,
+                              asharia::asset::AssetProductExecutionDiagnosticCode expectedCode,
+                              std::string_view expectedToken) {
+        for (const asharia::asset::AssetProductExecutionDiagnostic& diagnostic :
+             result.diagnostics) {
+            if (diagnostic.code == expectedCode &&
+                messageContains(diagnostic.message, expectedToken)) {
+                return true;
+            }
+        }
+
+        logFailure("Asset product execution smoke did not find the expected diagnostic.");
+        return false;
+    }
+
+    [[nodiscard]] bool smokeProductExecutionWritesDeterministicProducts() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-product-execution");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path contentRoot = root / "Content";
+        if (!writeScannedPlanningSource(contentRoot, "Textures/Decal.png", "decal bytes",
+                                        "785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                        0x2000F00D1234CAFEULL) ||
+            !writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
+                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                        0x1000F00D1234CAFEULL)) {
+            return false;
+        }
+
+        const asharia::asset::AssetScannedImportPlanResult plan =
+            asharia::asset::planScannedAssetImports(makeScannedPlanningRequest(
+                contentRoot, asharia::asset::AssetProductManifestDocument{}, "windows-msvc-debug"));
+        if (!plan.succeeded() || plan.plan.requests.size() != 2) {
+            logFailure("Asset product execution smoke could not build import requests.");
+            return false;
+        }
+
+        const std::vector<asharia::asset::AssetProductSourceBytes> sourceBytes{
+            asharia::asset::AssetProductSourceBytes{
+                .sourcePath = "Content/Textures/Decal.png",
+                .bytes = bytesFromText("decal bytes"),
+            },
+            asharia::asset::AssetProductSourceBytes{
+                .sourcePath = "Content/Textures/Crate.png",
+                .bytes = bytesFromText("crate bytes"),
+            },
+        };
+        const std::filesystem::path outputRoot = root / "ProductCache";
+        const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
+
+        const asharia::asset::AssetProductExecutionResult first =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = plan.plan,
+                .existingManifest = {},
+                .sourceBytes = sourceBytes,
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = manifestPath,
+            });
+        const asharia::asset::AssetProductExecutionResult second =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = plan.plan,
+                .existingManifest = {},
+                .sourceBytes = sourceBytes,
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = manifestPath,
+            });
+
+        auto firstText = asharia::asset::writeAssetProductManifestText(first.manifest);
+        auto secondText = asharia::asset::writeAssetProductManifestText(second.manifest);
+        if (!first.succeeded() || !second.succeeded() || first.writtenProducts.size() != 2 ||
+            second.writtenProducts.size() != 2 || first.manifest.products.size() != 2 ||
+            !first.manifestWritten || !second.manifestWritten || !firstText || !secondText ||
+            *firstText != *secondText) {
+            logFailure("Asset product execution smoke failed deterministic product writes.");
+            return false;
+        }
+
+        for (const asharia::asset::AssetProductWrite& product : first.writtenProducts) {
+            std::error_code existsError;
+            if (!std::filesystem::exists(product.productFilePath, existsError) || existsError) {
+                logFailure("Asset product execution smoke did not write product file.");
+                return false;
+            }
+        }
+
+        auto parsedManifest = asharia::asset::readAssetProductManifestFile(manifestPath);
+        if (!parsedManifest || *parsedManifest != first.manifest) {
+            logFailure(parsedManifest ? "Asset product execution smoke manifest mismatch."
+                                      : parsedManifest.error().message);
+            return false;
+        }
+
+        const asharia::asset::AssetScannedImportPlanResult cachePlan =
+            asharia::asset::planScannedAssetImports(
+                makeScannedPlanningRequest(contentRoot, first.manifest, "windows-msvc-debug"));
+        const asharia::asset::AssetProductExecutionResult cacheExecution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = cachePlan.plan,
+                .existingManifest = first.manifest,
+                .sourceBytes = sourceBytes,
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = manifestPath,
+            });
+
+        if (!cacheExecution.succeeded() || !cacheExecution.writtenProducts.empty() ||
+            cacheExecution.cacheHits.size() != 2 || cacheExecution.manifest != first.manifest) {
+            logFailure("Asset product execution smoke failed unchanged-input cache hit rerun.");
+            return false;
+        }
+
+        std::cout << "Asset product execution products: " << first.writtenProducts.size() << '\n';
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductExecutionSourceBytesHashMismatch() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-product-execution-hash-mismatch");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path contentRoot = root / "Content";
+        if (!writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
+                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                        0x1000F00D1234CAFEULL)) {
+            return false;
+        }
+
+        const asharia::asset::AssetScannedImportPlanResult plan =
+            asharia::asset::planScannedAssetImports(makeScannedPlanningRequest(
+                contentRoot, asharia::asset::AssetProductManifestDocument{}, "windows-msvc-debug"));
+        if (!plan.succeeded() || plan.plan.requests.size() != 1) {
+            logFailure("Asset product execution mismatch smoke could not build import request.");
+            return false;
+        }
+
+        const std::vector<asharia::asset::AssetProductSourceBytes> sourceBytes{
+            asharia::asset::AssetProductSourceBytes{
+                .sourcePath = "Content/Textures/Crate.png",
+                .bytes = bytesFromText("different crate bytes"),
+            },
+        };
+        const asharia::asset::AssetProductExecutionResult execution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = plan.plan,
+                .existingManifest = {},
+                .sourceBytes = sourceBytes,
+                .productOutputRoot = root / "ProductCache",
+                .productManifestOutputPath = root / "ProductCache" / "product-manifest.json",
+            });
+
+        return execution.writtenProducts.empty() &&
+               expectExecutionDiagnostic(
+                   execution,
+                   asharia::asset::AssetProductExecutionDiagnosticCode::SourceBytesHashMismatch,
+                   "hash mismatch");
+    }
+
     [[nodiscard]] bool smokeSourceSnapshotValidAndDeterministic() {
         const std::filesystem::path root = smokeRoot("asharia-asset-pipeline-smoke-snapshot-valid");
         if (root.empty() || !prepareWorkspace(root)) {
@@ -1447,7 +1619,9 @@ int main() {
         smokeSourceScanInvalidPrefix() && smokeScannedImportPlanningRequestsAndCacheHits() &&
         smokeScannedImportPlanningStopsOnScanDiagnostics() &&
         smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
-        smokeScannedImportPlanningPlanDiagnostics() && smokeImportPlanningCacheHitAndMiss() &&
+        smokeScannedImportPlanningPlanDiagnostics() &&
+        smokeProductExecutionWritesDeterministicProducts() &&
+        smokeProductExecutionSourceBytesHashMismatch() && smokeImportPlanningCacheHitAndMiss() &&
         smokeImportPlanningSourceChanged() && smokeImportPlanningSettingsChanged() &&
         smokeImportPlanningMissingSnapshot() && smokeImportPlanningDuplicateSource() &&
         smokeImportPlanningDuplicateSnapshot() && smokeImportPlanningInvalidTargetProfile() &&
