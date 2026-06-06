@@ -11,6 +11,7 @@
 #include "asharia/core/log.hpp"
 
 #include "editor_action.hpp"
+#include "editor_asset_icon.hpp"
 #include "editor_event.hpp"
 #include "editor_extension.hpp"
 #include "editor_i18n.hpp"
@@ -226,8 +227,8 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool validatePanelRegistrySmoke(EditorPanelRegistry& panelRegistry) {
-            constexpr std::size_t kExpectedPanelCount = 6;
-            constexpr std::size_t kExpectedOpenPanelCount = 4;
+            constexpr std::size_t kExpectedPanelCount = 7;
+            constexpr std::size_t kExpectedOpenPanelCount = 5;
 
             if (!panelRegistry.closePanel("log") || !panelRegistry.focusPanel("log")) {
                 asharia::logError(
@@ -237,7 +238,8 @@ namespace asharia::editor {
             if (panelRegistry.panelCount() != kExpectedPanelCount ||
                 panelRegistry.openPanelCount() != kExpectedOpenPanelCount ||
                 !panelRegistry.isOpen("log") || panelRegistry.isOpen("ui-style-preview") ||
-                panelRegistry.isOpen("editor-settings")) {
+                panelRegistry.isOpen("editor-settings") ||
+                !panelRegistry.isOpen("asset-browser")) {
                 asharia::logError(
                     "Editor panel registry smoke detected invalid singleton panel state.");
                 return false;
@@ -248,8 +250,8 @@ namespace asharia::editor {
 
         [[nodiscard]] bool validateActionRegistrySmoke(EditorActionRegistry& actionRegistry,
                                                        EditorActionServices& actionServices) {
-            constexpr std::size_t kExpectedActionCount = 12;
-            constexpr std::size_t kExpectedEnabledActionCount = 9;
+            constexpr std::size_t kExpectedActionCount = 13;
+            constexpr std::size_t kExpectedEnabledActionCount = 10;
 
             if (actionRegistry.actionCount() != kExpectedActionCount ||
                 actionRegistry.enabledActionCount() != kExpectedEnabledActionCount) {
@@ -304,6 +306,16 @@ namespace asharia::editor {
                 actionRegistry.invokeCount("view.editor-settings") != 1 ||
                 !actionServices.panels.closePanel("editor-settings")) {
                 asharia::logError("Editor action registry smoke failed to route Editor Settings.");
+                return false;
+            }
+            actionServices.eventQueue.clear();
+
+            if (!actionServices.panels.closePanel("asset-browser") ||
+                !actionRegistry.invoke("view.asset-browser",
+                                       makeEditorActionInvokeContext(actionServices)) ||
+                !actionServices.panels.isOpen("asset-browser") ||
+                actionRegistry.invokeCount("view.asset-browser") != 1) {
+                asharia::logError("Editor action registry smoke failed to route Asset Browser.");
                 return false;
             }
             actionServices.eventQueue.clear();
@@ -622,10 +634,10 @@ namespace asharia::editor {
         [[nodiscard]] bool validateToolRegistrySmoke(const EditorToolRegistry& toolRegistry,
                                                      const EditorActionRegistry& actionRegistry,
                                                      const EditorPanelRegistry& panelRegistry) {
-            constexpr std::size_t kExpectedToolCount = 7;
-            constexpr std::size_t kExpectedPanelContributions = 6;
-            constexpr std::size_t kExpectedActionContributions = 9;
-            constexpr std::size_t kExpectedToolbarActionContributions = 8;
+            constexpr std::size_t kExpectedToolCount = 8;
+            constexpr std::size_t kExpectedPanelContributions = 7;
+            constexpr std::size_t kExpectedActionContributions = 10;
+            constexpr std::size_t kExpectedToolbarActionContributions = 9;
             constexpr std::size_t kExpectedViewportOverlayContributions = 3;
             constexpr std::size_t kExpectedViewportActivationTools = 1;
 
@@ -829,6 +841,7 @@ namespace asharia::editor {
         return validatePanelRegistrySmoke(actionServices.panels) &&
                validateActionRegistrySmoke(actionRegistry, actionServices) &&
                validateEditorExtensionRegistrySmoke() && validateToolActivationDescriptorSmoke() &&
+               validateEditorAssetIconSmoke() &&
                validateEditorSettingsContributionSmoke() &&
                validateToolRegistrySmoke(toolRegistry, actionRegistry, actionServices.panels) &&
                validateToolManagerSmoke(toolRegistry, toolManager, actionServices.workspace) &&

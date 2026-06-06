@@ -36,6 +36,7 @@ namespace asharia::editor {
         EditorFrameDebuggerPanelDrawContext frameDebugger;
         EditorSettingsPanelDrawContext editorSettings;
         EditorUiStylePreviewPanelDrawContext uiStylePreview;
+        EditorAssetBrowserPanelDrawContext assetBrowser;
     };
 
     void ImGuiEditorPanel::prepareWindow(EditorPanelWindowContext& context,
@@ -69,6 +70,11 @@ namespace asharia::editor {
     void ImGuiUiStylePreviewEditorPanel::draw(EditorPanelDrawContext& context,
                                               EditorPanelState& state) {
         drawUiStylePreviewPanel(context.uiStylePreview, state);
+    }
+
+    void ImGuiAssetBrowserEditorPanel::draw(EditorPanelDrawContext& context,
+                                            EditorPanelState& state) {
+        drawAssetBrowserPanel(context.assetBrowser, state);
     }
 
     asharia::VoidResult EditorPanelRegistry::registerPanel(EditorPanelFactory factory) {
@@ -225,6 +231,11 @@ namespace asharia::editor {
             .uiStylePreview =
                 EditorUiStylePreviewPanelDrawContext{
                     .settings = context.settings.controller,
+                },
+            .assetBrowser =
+                EditorAssetBrowserPanelDrawContext{
+                    .ui = context.ui,
+                    .icons = context.assetIcons,
                 },
         };
         for (PanelEntry& entry : panels_) {

@@ -13,6 +13,7 @@
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_action.hpp"
+#include "editor_asset_icon.hpp"
 #include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -44,7 +45,8 @@ namespace asharia::editor {
                   EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
                   EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
                   EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
-                  EditorWorkspaceController& workspace, EditorRunMode mode) {
+                  EditorWorkspaceController& workspace, EditorAssetIconRegistry& assetIconRegistry,
+                  EditorRunMode mode) {
         const bool smokeMode = isEditorSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
         EditorFrameDebuggerSmokeState frameDebugSmoke;
@@ -105,6 +107,7 @@ namespace asharia::editor {
                 .input = {.router = inputRouter},
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},
+                .assetIcons = assetIconRegistry,
             };
             drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, i18n, panelRegistry,
                                  toolRegistry, workspace, frameContext.ui);

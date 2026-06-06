@@ -12,6 +12,7 @@
 #include "editor_panel.hpp"
 #include "editor_viewport_overlay_provider.hpp"
 #include "editor_workspace.hpp"
+#include "panels/asset_browser_panel.hpp"
 #include "panels/editor_settings_panel.hpp"
 #include "panels/frame_debugger_panel.hpp"
 #include "panels/log_panel.hpp"
@@ -43,6 +44,12 @@ namespace asharia::editor {
         auto log = panelRegistry.registerPanel([] { return std::make_unique<LogPanel>(); });
         if (!log) {
             return std::unexpected{std::move(log.error())};
+        }
+
+        auto assetBrowser =
+            panelRegistry.registerPanel([] { return std::make_unique<AssetBrowserPanel>(); });
+        if (!assetBrowser) {
+            return std::unexpected{std::move(assetBrowser.error())};
         }
 
         auto settings =
@@ -153,6 +160,22 @@ namespace asharia::editor {
             });
         if (!log) {
             return std::unexpected{std::move(log.error())};
+        }
+
+        auto assetBrowser = actionRegistry.registerAction(
+            EditorActionDesc{
+                .id = EditorId{.value = "view.asset-browser"},
+                .menuPath = "View",
+                .label = "Asset Browser",
+                .labelKey = "action.view.assetBrowser",
+                .shortcut = "Ctrl+6",
+                .enabled = true,
+            },
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("asset-browser"));
+            });
+        if (!assetBrowser) {
+            return std::unexpected{std::move(assetBrowser.error())};
         }
 
         auto uiStylePreview = actionRegistry.registerAction(
@@ -317,6 +340,20 @@ namespace asharia::editor {
                         .panels = {EditorToolPanelContribution{.panelId = "log"}},
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.log",
+                            .toolbarSlot = EditorToolbarSlot::View,
+                        }},
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.asset-browser"},
+                        .title = "Asset Browser",
+                        .titleKey = "tool.assetBrowser",
+                        .category = EditorToolCategory::Core,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
+                        .panels = {EditorToolPanelContribution{.panelId = "asset-browser"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.asset-browser",
                             .toolbarSlot = EditorToolbarSlot::View,
                         }},
                         .viewportOverlays = {},

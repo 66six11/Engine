@@ -4,6 +4,7 @@
 
 #include "editor_action.hpp"
 #include "editor_app_config.hpp"
+#include "editor_asset_icon.hpp"
 #include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -32,6 +33,7 @@ namespace asharia::editor {
         EditorActionRegistry actionRegistry;
         EditorToolRegistry toolRegistry;
         EditorToolManager toolManager;
+        EditorAssetIconRegistry assetIconRegistry;
         EditorActionServices actionServices;
     };
 

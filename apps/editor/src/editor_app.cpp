@@ -103,7 +103,7 @@ namespace asharia::editor {
             services.frameDebugger, services.actionRegistry, services.actionServices,
             services.eventQueue, services.diagnosticsLog, services.i18n,
             services.settingsController, services.panelRegistry, services.toolRegistry,
-            services.toolManager, services.workspaceController, mode);
+            services.toolManager, services.workspaceController, services.assetIconRegistry, mode);
         if (!runResult) {
             asharia::logError(runResult.error().message);
             return EXIT_FAILURE;

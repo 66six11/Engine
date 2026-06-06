@@ -1651,6 +1651,28 @@ Validation:
 
 ## Phase 24: Asset Browser And Material Editor
 
+### 24.0 Asset Browser Shell And Icon Contract
+
+Status: In progress.
+
+Scope:
+
+- Add a C++/ImGui Asset Browser panel shell with View menu, tool contribution and default dock metadata.
+- List deterministic synthetic catalog rows until the public catalog view is ready.
+- Resolve row icons through editor-owned Lucide icon ids and `EditorAssetIconRegistry`.
+- Allow custom icon resolvers to override by extension, asset type, importer id or diagnostic state without modifying the
+  Asset Browser draw code.
+
+Non-goals:
+
+- No source tree scanning, product cache mutation, import settings editing, watcher, hot reload, runtime loading, preview
+  textures, renderer/RHI or GPU upload.
+- No plugin-owned SVG/ImGui/Vulkan icon rendering. Custom providers return stable descriptors only.
+
+Validation:
+
+- `--smoke-editor-shell` covers panel/action/tool registration and Lucide/default/custom icon resolver fallback.
+
 ### 24.1 Asset Catalog View
 
 Status: Deferred.

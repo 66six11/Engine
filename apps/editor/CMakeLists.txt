@@ -76,6 +76,7 @@ add_executable(asharia-editor
     src/editor_app_registration.cpp
     src/editor_app_run_completion.cpp
     src/editor_app_services.cpp
+    src/editor_asset_icon.cpp
     src/editor_command.cpp
     src/editor_command_smoke.cpp
     src/editor_dock_layout.cpp
@@ -116,6 +117,7 @@ add_executable(asharia-editor
     src/imgui_runtime.cpp
     src/imgui_texture_registry.cpp
     src/main.cpp
+    src/panels/asset_browser_panel.cpp
     src/panels/editor_settings_panel.cpp
     src/panels/frame_debugger_panel.cpp
     src/panels/log_panel.cpp
