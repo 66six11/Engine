@@ -10,6 +10,7 @@
     "action.file.newScene": "新建场景",
     "action.file.open": "打开...",
     "action.view.editorSettings": "编辑器设置",
+    "action.view.assetBrowser": "资源浏览器",
     "action.view.frameDebugger": "帧调试器",
     "action.view.log": "日志",
     "action.view.renderGraph": "实时 RG 视图",
@@ -52,6 +53,7 @@
     "panel.log": "日志",
     "panel.renderGraph": "实时 RG 视图",
     "panel.sceneView": "场景视图",
+    "panel.assetBrowser": "资源浏览器",
     "panel.editorSettings": "编辑器设置",
     "panel.uiStylePreview": "UI 样式预览",
     "renderGraph.accessEdges": "访问边",
@@ -106,6 +108,18 @@
     "settings.sceneGrid.fadeStart": "淡出起点",
     "settings.sceneGrid.fadeEnd": "淡出终点",
     "settings.sceneGrid.opacity": "不透明度",
-    "settings.sceneGrid.color": "网格颜色"
+    "settings.sceneGrid.color": "网格颜色",
+    "tool.assetBrowser": "资源浏览器",
+    "assetBrowser.filter": "过滤",
+    "assetBrowser.column.name": "名称",
+    "assetBrowser.column.type": "类型",
+    "assetBrowser.column.importer": "导入器",
+    "assetBrowser.column.state": "状态",
+    "assetBrowser.type.folder": "文件夹",
+    "assetBrowser.state.folder": "文件夹",
+    "assetBrowser.state.ready": "就绪",
+    "assetBrowser.state.synthetic": "合成",
+    "assetBrowser.state.missing": "缺失",
+    "assetBrowser.noRows": "没有资源"
   }
 }

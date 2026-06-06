@@ -6,7 +6,7 @@ namespace asharia::editor {
 
     namespace {
 
-        constexpr std::array<EditorWorkspaceDockPanel, 6> kDefaultWorkspacePanels{{
+        constexpr std::array<EditorWorkspaceDockPanel, 7> kDefaultWorkspacePanels{{
             EditorWorkspaceDockPanel{.panelId = "scene-view",
                                      .dockSlot = EditorDockSlot::Center},
             EditorWorkspaceDockPanel{.panelId = "render-graph",
@@ -15,6 +15,8 @@ namespace asharia::editor {
                                      .dockSlot = EditorDockSlot::RightTop},
             EditorWorkspaceDockPanel{.panelId = "editor-settings",
                                      .dockSlot = EditorDockSlot::RightTop},
+            EditorWorkspaceDockPanel{.panelId = "asset-browser",
+                                     .dockSlot = EditorDockSlot::RightBottom},
             EditorWorkspaceDockPanel{.panelId = "ui-style-preview",
                                      .dockSlot = EditorDockSlot::RightBottom},
             EditorWorkspaceDockPanel{.panelId = "log", .dockSlot = EditorDockSlot::Bottom},

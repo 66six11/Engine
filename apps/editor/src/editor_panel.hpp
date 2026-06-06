@@ -11,6 +11,7 @@
 
 #include "asharia/core/result.hpp"
 
+#include "editor_asset_icon.hpp"
 #include "editor_id.hpp"
 #include "editor_render_graph_snapshot.hpp"
 #include "editor_viewport.hpp"
@@ -128,6 +129,11 @@ namespace asharia::editor {
         EditorSettingsController& settings;
     };
 
+    struct EditorAssetBrowserPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        const EditorAssetIconRegistry& icons;
+    };
+
     struct EditorPanelDrawContext;
 
     struct EditorFrameContext {
@@ -138,6 +144,7 @@ namespace asharia::editor {
         EditorFrameInputContext input;
         EditorFrameRenderGraphContext renderGraph;
         EditorFrameViewportContext viewport;
+        const EditorAssetIconRegistry& assetIcons;
     };
 
     class ImGuiEditorPanel {
@@ -205,6 +212,15 @@ namespace asharia::editor {
     private:
         virtual void drawUiStylePreviewPanel(EditorUiStylePreviewPanelDrawContext& context,
                                              EditorPanelState& state) = 0;
+    };
+
+    class ImGuiAssetBrowserEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawAssetBrowserPanel(EditorAssetBrowserPanelDrawContext& context,
+                                           EditorPanelState& state) = 0;
     };
 
     enum class EditorPanelLifecycleEventKind {

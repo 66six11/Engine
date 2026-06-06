@@ -10,6 +10,7 @@
     "action.file.newScene": "New Scene",
     "action.file.open": "Open...",
     "action.view.editorSettings": "Editor Settings",
+    "action.view.assetBrowser": "Asset Browser",
     "action.view.frameDebugger": "Frame Debugger",
     "action.view.log": "Log",
     "action.view.renderGraph": "Live RG View",
@@ -52,6 +53,7 @@
     "panel.log": "Log",
     "panel.renderGraph": "Live RG View",
     "panel.sceneView": "Scene View",
+    "panel.assetBrowser": "Asset Browser",
     "panel.editorSettings": "Editor Settings",
     "panel.uiStylePreview": "UI Style Preview",
     "renderGraph.accessEdges": "Access edges",
@@ -106,6 +108,18 @@
     "settings.sceneGrid.fadeStart": "Fade Start",
     "settings.sceneGrid.fadeEnd": "Fade End",
     "settings.sceneGrid.opacity": "Opacity",
-    "settings.sceneGrid.color": "Grid Color"
+    "settings.sceneGrid.color": "Grid Color",
+    "tool.assetBrowser": "Asset Browser",
+    "assetBrowser.filter": "Filter",
+    "assetBrowser.column.name": "Name",
+    "assetBrowser.column.type": "Type",
+    "assetBrowser.column.importer": "Importer",
+    "assetBrowser.column.state": "State",
+    "assetBrowser.type.folder": "folder",
+    "assetBrowser.state.folder": "folder",
+    "assetBrowser.state.ready": "ready",
+    "assetBrowser.state.synthetic": "synthetic",
+    "assetBrowser.state.missing": "missing",
+    "assetBrowser.noRows": "No assets"
   }
 }

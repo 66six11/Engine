@@ -64,6 +64,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
 | `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
 | `editor_tool_manager` | editor-local active tool state, per-viewport primary tool selection and activate/deactivate lifecycle | renderer pass policy, Vulkan resources, panel factories or persistent scene/asset mutation |
+| `editor_asset_icon` | editor-owned Lucide icon ids, asset icon query descriptors, custom resolver registry and ImGui glyph rendering | plugin-owned SVG injection, source scanning, texture/Vulkan ownership or runtime asset loading |
 | `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
@@ -321,6 +322,23 @@ Tool rules:
   panel.
 - Use `editor_i18n` keys for user-facing labels and keep technical names such as pass, resource and shader identifiers
   untranslated.
+
+### Asset Browser / Icons
+
+`AssetBrowserPanel` is the first shell for Phase 24. It is intentionally read-only and uses deterministic synthetic catalog
+rows until the public asset catalog view is ready. It registers as a normal panel/action/tool contribution and defaults to
+the right-bottom dock slot.
+
+Icon ownership stays in `editor_asset_icon`:
+
+- Panel code submits `EditorAssetIconQuery` values and draws the returned `EditorIconDescriptor`.
+- Built-in fallback ids use Lucide vocabulary such as `lucide.folder`, `lucide.file`, `lucide.image`, `lucide.braces`,
+  `lucide.palette`, `lucide.box`, `lucide.circle-help` and `lucide.triangle-alert`.
+- Custom providers can override by extension, asset type, importer id or diagnostic state, but they only return stable ids,
+  tint and tooltip metadata.
+- Custom providers do not return raw SVG, ImGui callbacks, `ImTextureID`, Vulkan handles or renderer resources.
+- Asset Browser UI state such as filter text is transient panel state, not asset metadata, product cache state or project
+  descriptor state.
 
 ### Actions 扩展
 
