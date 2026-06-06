@@ -458,8 +458,11 @@ struct AssetLoadResult {
 
 ### Material / Renderer
 
-- Material 阶段消费 `asset-core` 的 GUID、product key 和 dependency data。
-- Pipeline key 仍属于 renderer/material/RHI 层；`asset-core` 只提供 shader/material source identity 和 product identity。
+- `material-core` 当前提供 CPU-only material resource signature、descriptor contract、shader/signature
+  compatibility validation 和 pipeline key hash；它消费的是稳定合同，不直接读 `.ameta` 或 product cache。
+- Material 阶段后续消费 `asset-core` 的 GUID、product key 和 dependency data。
+- Pipeline cache / Vulkan pipeline creation 仍属于 renderer/RHI 层；`asset-core` 只提供 shader/material
+  source identity 和 product identity。
 - GPU upload 由 resource runtime 或 renderer backend 负责，不能放进 `asset-core`。
 
 ### Editor
@@ -850,6 +853,7 @@ scan-to-planning bridge baseline 稳定。
 | asset-pipeline source scan | 只扫描显式 source root 并配对 `.ameta` sidecar，可用 package-local tests 验证。 | 不读取 metadata、不 hash bytes、不桥接 plan、不执行 importer、不做 watcher 或 editor UI。 |
 | asset-pipeline scan-to-planning bridge | 只组合既有 scan/discovery/snapshot/planning 阶段，可用 package-local tests 验证。 | 不做 CLI、不执行 importer、不写 manifest/blob/cache、不做 watcher 或 editor UI。 |
 | asset-processor dry-run CLI | 只做 read-only CLI reporting，可用 `--smoke-dry-run` 验证。 | 不执行 importer、不写 manifest/blob/cache、不做 watcher、hot reload、editor UI 或 GPU upload。 |
+| material-core signature / pipeline key | 只定义 CPU-side material resource signature、compatibility diagnostics 和 deterministic pipeline key hash，可用 package-local tests 验证。 | 不做 `.amat` IO、不执行 importer、不写 product cache、不创建 Vulkan pipeline/cache、不做 editor UI。 |
 
 等待后再做：
 
@@ -858,7 +862,7 @@ scan-to-planning bridge baseline 稳定。
 | `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 product execution。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
-| Material asset / pipeline key | 等 material signature 和 descriptor contract 进入计划阶段。 |
+| Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 
 不建议现在做：
 
