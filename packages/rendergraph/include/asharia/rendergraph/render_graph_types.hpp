@@ -168,6 +168,7 @@ namespace asharia {
         ClearColor,
         FillBuffer,
         CopyImage,
+        CopyBuffer,
         Dispatch,
     };
 

@@ -830,12 +830,17 @@ scan-to-planning bridge baseline 稳定。
 
 交付：
 
-- Mesh/texture product record 到 runtime resource request 的桥接。
-- staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`。
+- 当前第一步已落地 graph-visible buffer copy baseline：`builtin.transfer-copy-buffer`、`CopyBuffer`
+  command summary 和 `--smoke-buffer-upload` 覆盖显式 upload payload 经 staging buffer 到 device-local
+  buffer 再到 readback buffer。
+- 后续仍需 Mesh/texture product record 到 runtime resource request 的桥接。
+- staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`、`project-core` 或 `.ameta`。
 
 验收：
 
-- `--smoke-mesh-resource` 和 `--smoke-texture-upload` 证明 runtime 不直接依赖 source path。
+- `--smoke-buffer-upload` 证明基础 buffer upload/copy work 是 RenderGraph-visible，且输入来自显式
+  upload payload，不来自 source path 或 metadata IO。
+- 后续 `--smoke-mesh-resource` 和 `--smoke-texture-upload` 证明 runtime 不直接依赖 source path。
 
 ## 并行开发建议
 
@@ -860,7 +865,7 @@ scan-to-planning bridge baseline 稳定。
 | 工作 | 等待项 |
 | --- | --- |
 | `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 product execution。 |
-| `--smoke-mesh-resource` / `--smoke-texture-upload` | 等 rendering 分支完成 storage/MRT/compute 和上传路径边界。 |
+| `--smoke-mesh-resource` / `--smoke-texture-upload` | 等基础 `--smoke-buffer-upload` 之后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
 | Asset Browser / import settings UI | 等 `editor-core` transaction 和 catalog view 稳定。 |
 | Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 
@@ -869,7 +874,7 @@ scan-to-planning bridge baseline 稳定。
 - 文件系统 watcher。
 - 后台 import worker。
 - 完整 glTF/texture importer。
-- GPU upload owner。
+- 完整 GPU upload owner；当前只允许保留 graph-visible buffer copy baseline。
 - 热重载。
 - 资产数据库 UI。
 - package marketplace。
@@ -892,6 +897,7 @@ Package-local tests：
 - `asharia-asset-processor --smoke-dry-run`：read-only dry-run 覆盖 request/cache-hit 报告、scan diagnostic
   和 product manifest read diagnostic。
 - `--smoke-asset-metadata-roundtrip`：`.ameta` deterministic round-trip。
+- `--smoke-buffer-upload`：显式 upload payload 通过 RenderGraph `CopyBuffer` 进入 device-local buffer 并读回。
 - `--smoke-mesh-resource`：mesh product 解析为 runtime draw resource，不依赖 source path。
 - `--smoke-texture-upload`：texture product 解析为 sampled runtime resource，不依赖 source path。
 

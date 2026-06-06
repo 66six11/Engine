@@ -1888,9 +1888,19 @@ namespace asharia {
             if (!transitions) {
                 return std::unexpected{std::move(transitions.error())};
             }
-            if (!pass.commands.empty()) {
+            if (pass.commands.size() != 1) {
                 return std::unexpected{
-                    renderGraphError("Compute readback copy pass expected no commands")};
+                    renderGraphError("Compute readback copy pass expected exactly one command")};
+            }
+            const RenderGraphCommand& copyCommand = pass.commands.front();
+            auto copyKind = expectCommandKind(copyCommand, RenderGraphCommandKind::CopyBuffer,
+                                              "Compute readback copy");
+            if (!copyKind) {
+                return std::unexpected{std::move(copyKind.error())};
+            }
+            if (copyCommand.name != "source" || copyCommand.secondaryName != "target") {
+                return std::unexpected{
+                    renderGraphError("Compute readback copy command does not match slots")};
             }
 
             auto source = findVulkanRenderGraphBufferTransferRead(pass, "source", bufferBindings);

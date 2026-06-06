@@ -40,6 +40,7 @@ namespace asharia {
     inline constexpr char kBasicComputeDispatchPassType[] = "builtin.compute-dispatch";
     inline constexpr char kBasicComputeDispatchParamsType[] = "builtin.compute-dispatch.params";
     inline constexpr char kBasicComputeReadbackPassType[] = "builtin.compute-readback";
+    inline constexpr char kBasicTransferCopyBufferPassType[] = "builtin.transfer-copy-buffer";
     inline constexpr char kBasicTransferFillBufferPassType[] = "builtin.transfer-fill-buffer";
     inline constexpr char kBasicTransferFillBufferParamsType[] =
         "builtin.transfer-fill-buffer.params";
@@ -402,7 +403,30 @@ namespace asharia {
                         .optional = false,
                     },
                 },
-            .allowedCommands = {},
+            .allowedCommands = {RenderGraphCommandKind::CopyBuffer},
+        });
+    }
+
+    inline void registerBasicTransferCopyBufferSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicTransferCopyBufferPassType,
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = RenderGraphSlotAccess::BufferTransferRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {RenderGraphCommandKind::CopyBuffer},
         });
     }
 
@@ -446,6 +470,7 @@ namespace asharia {
         registerBasicTransferFillBufferSchema(schemas);
         registerBasicComputeDispatchSchema(schemas);
         registerBasicComputeReadbackSchema(schemas);
+        registerBasicTransferCopyBufferSchema(schemas);
         registerBasicDebugImageCopySchema(schemas);
         return schemas;
     }

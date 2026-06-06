@@ -111,6 +111,8 @@ namespace asharia::rendergraph_internal {
             return "FillBuffer";
         case RenderGraphCommandKind::CopyImage:
             return "CopyImage";
+        case RenderGraphCommandKind::CopyBuffer:
+            return "CopyBuffer";
         case RenderGraphCommandKind::Dispatch:
             return "Dispatch";
         }
@@ -135,6 +137,7 @@ namespace asharia::rendergraph_internal {
         case RenderGraphCommandKind::FillBuffer:
             return command.name + " = " + std::to_string(command.uintValues[0]);
         case RenderGraphCommandKind::CopyImage:
+        case RenderGraphCommandKind::CopyBuffer:
             return command.name + " -> " + command.secondaryName;
         case RenderGraphCommandKind::DrawFullscreenTriangle:
             return "-";

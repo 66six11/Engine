@@ -17,6 +17,7 @@ namespace {
     constexpr std::string_view kStorageReadWritePass = "test.storage-rw";
     constexpr std::string_view kBufferTransferReadPass = "test.buffer-transfer-read";
     constexpr std::string_view kBufferTransferWritePass = "test.buffer-transfer-write";
+    constexpr std::string_view kBufferCopyPass = "test.buffer-copy";
     constexpr std::string_view kSideEffectPass = "test.side-effect";
 
     [[nodiscard]] bool contains(std::string_view text, std::string_view needle) {
@@ -228,6 +229,26 @@ namespace {
                     },
                 },
             .allowedCommands = {asharia::RenderGraphCommandKind::FillBuffer},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = std::string{kBufferCopyPass},
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyBuffer},
         });
         schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = std::string{kSideEffectPass},
@@ -635,6 +656,103 @@ namespace {
                       "RenderGraph diagnostics snapshot buffer fill command node was unexpected.");
     }
 
+    [[nodiscard]] bool compilesBufferTransferCopy(
+        const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto source = graph.createTransientBuffer(transientBufferDesc("CopySource"));
+        const auto target = graph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "CopyTarget",
+            .byteSize = 256,
+            .initialState = asharia::RenderGraphBufferState::Undefined,
+            .finalState = asharia::RenderGraphBufferState::TransferRead,
+        });
+
+        graph.addPass("ProduceCopySource", std::string{kBufferTransferWritePass})
+            .writeBuffer("target", source)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.fillBuffer("target", 0xA5000000U);
+            });
+        graph.addPass("CopyBuffer", std::string{kBufferCopyPass})
+            .readTransferBuffer("source", source)
+            .writeBuffer("target", target)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyBuffer("source", "target");
+            });
+
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            std::cerr << compiled.error().message << '\n';
+            return false;
+        }
+        if (!expect(compiled->passes.size() == 2,
+                    "RenderGraph did not keep buffer copy producer and copy pass.")) {
+            return false;
+        }
+
+        const asharia::RenderGraphCompiledPass& copyPass = compiled->passes[1];
+        if (!expect(copyPass.bufferTransferReadSlots.size() == 1 &&
+                        copyPass.bufferWriteSlots.size() == 1 &&
+                        copyPass.bufferTransferReadSlots.front().name == "source" &&
+                        copyPass.bufferWriteSlots.front().name == "target",
+                    "RenderGraph did not preserve buffer transfer copy slots.")) {
+            return false;
+        }
+        if (!expect(copyPass.commands.size() == 1 &&
+                        copyPass.commands.front().kind ==
+                            asharia::RenderGraphCommandKind::CopyBuffer &&
+                        copyPass.commands.front().name == "source" &&
+                        copyPass.commands.front().secondaryName == "target",
+                    "RenderGraph did not preserve buffer copy command summary.")) {
+            return false;
+        }
+
+        bool foundTransferReadTransition = false;
+        for (const asharia::RenderGraphBufferTransition& transition :
+             copyPass.bufferTransitionsBefore) {
+            if (transition.buffer == source &&
+                transition.oldState == asharia::RenderGraphBufferState::TransferWrite &&
+                transition.newState == asharia::RenderGraphBufferState::TransferRead) {
+                foundTransferReadTransition = true;
+            }
+        }
+        if (!expect(foundTransferReadTransition,
+                    "RenderGraph did not transition copy source to TransferRead.")) {
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(*compiled);
+        if (!expect(snapshot.commands.size() == 2,
+                    "RenderGraph diagnostics snapshot missed buffer copy command nodes.")) {
+            return false;
+        }
+
+        bool foundCopyCommand = false;
+        for (const asharia::RenderGraphDiagnosticsCommandNode& command : snapshot.commands) {
+            if (command.passName == "CopyBuffer" &&
+                command.kind == asharia::RenderGraphCommandKind::CopyBuffer &&
+                command.detail == "source -> target") {
+                foundCopyCommand = true;
+            }
+        }
+        if (!expect(foundCopyCommand,
+                    "RenderGraph diagnostics snapshot buffer copy command node was unexpected.")) {
+            return false;
+        }
+
+        bool foundTransferReadEdge = false;
+        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+            if (edge.passName == "CopyBuffer" && edge.resourceName == "CopySource" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::BufferTransferRead) {
+                foundTransferReadEdge = true;
+            }
+        }
+
+        return expect(foundTransferReadEdge,
+                      "RenderGraph diagnostics snapshot missed the BufferTransferRead edge.");
+    }
+
     [[nodiscard]] bool rejectsMissingProducers(
         const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph imageGraph;
@@ -714,6 +832,7 @@ int main() {
                         buildsDiagnosticsSnapshot(schemas) &&
                         compilesImageTransferCopy(schemas) &&
                         compilesBufferFillCommand(schemas) &&
+                        compilesBufferTransferCopy(schemas) &&
                         rejectsMissingProducers(schemas) &&
                         rejectsImportedResourcesWithoutFinalState(schemas);
 

@@ -8,7 +8,8 @@ namespace asharia::rendergraph_header_tests {
             .setTexture("sourceTexture", "source")
             .setVec4("tint", {1.0F, 0.5F, 0.25F, 1.0F})
             .drawFullscreenTriangle()
-            .fillBuffer("upload", 42);
+            .fillBuffer("upload", 42)
+            .copyBuffer("staging", "device");
 
         (void)commands.commands();
     }
