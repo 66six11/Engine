@@ -10,6 +10,7 @@ endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::archive packages/archive)
+asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
 asharia_require_package_target(asharia::shader_slang packages/shader-slang)
@@ -154,6 +155,7 @@ target_include_directories(asharia-editor
 target_link_libraries(asharia-editor
     PRIVATE
         asharia::archive
+        asharia::asset_core
         asharia::core
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "asharia/asset_core/asset_catalog.hpp"
+#include "asharia/asset_core/asset_catalog_view.hpp"
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_handle.hpp"
 #include "asharia/asset_core/asset_metadata.hpp"
@@ -734,12 +735,169 @@ namespace {
         return true;
     }
 
+    bool smokeAssetCatalogView() {
+        struct CatalogViewSourceFixture {
+            std::string_view guidText;
+            std::string_view typeName;
+            std::string_view sourcePath;
+            std::string_view importerName;
+            std::uint64_t sourceHash{};
+            std::uint64_t settingsHash{};
+        };
+
+        constexpr std::string_view kMaterialGuidText = "b8373128-8e46-44e1-a5a4-df4c2ef9d2ad";
+        constexpr std::string_view kMeshGuidText = "1135c477-65aa-4d44-92f1-f208fc6142ad";
+        constexpr std::string_view kShaderGuidText = "13a10d4b-6987-48d1-ad27-ae4055e5a936";
+        constexpr std::string_view kTextureGuidText = "cd9c0f3d-20e2-4028-a3e9-c3f42d3fd515";
+        constexpr std::string_view kMaterialTypeName = "com.asharia.asset.Material";
+        constexpr std::string_view kMeshTypeName = "com.asharia.asset.Mesh";
+        constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+
+        const auto makeRecord =
+            [](const CatalogViewSourceFixture& fixture) -> asharia::asset::SourceAssetRecord {
+            auto guid = asharia::asset::parseAssetGuid(fixture.guidText);
+            return asharia::asset::SourceAssetRecord{
+                .guid = guid ? *guid : asharia::asset::AssetGuid{},
+                .assetType = asharia::asset::makeAssetTypeId(fixture.typeName),
+                .assetTypeName = std::string{fixture.typeName},
+                .sourcePath = std::string{fixture.sourcePath},
+                .importerId = asharia::asset::makeImporterId(fixture.importerName),
+                .importerName = std::string{fixture.importerName},
+                .importerVersion = asharia::asset::ImporterVersion{1},
+                .sourceHash = fixture.sourceHash,
+                .settingsHash = fixture.settingsHash,
+            };
+        };
+
+        const asharia::asset::SourceAssetRecord materialRecord =
+            makeRecord(CatalogViewSourceFixture{.guidText = kMaterialGuidText,
+                                                .typeName = kMaterialTypeName,
+                                                .sourcePath = "Content/Materials/Brushed.amat",
+                                                .importerName = "com.asharia.importer.material",
+                                                .sourceHash = 0x1100ULL,
+                                                .settingsHash = 0x1200ULL});
+        const asharia::asset::SourceAssetRecord meshRecord =
+            makeRecord(CatalogViewSourceFixture{.guidText = kMeshGuidText,
+                                                .typeName = kMeshTypeName,
+                                                .sourcePath = "Content/Meshes/Cube.mesh",
+                                                .importerName = "com.asharia.importer.mesh",
+                                                .sourceHash = 0x2100ULL,
+                                                .settingsHash = 0x2200ULL});
+        const asharia::asset::SourceAssetRecord shaderRecord =
+            makeRecord(CatalogViewSourceFixture{.guidText = kShaderGuidText,
+                                                .typeName = kShaderTypeName,
+                                                .sourcePath = "Content/Shaders/Grid.slang",
+                                                .importerName = "com.asharia.importer.shader",
+                                                .sourceHash = 0x3100ULL,
+                                                .settingsHash = 0x3200ULL});
+        const asharia::asset::SourceAssetRecord textureRecord =
+            makeRecord(CatalogViewSourceFixture{.guidText = kTextureGuidText,
+                                                .typeName = kTextureTypeName,
+                                                .sourcePath = "Content/Textures/Zeta.png",
+                                                .importerName = "com.asharia.importer.texture",
+                                                .sourceHash = 0x4100ULL,
+                                                .settingsHash = 0x4200ULL});
+
+        asharia::asset::AssetCatalog catalog;
+        if (!catalog.addSource(textureRecord) || !catalog.addSource(shaderRecord) ||
+            !catalog.addSource(materialRecord) || !catalog.addSource(meshRecord)) {
+            logFailure("Asset catalog view smoke failed to build source catalog.");
+            return false;
+        }
+
+        const std::uint64_t targetProfile =
+            asharia::asset::makeAssetTargetProfileHash("editor-debug");
+        const asharia::asset::AssetProductKey currentMaterialKey =
+            asharia::asset::makeAssetProductKey(materialRecord, 0x5000ULL, targetProfile);
+        asharia::asset::SourceAssetRecord staleTextureRecord = textureRecord;
+        staleTextureRecord.sourceHash ^= 0x10ULL;
+        const asharia::asset::AssetProductKey staleTextureKey =
+            asharia::asset::makeAssetProductKey(staleTextureRecord, 0x6000ULL, targetProfile);
+        const asharia::asset::AssetProductKey invalidMeshKey =
+            asharia::asset::makeAssetProductKey(meshRecord, 0x7000ULL, targetProfile);
+
+        const std::array<asharia::asset::AssetProductRecord, 3> products{
+            asharia::asset::AssetProductRecord{
+                .key = currentMaterialKey,
+                .relativeProductPath = "materials/brushed.product",
+                .productSizeBytes = 128,
+                .productHash = asharia::asset::hashAssetProductKey(currentMaterialKey),
+            },
+            asharia::asset::AssetProductRecord{
+                .key = staleTextureKey,
+                .relativeProductPath = "textures/zeta.product",
+                .productSizeBytes = 256,
+                .productHash = asharia::asset::hashAssetProductKey(staleTextureKey),
+            },
+            asharia::asset::AssetProductRecord{
+                .key = invalidMeshKey,
+                .relativeProductPath = {},
+                .productSizeBytes = 0,
+                .productHash = 0,
+            },
+        };
+
+        const asharia::asset::AssetCatalogView view = asharia::asset::buildAssetCatalogView(
+            catalog, products, asharia::asset::AssetCatalogViewOptions{.requireProducts = true});
+        if (view.entries.size() != 4U || view.diagnostics.size() != 1U) {
+            logFailure("Asset catalog view smoke produced the wrong row or diagnostic count.");
+            return false;
+        }
+
+        const auto entryState = [&](std::size_t index) { return view.entries[index].productState; };
+        if (view.entries[0].sourcePath != materialRecord.sourcePath ||
+            view.entries[1].sourcePath != meshRecord.sourcePath ||
+            view.entries[2].sourcePath != shaderRecord.sourcePath ||
+            view.entries[3].sourcePath != textureRecord.sourcePath) {
+            logFailure("Asset catalog view smoke did not sort rows by source path.");
+            return false;
+        }
+
+        if (view.entries[0].guidText != kMaterialGuidText ||
+            view.entries[0].displayName != "Brushed.amat" || view.entries[0].extension != ".amat" ||
+            view.entries[2].displayName != "Grid.slang" || view.entries[2].extension != ".slang") {
+            logFailure("Asset catalog view smoke produced invalid display name or extension.");
+            return false;
+        }
+
+        if (entryState(0) != asharia::asset::AssetCatalogProductState::Ready ||
+            view.entries[0].currentProductCount != 1U || !view.entries[0].diagnostics.empty() ||
+            entryState(1) != asharia::asset::AssetCatalogProductState::InvalidProduct ||
+            view.entries[1].diagnostics.size() != 1U ||
+            view.entries[1].diagnostics[0].code !=
+                asharia::asset::AssetCatalogDiagnosticCode::InvalidProductRecord ||
+            entryState(2) != asharia::asset::AssetCatalogProductState::MissingProduct ||
+            view.entries[2].diagnostics.size() != 1U ||
+            view.entries[2].diagnostics[0].code !=
+                asharia::asset::AssetCatalogDiagnosticCode::MissingProduct ||
+            entryState(3) != asharia::asset::AssetCatalogProductState::StaleProduct ||
+            view.entries[3].staleProductCount != 1U || view.entries[3].diagnostics.size() != 1U ||
+            view.entries[3].diagnostics[0].code !=
+                asharia::asset::AssetCatalogDiagnosticCode::StaleProduct) {
+            logFailure("Asset catalog view smoke produced invalid product states.");
+            return false;
+        }
+
+        if (view.diagnostics[0].code !=
+                asharia::asset::AssetCatalogDiagnosticCode::InvalidProductRecord ||
+            asharia::asset::assetCatalogProductStateName(entryState(3)) != "stale-product" ||
+            asharia::asset::assetCatalogDiagnosticCodeName(view.diagnostics[0].code) !=
+                "invalid-product-record") {
+            logFailure("Asset catalog view smoke produced invalid diagnostic labels.");
+            return false;
+        }
+
+        std::cout << "Asset catalog view rows: " << view.entries.size() << '\n';
+        return true;
+    }
+
 } // namespace
 
 int main() {
     const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetSourcePath() &&
                         smokeAssetHandleAndReference() && smokeAssetMetadata() &&
                         smokeAssetMetadataIo() && smokeAssetProductKeyAndDependency() &&
-                        smokeAssetCatalog();
+                        smokeAssetCatalog() && smokeAssetCatalogView();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -325,13 +325,14 @@ Tool rules:
 
 ### Asset Browser / Icons
 
-`AssetBrowserPanel` is the first shell for Phase 24. It is intentionally read-only and uses deterministic synthetic catalog
-rows until the public asset catalog view is ready. It registers as a normal panel/action/tool contribution and defaults to
-the right-bottom dock slot.
+`AssetBrowserPanel` is the first shell for Phase 24. It is intentionally read-only and consumes a deterministic
+`asset-core` catalog view fixture until project catalog loading is ready. It registers as a normal panel/action/tool
+contribution and defaults to the right-bottom dock slot.
 
 Icon ownership stays in `editor_asset_icon`:
 
 - Panel code submits `EditorAssetIconQuery` values and draws the returned `EditorIconDescriptor`.
+- Panel rows come from public catalog view entries, not direct source tree scanning or product cache mutation.
 - Built-in fallback ids use Lucide vocabulary such as `lucide.folder`, `lucide.file`, `lucide.image`, `lucide.braces`,
   `lucide.palette`, `lucide.box`, `lucide.circle-help` and `lucide.triangle-alert`.
 - Custom providers can override by extension, asset type, importer id or diagnostic state, but they only return stable ids,

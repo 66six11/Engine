@@ -14,6 +14,7 @@ asharia_require_package_target(asharia::archive packages/archive)
 
 add_library(asharia-asset-core STATIC
     src/asset_catalog.cpp
+    src/asset_catalog_view.cpp
     src/asset_guid.cpp
     src/asset_metadata.cpp
     src/asset_product.cpp

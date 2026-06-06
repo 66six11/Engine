@@ -120,6 +120,10 @@
     "assetBrowser.state.ready": "ready",
     "assetBrowser.state.synthetic": "synthetic",
     "assetBrowser.state.missing": "missing",
+    "assetBrowser.state.notTracked": "not tracked",
+    "assetBrowser.state.missingProduct": "missing product",
+    "assetBrowser.state.staleProduct": "stale product",
+    "assetBrowser.state.invalidProduct": "invalid product",
     "assetBrowser.noRows": "No assets"
   }
 }

@@ -120,6 +120,10 @@
     "assetBrowser.state.ready": "就绪",
     "assetBrowser.state.synthetic": "合成",
     "assetBrowser.state.missing": "缺失",
+    "assetBrowser.state.notTracked": "未跟踪",
+    "assetBrowser.state.missingProduct": "缺少产物",
+    "assetBrowser.state.staleProduct": "产物过期",
+    "assetBrowser.state.invalidProduct": "产物无效",
     "assetBrowser.noRows": "没有资源"
   }
 }
