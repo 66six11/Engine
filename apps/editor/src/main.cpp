@@ -25,8 +25,8 @@ namespace {
 
     void printUsage() {
         std::cout << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
-                     "[--smoke-editor-viewport] [--smoke-editor-viewport-resize] "
-                     "[--smoke-editor-frame-debugger]\n";
+                     "[--smoke-editor-asset-browser] [--smoke-editor-viewport] "
+                     "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger]\n";
     }
 
 } // namespace
@@ -46,6 +46,11 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-editor-shell")) {
             return asharia::editor::runEditor(asharia::editor::EditorRunMode::SmokeShell);
+        }
+
+        if (hasArg(args, "--smoke-editor-asset-browser")) {
+            return asharia::editor::runEditor(
+                asharia::editor::EditorRunMode::SmokeAssetBrowser);
         }
 
         if (hasArg(args, "--smoke-editor-viewport")) {

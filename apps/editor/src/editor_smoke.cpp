@@ -118,6 +118,10 @@ namespace asharia::editor {
         return mode == EditorRunMode::SmokeFrameDebugger;
     }
 
+    bool isEditorAssetBrowserSmokeMode(EditorRunMode mode) {
+        return mode == EditorRunMode::SmokeAssetBrowser;
+    }
+
     int editorSmokeFrameCount(EditorRunMode mode) {
         if (isEditorViewportResizeSmokeMode(mode)) {
             return kResizeSmokeFrameCount;

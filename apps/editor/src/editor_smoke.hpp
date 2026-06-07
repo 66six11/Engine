@@ -47,6 +47,9 @@ namespace asharia::editor {
         EditorInspectedWorldSchedulerStats inspectedWorldStats;
         EditorInputRouterStats inputStats;
         EditorShortcutRouterStats shortcutStats;
+        bool assetCatalogSnapshotLoaded{};
+        std::size_t assetCatalogRows{};
+        std::size_t assetCatalogDiagnostics{};
     };
 
     struct EditorViewportResizeSmokeState {
@@ -80,6 +83,7 @@ namespace asharia::editor {
     [[nodiscard]] bool isEditorViewportSmokeMode(EditorRunMode mode);
     [[nodiscard]] bool isEditorViewportResizeSmokeMode(EditorRunMode mode);
     [[nodiscard]] bool isEditorFrameDebuggerSmokeMode(EditorRunMode mode);
+    [[nodiscard]] bool isEditorAssetBrowserSmokeMode(EditorRunMode mode);
     [[nodiscard]] int editorSmokeFrameCount(EditorRunMode mode);
 
     void requestSyntheticMultiViewSmoke(EditorRunMode mode,

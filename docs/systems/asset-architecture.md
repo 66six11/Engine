@@ -473,10 +473,14 @@ struct AssetLoadResult {
 - Asset Browser 消费 catalog view。
 - Inspector 修改 import settings 时生成 editor command，更新 `.ameta` 后触发 reimport request。
 - Editor UI 不直接修改 product cache；它只请求 import、展示状态和诊断。
-- 当前 Asset Browser shell 只使用 editor-local synthetic rows 和 `EditorAssetIconRegistry` 验证面板、菜单、dock
-  和 Lucide icon resolver 合同；它不是完整 catalog view，不扫描 source tree、不写 product cache、不触发 import。
-- #78 将该 shell 推进到 public `asset-core` catalog view model：editor 可消费排序稳定的 source/product
-  诊断 rows，但仍不从 panel 执行扫描、读取 manifest 文件、写 product cache 或触发 import。
+- 当前 Asset Browser shell 已通过 #76 / PR #77 落地面板、菜单、dock 和 Lucide icon resolver 合同。
+- #78 / PR #79 已将该 shell 推进到 public `asset-core` catalog view model：editor 可消费排序稳定的
+  source/product 诊断 rows，但仍不从 panel 执行扫描、读取 manifest 文件、写 product cache 或触发 import。
+- #80 正在补 editor-owned read-only project catalog snapshot service：它可组合 `project-core` descriptor、
+  `asset-pipeline` source scan / discovery / snapshot / import planning 和 `asset-core` catalog view；panel 仍只消费
+  snapshot/view facts，不拥有 watcher、hot reload、import execution、product writes、runtime loading 或 GPU upload。
+- #80 已新增 `EditorAssetCatalogStore`，Asset Browser 通过 panel draw context 消费当前 `AssetCatalogView`；无项目时使用
+  deterministic fixture，交互式运行可通过 `ASHARIA_EDITOR_PROJECT` 加载静态 project snapshot，smoke 仍固定走 fixture。
 
 ### Scripting
 
@@ -903,7 +907,7 @@ scan-to-planning bridge baseline 稳定。
 | --- | --- |
 | `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 importer、dependency invalidation 和调度策略。 |
 | `--smoke-mesh-resource` / `--smoke-texture-upload` | 等基础 `--smoke-buffer-upload` 和 deterministic product execution 之后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
-| Full Asset Browser / import settings UI | 第一版 shell/icon contract 已在 editor 层落地；#78 正在补 public catalog view model。import settings 编辑和 reimport request 仍等 `editor-core` transaction 和 catalog view 稳定。 |
+| Full Asset Browser / import settings UI | 第一版 shell/icon contract 和 public catalog view model 已落地；#80 正在补 read-only project catalog snapshot service 与 Asset Browser context 接线。import settings 编辑和 reimport request 仍等 editor command/transaction 与 catalog snapshot 稳定。 |
 | Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 
 不建议现在做：

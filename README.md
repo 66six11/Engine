@@ -82,12 +82,13 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --help
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --version
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 ```
 
-无参数启动会打开 Dear ImGui editor host；`--smoke-editor-*` 入口用于验证 editor shell、Scene View sampled texture、viewport overlay flags、overlay metadata roundtrip、RenderView diagnostics snapshot、Frame Debug capture/pause/resume state、只读 Render Graph panel snapshot consumption 和 resize/retirement flow。
+无参数启动会打开 Dear ImGui editor host；`--smoke-editor-*` 入口用于验证 editor shell、Asset Browser project catalog snapshot、Lucide/custom asset icon resolver、Scene View sampled texture、viewport overlay flags、overlay metadata roundtrip、RenderView diagnostics snapshot、Frame Debug capture/pause/resume state、只读 Render Graph panel snapshot consumption 和 resize/retirement flow。
 
 ## 仓库结构
 

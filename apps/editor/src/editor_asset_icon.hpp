@@ -41,6 +41,9 @@ namespace asharia::editor {
         std::string importerId;
         std::string extension;
         EditorAssetIconDiagnosticState diagnostic{EditorAssetIconDiagnosticState::None};
+        std::string sourcePath;
+        std::string displayName;
+        std::string guidText;
     };
 
     using EditorAssetIconResolver =
@@ -50,6 +53,9 @@ namespace asharia::editor {
     public:
         [[nodiscard]] asharia::VoidResult registerResolver(std::string id,
                                                            EditorAssetIconResolver resolver);
+        [[nodiscard]] asharia::VoidResult registerOrReplaceResolver(
+            std::string id, EditorAssetIconResolver resolver);
+        [[nodiscard]] bool unregisterResolver(std::string_view id);
         [[nodiscard]] EditorIconDescriptor resolveAssetIcon(
             const EditorAssetIconQuery& query) const;
         [[nodiscard]] std::size_t resolverCount() const noexcept;
@@ -63,7 +69,17 @@ namespace asharia::editor {
         std::vector<ResolverEntry> resolvers_;
     };
 
+    [[nodiscard]] EditorIconTint editorIconTint(float red, float green, float blue,
+                                                float alpha = 1.0F) noexcept;
+    [[nodiscard]] EditorIconDescriptor makeLucideEditorIconDescriptor(
+        std::string_view lucideName, EditorIconTint tint, std::string_view tooltipKey,
+        std::string_view tooltipFallback);
+    [[nodiscard]] std::string normalizeEditorAssetIconExtension(std::string_view extension);
+    [[nodiscard]] std::string normalizeEditorAssetIconToken(std::string_view value);
+
     void drawEditorIconGlyph(const EditorIconDescriptor& descriptor, float size);
+    [[nodiscard]] bool drawEditorIconButton(const EditorIconDescriptor& descriptor,
+                                            std::string_view stableId, float size);
 
     [[nodiscard]] bool validateEditorAssetIconSmoke();
 

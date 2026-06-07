@@ -5,6 +5,7 @@ namespace asharia::editor {
     enum class EditorRunMode {
         Interactive,
         SmokeShell,
+        SmokeAssetBrowser,
         SmokeViewport,
         SmokeViewportResize,
         SmokeFrameDebugger,

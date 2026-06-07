@@ -342,7 +342,7 @@ flowchart LR
 | package / target / manifest 依赖 | `package-first.md`、`flow.md` | `tools\check-doc-sync.ps1`、`git diff --check`、相关 CMake preset build |
 | RenderGraph pass/resource/transition | `flow.md`、`render-layer.md`、RenderGraph 系统文档 | `--smoke-rendergraph`、相关 renderer/RHI smoke、clangcl + msvc build |
 | Vulkan sync / swapchain / frame loop | `overview.md`、`flow.md`、`frame-loop-threading.md` | frame/swapchain/resize/deferred-deletion smoke、Vulkan review script |
-| editor shell / panel / action / viewport | `editor.md`、`editor-extension-architecture.md` | `--smoke-editor-shell`、viewport / frame-debugger smoke |
+| editor shell / panel / action / asset browser / viewport | `editor.md`、`editor-extension-architecture.md` | `--smoke-editor-shell`、`--smoke-editor-asset-browser`、viewport / frame-debugger smoke |
 | asset identity / product / hot reload | `docs/systems/asset-architecture.md` | package-local asset tests、metadata/product/dependency smoke |
 | schema / archive / persistence / migration | `docs/systems/reflection-serialization.md`、`naming.md` | serialization roundtrip、json archive、migration smoke |
 | script binding / editor script extension | `docs/systems/scripting.md`、`editor-ui-scripting.md` | permission、transaction、reload 和 diagnostics smoke |

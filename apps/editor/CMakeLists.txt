@@ -11,6 +11,9 @@ include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
+asharia_require_package_target(asharia::asset_core_io packages/asset-core)
+asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
+asharia_require_package_target(asharia::project_core_io packages/project-core)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
 asharia_require_package_target(asharia::shader_slang packages/shader-slang)
@@ -77,6 +80,8 @@ add_executable(asharia-editor
     src/editor_app_registration.cpp
     src/editor_app_run_completion.cpp
     src/editor_app_services.cpp
+    src/editor_asset_catalog.cpp
+    src/editor_asset_catalog_smoke.cpp
     src/editor_asset_icon.cpp
     src/editor_command.cpp
     src/editor_command_smoke.cpp
@@ -156,7 +161,10 @@ target_link_libraries(asharia-editor
     PRIVATE
         asharia::archive
         asharia::asset_core
+        asharia::asset_core_io
+        asharia::asset_pipeline
         asharia::core
+        asharia::project_core_io
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan
         asharia::window_glfw

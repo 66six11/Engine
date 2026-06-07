@@ -11,6 +11,7 @@
 
 #include "asharia/core/result.hpp"
 
+#include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
 #include "editor_id.hpp"
 #include "editor_render_graph_snapshot.hpp"
@@ -132,6 +133,8 @@ namespace asharia::editor {
     struct EditorAssetBrowserPanelDrawContext {
         const EditorFrameUiContext& ui;
         const EditorAssetIconRegistry& icons;
+        const asharia::asset::AssetCatalogView& catalogView;
+        std::span<const EditorAssetCatalogDiagnostic> catalogDiagnostics;
     };
 
     struct EditorPanelDrawContext;
@@ -145,6 +148,8 @@ namespace asharia::editor {
         EditorFrameRenderGraphContext renderGraph;
         EditorFrameViewportContext viewport;
         const EditorAssetIconRegistry& assetIcons;
+        const asharia::asset::AssetCatalogView& assetCatalogView;
+        std::span<const EditorAssetCatalogDiagnostic> assetCatalogDiagnostics;
     };
 
     class ImGuiEditorPanel {
