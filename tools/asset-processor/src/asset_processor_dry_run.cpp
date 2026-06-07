@@ -1,10 +1,8 @@
 ﻿#include "asset_processor_dry_run.hpp"
 
-#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <iterator>
 #include <optional>
 #include <ostream>
 #include <span>
@@ -18,39 +16,17 @@
 #include "asharia/asset_pipeline/asset_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
-#include "asharia/asset_pipeline/asset_source_discovery.hpp"
 #include "asharia/asset_pipeline/asset_source_scan.hpp"
-#include "asharia/asset_pipeline/asset_source_snapshot.hpp"
-#include "asharia/project/project_descriptor_io.hpp"
 
+#include "asset_processor_project_input.hpp"
 #include "asset_processor_text.hpp"
 
 namespace asharia::asset_processor {
     namespace {
 
-        constexpr std::string_view kDefaultMetadataSuffix = ".ameta";
-
         struct ManifestLoadResult {
             bool succeeded{};
             asharia::asset::AssetProductManifestDocument manifest;
-            std::string error;
-        };
-
-        struct DryRunSourceRoot {
-            std::string rootName;
-            std::filesystem::path sourceRoot;
-            std::string directory;
-            std::string sourcePathPrefix;
-        };
-
-        struct ResolvedDryRunInput {
-            bool succeeded{};
-            std::optional<std::filesystem::path> projectPath;
-            std::string projectName;
-            std::string projectId;
-            std::string assetCacheRoot;
-            std::vector<DryRunSourceRoot> sourceRoots;
-            std::vector<std::string> ignoredDirectoryNames;
             std::string error;
         };
 
@@ -132,6 +108,22 @@ namespace asharia::asset_processor {
                 return "DuplicateSourceSnapshot";
             case Code::InvalidProductManifest:
                 return "InvalidProductManifest";
+            case Code::MetadataSourceHashDrift:
+                return "MetadataSourceHashDrift";
+            }
+            return "Unknown";
+        }
+
+        [[nodiscard]] std::string
+        toText(asharia::asset::AssetImportPlanDiagnosticSeverity severity) {
+            using Severity = asharia::asset::AssetImportPlanDiagnosticSeverity;
+            switch (severity) {
+            case Severity::Info:
+                return "Info";
+            case Severity::Warning:
+                return "Warning";
+            case Severity::Error:
+                return "Error";
             }
             return "Unknown";
         }
@@ -155,79 +147,6 @@ namespace asharia::asset_processor {
                 return "TargetProfileChanged";
             }
             return "Unknown";
-        }
-
-        [[nodiscard]] std::filesystem::path
-        projectRootFromPath(const std::filesystem::path& projectPath) {
-            const std::filesystem::path parent = projectPath.parent_path();
-            return parent.empty() ? std::filesystem::path{"."} : parent;
-        }
-
-        [[nodiscard]] ResolvedDryRunInput resolveDryRunInput(const DryRunOptions& options) {
-            if (!options.projectPath) {
-                return ResolvedDryRunInput{
-                    .succeeded = true,
-                    .projectPath = std::nullopt,
-                    .projectName = {},
-                    .projectId = {},
-                    .assetCacheRoot = {},
-                    .sourceRoots =
-                        {
-                            DryRunSourceRoot{
-                                .rootName = "explicit",
-                                .sourceRoot = options.sourceRoot,
-                                .directory = {},
-                                .sourcePathPrefix = options.sourcePathPrefix,
-                            },
-                        },
-                    .ignoredDirectoryNames = options.ignoredDirectoryNames,
-                    .error = {},
-                };
-            }
-
-            auto descriptor =
-                asharia::project::readAshariaProjectDescriptorFile(*options.projectPath);
-            if (!descriptor) {
-                return ResolvedDryRunInput{
-                    .succeeded = false,
-                    .projectPath = options.projectPath,
-                    .projectName = {},
-                    .projectId = {},
-                    .assetCacheRoot = {},
-                    .sourceRoots = {},
-                    .ignoredDirectoryNames = {},
-                    .error = descriptor.error().message,
-                };
-            }
-
-            const std::filesystem::path projectRoot = projectRootFromPath(*options.projectPath);
-            std::vector<DryRunSourceRoot> sourceRoots;
-            sourceRoots.reserve(descriptor->assetSourceRoots.size());
-            for (const asharia::project::AssetSourceRootDesc& root : descriptor->assetSourceRoots) {
-                sourceRoots.push_back(DryRunSourceRoot{
-                    .rootName = root.rootName,
-                    .sourceRoot = projectRoot / std::filesystem::path{root.directory},
-                    .directory = root.directory,
-                    .sourcePathPrefix = root.sourcePathPrefix,
-                });
-            }
-
-            std::vector<std::string> ignoredDirectoryNames =
-                descriptor->assetDiscovery.ignoredDirectoryNames;
-            ignoredDirectoryNames.insert(ignoredDirectoryNames.end(),
-                                         options.ignoredDirectoryNames.begin(),
-                                         options.ignoredDirectoryNames.end());
-
-            return ResolvedDryRunInput{
-                .succeeded = true,
-                .projectPath = options.projectPath,
-                .projectName = descriptor->projectName,
-                .projectId = asharia::project::formatProjectId(descriptor->projectId),
-                .assetCacheRoot = descriptor->assetCacheRoot,
-                .sourceRoots = std::move(sourceRoots),
-                .ignoredDirectoryNames = std::move(ignoredDirectoryNames),
-                .error = {},
-            };
         }
 
         [[nodiscard]] ManifestLoadResult
@@ -258,9 +177,9 @@ namespace asharia::asset_processor {
         }
 
         void appendSourceRoots(std::ostream& output,
-                               std::span<const DryRunSourceRoot> sourceRoots) {
+                               std::span<const AssetProcessorSourceRoot> sourceRoots) {
             output << "sourceRoots=" << sourceRoots.size() << '\n';
-            for (const DryRunSourceRoot& root : sourceRoots) {
+            for (const AssetProcessorSourceRoot& root : sourceRoots) {
                 output << "source-root"
                        << " rootName=" << quoteText(root.rootName)
                        << " sourceRoot=" << quotePath(root.sourceRoot);
@@ -321,6 +240,7 @@ namespace asharia::asset_processor {
                                    const asharia::asset::AssetImportPlanResult& plan) {
             for (const asharia::asset::AssetImportPlanDiagnostic& diagnostic : plan.diagnostics) {
                 output << "diagnostic stage=planning"
+                       << " severity=" << toText(diagnostic.severity)
                        << " code=" << toText(diagnostic.code)
                        << " source=" << quoteText(diagnostic.sourcePath)
                        << " message=" << quoteText(diagnostic.message) << '\n';
@@ -357,95 +277,6 @@ namespace asharia::asset_processor {
             }
         }
 
-        [[nodiscard]] std::vector<asharia::asset::AssetSourceDiscoveryEntry>
-        makeDiscoveryEntries(std::span<const asharia::asset::AssetSourceScanEntry> scanEntries) {
-            std::vector<asharia::asset::AssetSourceDiscoveryEntry> discoveryEntries;
-            discoveryEntries.reserve(scanEntries.size());
-
-            for (const asharia::asset::AssetSourceScanEntry& entry : scanEntries) {
-                discoveryEntries.push_back(asharia::asset::AssetSourceDiscoveryEntry{
-                    .sourcePath = entry.sourcePath,
-                    .metadataPath = entry.metadataPath,
-                });
-            }
-
-            return discoveryEntries;
-        }
-
-        [[nodiscard]] std::vector<asharia::asset::AssetSourceSnapshotEntry>
-        makeSnapshotEntries(std::span<const asharia::asset::AssetSourceScanEntry> scanEntries) {
-            std::vector<asharia::asset::AssetSourceSnapshotEntry> snapshotEntries;
-            snapshotEntries.reserve(scanEntries.size());
-
-            for (const asharia::asset::AssetSourceScanEntry& entry : scanEntries) {
-                snapshotEntries.push_back(asharia::asset::AssetSourceSnapshotEntry{
-                    .sourcePath = entry.sourcePath,
-                    .sourceFilePath = entry.sourceFilePath,
-                });
-            }
-
-            return snapshotEntries;
-        }
-
-        [[nodiscard]] asharia::asset::AssetSourceScanResult
-        scanResolvedAssetSourceRoots(const ResolvedDryRunInput& input) {
-            asharia::asset::AssetSourceScanResult combined;
-            for (const DryRunSourceRoot& root : input.sourceRoots) {
-                asharia::asset::AssetSourceScanResult rootScan =
-                    asharia::asset::scanAssetSourceTree(asharia::asset::AssetSourceScanRequest{
-                        .sourceRoot = root.sourceRoot,
-                        .sourcePathPrefix = root.sourcePathPrefix,
-                        .metadataSuffix = std::string{kDefaultMetadataSuffix},
-                        .ignoredDirectoryNames = input.ignoredDirectoryNames,
-                    });
-
-                combined.entries.insert(combined.entries.end(),
-                                        std::make_move_iterator(rootScan.entries.begin()),
-                                        std::make_move_iterator(rootScan.entries.end()));
-                combined.diagnostics.insert(combined.diagnostics.end(),
-                                            std::make_move_iterator(rootScan.diagnostics.begin()),
-                                            std::make_move_iterator(rootScan.diagnostics.end()));
-            }
-
-            std::ranges::sort(combined.entries,
-                              [](const asharia::asset::AssetSourceScanEntry& left,
-                                 const asharia::asset::AssetSourceScanEntry& right) {
-                                  return left.sourcePath < right.sourcePath;
-                              });
-            return combined;
-        }
-
-        [[nodiscard]] asharia::asset::AssetScannedImportPlanResult
-        planResolvedAssetImports(const ResolvedDryRunInput& input,
-                                 asharia::asset::AssetProductManifestDocument productManifest,
-                                 std::string_view targetProfile) {
-            asharia::asset::AssetScannedImportPlanResult result;
-
-            result.scan = scanResolvedAssetSourceRoots(input);
-            if (!result.scan.succeeded()) {
-                return result;
-            }
-
-            const std::vector<asharia::asset::AssetSourceDiscoveryEntry> discoveryEntries =
-                makeDiscoveryEntries(result.scan.entries);
-            result.discovery = asharia::asset::discoverAssetSources(discoveryEntries);
-            if (!result.discovery.succeeded()) {
-                return result;
-            }
-
-            const std::vector<asharia::asset::AssetSourceSnapshotEntry> snapshotEntries =
-                makeSnapshotEntries(result.scan.entries);
-            result.snapshot = asharia::asset::snapshotAssetSourceFiles(snapshotEntries);
-            if (!result.snapshot.succeeded()) {
-                return result;
-            }
-
-            result.plan = asharia::asset::planAssetImports(result.discovery.manifest.records,
-                                                           result.snapshot.snapshots,
-                                                           productManifest, targetProfile);
-            return result;
-        }
-
     } // namespace
 
     DryRunExecution runDryRun(const DryRunOptions& options) {
@@ -463,7 +294,13 @@ namespace asharia::asset_processor {
                                                : quoteText("<empty>"))
                << '\n';
 
-        const ResolvedDryRunInput input = resolveDryRunInput(options);
+        const AssetProcessorResolvedInput input =
+            resolveAssetProcessorInput(AssetProcessorInputOptions{
+                .projectPath = options.projectPath,
+                .sourceRoot = options.sourceRoot,
+                .sourcePathPrefix = options.sourcePathPrefix,
+                .ignoredDirectoryNames = options.ignoredDirectoryNames,
+            });
         if (!input.succeeded) {
             output << "diagnostic stage=project"
                    << " code=ReadFailed"
@@ -494,7 +331,7 @@ namespace asharia::asset_processor {
         }
 
         const asharia::asset::AssetScannedImportPlanResult result =
-            planResolvedAssetImports(input, std::move(manifest.manifest), options.targetProfile);
+            planAssetProcessorImports(input, manifest.manifest, options.targetProfile);
 
         output << "scan entries=" << result.scan.entries.size()
                << " diagnostics=" << result.scan.diagnostics.size() << '\n'

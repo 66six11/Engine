@@ -310,6 +310,10 @@ editor workspace：
   `asset-pipeline` discovery。
 - `sourceHash` 和 `settingsHash` 在当前 v1 IO facade 中使用 16 位小写十六进制 `uint64` 文本；完整
   SHA-256 或平台化 content hash 等后续 asset-pipeline 再扩。
+- Editor/catalog snapshots must treat the current `asset-pipeline` source snapshot hash as the
+  authority for active product-key comparison. The `.ameta` `sourceHash` is the metadata file's
+  recorded source hash; it must not make a changed source look Ready after planning has produced a
+  newer snapshot hash.
 - `settings` v1 只接受 string key/value，并按文件顺序计算 deterministic settings hash；typed import
   settings 留给后续 editor/importer settings schema。
 - `sourceHash`、`settingsHash` 和 `importer.version` 共同影响 product key。
@@ -357,6 +361,10 @@ Cache 规则：
 - 未来用户项目可使用 `.asharia/cache/` 或 project-local library 目录；该目录不提交。
 - Product path 由 product key 派生，避免同名 source 文件冲突。
 - Cache miss 可以重新 import；cache hit 必须仍校验 product key 和 product hash。
+- Catalog/browser `Ready` state must compare the active view's expected full product key, including
+  dependency hash and target profile hash, when that expected key is available. A manifest product
+  with the same GUID/source/settings but a different dependency hash or target profile is stale for
+  the active view.
 - Product record 可写入 generated manifest，不能替代 source `.ameta`。
 - Product manifest v1 属于 `asset-pipeline` IO 边界，记录 `schema`、`schemaVersion` 和 `products`。
   每个 product 记录保存 GUID、asset type id、importer id/version、source/settings/dependency/target
@@ -482,6 +490,32 @@ struct AssetLoadResult {
 - #80 已新增 `EditorAssetCatalogStore`，Asset Browser 通过 panel draw context 消费当前 `AssetCatalogView`；无项目时使用
   deterministic fixture，交互式运行可通过 `ASHARIA_EDITOR_PROJECT` 加载静态 project snapshot；普通 editor smoke 仍走
   fixture，`--smoke-editor-asset-browser` 会加载临时 snapshot-backed project catalog 来验证启动到 panel context 的路由。
+- #81 推进 texture import profile classification：`.png`、`.jpg`、`.hdr`、`.exr` 等仍只是 source file
+  format，不能直接等同于 `Texture2D`。`.ameta` / importer settings 通过 `texture.profile` 描述 asset
+  semantic，当前 catalog-facing canonical profiles 为 `texture2d`、`sprite-sheet`、`texture-cube` 和
+  `skybox`；未知 profile 必须作为 source-metadata diagnostic 显示，而不是静默降级为 Texture2D。
+- Texture profile interpretation lives in `asset-pipeline` as a source/import metadata adapter. `asset-core`
+  keeps only the generic `AssetCatalogSourceFacet` view extension model and must not depend on texture importer
+  constants or profile names.
+- Sprite sheet 在当前切片只暴露稳定 sub-asset id、display name 和 role，供 Asset Browser filter/detail/icon
+  resolver 使用；rect、pivot、packing、atlas bake、GPU upload、preview texture、IBL bake 和 Import Settings 编辑仍由后续
+  importer/resource/runtime/editor command 切片承接。
+- Sprite sheet sub-asset stable id must be unique within one source asset. Duplicate ids are reported as
+  source-metadata warnings and skipped from the catalog-facing sub-asset list so future single-sprite
+  references and icon/filter overrides are not ambiguous.
+- #83 收紧 editor-facing catalog product state：Asset Browser 的 `Ready` 不再由 raw manifest 中“同
+  GUID/source/settings”的 product 推断，而是由 active import plan 产生的 expected full product key 与 manifest
+  product key 完整匹配决定。官方方向对齐
+  [Unity AssetDatabase](https://docs.unity3d.com/Manual/AssetDatabase.html) artifact dependencies、
+  [Godot import process](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html) 和
+  [Unreal Derived Data Cache](https://dev.epicgames.com/documentation/en-us/unreal-engine/using-derived-data-cache-in-unreal-engine)：
+  import/cook output 是带 source、settings、dependencies 和 target/platform context 的可再生成 derived data，而不是单靠
+  source extension 或 GUID 即可确认的新鲜资源。
+- #84 明确 `.ameta` `sourceHash` 在 v1 里只是 metadata-side recorded source information，active import
+  planning 以当前 `AssetSourceSnapshot` hash 作为 product key freshness authority。若两者不同，pipeline 产生
+  non-blocking warning diagnostic，editor 和 asset-processor 可展示漂移；这不阻止 planning/execution 使用当前 snapshot
+  hash 生成 request/product key。字段改名为 `lastImportedSourceHash` / `lastObservedSourceHash` 或移出 `.ameta`
+  属于后续 schema migration slice。
 
 ### Scripting
 

@@ -18,6 +18,7 @@
 #include "asharia/asset_pipeline/asset_source_discovery.hpp"
 #include "asharia/asset_pipeline/asset_source_scan.hpp"
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
+#include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 
 namespace {
 
@@ -114,6 +115,155 @@ namespace {
             .source = std::move(document.source),
             .settings = std::move(document.settings),
         };
+    }
+
+    [[nodiscard]] asharia::asset::SourceAssetRecord
+    makeTextureProfileSmokeRecord(std::string_view guidText, std::string_view sourcePath) {
+        auto guid = asharia::asset::parseAssetGuid(guidText);
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture";
+        constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
+        return asharia::asset::SourceAssetRecord{
+            .guid = guid ? *guid : asharia::asset::AssetGuid{},
+            .assetType = asharia::asset::makeAssetTypeId(kTextureTypeName),
+            .assetTypeName = std::string{kTextureTypeName},
+            .sourcePath = std::string{sourcePath},
+            .importerId = asharia::asset::makeImporterId(kTextureImporterName),
+            .importerName = std::string{kTextureImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = 0x9000ULL,
+            .settingsHash = 0xA000ULL,
+        };
+    }
+
+    [[nodiscard]] bool smokeTextureImportProfiles() {
+        const asharia::asset::SourceAssetRecord texture2d = makeTextureProfileSmokeRecord(
+            "cd9c0f3d-20e2-4028-a3e9-c3f42d3fd515", "Content/Textures/Albedo.png");
+        const asharia::asset::SourceAssetRecord spriteSheet = makeTextureProfileSmokeRecord(
+            "8d660642-764b-4403-88f2-0853208e098c", "Content/Sprites/Hero.png");
+        const asharia::asset::SourceAssetRecord textureCube = makeTextureProfileSmokeRecord(
+            "d15d28a5-c3cf-4876-a9c1-09220d516c53", "Content/Textures/SkyCube.ktx2");
+        const asharia::asset::SourceAssetRecord skybox = makeTextureProfileSmokeRecord(
+            "a72082bc-26e3-47df-b17d-337626633212", "Content/Textures/Sunset.exr");
+        const asharia::asset::SourceAssetRecord unknown = makeTextureProfileSmokeRecord(
+            "f99ea6e7-1623-48d2-bb9e-a33703373de2", "Content/Textures/Mystery.png");
+
+        const std::array texture2dSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = "Texture 2D"},
+        };
+        const std::array spriteSheetSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = std::string{asharia::asset::kTextureImportProfileSpriteSheet}},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.0.id",
+                                               .value = "hero-idle-0"},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.0.name",
+                                               .value = "Hero Idle 0"},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.1.id",
+                                               .value = "hero-idle-1"},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.2.id",
+                                               .value = "hero-idle-1"},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.2.name",
+                                               .value = "Duplicate Hero Idle 1"},
+        };
+        const std::array textureCubeSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = "cubemap"},
+        };
+        const std::array skyboxSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = "SkyBox"},
+        };
+        const std::array unknownSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = "array-texture"},
+        };
+
+        const asharia::asset::AssetCatalogSourceFacet texture2dFacet =
+            asharia::asset::makeTextureImportCatalogSourceFacet(texture2d, texture2dSettings);
+        const asharia::asset::AssetCatalogSourceFacet spriteSheetFacet =
+            asharia::asset::makeTextureImportCatalogSourceFacet(spriteSheet, spriteSheetSettings);
+        const asharia::asset::AssetCatalogSourceFacet textureCubeFacet =
+            asharia::asset::makeTextureImportCatalogSourceFacet(textureCube, textureCubeSettings);
+        const asharia::asset::AssetCatalogSourceFacet skyboxFacet =
+            asharia::asset::makeTextureImportCatalogSourceFacet(skybox, skyboxSettings);
+        const asharia::asset::AssetCatalogSourceFacet unknownFacet =
+            asharia::asset::makeTextureImportCatalogSourceFacet(unknown, unknownSettings);
+
+        if (asharia::asset::normalizeTextureImportProfileName("sprite_sheet") !=
+                asharia::asset::kTextureImportProfileSpriteSheet ||
+            asharia::asset::normalizeTextureImportProfileName("TextureCube") !=
+                asharia::asset::kTextureImportProfileTextureCube ||
+            asharia::asset::normalizeTextureImportProfileName(" array texture ") !=
+                "array texture") {
+            logFailure("Texture import profile smoke saw unstable profile normalization.");
+            return false;
+        }
+
+        if (texture2dFacet.importProfileName != asharia::asset::kTextureImportProfileTexture2D ||
+            texture2dFacet.assetRoleName != asharia::asset::kTextureRoleTexture2D ||
+            !texture2dFacet.subAssets.empty() || !texture2dFacet.diagnostics.empty()) {
+            logFailure("Texture import profile smoke rejected Texture2D metadata.");
+            return false;
+        }
+
+        if (spriteSheetFacet.importProfileName !=
+                asharia::asset::kTextureImportProfileSpriteSheet ||
+            spriteSheetFacet.assetRoleName != asharia::asset::kTextureRoleSpriteSheet ||
+            spriteSheetFacet.subAssets.size() != 2U ||
+            spriteSheetFacet.subAssets[0].stableId != "hero-idle-0" ||
+            spriteSheetFacet.subAssets[0].displayName != "Hero Idle 0" ||
+            spriteSheetFacet.subAssets[1].stableId != "hero-idle-1" ||
+            spriteSheetFacet.subAssets[1].displayName != "hero-idle-1" ||
+            spriteSheetFacet.diagnostics.size() != 1U ||
+            spriteSheetFacet.diagnostics[0].code !=
+                asharia::asset::AssetCatalogDiagnosticCode::SourceMetadata ||
+            spriteSheetFacet.diagnostics[0].message.find("duplicate stable id") ==
+                std::string::npos) {
+            logFailure("Texture import profile smoke rejected SpriteSheet sub-assets.");
+            return false;
+        }
+
+        if (textureCubeFacet.importProfileName !=
+                asharia::asset::kTextureImportProfileTextureCube ||
+            textureCubeFacet.assetRoleName != asharia::asset::kTextureRoleTextureCube ||
+            skyboxFacet.importProfileName != asharia::asset::kTextureImportProfileSkybox ||
+            skyboxFacet.assetRoleName != asharia::asset::kTextureRoleSkybox) {
+            logFailure("Texture import profile smoke rejected cube or skybox metadata.");
+            return false;
+        }
+
+        if (unknownFacet.importProfileName != "array-texture" ||
+            unknownFacet.assetRoleName != "unknown" || unknownFacet.diagnostics.size() != 1U ||
+            unknownFacet.diagnostics[0].code !=
+                asharia::asset::AssetCatalogDiagnosticCode::SourceMetadata) {
+            logFailure("Texture import profile smoke missed unknown profile diagnostic.");
+            return false;
+        }
+
+        asharia::asset::AssetCatalog catalog;
+        if (!catalog.addSource(unknown)) {
+            logFailure("Texture import profile smoke failed to build catalog.");
+            return false;
+        }
+        const std::array facets{unknownFacet};
+        const asharia::asset::AssetCatalogView view = asharia::asset::buildAssetCatalogView(
+            catalog, {}, asharia::asset::AssetCatalogViewOptions{.sourceFacets = facets});
+        if (view.entries.size() != 1U || view.entries[0].assetRoleName != "unknown" ||
+            view.entries[0].diagnostics.size() != 1U ||
+            asharia::asset::assetCatalogDiagnosticCodeName(view.entries[0].diagnostics[0].code) !=
+                "source-metadata") {
+            logFailure("Texture import profile smoke missed catalog-visible diagnostics.");
+            return false;
+        }
+
+        std::cout << "Texture import profile sub-assets: " << spriteSheetFacet.subAssets.size()
+                  << '\n';
+        return true;
     }
 
     [[nodiscard]] bool writeDocument(const std::filesystem::path& path,
@@ -468,6 +618,22 @@ namespace {
         return false;
     }
 
+    [[nodiscard]] bool
+    expectPlanDiagnosticSeverity(const asharia::asset::AssetImportPlanResult& result,
+                                 asharia::asset::AssetImportPlanDiagnosticCode expectedCode,
+                                 asharia::asset::AssetImportPlanDiagnosticSeverity expectedSeverity,
+                                 std::string_view expectedToken) {
+        for (const asharia::asset::AssetImportPlanDiagnostic& diagnostic : result.diagnostics) {
+            if (diagnostic.code == expectedCode && diagnostic.severity == expectedSeverity &&
+                messageContains(diagnostic.message, expectedToken)) {
+                return true;
+            }
+        }
+
+        logFailure("Asset import planning smoke did not find the expected diagnostic severity.");
+        return false;
+    }
+
     [[nodiscard]] bool smokeImportPlanningCacheHitAndMiss() {
         const auto crate =
             makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
@@ -530,6 +696,33 @@ namespace {
                 asharia::asset::AssetImportRequestReason::SourceChanged ||
             plan.requests.front().source.sourceHash != changedSnapshot.sourceHash) {
             logFailure("Asset import planning smoke missed a source hash change.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeImportPlanningMetadataSourceHashDriftWarning() {
+        const auto source =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL);
+        const auto currentSnapshot =
+            makeSourceSnapshot(source.source.sourcePath, 0x2000F00D1234CAFEULL);
+        const std::array sources{source};
+        const std::array snapshots{currentSnapshot};
+        const asharia::asset::AssetImportPlanResult plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug");
+
+        if (!plan.succeeded() || plan.requests.size() != 1U ||
+            plan.requests.front().source.sourceHash != currentSnapshot.sourceHash ||
+            plan.requests.front().productKey.sourceHash != currentSnapshot.sourceHash ||
+            plan.diagnostics.size() != 1U ||
+            !expectPlanDiagnosticSeverity(
+                plan, asharia::asset::AssetImportPlanDiagnosticCode::MetadataSourceHashDrift,
+                asharia::asset::AssetImportPlanDiagnosticSeverity::Warning,
+                "current snapshot hash")) {
+            logFailure("Asset import planning smoke missed metadata sourceHash drift warning.");
             return false;
         }
 
@@ -1622,9 +1815,10 @@ int main() {
         smokeScannedImportPlanningPlanDiagnostics() &&
         smokeProductExecutionWritesDeterministicProducts() &&
         smokeProductExecutionSourceBytesHashMismatch() && smokeImportPlanningCacheHitAndMiss() &&
-        smokeImportPlanningSourceChanged() && smokeImportPlanningSettingsChanged() &&
-        smokeImportPlanningMissingSnapshot() && smokeImportPlanningDuplicateSource() &&
-        smokeImportPlanningDuplicateSnapshot() && smokeImportPlanningInvalidTargetProfile() &&
+        smokeImportPlanningSourceChanged() && smokeImportPlanningMetadataSourceHashDriftWarning() &&
+        smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&
+        smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
+        smokeImportPlanningInvalidTargetProfile() && smokeTextureImportProfiles() &&
         smokeProductManifestRoundTrip() && smokeProductManifestMalformedInput() &&
         smokeProductManifestDuplicateField() && smokeProductManifestMissingField() &&
         smokeProductManifestUnknownField() && smokeProductManifestDuplicateProductKey() &&

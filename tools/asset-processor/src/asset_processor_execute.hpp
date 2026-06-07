@@ -15,6 +15,7 @@ namespace asharia::asset_processor {
         std::optional<std::filesystem::path> productManifestPath;
         std::filesystem::path productManifestOutputPath;
         std::vector<std::string> ignoredDirectoryNames;
+        std::optional<std::filesystem::path> projectPath;
     };
 
     struct ProductExecution {

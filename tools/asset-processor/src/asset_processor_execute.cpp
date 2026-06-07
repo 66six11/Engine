@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <ostream>
 #include <span>
 #include <sstream>
@@ -21,16 +22,24 @@
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_source_scan.hpp"
 
+#include "asset_processor_project_input.hpp"
 #include "asset_processor_text.hpp"
 
 namespace asharia::asset_processor {
     namespace {
 
-        constexpr std::string_view kDefaultMetadataSuffix = ".ameta";
-
         struct ManifestLoadResult {
             bool succeeded{};
             asharia::asset::AssetProductManifestDocument manifest;
+            std::string error;
+        };
+
+        struct ProductExecutionInput {
+            bool succeeded{};
+            AssetProcessorResolvedInput sources;
+            std::filesystem::path outputRoot;
+            std::optional<std::filesystem::path> productManifestPath;
+            std::filesystem::path productManifestOutputPath;
             std::string error;
         };
 
@@ -112,6 +121,22 @@ namespace asharia::asset_processor {
                 return "DuplicateSourceSnapshot";
             case Code::InvalidProductManifest:
                 return "InvalidProductManifest";
+            case Code::MetadataSourceHashDrift:
+                return "MetadataSourceHashDrift";
+            }
+            return "Unknown";
+        }
+
+        [[nodiscard]] std::string
+        toText(asharia::asset::AssetImportPlanDiagnosticSeverity severity) {
+            using Severity = asharia::asset::AssetImportPlanDiagnosticSeverity;
+            switch (severity) {
+            case Severity::Info:
+                return "Info";
+            case Severity::Warning:
+                return "Warning";
+            case Severity::Error:
+                return "Error";
             }
             return "Unknown";
         }
@@ -284,6 +309,7 @@ namespace asharia::asset_processor {
                                    const asharia::asset::AssetImportPlanResult& plan) {
             for (const asharia::asset::AssetImportPlanDiagnostic& diagnostic : plan.diagnostics) {
                 output << "diagnostic stage=planning"
+                       << " severity=" << toText(diagnostic.severity)
                        << " code=" << toText(diagnostic.code)
                        << " source=" << quoteText(diagnostic.sourcePath)
                        << " message=" << quoteText(diagnostic.message) << '\n';
@@ -304,31 +330,153 @@ namespace asharia::asset_processor {
         }
 
         [[nodiscard]] std::filesystem::path
-        defaultManifestOutputPath(const ProductExecutionOptions& options) {
+        projectManifestOutputPath(const std::filesystem::path& outputRoot) {
+            const std::filesystem::path parent = outputRoot.parent_path();
+            if (parent.empty()) {
+                return std::filesystem::path{"products.aproducts.json"};
+            }
+            return parent / "products.aproducts.json";
+        }
+
+        [[nodiscard]] std::filesystem::path
+        defaultManifestOutputPath(const ProductExecutionOptions& options,
+                                  const AssetProcessorResolvedInput& input,
+                                  const std::filesystem::path& outputRoot) {
             if (!options.productManifestOutputPath.empty()) {
                 return options.productManifestOutputPath;
             }
-            return options.outputRoot / "product-manifest.json";
+            if (input.projectPath) {
+                return projectManifestOutputPath(outputRoot);
+            }
+            return outputRoot / "product-manifest.json";
+        }
+
+        [[nodiscard]] std::optional<std::filesystem::path>
+        defaultExistingProjectManifestPath(
+            const ProductExecutionOptions& options,
+            const std::filesystem::path& productManifestOutputPath) {
+            if (options.productManifestPath) {
+                return options.productManifestPath;
+            }
+            if (!options.projectPath) {
+                return std::nullopt;
+            }
+
+            std::error_code existsError;
+            if (std::filesystem::exists(productManifestOutputPath, existsError) &&
+                !existsError) {
+                return productManifestOutputPath;
+            }
+            return std::nullopt;
+        }
+
+        [[nodiscard]] std::filesystem::path
+        defaultProjectOutputRoot(const AssetProcessorResolvedInput& input) {
+            return input.projectRoot / std::filesystem::path{input.assetCacheRoot};
+        }
+
+        [[nodiscard]] ProductExecutionInput
+        resolveProductExecutionInput(const ProductExecutionOptions& options) {
+            AssetProcessorResolvedInput sources =
+                resolveAssetProcessorInput(AssetProcessorInputOptions{
+                    .projectPath = options.projectPath,
+                    .sourceRoot = options.sourceRoot,
+                    .sourcePathPrefix = options.sourcePathPrefix,
+                    .ignoredDirectoryNames = options.ignoredDirectoryNames,
+                });
+            if (!sources.succeeded) {
+                const std::string error = sources.error;
+                return ProductExecutionInput{
+                    .succeeded = false,
+                    .sources = std::move(sources),
+                    .outputRoot = {},
+                    .productManifestPath = std::nullopt,
+                    .productManifestOutputPath = {},
+                    .error = error,
+                };
+            }
+
+            std::filesystem::path outputRoot = options.outputRoot;
+            if (outputRoot.empty() && sources.projectPath) {
+                outputRoot = defaultProjectOutputRoot(sources);
+            }
+
+            const std::filesystem::path productManifestOutputPath =
+                defaultManifestOutputPath(options, sources, outputRoot);
+            return ProductExecutionInput{
+                .succeeded = true,
+                .sources = std::move(sources),
+                .outputRoot = outputRoot,
+                .productManifestPath =
+                    defaultExistingProjectManifestPath(options, productManifestOutputPath),
+                .productManifestOutputPath = productManifestOutputPath,
+                .error = {},
+            };
+        }
+
+        void appendIgnoredDirectories(std::ostream& output,
+                                      std::span<const std::string> ignoredDirectoryNames) {
+            output << "ignoredDirectories=" << ignoredDirectoryNames.size();
+            for (const std::string& ignoredDirectoryName : ignoredDirectoryNames) {
+                output << " " << quoteText(ignoredDirectoryName);
+            }
+            output << '\n';
+        }
+
+        void appendSourceRoots(std::ostream& output,
+                               std::span<const AssetProcessorSourceRoot> sourceRoots) {
+            output << "sourceRoots=" << sourceRoots.size() << '\n';
+            for (const AssetProcessorSourceRoot& root : sourceRoots) {
+                output << "source-root"
+                       << " rootName=" << quoteText(root.rootName)
+                       << " sourceRoot=" << quotePath(root.sourceRoot);
+                if (!root.directory.empty()) {
+                    output << " directory=" << quoteText(root.directory);
+                }
+                output << " sourcePathPrefix=" << quoteText(root.sourcePathPrefix) << '\n';
+            }
         }
 
     } // namespace
 
     ProductExecution runProductExecution(const ProductExecutionOptions& options) {
         std::ostringstream output;
-        const std::filesystem::path manifestOutputPath = defaultManifestOutputPath(options);
+        const ProductExecutionInput input = resolveProductExecutionInput(options);
 
-        output << "asset-processor execute\n"
-               << "sourceRoot=" << quotePath(options.sourceRoot) << '\n'
-               << "sourcePathPrefix=" << quoteText(options.sourcePathPrefix) << '\n'
-               << "targetProfile=" << quoteText(options.targetProfile) << '\n'
+        output << "asset-processor execute\n";
+        if (options.projectPath) {
+            output << "projectPath=" << quotePath(*options.projectPath) << '\n';
+        } else {
+            output << "sourceRoot=" << quotePath(options.sourceRoot) << '\n'
+                   << "sourcePathPrefix=" << quoteText(options.sourcePathPrefix) << '\n';
+        }
+        output << "targetProfile=" << quoteText(options.targetProfile) << '\n'
                << "productManifest="
-               << (options.productManifestPath ? quotePath(*options.productManifestPath)
-                                               : quoteText("<empty>"))
+               << (input.productManifestPath ? quotePath(*input.productManifestPath)
+                                             : quoteText("<empty>"))
                << '\n'
-               << "outputRoot=" << quotePath(options.outputRoot) << '\n'
-               << "manifestOutput=" << quotePath(manifestOutputPath) << '\n';
+               << "outputRoot=" << quotePath(input.outputRoot) << '\n'
+               << "manifestOutput=" << quotePath(input.productManifestOutputPath) << '\n';
 
-        ManifestLoadResult manifest = loadProductManifest(options.productManifestPath);
+        if (!input.succeeded) {
+            output << "diagnostic stage=project"
+                   << " code=ReadFailed"
+                   << " message=" << quoteText(input.error) << '\n';
+            return ProductExecution{
+                .exitCode = EXIT_FAILURE,
+                .text = output.str(),
+            };
+        }
+
+        if (input.sources.projectPath) {
+            output << "projectName=" << quoteText(input.sources.projectName) << '\n'
+                   << "projectId=" << quoteText(input.sources.projectId) << '\n'
+                   << "assetCacheRoot=" << quoteText(input.sources.assetCacheRoot) << '\n';
+        }
+        appendIgnoredDirectories(output, input.sources.ignoredDirectoryNames);
+        appendSourceRoots(output, input.sources.sourceRoots);
+
+        ManifestLoadResult manifest = loadProductManifest(input.productManifestPath);
         if (!manifest.succeeded) {
             output << "diagnostic stage=product-manifest"
                    << " code=ReadFailed"
@@ -340,17 +488,7 @@ namespace asharia::asset_processor {
         }
 
         asharia::asset::AssetScannedImportPlanResult plan =
-            asharia::asset::planScannedAssetImports(asharia::asset::AssetScannedImportPlanRequest{
-                .scan =
-                    asharia::asset::AssetSourceScanRequest{
-                        .sourceRoot = options.sourceRoot,
-                        .sourcePathPrefix = options.sourcePathPrefix,
-                        .metadataSuffix = std::string{kDefaultMetadataSuffix},
-                        .ignoredDirectoryNames = options.ignoredDirectoryNames,
-                    },
-                .productManifest = manifest.manifest,
-                .targetProfile = options.targetProfile,
-            });
+            planAssetProcessorImports(input.sources, manifest.manifest, options.targetProfile);
 
         output << "scan entries=" << plan.scan.entries.size()
                << " diagnostics=" << plan.scan.diagnostics.size() << '\n'
@@ -362,11 +500,11 @@ namespace asharia::asset_processor {
                << " cacheHits=" << plan.plan.cacheHits.size()
                << " diagnostics=" << plan.plan.diagnostics.size() << '\n';
 
+        appendPlanDiagnostics(output, plan.plan);
         if (!plan.succeeded()) {
             appendScanDiagnostics(output, plan.scan);
             appendDiscoveryDiagnostics(output, plan.discovery);
             appendSnapshotDiagnostics(output, plan.snapshot);
-            appendPlanDiagnostics(output, plan.plan);
             return ProductExecution{
                 .exitCode = EXIT_FAILURE,
                 .text = output.str(),
@@ -387,8 +525,8 @@ namespace asharia::asset_processor {
                 .plan = std::move(plan.plan),
                 .existingManifest = std::move(manifest.manifest),
                 .sourceBytes = std::move(sourceBytes),
-                .productOutputRoot = options.outputRoot,
-                .productManifestOutputPath = manifestOutputPath,
+                .productOutputRoot = input.outputRoot,
+                .productManifestOutputPath = input.productManifestOutputPath,
             });
 
         output << "execution written=" << execution.writtenProducts.size()

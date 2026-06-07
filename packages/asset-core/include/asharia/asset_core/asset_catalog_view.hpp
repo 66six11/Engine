@@ -30,6 +30,7 @@ namespace asharia::asset {
         MissingProduct,
         StaleProduct,
         InvalidProductRecord,
+        SourceMetadata,
     };
 
     struct AssetCatalogDiagnostic {
@@ -43,6 +44,27 @@ namespace asharia::asset {
                                              const AssetCatalogDiagnostic&) = default;
     };
 
+    struct AssetCatalogSubAssetViewEntry {
+        std::string stableId;
+        std::string displayName;
+        std::string assetRoleName;
+
+        [[nodiscard]] friend bool operator==(const AssetCatalogSubAssetViewEntry&,
+                                             const AssetCatalogSubAssetViewEntry&) = default;
+    };
+
+    struct AssetCatalogSourceFacet {
+        AssetGuid guid{};
+        std::string sourcePath;
+        std::string importProfileName;
+        std::string assetRoleName;
+        std::vector<AssetCatalogSubAssetViewEntry> subAssets;
+        std::vector<AssetCatalogDiagnostic> diagnostics;
+
+        [[nodiscard]] friend bool operator==(const AssetCatalogSourceFacet&,
+                                             const AssetCatalogSourceFacet&) = default;
+    };
+
     struct AssetCatalogViewEntry {
         AssetGuid guid{};
         std::string guidText;
@@ -51,12 +73,15 @@ namespace asharia::asset {
         std::string sourcePath;
         std::string displayName;
         std::string extension;
+        std::string importProfileName;
+        std::string assetRoleName;
         ImporterId importerId{};
         std::string importerName;
         ImporterVersion importerVersion{};
         AssetCatalogProductState productState{AssetCatalogProductState::NotTracked};
         std::size_t currentProductCount{};
         std::size_t staleProductCount{};
+        std::vector<AssetCatalogSubAssetViewEntry> subAssets;
         std::vector<AssetCatalogDiagnostic> diagnostics;
 
         [[nodiscard]] friend bool operator==(const AssetCatalogViewEntry&,
@@ -73,6 +98,8 @@ namespace asharia::asset {
 
     struct AssetCatalogViewOptions {
         bool requireProducts{false};
+        std::span<const AssetProductKey> expectedProductKeys{};
+        std::span<const AssetCatalogSourceFacet> sourceFacets{};
     };
 
     [[nodiscard]] std::string_view

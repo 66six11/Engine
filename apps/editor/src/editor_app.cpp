@@ -41,6 +41,25 @@ namespace {
     }
 
     [[nodiscard]] std::optional<asharia::editor::EditorAssetCatalogSnapshotRequest>
+    editorAssetCatalogRequestFromConfig(
+        const asharia::editor::EditorAssetCatalogRunConfig& config) {
+        if (!config) {
+            return std::nullopt;
+        }
+
+        std::string targetProfile = config.targetProfile;
+        if (targetProfile.empty()) {
+            targetProfile = "editor-preview";
+        }
+
+        return asharia::editor::EditorAssetCatalogSnapshotRequest{
+            .projectFile = config.projectFile,
+            .productManifestFile = config.productManifestFile,
+            .targetProfile = std::move(targetProfile),
+        };
+    }
+
+    [[nodiscard]] std::optional<asharia::editor::EditorAssetCatalogSnapshotRequest>
     editorAssetCatalogRequestFromEnvironment() {
         const std::string project = editorEnvironmentValue("ASHARIA_EDITOR_PROJECT");
         if (project.empty()) {
@@ -63,7 +82,8 @@ namespace {
     }
 
     void loadEditorAssetCatalogForRun(asharia::editor::EditorAssetCatalogStore& store,
-                                      asharia::editor::EditorRunMode mode) {
+                                      const asharia::editor::EditorRunConfig& config) {
+        const asharia::editor::EditorRunMode mode = config.mode;
         if (asharia::editor::isEditorAssetBrowserSmokeMode(mode)) {
             asharia::editor::EditorAssetCatalogSnapshot snapshot =
                 asharia::editor::loadEditorAssetCatalogSmokeSnapshot();
@@ -86,7 +106,8 @@ namespace {
         }
 
         const std::optional<asharia::editor::EditorAssetCatalogSnapshotRequest> request =
-            editorAssetCatalogRequestFromEnvironment();
+            editorAssetCatalogRequestFromConfig(config.assetCatalog)
+                .or_else(editorAssetCatalogRequestFromEnvironment);
         if (!request) {
             store.useFixtureCatalog();
             return;
@@ -113,6 +134,11 @@ namespace {
 namespace asharia::editor {
 
     int runEditor(EditorRunMode mode) {
+        return runEditor(EditorRunConfig{.mode = mode, .assetCatalog = {}});
+    }
+
+    int runEditor(const EditorRunConfig& config) {
+        const EditorRunMode mode = config.mode;
         const bool smokeMode = asharia::editor::isEditorSmokeMode(mode);
 
         auto glfw = asharia::GlfwInstance::create();
@@ -181,7 +207,7 @@ namespace asharia::editor {
         }
 
         EditorAppServices services{settingsRun};
-        loadEditorAssetCatalogForRun(services.assetCatalogStore, mode);
+        loadEditorAssetCatalogForRun(services.assetCatalogStore, config);
         if (auto registered = registerEditorAppServices(services); !registered) {
             asharia::logError(registered.error().message);
             return EXIT_FAILURE;

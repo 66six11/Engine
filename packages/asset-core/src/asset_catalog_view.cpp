@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -48,6 +49,35 @@ namespace asharia::asset {
                    product.key.settingsHash == source.settingsHash;
         }
 
+        [[nodiscard]] bool
+        productMatchesExpectedKey(const AssetProductRecord& product,
+                                  const SourceAssetRecord& source,
+                                  std::span<const AssetProductKey> expectedProductKeys) noexcept {
+            return std::ranges::any_of(
+                expectedProductKeys, [&product, &source](const AssetProductKey& expectedKey) {
+                    return expectedKey.guid == source.guid && product.key == expectedKey;
+                });
+        }
+
+        [[nodiscard]] bool productMatchesActiveView(const AssetProductRecord& product,
+                                                    const SourceAssetRecord& source,
+                                                    const AssetCatalogViewOptions& options) {
+            if (!options.expectedProductKeys.empty()) {
+                return productMatchesExpectedKey(product, source, options.expectedProductKeys);
+            }
+            return productMatchesCurrentSource(product, source);
+        }
+
+        [[nodiscard]] std::string_view
+        staleProductMessage(const AssetCatalogViewOptions& options) noexcept {
+            if (!options.expectedProductKeys.empty()) {
+                return "Asset catalog source has product records, but none match the active "
+                       "target profile and expected product key.";
+            }
+            return "Asset catalog source has product records, but none match the current source "
+                   "or settings hash.";
+        }
+
         [[nodiscard]] AssetCatalogDiagnostic diagnostic(AssetCatalogDiagnosticCode code,
                                                         AssetCatalogDiagnosticSeverity severity,
                                                         const SourceAssetRecord& source,
@@ -59,6 +89,12 @@ namespace asharia::asset {
                 .sourcePath = source.sourcePath,
                 .message = std::string{message},
             };
+        }
+
+        [[nodiscard]] AssetCatalogDiagnostic
+        sourceMetadataDiagnostic(const SourceAssetRecord& source, std::string_view message) {
+            return diagnostic(AssetCatalogDiagnosticCode::SourceMetadata,
+                              AssetCatalogDiagnosticSeverity::Warning, source, message);
         }
 
         [[nodiscard]] AssetCatalogDiagnostic
@@ -74,6 +110,37 @@ namespace asharia::asset {
             };
         }
 
+        [[nodiscard]] bool sourceFacetMatches(const AssetCatalogSourceFacet& facet,
+                                              const SourceAssetRecord& source) {
+            return facet.guid == source.guid &&
+                   (facet.sourcePath.empty() || facet.sourcePath == source.sourcePath);
+        }
+
+        [[nodiscard]] const AssetCatalogSourceFacet*
+        firstSourceFacet(std::span<const AssetCatalogSourceFacet> facets,
+                         const SourceAssetRecord& source, std::size_t& matchCount) {
+            const AssetCatalogSourceFacet* first = nullptr;
+            matchCount = 0U;
+            for (const AssetCatalogSourceFacet& facet : facets) {
+                if (!sourceFacetMatches(facet, source)) {
+                    continue;
+                }
+                if (first == nullptr) {
+                    first = &facet;
+                }
+                ++matchCount;
+            }
+            return first;
+        }
+
+        void applySourceFacet(AssetCatalogViewEntry& entry, const AssetCatalogSourceFacet& facet) {
+            entry.importProfileName = facet.importProfileName;
+            entry.assetRoleName = facet.assetRoleName;
+            entry.subAssets = facet.subAssets;
+            entry.diagnostics.insert(entry.diagnostics.end(), facet.diagnostics.begin(),
+                                     facet.diagnostics.end());
+        }
+
         [[nodiscard]] AssetCatalogViewEntry makeEntry(const SourceAssetRecord& source,
                                                       std::span<const AssetProductRecord> products,
                                                       const AssetCatalogViewOptions& options) {
@@ -85,15 +152,28 @@ namespace asharia::asset {
                 .sourcePath = source.sourcePath,
                 .displayName = displayNameForPath(source.sourcePath),
                 .extension = {},
+                .importProfileName = {},
+                .assetRoleName = {},
                 .importerId = source.importerId,
                 .importerName = source.importerName,
                 .importerVersion = source.importerVersion,
                 .productState = AssetCatalogProductState::NotTracked,
                 .currentProductCount = 0U,
                 .staleProductCount = 0U,
+                .subAssets = {},
                 .diagnostics = {},
             };
             entry.extension = extensionForName(entry.displayName);
+
+            std::size_t sourceFacetMatchCount = 0U;
+            if (const AssetCatalogSourceFacet* facet =
+                    firstSourceFacet(options.sourceFacets, source, sourceFacetMatchCount)) {
+                applySourceFacet(entry, *facet);
+            }
+            if (sourceFacetMatchCount > 1U) {
+                entry.diagnostics.push_back(sourceMetadataDiagnostic(
+                    source, "Asset catalog source has multiple matching metadata facets."));
+            }
 
             std::size_t invalidProductCount = 0U;
             for (const AssetProductRecord& product : products) {
@@ -110,7 +190,7 @@ namespace asharia::asset {
                     continue;
                 }
 
-                if (productMatchesCurrentSource(product, source)) {
+                if (productMatchesActiveView(product, source, options)) {
                     ++entry.currentProductCount;
                 } else {
                     ++entry.staleProductCount;
@@ -123,11 +203,9 @@ namespace asharia::asset {
                 entry.productState = AssetCatalogProductState::InvalidProduct;
             } else if (entry.staleProductCount > 0U) {
                 entry.productState = AssetCatalogProductState::StaleProduct;
-                entry.diagnostics.push_back(diagnostic(
-                    AssetCatalogDiagnosticCode::StaleProduct,
-                    AssetCatalogDiagnosticSeverity::Warning, source,
-                    "Asset catalog source has product records, but none match the current source "
-                    "or settings hash."));
+                entry.diagnostics.push_back(diagnostic(AssetCatalogDiagnosticCode::StaleProduct,
+                                                       AssetCatalogDiagnosticSeverity::Warning,
+                                                       source, staleProductMessage(options)));
             } else if (options.requireProducts) {
                 entry.productState = AssetCatalogProductState::MissingProduct;
                 entry.diagnostics.push_back(
@@ -165,6 +243,8 @@ namespace asharia::asset {
             return "stale-product";
         case AssetCatalogDiagnosticCode::InvalidProductRecord:
             return "invalid-product-record";
+        case AssetCatalogDiagnosticCode::SourceMetadata:
+            return "source-metadata";
         }
         return "missing-product";
     }

@@ -21,6 +21,7 @@ add_library(asharia-asset-pipeline STATIC
     src/asset_source_scan.cpp
     src/asset_source_discovery.cpp
     src/asset_source_snapshot.cpp
+    src/asset_texture_import_profile.cpp
 )
 
 add_library(asharia::asset_pipeline ALIAS asharia-asset-pipeline)
@@ -56,6 +57,7 @@ if(ASHARIA_BUILD_TESTS)
       tests/asset_source_scan_header_test.cpp
       tests/asset_source_discovery_header_test.cpp
       tests/asset_source_snapshot_header_test.cpp
+      tests/asset_texture_import_profile_header_test.cpp
   )
 
   target_link_libraries(asharia-asset-pipeline-smoke-tests

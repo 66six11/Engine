@@ -34,6 +34,7 @@ namespace asharia::asset_processor {
         };
 
         enum class ExecuteOptionKind : std::uint8_t {
+            Project,
             SourceRoot,
             SourcePathPrefix,
             TargetProfile,
@@ -99,6 +100,9 @@ namespace asharia::asset_processor {
         }
 
         [[nodiscard]] ExecuteOptionKind classifyExecuteOption(std::string_view option) noexcept {
+            if (option == "--project") {
+                return ExecuteOptionKind::Project;
+            }
             if (option == "--source-root") {
                 return ExecuteOptionKind::SourceRoot;
             }
@@ -157,6 +161,11 @@ namespace asharia::asset_processor {
         [[nodiscard]] bool applyExecuteOption(ProductExecutionOptions& options,
                                               ExecuteOptionKind option, std::string value) {
             switch (option) {
+            case ExecuteOptionKind::Project:
+                if (!value.empty()) {
+                    options.projectPath = std::filesystem::path{value};
+                }
+                return true;
             case ExecuteOptionKind::SourceRoot:
                 options.sourceRoot = std::filesystem::path{value};
                 return true;
@@ -257,13 +266,19 @@ namespace asharia::asset_processor {
                 }
             }
 
-            if (parsed.execute.sourceRoot.empty()) {
+            if (parsed.execute.projectPath &&
+                (!parsed.execute.sourceRoot.empty() ||
+                 !parsed.execute.sourcePathPrefix.empty())) {
+                parsed.error = "execute --project cannot be combined with --source-root or "
+                               "--source-path-prefix.";
+            } else if (!parsed.execute.projectPath && parsed.execute.sourceRoot.empty()) {
                 parsed.error = "execute requires --source-root.";
-            } else if (parsed.execute.sourcePathPrefix.empty()) {
+            } else if (!parsed.execute.projectPath &&
+                       parsed.execute.sourcePathPrefix.empty()) {
                 parsed.error = "execute requires --source-path-prefix.";
             } else if (parsed.execute.targetProfile.empty()) {
                 parsed.error = "execute requires --target-profile.";
-            } else if (parsed.execute.outputRoot.empty()) {
+            } else if (!parsed.execute.projectPath && parsed.execute.outputRoot.empty()) {
                 parsed.error = "execute requires --output-root.";
             }
 
@@ -336,6 +351,10 @@ namespace asharia::asset_processor {
                       "--source-path-prefix <path> --target-profile <name> "
                       "--output-root <path> [--product-manifest <path>] "
                       "[--manifest-output <path>] [--ignore-dir <name> ...]\n"
+                   << "  asharia-asset-processor execute --project <path> "
+                      "--target-profile <name> [--output-root <path>] "
+                      "[--product-manifest <path>] [--manifest-output <path>] "
+                      "[--ignore-dir <name> ...]\n"
                    << "  asharia-asset-processor --smoke-dry-run\n"
                    << "  asharia-asset-processor --smoke-product-execution\n";
         }
