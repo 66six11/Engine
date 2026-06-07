@@ -41,6 +41,8 @@ namespace asharia::editor {
             const std::string assetType = normalizeEditorAssetIconToken(query.assetType);
             const std::string importerId = normalizeEditorAssetIconToken(query.importerId);
             const std::string extension = normalizeEditorAssetIconExtension(query.extension);
+            const std::string importProfile = normalizeEditorAssetIconToken(query.importProfile);
+            const std::string assetRole = normalizeEditorAssetIconToken(query.assetRole);
 
             if (anyOf(assetType, {"material", "asharia.material"}) || extension == ".amat" ||
                 importerId.contains("material")) {
@@ -51,7 +53,20 @@ namespace asharia::editor {
                 extension == ".gltf" || extension == ".glb" || importerId.contains("mesh")) {
                 return icon("lucide.box", tint(0.45F, 0.72F, 0.92F), "icon.mesh", "Mesh");
             }
-            if (anyOf(assetType, {"texture", "image"}) ||
+            if (importProfile == "sprite-sheet" || assetRole.contains("spritesheet") ||
+                query.subAssetCount > 0U) {
+                return icon("lucide.image", tint(0.50F, 0.86F, 0.76F), "icon.spriteSheet",
+                            "Sprite sheet");
+            }
+            if (importProfile == "texture-cube" || assetRole.contains("texturecube")) {
+                return icon("lucide.box", tint(0.50F, 0.78F, 0.92F), "icon.textureCube",
+                            "Texture cube");
+            }
+            if (importProfile == "skybox" || assetRole.contains("skybox")) {
+                return icon("lucide.image", tint(0.58F, 0.74F, 0.96F), "icon.skybox", "Skybox");
+            }
+            if (importProfile == "texture2d" || assetRole.contains("texture2d") ||
+                anyOf(assetType, {"texture", "image"}) ||
                 anyOf(extension, {".png", ".jpg", ".jpeg", ".dds", ".ktx", ".ktx2", ".tga"})) {
                 return icon("lucide.image", tint(0.45F, 0.84F, 0.68F), "icon.image", "Image");
             }
@@ -88,6 +103,50 @@ namespace asharia::editor {
 
         [[nodiscard]] bool iconIs(const EditorIconDescriptor& descriptor, std::string_view iconId) {
             return descriptor.id.value == iconId;
+        }
+
+        struct TextValue {
+            std::string_view value;
+        };
+
+        struct TextNeedle {
+            std::string_view value;
+        };
+
+        [[nodiscard]] bool normalizedContains(TextValue value, TextNeedle needle) {
+            if (needle.value.empty()) {
+                return true;
+            }
+            const std::string normalizedValue = normalizeEditorAssetIconToken(value.value);
+            const std::string normalizedNeedle = normalizeEditorAssetIconToken(needle.value);
+            return !normalizedNeedle.empty() && normalizedValue.contains(normalizedNeedle);
+        }
+
+        [[nodiscard]] bool normalizedEquals(TextValue value, TextNeedle expected) {
+            if (expected.value.empty()) {
+                return true;
+            }
+            return normalizeEditorAssetIconToken(value.value) ==
+                   normalizeEditorAssetIconToken(expected.value);
+        }
+
+        [[nodiscard]] bool extensionEquals(TextValue value, TextNeedle expected) {
+            if (expected.value.empty()) {
+                return true;
+            }
+            return normalizeEditorAssetIconExtension(value.value) ==
+                   normalizeEditorAssetIconExtension(expected.value);
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        validateIconRule(std::string_view resolverId, const EditorAssetIconRule& rule) {
+            if (rule.descriptor.id.value.empty()) {
+                return std::unexpected{
+                    asharia::Error{asharia::ErrorDomain::Core, 0,
+                                   "Editor asset icon rule descriptor id must not be empty: " +
+                                       std::string{resolverId}}};
+            }
+            return {};
         }
 
         [[nodiscard]] ImVec2 iconPoint(ImVec2 min, float size, float xScale, float yScale) {
@@ -290,6 +349,60 @@ namespace asharia::editor {
         return normalized;
     }
 
+    bool editorAssetIconRuleMatches(const EditorAssetIconRule& rule,
+                                    const EditorAssetIconQuery& query) {
+        if (rule.descriptor.id.value.empty()) {
+            return false;
+        }
+        if (rule.folder && *rule.folder != query.folder) {
+            return false;
+        }
+        if (rule.diagnostic && *rule.diagnostic != query.diagnostic) {
+            return false;
+        }
+        if (rule.minimumSubAssetCount && query.subAssetCount < *rule.minimumSubAssetCount) {
+            return false;
+        }
+        if (!normalizedContains(TextValue{query.assetType},
+                                TextNeedle{rule.assetTypeContains})) {
+            return false;
+        }
+        if (!normalizedContains(TextValue{query.importerId},
+                                TextNeedle{rule.importerIdContains})) {
+            return false;
+        }
+        if (!extensionEquals(TextValue{query.extension}, TextNeedle{rule.extension})) {
+            return false;
+        }
+        if (!normalizedContains(TextValue{query.sourcePath},
+                                TextNeedle{rule.sourcePathContains})) {
+            return false;
+        }
+        if (!normalizedContains(TextValue{query.displayName},
+                                TextNeedle{rule.displayNameContains})) {
+            return false;
+        }
+        if (!normalizedEquals(TextValue{query.guidText}, TextNeedle{rule.guidText})) {
+            return false;
+        }
+        if (!normalizedEquals(TextValue{query.importProfile},
+                              TextNeedle{rule.importProfile})) {
+            return false;
+        }
+        return normalizedContains(TextValue{query.assetRole},
+                                  TextNeedle{rule.assetRoleContains});
+    }
+
+    EditorAssetIconResolver makeEditorAssetIconRuleResolver(EditorAssetIconRule rule) {
+        return [rule = std::move(rule)](
+                   const EditorAssetIconQuery& query) -> std::optional<EditorIconDescriptor> {
+            if (!editorAssetIconRuleMatches(rule, query)) {
+                return std::nullopt;
+            }
+            return rule.descriptor;
+        };
+    }
+
     asharia::VoidResult
     EditorAssetIconRegistry::registerResolver(std::string resolverId,
                                               EditorAssetIconResolver resolver) {
@@ -340,6 +453,25 @@ namespace asharia::editor {
         return {};
     }
 
+    asharia::VoidResult EditorAssetIconRegistry::registerRule(std::string resolverId,
+                                                              EditorAssetIconRule rule) {
+        if (const asharia::VoidResult valid = validateIconRule(resolverId, rule); !valid) {
+            return std::unexpected{valid.error()};
+        }
+        return registerResolver(std::move(resolverId),
+                                makeEditorAssetIconRuleResolver(std::move(rule)));
+    }
+
+    asharia::VoidResult
+    EditorAssetIconRegistry::registerOrReplaceRule(std::string resolverId,
+                                                   EditorAssetIconRule rule) {
+        if (const asharia::VoidResult valid = validateIconRule(resolverId, rule); !valid) {
+            return std::unexpected{valid.error()};
+        }
+        return registerOrReplaceResolver(std::move(resolverId),
+                                         makeEditorAssetIconRuleResolver(std::move(rule)));
+    }
+
     bool EditorAssetIconRegistry::unregisterResolver(std::string_view resolverId) {
         const auto found =
             std::ranges::find_if(resolvers_, [resolverId](const ResolverEntry& entry) {
@@ -365,6 +497,259 @@ namespace asharia::editor {
     std::size_t EditorAssetIconRegistry::resolverCount() const noexcept {
         return resolvers_.size();
     }
+
+    namespace {
+
+        [[nodiscard]] bool
+        smokeTextureProfileAssetIconFallbacks(EditorAssetIconRegistry& registry) {
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".png",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = {},
+                        .displayName = {},
+                        .guidText = {},
+                        .importProfile = "sprite-sheet",
+                        .assetRole = {},
+                        .subAssetCount = 2U,
+                    })
+                    .tooltipKey != "icon.spriteSheet") {
+                asharia::logError("Editor asset icon smoke missed sprite-sheet profile fallback.");
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".ktx2",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = {},
+                        .displayName = {},
+                        .guidText = {},
+                        .importProfile = "texture-cube",
+                        .assetRole = {},
+                        .subAssetCount = 0U,
+                    })
+                    .tooltipKey != "icon.textureCube") {
+                asharia::logError("Editor asset icon smoke missed texture-cube profile fallback.");
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".hdr",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = {},
+                        .displayName = {},
+                        .guidText = {},
+                        .importProfile = "skybox",
+                        .assetRole = {},
+                        .subAssetCount = 0U,
+                    })
+                    .tooltipKey != "icon.skybox") {
+                asharia::logError("Editor asset icon smoke missed skybox profile fallback.");
+                return false;
+            }
+
+            auto spriteProfileCustom = registry.registerResolver(
+                "smoke.sprite-profile-icon",
+                [](const EditorAssetIconQuery& query) -> std::optional<EditorIconDescriptor> {
+                    if (normalizeEditorAssetIconToken(query.importProfile) != "sprite-sheet" ||
+                        query.subAssetCount == 0U) {
+                        return std::nullopt;
+                    }
+                    return makeLucideEditorIconDescriptor(
+                        "sparkles", editorIconTint(0.50F, 0.86F, 0.76F), "icon.spriteSheet.custom",
+                        "Custom sprite sheet");
+                });
+            if (!spriteProfileCustom) {
+                asharia::logError(spriteProfileCustom.error().message);
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".png",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = {},
+                        .displayName = {},
+                        .guidText = {},
+                        .importProfile = "sprite-sheet",
+                        .assetRole = {},
+                        .subAssetCount = 3U,
+                    })
+                    .id.value != "lucide.sparkles") {
+                asharia::logError("Editor asset icon smoke missed profile-based custom override.");
+                return false;
+            }
+            if (!registry.unregisterResolver("smoke.sprite-profile-icon")) {
+                asharia::logError("Editor asset icon smoke missed profile resolver unregister.");
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".png",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = {},
+                        .displayName = {},
+                        .guidText = {},
+                        .importProfile = "sprite-sheet",
+                        .assetRole = {},
+                        .subAssetCount = 3U,
+                    })
+                    .tooltipKey != "icon.spriteSheet") {
+                asharia::logError(
+                    "Editor asset icon smoke lost profile fallback after unregister.");
+                return false;
+            }
+
+            return true;
+        }
+
+        [[nodiscard]] bool smokeRuleBasedAssetIconOverrides(EditorAssetIconRegistry& registry) {
+            auto pngSlicesRule = registry.registerRule(
+                "smoke.png-slices-icon",
+                EditorAssetIconRule{
+                    .folder = false,
+                    .diagnostic = EditorAssetIconDiagnosticState::None,
+                    .minimumSubAssetCount = 2U,
+                    .assetTypeContains = {},
+                    .importerIdContains = {},
+                    .extension = "PNG",
+                    .sourcePathContains = {},
+                    .displayNameContains = {},
+                    .guidText = {},
+                    .importProfile = {},
+                    .assetRoleContains = {},
+                    .descriptor = makeLucideEditorIconDescriptor(
+                        "sparkles", editorIconTint(0.50F, 0.86F, 0.76F),
+                        "icon.pngSlices.custom", "Custom PNG slices"),
+                });
+            if (!pngSlicesRule) {
+                asharia::logError(pngSlicesRule.error().message);
+                return false;
+            }
+
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".png",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = "Assets/Textures/Hero.png",
+                        .displayName = "Hero.png",
+                        .guidText = {},
+                        .importProfile = {},
+                        .assetRole = {},
+                        .subAssetCount = 3U,
+                    })
+                    .id.value != "lucide.sparkles") {
+                asharia::logError("Editor asset icon smoke missed rule-based PNG override.");
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".png",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = "Assets/Textures/Hero.png",
+                        .displayName = "Hero.png",
+                        .guidText = {},
+                        .importProfile = {},
+                        .assetRole = {},
+                        .subAssetCount = 1U,
+                    })
+                    .id.value == "lucide.sparkles") {
+                asharia::logError(
+                    "Editor asset icon smoke applied a minimum-sub-asset rule too broadly.");
+                return false;
+            }
+
+            auto generatedShaderRule = registry.registerOrReplaceRule(
+                "smoke.png-slices-icon",
+                EditorAssetIconRule{
+                    .folder = false,
+                    .diagnostic = EditorAssetIconDiagnosticState::None,
+                    .minimumSubAssetCount = {},
+                    .assetTypeContains = {},
+                    .importerIdContains = {},
+                    .extension = ".slang",
+                    .sourcePathContains = "Generated/Shaders",
+                    .displayNameContains = {},
+                    .guidText = {},
+                    .importProfile = {},
+                    .assetRoleContains = {},
+                    .descriptor = makeLucideEditorIconDescriptor(
+                        "file-code-2", editorIconTint(0.66F, 0.78F, 0.96F),
+                        "icon.shader.generated.rule", "Generated shader"),
+                });
+            if (!generatedShaderRule) {
+                asharia::logError(generatedShaderRule.error().message);
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".png",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = "Assets/Textures/Hero.png",
+                        .displayName = "Hero.png",
+                        .guidText = {},
+                        .importProfile = {},
+                        .assetRole = {},
+                        .subAssetCount = 3U,
+                    })
+                    .tooltipKey != "icon.spriteSheet") {
+                asharia::logError("Editor asset icon smoke lost fallback after rule replacement.");
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".slang",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = "Assets/Generated/Shaders/grid.slang",
+                        .displayName = "grid.slang",
+                        .guidText = {},
+                        .importProfile = {},
+                        .assetRole = {},
+                        .subAssetCount = 0U,
+                    })
+                    .tooltipKey != "icon.shader.generated.rule") {
+                asharia::logError("Editor asset icon smoke missed replaced rule override.");
+                return false;
+            }
+            if (registry.registerRule("smoke.invalid-empty-rule", EditorAssetIconRule{})) {
+                asharia::logError("Editor asset icon smoke accepted an empty rule descriptor.");
+                return false;
+            }
+            if (!registry.unregisterResolver("smoke.png-slices-icon")) {
+                asharia::logError("Editor asset icon smoke missed rule unregister behavior.");
+                return false;
+            }
+
+            return true;
+        }
+
+    } // namespace
 
     void drawEditorIconGlyph(const EditorIconDescriptor& descriptor, float size) {
         size = std::max(size, 8.0F);
@@ -433,6 +818,9 @@ namespace asharia::editor {
                     .sourcePath = {},
                     .displayName = {},
                     .guidText = {},
+                    .importProfile = {},
+                    .assetRole = {},
+                    .subAssetCount = 0U,
                 })
                 .id.value != "lucide.folder") {
             asharia::logError("Editor asset icon smoke missed folder Lucide fallback.");
@@ -448,9 +836,15 @@ namespace asharia::editor {
                     .sourcePath = {},
                     .displayName = {},
                     .guidText = {},
+                    .importProfile = {},
+                    .assetRole = {},
+                    .subAssetCount = 0U,
                 })
                 .id.value != "lucide.image") {
             asharia::logError("Editor asset icon smoke missed image extension fallback.");
+            return false;
+        }
+        if (!smokeTextureProfileAssetIconFallbacks(registry)) {
             return false;
         }
         if (registry
@@ -463,6 +857,9 @@ namespace asharia::editor {
                     .sourcePath = {},
                     .displayName = {},
                     .guidText = {},
+                    .importProfile = {},
+                    .assetRole = {},
+                    .subAssetCount = 0U,
                 })
                 .id.value != "lucide.palette") {
             asharia::logError("Editor asset icon smoke missed material type fallback.");
@@ -478,6 +875,9 @@ namespace asharia::editor {
                     .sourcePath = {},
                     .displayName = {},
                     .guidText = {},
+                    .importProfile = {},
+                    .assetRole = {},
+                    .subAssetCount = 0U,
                 })
                 .id.value != "lucide.file") {
             asharia::logError("Editor asset icon smoke missed generic file fallback.");
@@ -493,6 +893,9 @@ namespace asharia::editor {
                     .sourcePath = {},
                     .displayName = {},
                     .guidText = {},
+                    .importProfile = {},
+                    .assetRole = {},
+                    .subAssetCount = 0U,
                 })
                 .id.value != "lucide.circle-help") {
             asharia::logError("Editor asset icon smoke missed missing diagnostic fallback.");
@@ -535,6 +938,9 @@ namespace asharia::editor {
                                           .sourcePath = {},
                                           .displayName = {},
                                           .guidText = {},
+                                          .importProfile = {},
+                                          .assetRole = {},
+                                          .subAssetCount = 0U,
                                       })
                     .id.value != "lucide.sparkles") {
             asharia::logError("Editor asset icon smoke missed custom resolver override.");
@@ -574,6 +980,9 @@ namespace asharia::editor {
                                           .sourcePath = "Assets/Generated/Shaders/grid.slang",
                                           .displayName = "grid.slang",
                                           .guidText = "5d3cdcbf-7396-40d0-b497-4fa2fe54f92a",
+                                          .importProfile = {},
+                                          .assetRole = {},
+                                          .subAssetCount = 0U,
                                       })
                     .id.value != "lucide.file-code-2") {
             asharia::logError("Editor asset icon smoke missed custom resolver replacement.");
@@ -589,6 +998,9 @@ namespace asharia::editor {
                     .sourcePath = "Assets/Shaders/grid.slang",
                     .displayName = "grid.slang",
                     .guidText = "5d3cdcbf-7396-40d0-b497-4fa2fe54f92a",
+                    .importProfile = {},
+                    .assetRole = {},
+                    .subAssetCount = 0U,
                 })
                 .id.value != "lucide.braces") {
             asharia::logError("Editor asset icon smoke lost fallback after resolver replacement.");
@@ -597,6 +1009,9 @@ namespace asharia::editor {
         if (!registry.unregisterResolver("smoke.shader-icon") ||
             registry.unregisterResolver("smoke.shader-icon") || registry.resolverCount() != 0U) {
             asharia::logError("Editor asset icon smoke missed resolver unregister behavior.");
+            return false;
+        }
+        if (!smokeRuleBasedAssetIconOverrides(registry)) {
             return false;
         }
 

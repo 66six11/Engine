@@ -334,24 +334,31 @@ Icon ownership stays in `editor_asset_icon`:
 
 - Panel code submits `EditorAssetIconQuery` values and draws the returned `EditorIconDescriptor`.
   Queries expose catalog-facing identity such as extension, asset type, importer id, diagnostic state, source path,
-  display name and GUID text; they do not expose filesystem scan internals or runtime resources.
+  display name, GUID text, import profile, asset role and sub-asset count; they do not expose filesystem scan internals or
+  runtime resources.
 - Panel rows come from public catalog view entries, not direct source tree scanning, import execution or product cache
   mutation.
 - Asset Browser row selection, filter text, visible-row summary and selected-asset details are transient panel state. The
   detail pane re-reads `AssetCatalogViewEntry` metadata such as GUID, source path, type, importer, importer version, product
-  counts and row diagnostics; it may offer clipboard copy buttons for read-only identifiers, but it does not create runtime
-  asset handles or editor commands.
+  counts, import profile, asset role, read-only sub-assets and row diagnostics; it may offer clipboard copy buttons for
+  read-only identifiers, but it does not create runtime asset handles or editor commands.
 - Text search matches catalog-facing metadata only: display name, source path, type, importer name, extension, GUID, product
-  state and row diagnostics.
+  state, import profile, asset role, sub-assets and row diagnostics.
 - Folder scope browsing is derived from `AssetCatalogViewEntry::sourcePath` only. It provides read-only source-path scope
   navigation and breadcrumbs for visible rows, but it does not enumerate the filesystem, watch directories or create folder
   assets.
 - Asset type filtering is derived from visible catalog row metadata (`AssetCatalogViewEntry::assetTypeName`) and remains local
   panel state. It does not query importers, load assets or create editor/runtime type registries.
-- Product state filtering is derived from catalog row metadata (`AssetCatalogViewEntry::productState`) and remains local
-  panel state. It does not trigger import/reimport, product-cache writes, resource loading or renderer preview creation.
-- Asset table sorting is a local view over the visible `AssetCatalogViewEntry` rows. Sorting by name, type, importer or
-  product state does not mutate catalog order, asset metadata, product records or project files.
+- Import profile filtering is derived from catalog row metadata (`AssetCatalogViewEntry::importProfileName`) after the current
+  folder/type scope and remains local panel state. It makes texture roles such as Texture2D, SpriteSheet, TextureCube and
+  Skybox browsable without deriving meaning from source file extensions.
+- Product state filtering is derived from catalog row metadata (`AssetCatalogViewEntry::productState`) after the current
+  folder/type/import-profile scope and remains local panel state. It does not trigger import/reimport, product-cache writes,
+  resource loading or renderer preview creation.
+- Asset table sorting is a local view over the visible `AssetCatalogViewEntry` rows. Sorting by name, type, import profile,
+  importer or product state does not mutate catalog order, asset metadata, product records or project files.
+- The Asset Browser main table displays import profile as a first-level column so source images with different semantics
+  such as Texture2D, SpriteSheet, TextureCube or Skybox are browsable without opening the details pane.
 - `editor_asset_catalog` composes public `project-core`, `asset-pipeline` and `asset-core` APIs into a read-only project
   snapshot for future browser wiring. It does not own watcher, hot reload, import execution, runtime loading or renderer
   resources.
@@ -359,20 +366,30 @@ Icon ownership stays in `editor_asset_icon`:
   loop. `AssetBrowserPanel` consumes the catalog rows and snapshot diagnostics through its panel context.
 - `EditorAssetCatalogStore` owns the current browser catalog view. It defaults to a deterministic fixture for development
   runs without a project and can be switched to a project snapshot at startup.
-- Interactive runs may set `ASHARIA_EDITOR_PROJECT`, optional `ASHARIA_EDITOR_PRODUCT_MANIFEST` and optional
-  `ASHARIA_EDITOR_ASSET_TARGET_PROFILE` to load a project snapshot. Regular editor smoke modes ignore those variables and
-  keep the deterministic fixture path; `--smoke-editor-asset-browser` loads a temporary snapshot-backed project catalog to
-  prove the startup/frame-context route.
+- Interactive runs may pass `--project <asharia.project.json>`, optional `--product-manifest <products.aproducts.json>` and
+  optional `--asset-target-profile <profile>` to load a real project snapshot. `ASHARIA_EDITOR_PROJECT`, optional
+  `ASHARIA_EDITOR_PRODUCT_MANIFEST` and optional `ASHARIA_EDITOR_ASSET_TARGET_PROFILE` remain fallback/script entry points
+  when CLI project options are absent. Regular editor smoke modes reject project-loading options and keep the deterministic
+  fixture path; `--smoke-editor-asset-browser` loads a temporary snapshot-backed project catalog to prove the
+  startup/frame-context route.
+- `--check-project <asharia.project.json>` runs the same read-only snapshot loader and prints row/diagnostic counts plus
+  compact row/sub-asset metadata such as source path, type, importer, import profile, asset role and product state without
+  opening a window or creating fixture data. It is the preferred first check for real project-path development.
 - Built-in fallback ids use Lucide vocabulary such as `lucide.folder`, `lucide.file`, `lucide.image`, `lucide.braces`,
   `lucide.palette`, `lucide.box`, `lucide.copy`, `lucide.x`, `lucide.circle-help` and `lucide.triangle-alert`.
-- Custom providers can override by extension, asset type, importer id, diagnostic state, source path, display name or GUID,
-  but they only return stable ids, tint and tooltip metadata.
+- Custom providers can override by extension, asset type, importer id, diagnostic state, source path, display name, GUID,
+  import profile, asset role or sub-asset count, but they only return stable ids, tint and tooltip metadata.
+- Simple override policies can use `EditorAssetIconRule` instead of hand-written resolver lambdas. Empty rule fields are
+  wildcards, while extension/import-profile/GUID fields match normalized values and `*Contains` fields match
+  case-insensitive substrings.
+- Asset Browser localizes descriptor tooltip keys through `EditorI18n` before drawing row and folder icons; custom providers
+  should return stable tooltip keys plus fallback text, not pre-localized UI strings.
 - Custom providers are registered through `EditorAssetIconRegistry`; resolver ids can be replaced or unregistered so future
   extension reload can update icon policy without recreating panel state.
 - Custom providers do not return raw SVG, ImGui callbacks, `ImTextureID`, Vulkan handles or renderer resources.
-- Asset Browser UI state such as filter text, folder scope, type/product-state filters and row selection is transient panel
-  state, not asset metadata, product cache state or project descriptor state. The clear-filters icon button resets only
-  those local controls.
+- Asset Browser UI state such as filter text, folder scope, type/import-profile/product-state filters and row selection is
+  transient panel state, not asset metadata, product cache state or project descriptor state. The clear-filters icon button
+  resets only those local controls.
 
 ### Actions 扩展
 

@@ -1,5 +1,6 @@
 ﻿#include "editor_asset_catalog_smoke.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -18,6 +19,7 @@
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_source_scan.hpp"
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
+#include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/project/project_descriptor_io.hpp"
 
@@ -32,6 +34,7 @@ namespace asharia::editor {
         constexpr std::string_view kAssetTypeName = "com.asharia.asset.Material";
         constexpr std::string_view kImporterName = "asharia.material";
         constexpr std::string_view kSourcePath = "Assets/Materials/brushed.amat";
+        constexpr std::size_t kFixtureCatalogRows = 8U;
 
         struct CatalogSourceFixtureDesc {
             std::string_view guidText;
@@ -203,9 +206,16 @@ namespace asharia::editor {
             }
 
             const std::uint64_t sourceHash = sourceHashFor(desc.sourcePath, sourceFile);
-            const std::array settings{
+            std::vector<asharia::asset::AssetImportSetting> settings{
                 asharia::asset::AssetImportSetting{.key = "profile", .value = "default"},
             };
+            if (std::string_view{desc.assetTypeName}.contains("Texture") ||
+                std::string_view{desc.sourcePath}.ends_with(".png")) {
+                settings.push_back(asharia::asset::AssetImportSetting{
+                    .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                    .value = std::string{asharia::asset::kTextureImportProfileTexture2D},
+                });
+            }
             const asharia::asset::SourceAssetRecord source =
                 sourceRecordFor(desc, sourceHash, settings);
             const std::filesystem::path metadataFile =
@@ -326,11 +336,57 @@ namespace asharia::editor {
             return true;
         }
 
+        [[nodiscard]] const asharia::asset::AssetCatalogViewEntry*
+        findFixtureProfile(const asharia::asset::AssetCatalogView& catalogView,
+                           std::string_view importProfile) {
+            const auto found = std::ranges::find_if(
+                catalogView.entries,
+                [importProfile](const asharia::asset::AssetCatalogViewEntry& entry) {
+                    return entry.importProfileName == importProfile;
+                });
+            return found == catalogView.entries.end() ? nullptr : &*found;
+        }
+
+        [[nodiscard]] bool
+        expectFixtureTextureProfiles(const asharia::asset::AssetCatalogView& catalogView) {
+            const asharia::asset::AssetCatalogViewEntry* texture2d =
+                findFixtureProfile(catalogView, asharia::asset::kTextureImportProfileTexture2D);
+            const asharia::asset::AssetCatalogViewEntry* spriteSheet =
+                findFixtureProfile(catalogView, asharia::asset::kTextureImportProfileSpriteSheet);
+            const asharia::asset::AssetCatalogViewEntry* textureCube =
+                findFixtureProfile(catalogView, asharia::asset::kTextureImportProfileTextureCube);
+            const asharia::asset::AssetCatalogViewEntry* skybox =
+                findFixtureProfile(catalogView, asharia::asset::kTextureImportProfileSkybox);
+            if (texture2d == nullptr || spriteSheet == nullptr || textureCube == nullptr ||
+                skybox == nullptr) {
+                asharia::logError(
+                    "Editor asset catalog smoke missed fixture texture profile rows.");
+                return false;
+            }
+            if (texture2d->assetRoleName != asharia::asset::kTextureRoleTexture2D ||
+                spriteSheet->assetRoleName != asharia::asset::kTextureRoleSpriteSheet ||
+                textureCube->assetRoleName != asharia::asset::kTextureRoleTextureCube ||
+                skybox->assetRoleName != asharia::asset::kTextureRoleSkybox) {
+                asharia::logError(
+                    "Editor asset catalog smoke produced invalid fixture texture roles.");
+                return false;
+            }
+            if (spriteSheet->subAssets.size() != 2U ||
+                spriteSheet->subAssets[0].stableId != "hero-idle-0" ||
+                spriteSheet->subAssets[1].stableId != "hero-run-0") {
+                asharia::logError(
+                    "Editor asset catalog smoke missed fixture sprite-sheet sub-assets.");
+                return false;
+            }
+            return true;
+        }
+
         [[nodiscard]] bool expectCatalogStoreSelection(const std::filesystem::path& projectFile,
                                                        const std::filesystem::path& manifestFile) {
             EditorAssetCatalogStore store;
             if (store.snapshot() != nullptr || !store.diagnostics().empty() ||
-                store.catalogView().entries.size() != 5U) {
+                store.catalogView().entries.size() != kFixtureCatalogRows ||
+                !expectFixtureTextureProfiles(store.catalogView())) {
                 asharia::logError("Editor asset catalog smoke found invalid fixture store state.");
                 return false;
             }
@@ -348,7 +404,9 @@ namespace asharia::editor {
             }
 
             store.useFixtureCatalog();
-            if (store.snapshot() != nullptr || store.catalogView().entries.size() != 5U) {
+            if (store.snapshot() != nullptr ||
+                store.catalogView().entries.size() != kFixtureCatalogRows ||
+                !expectFixtureTextureProfiles(store.catalogView())) {
                 asharia::logError("Editor asset catalog smoke did not restore fixture store view.");
                 return false;
             }
@@ -541,6 +599,19 @@ namespace asharia::editor {
                     return false;
                 }
                 ++entry;
+            }
+
+            const auto textureEntry = std::ranges::find_if(
+                snapshot.catalogView.entries,
+                [](const asharia::asset::AssetCatalogViewEntry& candidate) {
+                    return candidate.sourcePath == "Assets/Textures/checker.png";
+                });
+            if (textureEntry == snapshot.catalogView.entries.end() ||
+                textureEntry->importProfileName != asharia::asset::kTextureImportProfileTexture2D ||
+                textureEntry->assetRoleName != asharia::asset::kTextureRoleTexture2D) {
+                asharia::logError(
+                    "Editor asset catalog smoke missed texture profile catalog fields.");
+                return false;
             }
 
             return true;

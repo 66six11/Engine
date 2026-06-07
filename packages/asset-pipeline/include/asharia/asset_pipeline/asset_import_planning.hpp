@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -22,6 +23,12 @@ namespace asharia::asset {
         TargetProfileChanged,
     };
 
+    enum class AssetImportPlanDiagnosticSeverity : std::uint8_t {
+        Info,
+        Warning,
+        Error,
+    };
+
     enum class AssetImportPlanDiagnosticCode {
         InvalidTargetProfile,
         InvalidSource,
@@ -30,6 +37,7 @@ namespace asharia::asset {
         DuplicateSource,
         DuplicateSourceSnapshot,
         InvalidProductManifest,
+        MetadataSourceHashDrift,
     };
 
     struct AssetImportRequest {
@@ -55,6 +63,7 @@ namespace asharia::asset {
 
     struct AssetImportPlanDiagnostic {
         AssetImportPlanDiagnosticCode code{AssetImportPlanDiagnosticCode::InvalidSource};
+        AssetImportPlanDiagnosticSeverity severity{AssetImportPlanDiagnosticSeverity::Error};
         std::string sourcePath;
         std::string message;
 
@@ -72,7 +81,10 @@ namespace asharia::asset {
         [[nodiscard]] friend bool operator==(const AssetImportPlanResult&,
                                              const AssetImportPlanResult&) = default;
         [[nodiscard]] bool succeeded() const noexcept {
-            return diagnostics.empty();
+            return std::ranges::none_of(
+                diagnostics, [](const AssetImportPlanDiagnostic& diagnostic) {
+                    return diagnostic.severity == AssetImportPlanDiagnosticSeverity::Error;
+                });
         }
     };
 

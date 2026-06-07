@@ -1665,6 +1665,8 @@ Scope:
 - Resolve row icons through editor-owned Lucide icon ids and `EditorAssetIconRegistry`.
 - Allow custom icon resolvers to override by extension, asset type, importer id, diagnostic state, source path, display name
   or GUID without modifying the Asset Browser draw code.
+- Provide `EditorAssetIconRule` as the simple declarative path for extension/type/profile-based icon overrides before
+  future plugin or user-settings UI exists.
 
 Non-goals:
 
@@ -1706,9 +1708,13 @@ Current state:
 - `editor_asset_catalog` owns the read-only project snapshot loader and `EditorAssetCatalogStore`.
 - `AssetBrowserPanel` consumes the `AssetCatalogView` passed through panel draw context instead of constructing fixture
   rows in panel code.
-- Interactive runs can load a static project snapshot through `ASHARIA_EDITOR_PROJECT`, optional
-  `ASHARIA_EDITOR_PRODUCT_MANIFEST` and optional `ASHARIA_EDITOR_ASSET_TARGET_PROFILE`; regular editor smoke modes keep
-  deterministic fixture data, while `--smoke-editor-asset-browser` loads a temporary snapshot-backed project catalog.
+- Interactive runs can load a static real project snapshot through `--project`, optional `--product-manifest` and optional
+  `--asset-target-profile`; `ASHARIA_EDITOR_PROJECT`, optional `ASHARIA_EDITOR_PRODUCT_MANIFEST` and optional
+  `ASHARIA_EDITOR_ASSET_TARGET_PROFILE` remain fallback/script inputs. Regular editor smoke modes keep deterministic
+  fixture data, reject project-loading options, and `--smoke-editor-asset-browser` loads a temporary snapshot-backed project
+  catalog.
+- `--check-project <asharia.project.json>` runs the same snapshot loader without opening a window and prints counts plus
+  row/sub-asset metadata so real project-path development can verify product state, import profile and sub-assets directly.
 - Startup smoke validation covers ready product manifest state, missing-product catalog diagnostics, project read diagnostics
   and fixture/snapshot `EditorAssetCatalogStore` selection.
 
@@ -1824,6 +1830,77 @@ Validation:
 - `--smoke-editor-asset-browser` renders the snapshot-backed browser with sortable catalog columns and the local
   clear-filters control.
 - `--smoke-editor-shell` keeps fixture-backed catalog rows visible with default name sorting and stable selection.
+
+### 24.7.1 Texture Import Profile Classification
+
+Status: In progress via #81.
+
+Scope:
+
+- Treat image file extensions such as `.png`, `.jpg`, `.hdr` and `.exr` as source formats, not final editor/runtime asset
+  roles.
+- Surface catalog-facing `texture.profile` metadata as `texture2d`, `sprite-sheet`, `texture-cube`, `skybox` or
+  source-metadata diagnostics for unsupported profiles.
+- Expose texture profile, asset role and read-only sprite-sheet sub-assets through `AssetCatalogViewEntry` so Asset Browser
+  filtering, details and Lucide/custom icon resolution can distinguish Texture2D, SpriteSheet, TextureCube and Skybox
+  rows.
+- Derive the Import Profile filter from catalog row `importProfileName` after the current folder/type scope; keep it as
+  transient panel state that never runs importers, writes product cache or loads runtime/GPU resources.
+- Keep texture profile interpretation in `asset-pipeline`; `asset-core` owns only generic catalog facet data and remains
+  free of texture importer/profile constants.
+- Treat duplicate sprite-sheet sub-asset stable ids as source-metadata diagnostics and skip duplicate rows so future
+  single-sprite references and custom icon overrides stay unambiguous.
+- Keep this slice metadata-only: no PNG decode in the panel, no texture preview, no GPU upload, no IBL bake, no product
+  cache write and no Import Settings editor mutation.
+
+Validation:
+
+- Package-local asset-pipeline smoke covers Texture2D, SpriteSheet sub-assets, TextureCube/Skybox and unknown profile
+  diagnostics, including duplicate sprite stable ids.
+- `--smoke-editor-asset-browser` keeps snapshot-backed catalog rows routed through the Asset Browser with the extended
+  import-profile filter, icon query and details path.
+- Editor catalog smoke keeps the fixture catalog populated with Texture2D, SpriteSheet, TextureCube and Skybox profile rows so the
+  normal shell path renders multiple import-profile filter options without running importers or decoding images.
+
+### 24.7.2 Catalog Product Readiness Key Alignment
+
+Status: In progress via #83.
+
+Scope:
+
+- Keep `AssetCatalogView` backend-neutral but allow callers to pass active-view expected `AssetProductKey` values.
+- In editor project snapshots, collect expected keys from import planning cache hits and import requests before building the
+  browser-facing catalog view.
+- Treat a product with matching GUID/source/settings but different dependency hash or target profile hash as stale for the
+  active view, not Ready.
+- Keep `.ameta` `sourceHash` as metadata-side recorded source information; the current source snapshot hash produced by
+  `asset-pipeline` is authoritative for the active product key.
+
+Validation:
+
+- Package-local asset-core smoke covers dependency-hash and target-profile mismatch products as Stale, plus a separate
+  MissingProduct row.
+- `--smoke-editor-asset-browser` keeps snapshot-backed catalog rows routed through the corrected product-state path.
+
+### 24.7.3 Source Hash Authority and Drift Diagnostics
+
+Status: In progress via #84.
+
+Scope:
+
+- Keep active product-key freshness based on the current `AssetSourceSnapshot` hash produced by `asset-pipeline`.
+- Keep the serialized `.ameta` `sourceHash` field as v1 metadata-side recorded source information for this slice; do not
+  rename or migrate the schema yet.
+- Surface `.ameta` source hash versus current snapshot hash drift as a warning diagnostic, not as a plan failure.
+- Preserve existing error diagnostics as failing gates for invalid source, snapshot, manifest or target profile inputs.
+- Route the warning through editor snapshot diagnostics and asset-processor text output so Asset Browser/tooling can explain
+  why a source needs reimport without treating the project as broken.
+
+Validation:
+
+- Package-local asset-pipeline smoke covers metadata source-hash drift as `Warning` while keeping `succeeded()` true and
+  request/product key hashes based on the current snapshot.
+- Editor asset catalog smoke keeps warning severity non-fatal for snapshot-backed catalog loading.
 
 ### 24.8 Import Settings Editing
 

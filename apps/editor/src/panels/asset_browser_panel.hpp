@@ -27,6 +27,7 @@ namespace asharia::editor {
         std::array<char, 96> filter_{};
         std::string selectedFolderScope_;
         std::string selectedAssetTypeFilter_;
+        std::string selectedImportProfileFilter_;
         std::string selectedProductStateFilter_;
         std::string selectedAssetKey_;
     };

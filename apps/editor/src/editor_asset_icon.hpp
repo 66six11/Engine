@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
@@ -44,6 +45,24 @@ namespace asharia::editor {
         std::string sourcePath;
         std::string displayName;
         std::string guidText;
+        std::string importProfile;
+        std::string assetRole;
+        std::size_t subAssetCount{};
+    };
+
+    struct EditorAssetIconRule {
+        std::optional<bool> folder;
+        std::optional<EditorAssetIconDiagnosticState> diagnostic;
+        std::optional<std::size_t> minimumSubAssetCount;
+        std::string assetTypeContains;
+        std::string importerIdContains;
+        std::string extension;
+        std::string sourcePathContains;
+        std::string displayNameContains;
+        std::string guidText;
+        std::string importProfile;
+        std::string assetRoleContains;
+        EditorIconDescriptor descriptor;
     };
 
     using EditorAssetIconResolver =
@@ -53,11 +72,15 @@ namespace asharia::editor {
     public:
         [[nodiscard]] asharia::VoidResult registerResolver(std::string id,
                                                            EditorAssetIconResolver resolver);
-        [[nodiscard]] asharia::VoidResult registerOrReplaceResolver(
-            std::string id, EditorAssetIconResolver resolver);
+        [[nodiscard]] asharia::VoidResult
+        registerOrReplaceResolver(std::string id, EditorAssetIconResolver resolver);
+        [[nodiscard]] asharia::VoidResult registerRule(std::string id,
+                                                       EditorAssetIconRule rule);
+        [[nodiscard]] asharia::VoidResult
+        registerOrReplaceRule(std::string id, EditorAssetIconRule rule);
         [[nodiscard]] bool unregisterResolver(std::string_view id);
-        [[nodiscard]] EditorIconDescriptor resolveAssetIcon(
-            const EditorAssetIconQuery& query) const;
+        [[nodiscard]] EditorIconDescriptor
+        resolveAssetIcon(const EditorAssetIconQuery& query) const;
         [[nodiscard]] std::size_t resolverCount() const noexcept;
 
     private:
@@ -71,11 +94,14 @@ namespace asharia::editor {
 
     [[nodiscard]] EditorIconTint editorIconTint(float red, float green, float blue,
                                                 float alpha = 1.0F) noexcept;
-    [[nodiscard]] EditorIconDescriptor makeLucideEditorIconDescriptor(
-        std::string_view lucideName, EditorIconTint tint, std::string_view tooltipKey,
-        std::string_view tooltipFallback);
+    [[nodiscard]] EditorIconDescriptor
+    makeLucideEditorIconDescriptor(std::string_view lucideName, EditorIconTint tint,
+                                   std::string_view tooltipKey, std::string_view tooltipFallback);
     [[nodiscard]] std::string normalizeEditorAssetIconExtension(std::string_view extension);
     [[nodiscard]] std::string normalizeEditorAssetIconToken(std::string_view value);
+    [[nodiscard]] bool editorAssetIconRuleMatches(const EditorAssetIconRule& rule,
+                                                  const EditorAssetIconQuery& query);
+    [[nodiscard]] EditorAssetIconResolver makeEditorAssetIconRuleResolver(EditorAssetIconRule rule);
 
     void drawEditorIconGlyph(const EditorIconDescriptor& descriptor, float size);
     [[nodiscard]] bool drawEditorIconButton(const EditorIconDescriptor& descriptor,

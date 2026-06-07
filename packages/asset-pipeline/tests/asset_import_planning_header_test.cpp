@@ -8,6 +8,8 @@ namespace asharia::asset_pipeline_header_tests {
             asharia::asset::AssetImportRequestReason::MissingProduct;
         [[maybe_unused]] const asharia::asset::AssetImportPlanDiagnosticCode diagnostic =
             asharia::asset::AssetImportPlanDiagnosticCode::InvalidSource;
+        [[maybe_unused]] const asharia::asset::AssetImportPlanDiagnosticSeverity severity =
+            asharia::asset::AssetImportPlanDiagnosticSeverity::Warning;
     }
 
 } // namespace asharia::asset_pipeline_header_tests

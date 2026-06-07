@@ -16,6 +16,7 @@ asharia_require_package_target(asharia::project_core_io packages/project-core)
 add_executable(asharia-asset-processor
     src/asset_processor_dry_run.cpp
     src/asset_processor_execute.cpp
+    src/asset_processor_project_input.cpp
     src/asset_processor_smoke.cpp
     src/asset_processor_text.cpp
     src/main.cpp

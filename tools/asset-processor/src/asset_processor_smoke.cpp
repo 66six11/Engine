@@ -279,7 +279,11 @@ namespace asharia::asset_processor {
         if (emptyManifestDryRun.exitCode != EXIT_SUCCESS ||
             !expectReportText(emptyManifestDryRun.text, "ignoredDirectories=1 \"Ignored\"") ||
             !expectReportText(emptyManifestDryRun.text, "sourceRoots=1") ||
-            !expectReportText(emptyManifestDryRun.text, "planning requests=2 cacheHits=0") ||
+            !expectReportText(emptyManifestDryRun.text,
+                              "planning requests=2 cacheHits=0 diagnostics=2") ||
+            !expectReportText(emptyManifestDryRun.text,
+                              "diagnostic stage=planning severity=Warning "
+                              "code=MetadataSourceHashDrift") ||
             !expectReportText(emptyManifestDryRun.text,
                               "import-request source=\"Content/Textures/Crate.png\"") ||
             !expectReportText(emptyManifestDryRun.text,
@@ -418,10 +422,15 @@ namespace asharia::asset_processor {
             .productManifestPath = std::nullopt,
             .productManifestOutputPath = manifestPath,
             .ignoredDirectoryNames = {},
+            .projectPath = std::nullopt,
         });
         if (firstExecution.exitCode != EXIT_SUCCESS ||
             !expectReportText(firstExecution.text, "asset-processor execute") ||
-            !expectReportText(firstExecution.text, "planning requests=2 cacheHits=0") ||
+            !expectReportText(firstExecution.text,
+                              "planning requests=2 cacheHits=0 diagnostics=2") ||
+            !expectReportText(firstExecution.text,
+                              "diagnostic stage=planning severity=Warning "
+                              "code=MetadataSourceHashDrift") ||
             !expectReportText(firstExecution.text,
                               "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
                               "manifestWritten=true") ||
@@ -447,6 +456,7 @@ namespace asharia::asset_processor {
             .productManifestPath = manifestPath,
             .productManifestOutputPath = manifestPath,
             .ignoredDirectoryNames = {},
+            .projectPath = std::nullopt,
         });
         if (cacheHitExecution.exitCode != EXIT_SUCCESS ||
             !expectReportText(cacheHitExecution.text, "planning requests=0 cacheHits=2") ||
@@ -457,6 +467,58 @@ namespace asharia::asset_processor {
                               "cache-hit source=\"Content/Textures/Crate.png\"") ||
             !expectReportText(cacheHitExecution.text,
                               "cache-hit source=\"Content/Textures/Decal.png\"")) {
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path projectPath =
+            workspace->root / std::string{asharia::project::kDefaultAshariaProjectFileName};
+        if (!writeSmokeProjectDescriptor(projectPath)) {
+            return EXIT_FAILURE;
+        }
+
+        const ProductExecution projectExecution = runProductExecution(ProductExecutionOptions{
+            .sourceRoot = {},
+            .sourcePathPrefix = {},
+            .targetProfile = "windows-msvc-debug",
+            .outputRoot = {},
+            .productManifestPath = std::nullopt,
+            .productManifestOutputPath = {},
+            .ignoredDirectoryNames = {},
+            .projectPath = projectPath,
+        });
+        if (projectExecution.exitCode != EXIT_SUCCESS ||
+            !expectReportText(projectExecution.text, "projectPath=") ||
+            !expectReportText(projectExecution.text, "assetCacheRoot=\".asharia/cache/assets\"") ||
+            !expectReportText(projectExecution.text,
+                              "source-root rootName=\"project-assets\"") ||
+            !expectReportText(projectExecution.text, "planning requests=2 cacheHits=0") ||
+            !expectReportText(projectExecution.text,
+                              "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
+                              "manifestWritten=true")) {
+            return EXIT_FAILURE;
+        }
+
+        const ProductExecution projectCacheHitExecution =
+            runProductExecution(ProductExecutionOptions{
+                .sourceRoot = {},
+                .sourcePathPrefix = {},
+                .targetProfile = "windows-msvc-debug",
+                .outputRoot = {},
+                .productManifestPath = std::nullopt,
+                .productManifestOutputPath = {},
+                .ignoredDirectoryNames = {},
+                .projectPath = projectPath,
+            });
+        if (projectCacheHitExecution.exitCode != EXIT_SUCCESS ||
+            !expectReportText(projectCacheHitExecution.text,
+                              "productManifest=") ||
+            !expectReportText(projectCacheHitExecution.text,
+                              "products.aproducts.json") ||
+            !expectReportText(projectCacheHitExecution.text,
+                              "planning requests=0 cacheHits=2") ||
+            !expectReportText(projectCacheHitExecution.text,
+                              "execution written=0 cacheHits=2 diagnostics=0 manifestProducts=2 "
+                              "manifestWritten=true")) {
             return EXIT_FAILURE;
         }
 
@@ -473,6 +535,7 @@ namespace asharia::asset_processor {
             .productManifestPath = manifestPath,
             .productManifestOutputPath = manifestPath,
             .ignoredDirectoryNames = {},
+            .projectPath = std::nullopt,
         });
         if (changedExecution.exitCode != EXIT_SUCCESS ||
             !expectReportText(changedExecution.text, "planning requests=1 cacheHits=1") ||

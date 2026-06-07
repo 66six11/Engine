@@ -13,6 +13,7 @@
 #include "asharia/asset_pipeline/asset_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
+#include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/project/project_descriptor_io.hpp"
 
 namespace asharia::editor {
@@ -97,13 +98,26 @@ namespace asharia::editor {
             }
         }
 
+        [[nodiscard]] EditorAssetCatalogDiagnosticSeverity severityForImportPlanDiagnostic(
+            asharia::asset::AssetImportPlanDiagnosticSeverity severity) noexcept {
+            switch (severity) {
+            case asharia::asset::AssetImportPlanDiagnosticSeverity::Info:
+                return EditorAssetCatalogDiagnosticSeverity::Info;
+            case asharia::asset::AssetImportPlanDiagnosticSeverity::Warning:
+                return EditorAssetCatalogDiagnosticSeverity::Warning;
+            case asharia::asset::AssetImportPlanDiagnosticSeverity::Error:
+                return EditorAssetCatalogDiagnosticSeverity::Error;
+            }
+            return EditorAssetCatalogDiagnosticSeverity::Error;
+        }
+
         void appendImportPlanDiagnostics(
             EditorAssetCatalogSnapshot& snapshot,
             std::span<const asharia::asset::AssetImportPlanDiagnostic> diagnostics) {
             for (const asharia::asset::AssetImportPlanDiagnostic& diagnostic : diagnostics) {
                 addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::ImportPlanning,
-                              EditorAssetCatalogDiagnosticSeverity::Error, diagnostic.sourcePath,
-                              {}, diagnostic.message);
+                              severityForImportPlanDiagnostic(diagnostic.severity),
+                              diagnostic.sourcePath, {}, diagnostic.message);
             }
         }
 
@@ -154,11 +168,41 @@ namespace asharia::editor {
             }
         }
 
+        void
+        appendExpectedProductKeys(std::vector<asharia::asset::AssetProductKey>& expectedProductKeys,
+                                  const asharia::asset::AssetImportPlanResult& plan) {
+            expectedProductKeys.reserve(expectedProductKeys.size() + plan.cacheHits.size() +
+                                        plan.requests.size());
+            for (const asharia::asset::AssetImportCacheHit& hit : plan.cacheHits) {
+                expectedProductKeys.push_back(hit.product.key);
+            }
+            for (const asharia::asset::AssetImportRequest& request : plan.requests) {
+                expectedProductKeys.push_back(request.productKey);
+            }
+        }
+
+        void appendTextureProfileFacets(
+            std::vector<asharia::asset::AssetCatalogSourceFacet>& sourceFacets,
+            std::span<const asharia::asset::DiscoveredSourceAsset> discoveredSources) {
+            sourceFacets.reserve(sourceFacets.size() + discoveredSources.size());
+            for (const asharia::asset::DiscoveredSourceAsset& discovered : discoveredSources) {
+                asharia::asset::AssetCatalogSourceFacet facet =
+                    asharia::asset::makeTextureImportCatalogSourceFacet(discovered.source,
+                                                                        discovered.settings);
+                if (!facet.importProfileName.empty() || !facet.assetRoleName.empty() ||
+                    !facet.subAssets.empty() || !facet.diagnostics.empty()) {
+                    sourceFacets.push_back(std::move(facet));
+                }
+            }
+        }
+
         void appendRootSnapshot(const std::filesystem::path& projectDirectory,
                                 const asharia::project::AssetSourceRootDesc& root,
                                 const asharia::asset::AssetProductManifestDocument& productManifest,
                                 const std::string& targetProfile,
                                 asharia::asset::AssetCatalog& catalog,
+                                std::vector<asharia::asset::AssetProductKey>& expectedProductKeys,
+                                std::vector<asharia::asset::AssetCatalogSourceFacet>& sourceFacets,
                                 EditorAssetCatalogSnapshot& snapshot) {
             asharia::asset::AssetScannedImportPlanRequest request{
                 .scan =
@@ -179,6 +223,8 @@ namespace asharia::editor {
             appendDiscoveryDiagnostics(snapshot, result.discovery.diagnostics);
             appendSnapshotDiagnostics(snapshot, result.snapshot.diagnostics);
             appendImportPlanDiagnostics(snapshot, result.plan.diagnostics);
+            appendTextureProfileFacets(sourceFacets, result.discovery.manifest.records);
+            appendExpectedProductKeys(expectedProductKeys, result.plan);
             mergePlannedSources(catalog, snapshot, result.plan);
         }
 
@@ -210,8 +256,7 @@ namespace asharia::editor {
         [[nodiscard]] asharia::asset::AssetProductRecord
         fixtureProductRecord(const asharia::asset::SourceAssetRecord& source,
                              std::uint64_t dependencyHash, std::uint64_t targetProfileHash,
-                             std::string_view relativeProductPath,
-                             std::uint64_t productSizeBytes) {
+                             std::string_view relativeProductPath, std::uint64_t productSizeBytes) {
             const asharia::asset::AssetProductKey productKey =
                 asharia::asset::makeAssetProductKey(source, dependencyHash, targetProfileHash);
             return asharia::asset::AssetProductRecord{
@@ -251,8 +296,8 @@ namespace asharia::editor {
                             : std::span<const EditorAssetCatalogDiagnostic>{};
     }
 
-    std::string_view editorAssetCatalogDiagnosticCodeName(
-        EditorAssetCatalogDiagnosticCode code) noexcept {
+    std::string_view
+    editorAssetCatalogDiagnosticCodeName(EditorAssetCatalogDiagnosticCode code) noexcept {
         switch (code) {
         case EditorAssetCatalogDiagnosticCode::InvalidRequest:
             return "invalid-request";
@@ -327,15 +372,19 @@ namespace asharia::editor {
             readProductManifest(request, snapshot);
         const std::filesystem::path projectDirectory = projectDirectoryFor(request.projectFile);
         asharia::asset::AssetCatalog catalog;
+        std::vector<asharia::asset::AssetProductKey> expectedProductKeys;
+        std::vector<asharia::asset::AssetCatalogSourceFacet> sourceFacets;
         for (const asharia::project::AssetSourceRootDesc& root :
              snapshot.project.assetSourceRoots) {
             appendRootSnapshot(projectDirectory, root, productManifest, request.targetProfile,
-                               catalog, snapshot);
+                               catalog, expectedProductKeys, sourceFacets, snapshot);
         }
 
         snapshot.catalogView = asharia::asset::buildAssetCatalogView(
             catalog, productManifest.products,
-            asharia::asset::AssetCatalogViewOptions{.requireProducts = true});
+            asharia::asset::AssetCatalogViewOptions{.requireProducts = true,
+                                                    .expectedProductKeys = expectedProductKeys,
+                                                    .sourceFacets = sourceFacets});
         appendCatalogViewDiagnostics(snapshot, snapshot.catalogView.diagnostics);
         for (const asharia::asset::AssetCatalogViewEntry& entry : snapshot.catalogView.entries) {
             appendCatalogViewDiagnostics(snapshot, entry.diagnostics);
@@ -347,17 +396,16 @@ namespace asharia::editor {
         constexpr std::string_view kMaterialTypeName = "com.asharia.asset.Material";
         constexpr std::string_view kMeshTypeName = "com.asharia.asset.Mesh";
         constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
-        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
+        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture";
         constexpr std::string_view kTextTypeName = "com.asharia.asset.Text";
-        const asharia::asset::SourceAssetRecord material =
-            fixtureSourceRecord(FixtureSourceDesc{
-                .guidText = "b8373128-8e46-44e1-a5a4-df4c2ef9d2ad",
-                .assetTypeName = kMaterialTypeName,
-                .sourcePath = "Assets/Materials/brushed_metal.amat",
-                .importerName = "asharia.material",
-                .sourceHash = 0x1001ULL,
-                .settingsHash = 0x2001ULL,
-            });
+        const asharia::asset::SourceAssetRecord material = fixtureSourceRecord(FixtureSourceDesc{
+            .guidText = "b8373128-8e46-44e1-a5a4-df4c2ef9d2ad",
+            .assetTypeName = kMaterialTypeName,
+            .sourcePath = "Assets/Materials/brushed_metal.amat",
+            .importerName = "asharia.material",
+            .sourceHash = 0x1001ULL,
+            .settingsHash = 0x2001ULL,
+        });
         const asharia::asset::SourceAssetRecord shader = fixtureSourceRecord(FixtureSourceDesc{
             .guidText = "13a10d4b-6987-48d1-ad27-ae4055e5a936",
             .assetTypeName = kShaderTypeName,
@@ -366,24 +414,46 @@ namespace asharia::editor {
             .sourceHash = 0x1002ULL,
             .settingsHash = 0x2002ULL,
         });
-        asharia::asset::SourceAssetRecord staleMesh =
-            fixtureSourceRecord(FixtureSourceDesc{
-                .guidText = "1135c477-65aa-4d44-92f1-f208fc6142ad",
-                .assetTypeName = kMeshTypeName,
-                .sourcePath = "Assets/Meshes/cube.mesh",
-                .importerName = "asharia.mesh-placeholder",
-                .sourceHash = 0x1003ULL,
-                .settingsHash = 0x2003ULL,
-            });
-        const asharia::asset::SourceAssetRecord texture =
-            fixtureSourceRecord(FixtureSourceDesc{
-                .guidText = "cd9c0f3d-20e2-4028-a3e9-c3f42d3fd515",
-                .assetTypeName = kTextureTypeName,
-                .sourcePath = "Assets/Textures/checker.png",
-                .importerName = "asharia.texture-placeholder",
-                .sourceHash = 0x1004ULL,
-                .settingsHash = 0x2004ULL,
-            });
+        asharia::asset::SourceAssetRecord staleMesh = fixtureSourceRecord(FixtureSourceDesc{
+            .guidText = "1135c477-65aa-4d44-92f1-f208fc6142ad",
+            .assetTypeName = kMeshTypeName,
+            .sourcePath = "Assets/Meshes/cube.mesh",
+            .importerName = "asharia.mesh-placeholder",
+            .sourceHash = 0x1003ULL,
+            .settingsHash = 0x2003ULL,
+        });
+        const asharia::asset::SourceAssetRecord texture = fixtureSourceRecord(FixtureSourceDesc{
+            .guidText = "cd9c0f3d-20e2-4028-a3e9-c3f42d3fd515",
+            .assetTypeName = kTextureTypeName,
+            .sourcePath = "Assets/Textures/checker.png",
+            .importerName = "asharia.texture-placeholder",
+            .sourceHash = 0x1004ULL,
+            .settingsHash = 0x2004ULL,
+        });
+        const asharia::asset::SourceAssetRecord spriteSheet = fixtureSourceRecord(FixtureSourceDesc{
+            .guidText = "fd2e5880-dffb-4d27-b5d1-0c249005023a",
+            .assetTypeName = kTextureTypeName,
+            .sourcePath = "Assets/Textures/hero_sprites.png",
+            .importerName = "asharia.texture-placeholder",
+            .sourceHash = 0x1006ULL,
+            .settingsHash = 0x2006ULL,
+        });
+        const asharia::asset::SourceAssetRecord skybox = fixtureSourceRecord(FixtureSourceDesc{
+            .guidText = "3b2cef92-bc92-43be-8e7d-a74a89c1d502",
+            .assetTypeName = kTextureTypeName,
+            .sourcePath = "Assets/Textures/studio_skybox.hdr",
+            .importerName = "asharia.texture-placeholder",
+            .sourceHash = 0x1007ULL,
+            .settingsHash = 0x2007ULL,
+        });
+        const asharia::asset::SourceAssetRecord textureCube = fixtureSourceRecord(FixtureSourceDesc{
+            .guidText = "38fd0dc8-55ee-44c9-b12f-0179e0039c6b",
+            .assetTypeName = kTextureTypeName,
+            .sourcePath = "Assets/Textures/studio_probe_cube.ktx2",
+            .importerName = "asharia.texture-placeholder",
+            .sourceHash = 0x1008ULL,
+            .settingsHash = 0x2008ULL,
+        });
         const asharia::asset::SourceAssetRecord note = fixtureSourceRecord(FixtureSourceDesc{
             .guidText = "f98f9d88-237f-4e8a-a4b6-9977d3a1fc2b",
             .assetTypeName = kTextTypeName,
@@ -395,7 +465,9 @@ namespace asharia::editor {
 
         asharia::asset::AssetCatalog catalog;
         if (!catalog.addSource(shader) || !catalog.addSource(note) || !catalog.addSource(texture) ||
-            !catalog.addSource(material) || !catalog.addSource(staleMesh)) {
+            !catalog.addSource(spriteSheet) || !catalog.addSource(skybox) ||
+            !catalog.addSource(textureCube) || !catalog.addSource(material) ||
+            !catalog.addSource(staleMesh)) {
             return {};
         }
 
@@ -403,18 +475,75 @@ namespace asharia::editor {
             asharia::asset::makeAssetTargetProfileHash("editor-preview");
         asharia::asset::SourceAssetRecord oldMesh = staleMesh;
         oldMesh.sourceHash ^= 0x40ULL;
-        const std::array<asharia::asset::AssetProductRecord, 4> products{
+        const std::array expectedProductKeys{
+            asharia::asset::makeAssetProductKey(material, 0x3001ULL, targetProfile),
+            asharia::asset::makeAssetProductKey(shader, 0x3002ULL, targetProfile),
+            asharia::asset::makeAssetProductKey(staleMesh, 0x3003ULL, targetProfile),
+            asharia::asset::makeAssetProductKey(texture, 0x3004ULL, targetProfile),
+            asharia::asset::makeAssetProductKey(note, 0x3005ULL, targetProfile),
+            asharia::asset::makeAssetProductKey(spriteSheet, 0x3006ULL, targetProfile),
+            asharia::asset::makeAssetProductKey(skybox, 0x3007ULL, targetProfile),
+            asharia::asset::makeAssetProductKey(textureCube, 0x3008ULL, targetProfile),
+        };
+        const std::array<asharia::asset::AssetProductRecord, 7> products{
             fixtureProductRecord(material, 0x3001ULL, targetProfile,
                                  "materials/brushed_metal.product", 512),
             fixtureProductRecord(shader, 0x3002ULL, targetProfile, "shaders/grid.product", 256),
             fixtureProductRecord(texture, 0x3004ULL, targetProfile, "textures/checker.product",
                                  1024),
+            fixtureProductRecord(spriteSheet, 0x3006ULL, targetProfile,
+                                 "textures/hero_sprites.product", 4096),
+            fixtureProductRecord(skybox, 0x3007ULL, targetProfile, "textures/studio_skybox.product",
+                                 8192),
+            fixtureProductRecord(textureCube, 0x3008ULL, targetProfile,
+                                 "textures/studio_probe_cube.product", 8192),
             fixtureProductRecord(oldMesh, 0x3003ULL, targetProfile, "meshes/cube.old.product",
                                  2048),
         };
+        const std::array textureSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = std::string{asharia::asset::kTextureImportProfileTexture2D},
+            },
+        };
+        const std::array spriteSheetSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = std::string{asharia::asset::kTextureImportProfileSpriteSheet},
+            },
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.0.id",
+                                               .value = "hero-idle-0"},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.0.name",
+                                               .value = "Hero Idle 0"},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.1.id",
+                                               .value = "hero-run-0"},
+            asharia::asset::AssetImportSetting{.key = "texture.subAsset.1.name",
+                                               .value = "Hero Run 0"},
+        };
+        const std::array skyboxSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = std::string{asharia::asset::kTextureImportProfileSkybox},
+            },
+        };
+        const std::array textureCubeSettings{
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = std::string{asharia::asset::kTextureImportProfileTextureCube},
+            },
+        };
+        const std::array sourceFacets{
+            asharia::asset::makeTextureImportCatalogSourceFacet(texture, textureSettings),
+            asharia::asset::makeTextureImportCatalogSourceFacet(spriteSheet, spriteSheetSettings),
+            asharia::asset::makeTextureImportCatalogSourceFacet(skybox, skyboxSettings),
+            asharia::asset::makeTextureImportCatalogSourceFacet(textureCube, textureCubeSettings),
+        };
 
         return asharia::asset::buildAssetCatalogView(
-            catalog, products, asharia::asset::AssetCatalogViewOptions{.requireProducts = true});
+            catalog, products,
+            asharia::asset::AssetCatalogViewOptions{.requireProducts = true,
+                                                    .expectedProductKeys = expectedProductKeys,
+                                                    .sourceFacets = sourceFacets});
     }
 
 } // namespace asharia::editor

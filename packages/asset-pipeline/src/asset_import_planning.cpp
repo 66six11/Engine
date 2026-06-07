@@ -56,10 +56,13 @@ namespace asharia::asset {
             return true;
         }
 
-        void addDiagnostic(AssetImportPlanResult& result, AssetImportPlanDiagnosticCode code,
-                           std::string sourcePath, std::string message) {
+        void addDiagnostic(
+            AssetImportPlanResult& result, AssetImportPlanDiagnosticCode code,
+            std::string sourcePath, std::string message,
+            AssetImportPlanDiagnosticSeverity severity = AssetImportPlanDiagnosticSeverity::Error) {
             result.diagnostics.push_back(AssetImportPlanDiagnostic{
                 .code = code,
+                .severity = severity,
                 .sourcePath = std::move(sourcePath),
                 .message = std::move(message),
             });
@@ -318,6 +321,18 @@ namespace asharia::asset {
             SourceAssetRecord plannedSource = discovered.source;
             plannedSource.sourceHash = snapshots[*snapshotIndex].sourceHash;
             plannedSource.settingsHash = hashAssetImportSettings(discovered.settings);
+            if (discovered.source.sourceHash != plannedSource.sourceHash) {
+                addDiagnostic(result, AssetImportPlanDiagnosticCode::MetadataSourceHashDrift,
+                              plannedSource.sourcePath,
+                              "Asset import planning source " + sourceLabel(plannedSource) +
+                                  " has metadata sourceHash=\"" +
+                                  formatHash64(discovered.source.sourceHash) +
+                                  "\" but current snapshot sourceHash=\"" +
+                                  formatHash64(plannedSource.sourceHash) +
+                                  "\". Planning will use the current snapshot hash for product key "
+                                  "freshness.",
+                              AssetImportPlanDiagnosticSeverity::Warning);
+            }
 
             std::vector<AssetDependency> dependencies = makeImportDependencies(plannedSource);
             const std::uint64_t dependencyHash = hashAssetDependencies(dependencies);
