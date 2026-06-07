@@ -480,7 +480,8 @@ struct AssetLoadResult {
   `asset-pipeline` source scan / discovery / snapshot / import planning 和 `asset-core` catalog view；panel 仍只消费
   snapshot/view facts，不拥有 watcher、hot reload、import execution、product writes、runtime loading 或 GPU upload。
 - #80 已新增 `EditorAssetCatalogStore`，Asset Browser 通过 panel draw context 消费当前 `AssetCatalogView`；无项目时使用
-  deterministic fixture，交互式运行可通过 `ASHARIA_EDITOR_PROJECT` 加载静态 project snapshot，smoke 仍固定走 fixture。
+  deterministic fixture，交互式运行可通过 `ASHARIA_EDITOR_PROJECT` 加载静态 project snapshot；普通 editor smoke 仍走
+  fixture，`--smoke-editor-asset-browser` 会加载临时 snapshot-backed project catalog 来验证启动到 panel context 的路由。
 
 ### Scripting
 
