@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 #include <imgui.h>
 #include <string>
 #include <string_view>
@@ -17,42 +17,14 @@ namespace asharia::editor {
 
     namespace {
 
-        [[nodiscard]] EditorIconTint tint(float red, float green, float blue) {
-            return EditorIconTint{.red = red, .green = green, .blue = blue, .alpha = 1.0F};
+        [[nodiscard]] EditorIconTint tint(float red, float green, float blue) noexcept {
+            return editorIconTint(red, green, blue);
         }
 
         [[nodiscard]] EditorIconDescriptor icon(std::string_view iconId, EditorIconTint iconTint,
                                                 std::string_view tooltipKey,
                                                 std::string_view tooltipFallback) {
-            return EditorIconDescriptor{
-                .id = EditorIconId{.value = std::string{iconId}},
-                .tint = iconTint,
-                .tooltipKey = std::string{tooltipKey},
-                .tooltipFallback = std::string{tooltipFallback},
-            };
-        }
-
-        [[nodiscard]] std::string normalizedExtension(std::string_view extension) {
-            std::string normalized;
-            normalized.reserve(extension.size() + 1U);
-            if (!extension.empty() && extension.front() != '.') {
-                normalized.push_back('.');
-            }
-            for (char character : extension) {
-                normalized.push_back(static_cast<char>(
-                    std::tolower(static_cast<unsigned char>(character))));
-            }
-            return normalized;
-        }
-
-        [[nodiscard]] std::string normalizedToken(std::string_view value) {
-            std::string normalized;
-            normalized.reserve(value.size());
-            for (char character : value) {
-                normalized.push_back(static_cast<char>(
-                    std::tolower(static_cast<unsigned char>(character))));
-            }
-            return normalized;
+            return makeLucideEditorIconDescriptor(iconId, iconTint, tooltipKey, tooltipFallback);
         }
 
         [[nodiscard]] bool anyOf(std::string_view value,
@@ -66,12 +38,12 @@ namespace asharia::editor {
                 return icon("lucide.folder", tint(0.88F, 0.68F, 0.34F), "icon.folder", "Folder");
             }
 
-            const std::string assetType = normalizedToken(query.assetType);
-            const std::string importerId = normalizedToken(query.importerId);
-            const std::string extension = normalizedExtension(query.extension);
+            const std::string assetType = normalizeEditorAssetIconToken(query.assetType);
+            const std::string importerId = normalizeEditorAssetIconToken(query.importerId);
+            const std::string extension = normalizeEditorAssetIconExtension(query.extension);
 
-            if (anyOf(assetType, {"material", "asharia.material"}) ||
-                extension == ".amat" || importerId.contains("material")) {
+            if (anyOf(assetType, {"material", "asharia.material"}) || extension == ".amat" ||
+                importerId.contains("material")) {
                 return icon("lucide.palette", tint(0.78F, 0.58F, 0.92F), "icon.material",
                             "Material");
             }
@@ -87,8 +59,7 @@ namespace asharia::editor {
                 return icon("lucide.braces", tint(0.92F, 0.72F, 0.36F), "icon.shader", "Shader");
             }
             if (anyOf(extension, {".cpp", ".hpp", ".h", ".json", ".cmake", ".py", ".ps1"})) {
-                return icon("lucide.file-code-2", tint(0.66F, 0.78F, 0.96F), "icon.code",
-                            "Code");
+                return icon("lucide.file-code-2", tint(0.66F, 0.78F, 0.96F), "icon.code", "Code");
             }
             if (anyOf(extension, {".txt", ".md", ".toml", ".ini"})) {
                 return icon("lucide.file-text", tint(0.72F, 0.76F, 0.82F), "icon.text", "Text");
@@ -111,12 +82,11 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] ImU32 tintColor(const EditorIconTint& iconTint) {
-            return ImGui::GetColorU32(ImVec4{iconTint.red, iconTint.green, iconTint.blue,
-                                             iconTint.alpha});
+            return ImGui::GetColorU32(
+                ImVec4{iconTint.red, iconTint.green, iconTint.blue, iconTint.alpha});
         }
 
-        [[nodiscard]] bool iconIs(const EditorIconDescriptor& descriptor,
-                                  std::string_view iconId) {
+        [[nodiscard]] bool iconIs(const EditorIconDescriptor& descriptor, std::string_view iconId) {
             return descriptor.id.value == iconId;
         }
 
@@ -170,14 +140,14 @@ namespace asharia::editor {
 
         void drawCodeShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
                            float stroke) {
-            drawList.AddLine(iconPoint(min, size, 0.38F, 0.28F),
-                             iconPoint(min, size, 0.18F, 0.50F), color, stroke);
-            drawList.AddLine(iconPoint(min, size, 0.18F, 0.50F),
-                             iconPoint(min, size, 0.38F, 0.72F), color, stroke);
-            drawList.AddLine(iconPoint(min, size, 0.62F, 0.28F),
-                             iconPoint(min, size, 0.82F, 0.50F), color, stroke);
-            drawList.AddLine(iconPoint(min, size, 0.82F, 0.50F),
-                             iconPoint(min, size, 0.62F, 0.72F), color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.38F, 0.28F), iconPoint(min, size, 0.18F, 0.50F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.18F, 0.50F), iconPoint(min, size, 0.38F, 0.72F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.62F, 0.28F), iconPoint(min, size, 0.82F, 0.50F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.82F, 0.50F), iconPoint(min, size, 0.62F, 0.72F),
+                             color, stroke);
         }
 
         void drawPaletteShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
@@ -187,8 +157,7 @@ namespace asharia::editor {
             drawList.AddCircleFilled(iconPoint(min, size, 0.36F, 0.38F), size * 0.04F, color);
             drawList.AddCircleFilled(iconPoint(min, size, 0.52F, 0.34F), size * 0.04F, color);
             drawList.AddCircleFilled(iconPoint(min, size, 0.64F, 0.50F), size * 0.04F, color);
-            drawList.AddCircle(iconPoint(min, size, 0.56F, 0.68F), size * 0.07F, color, 12,
-                               stroke);
+            drawList.AddCircle(iconPoint(min, size, 0.56F, 0.68F), size * 0.07F, color, 12, stroke);
         }
 
         void drawBoxShape(ImDrawList& drawList, ImVec2 min, float size, IconDrawStyle style) {
@@ -199,8 +168,8 @@ namespace asharia::editor {
             const ImVec2 bottomCenter = iconPoint(min, size, 0.50F, 0.86F);
             const ImVec2 bottomLeft = iconPoint(min, size, 0.20F, 0.70F);
             const ImVec2 middle = iconPoint(min, size, 0.50F, 0.52F);
-            std::array<ImVec2, 6> points{
-                topLeft, topCenter, topRight, bottomRight, bottomCenter, bottomLeft};
+            std::array<ImVec2, 6> points{topLeft,     topCenter,    topRight,
+                                         bottomRight, bottomCenter, bottomLeft};
             drawList.AddPolyline(points.data(), static_cast<int>(points.size()), style.color,
                                  ImDrawFlags_Closed, style.stroke);
             drawList.AddLine(topCenter, bottomCenter, style.color, style.stroke);
@@ -227,8 +196,25 @@ namespace asharia::editor {
                              marker == DiagnosticIconMarker::Question ? "?" : "!");
         }
 
-        void drawGlyphById(ImDrawList& drawList, const EditorIconDescriptor& descriptor,
-                           ImVec2 min, float size, ImU32 color, float stroke) {
+        void drawXShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color, float stroke) {
+            drawList.AddLine(iconPoint(min, size, 0.24F, 0.24F), iconPoint(min, size, 0.76F, 0.76F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.76F, 0.24F), iconPoint(min, size, 0.24F, 0.76F),
+                             color, stroke);
+        }
+
+        void drawCopyShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                           float stroke) {
+            const ImVec2 backMin = iconPoint(min, size, 0.32F, 0.12F);
+            const ImVec2 backMax = iconPoint(min, size, 0.82F, 0.62F);
+            const ImVec2 frontMin = iconPoint(min, size, 0.18F, 0.30F);
+            const ImVec2 frontMax = iconPoint(min, size, 0.68F, 0.88F);
+            drawList.AddRect(backMin, backMax, color, size * 0.06F, 0, stroke);
+            drawList.AddRect(frontMin, frontMax, color, size * 0.06F, 0, stroke);
+        }
+
+        void drawGlyphById(ImDrawList& drawList, const EditorIconDescriptor& descriptor, ImVec2 min,
+                           float size, ImU32 color, float stroke) {
             if (iconIs(descriptor, "lucide.folder")) {
                 drawFolderShape(drawList, min, size, color, stroke);
             } else if (iconIs(descriptor, "lucide.image")) {
@@ -242,8 +228,7 @@ namespace asharia::editor {
             } else if (iconIs(descriptor, "lucide.palette")) {
                 drawPaletteShape(drawList, min, size, color, stroke);
             } else if (iconIs(descriptor, "lucide.box")) {
-                drawBoxShape(drawList, min, size,
-                             IconDrawStyle{.color = color, .stroke = stroke});
+                drawBoxShape(drawList, min, size, IconDrawStyle{.color = color, .stroke = stroke});
             } else if (iconIs(descriptor, "lucide.triangle-alert") ||
                        iconIs(descriptor, "lucide.circle-alert")) {
                 drawDiagnosticShape(drawList, min, size, color, stroke,
@@ -251,6 +236,10 @@ namespace asharia::editor {
             } else if (iconIs(descriptor, "lucide.circle-help")) {
                 drawDiagnosticShape(drawList, min, size, color, stroke,
                                     DiagnosticIconMarker::Question);
+            } else if (iconIs(descriptor, "lucide.x")) {
+                drawXShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.copy")) {
+                drawCopyShape(drawList, min, size, color, stroke);
             } else {
                 drawFileShape(drawList, min, size, color, stroke);
             }
@@ -258,12 +247,55 @@ namespace asharia::editor {
 
     } // namespace
 
-    asharia::VoidResult EditorAssetIconRegistry::registerResolver(
-        std::string resolverId, EditorAssetIconResolver resolver) {
+    EditorIconTint editorIconTint(float red, float green, float blue, float alpha) noexcept {
+        return EditorIconTint{.red = red, .green = green, .blue = blue, .alpha = alpha};
+    }
+
+    EditorIconDescriptor makeLucideEditorIconDescriptor(std::string_view lucideName,
+                                                        EditorIconTint iconTint,
+                                                        std::string_view tooltipKey,
+                                                        std::string_view tooltipFallback) {
+        std::string iconId{lucideName};
+        if (!iconId.starts_with("lucide.")) {
+            iconId = "lucide." + iconId;
+        }
+        return EditorIconDescriptor{
+            .id = EditorIconId{.value = std::move(iconId)},
+            .tint = iconTint,
+            .tooltipKey = std::string{tooltipKey},
+            .tooltipFallback = std::string{tooltipFallback},
+        };
+    }
+
+    std::string normalizeEditorAssetIconExtension(std::string_view extension) {
+        std::string normalized;
+        normalized.reserve(extension.size() + 1U);
+        if (!extension.empty() && extension.front() != '.') {
+            normalized.push_back('.');
+        }
+        for (char character : extension) {
+            normalized.push_back(
+                static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+        }
+        return normalized;
+    }
+
+    std::string normalizeEditorAssetIconToken(std::string_view value) {
+        std::string normalized;
+        normalized.reserve(value.size());
+        for (char character : value) {
+            normalized.push_back(
+                static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+        }
+        return normalized;
+    }
+
+    asharia::VoidResult
+    EditorAssetIconRegistry::registerResolver(std::string resolverId,
+                                              EditorAssetIconResolver resolver) {
         if (resolverId.empty()) {
-            return std::unexpected{
-                asharia::Error{asharia::ErrorDomain::Core, 0,
-                               "Editor asset icon resolver id must not be empty"}};
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::Core, 0, "Editor asset icon resolver id must not be empty"}};
         }
         if (!resolver) {
             return std::unexpected{
@@ -283,8 +315,45 @@ namespace asharia::editor {
         return {};
     }
 
-    EditorIconDescriptor EditorAssetIconRegistry::resolveAssetIcon(
-        const EditorAssetIconQuery& query) const {
+    asharia::VoidResult
+    EditorAssetIconRegistry::registerOrReplaceResolver(std::string resolverId,
+                                                       EditorAssetIconResolver resolver) {
+        if (resolverId.empty()) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::Core, 0, "Editor asset icon resolver id must not be empty"}};
+        }
+        if (!resolver) {
+            return std::unexpected{
+                asharia::Error{asharia::ErrorDomain::Core, 0,
+                               "Editor asset icon resolver must not be empty: " + resolverId}};
+        }
+
+        const auto found = std::ranges::find_if(
+            resolvers_, [&](const ResolverEntry& entry) { return entry.id == resolverId; });
+        if (found != resolvers_.end()) {
+            found->resolver = std::move(resolver);
+            return {};
+        }
+
+        resolvers_.push_back(
+            ResolverEntry{.id = std::move(resolverId), .resolver = std::move(resolver)});
+        return {};
+    }
+
+    bool EditorAssetIconRegistry::unregisterResolver(std::string_view resolverId) {
+        const auto found =
+            std::ranges::find_if(resolvers_, [resolverId](const ResolverEntry& entry) {
+                return entry.id == resolverId;
+            });
+        if (found == resolvers_.end()) {
+            return false;
+        }
+        resolvers_.erase(found);
+        return true;
+    }
+
+    EditorIconDescriptor
+    EditorAssetIconRegistry::resolveAssetIcon(const EditorAssetIconQuery& query) const {
         for (const ResolverEntry& entry : resolvers_) {
             if (std::optional<EditorIconDescriptor> resolved = entry.resolver(query)) {
                 return *resolved;
@@ -312,6 +381,46 @@ namespace asharia::editor {
         }
     }
 
+    bool drawEditorIconButton(const EditorIconDescriptor& descriptor, std::string_view stableId,
+                              float size) {
+        size = std::max(size, 8.0F);
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const ImVec2 cursor = ImGui::GetCursorScreenPos();
+        const ImVec2 buttonSize{size + (style.FramePadding.x * 2.0F),
+                                size + (style.FramePadding.y * 2.0F)};
+        std::string buttonId{"##"};
+        buttonId.append(stableId.data(), stableId.size());
+        const bool pressed = ImGui::InvisibleButton(buttonId.c_str(), buttonSize);
+        const bool hovered = ImGui::IsItemHovered();
+        const bool active = ImGui::IsItemActive();
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImGuiCol backgroundColor = ImGuiCol_Button;
+        if (active) {
+            backgroundColor = ImGuiCol_ButtonActive;
+        } else if (hovered) {
+            backgroundColor = ImGuiCol_ButtonHovered;
+        }
+        const ImU32 background = ImGui::GetColorU32(backgroundColor);
+        drawList->AddRectFilled(cursor, ImVec2{cursor.x + buttonSize.x, cursor.y + buttonSize.y},
+                                background, style.FrameRounding);
+        drawList->AddRect(cursor, ImVec2{cursor.x + buttonSize.x, cursor.y + buttonSize.y},
+                          ImGui::GetColorU32(ImGuiCol_Border), style.FrameRounding);
+
+        const float stroke = std::max(1.0F, std::round(size / 12.0F));
+        const ImU32 color = tintColor(descriptor.tint);
+        const ImVec2 iconMin{cursor.x + ((buttonSize.x - size) * 0.5F),
+                             cursor.y + ((buttonSize.y - size) * 0.5F)};
+        drawGlyphById(*drawList, descriptor, iconMin, size, color, stroke);
+
+        if (!descriptor.tooltipFallback.empty() && hovered) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(descriptor.tooltipFallback.c_str());
+            ImGui::EndTooltip();
+        }
+        return pressed;
+    }
+
     bool validateEditorAssetIconSmoke() {
         EditorAssetIconRegistry registry;
         if (registry
@@ -321,6 +430,9 @@ namespace asharia::editor {
                     .importerId = {},
                     .extension = {},
                     .diagnostic = EditorAssetIconDiagnosticState::None,
+                    .sourcePath = {},
+                    .displayName = {},
+                    .guidText = {},
                 })
                 .id.value != "lucide.folder") {
             asharia::logError("Editor asset icon smoke missed folder Lucide fallback.");
@@ -333,6 +445,9 @@ namespace asharia::editor {
                     .importerId = {},
                     .extension = ".png",
                     .diagnostic = EditorAssetIconDiagnosticState::None,
+                    .sourcePath = {},
+                    .displayName = {},
+                    .guidText = {},
                 })
                 .id.value != "lucide.image") {
             asharia::logError("Editor asset icon smoke missed image extension fallback.");
@@ -345,6 +460,9 @@ namespace asharia::editor {
                     .importerId = {},
                     .extension = {},
                     .diagnostic = EditorAssetIconDiagnosticState::None,
+                    .sourcePath = {},
+                    .displayName = {},
+                    .guidText = {},
                 })
                 .id.value != "lucide.palette") {
             asharia::logError("Editor asset icon smoke missed material type fallback.");
@@ -357,6 +475,9 @@ namespace asharia::editor {
                     .importerId = {},
                     .extension = ".unknown",
                     .diagnostic = EditorAssetIconDiagnosticState::None,
+                    .sourcePath = {},
+                    .displayName = {},
+                    .guidText = {},
                 })
                 .id.value != "lucide.file") {
             asharia::logError("Editor asset icon smoke missed generic file fallback.");
@@ -369,34 +490,52 @@ namespace asharia::editor {
                     .importerId = {},
                     .extension = {},
                     .diagnostic = EditorAssetIconDiagnosticState::Missing,
+                    .sourcePath = {},
+                    .displayName = {},
+                    .guidText = {},
                 })
                 .id.value != "lucide.circle-help") {
             asharia::logError("Editor asset icon smoke missed missing diagnostic fallback.");
+            return false;
+        }
+        if (makeLucideEditorIconDescriptor("x", editorIconTint(0.78F, 0.80F, 0.84F), "icon.clear",
+                                           "Clear")
+                .id.value != "lucide.x") {
+            asharia::logError("Editor asset icon smoke missed Lucide x id normalization.");
+            return false;
+        }
+        if (makeLucideEditorIconDescriptor("copy", editorIconTint(0.72F, 0.76F, 0.82F), "icon.copy",
+                                           "Copy")
+                .id.value != "lucide.copy") {
+            asharia::logError("Editor asset icon smoke missed Lucide copy id normalization.");
             return false;
         }
 
         auto custom = registry.registerResolver(
             "smoke.shader-icon",
             [](const EditorAssetIconQuery& query) -> std::optional<EditorIconDescriptor> {
-                if (normalizedExtension(query.extension) != ".slang") {
+                if (normalizeEditorAssetIconExtension(query.extension) != ".slang") {
                     return std::nullopt;
                 }
-                return icon("lucide.sparkles", tint(0.94F, 0.82F, 0.42F),
-                            "icon.shader.custom", "Custom shader");
+                return makeLucideEditorIconDescriptor("sparkles",
+                                                      editorIconTint(0.94F, 0.82F, 0.42F),
+                                                      "icon.shader.custom", "Custom shader");
             });
         if (!custom) {
             asharia::logError(custom.error().message);
             return false;
         }
         if (registry.resolverCount() != 1U ||
-            registry
-                    .resolveAssetIcon(EditorAssetIconQuery{
-                        .folder = false,
-                        .assetType = {},
-                        .importerId = {},
-                        .extension = ".slang",
-                        .diagnostic = EditorAssetIconDiagnosticState::None,
-                    })
+            registry.resolveAssetIcon(EditorAssetIconQuery{
+                                          .folder = false,
+                                          .assetType = {},
+                                          .importerId = {},
+                                          .extension = ".slang",
+                                          .diagnostic = EditorAssetIconDiagnosticState::None,
+                                          .sourcePath = {},
+                                          .displayName = {},
+                                          .guidText = {},
+                                      })
                     .id.value != "lucide.sparkles") {
             asharia::logError("Editor asset icon smoke missed custom resolver override.");
             return false;
@@ -407,6 +546,57 @@ namespace asharia::editor {
                     return std::nullopt;
                 })) {
             asharia::logError("Editor asset icon smoke accepted a duplicate resolver id.");
+            return false;
+        }
+
+        auto replaced = registry.registerOrReplaceResolver(
+            "smoke.shader-icon",
+            [](const EditorAssetIconQuery& query) -> std::optional<EditorIconDescriptor> {
+                if (!query.sourcePath.contains("Generated/Shaders") ||
+                    normalizeEditorAssetIconExtension(query.extension) != ".slang") {
+                    return std::nullopt;
+                }
+                return makeLucideEditorIconDescriptor("file-code-2",
+                                                      editorIconTint(0.66F, 0.78F, 0.96F),
+                                                      "icon.shader.generated", "Generated shader");
+            });
+        if (!replaced) {
+            asharia::logError(replaced.error().message);
+            return false;
+        }
+        if (registry.resolverCount() != 1U ||
+            registry.resolveAssetIcon(EditorAssetIconQuery{
+                                          .folder = false,
+                                          .assetType = {},
+                                          .importerId = {},
+                                          .extension = ".slang",
+                                          .diagnostic = EditorAssetIconDiagnosticState::None,
+                                          .sourcePath = "Assets/Generated/Shaders/grid.slang",
+                                          .displayName = "grid.slang",
+                                          .guidText = "5d3cdcbf-7396-40d0-b497-4fa2fe54f92a",
+                                      })
+                    .id.value != "lucide.file-code-2") {
+            asharia::logError("Editor asset icon smoke missed custom resolver replacement.");
+            return false;
+        }
+        if (registry
+                .resolveAssetIcon(EditorAssetIconQuery{
+                    .folder = false,
+                    .assetType = {},
+                    .importerId = {},
+                    .extension = ".slang",
+                    .diagnostic = EditorAssetIconDiagnosticState::None,
+                    .sourcePath = "Assets/Shaders/grid.slang",
+                    .displayName = "grid.slang",
+                    .guidText = "5d3cdcbf-7396-40d0-b497-4fa2fe54f92a",
+                })
+                .id.value != "lucide.braces") {
+            asharia::logError("Editor asset icon smoke lost fallback after resolver replacement.");
+            return false;
+        }
+        if (!registry.unregisterResolver("smoke.shader-icon") ||
+            registry.unregisterResolver("smoke.shader-icon") || registry.resolverCount() != 0U) {
+            asharia::logError("Editor asset icon smoke missed resolver unregister behavior.");
             return false;
         }
 

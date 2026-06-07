@@ -506,14 +506,17 @@ recording or descriptor lifetime, also run the relevant editor smoke commands:
 
 ```text
 --smoke-editor-shell
+--smoke-editor-asset-browser
 --smoke-editor-viewport
 --smoke-editor-viewport-resize
 --smoke-editor-frame-debugger
 ```
 
-`--smoke-editor-shell` covers shell/menu/panel/action/event state. `--smoke-editor-viewport` is the stricter sampled
-viewport texture smoke and verifies idle Scene View on-demand reuse. `--smoke-editor-viewport-resize` performs a real
-window resize and verifies resized viewport texture presentation plus old descriptor/render-target retirement.
+`--smoke-editor-shell` covers shell/menu/panel/action/event state. `--smoke-editor-asset-browser` covers
+snapshot-backed project catalog startup, `AssetCatalogView` routing and Asset Browser row/diagnostic consumption.
+`--smoke-editor-viewport` is the stricter sampled viewport texture smoke and verifies idle Scene View on-demand reuse.
+`--smoke-editor-viewport-resize` performs a real window resize and verifies resized viewport texture presentation plus old
+descriptor/render-target retirement.
 `--smoke-editor-frame-debugger` covers capture,
 fence-wait pause, skipped RenderView recording and resume.
 
@@ -543,7 +546,7 @@ Every sub-stage must:
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
 | 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
 | 21 | 21.1-21.11 camera/unproject foundation Done; visible grid pass and later interaction slices Deferred/Blocked | In progress | Freeze Frame Debug / diagnostics bottom-layer contracts first; then advance Grid through backend-neutral packets before adding visible renderer passes. |
-| 24 | 24.1-24.5 | Deferred | Add Asset Browser and Material Editor on asset/material public APIs. |
+| 24 | 24.1-24.11 | In progress | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
 
 ## Phase 15: ImGui Sampled Texture Contract
@@ -1660,8 +1663,8 @@ Scope:
 - Add a C++/ImGui Asset Browser panel shell with View menu, tool contribution and default dock metadata.
 - List deterministic synthetic catalog rows until the public catalog view is ready.
 - Resolve row icons through editor-owned Lucide icon ids and `EditorAssetIconRegistry`.
-- Allow custom icon resolvers to override by extension, asset type, importer id or diagnostic state without modifying the
-  Asset Browser draw code.
+- Allow custom icon resolvers to override by extension, asset type, importer id, diagnostic state, source path, display name
+  or GUID without modifying the Asset Browser draw code.
 
 Non-goals:
 
@@ -1671,11 +1674,12 @@ Non-goals:
 
 Validation:
 
-- `--smoke-editor-shell` covers panel/action/tool registration and Lucide/default/custom icon resolver fallback.
+- `--smoke-editor-shell` covers panel/action/tool registration plus Lucide/default/custom icon resolver fallback, replacement
+  and unregister behavior.
 
 ### 24.1 Asset Catalog View
 
-Status: In progress via #78.
+Status: Done via #78 / PR #79.
 
 Depends on:
 
@@ -1693,7 +1697,135 @@ Validation:
 - Asset Browser can list known assets and diagnostics from asset-core.
 - Package-local asset-core smoke covers deterministic view ordering and product diagnostics.
 
-### 24.2 Import Settings Editing
+### 24.2 Project Catalog Snapshot
+
+Status: In progress via #80.
+
+Current state:
+
+- `editor_asset_catalog` owns the read-only project snapshot loader and `EditorAssetCatalogStore`.
+- `AssetBrowserPanel` consumes the `AssetCatalogView` passed through panel draw context instead of constructing fixture
+  rows in panel code.
+- Interactive runs can load a static project snapshot through `ASHARIA_EDITOR_PROJECT`, optional
+  `ASHARIA_EDITOR_PRODUCT_MANIFEST` and optional `ASHARIA_EDITOR_ASSET_TARGET_PROFILE`; regular editor smoke modes keep
+  deterministic fixture data, while `--smoke-editor-asset-browser` loads a temporary snapshot-backed project catalog.
+- Startup smoke validation covers ready product manifest state, missing-product catalog diagnostics, project read diagnostics
+  and fixture/snapshot `EditorAssetCatalogStore` selection.
+
+Depends on:
+
+- 24.1 public catalog view model.
+- Stage 22 project descriptor, source scan, metadata discovery, source snapshot and import planning baselines.
+
+Scope:
+
+- Add an editor-owned read-only project catalog snapshot service that composes public `project-core`, `asset-pipeline`
+  and `asset-core` APIs.
+- Route the selected catalog view through app services and the Asset Browser draw context.
+- Preserve project, scan, discovery, snapshot, import-planning and catalog diagnostics for browser-facing UI.
+- Keep Asset Browser panel code out of direct source scanning, import execution, product cache writes and runtime loading.
+
+Validation:
+
+- `--smoke-editor-asset-browser` proves a temporary project descriptor/source asset/`.ameta` fixture appears in the
+  frame-loop `AssetCatalogView` with a clean product manifest.
+- Editor smoke proves a temporary project descriptor/source asset/`.ameta` fixture appears in an `AssetCatalogView`.
+- Smoke covers optional product manifest state and at least one project/catalog diagnostic path.
+- Smoke covers fixture-backed and snapshot-backed `EditorAssetCatalogStore` selection.
+
+### 24.3 Read-only Selection And Details
+
+Status: In progress.
+
+Scope:
+
+- Keep Asset Browser selection local to the panel as transient UI state.
+- Add a visible-row status summary for catalog state and diagnostics.
+- Add a selected-asset detail pane that reads GUID, source path, type, importer, importer version, product counts and row
+  diagnostics from `AssetCatalogViewEntry`.
+- Provide compact Lucide `copy` actions for GUID and source path so details can be inspected and copied without opening,
+  importing or mutating the asset.
+- Keep details read-only: no commands, import execution, product cache writes, file mutation, preview textures or runtime
+  loading.
+
+Validation:
+
+- `--smoke-editor-asset-browser` renders the snapshot-backed Asset Browser with a selected catalog row and detail pane.
+- `--smoke-editor-shell` keeps the fixture-backed catalog route visible and read-only.
+
+### 24.4 Catalog-derived Folder Scope
+
+Status: In progress.
+
+Scope:
+
+- Derive immediate child folder scopes from `AssetCatalogViewEntry::sourcePath`.
+- Derive folder breadcrumbs from the selected source-path scope so users can navigate back up without filesystem IO.
+- Keep selected folder scope local to `AssetBrowserPanel`; it only filters visible catalog rows and selected row details.
+- Reuse editor-owned Lucide folder icon resolution through `EditorAssetIconRegistry`.
+- Do not enumerate the filesystem, create folder assets, watch directories, import sources, write product cache or load
+  runtime resources.
+
+Validation:
+
+- `--smoke-editor-asset-browser` renders the snapshot-backed browser with derived folder scope and breadcrumb controls.
+- `--smoke-editor-shell` keeps fixture-backed source-path folder scopes and breadcrumbs available without project IO.
+
+### 24.5 Catalog-derived Asset Type Filter
+
+Status: In progress.
+
+Scope:
+
+- Derive asset type filter options from `AssetCatalogViewEntry::assetTypeName`.
+- Keep the selected asset type filter as transient `AssetBrowserPanel` state.
+- Combine text search, folder scope and type filter when computing visible rows and selected-row details.
+- Match text search against catalog-facing metadata only: display name, source path, type, importer name, extension, GUID,
+  product state and row diagnostics.
+- Do not query importer implementations, runtime type registries, loaded resources or filesystem state.
+
+Validation:
+
+- `--smoke-editor-asset-browser` renders the snapshot-backed browser with catalog-derived type filter controls.
+- `--smoke-editor-shell` keeps fixture-backed type filter options available across multiple asset types.
+
+### 24.6 Catalog-derived Product State Filter
+
+Status: In progress.
+
+Scope:
+
+- Derive product state filter options from `AssetCatalogViewEntry::productState`.
+- Keep the selected product state filter as transient `AssetBrowserPanel` state.
+- Combine text search, folder scope, type filter and product state filter when computing visible rows and selected-row
+  details.
+- Do not trigger import/reimport, product cache writes, runtime loading, preview texture creation or renderer/RHI work.
+
+Validation:
+
+- `--smoke-editor-asset-browser` renders the snapshot-backed browser with catalog-derived product state filter controls.
+- `--smoke-editor-shell` keeps fixture-backed product state filter options available across multiple catalog states.
+
+### 24.7 Catalog Row Sorting And Local Reset
+
+Status: In progress.
+
+Scope:
+
+- Sort visible Asset Browser rows by name, asset type, importer or product state through Dear ImGui table sort specs.
+- Keep sorting as a transient panel view over `AssetCatalogViewEntry` pointers.
+- Preserve stable row selection through GUID/source-path selection keys while the draw order changes.
+- Provide a Lucide `x` clear-filters button that resets only transient filter text, folder scope, asset type filter,
+  product state filter and selected row state.
+- Do not mutate catalog order, asset metadata, product records, project files, import plans or runtime resource state.
+
+Validation:
+
+- `--smoke-editor-asset-browser` renders the snapshot-backed browser with sortable catalog columns and the local
+  clear-filters control.
+- `--smoke-editor-shell` keeps fixture-backed catalog rows visible with default name sorting and stable selection.
+
+### 24.8 Import Settings Editing
 
 Status: Deferred.
 
@@ -1706,7 +1838,7 @@ Validation:
 
 - Editor-only import settings do not enter runtime manifest.
 
-### 24.3 Material Editor Data Path
+### 24.9 Material Editor Data Path
 
 Status: Deferred.
 
@@ -1723,7 +1855,7 @@ Validation:
 
 - Material mismatch diagnostics are available without editor.
 
-### 24.4 Preview View
+### 24.10 Preview View
 
 Status: Deferred.
 
@@ -1736,7 +1868,7 @@ Validation:
 
 - Preview View does not create editor-specific renderer path.
 
-### 24.5 Asset/Material UI Smoke
+### 24.11 Asset/Material UI Smoke
 
 Status: Deferred.
 

@@ -391,9 +391,11 @@ git diff --check
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
 build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 ```

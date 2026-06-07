@@ -325,21 +325,54 @@ Tool rules:
 
 ### Asset Browser / Icons
 
-`AssetBrowserPanel` is the first shell for Phase 24. It is intentionally read-only and consumes a deterministic
-`asset-core` catalog view fixture until project catalog loading is ready. It registers as a normal panel/action/tool
-contribution and defaults to the right-bottom dock slot.
+`AssetBrowserPanel` is the first shell for Phase 24. It is intentionally read-only and consumes an `asset-core`
+`AssetCatalogView` supplied through its panel draw context. The panel keeps its transient filter/UI state locally; project
+source scanning and product manifest reads belong to the editor-owned catalog snapshot service, not to panel draw code. The
+panel registers as a normal panel/action/tool contribution and defaults to the right-bottom dock slot.
 
 Icon ownership stays in `editor_asset_icon`:
 
 - Panel code submits `EditorAssetIconQuery` values and draws the returned `EditorIconDescriptor`.
-- Panel rows come from public catalog view entries, not direct source tree scanning or product cache mutation.
+  Queries expose catalog-facing identity such as extension, asset type, importer id, diagnostic state, source path,
+  display name and GUID text; they do not expose filesystem scan internals or runtime resources.
+- Panel rows come from public catalog view entries, not direct source tree scanning, import execution or product cache
+  mutation.
+- Asset Browser row selection, filter text, visible-row summary and selected-asset details are transient panel state. The
+  detail pane re-reads `AssetCatalogViewEntry` metadata such as GUID, source path, type, importer, importer version, product
+  counts and row diagnostics; it may offer clipboard copy buttons for read-only identifiers, but it does not create runtime
+  asset handles or editor commands.
+- Text search matches catalog-facing metadata only: display name, source path, type, importer name, extension, GUID, product
+  state and row diagnostics.
+- Folder scope browsing is derived from `AssetCatalogViewEntry::sourcePath` only. It provides read-only source-path scope
+  navigation and breadcrumbs for visible rows, but it does not enumerate the filesystem, watch directories or create folder
+  assets.
+- Asset type filtering is derived from visible catalog row metadata (`AssetCatalogViewEntry::assetTypeName`) and remains local
+  panel state. It does not query importers, load assets or create editor/runtime type registries.
+- Product state filtering is derived from catalog row metadata (`AssetCatalogViewEntry::productState`) and remains local
+  panel state. It does not trigger import/reimport, product-cache writes, resource loading or renderer preview creation.
+- Asset table sorting is a local view over the visible `AssetCatalogViewEntry` rows. Sorting by name, type, importer or
+  product state does not mutate catalog order, asset metadata, product records or project files.
+- `editor_asset_catalog` composes public `project-core`, `asset-pipeline` and `asset-core` APIs into a read-only project
+  snapshot for future browser wiring. It does not own watcher, hot reload, import execution, runtime loading or renderer
+  resources.
+- `EditorAssetCatalogStore` selects either the deterministic fixture catalog or a loaded project snapshot before the frame
+  loop. `AssetBrowserPanel` consumes the catalog rows and snapshot diagnostics through its panel context.
+- `EditorAssetCatalogStore` owns the current browser catalog view. It defaults to a deterministic fixture for development
+  runs without a project and can be switched to a project snapshot at startup.
+- Interactive runs may set `ASHARIA_EDITOR_PROJECT`, optional `ASHARIA_EDITOR_PRODUCT_MANIFEST` and optional
+  `ASHARIA_EDITOR_ASSET_TARGET_PROFILE` to load a project snapshot. Regular editor smoke modes ignore those variables and
+  keep the deterministic fixture path; `--smoke-editor-asset-browser` loads a temporary snapshot-backed project catalog to
+  prove the startup/frame-context route.
 - Built-in fallback ids use Lucide vocabulary such as `lucide.folder`, `lucide.file`, `lucide.image`, `lucide.braces`,
-  `lucide.palette`, `lucide.box`, `lucide.circle-help` and `lucide.triangle-alert`.
-- Custom providers can override by extension, asset type, importer id or diagnostic state, but they only return stable ids,
-  tint and tooltip metadata.
+  `lucide.palette`, `lucide.box`, `lucide.copy`, `lucide.x`, `lucide.circle-help` and `lucide.triangle-alert`.
+- Custom providers can override by extension, asset type, importer id, diagnostic state, source path, display name or GUID,
+  but they only return stable ids, tint and tooltip metadata.
+- Custom providers are registered through `EditorAssetIconRegistry`; resolver ids can be replaced or unregistered so future
+  extension reload can update icon policy without recreating panel state.
 - Custom providers do not return raw SVG, ImGui callbacks, `ImTextureID`, Vulkan handles or renderer resources.
-- Asset Browser UI state such as filter text is transient panel state, not asset metadata, product cache state or project
-  descriptor state.
+- Asset Browser UI state such as filter text, folder scope, type/product-state filters and row selection is transient panel
+  state, not asset metadata, product cache state or project descriptor state. The clear-filters icon button resets only
+  those local controls.
 
 ### Actions 扩展
 
@@ -420,6 +453,13 @@ build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 ```
 
+Asset Browser、asset catalog snapshot 或 asset icon resolver 相关改动必须运行：
+
+```powershell
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
+```
+
 Viewport、descriptor lifetime 或 resize 相关改动还必须运行：
 
 ```powershell
@@ -438,6 +478,9 @@ a view-local diagnostics snapshot. It also validates the editor-only Scene View 
 near-plane origin, viewport corner orientation, invalid matrix rejection and resize aspect handling. It also verifies idle
 Scene View on-demand reuse by checking that UI frames can reuse the last completed texture without incrementing
 `viewportFramesRendered` every frame.
+`--smoke-editor-asset-browser` validates that editor startup can load a snapshot-backed project catalog into
+`EditorAssetCatalogStore`, route catalog rows and diagnostics through the frame context, and present a clean
+`AssetCatalogView` without direct panel-side scanning, import execution, product cache writes or runtime loading.
 `--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
 WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
 but skips normal RenderView recording, so the captured render inputs and diagnostics snapshot stay frozen until Resume. The
@@ -448,8 +491,8 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 
 ## 当前缺口
 
-- Selection, transaction, dirty state, inspector and asset browser are blocked on scene/asset/schema ownership becoming
-  concrete enough.
+- Selection, transaction, dirty state, inspector, writable asset operations and richer asset browser workflows are blocked on
+  scene/asset/schema ownership becoming concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
   camera-height LOD/fade, source overlay diagnostics, Frame Debug replay preservation and a `sceneGrid` settings bridge

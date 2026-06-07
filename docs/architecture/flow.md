@@ -502,6 +502,7 @@ Editor smoke 入口：
 
 ```text
 asharia-editor --smoke-editor-shell
+asharia-editor --smoke-editor-asset-browser
 asharia-editor --smoke-editor-viewport
 asharia-editor --smoke-editor-viewport-resize
 asharia-editor --smoke-editor-frame-debugger

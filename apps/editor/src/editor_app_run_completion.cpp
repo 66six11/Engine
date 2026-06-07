@@ -41,6 +41,14 @@ namespace asharia::editor {
             return false;
         }
 
+        if (isEditorAssetBrowserSmokeMode(mode) &&
+            (!runResult.assetCatalogSnapshotLoaded || runResult.assetCatalogRows == 0U ||
+             runResult.assetCatalogDiagnostics != 0U)) {
+            asharia::logError(
+                "Editor asset browser smoke did not present a clean snapshot-backed catalog.");
+            return false;
+        }
+
         imgui.saveLayoutNow();
         if (!validateImguiLayoutSavedSmoke(mode, imgui)) {
             return false;
@@ -64,6 +72,8 @@ namespace asharia::editor {
                   << ", idle scene skips: " << viewportStats.idleSceneViewFramesSkipped
                   << ", frame debugger: " << frameDebugger.stateName()
                   << ", live texture descriptors peak: " << textureRegistryStats.peakLiveDescriptors
+                  << ", asset catalog rows: " << runResult.assetCatalogRows
+                  << ", asset catalog diagnostics: " << runResult.assetCatalogDiagnostics
                   << ", viewport: " << viewportExtent.width << 'x' << viewportExtent.height << '\n';
         if (isEditorViewportResizeSmokeMode(mode)) {
             std::cout << "Editor viewport resize: " << runResult.viewportExtentBeforeResize.width

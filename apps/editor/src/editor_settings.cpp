@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -61,6 +62,12 @@ namespace asharia::editor {
                 return std::filesystem::path{localAppData} / "Asharia" / "Editor";
             }
             return fallbackWritableDirectory() / "Asharia" / "Editor";
+        }
+
+        [[nodiscard]] std::string editorSmokeRunDirectoryName() {
+            static const std::string kRunId =
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+            return kRunId;
         }
 
         [[nodiscard]] std::optional<EditorLocale>
@@ -249,7 +256,8 @@ namespace asharia::editor {
     }
 
     std::filesystem::path editorSmokeSettingsPath() {
-        return fallbackWritableDirectory() / "Asharia" / "EditorSmoke" / "settings.json";
+        return fallbackWritableDirectory() / "Asharia" / "EditorSmoke" /
+               editorSmokeRunDirectoryName() / "settings.json";
     }
 
     asharia::Result<EditorSettings> loadEditorSettings(const std::filesystem::path& path,

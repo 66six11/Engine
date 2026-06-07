@@ -12,6 +12,7 @@ namespace asharia {
 
 namespace asharia::editor {
     class EditorActionRegistry;
+    class EditorAssetCatalogStore;
     class EditorAssetIconRegistry;
     class EditorDiagnosticsLog;
     class EditorEventQueue;
@@ -33,7 +34,9 @@ namespace asharia::editor {
                   EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
                   EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
                   EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
-                  EditorWorkspaceController& workspace, EditorAssetIconRegistry& assetIconRegistry,
+                  EditorWorkspaceController& workspace,
+                  const EditorAssetCatalogStore& assetCatalogStore,
+                  EditorAssetIconRegistry& assetIconRegistry,
                   EditorRunMode mode);
 
 } // namespace asharia::editor

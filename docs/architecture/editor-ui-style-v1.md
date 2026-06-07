@@ -462,6 +462,13 @@ build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 ```
 
+Asset Browser row, diagnostic or icon style changes must also run:
+
+```powershell
+build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
+```
+
 Viewport or texture registry changes must also run:
 
 ```powershell

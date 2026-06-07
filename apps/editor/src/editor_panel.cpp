@@ -236,6 +236,8 @@ namespace asharia::editor {
                 EditorAssetBrowserPanelDrawContext{
                     .ui = context.ui,
                     .icons = context.assetIcons,
+                    .catalogView = context.assetCatalogView,
+                    .catalogDiagnostics = context.assetCatalogDiagnostics,
                 },
         };
         for (PanelEntry& entry : panels_) {

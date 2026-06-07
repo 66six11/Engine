@@ -5,7 +5,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <system_error>
 
 #include "asharia/core/log.hpp"
 
@@ -15,15 +14,7 @@ namespace asharia::editor {
     namespace {
 
         [[nodiscard]] std::filesystem::path editorSmokeLayoutIniPath() {
-            std::error_code error;
-            std::filesystem::path basePath = std::filesystem::temp_directory_path(error);
-            if (error) {
-                basePath = std::filesystem::current_path(error);
-            }
-            if (basePath.empty()) {
-                basePath = ".";
-            }
-            return basePath / "Asharia" / "EditorSmoke" / "imgui-layout.ini";
+            return editorSmokeSettingsPath().parent_path() / "imgui-layout.ini";
         }
 
         [[nodiscard]] std::filesystem::path editorSettingsPathForRun(bool smokeMode) {

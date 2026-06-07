@@ -113,6 +113,19 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
+涉及 `AssetBrowserPanel`、editor asset catalog snapshot、`EditorAssetIconRegistry`、Lucide icon id 或 custom asset
+icon resolver 时，还必须跑：
+
+```powershell
+foreach ($preset in @("clangcl-debug", "msvc-debug")) {
+    $exe = "build\cmake\$preset\apps\editor\asharia-editor.exe"
+    & $exe --smoke-editor-asset-browser
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-asset-browser failed with exit code $LASTEXITCODE"
+    }
+}
+```
+
 涉及 editor viewport rendering、sampled texture registration、descriptor lifetime、Frame Debug capture/preview state、Live RG View、FrameDebuggerPanel RenderGraph view 或 resize flow 时，还必须跑：
 
 ```powershell

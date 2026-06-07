@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <array>
+#include <string>
 
 #include "editor_panel.hpp"
 
@@ -24,6 +25,10 @@ namespace asharia::editor {
             .preferredDock = EditorDockSlot::RightBottom,
         };
         std::array<char, 96> filter_{};
+        std::string selectedFolderScope_;
+        std::string selectedAssetTypeFilter_;
+        std::string selectedProductStateFilter_;
+        std::string selectedAssetKey_;
     };
 
 } // namespace asharia::editor

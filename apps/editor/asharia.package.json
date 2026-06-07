@@ -5,7 +5,10 @@
   "description": "Dear ImGui host application for editor shell and viewport integration.",
   "dependencies": [
     "com.asharia.archive",
+    "com.asharia.asset-core",
+    "com.asharia.asset-pipeline",
     "com.asharia.core",
+    "com.asharia.project-core",
     "com.asharia.renderer-basic",
     "com.asharia.shader-slang",
     "com.asharia.window-glfw",
@@ -15,7 +18,11 @@
   "targetDependencies": {
     "asharia-editor": [
       "asharia-archive",
+      "asharia-asset-core",
+      "asharia-asset-core-io",
+      "asharia-asset-pipeline",
       "asharia-core",
+      "asharia-project-core-io",
       "asharia-renderer-basic-vulkan",
       "asharia-rhi-vulkan",
       "asharia-shader-slang",

@@ -13,6 +13,7 @@
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_action.hpp"
+#include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
 #include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
@@ -45,7 +46,9 @@ namespace asharia::editor {
                   EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
                   EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
                   EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
-                  EditorWorkspaceController& workspace, EditorAssetIconRegistry& assetIconRegistry,
+                  EditorWorkspaceController& workspace,
+                  const EditorAssetCatalogStore& assetCatalogStore,
+                  EditorAssetIconRegistry& assetIconRegistry,
                   EditorRunMode mode) {
         const bool smokeMode = isEditorSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
@@ -108,6 +111,8 @@ namespace asharia::editor {
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},
                 .assetIcons = assetIconRegistry,
+                .assetCatalogView = assetCatalogStore.catalogView(),
+                .assetCatalogDiagnostics = assetCatalogStore.diagnostics(),
             };
             drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, i18n, panelRegistry,
                                  toolRegistry, workspace, frameContext.ui);
@@ -177,6 +182,9 @@ namespace asharia::editor {
             .inspectedWorldStats = inspectedWorldScheduler.stats(),
             .inputStats = inputRouter.stats(),
             .shortcutStats = shortcutRouter.stats(),
+            .assetCatalogSnapshotLoaded = assetCatalogStore.snapshot() != nullptr,
+            .assetCatalogRows = assetCatalogStore.catalogView().entries.size(),
+            .assetCatalogDiagnostics = assetCatalogStore.diagnostics().size(),
         };
     }
 
