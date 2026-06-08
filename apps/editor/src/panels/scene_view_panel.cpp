@@ -41,6 +41,46 @@ namespace {
         asharia::editor::EditorViewportPanelHost* viewportHost{};
     };
 
+    struct SceneViewportStatsOverlayText {
+        std::string_view swapchain;
+        std::string_view viewport;
+        std::string_view frame;
+    };
+
+    void drawSceneViewportStatsOverlay(SceneViewportStatsOverlayText text, ImVec2 viewportMin,
+                                       ImVec2 viewportMax) {
+        const asharia::editor::EditorUiTheme& theme = asharia::editor::editorUiTheme();
+        const std::string first{text.swapchain};
+        const std::string second{text.viewport};
+        const std::string third{text.frame};
+        const float width =
+            std::max({ImGui::CalcTextSize(first.c_str()).x, ImGui::CalcTextSize(second.c_str()).x,
+                      ImGui::CalcTextSize(third.c_str()).x}) +
+            14.0F;
+        const float lineHeight = ImGui::GetTextLineHeight();
+        const float height = (lineHeight * 3.0F) + 10.0F;
+        const ImVec2 min{std::max(viewportMin.x + 8.0F, viewportMax.x - width - 8.0F),
+                         std::max(viewportMin.y + 8.0F, viewportMax.y - height - 8.0F)};
+        const ImVec2 max{min.x + width, min.y + height};
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(
+            min, max,
+            ImGui::GetColorU32(asharia::editor::toImGuiEncodedSrgbVec4(asharia::editor::ColorSrgba8{
+                .r = theme.inputBackground.r,
+                .g = theme.inputBackground.g,
+                .b = theme.inputBackground.b,
+                .a = 205,
+            })),
+            2.0F);
+        drawList->AddRect(min, max, asharia::editor::toImGuiEncodedSrgbU32(theme.border), 2.0F);
+        const ImU32 textColor = asharia::editor::toImGuiEncodedSrgbU32(theme.textMuted);
+        drawList->AddText(ImVec2{min.x + 7.0F, min.y + 5.0F}, textColor, first.c_str());
+        drawList->AddText(ImVec2{min.x + 7.0F, min.y + 5.0F + lineHeight}, textColor,
+                          second.c_str());
+        drawList->AddText(ImVec2{min.x + 7.0F, min.y + 5.0F + (lineHeight * 2.0F)}, textColor,
+                          third.c_str());
+    }
+
     [[nodiscard]] bool* sceneOverlayFlagForId(asharia::editor::EditorViewportOverlayFlags& flags,
                                               std::string_view overlayId) {
         if (overlayId == asharia::editor::kEditorSceneGridOverlayId) {
@@ -88,13 +128,12 @@ namespace {
             ImGui::EndDisabled();
 
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-                (!overlay.disabledReasonKey.empty() ||
-                 !overlay.disabledReasonFallback.empty())) {
+                (!overlay.disabledReasonKey.empty() || !overlay.disabledReasonFallback.empty())) {
                 const std::string tooltip =
                     std::string{i18n.text(asharia::editor::EditorI18nTextQuery{
                         .key = overlay.disabledReasonKey,
                         .fallback = overlay.disabledReasonFallback,
-                })};
+                    })};
                 if (!tooltip.empty()) {
                     ImGui::BeginTooltip();
                     ImGui::TextUnformatted(tooltip.c_str());
@@ -172,7 +211,6 @@ namespace {
                           asharia::editor::toImGuiEncodedSrgbU32(theme.borderStrong), 4.0F);
 
         SceneOverlayStripResult result;
-        const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
         ImGui::SetCursorScreenPos(ImVec2{stripPos.x + stripPadding.x, stripPos.y + stripPadding.y});
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, buttonPadding);
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{4.0F, 0.0F});
@@ -197,7 +235,6 @@ namespace {
         ImGui::EndGroup();
         ImGui::PopStyleVar(3);
         result.hovered = ImGui::IsMouseHoveringRect(stripPos, stripMax, false);
-        ImGui::SetCursorScreenPos(restoreCursor);
         return result;
     }
 
@@ -280,9 +317,13 @@ namespace asharia::editor {
             .viewportHost = &context.viewportHost,
         };
 
+        const EditorI18n& i18n = panelContext.ui->i18n;
+        const std::string sceneHeaderStatus = std::string{i18n.text("scene.viewMode.shaded")} +
+                                              " | " + std::string{i18n.text("scene.pivot")} +
+                                              " | " + std::string{i18n.text("scene.space.local")};
+        asharia::editor::drawEditorUiPanelHeader(i18n.text("panel.sceneView"), sceneHeaderStatus);
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();
-        viewportSize.y =
-            std::max(1.0F, viewportSize.y - (ImGui::GetTextLineHeightWithSpacing() * 3.0F));
+        viewportSize.y = std::max(1.0F, viewportSize.y);
         const EditorExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
         updateCameraForViewportExtent(viewportExtent);
         std::uint64_t viewportFrameIndex{};
@@ -300,6 +341,22 @@ namespace asharia::editor {
         const ImVec2 viewportMin = ImGui::GetItemRectMin();
         const ImVec2 viewportMax = ImGui::GetItemRectMax();
         const bool viewportHovered = ImGui::IsItemHovered();
+        const std::string swapchainText = std::string{i18n.text("scene.swapchain")} + " " +
+                                          std::to_string(panelContext.ui->swapchainExtent.width) +
+                                          "x" +
+                                          std::to_string(panelContext.ui->swapchainExtent.height);
+        const std::string viewportText = std::string{i18n.text("scene.viewport")} + " " +
+                                         std::to_string(viewportExtent.width) + "x" +
+                                         std::to_string(viewportExtent.height);
+        const std::string frameText = std::string{i18n.text("scene.viewportFrame")} + " " +
+                                      std::to_string(viewportFrameIndex);
+        drawSceneViewportStatsOverlay(
+            SceneViewportStatsOverlayText{
+                .swapchain = swapchainText,
+                .viewport = viewportText,
+                .frame = frameText,
+            },
+            viewportMin, viewportMax);
         const SceneOverlayStripResult overlayStrip =
             drawSceneOverlayStrip(*panelContext.ui, panelContext.tools->registry, desc_.id.value,
                                   viewportMin, viewportMax, overlayFlags_);
@@ -330,20 +387,6 @@ namespace asharia::editor {
             .worldGrid = panelContext.settings->sceneGrid,
             .refresh = refresh,
         });
-
-        const EditorI18n& i18n = panelContext.ui->i18n;
-        const std::string swapchainText = std::string{i18n.text("scene.swapchain")} + ": " +
-                                          std::to_string(panelContext.ui->swapchainExtent.width) +
-                                          "x" +
-                                          std::to_string(panelContext.ui->swapchainExtent.height);
-        const std::string viewportText = std::string{i18n.text("scene.viewport")} + ": " +
-                                         std::to_string(viewportExtent.width) + "x" +
-                                         std::to_string(viewportExtent.height);
-        const std::string frameText = std::string{i18n.text("scene.viewportFrame")} + ": " +
-                                      std::to_string(viewportFrameIndex);
-        ImGui::TextUnformatted(swapchainText.c_str());
-        ImGui::TextUnformatted(viewportText.c_str());
-        ImGui::TextUnformatted(frameText.c_str());
     }
 
 } // namespace asharia::editor

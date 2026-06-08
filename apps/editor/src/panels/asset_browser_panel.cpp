@@ -2334,6 +2334,8 @@ namespace asharia::editor {
         static_cast<void>(state);
 
         const EditorI18n& i18n = context.ui.i18n;
+        drawEditorUiPanelHeader(textValue(i18n, "panel.assetBrowser", "Project"),
+                                textValue(i18n, "assetBrowser.scope.all", "All"));
         const ImGuiStyle& style = ImGui::GetStyle();
         const float clearIconSize = 16.0F;
         const float clearButtonWidth = clearIconSize + (style.FramePadding.x * 2.0F);
@@ -2346,8 +2348,8 @@ namespace asharia::editor {
             ImGui::SetNextItemWidth(-1.0F);
         }
         const std::string filterLabel =
-            label(i18n, "assetBrowser.filter", "asset-browser-filter", "Filter");
-        ImGui::InputText(filterLabel.c_str(), filter_.data(), filter_.size());
+            label(i18n, "assetBrowser.filter", "asset-browser-filter", "Search");
+        static_cast<void>(drawEditorUiSearchField(filterLabel, filter_.data(), filter_.size()));
         if (clearButtonInline) {
             ImGui::SameLine();
         }
@@ -2376,7 +2378,6 @@ namespace asharia::editor {
         if (!clearEnabled) {
             ImGui::EndDisabled();
         }
-        ImGui::Separator();
 
         const std::string_view filter{filter_.data()};
         if (!assetTypeFilterExists(context.catalogView, selectedFolderScope_,
@@ -2430,49 +2431,6 @@ namespace asharia::editor {
             selectedSubAssetStableId_.clear();
         }
 
-        if (context.catalogSnapshot == nullptr) {
-            selectedNavigationKey_.clear();
-            selectedSubAssetStableId_.clear();
-            drawFolderScopeControls(
-                context, AssetBrowserFolderScopeState{
-                             .selectedFolderScope = &selectedFolderScope_,
-                             .selectedAssetTypeFilter = &selectedAssetTypeFilter_,
-                             .selectedImportProfileFilter = &selectedImportProfileFilter_,
-                             .selectedProductStateFilter = &selectedProductStateFilter_,
-                             .selectedAssetKey = &selectedAssetKey_,
-                             .selectedSubAssetStableId = &selectedSubAssetStableId_,
-                         });
-        } else {
-            drawNavigationTreeControls(
-                context, AssetBrowserNavigationTreeState{
-                             .selectedFolderScope = &selectedFolderScope_,
-                             .selectedAssetTypeFilter = &selectedAssetTypeFilter_,
-                             .selectedImportProfileFilter = &selectedImportProfileFilter_,
-                             .selectedProductStateFilter = &selectedProductStateFilter_,
-                             .selectedAssetKey = &selectedAssetKey_,
-                             .selectedNavigationKey = &selectedNavigationKey_,
-                             .selectedSubAssetStableId = &selectedSubAssetStableId_,
-                         });
-        }
-        drawAssetTypeFilterControl(context, selectedFolderScope_, selectedAssetTypeFilter_,
-                                   selectedImportProfileFilter_, selectedProductStateFilter_,
-                                   selectedAssetKey_, selectedSubAssetStableId_);
-        drawImportProfileFilterControl(context,
-                                       AssetBrowserImportProfileFilterQuery{
-                                           .folderScope = selectedFolderScope_,
-                                           .assetTypeFilter = selectedAssetTypeFilter_,
-                                       },
-                                       selectedImportProfileFilter_, selectedProductStateFilter_,
-                                       selectedAssetKey_, selectedSubAssetStableId_);
-        drawProductStateFilterControl(context,
-                                      AssetBrowserProductStateFilterQuery{
-                                          .folderScope = selectedFolderScope_,
-                                          .assetTypeFilter = selectedAssetTypeFilter_,
-                                          .importProfileFilter = selectedImportProfileFilter_,
-                                      },
-                                      selectedProductStateFilter_, selectedAssetKey_,
-                                      selectedSubAssetStableId_);
-        ImGui::Separator();
         const AssetBrowserVisibilityQuery visibility{
             .filter = filter,
             .folderScope = selectedFolderScope_,
@@ -2480,39 +2438,92 @@ namespace asharia::editor {
             .importProfileFilter = selectedImportProfileFilter_,
             .productStateFilter = selectedProductStateFilter_,
         };
-        drawAssetBrowserSummary(context, visibility);
-        ImGui::Separator();
-        drawAssetBrowserCatalogSource(context);
-        ImGui::Separator();
-        drawCatalogDiagnostics(context);
-        drawAssetBrowserRows(context, visibility,
-                             AssetBrowserRowsState{
+        const float splitWidth = ImGui::GetContentRegionAvail().x;
+        const float maxNavigationWidth = std::max(96.0F, splitWidth - 180.0F);
+        const float navigationWidth =
+            std::min(std::clamp(splitWidth * 0.24F, 190.0F, 280.0F), maxNavigationWidth);
+        if (ImGui::BeginChild("project-navigation-pane", ImVec2{navigationWidth, 0.0F},
+                              ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+            if (context.catalogSnapshot == nullptr) {
+                selectedNavigationKey_.clear();
+                selectedSubAssetStableId_.clear();
+                drawFolderScopeControls(
+                    context, AssetBrowserFolderScopeState{
+                                 .selectedFolderScope = &selectedFolderScope_,
+                                 .selectedAssetTypeFilter = &selectedAssetTypeFilter_,
+                                 .selectedImportProfileFilter = &selectedImportProfileFilter_,
+                                 .selectedProductStateFilter = &selectedProductStateFilter_,
+                                 .selectedAssetKey = &selectedAssetKey_,
+                                 .selectedSubAssetStableId = &selectedSubAssetStableId_,
+                             });
+            } else {
+                drawNavigationTreeControls(
+                    context, AssetBrowserNavigationTreeState{
+                                 .selectedFolderScope = &selectedFolderScope_,
+                                 .selectedAssetTypeFilter = &selectedAssetTypeFilter_,
+                                 .selectedImportProfileFilter = &selectedImportProfileFilter_,
+                                 .selectedProductStateFilter = &selectedProductStateFilter_,
                                  .selectedAssetKey = &selectedAssetKey_,
                                  .selectedNavigationKey = &selectedNavigationKey_,
                                  .selectedSubAssetStableId = &selectedSubAssetStableId_,
                              });
-        selectedRow = selectedVisibleRow(context.catalogView,
-                                         AssetBrowserSelectionQuery{
-                                             .filter = filter,
-                                             .folderScope = selectedFolderScope_,
-                                             .assetTypeFilter = selectedAssetTypeFilter_,
-                                             .importProfileFilter = selectedImportProfileFilter_,
-                                             .productStateFilter = selectedProductStateFilter_,
-                                             .selectedAssetKey = selectedAssetKey_,
-                                         });
-        ImGui::Separator();
-        if (selectedRow != nullptr &&
-            findSubAssetByStableId(*selectedRow, selectedSubAssetStableId_) == nullptr) {
-            selectedSubAssetStableId_.clear();
+            }
         }
-        drawSelectedAssetDetails(context, selectedRow, selectedSubAssetStableId_,
-                                 AssetBrowserImportSettingsUiState{
-                                     .selectionKey = &importSettingsSelectionKey_,
-                                     .textureProfileDraft = &textureProfileDraft_,
-                                     .textureProfileBaseline = &textureProfileBaseline_,
-                                     .message = &importSettingsMessage_,
-                                     .messageIsError = &importSettingsMessageIsError_,
+        ImGui::EndChild();
+        ImGui::SameLine();
+        if (ImGui::BeginChild("project-content-pane", ImVec2{0.0F, 0.0F}, ImGuiChildFlags_None,
+                              ImGuiWindowFlags_None)) {
+            drawAssetTypeFilterControl(context, selectedFolderScope_, selectedAssetTypeFilter_,
+                                       selectedImportProfileFilter_, selectedProductStateFilter_,
+                                       selectedAssetKey_, selectedSubAssetStableId_);
+            drawImportProfileFilterControl(context,
+                                           AssetBrowserImportProfileFilterQuery{
+                                               .folderScope = selectedFolderScope_,
+                                               .assetTypeFilter = selectedAssetTypeFilter_,
+                                           },
+                                           selectedImportProfileFilter_,
+                                           selectedProductStateFilter_, selectedAssetKey_,
+                                           selectedSubAssetStableId_);
+            drawProductStateFilterControl(context,
+                                          AssetBrowserProductStateFilterQuery{
+                                              .folderScope = selectedFolderScope_,
+                                              .assetTypeFilter = selectedAssetTypeFilter_,
+                                              .importProfileFilter = selectedImportProfileFilter_,
+                                          },
+                                          selectedProductStateFilter_, selectedAssetKey_,
+                                          selectedSubAssetStableId_);
+            drawAssetBrowserSummary(context, visibility);
+            drawAssetBrowserCatalogSource(context);
+            drawCatalogDiagnostics(context);
+            drawAssetBrowserRows(context, visibility,
+                                 AssetBrowserRowsState{
+                                     .selectedAssetKey = &selectedAssetKey_,
+                                     .selectedNavigationKey = &selectedNavigationKey_,
+                                     .selectedSubAssetStableId = &selectedSubAssetStableId_,
                                  });
+            selectedRow = selectedVisibleRow(
+                context.catalogView, AssetBrowserSelectionQuery{
+                                         .filter = filter,
+                                         .folderScope = selectedFolderScope_,
+                                         .assetTypeFilter = selectedAssetTypeFilter_,
+                                         .importProfileFilter = selectedImportProfileFilter_,
+                                         .productStateFilter = selectedProductStateFilter_,
+                                         .selectedAssetKey = selectedAssetKey_,
+                                     });
+            if (selectedRow != nullptr &&
+                findSubAssetByStableId(*selectedRow, selectedSubAssetStableId_) == nullptr) {
+                selectedSubAssetStableId_.clear();
+            }
+            drawSelectedAssetDetails(context, selectedRow, selectedSubAssetStableId_,
+                                     AssetBrowserImportSettingsUiState{
+                                         .selectionKey = &importSettingsSelectionKey_,
+                                         .textureProfileDraft = &textureProfileDraft_,
+                                         .textureProfileBaseline = &textureProfileBaseline_,
+                                         .message = &importSettingsMessage_,
+                                         .messageIsError = &importSettingsMessageIsError_,
+                                     });
+        }
+        ImGui::EndChild();
     }
 
 } // namespace asharia::editor

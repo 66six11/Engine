@@ -17,7 +17,7 @@ namespace asharia::editor {
 
         EditorPanelDesc desc_{
             .id = EditorId{.value = "asset-browser"},
-            .title = "Asset Browser",
+            .title = "Project",
             .titleKey = "panel.assetBrowser",
             .defaultOpen = true,
             .singleton = true,

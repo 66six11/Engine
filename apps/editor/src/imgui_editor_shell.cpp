@@ -18,9 +18,6 @@ namespace asharia::editor {
 
     namespace {
 
-        constexpr float kCommandBarHeight = 34.0F;
-        constexpr float kStatusBarHeight = 24.0F;
-
         [[nodiscard]] ImGuiID editorDockspaceId() {
             return ImGui::GetID("asharia-editor-dockspace");
         }
@@ -59,7 +56,7 @@ namespace asharia::editor {
 
             const std::string label = actionLabel(*action, i18n);
             ImGui::BeginDisabled(!action->enabled);
-            if (ImGui::SmallButton(label.c_str()) && action->enabled) {
+            if (drawEditorUiCompactButton(label) && action->enabled) {
                 static_cast<void>(actionRegistry.invoke(action->id.value, actionInvoke));
             }
             ImGui::EndDisabled();
@@ -100,9 +97,7 @@ namespace asharia::editor {
 
         void sameLineSeparator() {
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            text("|");
-            ImGui::PopStyleColor();
+            drawEditorUiToolbarSeparator();
             ImGui::SameLine();
         }
 
@@ -221,42 +216,56 @@ namespace asharia::editor {
         }
 
         const EditorUiTheme& theme = editorUiTheme();
+        const EditorUiMetrics& metrics = editorUiMetrics();
         constexpr ImGuiWindowFlags kWindowFlags =
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavFocus |
             ImGuiWindowFlags_NoDocking;
         ImGui::PushStyleColor(ImGuiCol_WindowBg, toImGuiEncodedSrgbVec4(theme.panelBackground));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{8.0F, 4.0F});
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{5.0F, 4.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 3.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{4.0F, 3.0F});
         if (ImGui::BeginViewportSideBar("##asharia-editor-command-bar", viewport, ImGuiDir_Up,
-                                        kCommandBarHeight, kWindowFlags)) {
+                                        metrics.commandBarHeight, kWindowFlags)) {
             const bool hasDebug = hasToolbarSlot(context, EditorToolbarSlot::Debug);
             const bool hasView = hasToolbarSlot(context, EditorToolbarSlot::View);
             const bool hasUtility = hasToolbarSlot(context, EditorToolbarSlot::Utility);
-            if (hasDebug) {
-                static_cast<void>(
-                    drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::Debug));
-            }
-            if (hasDebug && hasView) {
-                sameLineSeparator();
-            }
             if (hasView) {
                 static_cast<void>(
                     drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::View));
             }
-            if ((hasDebug || hasView) && hasUtility) {
+            if (hasView) {
                 sameLineSeparator();
             }
-            if (hasUtility) {
+            static_cast<void>(drawEditorUiToolbarToggle(
+                "Play", false, false, "Pending play session and Game View support."));
+            ImGui::SameLine();
+            static_cast<void>(drawEditorUiToolbarToggle(
+                "Pause", false, false, "Pending play session and Game View support."));
+            ImGui::SameLine();
+            static_cast<void>(drawEditorUiToolbarToggle(
+                "Step", false, false, "Pending play session and Game View support."));
+            if (hasDebug) {
+                sameLineSeparator();
                 static_cast<void>(
-                    drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::Utility));
+                    drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::Debug));
             }
 
-            const std::string themeLabel = std::string{"Theme: "} + std::string{theme.name};
-            const float labelWidth = ImGui::CalcTextSize(themeLabel.c_str()).x;
-            const float labelX = ImGui::GetWindowContentRegionMax().x - labelWidth;
+            const std::string themeLabel = std::string{theme.name};
+            const std::string searchLabel = "Search";
+            const float utilityWidth = (hasUtility ? 170.0F : 0.0F) +
+                                       ImGui::CalcTextSize(searchLabel.c_str()).x +
+                                       ImGui::CalcTextSize(themeLabel.c_str()).x + 48.0F;
+            const float labelX = ImGui::GetWindowContentRegionMax().x - utilityWidth;
             if (labelX > ImGui::GetCursorPosX() + 12.0F) {
                 ImGui::SameLine(labelX);
+                static_cast<void>(drawEditorUiToolbarToggle("Search", false, false,
+                                                            "Global command search is pending."));
+                if (hasUtility) {
+                    sameLineSeparator();
+                    static_cast<void>(
+                        drawToolbarSlot(actionRegistry, context, EditorToolbarSlot::Utility));
+                }
+                sameLineSeparator();
                 ImGui::PushStyleColor(ImGuiCol_Text,
                                       ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
                 text(themeLabel);
@@ -275,26 +284,29 @@ namespace asharia::editor {
         }
 
         const EditorUiTheme& theme = editorUiTheme();
+        const EditorUiMetrics& metrics = editorUiMetrics();
         constexpr ImGuiWindowFlags kWindowFlags =
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavFocus |
             ImGuiWindowFlags_NoDocking;
         ImGui::PushStyleColor(ImGuiCol_WindowBg, toImGuiEncodedSrgbVec4(theme.menuBackground));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{8.0F, 3.0F});
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{6.0F, 3.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 2.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{6.0F, 2.0F});
         if (ImGui::BeginViewportSideBar("##asharia-editor-status-bar", viewport, ImGuiDir_Down,
-                                        kStatusBarHeight, kWindowFlags)) {
-            text(dirtyStatusText(context.dirtyState.snapshot()));
-            sameLineSeparator();
-            text(context.frameDebugger.stateName());
-            sameLineSeparator();
+                                        metrics.statusBarHeight, kWindowFlags)) {
+            drawEditorUiStatusPill(dirtyStatusText(context.dirtyState.snapshot()),
+                                   context.dirtyState.snapshot().clean() ? EditorUiTone::Muted
+                                                                         : EditorUiTone::Warning);
+            ImGui::SameLine();
+            drawEditorUiStatusPill(context.frameDebugger.stateName(), EditorUiTone::Muted);
+            ImGui::SameLine();
             const std::string frameText =
                 std::string{"Frame "} + std::to_string(context.ui.frameIndex);
             text(frameText);
-            sameLineSeparator();
+            ImGui::SameLine();
             const std::string extent = extentText(context.ui.swapchainExtent);
             text(extent);
-            sameLineSeparator();
+            ImGui::SameLine();
             const std::string panelCount = std::string{"Panels "} +
                                            std::to_string(context.panels.openPanelCount()) + "/" +
                                            std::to_string(context.panels.panelCount());

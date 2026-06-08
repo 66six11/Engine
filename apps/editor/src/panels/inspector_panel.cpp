@@ -25,12 +25,6 @@ namespace {
         return textValue(i18n, text.key, text.fallback);
     }
 
-    void mutedText(std::string_view value) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        ImGui::TextUnformatted(value.data(), value.data() + value.size());
-        ImGui::PopStyleColor();
-    }
-
     [[nodiscard]] std::string
     inspectorValueText(const asharia::editor::EditorI18n& i18n,
                        const asharia::editor::EditorInspectorValue& value) {
@@ -61,7 +55,10 @@ namespace {
 
     void drawInspectorSection(const asharia::editor::EditorI18n& i18n,
                               const asharia::editor::EditorInspectorSection& section) {
-        asharia::editor::drawEditorUiSectionHeader(textValue(i18n, section.title));
+        if (!asharia::editor::drawEditorUiComponentHeader(section.stableId,
+                                                          textValue(i18n, section.title))) {
+            return;
+        }
         if (asharia::editor::beginEditorUiPropertyTable(section.stableId, 116.0F)) {
             for (const asharia::editor::EditorInspectorRow& row : section.rows) {
                 asharia::editor::drawEditorUiProperty(asharia::editor::EditorUiProperty{
@@ -106,22 +103,28 @@ namespace asharia::editor {
             .undoDepth = static_cast<std::size_t>(context.commandHistory.undoDepth()),
             .redoDepth = static_cast<std::size_t>(context.commandHistory.redoDepth()),
         });
-        ImGui::TextUnformatted(textValue(i18n, model.title).c_str());
-        mutedText(textValue(i18n, model.summary));
-        ImGui::Spacing();
+        asharia::editor::drawEditorUiPanelHeader(textValue(i18n, model.title),
+                                                 textValue(i18n, model.summary));
         drawEditorUiStatusPill(textValue(i18n, "inspector.state.shell", "Shell"),
                                EditorUiTone::Muted);
         ImGui::SameLine();
         drawEditorUiStatusPill(textValue(i18n, "inspector.state.readOnly", "Read-only"),
                                EditorUiTone::Info);
+        ImGui::SameLine();
+        static_cast<void>(drawEditorUiToolbarToggle(
+            "Lock", false, false, "Inspector lock is pending pinned-object support."));
+        ImGui::SameLine();
+        static_cast<void>(drawEditorUiToolbarToggle(
+            "Pin", false, false, "Inspector pin is pending comparison workflow support."));
+        ImGui::Spacing();
 
         for (const EditorInspectorSection& section : model.sections) {
             drawInspectorSection(i18n, section);
         }
 
         ImGui::BeginDisabled();
-        ImGui::Button(textValue(i18n, "inspector.addComponent", "Add Component").c_str(),
-                      ImVec2{-1.0F, 0.0F});
+        static_cast<void>(
+            drawEditorUiCompactButton(textValue(i18n, "inspector.addComponent", "Add Component")));
         ImGui::EndDisabled();
     }
 

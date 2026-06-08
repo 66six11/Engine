@@ -275,8 +275,9 @@ state directory, assigns `ImGuiIO::IniFilename` during ImGui context creation an
 This state stores editor window/docking layout only; it is not scene data, asset data or runtime configuration.
 
 `EditorWorkspaceController` owns the current editor workspace preset and transient layout reset requests. The default
-workspace describes the dock slots for Scene Tree, Scene View, Inspector, Live RG View, Frame Debugger, Asset Browser,
-UI Style Preview, Editor Settings and Log.
+workspace describes the dock slots for the internal Scene Tree, Scene View, Inspector, Live RG View, Frame Debugger,
+Asset Browser, UI Style Preview, Editor Settings and Log panels. The Unity-like workbench baseline keeps those stable
+panel ids, but the visible default labels are Hierarchy, Scene View, Inspector, Project and Console.
 `editor_dock_layout` is the only editor module that calls ImGui DockBuilder APIs; the shell asks it to apply the active
 workspace when no dock node exists or when `View > Reset Layout` requests a reset. This keeps future layout presets and tool
 contributions out of panel widget code.
@@ -302,12 +303,16 @@ remain command/transaction, panel, viewport coordinator and renderer-owned respo
 
 ### ImGui theme
 
-`editor_ui` owns the editor-local Dear ImGui style tokens and the built-in editor theme catalog. The default theme is
-`black-default` (Black Default); `classic-blue-gray-2` remains available, and the legacy `classic-blue-gray` settings value
-is still accepted as an alias. Alternate themes include warm graphite amber, forest green slate, purple electric, carbon
-copper, cool gray teal and light graphite orange. `ImGuiRuntime::create()` applies the startup theme from editor settings, and runtime theme
-changes are applied through `EditorSettingsController`. This is editor shell presentation state only; renderer, RHI and
-runtime packages do not depend on theme colors, rounding values or component preview helpers.
+`editor_ui` owns the editor-local Dear ImGui style tokens, compact editor metrics and the built-in editor theme catalog.
+The default theme is `unity-6-dark` (Unity 6 Dark); `black-default` (Black Default), `classic-blue-gray-2` and the other
+legacy built-in themes remain available, and the legacy `classic-blue-gray` settings value is still accepted as an alias.
+`ImGuiRuntime::create()` applies the startup theme from editor settings, and runtime theme changes are applied through
+`EditorSettingsController`. This is editor shell presentation state only; renderer, RHI and runtime packages do not depend
+on theme colors, rounding values, compact metrics or component preview helpers.
+
+`editor_ui_widgets` owns small shared ImGui drawing helpers for the Unity-like workbench baseline: compact panel headers,
+component section headers, toolbar toggles, search fields, property rows and status chips. These helpers are intentionally
+presentation primitives, not a generic UI toolkit or a scene editing data model.
 
 Theme colors are authored as display-referred sRGB bytes. `EditorUiTheme` stores `ColorSrgba8` values such as `#171D24`;
 it does not store `ImVec4` or linear floats. `editor_ui` converts those bytes to encoded sRGB `ImVec4` / `ImU32` values only
@@ -329,8 +334,9 @@ already in the pass working space.
 
 `editor_i18n` owns the first editor-local text catalog. The catalog is key-based, loaded from
 `apps/editor/resources/i18n/*.json`, and currently covers `en-US` and `zh-Hans` for menus, panel titles and the core Scene
-View / Log / RG View / Frame Debug labels. It is deliberately scoped to `apps/editor`; runtime, renderer and asset text
-localization are separate future concerns.
+View / Console / RG View / Frame Debug labels. The current catalog deliberately maps the internal Scene Tree, Asset Browser
+and Log panels to Unity-like visible names Hierarchy, Project and Console without renaming their stable ids. It is
+deliberately scoped to `apps/editor`; runtime, renderer and asset text localization are separate future concerns.
 
 Dear ImGui labels must preserve stable IDs when visible text changes. Editor UI code should use `EditorI18n::label()` for
 menus, actions, panel windows and other stateful controls so labels are emitted as `translated text###stable-id`. This keeps
@@ -684,6 +690,11 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   event metadata for diagnostics. Real scene hierarchy, picking, transaction-backed writable fields, dirty
   persistence/autosave, writable asset operations and richer asset browser workflows are still blocked on
   scene/asset/schema ownership becoming concrete enough.
+- The Unity-like workbench UI baseline is visual and presentational only. It adds the `Unity 6 Dark` default theme,
+  compact toolbar/status/panel metrics, Hierarchy/Project/Console visible labels, a Scene View header, a Project split
+  navigation/content layout and disabled/pending controls for play, search, Console filters, Inspector lock/pin and
+  not-yet-wired authoring affordances. It does not implement writable Inspector fields, scene hierarchy mutation,
+  picking, transform gizmos, selection outlines or a new `packages/editor-core`.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
