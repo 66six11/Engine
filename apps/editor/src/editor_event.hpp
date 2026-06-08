@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -17,14 +18,43 @@ namespace asharia::editor {
         ActionInvoked,
         ViewportResized,
         SelectionChanged,
+        DirtyStateChanged,
+        CommandHistoryChanged,
+        ValidationReported,
+    };
+
+    enum class EditorEventSeverity {
+        Info,
+        Warning,
+        Error,
+    };
+
+    enum class EditorEventOutcome {
+        None,
+        Succeeded,
+        Failed,
+        Noop,
+    };
+
+    struct EditorEventMetadata {
+        std::uint64_t revision{};
+        std::string subjectId;
+        std::string label;
+        std::string message;
+        EditorEventSeverity severity{EditorEventSeverity::Info};
+        EditorEventOutcome outcome{EditorEventOutcome::None};
     };
 
     struct EditorEvent {
         EditorEventKind kind{};
         EditorId sourceId;
+        EditorEventMetadata metadata;
     };
 
     [[nodiscard]] std::string_view editorEventKindName(EditorEventKind kind);
+    [[nodiscard]] std::string_view editorEventSeverityName(EditorEventSeverity severity);
+    [[nodiscard]] std::string_view editorEventOutcomeName(EditorEventOutcome outcome);
+    [[nodiscard]] std::string editorEventDisplayText(const EditorEvent& event);
 
     class EditorEventQueue {
     public:

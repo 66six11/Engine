@@ -387,11 +387,24 @@ enum class EditorEventKind {
     ActionInvoked,
     ViewportResized,
     SelectionChanged,
+    DirtyStateChanged,
+    CommandHistoryChanged,
+    ValidationReported,
+};
+
+struct EditorEventMetadata {
+    std::uint64_t revision{};
+    std::string subjectId;
+    std::string label;
+    std::string message;
+    EditorEventSeverity severity{EditorEventSeverity::Info};
+    EditorEventOutcome outcome{EditorEventOutcome::None};
 };
 
 struct EditorEvent {
     EditorEventKind kind;
     EditorId sourceId;
+    EditorEventMetadata metadata;
 };
 ```
 
@@ -402,7 +415,8 @@ Rules:
 - UI diagnostics that need history consume events through a diagnostics sink; panels should not treat the frame-local
   event queue as durable storage.
 - Events do not carry owning pointers to panels, world objects or Vulkan resources.
-- Add typed payload variants only when a real consumer exists.
+- Keep event metadata value-only. State events may carry revision, subject, label, message, severity and outcome; richer
+  typed payload variants still require a real consumer.
 
 ## Viewport Requests
 
@@ -585,7 +599,7 @@ Every sub-stage must:
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.10 Done; 16.11-16.13 Deferred | In progress | Split editor shell from one file into host/runtime/panel/action/event/tool/workspace layout modules; defer tool/overlay extension contracts until Frame Debug diagnostics contract is frozen. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
-| 20 | 20.1-20.6 | In progress | Add app-local selection, inspector data and dirty-state contracts; transaction-backed editing still follows scene/object baseline. |
+| 20 | 20.1-20.7 | In progress | Add app-local selection, inspector data, dirty-state and state-event contracts; transaction-backed editing still follows scene/object baseline. |
 | 21 | 21.1-21.11 camera/unproject foundation Done; visible grid pass and later interaction slices Deferred/Blocked | In progress | Freeze Frame Debug / diagnostics bottom-layer contracts first; then advance Grid through backend-neutral packets before adding visible renderer passes. |
 | 24 | 24.1-24.11 | In progress | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
@@ -1169,6 +1183,26 @@ Validation:
 
 - `--smoke-editor-shell` runs the CPU-only Dirty State smoke for bucket separation, duplicate no-op handling, revision
   preservation on no-op updates and scoped clear behavior.
+
+### 20.7 State Event Contract
+
+Status: Done.
+
+Scope:
+
+- Extend the frame-local `EditorEvent` value with shared metadata for revision, subject id, label, message, severity and
+  outcome.
+- Route `SelectionChanged`, `DirtyStateChanged`, `CommandHistoryChanged` and `ValidationReported` facts through the same
+  diagnostics shape without adding a global EventBus.
+- Bind `EditorDirtyState` and `EditorCommandHistory` to the app event queue while preserving no-op behavior and failure
+  semantics.
+- Keep validation as a reportable event contract only; writable Inspector validation/fixing UI remains deferred.
+- Do not extract `packages/editor-core`, add autosave, scene picking, gizmo editing, source control or renderer behavior.
+
+Validation:
+
+- `--smoke-editor-shell` runs the CPU-only State Event smoke for selection/dirty/command/validation ordering, metadata,
+  diagnostics routing, no-op suppression and failed command-history facts.
 
 ## Phase 21: Scene View Tools
 

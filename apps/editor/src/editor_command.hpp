@@ -1,13 +1,19 @@
 ﻿#pragma once
 
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "asharia/core/result.hpp"
 
 namespace asharia::editor {
+
+    class EditorEventQueue;
+
+    inline constexpr std::string_view kEditorCommandHistoryOwnerId = "editor.commandHistory";
 
     class EditorCommand {
     public:
@@ -49,12 +55,14 @@ namespace asharia::editor {
         static constexpr int kMaxHistoryDepth = 256;
 
         EditorCommandHistory() = default;
+        explicit EditorCommandHistory(EditorEventQueue& eventQueue);
         EditorCommandHistory(const EditorCommandHistory&) = delete;
         EditorCommandHistory& operator=(const EditorCommandHistory&) = delete;
         EditorCommandHistory(EditorCommandHistory&&) = default;
         EditorCommandHistory& operator=(EditorCommandHistory&&) = default;
 
         void push(EditorTransaction&& transaction);
+        void setEventQueue(EditorEventQueue* eventQueue) noexcept;
 
         [[nodiscard]] asharia::Result<void> undo();
         [[nodiscard]] asharia::Result<void> redo();
@@ -63,8 +71,14 @@ namespace asharia::editor {
 
         [[nodiscard]] int undoDepth() const;
         [[nodiscard]] int redoDepth() const;
+        [[nodiscard]] std::uint64_t revision() const noexcept;
 
     private:
+        void emitHistoryChanged(std::string_view operation, bool succeeded, std::string message);
+        void bumpRevision() noexcept;
+
+        EditorEventQueue* eventQueue_{};
+        std::uint64_t revision_{};
         std::deque<EditorTransaction> undoStack_;
         std::deque<EditorTransaction> redoStack_;
     };
