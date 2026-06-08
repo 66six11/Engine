@@ -13,6 +13,8 @@
 
 #include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
+#include "editor_asset_import_settings_command.hpp"
+#include "editor_command.hpp"
 #include "editor_id.hpp"
 #include "editor_render_graph_snapshot.hpp"
 #include "editor_viewport.hpp"
@@ -27,6 +29,7 @@ namespace asharia::editor {
     };
 
     enum class EditorDockSlot {
+        Left,
         Center,
         RightTop,
         RightBottom,
@@ -105,6 +108,15 @@ namespace asharia::editor {
         EditorViewportPanelHost& viewportHost;
     };
 
+    struct EditorSceneTreePanelDrawContext {
+        const EditorFrameUiContext& ui;
+    };
+
+    struct EditorInspectorPanelDrawContext {
+        const EditorFrameUiContext& ui;
+        const EditorCommandHistory& commandHistory;
+    };
+
     struct EditorLogPanelDrawContext {
         const EditorFrameUiContext& ui;
         EditorDiagnosticsLog& diagnosticsLog;
@@ -134,7 +146,11 @@ namespace asharia::editor {
         const EditorFrameUiContext& ui;
         const EditorAssetIconRegistry& icons;
         const asharia::asset::AssetCatalogView& catalogView;
+        const EditorAssetCatalogSnapshot* catalogSnapshot{};
         std::span<const EditorAssetCatalogDiagnostic> catalogDiagnostics;
+        EditorCommandHistory& commandHistory;
+        EditorAssetReimportRequestLog& reimportRequests;
+        EditorAssetReimportPendingState& pendingReimports;
     };
 
     struct EditorPanelDrawContext;
@@ -149,7 +165,11 @@ namespace asharia::editor {
         EditorFrameViewportContext viewport;
         const EditorAssetIconRegistry& assetIcons;
         const asharia::asset::AssetCatalogView& assetCatalogView;
+        const EditorAssetCatalogSnapshot* assetCatalogSnapshot{};
         std::span<const EditorAssetCatalogDiagnostic> assetCatalogDiagnostics;
+        EditorCommandHistory& commandHistory;
+        EditorAssetReimportRequestLog& assetReimportRequests;
+        EditorAssetReimportPendingState& assetPendingReimports;
     };
 
     class ImGuiEditorPanel {
@@ -172,6 +192,24 @@ namespace asharia::editor {
 
     private:
         virtual void drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
+                                        EditorPanelState& state) = 0;
+    };
+
+    class ImGuiSceneTreeEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawSceneTreePanel(EditorSceneTreePanelDrawContext& context,
+                                        EditorPanelState& state) = 0;
+    };
+
+    class ImGuiInspectorEditorPanel : public ImGuiEditorPanel {
+    public:
+        void draw(EditorPanelDrawContext& context, EditorPanelState& state) final;
+
+    private:
+        virtual void drawInspectorPanel(EditorInspectorPanelDrawContext& context,
                                         EditorPanelState& state) = 0;
     };
 

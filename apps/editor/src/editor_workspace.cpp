@@ -6,17 +6,21 @@ namespace asharia::editor {
 
     namespace {
 
-        constexpr std::array<EditorWorkspaceDockPanel, 7> kDefaultWorkspacePanels{{
+        constexpr std::array<EditorWorkspaceDockPanel, 9> kDefaultWorkspacePanels{{
+            EditorWorkspaceDockPanel{.panelId = "scene-tree",
+                                     .dockSlot = EditorDockSlot::Left},
             EditorWorkspaceDockPanel{.panelId = "scene-view",
                                      .dockSlot = EditorDockSlot::Center},
             EditorWorkspaceDockPanel{.panelId = "render-graph",
                                      .dockSlot = EditorDockSlot::Center},
-            EditorWorkspaceDockPanel{.panelId = "frame-debugger",
+            EditorWorkspaceDockPanel{.panelId = "inspector",
                                      .dockSlot = EditorDockSlot::RightTop},
+            EditorWorkspaceDockPanel{.panelId = "frame-debugger",
+                                     .dockSlot = EditorDockSlot::RightBottom},
             EditorWorkspaceDockPanel{.panelId = "editor-settings",
                                      .dockSlot = EditorDockSlot::RightTop},
             EditorWorkspaceDockPanel{.panelId = "asset-browser",
-                                     .dockSlot = EditorDockSlot::RightBottom},
+                                     .dockSlot = EditorDockSlot::Bottom},
             EditorWorkspaceDockPanel{.panelId = "ui-style-preview",
                                      .dockSlot = EditorDockSlot::RightBottom},
             EditorWorkspaceDockPanel{.panelId = "log", .dockSlot = EditorDockSlot::Bottom},
@@ -26,9 +30,10 @@ namespace asharia::editor {
             .id = "default",
             .title = "Default",
             .panels = std::span<const EditorWorkspaceDockPanel>{kDefaultWorkspacePanels},
+            .leftRatio = 0.22F,
             .bottomRatio = 0.24F,
-            .rightRatio = 0.32F,
-            .rightBottomRatio = 0.48F,
+            .rightRatio = 0.28F,
+            .rightBottomRatio = 0.42F,
         };
 
     } // namespace

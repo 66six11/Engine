@@ -126,6 +126,13 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
+涉及 `packages/asset-core`、`packages/asset-pipeline` texture profile/catalog facet、editor asset catalog 或 Asset Browser
+profile/sub-asset 语义时，还必须跑资产边界检查，确保 `asset-core` 没有重新引入具体 texture profile/importer 解释：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
+```
+
 涉及 editor viewport rendering、sampled texture registration、descriptor lifetime、Frame Debug capture/preview state、Live RG View、FrameDebuggerPanel RenderGraph view 或 resize flow 时，还必须跑：
 
 ```powershell

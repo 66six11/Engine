@@ -40,8 +40,9 @@ Vulkan loader/binding 策略：
 - `glslang`、`shaderc` 或 `dxc`：fallback shader 编译器，不作为默认路线。
 - `spirv-tools`：`spirv-val`、`spirv-dis` 和可选优化检查。
 - `clang-format`、`clang-tidy`：格式化和静态检查。主编译器仍然是 MSVC。
-- 仓库维护脚本：`tools/check-text-encoding.ps1`、`tools/check-doc-sync.ps1` 和
-  `tools/count-code-lines.ps1` 分别负责编码检查、文档同步检查和 tracked 文本行数统计。
+- 仓库维护脚本：`tools/check-text-encoding.ps1`、`tools/check-doc-sync.ps1`、
+  `tools/check-asset-boundaries.ps1` 和 `tools/count-code-lines.ps1` 分别负责编码检查、文档同步检查、
+  asset-core / asset-pipeline profile 边界检查和 tracked 文本行数统计。
 
 ## CMake 策略
 

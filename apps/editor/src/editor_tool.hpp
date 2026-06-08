@@ -49,6 +49,9 @@ namespace asharia::editor {
     struct EditorToolViewportOverlayContribution {
         std::string overlayId;
         std::string viewportId;
+        bool enabled{true};
+        std::string disabledReasonKey;
+        std::string disabledReasonFallback;
         std::optional<EditorViewportWorldGridSettings> worldGrid;
     };
 

@@ -20,7 +20,7 @@ namespace asharia::editor {
             .defaultOpen = true,
             .singleton = true,
             .category = EditorPanelCategory::Diagnostics,
-            .preferredDock = EditorDockSlot::RightTop,
+            .preferredDock = EditorDockSlot::RightBottom,
         };
     };
 

@@ -125,9 +125,9 @@ namespace asharia::editor {
     [[nodiscard]] constexpr EditorViewportOverlayFlags defaultEditorSceneViewOverlayFlags() {
         return EditorViewportOverlayFlags{
             .gridVisible = true,
-            .gizmoVisible = true,
+            .gizmoVisible = false,
             .wireVisible = false,
-            .selectionOutlineVisible = true,
+            .selectionOutlineVisible = false,
             .debugOverlayVisible = false,
             .debugGizmoVisible = false,
         };

@@ -194,6 +194,16 @@ try {
     $requiresDesignReview = [bool]($changedFiles | Where-Object {
             Test-MatchesAnyPattern -Path $_ -Patterns $designPatterns
         })
+    $assetBoundaryPatterns = @(
+        "^packages/asset-core/",
+        "^packages/asset-pipeline/",
+        "^apps/editor/src/editor_asset_catalog",
+        "^apps/editor/src/panels/asset_browser_panel",
+        "^tools/check-asset-boundaries\.ps1$"
+    )
+    $requiresAssetBoundaryCheck = [bool]($changedFiles | Where-Object {
+            Test-MatchesAnyPattern -Path $_ -Patterns $assetBoundaryPatterns
+        })
 
     $docHints = New-Object System.Collections.Generic.List[string]
     Add-DocHints -ChangedFiles $changedFiles -Docs $docHints
@@ -225,6 +235,12 @@ try {
         foreach ($command in $packageTestCommands) {
             Write-Host "  $command"
         }
+    }
+
+    if ($requiresAssetBoundaryCheck) {
+        Write-Host ""
+        Write-Host "Asset boundary gate:"
+        Write-Host "  powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1"
     }
 
     if ($requiresRenderingSmokes) {
@@ -260,6 +276,11 @@ try {
         }
         Invoke-CheapGate "git diff whitespace check" {
             git diff --check
+        }
+        if ($requiresAssetBoundaryCheck) {
+            Invoke-CheapGate "asset boundary check" {
+                powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
+            }
         }
     }
 } finally {

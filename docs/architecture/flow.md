@@ -85,6 +85,10 @@ flowchart TD
     App -->|selected sample renderer| RendererVk
     EditorApp --> Core
     EditorApp --> Archive
+    EditorApp -->|project descriptor IO| ProjectCoreIo
+    EditorApp -->|catalog view + metadata IO| AssetCore
+    EditorApp -->|.ameta text IO| AssetCoreIo
+    EditorApp -->|snapshot planning only| AssetPipeline
     EditorApp --> Window
     EditorApp --> RhiVk
     EditorApp --> RendererVk
@@ -119,11 +123,19 @@ flowchart TD
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把
   Vulkan barrier/layout 细节扩散到 app 层。
 - `apps/editor` 当前承担 editor host 和 editor smoke harness。它可以直接链接 ImGui、`window-glfw`、
-  `rhi-vulkan` 和 `renderer_basic_vulkan`，因为这些都属于 host integration；未来
-  `packages/editor-core` 只能保留 backend-neutral editor state。
+  `rhi-vulkan`、`renderer_basic_vulkan`、`project_core_io`、`asset_core`、`asset_core_io` 和
+  `asset_pipeline`，因为这些都属于 host integration 或只读 project/asset snapshot 组装；未来
+  `packages/editor-core` 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
+  execution 依赖。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
+- Asset Browser 当前消费 `EditorAssetCatalogStore` 提供的 `AssetCatalogView` 和可选 snapshot facts；project
+  descriptor 读取、source scan/discovery/snapshot、import planning 和 catalog report 生成在 `apps/editor`
+  的 host 服务中组合 public package API。它不执行 importer、不写 product manifest/blob、不创建 runtime asset
+  handle，也不上传 GPU 资源。
+- Scene Tree 和 Inspector 现在是默认 workbench 中的 read-only shell panel。它们不消费 runtime scene hierarchy、
+  `SelectionSet` 或 inspector data model；当前 UI 只暴露“对象身份/选择/数据模型待接入”的状态，避免伪造场景数据。
 
 ## 当前架构总览
 
@@ -477,14 +489,16 @@ sequenceDiagram
 - `EditorViewportCoordinator` 是 editor-side Vulkan bridge；它按 `panelId + EditorViewportKind` 拥有 keyed
   pending/presented viewport render targets 和 keyed diagnostics snapshot，并通过 frame-loop deferred deletion 延迟释放旧
   target。Frame callback 仍返回一个合并后的 acquire wait-stage mask。
-- `EditorViewportOverlayFlags` 是当前 viewport overlay intent。Scene View 请求保留 grid、transform gizmo、wire、
-  selection outline、debug overlay 和 debug gizmo flags；Game View 请求会清空 Scene-only authoring flags，但可保留
-  显式 debug overlay/debug gizmo flags；Preview View 当前清空全部 overlay flags。
+- `EditorViewportOverlayFlags` 是当前 viewport overlay intent。Scene View 当前 effective request 只保留 Grid 和显式
+  debug overlay/debug gizmo flags；transform gizmo、wire 和 selection outline 在真实 provider/render bridge 前会被清空。
+  Game View 请求会清空 Scene-only authoring flags，但可保留显式 debug overlay/debug gizmo flags；Preview View 当前清空全部
+  overlay flags。
 - `EditorViewportRefreshPolicy` / `EditorViewportRepaintReason` 是当前 viewport refresh intent。Scene View 默认
   `OnDemand`，没有 repaint reason 时复用上一张 presented texture；Game View 和未来 Play Session 仍可用
   `Continuous`/`AlwaysRefresh` 维持持续渲染。
-- Scene View 的 grid、gizmo、wire 和 selection outline flag 当前只作为 editor view-local intent 保存在 request/result
-  metadata 中；它们尚未映射为 renderer pass。Game View 只允许显式 debug overlay/debug gizmo intent 进入后续 graph。
+- Scene View 的 Grid 已映射到 renderer-owned world-grid pass；Gizmo/Select/selection-outline contribution ids 仍保留在
+  tool registry 中，但 Scene View strip 将它们显示为 disabled/pending，effective RenderView diagnostics 不再记录这些
+  source overlay ids。Game View 只允许显式 debug overlay/debug gizmo intent 进入后续 graph。
 - `ImGuiTextureRegistry` 只拥有 ImGui descriptor lifetime，不拥有 `VulkanRenderTarget`、
   `VkImage` 或 `VkImageView`。descriptor retirement 使用 frame epoch，避免 resize 后释放仍被
   submitted ImGui draw data 引用的 descriptor。
@@ -497,6 +511,50 @@ sequenceDiagram
   host frame 提交，以便 UI 可以显示或恢复。它只保存 `BasicRenderViewDiagnostics` 的 CPU snapshot，不保存 Vulkan
   handles，不使用 `vkDeviceWaitIdle` 作为普通 capture 机制。`EditorInspectedWorldScheduler` 在同一状态下跳过
   frame advance、game update 和 script update safe-point counter，作为未来 runtime/script scheduler 接入前的验证 seam。
+
+### Editor Project / Asset 数据流
+
+当前 editor 的 project/asset 能力是 host-level snapshot 和 metadata command，不是完整资产处理器或场景编辑器。
+
+```mermaid
+flowchart LR
+    ProjectInput["--project / ASHARIA_EDITOR_PROJECT"]
+    ProductInput["optional product manifest"]
+    ProjectIo["project_core_io<br/>read asharia.project.json"]
+    AssetScan["asset_pipeline<br/>scan / discover / snapshot / plan"]
+    AssetIo["asset_core_io<br/>read .ameta text"]
+    CatalogView["asset_core<br/>AssetCatalogView"]
+    Store["EditorAssetCatalogStore<br/>snapshot or fixture"]
+    FrameContext["EditorFrameContext"]
+    Browser["AssetBrowserPanel<br/>read-only table / tree / details"]
+    ImportUi["Import Settings UI<br/>texture.profile only"]
+    Transaction["EditorTransaction"]
+    MetadataCommand["editor_asset_import_settings_command<br/>rewrite .ameta"]
+    Pending["EditorAssetReimportPendingState<br/>pending facts"]
+    FutureScheduler["future import scheduler / catalog refresh"]
+
+    ProjectInput --> ProjectIo --> AssetScan
+    ProductInput -.read facts if present.-> AssetScan
+    AssetIo --> AssetScan
+    AssetScan --> CatalogView --> Store --> FrameContext --> Browser
+    Browser --> ImportUi --> Transaction --> MetadataCommand --> Pending
+    Pending -.explicit future handoff.-> FutureScheduler
+```
+
+约束：
+
+- `EditorAssetCatalogStore` 在 frame loop 前选择 deterministic fixture 或 project snapshot；panel 只读取
+  `AssetCatalogView`、snapshot diagnostics 和 source-root/path helper 结果。
+- `asset-pipeline` 在这个路径里只提供 source scan/discovery/snapshot、import planning 和 diagnostics。它不被
+  Asset Browser 用作 importer scheduler，也不在 UI 线程写 product blobs。
+- Product manifest 只作为 catalog product-state 输入事实；缺失、stale 或 unknown product 不会被 editor pending
+  reimport state 覆盖成 Ready。
+- Import Settings 当前只通过 `EditorTransaction` 修改 `.ameta` 的 `texture.profile`，并记录 source GUID、source path、
+  target profile 和 changed-setting keys。Undo/redo 恢复 metadata 文本；command-produced request/pending facts 只是
+  editor coordination state。真正 reimport、product manifest/blob writes、catalog invalidation、runtime asset loading
+  和 GPU preview allocation 留给后续显式服务。
+- Scene Tree / Inspector 没有进入这条 asset flow。它们目前不消费 asset catalog row selection，也不把 panel state
+  写回 project descriptor、asset metadata 或 runtime scene。
 
 Editor smoke 入口：
 
@@ -701,9 +759,9 @@ flowchart TD
   RenderView camera/per-view constants；差异只落在 view kind、overlay/debug/show flags、filtering 和 refresh
   intent 上。
 - Scene/debug viewport flags 已先作为 view-local intent 接入 editor viewport request/result，并完成 flagged texture
-  metadata 的 acquire roundtrip。后续 grid、transform gizmos、selection outline、wire overlay、debug overlay/debug gizmo
-  等 pass 继续沿用该 view-local intent。Scene-only authoring pass 不能污染 Game View graph；Game debug pass 必须显式
-  opt in。
+  metadata 的 acquire roundtrip。Grid 已沿该路径进入 renderer-owned world-grid pass；transform gizmo、selection outline
+  和 wire overlay 在真实 provider/render bridge 前保持 pending/effective-off。Scene-only authoring pass 不能污染
+  Game View graph；Game debug pass 必须显式 opt in。
 - RenderGraph handle 只在单个 view graph 内有效；跨 view 共享资源必须由 resource manager 拥有并 import。
 
 ## RenderGraph 编译与执行流程

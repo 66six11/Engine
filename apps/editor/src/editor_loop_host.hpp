@@ -14,6 +14,9 @@ namespace asharia::editor {
     class EditorActionRegistry;
     class EditorAssetCatalogStore;
     class EditorAssetIconRegistry;
+    class EditorAssetReimportPendingState;
+    class EditorAssetReimportRequestLog;
+    class EditorCommandHistory;
     class EditorDiagnosticsLog;
     class EditorEventQueue;
     class EditorFrameDebugger;
@@ -26,17 +29,16 @@ namespace asharia::editor {
     class EditorWorkspaceController;
     struct EditorActionServices;
 
-    [[nodiscard]] Result<EditorSmokeRunResult>
-    runEditorLoop(GlfwWindow& window, VulkanFrameLoop& frameLoop,
-                  BasicFullscreenTextureRenderer& renderer, EditorViewportCoordinator& viewportHost,
-                  EditorFrameDebugger& frameDebugger, EditorActionRegistry& actionRegistry,
-                  EditorActionServices& actionServices, EditorEventQueue& eventQueue,
-                  EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
-                  EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
-                  EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
-                  EditorWorkspaceController& workspace,
-                  const EditorAssetCatalogStore& assetCatalogStore,
-                  EditorAssetIconRegistry& assetIconRegistry,
-                  EditorRunMode mode);
+    [[nodiscard]] Result<EditorSmokeRunResult> runEditorLoop(
+        GlfwWindow& window, VulkanFrameLoop& frameLoop, BasicFullscreenTextureRenderer& renderer,
+        EditorViewportCoordinator& viewportHost, EditorFrameDebugger& frameDebugger,
+        EditorActionRegistry& actionRegistry, EditorActionServices& actionServices,
+        EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
+        EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
+        EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
+        EditorWorkspaceController& workspace, const EditorAssetCatalogStore& assetCatalogStore,
+        EditorAssetIconRegistry& assetIconRegistry, EditorCommandHistory& commandHistory,
+        EditorAssetReimportRequestLog& assetReimportRequests,
+        EditorAssetReimportPendingState& assetPendingReimports, EditorRunMode mode);
 
 } // namespace asharia::editor

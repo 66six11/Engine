@@ -1,7 +1,6 @@
 ﻿#include "panels/scene_view_panel.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <imgui.h>
 #include <string>
@@ -79,6 +78,31 @@ namespace {
             .stableId = overlay.overlayId,
             .fallback = text.fallback,
         });
+
+        if (!overlay.enabled) {
+            const bool changed = value;
+            value = false;
+
+            ImGui::BeginDisabled();
+            ImGui::Button(label.c_str());
+            ImGui::EndDisabled();
+
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
+                (!overlay.disabledReasonKey.empty() ||
+                 !overlay.disabledReasonFallback.empty())) {
+                const std::string tooltip =
+                    std::string{i18n.text(asharia::editor::EditorI18nTextQuery{
+                        .key = overlay.disabledReasonKey,
+                        .fallback = overlay.disabledReasonFallback,
+                })};
+                if (!tooltip.empty()) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextUnformatted(tooltip.c_str());
+                    ImGui::EndTooltip();
+                }
+            }
+            return changed;
+        }
 
         if (value) {
             const asharia::editor::EditorUiTheme& theme = asharia::editor::editorUiTheme();
@@ -216,33 +240,28 @@ namespace asharia::editor {
         cameraExtent_ = viewportExtent;
     }
 
-    bool SceneViewPanel::handleCameraNavigation(EditorExtent2D viewportExtent) {
-        const bool viewportHovered = ImGui::IsItemHovered();
-        const ImVec2 mouseDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
-        const ImVec2 panDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
-        const float scrollDelta = ImGui::GetIO().MouseWheel;
-
-        if (!viewportHovered) {
+    bool SceneViewPanel::handleCameraNavigation(EditorExtent2D viewportExtent,
+                                                const EditorInputSnapshot& input) {
+        if (!input.sceneViewCanReceiveMouse) {
             return false;
         }
 
         bool cameraChanged = false;
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) &&
-            (std::fabs(mouseDelta.x) > 0.0F || std::fabs(mouseDelta.y) > 0.0F)) {
+        if (input.sceneViewCameraOrbitActive) {
             constexpr float kOrbitSpeed = 0.005F;
-            orbitEditorViewportCamera(camera_, mouseDelta.x * kOrbitSpeed,
-                                      mouseDelta.y * kOrbitSpeed);
+            orbitEditorViewportCamera(camera_, input.sceneViewCameraOrbitDeltaX * kOrbitSpeed,
+                                      input.sceneViewCameraOrbitDeltaY * kOrbitSpeed);
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Right);
             cameraChanged = true;
         }
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle) &&
-            (std::fabs(panDelta.x) > 0.0F || std::fabs(panDelta.y) > 0.0F)) {
-            panEditorViewportCamera(camera_, panDelta.x, panDelta.y, viewportExtent);
+        if (input.sceneViewCameraPanActive) {
+            panEditorViewportCamera(camera_, input.sceneViewCameraPanDeltaX,
+                                    input.sceneViewCameraPanDeltaY, viewportExtent);
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Middle);
             cameraChanged = true;
         }
-        if (std::fabs(scrollDelta) > 0.0F) {
-            dollyEditorViewportCamera(camera_, scrollDelta);
+        if (input.sceneViewCameraDollyActive) {
+            dollyEditorViewportCamera(camera_, input.sceneViewCameraDollyDelta);
             cameraChanged = true;
         }
         if (cameraChanged) {
@@ -281,7 +300,6 @@ namespace asharia::editor {
         const ImVec2 viewportMin = ImGui::GetItemRectMin();
         const ImVec2 viewportMax = ImGui::GetItemRectMax();
         const bool viewportHovered = ImGui::IsItemHovered();
-        const bool cameraChanged = handleCameraNavigation(viewportExtent);
         const SceneOverlayStripResult overlayStrip =
             drawSceneOverlayStrip(*panelContext.ui, panelContext.tools->registry, desc_.id.value,
                                   viewportMin, viewportMax, overlayFlags_);
@@ -289,6 +307,8 @@ namespace asharia::editor {
             .hovered = viewportHovered && !overlayStrip.hovered,
             .focused = state.focused,
         });
+        const bool cameraChanged =
+            handleCameraNavigation(viewportExtent, panelContext.inputRouter->snapshot());
 
         EditorViewportRefreshRequest refresh{
             .policy = EditorViewportRefreshPolicy::OnDemand,

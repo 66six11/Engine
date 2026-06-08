@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -15,6 +16,8 @@
 #include "editor_action.hpp"
 #include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
+#include "editor_asset_import_settings_command.hpp"
+#include "editor_command.hpp"
 #include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -36,20 +39,46 @@ namespace asharia::editor {
 
         constexpr int kSmokeAttemptLimit = 120;
 
+        [[nodiscard]] std::string
+        targetProfileForCatalogStore(const EditorAssetCatalogStore& assetCatalogStore) {
+            const EditorAssetCatalogSnapshot* snapshot = assetCatalogStore.snapshot();
+            if (snapshot != nullptr && !snapshot->targetProfile.empty()) {
+                return snapshot->targetProfile;
+            }
+            return "editor-preview";
+        }
+
+        [[nodiscard]] std::size_t
+        countPendingReimportRows(const EditorAssetCatalogStore& assetCatalogStore,
+                                 const EditorAssetReimportPendingState& pendingReimports) {
+            const std::string targetProfile = targetProfileForCatalogStore(assetCatalogStore);
+            std::size_t rows = 0U;
+            for (const asharia::asset::AssetCatalogViewEntry& row :
+                 assetCatalogStore.catalogView().entries) {
+                if (pendingReimports.hasPending(EditorAssetReimportSourceKey{
+                        .guid = row.guid,
+                        .sourcePath = row.sourcePath,
+                        .targetProfile = targetProfile,
+                    })) {
+                    ++rows;
+                }
+            }
+            return rows;
+        }
+
     } // namespace
 
-    [[nodiscard]] Result<EditorSmokeRunResult>
-    runEditorLoop(GlfwWindow& window, VulkanFrameLoop& frameLoop,
-                  BasicFullscreenTextureRenderer& renderer, EditorViewportCoordinator& viewportHost,
-                  EditorFrameDebugger& frameDebugger, EditorActionRegistry& actionRegistry,
-                  EditorActionServices& actionServices, EditorEventQueue& eventQueue,
-                  EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
-                  EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
-                  EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
-                  EditorWorkspaceController& workspace,
-                  const EditorAssetCatalogStore& assetCatalogStore,
-                  EditorAssetIconRegistry& assetIconRegistry,
-                  EditorRunMode mode) {
+    [[nodiscard]] Result<EditorSmokeRunResult> runEditorLoop(
+        GlfwWindow& window, VulkanFrameLoop& frameLoop, BasicFullscreenTextureRenderer& renderer,
+        EditorViewportCoordinator& viewportHost, EditorFrameDebugger& frameDebugger,
+        EditorActionRegistry& actionRegistry, EditorActionServices& actionServices,
+        EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
+        EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
+        EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
+        EditorWorkspaceController& workspace, const EditorAssetCatalogStore& assetCatalogStore,
+        EditorAssetIconRegistry& assetIconRegistry, EditorCommandHistory& commandHistory,
+        EditorAssetReimportRequestLog& assetReimportRequests,
+        EditorAssetReimportPendingState& assetPendingReimports, EditorRunMode mode) {
         const bool smokeMode = isEditorSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
         EditorFrameDebuggerSmokeState frameDebugSmoke;
@@ -84,10 +113,21 @@ namespace asharia::editor {
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
             const ImGuiIO& imguiIo = ImGui::GetIO();
+            const ImVec2 rightMouseDragDelta =
+                ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
+            const ImVec2 middleMouseDragDelta =
+                ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
             inputRouter.beginFrame(EditorInputCapture{
                 .imguiWantsMouse = imguiIo.WantCaptureMouse,
                 .imguiWantsKeyboard = imguiIo.WantCaptureKeyboard,
                 .imguiWantsTextInput = imguiIo.WantTextInput,
+                .rightMouseDragging = ImGui::IsMouseDragging(ImGuiMouseButton_Right),
+                .rightMouseDragDeltaX = rightMouseDragDelta.x,
+                .rightMouseDragDeltaY = rightMouseDragDelta.y,
+                .middleMouseDragging = ImGui::IsMouseDragging(ImGuiMouseButton_Middle),
+                .middleMouseDragDeltaX = middleMouseDragDelta.x,
+                .middleMouseDragDeltaY = middleMouseDragDelta.y,
+                .mouseWheel = imguiIo.MouseWheel,
             });
             viewportHost.beginImguiFrame(editorViewportFrameEpochs(frameLoop));
             panelRegistry.clearLifecycleEvents();
@@ -112,7 +152,11 @@ namespace asharia::editor {
                 .viewport = {.host = viewportHost},
                 .assetIcons = assetIconRegistry,
                 .assetCatalogView = assetCatalogStore.catalogView(),
+                .assetCatalogSnapshot = assetCatalogStore.snapshot(),
                 .assetCatalogDiagnostics = assetCatalogStore.diagnostics(),
+                .commandHistory = commandHistory,
+                .assetReimportRequests = assetReimportRequests,
+                .assetPendingReimports = assetPendingReimports,
             };
             drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, i18n, panelRegistry,
                                  toolRegistry, workspace, frameContext.ui);
@@ -185,6 +229,10 @@ namespace asharia::editor {
             .assetCatalogSnapshotLoaded = assetCatalogStore.snapshot() != nullptr,
             .assetCatalogRows = assetCatalogStore.catalogView().entries.size(),
             .assetCatalogDiagnostics = assetCatalogStore.diagnostics().size(),
+            .assetReimportRequests = assetReimportRequests.size(),
+            .assetPendingReimports = assetPendingReimports.size(),
+            .assetPendingReimportRows =
+                countPendingReimportRows(assetCatalogStore, assetPendingReimports),
         };
     }
 

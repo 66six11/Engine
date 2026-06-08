@@ -40,15 +40,6 @@ namespace asharia::asset {
             return product.key.guid == source.guid;
         }
 
-        [[nodiscard]] bool productMatchesCurrentSource(const AssetProductRecord& product,
-                                                       const SourceAssetRecord& source) noexcept {
-            return product.key.guid == source.guid && product.key.assetType == source.assetType &&
-                   product.key.importerId == source.importerId &&
-                   product.key.importerVersion == source.importerVersion &&
-                   product.key.sourceHash == source.sourceHash &&
-                   product.key.settingsHash == source.settingsHash;
-        }
-
         [[nodiscard]] bool
         productMatchesExpectedKey(const AssetProductRecord& product,
                                   const SourceAssetRecord& source,
@@ -65,7 +56,7 @@ namespace asharia::asset {
             if (!options.expectedProductKeys.empty()) {
                 return productMatchesExpectedKey(product, source, options.expectedProductKeys);
             }
-            return productMatchesCurrentSource(product, source);
+            return false;
         }
 
         [[nodiscard]] std::string_view
@@ -74,8 +65,8 @@ namespace asharia::asset {
                 return "Asset catalog source has product records, but none match the active "
                        "target profile and expected product key.";
             }
-            return "Asset catalog source has product records, but none match the current source "
-                   "or settings hash.";
+            return "Asset catalog source has product records, but the active view did not provide "
+                   "expected product keys, so no product can be reported as ready.";
         }
 
         [[nodiscard]] AssetCatalogDiagnostic diagnostic(AssetCatalogDiagnosticCode code,

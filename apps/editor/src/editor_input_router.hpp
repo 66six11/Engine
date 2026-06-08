@@ -8,6 +8,13 @@ namespace asharia::editor {
         bool imguiWantsMouse{};
         bool imguiWantsKeyboard{};
         bool imguiWantsTextInput{};
+        bool rightMouseDragging{};
+        float rightMouseDragDeltaX{};
+        float rightMouseDragDeltaY{};
+        bool middleMouseDragging{};
+        float middleMouseDragDeltaX{};
+        float middleMouseDragDeltaY{};
+        float mouseWheel{};
     };
 
     struct EditorSceneViewInputState {
@@ -19,9 +26,25 @@ namespace asharia::editor {
         bool imguiWantsMouse{};
         bool imguiWantsKeyboard{};
         bool imguiWantsTextInput{};
+        bool rightMouseDragging{};
+        float rightMouseDragDeltaX{};
+        float rightMouseDragDeltaY{};
+        bool middleMouseDragging{};
+        float middleMouseDragDeltaX{};
+        float middleMouseDragDeltaY{};
+        float mouseWheel{};
         bool sceneViewHovered{};
         bool sceneViewFocused{};
         bool sceneViewCanReceiveMouse{};
+        bool sceneViewCameraOrbitActive{};
+        float sceneViewCameraOrbitDeltaX{};
+        float sceneViewCameraOrbitDeltaY{};
+        bool sceneViewCameraPanActive{};
+        float sceneViewCameraPanDeltaX{};
+        float sceneViewCameraPanDeltaY{};
+        bool sceneViewCameraDollyActive{};
+        float sceneViewCameraDollyDelta{};
+        bool sceneViewCameraInputActive{};
         bool shortcutsEnabled{};
     };
 

@@ -280,7 +280,11 @@ namespace asharia::editor {
     EditorViewportOverlayFlags
     effectiveEditorViewportOverlayFlags(EditorViewportKind kind, EditorViewportOverlayFlags flags) {
         if (kind == EditorViewportKind::Scene) {
-            return flags;
+            return EditorViewportOverlayFlags{
+                .gridVisible = flags.gridVisible,
+                .debugOverlayVisible = flags.debugOverlayVisible,
+                .debugGizmoVisible = flags.debugGizmoVisible,
+            };
         }
         if (kind == EditorViewportKind::Game) {
             return EditorViewportOverlayFlags{

@@ -496,10 +496,36 @@ struct AssetLoadResult {
   `skybox`；未知 profile 必须作为 source-metadata diagnostic 显示，而不是静默降级为 Texture2D。
 - Texture profile interpretation lives in `asset-pipeline` as a source/import metadata adapter. `asset-core`
   keeps only the generic `AssetCatalogSourceFacet` view extension model and must not depend on texture importer
-  constants or profile names.
+  constants or profile names. `tools/check-asset-boundaries.ps1` is the lightweight repository guard for this boundary.
 - Sprite sheet 在当前切片只暴露稳定 sub-asset id、display name 和 role，供 Asset Browser filter/detail/icon
   resolver 使用；rect、pivot、packing、atlas bake、GPU upload、preview texture、IBL bake 和 Import Settings 编辑仍由后续
   importer/resource/runtime/editor command 切片承接。
+- #86 adds the first editor command contract for import settings without turning the UI into an importer. The current
+  command edits only `texture.profile`, rewrites the source `.ameta` with a recomputed `settingsHash`, supports
+  undo/redo, and records a reimport request fact for a later scheduler. It does not decode PNG/JPG/HDR/EXR files, create
+  Texture2D/TextureCube runtime resources, bake skyboxes, update product manifests or upload GPU textures.
+- #99 / #100 now have the first Asset Browser control-surface path: selected texture rows can edit `texture.profile`
+  through the editor command/history path, record pending reimport on real metadata changes, and show/clear that pending
+  marker for the selected source and target profile. Catalog rows may also show a separate pending marker beside their
+  product state, but this pending state is useful only for Asset Browser / Inspector status. It is not a source of truth for
+  product freshness and does not refresh the catalog, execute importers, write product cache files, invalidate runtime
+  handles or upload GPU resources. `--smoke-editor-asset-browser` now covers this path with a temporary snapshot-backed
+  `.png` texture-profile row and verifies one reimport request, one pending reimport entry and one matching pending row.
+  Pending markers are keyed for editor coordination by source GUID when available, with sourcePath as the fallback
+  identity; neither key is a product cache key or runtime resource handle. The pending state can also produce a
+  deterministic read-only work snapshot with sorted changed-setting keys for a future scheduler handoff, but that snapshot
+  is still coordination data and does not execute imports, refresh catalog truth, write products or allocate runtime
+  resources.
+  #102 adds the first explicit editor catalog refresh service: it rebuilds an `EditorAssetCatalogStore` snapshot from the
+  same project/product-manifest/target-profile request, so real `.ameta` changes can become read-only catalog facts while
+  import execution, product manifest/blob writes, runtime resource allocation and GPU upload remain out of scope.
+  The selected-row Import Settings UI can also read the canonical `texture.profile` back from the source `.ameta` after
+  execute, undo and redo so the visible draft/baseline follows the persisted metadata while product truth remains owned by
+  catalog planning and product manifests.
+- The current answer for image sources is therefore: source format (`.png`) is separate from catalog/runtime semantic.
+  `texture.profile=texture2d` means one texture semantic, `sprite-sheet` means the source owns read-only sprite sub-asset
+  facts, and `texture-cube` / `skybox` describe future cube/skybox import semantics. Runtime Texture2D/TextureCube
+  allocation remains a later importer/product/resource stage.
 - Sprite sheet sub-asset stable id must be unique within one source asset. Duplicate ids are reported as
   source-metadata warnings and skipped from the catalog-facing sub-asset list so future single-sprite
   references and icon/filter overrides are not ambiguous.
@@ -511,6 +537,8 @@ struct AssetLoadResult {
   [Unreal Derived Data Cache](https://dev.epicgames.com/documentation/en-us/unreal-engine/using-derived-data-cache-in-unreal-engine)：
   import/cook output 是带 source、settings、dependencies 和 target/platform context 的可再生成 derived data，而不是单靠
   source extension 或 GUID 即可确认的新鲜资源。
+  `AssetCatalogViewOptions::expectedProductKeys` is therefore the readiness authority. If a caller passes product records
+  without expected full keys, the catalog can expose those records as stale/unconfirmed but must not mark the row `Ready`.
 - #84 明确 `.ameta` `sourceHash` 在 v1 里只是 metadata-side recorded source information，active import
   planning 以当前 `AssetSourceSnapshot` hash 作为 product key freshness authority。若两者不同，pipeline 产生
   non-blocking warning diagnostic，editor 和 asset-processor 可展示漂移；这不阻止 planning/execution 使用当前 snapshot

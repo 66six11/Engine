@@ -53,6 +53,9 @@ namespace asharia::editor {
                 extension == ".gltf" || extension == ".glb" || importerId.contains("mesh")) {
                 return icon("lucide.box", tint(0.45F, 0.72F, 0.92F), "icon.mesh", "Mesh");
             }
+            if (assetRole.contains("sprite") && !assetRole.contains("spritesheet")) {
+                return icon("lucide.image", tint(0.56F, 0.82F, 0.96F), "icon.sprite", "Sprite");
+            }
             if (importProfile == "sprite-sheet" || assetRole.contains("spritesheet") ||
                 query.subAssetCount > 0U) {
                 return icon("lucide.image", tint(0.50F, 0.86F, 0.76F), "icon.spriteSheet",
@@ -138,15 +141,36 @@ namespace asharia::editor {
                    normalizeEditorAssetIconExtension(expected.value);
         }
 
-        [[nodiscard]] asharia::VoidResult
-        validateIconRule(std::string_view resolverId, const EditorAssetIconRule& rule) {
+        [[nodiscard]] asharia::VoidResult validateIconRule(std::string_view resolverId,
+                                                           const EditorAssetIconRule& rule) {
             if (rule.descriptor.id.value.empty()) {
                 return std::unexpected{
                     asharia::Error{asharia::ErrorDomain::Core, 0,
                                    "Editor asset icon rule descriptor id must not be empty: " +
                                        std::string{resolverId}}};
             }
+            for (const char character : rule.descriptor.id.value) {
+                const auto byte = static_cast<unsigned char>(character);
+                if (std::iscntrl(byte) != 0 || std::isspace(byte) != 0 || character == '<' ||
+                    character == '>') {
+                    return std::unexpected{
+                        asharia::Error{asharia::ErrorDomain::Core, 0,
+                                       "Editor asset icon rule descriptor id is not stable: " +
+                                           std::string{resolverId}}};
+                }
+            }
             return {};
+        }
+
+        [[nodiscard]] bool iconDescriptorIsStable(const EditorIconDescriptor& descriptor) {
+            if (descriptor.id.value.empty()) {
+                return false;
+            }
+            return std::ranges::none_of(descriptor.id.value, [](const char character) {
+                const auto byte = static_cast<unsigned char>(character);
+                return std::iscntrl(byte) != 0 || std::isspace(byte) != 0 || character == '<' ||
+                       character == '>';
+            });
         }
 
         [[nodiscard]] ImVec2 iconPoint(ImVec2 min, float size, float xScale, float yScale) {
@@ -349,6 +373,39 @@ namespace asharia::editor {
         return normalized;
     }
 
+    EditorAssetIconDiagnosticState editorAssetIconDiagnosticStateForProductState(
+        asharia::asset::AssetCatalogProductState productState) noexcept {
+        switch (productState) {
+        case asharia::asset::AssetCatalogProductState::MissingProduct:
+            return EditorAssetIconDiagnosticState::Missing;
+        case asharia::asset::AssetCatalogProductState::StaleProduct:
+            return EditorAssetIconDiagnosticState::Warning;
+        case asharia::asset::AssetCatalogProductState::InvalidProduct:
+            return EditorAssetIconDiagnosticState::Invalid;
+        case asharia::asset::AssetCatalogProductState::NotTracked:
+        case asharia::asset::AssetCatalogProductState::Ready:
+            return EditorAssetIconDiagnosticState::None;
+        }
+        return EditorAssetIconDiagnosticState::None;
+    }
+
+    EditorAssetIconQuery
+    makeEditorAssetIconQuery(const asharia::asset::AssetCatalogViewEntry& row) {
+        return EditorAssetIconQuery{
+            .folder = false,
+            .assetType = row.assetTypeName,
+            .importerId = row.importerName,
+            .extension = row.extension,
+            .diagnostic = editorAssetIconDiagnosticStateForProductState(row.productState),
+            .sourcePath = row.sourcePath,
+            .displayName = row.displayName,
+            .guidText = row.guidText,
+            .importProfile = row.importProfileName,
+            .assetRole = row.assetRoleName,
+            .subAssetCount = row.subAssets.size(),
+        };
+    }
+
     bool editorAssetIconRuleMatches(const EditorAssetIconRule& rule,
                                     const EditorAssetIconQuery& query) {
         if (rule.descriptor.id.value.empty()) {
@@ -363,19 +420,16 @@ namespace asharia::editor {
         if (rule.minimumSubAssetCount && query.subAssetCount < *rule.minimumSubAssetCount) {
             return false;
         }
-        if (!normalizedContains(TextValue{query.assetType},
-                                TextNeedle{rule.assetTypeContains})) {
+        if (!normalizedContains(TextValue{query.assetType}, TextNeedle{rule.assetTypeContains})) {
             return false;
         }
-        if (!normalizedContains(TextValue{query.importerId},
-                                TextNeedle{rule.importerIdContains})) {
+        if (!normalizedContains(TextValue{query.importerId}, TextNeedle{rule.importerIdContains})) {
             return false;
         }
         if (!extensionEquals(TextValue{query.extension}, TextNeedle{rule.extension})) {
             return false;
         }
-        if (!normalizedContains(TextValue{query.sourcePath},
-                                TextNeedle{rule.sourcePathContains})) {
+        if (!normalizedContains(TextValue{query.sourcePath}, TextNeedle{rule.sourcePathContains})) {
             return false;
         }
         if (!normalizedContains(TextValue{query.displayName},
@@ -385,12 +439,10 @@ namespace asharia::editor {
         if (!normalizedEquals(TextValue{query.guidText}, TextNeedle{rule.guidText})) {
             return false;
         }
-        if (!normalizedEquals(TextValue{query.importProfile},
-                              TextNeedle{rule.importProfile})) {
+        if (!normalizedEquals(TextValue{query.importProfile}, TextNeedle{rule.importProfile})) {
             return false;
         }
-        return normalizedContains(TextValue{query.assetRole},
-                                  TextNeedle{rule.assetRoleContains});
+        return normalizedContains(TextValue{query.assetRole}, TextNeedle{rule.assetRoleContains});
     }
 
     EditorAssetIconResolver makeEditorAssetIconRuleResolver(EditorAssetIconRule rule) {
@@ -462,9 +514,8 @@ namespace asharia::editor {
                                 makeEditorAssetIconRuleResolver(std::move(rule)));
     }
 
-    asharia::VoidResult
-    EditorAssetIconRegistry::registerOrReplaceRule(std::string resolverId,
-                                                   EditorAssetIconRule rule) {
+    asharia::VoidResult EditorAssetIconRegistry::registerOrReplaceRule(std::string resolverId,
+                                                                       EditorAssetIconRule rule) {
         if (const asharia::VoidResult valid = validateIconRule(resolverId, rule); !valid) {
             return std::unexpected{valid.error()};
         }
@@ -488,7 +539,11 @@ namespace asharia::editor {
     EditorAssetIconRegistry::resolveAssetIcon(const EditorAssetIconQuery& query) const {
         for (const ResolverEntry& entry : resolvers_) {
             if (std::optional<EditorIconDescriptor> resolved = entry.resolver(query)) {
-                return *resolved;
+                if (iconDescriptorIsStable(*resolved)) {
+                    return *resolved;
+                }
+                asharia::logWarning("Editor asset icon resolver returned an invalid descriptor: " +
+                                    entry.id);
             }
         }
         return builtInAssetIcon(query);
@@ -518,6 +573,24 @@ namespace asharia::editor {
                     })
                     .tooltipKey != "icon.spriteSheet") {
                 asharia::logError("Editor asset icon smoke missed sprite-sheet profile fallback.");
+                return false;
+            }
+            if (registry
+                    .resolveAssetIcon(EditorAssetIconQuery{
+                        .folder = false,
+                        .assetType = {},
+                        .importerId = {},
+                        .extension = ".png",
+                        .diagnostic = EditorAssetIconDiagnosticState::None,
+                        .sourcePath = {},
+                        .displayName = {},
+                        .guidText = {},
+                        .importProfile = "sprite-sheet",
+                        .assetRole = "com.asharia.asset.Sprite",
+                        .subAssetCount = 0U,
+                    })
+                    .tooltipKey != "icon.sprite") {
+                asharia::logError("Editor asset icon smoke missed sprite role fallback.");
                 return false;
             }
             if (registry
@@ -619,23 +692,22 @@ namespace asharia::editor {
 
         [[nodiscard]] bool smokeRuleBasedAssetIconOverrides(EditorAssetIconRegistry& registry) {
             auto pngSlicesRule = registry.registerRule(
-                "smoke.png-slices-icon",
-                EditorAssetIconRule{
-                    .folder = false,
-                    .diagnostic = EditorAssetIconDiagnosticState::None,
-                    .minimumSubAssetCount = 2U,
-                    .assetTypeContains = {},
-                    .importerIdContains = {},
-                    .extension = "PNG",
-                    .sourcePathContains = {},
-                    .displayNameContains = {},
-                    .guidText = {},
-                    .importProfile = {},
-                    .assetRoleContains = {},
-                    .descriptor = makeLucideEditorIconDescriptor(
-                        "sparkles", editorIconTint(0.50F, 0.86F, 0.76F),
-                        "icon.pngSlices.custom", "Custom PNG slices"),
-                });
+                "smoke.png-slices-icon", EditorAssetIconRule{
+                                             .folder = false,
+                                             .diagnostic = EditorAssetIconDiagnosticState::None,
+                                             .minimumSubAssetCount = 2U,
+                                             .assetTypeContains = {},
+                                             .importerIdContains = {},
+                                             .extension = "PNG",
+                                             .sourcePathContains = {},
+                                             .displayNameContains = {},
+                                             .guidText = {},
+                                             .importProfile = {},
+                                             .assetRoleContains = {},
+                                             .descriptor = makeLucideEditorIconDescriptor(
+                                                 "sparkles", editorIconTint(0.50F, 0.86F, 0.76F),
+                                                 "icon.pngSlices.custom", "Custom PNG slices"),
+                                         });
             if (!pngSlicesRule) {
                 asharia::logError(pngSlicesRule.error().message);
                 return false;
@@ -680,23 +752,22 @@ namespace asharia::editor {
             }
 
             auto generatedShaderRule = registry.registerOrReplaceRule(
-                "smoke.png-slices-icon",
-                EditorAssetIconRule{
-                    .folder = false,
-                    .diagnostic = EditorAssetIconDiagnosticState::None,
-                    .minimumSubAssetCount = {},
-                    .assetTypeContains = {},
-                    .importerIdContains = {},
-                    .extension = ".slang",
-                    .sourcePathContains = "Generated/Shaders",
-                    .displayNameContains = {},
-                    .guidText = {},
-                    .importProfile = {},
-                    .assetRoleContains = {},
-                    .descriptor = makeLucideEditorIconDescriptor(
-                        "file-code-2", editorIconTint(0.66F, 0.78F, 0.96F),
-                        "icon.shader.generated.rule", "Generated shader"),
-                });
+                "smoke.png-slices-icon", EditorAssetIconRule{
+                                             .folder = false,
+                                             .diagnostic = EditorAssetIconDiagnosticState::None,
+                                             .minimumSubAssetCount = {},
+                                             .assetTypeContains = {},
+                                             .importerIdContains = {},
+                                             .extension = ".slang",
+                                             .sourcePathContains = "Generated/Shaders",
+                                             .displayNameContains = {},
+                                             .guidText = {},
+                                             .importProfile = {},
+                                             .assetRoleContains = {},
+                                             .descriptor = makeLucideEditorIconDescriptor(
+                                                 "file-code-2", editorIconTint(0.66F, 0.78F, 0.96F),
+                                                 "icon.shader.generated.rule", "Generated shader"),
+                                         });
             if (!generatedShaderRule) {
                 asharia::logError(generatedShaderRule.error().message);
                 return false;
@@ -743,6 +814,91 @@ namespace asharia::editor {
             }
             if (!registry.unregisterResolver("smoke.png-slices-icon")) {
                 asharia::logError("Editor asset icon smoke missed rule unregister behavior.");
+                return false;
+            }
+
+            return true;
+        }
+
+        [[nodiscard]] bool smokeInvalidAssetIconDescriptors(EditorAssetIconRegistry& registry) {
+            auto invalidResolver = registry.registerResolver(
+                "smoke.invalid-icon",
+                [](const EditorAssetIconQuery&) -> std::optional<EditorIconDescriptor> {
+                    return EditorIconDescriptor{};
+                });
+            if (!invalidResolver ||
+                registry.resolveAssetIcon(EditorAssetIconQuery{
+                                              .folder = false,
+                                              .assetType = {},
+                                              .importerId = {},
+                                              .extension = ".png",
+                                              .diagnostic = EditorAssetIconDiagnosticState::None,
+                                              .sourcePath = {},
+                                              .displayName = {},
+                                              .guidText = {},
+                                              .importProfile = {},
+                                              .assetRole = {},
+                                              .subAssetCount = 0U,
+                                          })
+                        .id.value != "lucide.image") {
+                asharia::logError(
+                    "Editor asset icon smoke accepted an invalid resolver descriptor.");
+                return false;
+            }
+
+            auto svgLikeResolver = registry.registerOrReplaceResolver(
+                "smoke.invalid-icon",
+                [](const EditorAssetIconQuery&) -> std::optional<EditorIconDescriptor> {
+                    return EditorIconDescriptor{
+                        .id = EditorIconId{.value = "<svg>"},
+                        .tint = editorIconTint(1.0F, 1.0F, 1.0F),
+                        .tooltipKey = "icon.invalid.svg",
+                        .tooltipFallback = "Invalid SVG",
+                    };
+                });
+            if (!svgLikeResolver ||
+                registry.resolveAssetIcon(EditorAssetIconQuery{
+                                              .folder = false,
+                                              .assetType = {},
+                                              .importerId = {},
+                                              .extension = ".slang",
+                                              .diagnostic = EditorAssetIconDiagnosticState::None,
+                                              .sourcePath = {},
+                                              .displayName = {},
+                                              .guidText = {},
+                                              .importProfile = {},
+                                              .assetRole = {},
+                                              .subAssetCount = 0U,
+                                          })
+                        .id.value != "lucide.braces" ||
+                !registry.unregisterResolver("smoke.invalid-icon")) {
+                asharia::logError("Editor asset icon smoke accepted an SVG-like icon descriptor.");
+                return false;
+            }
+
+            if (registry.registerRule("smoke.invalid-svg-rule",
+                                      EditorAssetIconRule{
+                                          .folder = {},
+                                          .diagnostic = {},
+                                          .minimumSubAssetCount = {},
+                                          .assetTypeContains = {},
+                                          .importerIdContains = {},
+                                          .extension = {},
+                                          .sourcePathContains = {},
+                                          .displayNameContains = {},
+                                          .guidText = {},
+                                          .importProfile = {},
+                                          .assetRoleContains = {},
+                                          .descriptor =
+                                              EditorIconDescriptor{
+                                                  .id = EditorIconId{.value = "<svg>"},
+                                                  .tint = editorIconTint(1.0F, 1.0F, 1.0F),
+                                                  .tooltipKey = "icon.invalid.svg.rule",
+                                                  .tooltipFallback = "Invalid SVG rule",
+                                              },
+                                      })) {
+                asharia::logError(
+                    "Editor asset icon smoke accepted an invalid rule descriptor id.");
                 return false;
             }
 
@@ -911,6 +1067,10 @@ namespace asharia::editor {
                                            "Copy")
                 .id.value != "lucide.copy") {
             asharia::logError("Editor asset icon smoke missed Lucide copy id normalization.");
+            return false;
+        }
+
+        if (!smokeInvalidAssetIconDescriptors(registry)) {
             return false;
         }
 

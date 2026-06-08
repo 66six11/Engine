@@ -950,6 +950,31 @@ namespace {
             return false;
         }
 
+        const std::array<asharia::asset::AssetProductRecord, 1> manifestOnlyProducts{
+            products[0],
+        };
+        const asharia::asset::AssetCatalogView manifestOnlyView =
+            asharia::asset::buildAssetCatalogView(
+                catalog, manifestOnlyProducts,
+                asharia::asset::AssetCatalogViewOptions{.requireProducts = true});
+        const auto manifestOnlyMaterial = std::ranges::find_if(
+            manifestOnlyView.entries,
+            [&materialRecord](const asharia::asset::AssetCatalogViewEntry& entry) {
+                return entry.sourcePath == materialRecord.sourcePath;
+            });
+        if (manifestOnlyMaterial == manifestOnlyView.entries.end() ||
+            manifestOnlyMaterial->productState !=
+                asharia::asset::AssetCatalogProductState::StaleProduct ||
+            manifestOnlyMaterial->currentProductCount != 0U ||
+            manifestOnlyMaterial->staleProductCount != 1U ||
+            manifestOnlyMaterial->diagnostics.size() != 1U ||
+            manifestOnlyMaterial->diagnostics[0].message.find("expected product keys") ==
+                std::string::npos) {
+            logFailure(
+                "Asset catalog view smoke allowed Ready without expected product key authority.");
+            return false;
+        }
+
         std::cout << "Asset catalog view rows: " << view.entries.size() << '\n';
         return true;
     }

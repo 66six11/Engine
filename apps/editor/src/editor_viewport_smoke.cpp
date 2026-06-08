@@ -110,13 +110,13 @@ namespace asharia::editor {
                 } else if (provider.overlayId == kEditorSceneTransformGizmoOverlayId) {
                     sawSceneGizmo =
                         !supportsGame &&
-                        editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
+                        !editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
                         editorViewportOverlayProviderEnabled(provider, sceneAllContext) &&
                         !editorViewportOverlayProviderEnabled(provider, gameContext);
                 } else if (provider.overlayId == kEditorSceneSelectionOutlineOverlayId) {
                     sawSceneSelection =
                         !supportsGame &&
-                        editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
+                        !editorViewportOverlayProviderEnabled(provider, sceneDefaultContext) &&
                         editorViewportOverlayProviderEnabled(provider, sceneAllContext) &&
                         !editorViewportOverlayProviderEnabled(provider, gameContext);
                 } else if (provider.overlayId == kEditorDebugOverlayId) {
@@ -378,10 +378,8 @@ namespace asharia::editor {
                 scene.frameParams.frameIndex == 0 || !scene.overlay.enabled ||
                 !matchesWorldGridSettings(scene.overlay, defaultEditorSceneGridSettings()) ||
                 scene.overlay.debugWorldLineCount != 0 ||
-                scene.overlay.sourceOverlayIds.size() != 3U ||
-                !hasSourceOverlayId(scene.overlay, kEditorSceneGridOverlayId) ||
-                !hasSourceOverlayId(scene.overlay, kEditorSceneTransformGizmoOverlayId) ||
-                !hasSourceOverlayId(scene.overlay, kEditorSceneSelectionOutlineOverlayId)) {
+                scene.overlay.sourceOverlayIds.size() != 1U ||
+                !hasSourceOverlayId(scene.overlay, kEditorSceneGridOverlayId)) {
                 asharia::logError(
                     "Editor viewport smoke recorded invalid RenderView overlay prerequisites.");
                 return false;
@@ -520,8 +518,8 @@ namespace asharia::editor {
         }
 
         const EditorViewportOverlayFlags defaults = defaultEditorSceneViewOverlayFlags();
-        if (!defaults.gridVisible || !defaults.gizmoVisible || defaults.wireVisible ||
-            !defaults.selectionOutlineVisible || defaults.debugOverlayVisible ||
+        if (!defaults.gridVisible || defaults.gizmoVisible || defaults.wireVisible ||
+            defaults.selectionOutlineVisible || defaults.debugOverlayVisible ||
             defaults.debugGizmoVisible) {
             asharia::logError("Editor viewport smoke found invalid default overlay flags.");
             return false;
@@ -535,10 +533,15 @@ namespace asharia::editor {
             .debugOverlayVisible = true,
             .debugGizmoVisible = true,
         };
-        if (!sameViewportOverlayFlags(
-                effectiveEditorViewportOverlayFlags(EditorViewportKind::Scene, allFlags),
-                allFlags)) {
-            asharia::logError("Editor viewport smoke dropped Scene View overlay flags.");
+        const EditorViewportOverlayFlags sceneFlags =
+            effectiveEditorViewportOverlayFlags(EditorViewportKind::Scene, allFlags);
+        const EditorViewportOverlayFlags expectedSceneFlags{
+            .gridVisible = true,
+            .debugOverlayVisible = true,
+            .debugGizmoVisible = true,
+        };
+        if (!sameViewportOverlayFlags(sceneFlags, expectedSceneFlags)) {
+            asharia::logError("Editor viewport smoke kept pending Scene View overlay flags.");
             return false;
         }
         const EditorViewportOverlayFlags gameFlags =

@@ -227,8 +227,8 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool validatePanelRegistrySmoke(EditorPanelRegistry& panelRegistry) {
-            constexpr std::size_t kExpectedPanelCount = 7;
-            constexpr std::size_t kExpectedOpenPanelCount = 5;
+            constexpr std::size_t kExpectedPanelCount = 9;
+            constexpr std::size_t kExpectedOpenPanelCount = 7;
 
             if (!panelRegistry.closePanel("log") || !panelRegistry.focusPanel("log")) {
                 asharia::logError(
@@ -239,6 +239,7 @@ namespace asharia::editor {
                 panelRegistry.openPanelCount() != kExpectedOpenPanelCount ||
                 !panelRegistry.isOpen("log") || panelRegistry.isOpen("ui-style-preview") ||
                 panelRegistry.isOpen("editor-settings") ||
+                !panelRegistry.isOpen("scene-tree") || !panelRegistry.isOpen("inspector") ||
                 !panelRegistry.isOpen("asset-browser")) {
                 asharia::logError(
                     "Editor panel registry smoke detected invalid singleton panel state.");
@@ -250,8 +251,8 @@ namespace asharia::editor {
 
         [[nodiscard]] bool validateActionRegistrySmoke(EditorActionRegistry& actionRegistry,
                                                        EditorActionServices& actionServices) {
-            constexpr std::size_t kExpectedActionCount = 13;
-            constexpr std::size_t kExpectedEnabledActionCount = 10;
+            constexpr std::size_t kExpectedActionCount = 15;
+            constexpr std::size_t kExpectedEnabledActionCount = 12;
 
             if (actionRegistry.actionCount() != kExpectedActionCount ||
                 actionRegistry.enabledActionCount() != kExpectedEnabledActionCount) {
@@ -286,6 +287,26 @@ namespace asharia::editor {
             if (!closedLog || !invokedLogAction || !openedLog) {
                 asharia::logError(
                     "Editor event queue smoke missed action or panel lifecycle events.");
+                return false;
+            }
+            actionServices.eventQueue.clear();
+
+            if (!actionServices.panels.closePanel("scene-tree") ||
+                !actionRegistry.invoke("view.scene-tree",
+                                       makeEditorActionInvokeContext(actionServices)) ||
+                !actionServices.panels.isOpen("scene-tree") ||
+                actionRegistry.invokeCount("view.scene-tree") != 1) {
+                asharia::logError("Editor action registry smoke failed to route Scene Tree.");
+                return false;
+            }
+            actionServices.eventQueue.clear();
+
+            if (!actionServices.panels.closePanel("inspector") ||
+                !actionRegistry.invoke("view.inspector",
+                                       makeEditorActionInvokeContext(actionServices)) ||
+                !actionServices.panels.isOpen("inspector") ||
+                actionRegistry.invokeCount("view.inspector") != 1) {
+                asharia::logError("Editor action registry smoke failed to route Inspector.");
                 return false;
             }
             actionServices.eventQueue.clear();
@@ -590,9 +611,12 @@ namespace asharia::editor {
             std::size_t sceneOverlayCount = 0;
             bool sawSceneGrid = false;
             bool sawSceneGridDefault = false;
+            bool sawSceneGridEnabled = false;
             bool sawUnexpectedWorldGridDefault = false;
             bool sawSceneGizmo = false;
+            bool sawSceneGizmoPending = false;
             bool sawSceneSelectionOutline = false;
+            bool sawSceneSelectionOutlinePending = false;
             toolRegistry.visitViewportOverlays(
                 "scene-view", [&](const EditorToolDesc& tool,
                                   const EditorToolViewportOverlayContribution& overlay) {
@@ -600,6 +624,7 @@ namespace asharia::editor {
                     ++sceneOverlayCount;
                     if (overlay.overlayId == kEditorSceneGridOverlayId) {
                         sawSceneGrid = true;
+                        sawSceneGridEnabled = overlay.enabled;
                         sawSceneGridDefault =
                             overlay.worldGrid.has_value() &&
                             sameWorldGridSettings(*overlay.worldGrid,
@@ -607,11 +632,16 @@ namespace asharia::editor {
                     } else if (overlay.worldGrid.has_value()) {
                         sawUnexpectedWorldGridDefault = true;
                     }
-                    sawSceneGizmo =
-                        sawSceneGizmo || overlay.overlayId == kEditorSceneTransformGizmoOverlayId;
-                    sawSceneSelectionOutline =
-                        sawSceneSelectionOutline ||
-                        overlay.overlayId == kEditorSceneSelectionOutlineOverlayId;
+                    if (overlay.overlayId == kEditorSceneTransformGizmoOverlayId) {
+                        sawSceneGizmo = true;
+                        sawSceneGizmoPending =
+                            !overlay.enabled && !overlay.disabledReasonKey.empty();
+                    }
+                    if (overlay.overlayId == kEditorSceneSelectionOutlineOverlayId) {
+                        sawSceneSelectionOutline = true;
+                        sawSceneSelectionOutlinePending =
+                            !overlay.enabled && !overlay.disabledReasonKey.empty();
+                    }
                 });
             std::size_t gameOverlayCount = 0;
             toolRegistry.visitViewportOverlays(
@@ -622,8 +652,10 @@ namespace asharia::editor {
                     ++gameOverlayCount;
                 });
             if (sceneOverlayCount != expectedViewportOverlayContributions ||
-                gameOverlayCount != 0 || !sawSceneGrid || !sawSceneGridDefault ||
-                sawUnexpectedWorldGridDefault || !sawSceneGizmo || !sawSceneSelectionOutline) {
+                gameOverlayCount != 0 || !sawSceneGrid || !sawSceneGridEnabled ||
+                !sawSceneGridDefault || sawUnexpectedWorldGridDefault || !sawSceneGizmo ||
+                !sawSceneGizmoPending || !sawSceneSelectionOutline ||
+                !sawSceneSelectionOutlinePending) {
                 asharia::logError("Editor tool registry smoke missed a viewport overlay query.");
                 return false;
             }
@@ -634,9 +666,9 @@ namespace asharia::editor {
         [[nodiscard]] bool validateToolRegistrySmoke(const EditorToolRegistry& toolRegistry,
                                                      const EditorActionRegistry& actionRegistry,
                                                      const EditorPanelRegistry& panelRegistry) {
-            constexpr std::size_t kExpectedToolCount = 8;
-            constexpr std::size_t kExpectedPanelContributions = 7;
-            constexpr std::size_t kExpectedActionContributions = 10;
+            constexpr std::size_t kExpectedToolCount = 10;
+            constexpr std::size_t kExpectedPanelContributions = 9;
+            constexpr std::size_t kExpectedActionContributions = 12;
             constexpr std::size_t kExpectedToolbarActionContributions = 9;
             constexpr std::size_t kExpectedViewportOverlayContributions = 3;
             constexpr std::size_t kExpectedViewportActivationTools = 1;

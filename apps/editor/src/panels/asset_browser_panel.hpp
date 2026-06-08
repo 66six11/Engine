@@ -22,7 +22,7 @@ namespace asharia::editor {
             .defaultOpen = true,
             .singleton = true,
             .category = EditorPanelCategory::Tools,
-            .preferredDock = EditorDockSlot::RightBottom,
+            .preferredDock = EditorDockSlot::Bottom,
         };
         std::array<char, 96> filter_{};
         std::string selectedFolderScope_;
@@ -30,6 +30,13 @@ namespace asharia::editor {
         std::string selectedImportProfileFilter_;
         std::string selectedProductStateFilter_;
         std::string selectedAssetKey_;
+        std::string selectedNavigationKey_;
+        std::string selectedSubAssetStableId_;
+        std::string importSettingsSelectionKey_;
+        std::string textureProfileDraft_;
+        std::string textureProfileBaseline_;
+        std::string importSettingsMessage_;
+        bool importSettingsMessageIsError_{false};
     };
 
 } // namespace asharia::editor

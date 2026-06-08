@@ -163,7 +163,13 @@ namespace asharia::editor {
             }
             if (ImGui::BeginMenu(viewMenu.c_str())) {
                 drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.scene-tree", context.panels.isOpen("scene-tree"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
                                    "view.scene-view", context.panels.isOpen("scene-view"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.inspector", context.panels.isOpen("inspector"));
+                drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
+                                   "view.asset-browser", context.panels.isOpen("asset-browser"));
                 drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke, "view.log",
                                    context.panels.isOpen("log"));
                 drawActionMenuItem(actionRegistry, context.i18n, context.actionInvoke,
