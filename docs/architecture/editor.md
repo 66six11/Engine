@@ -83,6 +83,7 @@ renderer/GPU lifetime。
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
 | `editor_selection` | app-local active `SelectionSet` owner, stable `sceneId + EntityId` values, empty/missing/stale/multi-selection shapes and `SelectionChanged` facts | runtime scene hierarchy ownership, scene serialization, object pointers, picking, gizmo state or writable Inspector data |
+| `editor_dirty_state` | app-local dirty-state owner and snapshot for transient UI, document dirty, asset metadata dirty and pending reimport facts | autosave, source control, importer execution, product cache writes, runtime scene serialization or writable Inspector fields |
 | `editor_inspector_model` | app-local data-only Inspector sections, rows, display values, mixed-value placeholders and validation messages | ImGui widgets, runtime mutable object pointers, scene serialization, dirty state or writable component editing |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
@@ -175,6 +176,20 @@ The first model is intentionally read-only. Empty selection, single selection, m
 missing/stale selection validation are represented explicitly so future scene/schema-backed properties can plug into the
 same row contract. Writable Transform/component fields remain deferred until dirty state, validation and command/transaction
 ownership can restore visible scene state through undo/redo.
+
+### Dirty state
+
+`EditorAppServices` owns one app-local `EditorDirtyState`. It exposes a read-only `EditorDirtySnapshot` that separates:
+
+- transient UI dirty facts, such as layout or panel-local state that should not make a document unsaved;
+- document dirty facts that will later be set by scene/schema-backed transactions;
+- asset metadata dirty facts that belong to editor-owned metadata writes rather than runtime assets;
+- pending reimport count, derived from `EditorAssetReimportPendingState`.
+
+The shell updates pending reimport count from the existing pending state before drawing each frame. The status bar can
+show Clean, Dirty, Pending reimport or Transient state, and Inspector can render a read-only Dirty State section from the
+same snapshot. This is only a state contract: it does not save files, schedule importers, refresh catalog truth, own source
+control state, run autosave or make Inspector fields writable.
 
 ### Scene View 纹理流
 
@@ -594,6 +609,8 @@ The shell smoke also runs CPU-only editor state contract gates:
   `SelectionChanged` event emission and diagnostics routing.
 - `EditorInspectorModel`: empty selection, single read-only selection, multi-selection mixed values and validation row
   representation without ImGui dependency.
+- `EditorDirtyState`: transient UI, document, asset metadata and pending reimport buckets stay separated, no-op updates
+  preserve revision, and clears do not cross buckets.
 
 Asset Browser、asset catalog snapshot 或 asset icon resolver 相关改动必须运行：
 
@@ -639,9 +656,10 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 
 - Scene Tree and Inspector now exist as read-only shell panels in the default workbench. They read the app-local
   `EditorSelectionSet` snapshot for stable selected ids and missing/stale state, and Inspector renders an app-local
-  data-only model for rows, mixed values and validation. Real scene hierarchy, picking, transaction-backed writable fields,
-  dirty state, writable asset operations and richer asset browser workflows are still blocked on scene/asset/schema
-  ownership becoming concrete enough.
+  data-only model for rows, mixed values, validation and read-only dirty-state summary. The app-local `EditorDirtyState`
+  separates transient UI, document, asset metadata and pending reimport facts, but real scene hierarchy, picking,
+  transaction-backed writable fields, dirty persistence/autosave, writable asset operations and richer asset browser
+  workflows are still blocked on scene/asset/schema ownership becoming concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for

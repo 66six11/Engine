@@ -18,6 +18,7 @@
 #include "editor_asset_icon.hpp"
 #include "editor_asset_import_settings_command.hpp"
 #include "editor_command.hpp"
+#include "editor_dirty_state.hpp"
 #include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -76,10 +77,10 @@ namespace asharia::editor {
         EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
         const EditorSelectionSet& selectionSet, EditorSettingsController& settingsController,
         EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
-        EditorToolManager& toolManager,
-        EditorWorkspaceController& workspace, const EditorAssetCatalogStore& assetCatalogStore,
+        EditorToolManager& toolManager, EditorWorkspaceController& workspace,
+        const EditorAssetCatalogStore& assetCatalogStore,
         EditorAssetIconRegistry& assetIconRegistry, EditorCommandHistory& commandHistory,
-        EditorAssetReimportRequestLog& assetReimportRequests,
+        EditorDirtyState& dirtyState, EditorAssetReimportRequestLog& assetReimportRequests,
         EditorAssetReimportPendingState& assetPendingReimports, EditorRunMode mode) {
         const bool smokeMode = isEditorSmokeMode(mode);
         EditorViewportResizeSmokeState resizeSmoke;
@@ -115,10 +116,8 @@ namespace asharia::editor {
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
             const ImGuiIO& imguiIo = ImGui::GetIO();
-            const ImVec2 rightMouseDragDelta =
-                ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
-            const ImVec2 middleMouseDragDelta =
-                ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
+            const ImVec2 rightMouseDragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
+            const ImVec2 middleMouseDragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
             inputRouter.beginFrame(EditorInputCapture{
                 .imguiWantsMouse = imguiIo.WantCaptureMouse,
                 .imguiWantsKeyboard = imguiIo.WantCaptureKeyboard,
@@ -134,6 +133,7 @@ namespace asharia::editor {
             viewportHost.beginImguiFrame(editorViewportFrameEpochs(frameLoop));
             panelRegistry.clearLifecycleEvents();
             eventQueue.clear();
+            static_cast<void>(dirtyState.setPendingReimportCount(assetPendingReimports.size()));
             EditorFrameContext frameContext{
                 .ui =
                     {
@@ -153,6 +153,7 @@ namespace asharia::editor {
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},
                 .selection = selectionSet,
+                .dirtyState = dirtyState,
                 .assetIcons = assetIconRegistry,
                 .assetCatalogView = assetCatalogStore.catalogView(),
                 .assetCatalogSnapshot = assetCatalogStore.snapshot(),
@@ -161,8 +162,8 @@ namespace asharia::editor {
                 .assetReimportRequests = assetReimportRequests,
                 .assetPendingReimports = assetPendingReimports,
             };
-            drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, i18n, panelRegistry,
-                                 toolRegistry, workspace, frameContext.ui);
+            drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, dirtyState, i18n,
+                                 panelRegistry, toolRegistry, workspace, frameContext.ui);
             panelRegistry.drawPanels(frameContext);
             requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();

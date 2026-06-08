@@ -102,6 +102,7 @@ namespace asharia::editor {
         const EditorI18n& i18n = context.ui.i18n;
         const EditorInspectorModel model = buildEditorInspectorModel(EditorInspectorModelBuildInput{
             .selection = context.selection.snapshot(),
+            .dirtySnapshot = &context.dirtyState.snapshot(),
             .undoDepth = static_cast<std::size_t>(context.commandHistory.undoDepth()),
             .redoDepth = static_cast<std::size_t>(context.commandHistory.redoDepth()),
         });

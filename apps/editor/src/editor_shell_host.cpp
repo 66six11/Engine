@@ -1,6 +1,7 @@
 ﻿#include "editor_shell_host.hpp"
 
 #include "editor_action.hpp"
+#include "editor_dirty_state.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
 #include "editor_panel.hpp"
@@ -12,7 +13,8 @@ namespace asharia::editor {
 
     void drawEditorShellFrame(EditorActionRegistry& actionRegistry,
                               EditorActionServices& actionServices,
-                              EditorFrameDebugger& frameDebugger, EditorI18n& i18n,
+                              EditorFrameDebugger& frameDebugger,
+                              const EditorDirtyState& dirtyState, EditorI18n& i18n,
                               EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
                               EditorWorkspaceController& workspace,
                               const EditorFrameUiContext& uiContext) {
@@ -37,6 +39,7 @@ namespace asharia::editor {
             .ui = uiContext,
             .panels = panelRegistry,
             .frameDebugger = frameDebugger,
+            .dirtyState = dirtyState,
         };
 
         drawEditorMainMenu(actionRegistry, menuContext);

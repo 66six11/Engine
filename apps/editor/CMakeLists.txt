@@ -88,6 +88,8 @@ add_executable(asharia-editor
     src/editor_asset_icon.cpp
     src/editor_command.cpp
     src/editor_command_smoke.cpp
+    src/editor_dirty_state.cpp
+    src/editor_dirty_state_smoke.cpp
     src/editor_dock_layout.cpp
     src/editor_event.cpp
     src/editor_extension.cpp
