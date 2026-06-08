@@ -83,6 +83,7 @@ renderer/GPU lifetime。
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
 | `editor_selection` | app-local active `SelectionSet` owner, stable `sceneId + EntityId` values, empty/missing/stale/multi-selection shapes and `SelectionChanged` facts | runtime scene hierarchy ownership, scene serialization, object pointers, picking, gizmo state or writable Inspector data |
+| `editor_inspector_model` | app-local data-only Inspector sections, rows, display values, mixed-value placeholders and validation messages | ImGui widgets, runtime mutable object pointers, scene serialization, dirty state or writable component editing |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
 | `editor_viewport` | backend-neutral viewport request/result structs、Scene/debug viewport flags and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
@@ -162,6 +163,18 @@ Selection mutations normalize invalid and duplicate targets, keep one primary it
 Scene Tree and Inspector receive a read-only selection context from `EditorPanelRegistry::drawPanels()`. They can display
 the same stable selection ids and missing/stale state without owning panel-local selection. They still do not perform scene
 picking, tree hierarchy mutation, transform editing, selection outline rendering or Inspector field writes.
+
+### Inspector data model
+
+`EditorInspectorModel` is the first app-local Inspector data contract. It describes backend-neutral sections, rows, display
+values, mixed-value placeholders and validation messages. The current Inspector panel builds the model from the
+`EditorSelectionSet` snapshot plus command-history depths, then renders that model through ImGui; the panel no longer owns
+the property-row data shape itself.
+
+The first model is intentionally read-only. Empty selection, single selection, multi-selection mixed values and
+missing/stale selection validation are represented explicitly so future scene/schema-backed properties can plug into the
+same row contract. Writable Transform/component fields remain deferred until dirty state, validation and command/transaction
+ownership can restore visible scene state through undo/redo.
 
 ### Scene View 纹理流
 
@@ -575,8 +588,12 @@ build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 ```
 
-The shell smoke also runs the CPU-only `EditorSelectionSet` contract gate: replace/no-op/multi missing-stale refresh,
-layout-reset stability, clear, deterministic `SelectionChanged` event emission and diagnostics routing.
+The shell smoke also runs CPU-only editor state contract gates:
+
+- `EditorSelectionSet`: replace/no-op/multi missing-stale refresh, layout-reset stability, clear, deterministic
+  `SelectionChanged` event emission and diagnostics routing.
+- `EditorInspectorModel`: empty selection, single read-only selection, multi-selection mixed values and validation row
+  representation without ImGui dependency.
 
 Asset Browser、asset catalog snapshot 或 asset icon resolver 相关改动必须运行：
 
@@ -621,9 +638,10 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 ## 当前缺口
 
 - Scene Tree and Inspector now exist as read-only shell panels in the default workbench. They read the app-local
-  `EditorSelectionSet` snapshot for stable selected ids and missing/stale state, but real scene hierarchy, picking,
-  transaction, dirty state, inspector data model, writable asset operations and richer asset browser workflows are still
-  blocked on scene/asset/schema ownership becoming concrete enough.
+  `EditorSelectionSet` snapshot for stable selected ids and missing/stale state, and Inspector renders an app-local
+  data-only model for rows, mixed values and validation. Real scene hierarchy, picking, transaction-backed writable fields,
+  dirty state, writable asset operations and richer asset browser workflows are still blocked on scene/asset/schema
+  ownership becoming concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
