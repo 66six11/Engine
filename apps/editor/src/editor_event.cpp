@@ -1,6 +1,7 @@
 ﻿#include "editor_event.hpp"
 
 #include <cstddef>
+#include <string>
 #include <utility>
 
 namespace asharia::editor {
@@ -19,8 +20,64 @@ namespace asharia::editor {
             return "ViewportResized";
         case EditorEventKind::SelectionChanged:
             return "SelectionChanged";
+        case EditorEventKind::DirtyStateChanged:
+            return "DirtyStateChanged";
+        case EditorEventKind::CommandHistoryChanged:
+            return "CommandHistoryChanged";
+        case EditorEventKind::ValidationReported:
+            return "ValidationReported";
         }
         return "Unknown";
+    }
+
+    std::string_view editorEventSeverityName(EditorEventSeverity severity) {
+        switch (severity) {
+        case EditorEventSeverity::Info:
+            return "Info";
+        case EditorEventSeverity::Warning:
+            return "Warning";
+        case EditorEventSeverity::Error:
+            return "Error";
+        }
+        return "Unknown";
+    }
+
+    std::string_view editorEventOutcomeName(EditorEventOutcome outcome) {
+        switch (outcome) {
+        case EditorEventOutcome::None:
+            return "None";
+        case EditorEventOutcome::Succeeded:
+            return "Succeeded";
+        case EditorEventOutcome::Failed:
+            return "Failed";
+        case EditorEventOutcome::Noop:
+            return "Noop";
+        }
+        return "Unknown";
+    }
+
+    std::string editorEventDisplayText(const EditorEvent& event) {
+        std::string text =
+            std::string{editorEventKindName(event.kind)} + ": " + event.sourceId.value;
+        if (event.metadata.revision != 0U) {
+            text += " rev=" + std::to_string(event.metadata.revision);
+        }
+        if (!event.metadata.label.empty()) {
+            text += " " + event.metadata.label;
+        }
+        if (!event.metadata.subjectId.empty()) {
+            text += " subject=" + event.metadata.subjectId;
+        }
+        if (event.metadata.outcome != EditorEventOutcome::None) {
+            text += " outcome=" + std::string{editorEventOutcomeName(event.metadata.outcome)};
+        }
+        if (event.metadata.severity != EditorEventSeverity::Info) {
+            text += " severity=" + std::string{editorEventSeverityName(event.metadata.severity)};
+        }
+        if (!event.metadata.message.empty()) {
+            text += " - " + event.metadata.message;
+        }
+        return text;
     }
 
     void EditorEventQueue::push(EditorEvent event) {

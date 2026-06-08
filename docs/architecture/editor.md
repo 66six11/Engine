@@ -81,7 +81,7 @@ renderer/GPU lifetime。
 | `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
-| `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
+| `editor_event` | frame-local typed event queue, event metadata, severity/outcome labels and diagnostics history sink | global EventBus、durable document storage、panel/world pointers or Vulkan resources |
 | `editor_selection` | app-local active `SelectionSet` owner, stable `sceneId + EntityId` values, empty/missing/stale/multi-selection shapes and `SelectionChanged` facts | runtime scene hierarchy ownership, scene serialization, object pointers, picking, gizmo state or writable Inspector data |
 | `editor_dirty_state` | app-local dirty-state owner and snapshot for transient UI, document dirty, asset metadata dirty and pending reimport facts | autosave, source control, importer execution, product cache writes, runtime scene serialization or writable Inspector fields |
 | `editor_inspector_model` | app-local data-only Inspector sections, rows, display values, mixed-value placeholders and validation messages | ImGui widgets, runtime mutable object pointers, scene serialization, dirty state or writable component editing |
@@ -159,7 +159,8 @@ fences and completed frame epochs.
 
 Selection mutations normalize invalid and duplicate targets, keep one primary item, preserve explicit `Resolved`,
 `Missing` and `Stale` states, increment a revision, and emit a frame-local `SelectionChanged` event through
-`EditorEventQueue`. `EditorDiagnosticsLog` can record that fact the same way it records panel/action events.
+`EditorEventQueue`. The event metadata carries the selection revision, change reason, primary target label and count
+summary; `EditorDiagnosticsLog` can record that fact the same way it records panel/action events.
 
 Scene Tree and Inspector receive a read-only selection context from `EditorPanelRegistry::drawPanels()`. They can display
 the same stable selection ids and missing/stale state without owning panel-local selection. They still do not perform scene
@@ -190,6 +191,26 @@ The shell updates pending reimport count from the existing pending state before 
 show Clean, Dirty, Pending reimport or Transient state, and Inspector can render a read-only Dirty State section from the
 same snapshot. This is only a state contract: it does not save files, schedule importers, refresh catalog truth, own source
 control state, run autosave or make Inspector fields writable.
+
+`EditorDirtyState` can optionally bind to the frame-local `EditorEventQueue`. Real dirty-state changes emit
+`DirtyStateChanged` with revision, bucket label and subject id metadata; duplicate/no-op updates do not emit an event.
+
+### State event contract
+
+`EditorEvent` is still a frame-local fact queue, not a durable bus. Events now share a small metadata shape: revision,
+subject id, label, message, severity and outcome. Existing panel/action events may leave metadata empty; state events use it
+so Selection, Dirty State, Command History and validation facts can be correlated in Log/Console, status diagnostics and
+future Inspector validation without panel-local hidden coupling.
+
+Current state event kinds:
+
+- `SelectionChanged`: emitted by `EditorSelectionSet` with selection revision/reason/count metadata.
+- `DirtyStateChanged`: emitted by `EditorDirtyState` for real dirty bucket changes.
+- `CommandHistoryChanged`: emitted by `EditorCommandHistory` for push/undo/redo/clear success and undo/redo failure facts.
+- `ValidationReported`: reserved for row/object validation facts; this slice defines the diagnostics route but does not
+  turn the read-only Inspector model into writable validation fixing UI.
+
+Events do not own scene objects, asset products, ImGui widgets, Vulkan resources or saved document data.
 
 ### Scene View 纹理流
 
@@ -611,6 +632,8 @@ The shell smoke also runs CPU-only editor state contract gates:
   representation without ImGui dependency.
 - `EditorDirtyState`: transient UI, document, asset metadata and pending reimport buckets stay separated, no-op updates
   preserve revision, and clears do not cross buckets.
+- `EditorStateEvent`: selection, dirty, command-history and validation facts route through one deterministic event metadata
+  shape, preserve ordering in diagnostics, and do not emit duplicate no-op state events.
 
 Asset Browser、asset catalog snapshot 或 asset icon resolver 相关改动必须运行：
 
@@ -657,9 +680,10 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 - Scene Tree and Inspector now exist as read-only shell panels in the default workbench. They read the app-local
   `EditorSelectionSet` snapshot for stable selected ids and missing/stale state, and Inspector renders an app-local
   data-only model for rows, mixed values, validation and read-only dirty-state summary. The app-local `EditorDirtyState`
-  separates transient UI, document, asset metadata and pending reimport facts, but real scene hierarchy, picking,
-  transaction-backed writable fields, dirty persistence/autosave, writable asset operations and richer asset browser
-  workflows are still blocked on scene/asset/schema ownership becoming concrete enough.
+  separates transient UI, document, asset metadata and pending reimport facts, and state changes now share frame-local
+  event metadata for diagnostics. Real scene hierarchy, picking, transaction-backed writable fields, dirty
+  persistence/autosave, writable asset operations and richer asset browser workflows are still blocked on
+  scene/asset/schema ownership becoming concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for

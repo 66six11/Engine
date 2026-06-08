@@ -8,6 +8,8 @@
 
 #include "asharia/core/error.hpp"
 
+#include "editor_event.hpp"
+
 namespace asharia::editor {
 
     namespace {
@@ -19,10 +21,9 @@ namespace asharia::editor {
         [[nodiscard]] asharia::Error transactionRecoveryError(std::string_view operation,
                                                               const asharia::Error& original,
                                                               const asharia::Error& recovery) {
-            return asharia::Error{
-                original.domain, original.code,
-                std::string{operation} + " failed: " + original.message +
-                    "; transaction recovery also failed: " + recovery.message};
+            return asharia::Error{original.domain, original.code,
+                                  std::string{operation} + " failed: " + original.message +
+                                      "; transaction recovery also failed: " + recovery.message};
         }
 
     } // namespace
@@ -85,55 +86,82 @@ namespace asharia::editor {
         if (commands_.size() == 1) {
             return commands_.front()->description();
         }
-        return commands_.front()->description() + " (+" +
-               std::to_string(commands_.size() - 1) + " more)";
+        return commands_.front()->description() + " (+" + std::to_string(commands_.size() - 1) +
+               " more)";
     }
 
     std::size_t EditorTransaction::commandCount() const {
         return commands_.size();
     }
 
+    EditorCommandHistory::EditorCommandHistory(EditorEventQueue& eventQueue)
+        : eventQueue_(&eventQueue) {}
+
+    void EditorCommandHistory::setEventQueue(EditorEventQueue* eventQueue) noexcept {
+        eventQueue_ = eventQueue;
+    }
+
     void EditorCommandHistory::push(EditorTransaction&& transaction) {
+        const std::string description = transaction.description();
         redoStack_.clear();
         undoStack_.push_back(std::move(transaction));
         while (undoStack_.size() > static_cast<std::size_t>(kMaxHistoryDepth)) {
             undoStack_.pop_front();
         }
+        bumpRevision();
+        emitHistoryChanged("push", true, description);
     }
 
     asharia::Result<void> EditorCommandHistory::undo() {
         if (undoStack_.empty()) {
-            return std::unexpected{commandHistoryError("Nothing to undo")};
+            asharia::Error error = commandHistoryError("Nothing to undo");
+            emitHistoryChanged("undo", false, error.message);
+            return std::unexpected{std::move(error)};
         }
         EditorTransaction transaction = std::move(undoStack_.back());
+        const std::string description = transaction.description();
         undoStack_.pop_back();
         auto result = transaction.undoAll();
         if (!result) {
             undoStack_.push_back(std::move(transaction));
+            emitHistoryChanged("undo", false, result.error().message);
             return result;
         }
         redoStack_.push_back(std::move(transaction));
+        bumpRevision();
+        emitHistoryChanged("undo", true, description);
         return {};
     }
 
     asharia::Result<void> EditorCommandHistory::redo() {
         if (redoStack_.empty()) {
-            return std::unexpected{commandHistoryError("Nothing to redo")};
+            asharia::Error error = commandHistoryError("Nothing to redo");
+            emitHistoryChanged("redo", false, error.message);
+            return std::unexpected{std::move(error)};
         }
         EditorTransaction transaction = std::move(redoStack_.back());
+        const std::string description = transaction.description();
         redoStack_.pop_back();
         auto result = transaction.executeAll();
         if (!result) {
             redoStack_.push_back(std::move(transaction));
+            emitHistoryChanged("redo", false, result.error().message);
             return result;
         }
         undoStack_.push_back(std::move(transaction));
+        bumpRevision();
+        emitHistoryChanged("redo", true, description);
         return {};
     }
 
     void EditorCommandHistory::clear() {
+        if (undoStack_.empty() && redoStack_.empty()) {
+            return;
+        }
         undoStack_.clear();
         redoStack_.clear();
+        bumpRevision();
+        emitHistoryChanged("clear", true, "clear");
     }
 
     int EditorCommandHistory::undoDepth() const {
@@ -142,6 +170,35 @@ namespace asharia::editor {
 
     int EditorCommandHistory::redoDepth() const {
         return static_cast<int>(redoStack_.size());
+    }
+
+    std::uint64_t EditorCommandHistory::revision() const noexcept {
+        return revision_;
+    }
+
+    void EditorCommandHistory::emitHistoryChanged(std::string_view operation, bool succeeded,
+                                                  std::string message) {
+        if (eventQueue_ == nullptr) {
+            return;
+        }
+        eventQueue_->push(EditorEvent{
+            .kind = EditorEventKind::CommandHistoryChanged,
+            .sourceId = EditorId{.value = std::string{kEditorCommandHistoryOwnerId}},
+            .metadata =
+                EditorEventMetadata{
+                    .revision = revision_,
+                    .subjectId = {},
+                    .label = std::string{operation},
+                    .message = std::move(message),
+                    .severity = succeeded ? EditorEventSeverity::Info : EditorEventSeverity::Error,
+                    .outcome =
+                        succeeded ? EditorEventOutcome::Succeeded : EditorEventOutcome::Failed,
+                },
+        });
+    }
+
+    void EditorCommandHistory::bumpRevision() noexcept {
+        ++revision_;
     }
 
 } // namespace asharia::editor

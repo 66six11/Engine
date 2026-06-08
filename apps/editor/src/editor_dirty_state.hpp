@@ -8,6 +8,10 @@
 
 namespace asharia::editor {
 
+    class EditorEventQueue;
+
+    inline constexpr std::string_view kEditorDirtyStateOwnerId = "editor.dirtyState";
+
     struct EditorDirtyEntry {
         std::string stableId;
         std::string label;
@@ -34,6 +38,11 @@ namespace asharia::editor {
 
     class EditorDirtyState {
     public:
+        EditorDirtyState() = default;
+        explicit EditorDirtyState(EditorEventQueue& eventQueue);
+
+        void setEventQueue(EditorEventQueue* eventQueue) noexcept;
+
         [[nodiscard]] bool markTransientUiDirty(std::string stableId, std::string label = {});
         [[nodiscard]] bool markDocumentDirty(std::string stableId, std::string label = {});
         [[nodiscard]] bool markAssetMetadataDirty(std::string stableId, std::string label = {});
@@ -50,11 +59,14 @@ namespace asharia::editor {
         [[nodiscard]] const EditorDirtySnapshot& snapshot() const noexcept;
 
     private:
-        [[nodiscard]] bool mark(std::vector<EditorDirtyEntry>& entries, std::string stableId,
-                                std::string label);
-        [[nodiscard]] bool clear(std::vector<EditorDirtyEntry>& entries, std::string_view stableId);
+        [[nodiscard]] bool mark(std::vector<EditorDirtyEntry>& entries, std::string_view bucket,
+                                std::string stableId, std::string label);
+        [[nodiscard]] bool clear(std::vector<EditorDirtyEntry>& entries, std::string_view bucket,
+                                 std::string_view stableId);
+        void emitChanged(std::string_view bucket, std::string subjectId, std::string message);
         void bumpRevision() noexcept;
 
+        EditorEventQueue* eventQueue_{};
         EditorDirtySnapshot snapshot_;
     };
 

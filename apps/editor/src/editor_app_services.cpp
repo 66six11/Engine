@@ -7,15 +7,14 @@
 namespace asharia::editor {
 
     EditorAppServices::EditorAppServices(const EditorSettingsRunState& settingsRun)
-        : selectionSet(eventQueue),
-          i18n(settingsRun.settings.locale),
+        : selectionSet(eventQueue), i18n(settingsRun.settings.locale),
           settingsController(settingsRun.settings, settingsRun.path, i18n),
-          actionServices{
-              .eventQueue = eventQueue,
-              .panels = panelRegistry,
-              .frameDebugger = frameDebugger,
-              .workspace = workspaceController,
-          } {}
+          commandHistory(eventQueue), dirtyState(eventQueue), actionServices{
+                                                                  .eventQueue = eventQueue,
+                                                                  .panels = panelRegistry,
+                                                                  .frameDebugger = frameDebugger,
+                                                                  .workspace = workspaceController,
+                                                              } {}
 
     asharia::VoidResult registerEditorAppServices(EditorAppServices& services) {
         auto registered =

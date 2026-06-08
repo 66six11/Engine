@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include "editor_event.hpp"
+
 namespace asharia::editor {
 
     namespace {
@@ -24,6 +26,12 @@ namespace asharia::editor {
         }
 
     } // namespace
+
+    EditorDirtyState::EditorDirtyState(EditorEventQueue& eventQueue) : eventQueue_(&eventQueue) {}
+
+    void EditorDirtyState::setEventQueue(EditorEventQueue* eventQueue) noexcept {
+        eventQueue_ = eventQueue;
+    }
 
     bool EditorDirtySnapshot::hasTransientUiDirty() const noexcept {
         return !transientUi.empty();
@@ -54,27 +62,28 @@ namespace asharia::editor {
     }
 
     bool EditorDirtyState::markTransientUiDirty(std::string stableId, std::string label) {
-        return mark(snapshot_.transientUi, std::move(stableId), std::move(label));
+        return mark(snapshot_.transientUi, "TransientUi", std::move(stableId), std::move(label));
     }
 
     bool EditorDirtyState::markDocumentDirty(std::string stableId, std::string label) {
-        return mark(snapshot_.documents, std::move(stableId), std::move(label));
+        return mark(snapshot_.documents, "Document", std::move(stableId), std::move(label));
     }
 
     bool EditorDirtyState::markAssetMetadataDirty(std::string stableId, std::string label) {
-        return mark(snapshot_.assetMetadata, std::move(stableId), std::move(label));
+        return mark(snapshot_.assetMetadata, "AssetMetadata", std::move(stableId),
+                    std::move(label));
     }
 
     bool EditorDirtyState::clearTransientUiDirty(std::string_view stableId) {
-        return clear(snapshot_.transientUi, stableId);
+        return clear(snapshot_.transientUi, "TransientUi", stableId);
     }
 
     bool EditorDirtyState::clearDocumentDirty(std::string_view stableId) {
-        return clear(snapshot_.documents, stableId);
+        return clear(snapshot_.documents, "Document", stableId);
     }
 
     bool EditorDirtyState::clearAssetMetadataDirty(std::string_view stableId) {
-        return clear(snapshot_.assetMetadata, stableId);
+        return clear(snapshot_.assetMetadata, "AssetMetadata", stableId);
     }
 
     bool EditorDirtyState::clearTransientUiDirty() {
@@ -83,6 +92,7 @@ namespace asharia::editor {
         }
         snapshot_.transientUi.clear();
         bumpRevision();
+        emitChanged("TransientUi", "transient-ui", "clear");
         return true;
     }
 
@@ -93,6 +103,7 @@ namespace asharia::editor {
         snapshot_.documents.clear();
         snapshot_.assetMetadata.clear();
         bumpRevision();
+        emitChanged("Persistent", "persistent", "clear");
         return true;
     }
 
@@ -102,6 +113,7 @@ namespace asharia::editor {
         }
         snapshot_.pendingReimportCount = count;
         bumpRevision();
+        emitChanged("PendingReimport", "pending-reimport", std::to_string(count));
         return true;
     }
 
@@ -113,8 +125,8 @@ namespace asharia::editor {
         return snapshot_;
     }
 
-    bool EditorDirtyState::mark(std::vector<EditorDirtyEntry>& entries, std::string stableId,
-                                std::string label) {
+    bool EditorDirtyState::mark(std::vector<EditorDirtyEntry>& entries, std::string_view bucket,
+                                std::string stableId, std::string label) {
         if (stableId.empty() || hasEntry(entries, stableId)) {
             return false;
         }
@@ -124,10 +136,11 @@ namespace asharia::editor {
             .label = std::move(entryLabel),
         });
         bumpRevision();
+        emitChanged(bucket, entries.back().stableId, entries.back().label);
         return true;
     }
 
-    bool EditorDirtyState::clear(std::vector<EditorDirtyEntry>& entries,
+    bool EditorDirtyState::clear(std::vector<EditorDirtyEntry>& entries, std::string_view bucket,
                                  std::string_view stableId) {
         const std::size_t oldSize = entries.size();
         std::erase_if(entries, [stableId](const EditorDirtyEntry& entry) {
@@ -137,7 +150,28 @@ namespace asharia::editor {
             return false;
         }
         bumpRevision();
+        emitChanged(bucket, std::string{stableId}, "clear");
         return true;
+    }
+
+    void EditorDirtyState::emitChanged(std::string_view bucket, std::string subjectId,
+                                       std::string message) {
+        if (eventQueue_ == nullptr) {
+            return;
+        }
+        eventQueue_->push(EditorEvent{
+            .kind = EditorEventKind::DirtyStateChanged,
+            .sourceId = EditorId{.value = std::string{kEditorDirtyStateOwnerId}},
+            .metadata =
+                EditorEventMetadata{
+                    .revision = snapshot_.revision,
+                    .subjectId = std::move(subjectId),
+                    .label = std::string{bucket},
+                    .message = std::move(message),
+                    .severity = EditorEventSeverity::Info,
+                    .outcome = EditorEventOutcome::Succeeded,
+                },
+        });
     }
 
     void EditorDirtyState::bumpRevision() noexcept {

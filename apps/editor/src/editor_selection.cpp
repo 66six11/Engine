@@ -32,8 +32,8 @@ namespace asharia::editor {
                 if (!isValidEditorSceneEntitySelectionId(item.target)) {
                     continue;
                 }
-                const bool alreadySelected = std::ranges::any_of(
-                    normalized, [&](const EditorSelectionItem& selected) {
+                const bool alreadySelected =
+                    std::ranges::any_of(normalized, [&](const EditorSelectionItem& selected) {
                         return sameSelectionTarget(selected, item.target);
                     });
                 if (!alreadySelected) {
@@ -57,20 +57,24 @@ namespace asharia::editor {
 
         [[nodiscard]] bool hasState(const std::vector<EditorSelectionItem>& items,
                                     EditorSelectionTargetState state) {
-            return std::ranges::any_of(items, [state](const EditorSelectionItem& item) {
-                return item.state == state;
-            });
+            return std::ranges::any_of(
+                items, [state](const EditorSelectionItem& item) { return item.state == state; });
         }
 
         [[nodiscard]] std::optional<EditorSceneEntitySelectionId>
         primaryTargetFor(const std::vector<EditorSelectionItem>& items) {
-            const auto found = std::ranges::find_if(items, [](const EditorSelectionItem& item) {
-                return item.primary;
-            });
+            const auto found = std::ranges::find_if(
+                items, [](const EditorSelectionItem& item) { return item.primary; });
             if (found == items.end()) {
                 return std::nullopt;
             }
             return found->target;
+        }
+
+        [[nodiscard]] std::string selectionEventMessage(const EditorSelectionChangedFact& fact) {
+            return "source=" + fact.sourceId.value +
+                   " previous=" + std::to_string(fact.previousCount) +
+                   " selected=" + std::to_string(fact.selectedCount);
         }
 
     } // namespace
@@ -84,9 +88,8 @@ namespace asharia::editor {
     }
 
     const EditorSelectionItem* EditorSelectionSnapshot::primary() const noexcept {
-        const auto found = std::ranges::find_if(items, [](const EditorSelectionItem& item) {
-            return item.primary;
-        });
+        const auto found = std::ranges::find_if(
+            items, [](const EditorSelectionItem& item) { return item.primary; });
         if (found == items.end()) {
             return nullptr;
         }
@@ -101,8 +104,7 @@ namespace asharia::editor {
         return hasState(items, EditorSelectionTargetState::Stale);
     }
 
-    bool isValidEditorSceneEntitySelectionId(
-        const EditorSceneEntitySelectionId& target) noexcept {
+    bool isValidEditorSceneEntitySelectionId(const EditorSceneEntitySelectionId& target) noexcept {
         return !target.sceneId.empty() && asharia::isValid(target.entity);
     }
 
@@ -111,8 +113,7 @@ namespace asharia::editor {
                std::to_string(target.entity.generation);
     }
 
-    std::string_view
-    editorSelectionTargetStateName(EditorSelectionTargetState state) noexcept {
+    std::string_view editorSelectionTargetStateName(EditorSelectionTargetState state) noexcept {
         switch (state) {
         case EditorSelectionTargetState::Resolved:
             return "Resolved";
@@ -124,8 +125,7 @@ namespace asharia::editor {
         return "Unknown";
     }
 
-    std::string_view
-    editorSelectionChangeReasonName(EditorSelectionChangeReason reason) noexcept {
+    std::string_view editorSelectionChangeReasonName(EditorSelectionChangeReason reason) noexcept {
         switch (reason) {
         case EditorSelectionChangeReason::Replace:
             return "Replace";
@@ -140,16 +140,12 @@ namespace asharia::editor {
     EditorSelectionSet::EditorSelectionSet(EditorEventQueue& eventQueue)
         : eventQueue_(&eventQueue) {}
 
-    bool EditorSelectionSet::replace(std::vector<EditorSelectionItem> items,
-                                     EditorId sourceId) {
-        return commit(std::move(items), EditorSelectionChangeReason::Replace,
-                      std::move(sourceId));
+    bool EditorSelectionSet::replace(std::vector<EditorSelectionItem> items, EditorId sourceId) {
+        return commit(std::move(items), EditorSelectionChangeReason::Replace, std::move(sourceId));
     }
 
-    bool EditorSelectionSet::refresh(std::vector<EditorSelectionItem> items,
-                                     EditorId sourceId) {
-        return commit(std::move(items), EditorSelectionChangeReason::Refresh,
-                      std::move(sourceId));
+    bool EditorSelectionSet::refresh(std::vector<EditorSelectionItem> items, EditorId sourceId) {
+        return commit(std::move(items), EditorSelectionChangeReason::Refresh, std::move(sourceId));
     }
 
     bool EditorSelectionSet::clear(EditorId sourceId) {
@@ -191,6 +187,17 @@ namespace asharia::editor {
             eventQueue_->push(EditorEvent{
                 .kind = EditorEventKind::SelectionChanged,
                 .sourceId = EditorId{.value = std::string{kEditorSelectionOwnerId}},
+                .metadata =
+                    EditorEventMetadata{
+                        .revision = latestChange_->revision,
+                        .subjectId = latestChange_->primaryTarget
+                                         ? editorSelectionTargetLabel(*latestChange_->primaryTarget)
+                                         : std::string{},
+                        .label = std::string{editorSelectionChangeReasonName(reason)},
+                        .message = selectionEventMessage(*latestChange_),
+                        .severity = EditorEventSeverity::Info,
+                        .outcome = EditorEventOutcome::Succeeded,
+                    },
             });
         }
         return true;

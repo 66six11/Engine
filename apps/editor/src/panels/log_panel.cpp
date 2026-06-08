@@ -76,8 +76,7 @@ namespace asharia::editor {
         }
         for (const EditorDiagnosticEvent& diagnostic : recentEvents) {
             const std::string eventText = std::to_string(diagnostic.sequence) + " " +
-                                          std::string{editorEventKindName(diagnostic.event.kind)} +
-                                          ": " + diagnostic.event.sourceId.value;
+                                          editorEventDisplayText(diagnostic.event);
             ImGui::Bullet();
             ImGui::SameLine();
             ImGui::TextUnformatted(eventText.c_str());
