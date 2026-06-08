@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <imgui.h>
 #include <optional>
@@ -9,6 +10,7 @@
 namespace asharia::editor {
 
     enum class EditorUiThemeId {
+        Unity6Dark,
         BlackDefault,
         ClassicBlueGray,
         WarmGraphiteAmber,
@@ -31,6 +33,21 @@ namespace asharia::editor {
     struct EditorUiProperty {
         std::string_view label;
         std::string_view value;
+    };
+
+    struct EditorUiMetrics {
+        float commandBarHeight{32.0F};
+        float statusBarHeight{22.0F};
+        float viewportHeaderHeight{28.0F};
+        float panelHeaderHeight{28.0F};
+        float rowHeight{22.0F};
+        float sectionHeaderHeight{24.0F};
+        float toolbarIconSize{14.0F};
+        float assetIconSize{16.0F};
+        float panelPadding{6.0F};
+        float rowPaddingX{6.0F};
+        float rowPaddingY{2.0F};
+        float labelWidth{112.0F};
     };
 
     struct ColorSrgba8 {
@@ -90,12 +107,23 @@ namespace asharia::editor {
     [[nodiscard]] std::span<const EditorUiTheme> editorUiThemes();
     [[nodiscard]] const EditorUiTheme& editorUiTheme(EditorUiThemeId themeId);
     [[nodiscard]] const EditorUiTheme& editorUiTheme();
+    [[nodiscard]] const EditorUiMetrics& editorUiMetrics();
     [[nodiscard]] std::span<const EditorUiColorToken> editorUiColorTokens();
     [[nodiscard]] ImVec4 toImGuiEncodedSrgbVec4(ColorSrgba8 color);
     [[nodiscard]] ImU32 toImGuiEncodedSrgbU32(ColorSrgba8 color);
     void applyEditorUiTheme(EditorUiThemeId themeId);
     void applyEditorUiTheme();
+    void drawEditorUiPanelHeader(std::string_view title, std::string_view subtitle = {});
     void drawEditorUiSectionHeader(std::string_view label);
+    [[nodiscard]] bool drawEditorUiComponentHeader(std::string_view tableIdentifier,
+                                                   std::string_view label, bool defaultOpen = true);
+    [[nodiscard]] bool drawEditorUiCompactButton(std::string_view label, bool active = false);
+    [[nodiscard]] bool drawEditorUiToolbarToggle(std::string_view label, bool active,
+                                                 bool enabled = true,
+                                                 std::string_view disabledTooltip = {});
+    void drawEditorUiToolbarSeparator();
+    [[nodiscard]] bool drawEditorUiSearchField(std::string_view label, char* buffer,
+                                               std::size_t bufferSize, bool enabled = true);
     bool beginEditorUiPropertyTable(std::string_view tableIdentifier, float labelWidth);
     void drawEditorUiProperty(const EditorUiProperty& property);
     void endEditorUiPropertyTable();

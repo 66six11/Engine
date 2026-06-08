@@ -102,12 +102,12 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool validateEditorThemeCatalogSmoke(std::span<const EditorUiTheme> themes) {
-            if (themes.size() != 8U) {
+            if (themes.size() != 9U) {
                 asharia::logError("Editor theme smoke found an unexpected theme count.");
                 return false;
             }
-            if (defaultEditorUiThemeId() != EditorUiThemeId::BlackDefault ||
-                editorUiThemeName(defaultEditorUiThemeId()) != "black-default") {
+            if (defaultEditorUiThemeId() != EditorUiThemeId::Unity6Dark ||
+                editorUiThemeName(defaultEditorUiThemeId()) != "unity-6-dark") {
                 asharia::logError("Editor theme smoke found an invalid default theme.");
                 return false;
             }
@@ -129,6 +129,15 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool validateEditorThemeColorSmoke() {
+            const EditorUiTheme& unityTheme = editorUiTheme(EditorUiThemeId::Unity6Dark);
+            if (!colorMatches(unityTheme.appBackground, 0x20U, 0x20U, 0x20U, 0xFFU) ||
+                !colorMatches(unityTheme.viewportBackground, 0x30U, 0x30U, 0x30U, 0xFFU) ||
+                toImGuiEncodedSrgbU32(unityTheme.appBackground) !=
+                    IM_COL32(0x20U, 0x20U, 0x20U, 0xFFU)) {
+                asharia::logError("Editor theme smoke found an invalid Unity 6 Dark theme byte.");
+                return false;
+            }
+
             const EditorUiTheme& blackTheme = editorUiTheme(EditorUiThemeId::BlackDefault);
             if (!colorMatches(blackTheme.appBackground, 0x11U, 0x12U, 0x14U, 0xFFU) ||
                 !colorMatches(blackTheme.viewportBackground, 0x24U, 0x24U, 0x27U, 0xFFU) ||
@@ -151,14 +160,20 @@ namespace asharia::editor {
 
         [[nodiscard]] bool validateEditorThemeNameResolutionSmoke() {
             const std::optional<EditorUiThemeId> defaultTheme =
-                editorUiThemeIdFromName("black-default");
-            if (!defaultTheme || *defaultTheme != EditorUiThemeId::BlackDefault) {
+                editorUiThemeIdFromName("unity-6-dark");
+            if (!defaultTheme || *defaultTheme != EditorUiThemeId::Unity6Dark) {
                 asharia::logError("Editor theme smoke could not resolve the default theme name.");
                 return false;
             }
             const std::optional<EditorUiThemeId> defaultThemeAlias =
+                editorUiThemeIdFromName("Unity 6 Dark");
+            if (!defaultThemeAlias || *defaultThemeAlias != EditorUiThemeId::Unity6Dark) {
+                asharia::logError("Editor theme smoke could not resolve the Unity theme alias.");
+                return false;
+            }
+            const std::optional<EditorUiThemeId> blackThemeAlias =
                 editorUiThemeIdFromName("Dark Black");
-            if (!defaultThemeAlias || *defaultThemeAlias != EditorUiThemeId::BlackDefault) {
+            if (!blackThemeAlias || *blackThemeAlias != EditorUiThemeId::BlackDefault) {
                 asharia::logError("Editor theme smoke could not resolve the black theme alias.");
                 return false;
             }

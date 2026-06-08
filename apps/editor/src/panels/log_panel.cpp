@@ -7,6 +7,7 @@
 #include "editor_event.hpp"
 #include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
+#include "editor_ui.hpp"
 
 namespace {
 
@@ -56,16 +57,39 @@ namespace asharia::editor {
             std::string{i18n.text("log.acceptsMouse")} + "=" +
             yesNo(i18n, input.sceneViewCanReceiveMouse) + ", " +
             std::string{i18n.text("log.shortcuts")} + "=" + yesNo(i18n, input.shortcutsEnabled);
-        ImGui::TextUnformatted(i18n.text("log.initialized").data(),
-                               i18n.text("log.initialized").data() +
-                                   i18n.text("log.initialized").size());
-        ImGui::TextUnformatted(modeText.c_str());
-        ImGui::TextUnformatted(inputCaptureText.c_str());
-        ImGui::TextUnformatted(sceneViewInputText.c_str());
-        ImGui::Separator();
-        ImGui::TextUnformatted(i18n.text("log.recentEvents").data(),
-                               i18n.text("log.recentEvents").data() +
-                                   i18n.text("log.recentEvents").size());
+        drawEditorUiPanelHeader(i18n.text("panel.log"), modeText);
+        static_cast<void>(drawEditorUiToolbarToggle(
+            "Clear", false, false, "Console clear is pending severity filter support."));
+        ImGui::SameLine();
+        static_cast<void>(drawEditorUiToolbarToggle(
+            "Collapse", false, false, "Console collapse is pending event grouping support."));
+        ImGui::SameLine();
+        drawEditorUiToolbarSeparator();
+        ImGui::SameLine();
+        static_cast<void>(
+            drawEditorUiToolbarToggle("Error", false, false, "Severity filters are pending."));
+        ImGui::SameLine();
+        static_cast<void>(
+            drawEditorUiToolbarToggle("Warning", false, false, "Severity filters are pending."));
+        ImGui::SameLine();
+        static_cast<void>(
+            drawEditorUiToolbarToggle("Info", true, false, "Severity filters are pending."));
+        ImGui::Spacing();
+
+        drawEditorUiStatusPill(std::string{i18n.text("log.initialized")}, EditorUiTone::Success);
+        ImGui::Spacing();
+        if (beginEditorUiPropertyTable("console-input-state", 116.0F)) {
+            drawEditorUiProperty(EditorUiProperty{
+                .label = std::string_view{i18n.text("log.inputCapture")},
+                .value = inputCaptureText,
+            });
+            drawEditorUiProperty(EditorUiProperty{
+                .label = std::string_view{i18n.text("log.sceneViewInput")},
+                .value = sceneViewInputText,
+            });
+            endEditorUiPropertyTable();
+        }
+        drawEditorUiSectionHeader(i18n.text("log.recentEvents"));
         const std::span<const EditorDiagnosticEvent> recentEvents =
             panelContext.diagnosticsLog->recentEvents();
         if (recentEvents.empty()) {

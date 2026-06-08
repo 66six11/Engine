@@ -30,8 +30,44 @@ namespace asharia::editor {
             return converted;
         }
 
-        [[nodiscard]] const std::array<EditorUiTheme, 8>& themes() {
-            static const std::array<EditorUiTheme, 8> kThemes{
+        [[nodiscard]] const std::array<EditorUiTheme, 9>& themes() {
+            static const std::array<EditorUiTheme, 9> kThemes{
+                EditorUiTheme{
+                    .id = EditorUiThemeId::Unity6Dark,
+                    .storageName = "unity-6-dark",
+                    .name = "Unity 6 Dark",
+                    .appBackground = rgb(32, 32, 32),
+                    .panelBackground = rgb(56, 56, 56),
+                    .floatingBackground = rgb(64, 64, 64),
+                    .panelBackgroundAlt = rgb(48, 48, 48),
+                    .titleBackground = rgb(42, 42, 42),
+                    .menuBackground = rgb(37, 37, 37),
+                    .inputBackground = rgb(44, 44, 44),
+                    .surface = rgb(53, 53, 53),
+                    .surfaceHover = rgb(68, 68, 68),
+                    .surfaceActive = rgb(67, 95, 123),
+                    .border = rgb(30, 30, 30),
+                    .borderStrong = rgb(22, 22, 22),
+                    .divider = rgb(45, 45, 45),
+                    .text = rgb(220, 220, 220),
+                    .textSecondary = rgb(188, 188, 188),
+                    .textMuted = rgb(142, 142, 142),
+                    .textDisabled = rgb(104, 104, 104),
+                    .accent = rgb(64, 128, 194),
+                    .accentHover = rgb(78, 146, 216),
+                    .accentActive = rgb(104, 170, 234),
+                    .selection = rgb(62, 95, 128),
+                    .viewportBackground = rgb(48, 48, 48),
+                    .info = rgb(91, 158, 223),
+                    .success = rgb(105, 173, 93),
+                    .warning = rgb(210, 164, 72),
+                    .danger = rgb(210, 92, 92),
+                    .windowRounding = 1.0F,
+                    .childRounding = 1.0F,
+                    .frameRounding = 2.0F,
+                    .popupRounding = 2.0F,
+                    .tabRounding = 2.0F,
+                },
                 EditorUiTheme{
                     .id = EditorUiThemeId::BlackDefault,
                     .storageName = "black-default",
@@ -325,7 +361,7 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] EditorUiThemeId& currentThemeIdStorage() {
-            static EditorUiThemeId currentThemeId = EditorUiThemeId::BlackDefault;
+            static EditorUiThemeId currentThemeId = defaultEditorUiThemeId();
             return currentThemeId;
         }
 
@@ -336,7 +372,7 @@ namespace asharia::editor {
     } // namespace
 
     EditorUiThemeId defaultEditorUiThemeId() {
-        return EditorUiThemeId::BlackDefault;
+        return EditorUiThemeId::Unity6Dark;
     }
 
     EditorUiThemeId currentEditorUiThemeId() {
@@ -348,6 +384,9 @@ namespace asharia::editor {
     }
 
     std::optional<EditorUiThemeId> editorUiThemeIdFromName(std::string_view name) {
+        if (name == "unity-6-dark" || name == "Unity 6 Dark" || name == "unity-dark") {
+            return EditorUiThemeId::Unity6Dark;
+        }
         if (name == "dark-black" || name == "Dark Black") {
             return EditorUiThemeId::BlackDefault;
         }
@@ -378,6 +417,11 @@ namespace asharia::editor {
 
     const EditorUiTheme& editorUiTheme() {
         return editorUiTheme(currentEditorUiThemeId());
+    }
+
+    const EditorUiMetrics& editorUiMetrics() {
+        static constexpr EditorUiMetrics kMetrics{};
+        return kMetrics;
     }
 
     std::span<const EditorUiColorToken> editorUiColorTokens() {
@@ -454,13 +498,14 @@ namespace asharia::editor {
             isClassicBlueGray ? rgb(29, 43, 55) : theme.surfaceActive;
         const ColorSrgba8 caret = isClassicBlueGray ? rgb(158, 220, 255) : theme.accent;
         ImGuiStyle& style = ImGui::GetStyle();
-        style.WindowPadding = ImVec2{8.0F, 8.0F};
-        style.FramePadding = ImVec2{7.0F, 3.0F};
-        style.CellPadding = ImVec2{5.0F, 3.0F};
-        style.ItemSpacing = ImVec2{7.0F, 5.0F};
-        style.ItemInnerSpacing = ImVec2{5.0F, 4.0F};
+        const EditorUiMetrics& metrics = editorUiMetrics();
+        style.WindowPadding = ImVec2{metrics.panelPadding, metrics.panelPadding};
+        style.FramePadding = ImVec2{6.0F, 2.0F};
+        style.CellPadding = ImVec2{5.0F, 2.0F};
+        style.ItemSpacing = ImVec2{6.0F, 4.0F};
+        style.ItemInnerSpacing = ImVec2{4.0F, 3.0F};
         style.IndentSpacing = 15.0F;
-        style.ScrollbarSize = 13.0F;
+        style.ScrollbarSize = 12.0F;
         style.GrabMinSize = 8.0F;
         style.WindowBorderSize = 1.0F;
         style.ChildBorderSize = 1.0F;

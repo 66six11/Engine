@@ -18,8 +18,8 @@
 #include "panels/inspector_panel.hpp"
 #include "panels/log_panel.hpp"
 #include "panels/render_graph_panel.hpp"
-#include "panels/scene_view_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "panels/scene_view_panel.hpp"
 #include "panels/ui_style_preview_panel.hpp"
 
 namespace asharia::editor {
@@ -116,7 +116,7 @@ namespace asharia::editor {
             EditorActionDesc{
                 .id = EditorId{.value = "view.scene-tree"},
                 .menuPath = "View",
-                .label = "Scene Tree",
+                .label = "Hierarchy",
                 .labelKey = "action.view.sceneTree",
                 .shortcut = "Ctrl+7",
                 .enabled = true,
@@ -180,7 +180,7 @@ namespace asharia::editor {
             EditorActionDesc{
                 .id = EditorId{.value = "view.log"},
                 .menuPath = "View",
-                .label = "Log",
+                .label = "Console",
                 .labelKey = "action.view.log",
                 .shortcut = "Ctrl+2",
                 .enabled = true,
@@ -196,7 +196,7 @@ namespace asharia::editor {
             EditorActionDesc{
                 .id = EditorId{.value = "view.asset-browser"},
                 .menuPath = "View",
-                .label = "Asset Browser",
+                .label = "Project",
                 .labelKey = "action.view.assetBrowser",
                 .shortcut = "Ctrl+6",
                 .enabled = true,
@@ -308,7 +308,7 @@ namespace asharia::editor {
                 {
                     EditorToolDesc{
                         .id = EditorId{.value = "tool.scene-tree"},
-                        .title = "Scene Tree",
+                        .title = "Hierarchy",
                         .titleKey = "tool.sceneTree",
                         .category = EditorToolCategory::Core,
                         .activationPolicy = EditorToolActivationPolicy::None,
@@ -402,7 +402,7 @@ namespace asharia::editor {
                     },
                     EditorToolDesc{
                         .id = EditorId{.value = "tool.log"},
-                        .title = "Log",
+                        .title = "Console",
                         .titleKey = "tool.log",
                         .category = EditorToolCategory::Diagnostics,
                         .activationPolicy = EditorToolActivationPolicy::None,
@@ -416,7 +416,7 @@ namespace asharia::editor {
                     },
                     EditorToolDesc{
                         .id = EditorId{.value = "tool.asset-browser"},
-                        .title = "Asset Browser",
+                        .title = "Project",
                         .titleKey = "tool.assetBrowser",
                         .category = EditorToolCategory::Core,
                         .activationPolicy = EditorToolActivationPolicy::None,

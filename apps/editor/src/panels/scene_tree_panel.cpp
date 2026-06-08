@@ -1,7 +1,7 @@
 ﻿#include "panels/scene_tree_panel.hpp"
 
-#include <imgui.h>
 #include <cstddef>
+#include <imgui.h>
 #include <string>
 #include <string_view>
 
@@ -34,8 +34,7 @@ namespace {
         ImGui::PopStyleColor();
     }
 
-    [[nodiscard]] std::string selectionItemLabel(
-        const asharia::editor::EditorSelectionItem& item) {
+    [[nodiscard]] std::string selectionItemLabel(const asharia::editor::EditorSelectionItem& item) {
         std::string value = item.displayName.empty()
                                 ? asharia::editor::editorSelectionTargetLabel(item.target)
                                 : item.displayName;
@@ -45,9 +44,9 @@ namespace {
         return value;
     }
 
-    [[nodiscard]] std::string selectionSummary(
-        const asharia::editor::EditorI18n& i18n,
-        const asharia::editor::EditorSelectionSnapshot& snapshot) {
+    [[nodiscard]] std::string
+    selectionSummary(const asharia::editor::EditorI18n& i18n,
+                     const asharia::editor::EditorSelectionSnapshot& snapshot) {
         if (snapshot.empty()) {
             return textValue(i18n, "sceneTree.selection.none", "None");
         }
@@ -71,31 +70,21 @@ namespace asharia::editor {
         static_cast<void>(state);
 
         const EditorI18n& i18n = context.ui.i18n;
+        drawEditorUiPanelHeader(textValue(i18n, "panel.sceneTree", "Hierarchy"),
+                                selectionSummary(i18n, context.selection.snapshot()));
         const std::string filterLabel =
-            label(i18n, "sceneTree.filter", "scene-tree-filter", "Filter");
-        ImGui::SetNextItemWidth(-1.0F);
-        ImGui::BeginDisabled();
-        ImGui::InputText(filterLabel.c_str(), filter_.data(), filter_.size());
-        ImGui::EndDisabled();
-
-        if (beginEditorUiPropertyTable("scene-tree-shell-state", 88.0F)) {
-            drawEditorUiProperty(EditorUiProperty{
-                .label = textValue(i18n, "sceneTree.selection", "Selection"),
-                .value = selectionSummary(i18n, context.selection.snapshot()),
-            });
-            drawEditorUiProperty(EditorUiProperty{
-                .label = textValue(i18n, "sceneTree.source", "Source"),
-                .value = textValue(i18n, "sceneTree.source.pending", "Scene model pending"),
-            });
-            endEditorUiPropertyTable();
-        }
-
-        ImGui::Separator();
+            label(i18n, "sceneTree.filter", "scene-tree-filter", "Search");
+        static_cast<void>(
+            drawEditorUiSearchField(filterLabel, filter_.data(), filter_.size(), false));
+        ImGui::Spacing();
         drawEditorUiStatusPill(textValue(i18n, "sceneTree.state.shell", "Shell"),
                                EditorUiTone::Muted);
         ImGui::SameLine();
         drawEditorUiStatusPill(textValue(i18n, "sceneTree.state.readOnly", "Read-only"),
                                EditorUiTone::Info);
+        ImGui::SameLine();
+        drawEditorUiStatusPill(textValue(i18n, "sceneTree.source.pending", "Scene model pending"),
+                               EditorUiTone::Warning);
         ImGui::Spacing();
 
         const ImGuiTreeNodeFlags rootFlags =
@@ -107,26 +96,24 @@ namespace asharia::editor {
             ImGui::BeginDisabled();
             const std::string pendingLabel =
                 textValue(i18n, "sceneTree.pendingIdentity", "Scene object identity bridge");
-            ImGui::TreeNodeEx(pendingLabel.c_str(),
-                              ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                  ImGuiTreeNodeFlags_SpanAvailWidth);
+            ImGui::TreeNodeEx(pendingLabel.c_str(), ImGuiTreeNodeFlags_Leaf |
+                                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                        ImGuiTreeNodeFlags_SpanAvailWidth);
             const std::string selectionLabel =
                 textValue(i18n, "sceneTree.pendingSelection", "SelectionSet");
             const asharia::editor::EditorSelectionSnapshot& selection =
                 context.selection.snapshot();
             if (selection.empty()) {
-                ImGui::TreeNodeEx(selectionLabel.c_str(),
-                                  ImGuiTreeNodeFlags_Leaf |
-                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                      ImGuiTreeNodeFlags_SpanAvailWidth);
+                ImGui::TreeNodeEx(selectionLabel.c_str(), ImGuiTreeNodeFlags_Leaf |
+                                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                              ImGuiTreeNodeFlags_SpanAvailWidth);
             } else if (ImGui::TreeNodeEx(selectionLabel.c_str(),
                                          ImGuiTreeNodeFlags_DefaultOpen |
                                              ImGuiTreeNodeFlags_OpenOnArrow |
                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                              ImGuiTreeNodeFlags_SpanAvailWidth)) {
                 for (std::size_t index = 0; index < selection.items.size(); ++index) {
-                    const asharia::editor::EditorSelectionItem& selected =
-                        selection.items[index];
+                    const asharia::editor::EditorSelectionItem& selected = selection.items[index];
                     std::string rowLabel = selectionItemLabel(selected);
                     rowLabel += "###scene-tree-selection-";
                     rowLabel += std::to_string(index);
@@ -144,7 +131,6 @@ namespace asharia::editor {
             ImGui::TreePop();
         }
 
-        ImGui::Spacing();
         mutedText(textValue(i18n, "sceneTree.empty", "No scene hierarchy loaded."));
     }
 

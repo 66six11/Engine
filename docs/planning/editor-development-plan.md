@@ -125,14 +125,16 @@ Frame Debug / diagnostics 的底层合同，上层只保留最小消费来验证
 ## 长期目标：生产型场景工作台
 
 2026-06-08 UI/交互审查后，editor 的长期目标从“可验证的渲染/资产调试 host”推进为“可持续扩展的场景工作台”。
-该目标不改变 package-first 边界：Scene Tree、Inspector、Scene View、Asset Browser 和 Console 必须围绕同一个
+该目标不改变 package-first 边界：内部 Scene Tree、Inspector、Scene View、Asset Browser 和 Log/Console 面板必须围绕同一个
 backend-neutral selection / transaction / validation 合同协同，而不是通过 panel-local 全局状态互相偷连。
+Unity-like workbench UI 只改变可见产品语言：Scene Tree 显示为 Hierarchy，Asset Browser 显示为 Project，Log
+显示为 Console；稳定 panel id、命令 id 和 package 边界不因此改名。
 
 阶段路线：
 
-1. **Workbench Shell Baseline**：默认布局建立 Left Scene Tree、Center Scene View、Right Inspector、Bottom Asset Browser /
-   Log 的生产型框架；Scene Tree 和 Inspector 先是 read-only shell，不假造场景对象或可写属性。
-2. **Selection Contract**：把 `SelectionSet` 接到 scene object identity；Scene Tree、Scene View picking、Inspector 和
+1. **Workbench Shell Baseline**：默认布局建立 Left Hierarchy、Center Scene View、Right Inspector、Bottom Project /
+   Console 的生产型框架；Hierarchy 和 Inspector 先是 read-only shell，不假造场景对象或可写属性。
+2. **Selection Contract**：把 `SelectionSet` 接到 scene object identity；Hierarchy、Scene View picking、Inspector 和
    diagnostics 使用同一稳定 selection id，并保持刷新、layout reset 和 undo/redo 后的选择稳定。
 3. **Inspector Data Model**：定义不依赖 ImGui 的 inspector row/section/value/mixed-value/validation model；UI 只渲染
    model，不直接读取 runtime mutable pointers。
@@ -140,17 +142,22 @@ backend-neutral selection / transaction / validation 合同协同，而不是通
    transaction 产生 named undo/redo、dirty state 和 validation evidence。
 5. **Viewport Authoring Tools**：在 input router snapshot 基础上接入 picking、transform gizmo、selection outline、snap、
    pivot/local-global 和 viewport toolbar；Scene-only authoring overlay 不进入 Game View，除非走显式 debug flag。
-6. **Asset/Console Production Flow**：Asset Browser 拆出 cached view model 和 virtualized table/grid；Console 提供
+6. **Asset/Console Production Flow**：Project/Asset Browser 拆出 cached view model 和 virtualized table/grid；Console 提供
    severity filters、jump-to-source/object links 和状态栏 warning/error count。
 7. **Extension Boundary**：等上述 state contracts 有真实消费者后，再恢复外部 manifest、script hot reload、tool/panel
    provider 和 reload diagnostics。
 
 阶段 1 当前执行结果：
 
-- 新增默认 Left dock，Scene Tree shell 默认打开。
+- 新增默认 Left dock，Scene Tree shell 默认打开；Unity-like 显示名为 Hierarchy。
 - 新增 Inspector shell，默认停靠到右侧属性区域。
-- Asset Browser 默认移到底部，Log 作为同一底部工作区的诊断入口。
-- `View` 菜单补齐 Scene Tree、Inspector 和 Asset Browser 入口。
+- Asset Browser 默认移到底部，Log 作为同一底部工作区的诊断入口；Unity-like 显示名为 Project / Console。
+- `View` 菜单补齐 Hierarchy、Inspector 和 Project 入口。
+- #119 / #120 开始 Unity 6 Dark workbench visual baseline：新增 `Unity 6 Dark` 默认主题、紧凑 editor metrics、
+  panel header / toolbar toggle / search field / component section / status chip 等共享 presentation primitives，并把
+  command bar、status bar、Scene View、Hierarchy、Inspector、Project 和 Console shell 调整为 Unity-like 暗色工作台口径。
+- Play、Search、Console filters、Inspector lock/pin、Gizmo/Select 等未接真实 provider 的控件保持 disabled/pending，
+  不伪装成可用功能。
 
 阶段 1 非目标：
 

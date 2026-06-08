@@ -16,7 +16,7 @@ namespace asharia::editor {
 
         EditorPanelDesc desc_{
             .id = EditorId{.value = "scene-tree"},
-            .title = "Scene Tree",
+            .title = "Hierarchy",
             .titleKey = "panel.sceneTree",
             .defaultOpen = true,
             .singleton = true,

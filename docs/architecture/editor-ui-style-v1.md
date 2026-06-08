@@ -1,11 +1,11 @@
 # Asharia Editor UI Style v1
 
-更新日期：2026-05-22
+更新日期：2026-06-08
 
 本文定义 Asharia Editor 第一版视觉与交互风格目标。它是设计规范和后续实现约束，不替代
 `docs/architecture/editor.md` 的当前架构事实，也不替代 `docs/planning/editor-development-plan.md` 的阶段拆分。
 
-配色值以当前 `Black Default` 主题实现为准。本文不重新定义具体 hex 色表，重点约束布局、
+配色值以当前 `Unity 6 Dark` 默认主题实现为准。本文不重新定义具体 hex 色表，重点约束布局、
 密度、组件状态、viewport 视觉系统、主题数据结构和颜色空间接入方式。
 
 ## 定位
@@ -85,9 +85,9 @@ Status Bar
 | 区域 | 职责 | 约束 |
 | --- | --- | --- |
 | Center Dock | Scene View、RenderGraph、Frame Debugger、Profiler、Texture Viewer | 视觉中心，优先给 viewport 和图形调试内容 |
-| Left Dock | Scene Tree、Assets、Resources | 扫描和导航，不承载重型编辑 |
+| Left Dock | Hierarchy、Assets、Resources | 扫描和导航，不承载重型编辑 |
 | Right Dock | Inspector、Properties、Theme Workbench details | 属性编辑和对象详情 |
-| Bottom Dock | Console、Log、Validation、Profiler timeline | 高密度日志和状态 |
+| Bottom Dock | Project、Console、Validation、Profiler timeline | 高密度日志和状态 |
 | Command Bar | Play、Pause、Step、Capture、Search、Layout | 紧凑命令区，不做网页导航 |
 | Status Bar | Ready、FPS、GPU、Project、Git、Warnings | 只放持续状态，不放大按钮 |
 
@@ -370,16 +370,16 @@ Inspector：
 
 ```json
 {
-  "name": "Black Default",
-  "id": "black-default",
+  "name": "Unity 6 Dark",
+  "id": "unity-6-dark",
   "density": "compact",
   "colorEncoding": "srgb8",
   "ui": {
-    "appBg": "#111214",
-    "panelBg": "#18191D"
+    "appBg": "#202020",
+    "panelBg": "#383838"
   },
   "viewport": {
-    "bg": "#242427",
+    "bg": "#303030",
     "gridMinor": "#263342"
   },
   "metrics": {
@@ -542,14 +542,16 @@ expected RGB: 11 12 14, tolerance +/- 1
 
 Implemented:
 
-- Built-in editor themes with `Black Default` as default and `Classic Blue Gray 2.0` retained.
+- Built-in editor themes with `Unity 6 Dark` as default; `Black Default` and `Classic Blue Gray 2.0` remain available.
 - User setting persistence for theme selection.
 - `ColorSrgba8` theme storage.
 - encoded sRGB ImGui adapter.
 - custom ImGui fragment shader with vertex color sRGB decode.
 - UI texture color-space metadata propagation for editor viewport textures.
-- Editor shell command bar and status bar using the current editor theme tokens.
-- Default docking layout with Left Scene Tree, Center Scene/RG, Right Inspector/debug and Bottom Asset Browser/Log shells.
+- `EditorUiMetrics` for compact Unity-like toolbar, status bar, panel header, viewport header, row and property label sizing.
+- Editor shell command bar and status bar using compact Unity-like theme tokens and disabled/pending affordances for work not yet wired.
+- Default docking layout with internal Scene Tree / Asset Browser / Log panel ids displayed as Hierarchy / Project / Console.
+- Scene View, Hierarchy, Inspector, Project and Console shells use shared compact headers, status chips, property rows and disabled pending controls.
 - Theme Workbench three-column Tokens / Component Preview / Inspector layout with viewport and texture viewer mocks.
 
 Planned:
@@ -558,5 +560,6 @@ Planned:
 - Unity-style Editor Settings categories for Colors / Scene View / Overlays / Diagnostics.
 - Viewport-specific tokens.
 - UI Style Preview contrast checks and richer usage diagnostics.
-- Viewport header, grid fade, selection outline and gizmo styling.
+- Real Scene View mode/tool state provider for Shaded / Pivot / Local / Snap values; the current header is presentation-only.
+- Grid fade, selection outline and gizmo styling.
 - Texture Viewer style and pixel inspect UI.

@@ -14,7 +14,7 @@ namespace asharia::editor {
 
     struct EditorSettings {
         EditorLocale locale{EditorLocale::EnUs};
-        EditorUiThemeId theme{EditorUiThemeId::BlackDefault};
+        EditorUiThemeId theme{EditorUiThemeId::Unity6Dark};
         EditorViewportWorldGridSettings sceneGrid;
     };
 
