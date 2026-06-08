@@ -113,7 +113,7 @@
     "inspector.selection": "选择",
     "inspector.selection.none": "无",
     "inspector.selection.entities": "个实体",
-    "inspector.selection.detail": "SelectionSet 当前只读，等待 Inspector data model 接入。",
+    "inspector.selection.detail": "Inspector 数据模型当前只读，等待场景 schema 和 transaction 接入。",
     "inspector.selection.count": "已选",
     "inspector.selection.missing": "缺失",
     "inspector.selection.stale": "过期",
@@ -225,6 +225,19 @@
     "assetBrowser.state.staleProduct": "产物过期",
     "assetBrowser.state.invalidProduct": "产物无效",
     "assetBrowser.state.pendingReimport": "待处理",
-    "assetBrowser.noRows": "没有资源"
+    "assetBrowser.noRows": "没有资源",
+    "inspector.selection.summary": "摘要",
+    "inspector.selection.primary": "主选择",
+    "inspector.selection.target": "目标",
+    "inspector.selection.state": "状态",
+    "inspector.state.readOnly": "只读",
+    "inspector.commandHistory": "命令历史",
+    "inspector.value.empty": "-",
+    "inspector.value.mixed": "混合",
+    "inspector.validation.info": "信息",
+    "inspector.validation.warning": "警告",
+    "inspector.validation.error": "错误",
+    "inspector.validation.selectionMissing": "选择包含缺失的场景/实体目标。",
+    "inspector.validation.selectionStale": "选择包含过期的场景/实体目标。"
   }
 }

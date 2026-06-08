@@ -1133,16 +1133,24 @@ Validation:
 
 ### 20.5 Inspector Data Model Stub
 
-Status: Blocked.
+Status: Done.
 
 Scope:
 
-- Define data model for property display and mixed values.
-- Do not build full Inspector UI before schema/scene metadata is ready.
+- Define a data-only `EditorInspectorModel` for sections, rows, display values, mixed-value placeholders and validation
+  messages without depending on ImGui.
+- Let the current Inspector panel render the model instead of assembling ad hoc SelectionSet rows directly in widget code.
+- Preserve read-only empty, single-selection, multi-selection/mixed-value and missing/stale validation shapes for future
+  scene/schema-backed details.
+- Keep the model app-local until selection, transaction, dirty state and schema-backed Inspector consumers justify a narrow
+  `packages/editor-core` extraction.
+- Do not build writable component editing UI before schema/scene metadata, dirty state and command/transaction ownership
+  exist.
 
 Validation:
 
-- Model can represent single and multi-selection fields without ImGui dependency.
+- `--smoke-editor-shell` runs the CPU-only Inspector model smoke for empty selection, single read-only selection,
+  multi-selection mixed values and validation row representation.
 
 ## Phase 21: Scene View Tools
 

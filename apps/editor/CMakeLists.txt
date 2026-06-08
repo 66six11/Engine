@@ -96,6 +96,8 @@ add_executable(asharia-editor
     src/editor_frame_debugger_smoke.cpp
     src/editor_frame_debug_preview.cpp
     src/editor_i18n.cpp
+    src/editor_inspector_model.cpp
+    src/editor_inspector_smoke.cpp
     src/editor_inspected_world.cpp
     src/editor_input_smoke.cpp
     src/editor_input_router.cpp
