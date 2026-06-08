@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "editor_dirty_state.hpp"
 #include "editor_selection.hpp"
 
 namespace asharia::editor {
@@ -68,6 +69,7 @@ namespace asharia::editor {
 
     struct EditorInspectorModelBuildInput {
         const EditorSelectionSnapshot& selection;
+        const EditorDirtySnapshot* dirtySnapshot{};
         std::size_t undoDepth{};
         std::size_t redoDepth{};
     };

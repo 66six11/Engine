@@ -152,6 +152,50 @@ namespace asharia::editor {
             return true;
         }
 
+        [[nodiscard]] bool validateDirtySectionModel() {
+            EditorSelectionSnapshot selection{};
+            EditorDirtySnapshot dirty{
+                .revision = 5U,
+                .transientUi = std::vector<EditorDirtyEntry>{EditorDirtyEntry{.stableId = "layout",
+                                                                              .label = "Layout"}},
+                .documents = std::vector<EditorDirtyEntry>{EditorDirtyEntry{
+                    .stableId = "scene:main", .label = "Main Scene"}},
+                .assetMetadata = std::vector<EditorDirtyEntry>{EditorDirtyEntry{
+                    .stableId = "asset:hero", .label = "Hero metadata"}},
+                .pendingReimportCount = 3U,
+            };
+            const EditorInspectorModel model =
+                buildEditorInspectorModel(EditorInspectorModelBuildInput{
+                    .selection = selection,
+                    .dirtySnapshot = &dirty,
+                });
+            const EditorInspectorRow* documentRow =
+                requireRow(model, EditorInspectorSmokeRowId{.sectionId = "dirty-state",
+                                                            .rowId = "dirty.document"});
+            const EditorInspectorRow* assetMetadataRow =
+                requireRow(model, EditorInspectorSmokeRowId{.sectionId = "dirty-state",
+                                                            .rowId = "dirty.assetMetadata"});
+            const EditorInspectorRow* pendingReimportRow =
+                requireRow(model, EditorInspectorSmokeRowId{.sectionId = "dirty-state",
+                                                            .rowId = "dirty.pendingReimport"});
+            const EditorInspectorRow* transientUiRow =
+                requireRow(model, EditorInspectorSmokeRowId{.sectionId = "dirty-state",
+                                                            .rowId = "dirty.transientUi"});
+            const EditorInspectorRow* revisionRow =
+                requireRow(model, EditorInspectorSmokeRowId{.sectionId = "dirty-state",
+                                                            .rowId = "dirty.revision"});
+            if (documentRow == nullptr || assetMetadataRow == nullptr ||
+                pendingReimportRow == nullptr || transientUiRow == nullptr ||
+                revisionRow == nullptr || !documentRow->readOnly ||
+                documentRow->value.text != "yes" || assetMetadataRow->value.text != "1" ||
+                pendingReimportRow->value.text != "3" || transientUiRow->value.text != "1" ||
+                revisionRow->value.text != "5") {
+                asharia::logError("Editor inspector smoke dirty section model failed.");
+                return false;
+            }
+            return true;
+        }
+
     } // namespace
 
     bool validateEditorInspectorModelSmoke(EditorRunMode mode) {
@@ -160,7 +204,7 @@ namespace asharia::editor {
         }
 
         return validateEmptyModel() && validateSingleReadOnlyModel() &&
-               validateMixedAndValidationModel();
+               validateMixedAndValidationModel() && validateDirtySectionModel();
     }
 
 } // namespace asharia::editor

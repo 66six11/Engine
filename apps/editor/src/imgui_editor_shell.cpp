@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "editor_dirty_state.hpp"
 #include "editor_dock_layout.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -107,6 +108,19 @@ namespace asharia::editor {
 
         [[nodiscard]] std::string extentText(EditorExtent2D extent) {
             return std::to_string(extent.width) + "x" + std::to_string(extent.height);
+        }
+
+        [[nodiscard]] std::string dirtyStatusText(const EditorDirtySnapshot& dirty) {
+            if (dirty.clean()) {
+                return "Clean";
+            }
+            if (dirty.hasPersistentDirty()) {
+                return "Dirty " + std::to_string(dirty.persistentDirtyCount());
+            }
+            if (dirty.hasPendingReimport()) {
+                return "Pending reimport " + std::to_string(dirty.pendingReimportCount);
+            }
+            return "Transient";
         }
 
     } // namespace
@@ -270,7 +284,7 @@ namespace asharia::editor {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{6.0F, 3.0F});
         if (ImGui::BeginViewportSideBar("##asharia-editor-status-bar", viewport, ImGuiDir_Down,
                                         kStatusBarHeight, kWindowFlags)) {
-            text("Ready");
+            text(dirtyStatusText(context.dirtyState.snapshot()));
             sameLineSeparator();
             text(context.frameDebugger.stateName());
             sameLineSeparator();

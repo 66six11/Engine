@@ -4,6 +4,7 @@
 
 namespace asharia::editor {
 
+    class EditorDirtyState;
     class EditorFrameDebugger;
     class EditorI18n;
     class EditorPanelRegistry;
@@ -33,6 +34,7 @@ namespace asharia::editor {
         const EditorFrameUiContext& ui;
         const EditorPanelRegistry& panels;
         const EditorFrameDebugger& frameDebugger;
+        const EditorDirtyState& dirtyState;
     };
 
     void drawEditorDockspace(EditorDockspaceContext& context);

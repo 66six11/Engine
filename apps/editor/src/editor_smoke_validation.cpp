@@ -2,6 +2,7 @@
 
 #include "editor_asset_catalog_smoke.hpp"
 #include "editor_command_smoke.hpp"
+#include "editor_dirty_state_smoke.hpp"
 #include "editor_inspector_smoke.hpp"
 #include "editor_registration_smoke.hpp"
 #include "editor_selection_smoke.hpp"
@@ -18,6 +19,6 @@ namespace asharia::editor {
                validateEditorRegistrationSmoke(mode, actionRegistry, actionServices, settings, i18n,
                                                toolRegistry, toolManager) &&
                validateEditorCommandSmoke(mode) && validateEditorSelectionSmoke(mode) &&
-               validateEditorInspectorModelSmoke(mode);
+               validateEditorInspectorModelSmoke(mode) && validateEditorDirtyStateSmoke(mode);
     }
 } // namespace asharia::editor

@@ -51,13 +51,11 @@ namespace asharia::editor {
         drawSceneViewPanel(context.sceneView, state);
     }
 
-    void ImGuiSceneTreeEditorPanel::draw(EditorPanelDrawContext& context,
-                                         EditorPanelState& state) {
+    void ImGuiSceneTreeEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
         drawSceneTreePanel(context.sceneTree, state);
     }
 
-    void ImGuiInspectorEditorPanel::draw(EditorPanelDrawContext& context,
-                                         EditorPanelState& state) {
+    void ImGuiInspectorEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
         drawInspectorPanel(context.inspector, state);
     }
 
@@ -228,6 +226,7 @@ namespace asharia::editor {
                 EditorInspectorPanelDrawContext{
                     .ui = context.ui,
                     .selection = context.selection,
+                    .dirtyState = context.dirtyState,
                     .commandHistory = context.commandHistory,
                 },
             .log =

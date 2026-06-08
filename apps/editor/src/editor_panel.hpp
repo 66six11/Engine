@@ -37,6 +37,7 @@ namespace asharia::editor {
     };
 
     class EditorDiagnosticsLog;
+    class EditorDirtyState;
     class EditorEventQueue;
     class EditorFrameDebugger;
     class EditorI18n;
@@ -117,6 +118,7 @@ namespace asharia::editor {
     struct EditorInspectorPanelDrawContext {
         const EditorFrameUiContext& ui;
         const EditorSelectionSet& selection;
+        const EditorDirtyState& dirtyState;
         const EditorCommandHistory& commandHistory;
     };
 
@@ -167,6 +169,7 @@ namespace asharia::editor {
         EditorFrameRenderGraphContext renderGraph;
         EditorFrameViewportContext viewport;
         const EditorSelectionSet& selection;
+        const EditorDirtyState& dirtyState;
         const EditorAssetIconRegistry& assetIcons;
         const asharia::asset::AssetCatalogView& assetCatalogView;
         const EditorAssetCatalogSnapshot* assetCatalogSnapshot{};

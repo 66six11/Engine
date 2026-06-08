@@ -17,6 +17,7 @@ namespace asharia::editor {
     class EditorAssetReimportPendingState;
     class EditorAssetReimportRequestLog;
     class EditorCommandHistory;
+    class EditorDirtyState;
     class EditorDiagnosticsLog;
     class EditorEventQueue;
     class EditorFrameDebugger;
@@ -37,10 +38,10 @@ namespace asharia::editor {
         EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
         const EditorSelectionSet& selectionSet, EditorSettingsController& settingsController,
         EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
-        EditorToolManager& toolManager,
-        EditorWorkspaceController& workspace, const EditorAssetCatalogStore& assetCatalogStore,
+        EditorToolManager& toolManager, EditorWorkspaceController& workspace,
+        const EditorAssetCatalogStore& assetCatalogStore,
         EditorAssetIconRegistry& assetIconRegistry, EditorCommandHistory& commandHistory,
-        EditorAssetReimportRequestLog& assetReimportRequests,
+        EditorDirtyState& dirtyState, EditorAssetReimportRequestLog& assetReimportRequests,
         EditorAssetReimportPendingState& assetPendingReimports, EditorRunMode mode);
 
 } // namespace asharia::editor

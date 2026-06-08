@@ -585,7 +585,7 @@ Every sub-stage must:
 | 15 | 15.1 | Done | Lock ImGui sampled texture contract and reject generic UI layer. |
 | 16 | 16.1-16.10 Done; 16.11-16.13 Deferred | In progress | Split editor shell from one file into host/runtime/panel/action/event/tool/workspace layout modules; defer tool/overlay extension contracts until Frame Debug diagnostics contract is frozen. |
 | 17 | 17.1-17.7 Done | Done | Convert Scene View viewport to request/result + delayed texture registry, input capture and shortcut routing. |
-| 20 | 20.1-20.5 | Blocked | Add editor-core selection and transaction after scene/object baseline. |
+| 20 | 20.1-20.6 | In progress | Add app-local selection, inspector data and dirty-state contracts; transaction-backed editing still follows scene/object baseline. |
 | 21 | 21.1-21.11 camera/unproject foundation Done; visible grid pass and later interaction slices Deferred/Blocked | In progress | Freeze Frame Debug / diagnostics bottom-layer contracts first; then advance Grid through backend-neutral packets before adding visible renderer passes. |
 | 24 | 24.1-24.11 | In progress | Add Asset Browser and Material Editor on asset/material public APIs. |
 | 28 | 28.1-28.5 | Deferred | Add Edit/Game Play Session and multi-view diagnostics. |
@@ -1151,6 +1151,24 @@ Validation:
 
 - `--smoke-editor-shell` runs the CPU-only Inspector model smoke for empty selection, single read-only selection,
   multi-selection mixed values and validation row representation.
+
+### 20.6 Dirty State Contract
+
+Status: Done.
+
+Scope:
+
+- Add app-local `EditorDirtyState` owner and `EditorDirtySnapshot` value that separate transient UI, document dirty, asset
+  metadata dirty and pending reimport facts.
+- Feed pending reimport count from `EditorAssetReimportPendingState` into the dirty snapshot before shell draw.
+- Expose dirty state through the Unity-style status bar and a read-only Inspector model section without making Inspector
+  fields writable.
+- Keep autosave, source control, importer scheduling, catalog refresh and durable scene serialization out of this slice.
+
+Validation:
+
+- `--smoke-editor-shell` runs the CPU-only Dirty State smoke for bucket separation, duplicate no-op handling, revision
+  preservation on no-op updates and scoped clear behavior.
 
 ## Phase 21: Scene View Tools
 

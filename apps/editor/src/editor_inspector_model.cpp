@@ -180,6 +180,32 @@ namespace asharia::editor {
             return section;
         }
 
+        [[nodiscard]] EditorInspectorSection dirtySection(const EditorDirtySnapshot& dirty) {
+            EditorInspectorSection section{
+                .stableId = "dirty-state",
+                .title = text("inspector.dirtyState", "Dirty State"),
+                .readOnly = true,
+                .rows = {},
+                .validation = {},
+            };
+            section.rows.push_back(row("dirty.document", "inspector.dirtyState.document",
+                                       "Document",
+                                       textValue(dirty.hasDocumentDirty() ? "yes" : "no")));
+            section.rows.push_back(row("dirty.assetMetadata", "inspector.dirtyState.assetMetadata",
+                                       "Asset metadata",
+                                       textValue(std::to_string(dirty.assetMetadata.size()))));
+            section.rows.push_back(row("dirty.pendingReimport",
+                                       "inspector.dirtyState.pendingReimport", "Pending reimport",
+                                       textValue(std::to_string(dirty.pendingReimportCount))));
+            section.rows.push_back(row("dirty.transientUi", "inspector.dirtyState.transientUi",
+                                       "Transient UI",
+                                       textValue(std::to_string(dirty.transientUi.size()))));
+            section.rows.push_back(row("dirty.revision", "inspector.dirtyState.revision",
+                                       "Dirty revision",
+                                       textValue(std::to_string(dirty.revision))));
+            return section;
+        }
+
         [[nodiscard]] bool rowHasMixedValue(const EditorInspectorRow& row) noexcept {
             return row.value.kind == EditorInspectorValueKind::Mixed;
         }
@@ -224,6 +250,9 @@ namespace asharia::editor {
             .sections = {},
         };
         model.sections.push_back(selectionSection(input.selection));
+        if (input.dirtySnapshot != nullptr) {
+            model.sections.push_back(dirtySection(*input.dirtySnapshot));
+        }
         model.sections.push_back(commandSection(input.undoDepth, input.redoDepth));
         return model;
     }
