@@ -1,10 +1,12 @@
 ﻿#include "panels/scene_tree_panel.hpp"
 
 #include <imgui.h>
+#include <cstddef>
 #include <string>
 #include <string_view>
 
 #include "editor_i18n.hpp"
+#include "editor_selection.hpp"
 #include "editor_ui.hpp"
 
 namespace {
@@ -32,6 +34,30 @@ namespace {
         ImGui::PopStyleColor();
     }
 
+    [[nodiscard]] std::string selectionItemLabel(
+        const asharia::editor::EditorSelectionItem& item) {
+        std::string value = item.displayName.empty()
+                                ? asharia::editor::editorSelectionTargetLabel(item.target)
+                                : item.displayName;
+        value += " [";
+        value += asharia::editor::editorSelectionTargetStateName(item.state);
+        value += "]";
+        return value;
+    }
+
+    [[nodiscard]] std::string selectionSummary(
+        const asharia::editor::EditorI18n& i18n,
+        const asharia::editor::EditorSelectionSnapshot& snapshot) {
+        if (snapshot.empty()) {
+            return textValue(i18n, "sceneTree.selection.none", "None");
+        }
+        if (snapshot.size() == 1U) {
+            return selectionItemLabel(snapshot.items.front());
+        }
+        return std::to_string(snapshot.size()) + " " +
+               textValue(i18n, "sceneTree.selection.entities", "entities");
+    }
+
 } // namespace
 
 namespace asharia::editor {
@@ -55,7 +81,7 @@ namespace asharia::editor {
         if (beginEditorUiPropertyTable("scene-tree-shell-state", 88.0F)) {
             drawEditorUiProperty(EditorUiProperty{
                 .label = textValue(i18n, "sceneTree.selection", "Selection"),
-                .value = textValue(i18n, "sceneTree.selection.none", "None"),
+                .value = selectionSummary(i18n, context.selection.snapshot()),
             });
             drawEditorUiProperty(EditorUiProperty{
                 .label = textValue(i18n, "sceneTree.source", "Source"),
@@ -86,9 +112,34 @@ namespace asharia::editor {
                                   ImGuiTreeNodeFlags_SpanAvailWidth);
             const std::string selectionLabel =
                 textValue(i18n, "sceneTree.pendingSelection", "SelectionSet");
-            ImGui::TreeNodeEx(selectionLabel.c_str(),
-                              ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                  ImGuiTreeNodeFlags_SpanAvailWidth);
+            const asharia::editor::EditorSelectionSnapshot& selection =
+                context.selection.snapshot();
+            if (selection.empty()) {
+                ImGui::TreeNodeEx(selectionLabel.c_str(),
+                                  ImGuiTreeNodeFlags_Leaf |
+                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                      ImGuiTreeNodeFlags_SpanAvailWidth);
+            } else if (ImGui::TreeNodeEx(selectionLabel.c_str(),
+                                         ImGuiTreeNodeFlags_DefaultOpen |
+                                             ImGuiTreeNodeFlags_OpenOnArrow |
+                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                             ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                for (std::size_t index = 0; index < selection.items.size(); ++index) {
+                    const asharia::editor::EditorSelectionItem& selected =
+                        selection.items[index];
+                    std::string rowLabel = selectionItemLabel(selected);
+                    rowLabel += "###scene-tree-selection-";
+                    rowLabel += std::to_string(index);
+                    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf |
+                                               ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                               ImGuiTreeNodeFlags_SpanAvailWidth;
+                    if (selected.primary) {
+                        flags |= ImGuiTreeNodeFlags_Selected;
+                    }
+                    ImGui::TreeNodeEx(rowLabel.c_str(), flags);
+                }
+                ImGui::TreePop();
+            }
             ImGui::EndDisabled();
             ImGui::TreePop();
         }

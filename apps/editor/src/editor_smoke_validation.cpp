@@ -3,6 +3,7 @@
 #include "editor_asset_catalog_smoke.hpp"
 #include "editor_command_smoke.hpp"
 #include "editor_registration_smoke.hpp"
+#include "editor_selection_smoke.hpp"
 #include "editor_startup_smoke.hpp"
 
 namespace asharia::editor {
@@ -15,6 +16,6 @@ namespace asharia::editor {
                validateEditorAssetCatalogSnapshotSmoke(mode) &&
                validateEditorRegistrationSmoke(mode, actionRegistry, actionServices, settings, i18n,
                                                toolRegistry, toolManager) &&
-               validateEditorCommandSmoke(mode);
+               validateEditorCommandSmoke(mode) && validateEditorSelectionSmoke(mode);
     }
 } // namespace asharia::editor

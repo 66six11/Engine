@@ -36,6 +36,7 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 - `asharia::window_glfw`
 - `asharia::rhi_vulkan`
 - `asharia::renderer_basic_vulkan`
+- `asharia::scene_core`
 - `asharia::archive`
 - `asharia::asset_core`
 - `asharia::asset_core_io`
@@ -46,9 +47,10 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 - ImGui GLFW/Vulkan backend source files from the Conan ImGui package
 
 这些依赖属于当前 `apps/editor` host executable 的集成边界。Editor app 可以组合 public project/asset/pipeline
-API 来加载项目描述、读取 `.ameta`、构造只读 catalog snapshot、生成 report 和记录 pending reimport facts；这不表示
-存在可复用的 `packages/editor-core`，也不表示 editor panel 可以拥有 importer execution、product cache writes、runtime
-asset handles 或 renderer/GPU lifetime。
+API 来加载项目描述、读取 `.ameta`、构造只读 catalog snapshot、生成 report 和记录 pending reimport facts，并可以消费
+`scene-core` 的 `EntityId` 作为 editor selection value；这不表示存在可复用的 `packages/editor-core`，也不表示 editor
+panel 可以拥有 importer execution、product cache writes、runtime asset handles、runtime scene hierarchy 或
+renderer/GPU lifetime。
 
 禁止方向：
 
@@ -80,6 +82,7 @@ asset handles 或 renderer/GPU lifetime。
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
 | `editor_action` | action descriptor、enabled state、callback invocation、stable action ids and action-only service bundle | command transaction semantics before transaction exists、full app service access |
 | `editor_event` | frame-local typed event queue、diagnostics history sink | global EventBus、durable document storage |
+| `editor_selection` | app-local active `SelectionSet` owner, stable `sceneId + EntityId` values, empty/missing/stale/multi-selection shapes and `SelectionChanged` facts | runtime scene hierarchy ownership, scene serialization, object pointers, picking, gizmo state or writable Inspector data |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
 | `editor_viewport` | backend-neutral viewport request/result structs、Scene/debug viewport flags and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
@@ -145,6 +148,20 @@ panelRegistry.clearLifecycleEvents()
 
 `VulkanFrameLoop` remains the owner of acquire, command buffer begin/end, submit, present, swapchain recreation,
 fences and completed frame epochs.
+
+### Selection state
+
+`EditorAppServices` owns the single active `EditorSelectionSet` for the app. The first slice keeps this owner in
+`apps/editor` rather than extracting `packages/editor-core`; it is still backend-neutral and uses `asharia::EntityId` from
+`scene-core` plus a scene/document key string, not runtime object pointers.
+
+Selection mutations normalize invalid and duplicate targets, keep one primary item, preserve explicit `Resolved`,
+`Missing` and `Stale` states, increment a revision, and emit a frame-local `SelectionChanged` event through
+`EditorEventQueue`. `EditorDiagnosticsLog` can record that fact the same way it records panel/action events.
+
+Scene Tree and Inspector receive a read-only selection context from `EditorPanelRegistry::drawPanels()`. They can display
+the same stable selection ids and missing/stale state without owning panel-local selection. They still do not perform scene
+picking, tree hierarchy mutation, transform editing, selection outline rendering or Inspector field writes.
 
 ### Scene View 纹理流
 
@@ -558,6 +575,9 @@ build\cmake\clangcl-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 ```
 
+The shell smoke also runs the CPU-only `EditorSelectionSet` contract gate: replace/no-op/multi missing-stale refresh,
+layout-reset stability, clear, deterministic `SelectionChanged` event emission and diagnostics routing.
+
 Asset Browser、asset catalog snapshot 或 asset icon resolver 相关改动必须运行：
 
 ```powershell
@@ -600,9 +620,10 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 
 ## 当前缺口
 
-- Scene Tree and Inspector now exist as read-only shell panels in the default workbench. Real selection, transaction,
-  dirty state, inspector data model, writable asset operations and richer asset browser workflows are still blocked on
-  scene/asset/schema ownership becoming concrete enough.
+- Scene Tree and Inspector now exist as read-only shell panels in the default workbench. They read the app-local
+  `EditorSelectionSet` snapshot for stable selected ids and missing/stale state, but real scene hierarchy, picking,
+  transaction, dirty state, inspector data model, writable asset operations and richer asset browser workflows are still
+  blocked on scene/asset/schema ownership becoming concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for

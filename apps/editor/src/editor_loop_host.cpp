@@ -24,6 +24,7 @@
 #include "editor_input_router.hpp"
 #include "editor_inspected_world.hpp"
 #include "editor_panel.hpp"
+#include "editor_selection.hpp"
 #include "editor_settings.hpp"
 #include "editor_shell_host.hpp"
 #include "editor_shortcut_router.hpp"
@@ -73,8 +74,9 @@ namespace asharia::editor {
         EditorViewportCoordinator& viewportHost, EditorFrameDebugger& frameDebugger,
         EditorActionRegistry& actionRegistry, EditorActionServices& actionServices,
         EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
-        EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
-        EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
+        const EditorSelectionSet& selectionSet, EditorSettingsController& settingsController,
+        EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
+        EditorToolManager& toolManager,
         EditorWorkspaceController& workspace, const EditorAssetCatalogStore& assetCatalogStore,
         EditorAssetIconRegistry& assetIconRegistry, EditorCommandHistory& commandHistory,
         EditorAssetReimportRequestLog& assetReimportRequests,
@@ -150,6 +152,7 @@ namespace asharia::editor {
                 .input = {.router = inputRouter},
                 .renderGraph = {.snapshots = viewportHost},
                 .viewport = {.host = viewportHost},
+                .selection = selectionSet,
                 .assetIcons = assetIconRegistry,
                 .assetCatalogView = assetCatalogStore.catalogView(),
                 .assetCatalogSnapshot = assetCatalogStore.snapshot(),

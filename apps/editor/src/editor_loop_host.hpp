@@ -22,6 +22,7 @@ namespace asharia::editor {
     class EditorFrameDebugger;
     class EditorI18n;
     class EditorPanelRegistry;
+    class EditorSelectionSet;
     class EditorSettingsController;
     class EditorToolManager;
     class EditorToolRegistry;
@@ -34,8 +35,9 @@ namespace asharia::editor {
         EditorViewportCoordinator& viewportHost, EditorFrameDebugger& frameDebugger,
         EditorActionRegistry& actionRegistry, EditorActionServices& actionServices,
         EditorEventQueue& eventQueue, EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
-        EditorSettingsController& settingsController, EditorPanelRegistry& panelRegistry,
-        EditorToolRegistry& toolRegistry, EditorToolManager& toolManager,
+        const EditorSelectionSet& selectionSet, EditorSettingsController& settingsController,
+        EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
+        EditorToolManager& toolManager,
         EditorWorkspaceController& workspace, const EditorAssetCatalogStore& assetCatalogStore,
         EditorAssetIconRegistry& assetIconRegistry, EditorCommandHistory& commandHistory,
         EditorAssetReimportRequestLog& assetReimportRequests,

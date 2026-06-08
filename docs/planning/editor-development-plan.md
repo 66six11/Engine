@@ -1101,17 +1101,22 @@ Validation:
 
 ### 20.3 Selection Model
 
-Status: Blocked.
+Status: Current / partial.
 
 Scope:
 
-- Add `SelectionSet` in editor-core.
-- Store `EntityId` and editor-only selection metadata.
-- Emit `SelectionChanged`.
+- Add app-local `EditorSelectionSet` as the first active owner; defer `packages/editor-core`
+  extraction until the state has more backend-neutral consumers.
+- Store scene/document key plus `EntityId` and editor-only selection metadata.
+- Emit deterministic `SelectionChanged` facts through the editor event queue.
+- Preserve empty, missing, stale and multi-selection shapes without owning runtime object pointers.
 
 Validation:
 
-- CPU-only selection tests or smoke cover add/remove/clear and deleted entity cleanup.
+- `--smoke-editor-shell` runs CPU-only selection smoke for replace/no-op/multi missing-stale refresh,
+  layout reset stability, clear and diagnostics event routing.
+- Deleted entity cleanup remains a later scene provider integration step because this slice does not
+  own runtime scene hierarchy or mutation.
 
 ### 20.4 Transaction Skeleton
 

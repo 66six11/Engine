@@ -89,6 +89,7 @@ flowchart TD
     EditorApp -->|catalog view + metadata IO| AssetCore
     EditorApp -->|.ameta text IO| AssetCoreIo
     EditorApp -->|snapshot planning only| AssetPipeline
+    EditorApp -->|selection EntityId values| SceneCore
     EditorApp --> Window
     EditorApp --> RhiVk
     EditorApp --> RendererVk
@@ -123,8 +124,9 @@ flowchart TD
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把
   Vulkan barrier/layout 细节扩散到 app 层。
 - `apps/editor` 当前承担 editor host 和 editor smoke harness。它可以直接链接 ImGui、`window-glfw`、
-  `rhi-vulkan`、`renderer_basic_vulkan`、`project_core_io`、`asset_core`、`asset_core_io` 和
-  `asset_pipeline`，因为这些都属于 host integration 或只读 project/asset snapshot 组装；未来
+  `rhi-vulkan`、`renderer_basic_vulkan`、`project_core_io`、`asset_core`、`asset_core_io`、`asset_pipeline`
+  和 `scene_core`，因为这些都属于 host integration、只读 project/asset snapshot 组装或 editor-owned
+  selection value contracts；未来
   `packages/editor-core` 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
@@ -134,8 +136,9 @@ flowchart TD
   descriptor 读取、source scan/discovery/snapshot、import planning 和 catalog report 生成在 `apps/editor`
   的 host 服务中组合 public package API。它不执行 importer、不写 product manifest/blob、不创建 runtime asset
   handle，也不上传 GPU 资源。
-- Scene Tree 和 Inspector 现在是默认 workbench 中的 read-only shell panel。它们不消费 runtime scene hierarchy、
-  `SelectionSet` 或 inspector data model；当前 UI 只暴露“对象身份/选择/数据模型待接入”的状态，避免伪造场景数据。
+- Scene Tree 和 Inspector 现在是默认 workbench 中的 read-only shell panel。它们消费 app-local
+  `EditorSelectionSet` 的稳定 `sceneId + EntityId` snapshot，但仍不消费 runtime scene hierarchy 或 inspector
+  data model；当前 UI 只表达 selection contract 状态，避免伪造场景数据。
 
 ## 当前架构总览
 
