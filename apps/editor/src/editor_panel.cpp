@@ -222,10 +222,12 @@ namespace asharia::editor {
             .sceneTree =
                 EditorSceneTreePanelDrawContext{
                     .ui = context.ui,
+                    .selection = context.selection,
                 },
             .inspector =
                 EditorInspectorPanelDrawContext{
                     .ui = context.ui,
+                    .selection = context.selection,
                     .commandHistory = context.commandHistory,
                 },
             .log =

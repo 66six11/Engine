@@ -16,6 +16,7 @@ asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
 asharia_require_package_target(asharia::project_core_io packages/project-core)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
+asharia_require_package_target(asharia::scene_core packages/scene-core)
 asharia_require_package_target(asharia::shader_slang packages/shader-slang)
 asharia_require_package_target(asharia::window_glfw packages/window-glfw)
 
@@ -104,6 +105,8 @@ add_executable(asharia-editor
     src/editor_registration_smoke.cpp
     src/editor_settings.cpp
     src/editor_settings_contribution.cpp
+    src/editor_selection.cpp
+    src/editor_selection_smoke.cpp
     src/editor_shell_host.cpp
     src/editor_shortcut_router.cpp
     src/editor_shortcut_smoke.cpp
@@ -171,6 +174,7 @@ target_link_libraries(asharia-editor
         asharia::project_core_io
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan
+        asharia::scene_core
         asharia::window_glfw
         glm::glm
         imgui::imgui

@@ -12,6 +12,7 @@
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
 #include "editor_panel.hpp"
+#include "editor_selection.hpp"
 #include "editor_settings.hpp"
 #include "editor_tool.hpp"
 #include "editor_tool_manager.hpp"
@@ -27,6 +28,7 @@ namespace asharia::editor {
         EditorAppServices& operator=(EditorAppServices&&) = delete;
 
         EditorEventQueue eventQueue;
+        EditorSelectionSet selectionSet;
         EditorDiagnosticsLog diagnosticsLog;
         EditorFrameDebugger frameDebugger;
         EditorI18n i18n;
