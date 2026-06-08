@@ -1,5 +1,6 @@
 ﻿#include "editor_app.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -7,7 +8,9 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
@@ -16,6 +19,7 @@
 #include "editor_app_services.hpp"
 #include "editor_asset_catalog.hpp"
 #include "editor_asset_catalog_smoke.hpp"
+#include "editor_asset_import_settings_command.hpp"
 #include "editor_loop_host.hpp"
 #include "editor_render_runtime.hpp"
 #include "editor_smoke.hpp"
@@ -66,8 +70,7 @@ namespace {
             return std::nullopt;
         }
 
-        std::string targetProfile =
-            editorEnvironmentValue("ASHARIA_EDITOR_ASSET_TARGET_PROFILE");
+        std::string targetProfile = editorEnvironmentValue("ASHARIA_EDITOR_ASSET_TARGET_PROFILE");
         if (targetProfile.empty()) {
             targetProfile = "editor-preview";
         }
@@ -75,8 +78,7 @@ namespace {
         return asharia::editor::EditorAssetCatalogSnapshotRequest{
             .projectFile = std::filesystem::path{project},
             .productManifestFile =
-                std::filesystem::path{
-                    editorEnvironmentValue("ASHARIA_EDITOR_PRODUCT_MANIFEST")},
+                std::filesystem::path{editorEnvironmentValue("ASHARIA_EDITOR_PRODUCT_MANIFEST")},
             .targetProfile = std::move(targetProfile),
         };
     }
@@ -94,8 +96,8 @@ namespace {
             if (!succeeded || rowCount == 0U) {
                 asharia::logError("Editor asset browser smoke could not load project catalog "
                                   "snapshot rows=" +
-                                  std::to_string(rowCount) + " diagnostics=" +
-                                  std::to_string(diagnosticCount));
+                                  std::to_string(rowCount) +
+                                  " diagnostics=" + std::to_string(diagnosticCount));
             }
             return;
         }
@@ -124,9 +126,46 @@ namespace {
                              std::to_string(rowCount));
         } else {
             asharia::logWarning("Loaded editor asset catalog snapshot with diagnostics rows=" +
-                                std::to_string(rowCount) + " diagnostics=" +
-                                std::to_string(diagnosticCount));
+                                std::to_string(rowCount) +
+                                " diagnostics=" + std::to_string(diagnosticCount));
         }
+    }
+
+    void seedAssetBrowserSmokePendingReimport(
+        const asharia::editor::EditorAssetCatalogStore& store,
+        asharia::editor::EditorAssetReimportRequestLog& reimportRequests,
+        asharia::editor::EditorAssetReimportPendingState& pendingReimports) {
+        const asharia::editor::EditorAssetCatalogSnapshot* snapshot = store.snapshot();
+        if (snapshot == nullptr || pendingReimports.size() != 0U) {
+            return;
+        }
+
+        const auto row =
+            std::ranges::find_if(store.catalogView().entries,
+                                 [](const asharia::asset::AssetCatalogViewEntry& candidate) {
+                                     return candidate.guid &&
+                                            !candidate.importProfileName.empty() &&
+                                            !candidate.sourcePath.empty();
+                                 });
+        if (row == store.catalogView().entries.end()) {
+            return;
+        }
+
+        std::string targetProfile = snapshot->targetProfile;
+        if (targetProfile.empty()) {
+            targetProfile = "editor-preview";
+        }
+        asharia::editor::EditorAssetReimportRequest request{
+            .guid = row->guid,
+            .sourcePath = row->sourcePath,
+            .metadataFile = asharia::editor::resolveEditorAssetCatalogMetadataFilePath(
+                *snapshot, row->sourcePath),
+            .targetProfile = targetProfile,
+            .changedSettingKeys = std::vector<std::string>{std::string{
+                asharia::asset::kTextureImportProfileSettingKey}},
+        };
+        reimportRequests.record(request);
+        pendingReimports.record(std::move(request));
     }
 
 } // namespace
@@ -208,6 +247,11 @@ namespace asharia::editor {
 
         EditorAppServices services{settingsRun};
         loadEditorAssetCatalogForRun(services.assetCatalogStore, config);
+        if (isEditorAssetBrowserSmokeMode(mode)) {
+            seedAssetBrowserSmokePendingReimport(services.assetCatalogStore,
+                                                 services.assetReimportRequests,
+                                                 services.assetPendingReimports);
+        }
         if (auto registered = registerEditorAppServices(services); !registered) {
             asharia::logError(registered.error().message);
             return EXIT_FAILURE;
@@ -226,7 +270,8 @@ namespace asharia::editor {
             services.eventQueue, services.diagnosticsLog, services.i18n,
             services.settingsController, services.panelRegistry, services.toolRegistry,
             services.toolManager, services.workspaceController, services.assetCatalogStore,
-            services.assetIconRegistry, mode);
+            services.assetIconRegistry, services.commandHistory, services.assetReimportRequests,
+            services.assetPendingReimports, mode);
         if (!runResult) {
             asharia::logError(runResult.error().message);
             return EXIT_FAILURE;

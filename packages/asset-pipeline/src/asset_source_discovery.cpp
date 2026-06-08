@@ -12,7 +12,8 @@ namespace asharia::asset {
     namespace {
 
         [[nodiscard]] std::string metadataPathText(const std::filesystem::path& path) {
-            return path.generic_string();
+            const std::u8string text = path.generic_u8string();
+            return std::string{text.begin(), text.end()};
         }
 
         [[nodiscard]] std::string entryLabel(const AssetSourceDiscoveryEntry& entry) {

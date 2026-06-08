@@ -10,6 +10,7 @@ namespace asharia::editor {
     namespace {
 
         struct EditorDockLayoutNodes {
+            ImGuiID left{};
             ImGuiID center{};
             ImGuiID rightTop{};
             ImGuiID rightBottom{};
@@ -19,6 +20,8 @@ namespace asharia::editor {
         [[nodiscard]] ImGuiID dockNodeForSlot(const EditorDockLayoutNodes& nodes,
                                               EditorDockSlot slot) {
             switch (slot) {
+            case EditorDockSlot::Left:
+                return nodes.left;
             case EditorDockSlot::Center:
                 return nodes.center;
             case EditorDockSlot::RightTop:
@@ -54,8 +57,12 @@ namespace asharia::editor {
         ImGui::DockBuilderSplitNode(mainDockId, ImGuiDir_Down, desc.preset.bottomRatio,
                                     &bottomDockId, &mainDockId);
 
-        ImGuiID rightDockId = 0;
+        ImGuiID leftDockId = 0;
         ImGuiID centerDockId = mainDockId;
+        ImGui::DockBuilderSplitNode(centerDockId, ImGuiDir_Left, desc.preset.leftRatio,
+                                    &leftDockId, &centerDockId);
+
+        ImGuiID rightDockId = 0;
         ImGui::DockBuilderSplitNode(centerDockId, ImGuiDir_Right, desc.preset.rightRatio,
                                     &rightDockId, &centerDockId);
 
@@ -66,6 +73,7 @@ namespace asharia::editor {
                                     &rightTopDockId);
 
         const EditorDockLayoutNodes nodes{
+            .left = leftDockId,
             .center = centerDockId,
             .rightTop = rightTopDockId,
             .rightBottom = rightBottomDockId,

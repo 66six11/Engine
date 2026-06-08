@@ -50,6 +50,9 @@ namespace asharia::editor {
         bool assetCatalogSnapshotLoaded{};
         std::size_t assetCatalogRows{};
         std::size_t assetCatalogDiagnostics{};
+        std::size_t assetReimportRequests{};
+        std::size_t assetPendingReimports{};
+        std::size_t assetPendingReimportRows{};
     };
 
     struct EditorViewportResizeSmokeState {

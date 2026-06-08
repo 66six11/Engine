@@ -141,7 +141,7 @@ namespace {
         const asharia::asset::SourceAssetRecord spriteSheet = makeTextureProfileSmokeRecord(
             "8d660642-764b-4403-88f2-0853208e098c", "Content/Sprites/Hero.png");
         const asharia::asset::SourceAssetRecord textureCube = makeTextureProfileSmokeRecord(
-            "d15d28a5-c3cf-4876-a9c1-09220d516c53", "Content/Textures/SkyCube.ktx2");
+            "d15d28a5-c3cf-4876-a9c1-09220d516c53", "Content/Textures/SkyCube.png");
         const asharia::asset::SourceAssetRecord skybox = makeTextureProfileSmokeRecord(
             "a72082bc-26e3-47df-b17d-337626633212", "Content/Textures/Sunset.exr");
         const asharia::asset::SourceAssetRecord unknown = makeTextureProfileSmokeRecord(
@@ -231,9 +231,11 @@ namespace {
         if (textureCubeFacet.importProfileName !=
                 asharia::asset::kTextureImportProfileTextureCube ||
             textureCubeFacet.assetRoleName != asharia::asset::kTextureRoleTextureCube ||
+            textureCubeFacet.sourcePath != "Content/Textures/SkyCube.png" ||
             skyboxFacet.importProfileName != asharia::asset::kTextureImportProfileSkybox ||
             skyboxFacet.assetRoleName != asharia::asset::kTextureRoleSkybox) {
-            logFailure("Texture import profile smoke rejected cube or skybox metadata.");
+            logFailure(
+                "Texture import profile smoke rejected profile-driven cube or skybox metadata.");
             return false;
         }
 

@@ -55,6 +55,8 @@ namespace asharia::editor {
 
     struct EditorAssetCatalogSnapshot {
         std::filesystem::path projectFile;
+        std::filesystem::path productManifestFile;
+        std::string targetProfile;
         asharia::project::AshariaProjectDescriptor project;
         asharia::asset::AssetCatalogView catalogView;
         std::vector<EditorAssetCatalogDiagnostic> diagnostics;
@@ -62,6 +64,49 @@ namespace asharia::editor {
         [[nodiscard]] friend bool operator==(const EditorAssetCatalogSnapshot&,
                                              const EditorAssetCatalogSnapshot&) = default;
         [[nodiscard]] bool succeeded() const noexcept;
+    };
+
+    struct EditorAssetCatalogResolvedSourceRoot {
+        bool matched{false};
+        std::string rootName;
+        std::string sourcePathPrefix;
+        std::filesystem::path directory;
+        std::filesystem::path resolvedDirectory;
+
+        [[nodiscard]] friend bool operator==(const EditorAssetCatalogResolvedSourceRoot&,
+                                             const EditorAssetCatalogResolvedSourceRoot&) = default;
+    };
+
+    enum class EditorAssetCatalogNavigationNodeKind : std::uint8_t {
+        SourceRoot,
+        Folder,
+        Asset,
+        SubAsset,
+    };
+
+    struct EditorAssetCatalogNavigationNode {
+        EditorAssetCatalogNavigationNodeKind kind{EditorAssetCatalogNavigationNodeKind::Asset};
+        std::string key;
+        std::string parentKey;
+        std::string displayName;
+        std::string scopePath;
+        std::string sourcePath;
+        std::string sourceRootName;
+        std::string sourceRootPrefix;
+        std::filesystem::path sourceRootDirectory;
+        std::string guidText;
+        std::string stableId;
+        std::string assetTypeName;
+        std::string importerName;
+        std::string extension;
+        std::string importProfileName;
+        std::string assetRoleName;
+        std::size_t subAssetCount{};
+        asharia::asset::AssetCatalogProductState productState{
+            asharia::asset::AssetCatalogProductState::NotTracked};
+
+        [[nodiscard]] friend bool operator==(const EditorAssetCatalogNavigationNode&,
+                                             const EditorAssetCatalogNavigationNode&) = default;
     };
 
     class EditorAssetCatalogStore {
@@ -83,10 +128,32 @@ namespace asharia::editor {
 
     [[nodiscard]] EditorAssetCatalogSnapshot
     loadEditorAssetCatalogSnapshot(const EditorAssetCatalogSnapshotRequest& request);
+    [[nodiscard]] EditorAssetCatalogSnapshotRequest
+    makeEditorAssetCatalogSnapshotRequest(const EditorAssetCatalogSnapshot& snapshot);
+    [[nodiscard]] const EditorAssetCatalogSnapshot*
+    refreshEditorAssetCatalogStore(EditorAssetCatalogStore& store);
+    [[nodiscard]] const EditorAssetCatalogSnapshot*
+    refreshEditorAssetCatalogStore(EditorAssetCatalogStore& store,
+                                   const EditorAssetCatalogSnapshotRequest& request);
+    [[nodiscard]] std::filesystem::path
+    resolveEditorAssetCatalogSourceFilePath(const EditorAssetCatalogSnapshot& snapshot,
+                                            std::string_view sourcePath);
+    [[nodiscard]] std::filesystem::path
+    resolveEditorAssetCatalogMetadataFilePath(const EditorAssetCatalogSnapshot& snapshot,
+                                              std::string_view sourcePath);
+    [[nodiscard]] std::vector<EditorAssetCatalogResolvedSourceRoot>
+    resolveEditorAssetCatalogSourceRoots(const EditorAssetCatalogSnapshot& snapshot);
+    [[nodiscard]] EditorAssetCatalogResolvedSourceRoot
+    resolveEditorAssetCatalogSourceRootForSourcePath(const EditorAssetCatalogSnapshot& snapshot,
+                                                     std::string_view sourcePath);
+    [[nodiscard]] std::vector<EditorAssetCatalogNavigationNode>
+    makeEditorAssetCatalogNavigationNodes(const EditorAssetCatalogSnapshot& snapshot);
+    [[nodiscard]] std::string_view
+    editorAssetCatalogNavigationNodeKindName(EditorAssetCatalogNavigationNodeKind kind) noexcept;
     [[nodiscard]] asharia::asset::AssetCatalogView makeEditorAssetBrowserFixtureCatalogView();
     [[nodiscard]] std::string_view
     editorAssetCatalogDiagnosticCodeName(EditorAssetCatalogDiagnosticCode code) noexcept;
-    [[nodiscard]] std::string_view
-    editorAssetCatalogDiagnosticSeverityName(EditorAssetCatalogDiagnosticSeverity severity) noexcept;
+    [[nodiscard]] std::string_view editorAssetCatalogDiagnosticSeverityName(
+        EditorAssetCatalogDiagnosticSeverity severity) noexcept;
 
 } // namespace asharia::editor

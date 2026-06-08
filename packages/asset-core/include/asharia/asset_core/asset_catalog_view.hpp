@@ -98,6 +98,8 @@ namespace asharia::asset {
 
     struct AssetCatalogViewOptions {
         bool requireProducts{false};
+        // Ready product state requires the active view's expected full product keys.
+        // Without these keys, product records are visible but cannot prove readiness.
         std::span<const AssetProductKey> expectedProductKeys{};
         std::span<const AssetCatalogSourceFacet> sourceFacets{};
     };

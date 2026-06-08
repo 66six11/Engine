@@ -52,6 +52,20 @@ namespace asharia::asset {
             return text;
         }
 
+        [[nodiscard]] std::string pathText(const std::filesystem::path& path) {
+            const std::u8string text = path.generic_u8string();
+            return std::string{text.begin(), text.end()};
+        }
+
+        [[nodiscard]] std::filesystem::path pathFromUtf8(std::string_view text) {
+            std::u8string utf8;
+            utf8.reserve(text.size());
+            for (const char value : text) {
+                utf8.push_back(static_cast<char8_t>(static_cast<unsigned char>(value)));
+            }
+            return std::filesystem::path{utf8};
+        }
+
         [[nodiscard]] std::string productLabel(const AssetImportRequest& request) {
             return "guid=\"" + formatAssetGuid(request.source.guid) + "\" source=\"" +
                    request.source.sourcePath + "\" assetType=\"" + request.source.assetTypeName +
@@ -157,7 +171,7 @@ namespace asharia::asset {
 
         [[nodiscard]] std::filesystem::path makeOutputPath(const std::filesystem::path& outputRoot,
                                                            std::string_view productPath) {
-            return outputRoot / std::filesystem::path{std::string{productPath}};
+            return outputRoot / pathFromUtf8(productPath);
         }
 
         [[nodiscard]] bool productOrdersBefore(const AssetProductRecord& left,
@@ -179,7 +193,7 @@ namespace asharia::asset {
                         result, AssetProductExecutionDiagnosticCode::ProductWriteFailed,
                         *product.request,
                         "Asset product execution could not create product output directory '" +
-                            parent.generic_string() + "': " + createError.message() + ".");
+                            pathText(parent) + "': " + createError.message() + ".");
                     return false;
                 }
             }
@@ -190,7 +204,7 @@ namespace asharia::asset {
                     result, AssetProductExecutionDiagnosticCode::ProductWriteFailed,
                     *product.request,
                     "Asset product execution could not open product output file '" +
-                        product.outputPath.generic_string() + "'.");
+                        pathText(product.outputPath) + "'.");
                 return false;
             }
 
@@ -201,7 +215,7 @@ namespace asharia::asset {
                         result, AssetProductExecutionDiagnosticCode::ProductWriteFailed,
                         *product.request,
                         "Asset product execution could not write product output file '" +
-                            product.outputPath.generic_string() + "'.");
+                            pathText(product.outputPath) + "'.");
                     return false;
                 }
             }
@@ -220,11 +234,11 @@ namespace asharia::asset {
                 std::error_code createError;
                 std::filesystem::create_directories(parent, createError);
                 if (createError) {
-                    addDiagnostic(
-                        result, AssetProductExecutionDiagnosticCode::ManifestWriteFailed, {}, {},
-                        "Asset product execution could not create product manifest "
-                        "directory '" +
-                            parent.generic_string() + "': " + createError.message() + ".");
+                    addDiagnostic(result, AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                  {}, {},
+                                  "Asset product execution could not create product manifest "
+                                  "directory '" +
+                                      pathText(parent) + "': " + createError.message() + ".");
                     return false;
                 }
             }
@@ -235,7 +249,7 @@ namespace asharia::asset {
                 addDiagnostic(result, AssetProductExecutionDiagnosticCode::ManifestWriteFailed, {},
                               {},
                               "Asset product execution could not write product manifest '" +
-                                  request.productManifestOutputPath.generic_string() +
+                                  pathText(request.productManifestOutputPath) +
                                   "': " + written.error().message);
                 return false;
             }

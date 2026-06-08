@@ -15,14 +15,22 @@
 #include "panels/asset_browser_panel.hpp"
 #include "panels/editor_settings_panel.hpp"
 #include "panels/frame_debugger_panel.hpp"
+#include "panels/inspector_panel.hpp"
 #include "panels/log_panel.hpp"
 #include "panels/render_graph_panel.hpp"
 #include "panels/scene_view_panel.hpp"
+#include "panels/scene_tree_panel.hpp"
 #include "panels/ui_style_preview_panel.hpp"
 
 namespace asharia::editor {
 
     [[nodiscard]] asharia::VoidResult registerEditorPanels(EditorPanelRegistry& panelRegistry) {
+        auto sceneTree =
+            panelRegistry.registerPanel([] { return std::make_unique<SceneTreePanel>(); });
+        if (!sceneTree) {
+            return std::unexpected{std::move(sceneTree.error())};
+        }
+
         auto sceneView =
             panelRegistry.registerPanel([] { return std::make_unique<SceneViewPanel>(); });
         if (!sceneView) {
@@ -50,6 +58,12 @@ namespace asharia::editor {
             panelRegistry.registerPanel([] { return std::make_unique<AssetBrowserPanel>(); });
         if (!assetBrowser) {
             return std::unexpected{std::move(assetBrowser.error())};
+        }
+
+        auto inspector =
+            panelRegistry.registerPanel([] { return std::make_unique<InspectorPanel>(); });
+        if (!inspector) {
+            return std::unexpected{std::move(inspector.error())};
         }
 
         auto settings =
@@ -96,6 +110,22 @@ namespace asharia::editor {
         });
         if (!exit) {
             return std::unexpected{std::move(exit.error())};
+        }
+
+        auto sceneTree = actionRegistry.registerAction(
+            EditorActionDesc{
+                .id = EditorId{.value = "view.scene-tree"},
+                .menuPath = "View",
+                .label = "Scene Tree",
+                .labelKey = "action.view.sceneTree",
+                .shortcut = "Ctrl+7",
+                .enabled = true,
+            },
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("scene-tree"));
+            });
+        if (!sceneTree) {
+            return std::unexpected{std::move(sceneTree.error())};
         }
 
         auto sceneView = actionRegistry.registerAction(
@@ -176,6 +206,22 @@ namespace asharia::editor {
             });
         if (!assetBrowser) {
             return std::unexpected{std::move(assetBrowser.error())};
+        }
+
+        auto inspector = actionRegistry.registerAction(
+            EditorActionDesc{
+                .id = EditorId{.value = "view.inspector"},
+                .menuPath = "View",
+                .label = "Inspector",
+                .labelKey = "action.view.inspector",
+                .shortcut = "Ctrl+8",
+                .enabled = true,
+            },
+            [](EditorActionContext& context) {
+                static_cast<void>(context.panels.focusPanel("inspector"));
+            });
+        if (!inspector) {
+            return std::unexpected{std::move(inspector.error())};
         }
 
         auto uiStylePreview = actionRegistry.registerAction(
@@ -261,6 +307,19 @@ namespace asharia::editor {
             .tools =
                 {
                     EditorToolDesc{
+                        .id = EditorId{.value = "tool.scene-tree"},
+                        .title = "Scene Tree",
+                        .titleKey = "tool.sceneTree",
+                        .category = EditorToolCategory::Core,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
+                        .panels = {EditorToolPanelContribution{.panelId = "scene-tree"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.scene-tree",
+                        }},
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
                         .id = EditorId{.value = "tool.scene-view"},
                         .title = "Scene View",
                         .titleKey = "tool.sceneView",
@@ -277,16 +336,27 @@ namespace asharia::editor {
                                 EditorToolViewportOverlayContribution{
                                     .overlayId = std::string{kEditorSceneGridOverlayId},
                                     .viewportId = "scene-view",
+                                    .enabled = true,
+                                    .disabledReasonKey = {},
+                                    .disabledReasonFallback = {},
                                     .worldGrid = defaultEditorSceneGridSettings(),
                                 },
                                 EditorToolViewportOverlayContribution{
                                     .overlayId = std::string{kEditorSceneTransformGizmoOverlayId},
                                     .viewportId = "scene-view",
+                                    .enabled = false,
+                                    .disabledReasonKey = "scene.overlay.pending.gizmo",
+                                    .disabledReasonFallback =
+                                        "Pending SelectionSet and transform provider support.",
                                     .worldGrid = std::nullopt,
                                 },
                                 EditorToolViewportOverlayContribution{
                                     .overlayId = std::string{kEditorSceneSelectionOutlineOverlayId},
                                     .viewportId = "scene-view",
+                                    .enabled = false,
+                                    .disabledReasonKey = "scene.overlay.pending.selection",
+                                    .disabledReasonFallback =
+                                        "Pending scene selection and render bridge support.",
                                     .worldGrid = std::nullopt,
                                 },
                             },
@@ -355,6 +425,19 @@ namespace asharia::editor {
                         .actions = {EditorToolActionContribution{
                             .actionId = "view.asset-browser",
                             .toolbarSlot = EditorToolbarSlot::View,
+                        }},
+                        .viewportOverlays = {},
+                    },
+                    EditorToolDesc{
+                        .id = EditorId{.value = "tool.inspector"},
+                        .title = "Inspector",
+                        .titleKey = "tool.inspector",
+                        .category = EditorToolCategory::Core,
+                        .activationPolicy = EditorToolActivationPolicy::None,
+                        .activationViewportIds = {},
+                        .panels = {EditorToolPanelContribution{.panelId = "inspector"}},
+                        .actions = {EditorToolActionContribution{
+                            .actionId = "view.inspector",
                         }},
                         .viewportOverlays = {},
                     },

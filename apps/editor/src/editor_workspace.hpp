@@ -17,6 +17,7 @@ namespace asharia::editor {
         std::string_view id;
         std::string_view title;
         std::span<const EditorWorkspaceDockPanel> panels;
+        float leftRatio{0.22F};
         float bottomRatio{0.24F};
         float rightRatio{0.32F};
         float rightBottomRatio{0.48F};

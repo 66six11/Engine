@@ -14,7 +14,8 @@ namespace asharia::asset {
     namespace {
 
         [[nodiscard]] std::string pathText(const std::filesystem::path& path) {
-            return path.generic_string();
+            const std::u8string text = path.generic_u8string();
+            return std::string{text.begin(), text.end()};
         }
 
         void addDiagnostic(AssetSourceScanResult& result, AssetSourceScanDiagnosticCode code,
@@ -162,7 +163,7 @@ namespace asharia::asset {
         [[nodiscard]] bool
         shouldIgnoreDirectory(const std::filesystem::path& path,
                               std::span<const std::string> ignoredDirectoryNames) {
-            const std::string directoryName = path.filename().generic_string();
+            const std::string directoryName = pathText(path.filename());
             return std::ranges::any_of(
                 ignoredDirectoryNames,
                 [&directoryName](const std::string& ignored) { return ignored == directoryName; });
@@ -170,7 +171,7 @@ namespace asharia::asset {
 
         [[nodiscard]] bool isMetadataSidecarPath(const std::filesystem::path& path,
                                                  std::string_view metadataSuffix) {
-            return path.filename().generic_string().ends_with(metadataSuffix);
+            return pathText(path.filename()).ends_with(metadataSuffix);
         }
 
         [[nodiscard]] std::filesystem::path
@@ -260,7 +261,7 @@ namespace asharia::asset {
                 return {};
             }
 
-            const std::string relativeText = relativePath.generic_string();
+            const std::string relativeText = pathText(relativePath);
             std::string sourcePath = request.sourcePathPrefix.empty()
                                          ? relativeText
                                          : request.sourcePathPrefix + "/" + relativeText;

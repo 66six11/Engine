@@ -1,10 +1,11 @@
 ﻿#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -15,6 +16,7 @@
 
 #include "editor_app.hpp"
 #include "editor_asset_catalog.hpp"
+#include "editor_asset_catalog_report.hpp"
 
 namespace {
 
@@ -53,56 +55,121 @@ namespace {
     struct ParsedInteractiveArgs {
         asharia::editor::EditorAssetCatalogRunConfig assetCatalog;
         bool checkProject{false};
+        bool checkProjectJson{false};
         std::string error;
     };
 
-    [[nodiscard]] ParsedInteractiveArgs parseInteractiveArgs(std::span<char*> args) {
-        ParsedInteractiveArgs parsed{};
-        for (std::size_t index = 1U; index < args.size(); ++index) {
-            if (args[index] == nullptr) {
-                continue;
-            }
+    enum class InteractiveOption : std::uint8_t {
+        Project,
+        CheckProject,
+        CheckProjectJson,
+        Json,
+        ProductManifest,
+        AssetTargetProfile,
+        Unknown,
+    };
 
-            const std::string_view option{args[index]};
-            if (option == "--project") {
-                OptionValueResult value = readOptionValue(args, index, option);
-                if (!value.succeeded) {
-                    parsed.error = std::move(value.error);
-                    return parsed;
-                }
-                parsed.assetCatalog.projectFile = std::filesystem::path{value.value};
-            } else if (option == "--check-project") {
-                OptionValueResult value = readOptionValue(args, index, option);
-                if (!value.succeeded) {
-                    parsed.error = std::move(value.error);
-                    return parsed;
-                }
-                parsed.checkProject = true;
-                parsed.assetCatalog.projectFile = std::filesystem::path{value.value};
-            } else if (option == "--product-manifest") {
-                OptionValueResult value = readOptionValue(args, index, option);
-                if (!value.succeeded) {
-                    parsed.error = std::move(value.error);
-                    return parsed;
-                }
-                parsed.assetCatalog.productManifestFile = std::filesystem::path{value.value};
-            } else if (option == "--asset-target-profile") {
-                OptionValueResult value = readOptionValue(args, index, option);
-                if (!value.succeeded) {
-                    parsed.error = std::move(value.error);
-                    return parsed;
-                }
-                parsed.assetCatalog.targetProfile = std::move(value.value);
-            } else {
-                parsed.error = "Unknown editor option " + std::string{option} + ".";
-                return parsed;
-            }
+    [[nodiscard]] InteractiveOption interactiveOptionFor(std::string_view option) noexcept {
+        if (option == "--project") {
+            return InteractiveOption::Project;
         }
+        if (option == "--check-project") {
+            return InteractiveOption::CheckProject;
+        }
+        if (option == "--check-project-json") {
+            return InteractiveOption::CheckProjectJson;
+        }
+        if (option == "--json") {
+            return InteractiveOption::Json;
+        }
+        if (option == "--product-manifest") {
+            return InteractiveOption::ProductManifest;
+        }
+        if (option == "--asset-target-profile") {
+            return InteractiveOption::AssetTargetProfile;
+        }
+        return InteractiveOption::Unknown;
+    }
+
+    [[nodiscard]] std::optional<std::string> readParsedOptionValue(std::span<char*> args,
+                                                                   std::size_t& index,
+                                                                   std::string_view option,
+                                                                   ParsedInteractiveArgs& parsed) {
+        OptionValueResult result = readOptionValue(args, index, option);
+        if (!result.succeeded) {
+            parsed.error = std::move(result.error);
+            return std::nullopt;
+        }
+        return std::move(result.value);
+    }
+
+    [[nodiscard]] bool parseInteractiveOption(std::span<char*> args, std::size_t& index,
+                                              ParsedInteractiveArgs& parsed) {
+        const std::string_view option{args[index]};
+        switch (interactiveOptionFor(option)) {
+        case InteractiveOption::Project:
+            if (std::optional<std::string> value =
+                    readParsedOptionValue(args, index, option, parsed)) {
+                parsed.assetCatalog.projectFile = std::filesystem::path{*value};
+            }
+            return parsed.error.empty();
+        case InteractiveOption::CheckProject:
+            if (std::optional<std::string> value =
+                    readParsedOptionValue(args, index, option, parsed)) {
+                parsed.checkProject = true;
+                parsed.assetCatalog.projectFile = std::filesystem::path{*value};
+            }
+            return parsed.error.empty();
+        case InteractiveOption::CheckProjectJson:
+            if (std::optional<std::string> value =
+                    readParsedOptionValue(args, index, option, parsed)) {
+                parsed.checkProject = true;
+                parsed.checkProjectJson = true;
+                parsed.assetCatalog.projectFile = std::filesystem::path{*value};
+            }
+            return parsed.error.empty();
+        case InteractiveOption::Json:
+            parsed.checkProjectJson = true;
+            return true;
+        case InteractiveOption::ProductManifest:
+            if (std::optional<std::string> value =
+                    readParsedOptionValue(args, index, option, parsed)) {
+                parsed.assetCatalog.productManifestFile = std::filesystem::path{*value};
+            }
+            return parsed.error.empty();
+        case InteractiveOption::AssetTargetProfile:
+            if (std::optional<std::string> value =
+                    readParsedOptionValue(args, index, option, parsed)) {
+                parsed.assetCatalog.targetProfile = std::move(*value);
+            }
+            return parsed.error.empty();
+        case InteractiveOption::Unknown:
+            parsed.error = "Unknown editor option " + std::string{option} + ".";
+            return false;
+        }
+        parsed.error = "Unknown editor option " + std::string{option} + ".";
+        return false;
+    }
+
+    void validateInteractiveArgs(ParsedInteractiveArgs& parsed) {
         if (parsed.assetCatalog.projectFile.empty() &&
             (!parsed.assetCatalog.productManifestFile.empty() ||
              !parsed.assetCatalog.targetProfile.empty())) {
             parsed.error = "--product-manifest and --asset-target-profile require --project.";
         }
+        if (parsed.checkProjectJson && !parsed.checkProject) {
+            parsed.error = "--json requires --check-project.";
+        }
+    }
+
+    [[nodiscard]] ParsedInteractiveArgs parseInteractiveArgs(std::span<char*> args) {
+        ParsedInteractiveArgs parsed{};
+        for (std::size_t index = 1U; index < args.size(); ++index) {
+            if (args[index] != nullptr && !parseInteractiveOption(args, index, parsed)) {
+                return parsed;
+            }
+        }
+        validateInteractiveArgs(parsed);
         return parsed;
     }
 
@@ -131,53 +198,25 @@ namespace {
         };
     }
 
-    [[nodiscard]] int checkProjectAssetCatalog(
-        const asharia::editor::EditorAssetCatalogRunConfig& config) {
+    [[nodiscard]] int
+    checkProjectAssetCatalog(const asharia::editor::EditorAssetCatalogRunConfig& config,
+                             bool jsonOutput) {
         const asharia::editor::EditorAssetCatalogSnapshotRequest request =
             snapshotRequestFor(config);
         const asharia::editor::EditorAssetCatalogSnapshot snapshot =
             asharia::editor::loadEditorAssetCatalogSnapshot(request);
 
-        std::cout << "project=" << request.projectFile.string() << '\n'
-                  << "targetProfile=" << request.targetProfile << '\n'
-                  << "rows=" << snapshot.catalogView.entries.size() << '\n'
-                  << "diagnostics=" << snapshot.diagnostics.size() << '\n';
-        for (const asharia::asset::AssetCatalogViewEntry& entry :
-             snapshot.catalogView.entries) {
-            std::cout << "row"
-                      << " sourcePath=" << std::quoted(entry.sourcePath)
-                      << " displayName=" << std::quoted(entry.displayName)
-                      << " type=" << std::quoted(entry.assetTypeName)
-                      << " importer=" << std::quoted(entry.importerName)
-                      << " profile=" << std::quoted(entry.importProfileName)
-                      << " role=" << std::quoted(entry.assetRoleName)
-                      << " productState="
-                      << asharia::asset::assetCatalogProductStateName(entry.productState)
-                      << " currentProducts=" << entry.currentProductCount
-                      << " staleProducts=" << entry.staleProductCount
-                      << " subAssets=" << entry.subAssets.size() << '\n';
-            for (const asharia::asset::AssetCatalogSubAssetViewEntry& subAsset :
-                 entry.subAssets) {
-                std::cout << "sub-asset"
-                          << " sourcePath=" << std::quoted(entry.sourcePath)
-                          << " stableId=" << std::quoted(subAsset.stableId)
-                          << " displayName=" << std::quoted(subAsset.displayName)
-                          << " role=" << std::quoted(subAsset.assetRoleName) << '\n';
+        if (jsonOutput) {
+            auto report =
+                asharia::editor::writeEditorAssetCatalogSnapshotJsonReport(request, snapshot);
+            if (!report) {
+                asharia::logError(report.error().message);
+                return EXIT_FAILURE;
             }
-        }
-        for (const asharia::editor::EditorAssetCatalogDiagnostic& diagnostic :
-             snapshot.diagnostics) {
-            std::cout
-                << asharia::editor::editorAssetCatalogDiagnosticSeverityName(diagnostic.severity)
-                << ' '
-                << asharia::editor::editorAssetCatalogDiagnosticCodeName(diagnostic.code);
-            if (!diagnostic.sourcePath.empty()) {
-                std::cout << " sourcePath=" << diagnostic.sourcePath;
-            }
-            if (!diagnostic.path.empty()) {
-                std::cout << " path=" << diagnostic.path.string();
-            }
-            std::cout << " message=" << std::quoted(diagnostic.message) << '\n';
+            std::cout << *report;
+        } else {
+            std::cout << asharia::editor::writeEditorAssetCatalogSnapshotTextReport(request,
+                                                                                    snapshot);
         }
         return snapshot.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
     }
@@ -188,15 +227,19 @@ namespace {
     }
 
     void printUsage() {
-        std::cout << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
-                     "[--smoke-editor-asset-browser] [--smoke-editor-viewport] "
-                     "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger]\n"
-                     "       asharia-editor [--project <asharia.project.json>] "
-                     "[--product-manifest <products.aproducts.json>] "
-                     "[--asset-target-profile <profile>]\n"
-                     "       asharia-editor --check-project <asharia.project.json> "
-                     "[--product-manifest <products.aproducts.json>] "
-                     "[--asset-target-profile <profile>]\n";
+        std::cout
+            << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
+               "[--smoke-editor-asset-browser] [--smoke-editor-viewport] "
+               "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger]\n"
+               "       asharia-editor [--project <asharia.project.json|project-dir>] "
+               "[--product-manifest <products.aproducts.json>] "
+               "[--asset-target-profile <profile>]\n"
+               "       asharia-editor --check-project <asharia.project.json|project-dir> "
+               "[--json] [--product-manifest <products.aproducts.json>] "
+               "[--asset-target-profile <profile>]\n"
+               "       asharia-editor --check-project-json <asharia.project.json|project-dir> "
+               "[--product-manifest <products.aproducts.json>] "
+               "[--asset-target-profile <profile>]\n";
     }
 
 } // namespace
@@ -225,8 +268,7 @@ int main(int argc, char** argv) {
             if (!validateSingleSmokeArg(args, "--smoke-editor-asset-browser")) {
                 return EXIT_FAILURE;
             }
-            return asharia::editor::runEditor(
-                asharia::editor::EditorRunMode::SmokeAssetBrowser);
+            return asharia::editor::runEditor(asharia::editor::EditorRunMode::SmokeAssetBrowser);
         }
 
         if (hasArg(args, "--smoke-editor-viewport")) {
@@ -251,9 +293,8 @@ int main(int argc, char** argv) {
         }
 
         if (args.size() == 1) {
-            return asharia::editor::runEditor(
-                asharia::editor::EditorRunConfig{.mode = asharia::editor::EditorRunMode::Interactive,
-                                                 .assetCatalog = {}});
+            return asharia::editor::runEditor(asharia::editor::EditorRunConfig{
+                .mode = asharia::editor::EditorRunMode::Interactive, .assetCatalog = {}});
         }
 
         const ParsedInteractiveArgs parsed = parseInteractiveArgs(args);
@@ -263,7 +304,7 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
         if (parsed.checkProject) {
-            return checkProjectAssetCatalog(parsed.assetCatalog);
+            return checkProjectAssetCatalog(parsed.assetCatalog, parsed.checkProjectJson);
         }
 
         return asharia::editor::runEditor(

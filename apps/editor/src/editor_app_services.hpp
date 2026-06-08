@@ -6,6 +6,8 @@
 #include "editor_app_config.hpp"
 #include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
+#include "editor_asset_import_settings_command.hpp"
+#include "editor_command.hpp"
 #include "editor_event.hpp"
 #include "editor_frame_debugger.hpp"
 #include "editor_i18n.hpp"
@@ -36,6 +38,9 @@ namespace asharia::editor {
         EditorToolManager toolManager;
         EditorAssetCatalogStore assetCatalogStore;
         EditorAssetIconRegistry assetIconRegistry;
+        EditorCommandHistory commandHistory;
+        EditorAssetReimportRequestLog assetReimportRequests;
+        EditorAssetReimportPendingState assetPendingReimports;
         EditorActionServices actionServices;
     };
 

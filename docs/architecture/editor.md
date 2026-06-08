@@ -1,6 +1,6 @@
 # Editor 架构
 
-更新日期：2026-06-02
+更新日期：2026-06-08
 
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
 integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
@@ -37,9 +37,18 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 - `asharia::rhi_vulkan`
 - `asharia::renderer_basic_vulkan`
 - `asharia::archive`
+- `asharia::asset_core`
+- `asharia::asset_core_io`
+- `asharia::asset_pipeline`
+- `asharia::project_core_io`
 - `asharia::shader_slang`
 - `imgui::imgui`
 - ImGui GLFW/Vulkan backend source files from the Conan ImGui package
+
+这些依赖属于当前 `apps/editor` host executable 的集成边界。Editor app 可以组合 public project/asset/pipeline
+API 来加载项目描述、读取 `.ameta`、构造只读 catalog snapshot、生成 report 和记录 pending reimport facts；这不表示
+存在可复用的 `packages/editor-core`，也不表示 editor panel 可以拥有 importer execution、product cache writes、runtime
+asset handles 或 renderer/GPU lifetime。
 
 禁止方向：
 
@@ -64,6 +73,8 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
 | `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
 | `editor_tool_manager` | editor-local active tool state, per-viewport primary tool selection and activate/deactivate lifecycle | renderer pass policy, Vulkan resources, panel factories or persistent scene/asset mutation |
+| `editor_asset_catalog` | editor-owned read-only project catalog snapshot service, source-root/path helpers and deterministic catalog reports composed from public `project-core` / `asset-pipeline` / `asset-core` APIs | filesystem watcher, importer execution, product manifest/blob writes, runtime asset handles or GPU resources |
+| `editor_asset_import_settings_command` | undoable `.ameta` import-setting edits plus editor-owned reimport request/pending facts | import scheduling, product cache mutation, catalog truth, runtime loading or preview texture allocation |
 | `editor_asset_icon` | editor-owned Lucide icon ids, asset icon query descriptors, custom resolver registry and ImGui glyph rendering | plugin-owned SVG injection, source scanning, texture/Vulkan ownership or runtime asset loading |
 | `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、hard-coded tool layout policy |
 | `editor_panel` | panel descriptor/state、singleton panel registry、focus/open/close lifecycle | ImGui backend setup、Vulkan resource lifetime |
@@ -198,7 +209,8 @@ state directory, assigns `ImGuiIO::IniFilename` during ImGui context creation an
 This state stores editor window/docking layout only; it is not scene data, asset data or runtime configuration.
 
 `EditorWorkspaceController` owns the current editor workspace preset and transient layout reset requests. The default
-workspace describes the dock slots for Scene View, Live RG View, Frame Debugger, UI Style Preview, Editor Settings and Log.
+workspace describes the dock slots for Scene Tree, Scene View, Inspector, Live RG View, Frame Debugger, Asset Browser,
+UI Style Preview, Editor Settings and Log.
 `editor_dock_layout` is the only editor module that calls ImGui DockBuilder APIs; the shell asks it to apply the active
 workspace when no dock node exists or when `View > Reset Layout` requests a reset. This keeps future layout presets and tool
 contributions out of panel widget code.
@@ -213,7 +225,8 @@ viewport activation metadata. It does not own panel factories or invoke commands
 toolbar contributions, so future tools can shape the editor chrome without adding more hard-coded button lists to
 `imgui_editor_shell`.
 Viewport overlay contributions are queried by viewport id through `visitViewportOverlays()`. Scene View uses that query to
-draw its compact grid/gizmo/selection-outline strip over the sampled viewport while keeping overlay ids tool-owned.
+draw its compact overlay strip over the sampled viewport while keeping Grid/Gizmo/Select overlay ids tool-owned. Only Grid
+is enabled until the pending Gizmo/Select ids have real selection/provider/render bridge consumers.
 
 `EditorToolManager` owns the editor-only lifecycle state for those registered tools. It syncs from `EditorToolRegistry`,
 tracks one primary active tool per viewport, rejects activation when the tool did not declare support for that viewport,
@@ -362,19 +375,57 @@ Icon ownership stays in `editor_asset_icon`:
 - `editor_asset_catalog` composes public `project-core`, `asset-pipeline` and `asset-core` APIs into a read-only project
   snapshot for future browser wiring. It does not own watcher, hot reload, import execution, runtime loading or renderer
   resources.
+- Editor project snapshots explicitly sequence source scan, metadata discovery, source hashing and import planning instead
+  of treating `planScannedAssetImports()` as the UI contract. Missing `.ameta` sidecars and orphan sidecars are editor
+  warnings for Resource Browser visibility, while invalid roots, filesystem errors, invalid source paths and duplicate
+  source/metadata paths remain errors.
+- Source files that are scanned but do not produce a catalog source are appended as read-only `DefaultAsset` rows with
+  product state `NotTracked`. They keep only source-path/display/extension facts plus a warning diagnostic; the editor does
+  not invent a GUID, importer, product key or runtime resource for them.
 - `EditorAssetCatalogStore` selects either the deterministic fixture catalog or a loaded project snapshot before the frame
   loop. `AssetBrowserPanel` consumes the catalog rows and snapshot diagnostics through its panel context.
 - `EditorAssetCatalogStore` owns the current browser catalog view. It defaults to a deterministic fixture for development
   runs without a project and can be switched to a project snapshot at startup.
-- Interactive runs may pass `--project <asharia.project.json>`, optional `--product-manifest <products.aproducts.json>` and
-  optional `--asset-target-profile <profile>` to load a real project snapshot. `ASHARIA_EDITOR_PROJECT`, optional
+- `EditorFrameContext` passes the optional `EditorAssetCatalogSnapshot` pointer into the Asset Browser draw context. The
+  panel uses it only to display current catalog source facts such as fixture/project mode, resolved project file, resolved
+  product manifest path, target profile and source-root mappings; it does not mutate project descriptors, metadata or
+  product cache state.
+- `resolveEditorAssetCatalogSourceRoots()` and `resolveEditorAssetCatalogSourceRootForSourcePath()` expose the project
+  descriptor's asset source roots as editor/reporting facts: root name, virtual source-path prefix, authored directory and
+  resolved project-local directory. Asset Browser uses the same helper to show the loaded source roots and the selected
+  row's matched root.
+- `makeEditorAssetCatalogNavigationNodes()` builds a deterministic read-only navigation model from the same snapshot:
+  source-root nodes, virtual folder nodes, asset nodes and sub-asset nodes. The model is catalog-derived and does not
+  enumerate the filesystem or imply that sub-assets have standalone source files. Sub-asset nodes keep their own stable id
+  and asset role, so sprite slices can resolve different icon/tooling policy from the parent sprite-sheet source asset.
+- Snapshot-backed Asset Browser runs draw this navigation model as the left-to-right browser entry point: selecting
+  source-root/folder nodes updates transient folder scope, and selecting asset/sub-asset nodes selects the parent catalog
+  row for details. Sub-asset selection is kept as a local stable-id selection that drives a read-only detail section and
+  copy affordance; it does not turn the slice into an independent source file, product row or runtime asset. Fixture-backed
+  runs keep the older source-path folder controls so smoke and local UI development still work without project IO.
+- `resolveEditorAssetCatalogSourceFilePath()` and `resolveEditorAssetCatalogMetadataFilePath()` derive physical source and
+  `.ameta` paths from the loaded project descriptor and catalog row `sourcePath`. They are read-only helpers for UI/reporting
+  and do not perform filesystem discovery, import execution or cache writes.
+- Interactive runs may pass `--project <asharia.project.json|project-dir>`, optional
+  `--product-manifest <products.aproducts.json>` and optional `--asset-target-profile <profile>` to load a real project
+  snapshot. Directory input resolves to `asharia.project.json`; when no manifest is passed, the loader reads an existing
+  project-default `.aproducts` manifest beside the generated asset cache root and otherwise leaves products missing.
+  `ASHARIA_EDITOR_PROJECT`, optional
   `ASHARIA_EDITOR_PRODUCT_MANIFEST` and optional `ASHARIA_EDITOR_ASSET_TARGET_PROFILE` remain fallback/script entry points
   when CLI project options are absent. Regular editor smoke modes reject project-loading options and keep the deterministic
-  fixture path; `--smoke-editor-asset-browser` loads a temporary snapshot-backed project catalog to prove the
-  startup/frame-context route.
-- `--check-project <asharia.project.json>` runs the same read-only snapshot loader and prints row/diagnostic counts plus
+  fixture path; `--smoke-editor-asset-browser` loads a temporary snapshot-backed project catalog with material and
+  texture-profile rows to prove the startup/frame-context route.
+- `--check-project <asharia.project.json|project-dir>` runs the same read-only snapshot loader and prints row/diagnostic counts plus
   compact row/sub-asset metadata such as source path, type, importer, import profile, asset role and product state without
   opening a window or creating fixture data. It is the preferred first check for real project-path development.
+- `--check-project-json <asharia.project.json|project-dir>` and
+  `--check-project <asharia.project.json|project-dir> --json` run the same read-only path but emit deterministic JSON
+  through the repository archive facade. The JSON report is intended for real project-path review logs and automation; it
+  records resolved project/manifest paths, resolved source roots, navigation nodes, per-row matched source root and per-row
+  source/metadata file paths, and does not create fixture data, execute importers, write product cache or load runtime
+  resources. Each row and navigation node records the default resolved Lucide icon descriptor through the same icon query
+  path used by the Asset Browser panel. Programmatic callers can pass an `EditorAssetIconRegistry` to resolve report icons
+  with the same custom resolver/rule set used by the UI.
 - Built-in fallback ids use Lucide vocabulary such as `lucide.folder`, `lucide.file`, `lucide.image`, `lucide.braces`,
   `lucide.palette`, `lucide.box`, `lucide.copy`, `lucide.x`, `lucide.circle-help` and `lucide.triangle-alert`.
 - Custom providers can override by extension, asset type, importer id, diagnostic state, source path, display name, GUID,
@@ -386,10 +437,40 @@ Icon ownership stays in `editor_asset_icon`:
   should return stable tooltip keys plus fallback text, not pre-localized UI strings.
 - Custom providers are registered through `EditorAssetIconRegistry`; resolver ids can be replaced or unregistered so future
   extension reload can update icon policy without recreating panel state.
+- Empty icon ids and payload-like ids are invalid descriptor output. Rule registration rejects them, and resolver output is
+  diagnosed and ignored so the row/report falls back to the built-in Lucide descriptor.
 - Custom providers do not return raw SVG, ImGui callbacks, `ImTextureID`, Vulkan handles or renderer resources.
-- Asset Browser UI state such as filter text, folder scope, type/import-profile/product-state filters and row selection is
-  transient panel state, not asset metadata, product cache state or project descriptor state. The clear-filters icon button
-  resets only those local controls.
+- Asset Browser UI state such as filter text, folder scope, type/import-profile/product-state filters, row selection,
+  navigation selection and selected sub-asset stable id is transient panel state, not asset metadata, product cache state or
+  project descriptor state. The clear-filters icon button resets only those local controls.
+- `editor_asset_import_settings_command` owns the first narrow import-settings mutation contract. It creates undoable
+  editor commands that read and rewrite a selected source `.ameta`, recompute the canonical settings hash, and record an
+  editor-owned reimport request fact containing source GUID, source path, changed setting keys and target profile. It does
+  not execute importers, refresh the catalog, write product manifests/blobs, allocate preview textures, upload GPU
+  resources or make Asset Browser panel state persistent.
+- The same module also owns the first pending reimport coordination state. It consumes command-produced request facts and
+  coalesces them by source and target profile. Asset Browser rows can add a separate pending marker beside the catalog
+  product-state pill, and selected details can show/clear that pending state for the current source/target profile by
+  source GUID or source path, but the queue is still not product truth. Clearing pending state does not mutate `.ameta`,
+  product manifests, product blobs, cache files, runtime resources or GPU objects.
+- `EditorAssetReimportPendingState::snapshotPendingWork()` is the narrow future scheduler handoff contract. It returns a
+  deterministic, read-only value list of pending work facts, sorted changed-setting keys and request counts; it does not
+  schedule imports, refresh the catalog, invalidate products or allocate runtime resources.
+- `refreshEditorAssetCatalogStore()` is the explicit editor-owned catalog refresh contract. It rebuilds the current
+  snapshot from its original project/product-manifest/target-profile request and swaps the store view so metadata changes
+  can be reflected as catalog facts. It does not consume pending reimport state, execute importers, write product
+  manifests/blobs, mutate product cache files, allocate runtime resources or upload GPU textures.
+- The Asset Browser Import Settings section is a command producer for the current selected texture row. Its profile combo
+  edits only `texture.profile` through `EditorTransaction`, records pending reimport when the metadata changed, and leaves
+  invoking catalog refresh/import execution/product-cache writes to explicit editor/pipeline service slices.
+- After a successful metadata command, the Import Settings UI may read the current canonical `texture.profile` back from the
+  selected row's `.ameta` to keep the visible draft/baseline aligned with execute, undo and redo. This is editor metadata
+  readback only; it does not refresh `AssetCatalogView`, recompute product readiness, execute importers or change pending
+  reimport ownership.
+- The current command surface is intentionally limited to `texture.profile`. A source image file extension such as `.png`
+  remains source-format information; catalog semantics come from `.ameta` settings such as `texture2d`, `sprite-sheet`,
+  `texture-cube` and `skybox`. Sprite slices remain read-only catalog sub-assets until a later Import Settings/Inspector
+  slice owns rects, pivots, packing and atlas bake data.
 
 ### Actions 扩展
 
@@ -404,18 +485,24 @@ Action rules:
 - Keep callbacks on `EditorActionContext`; `EditorActionInvokeContext` owns event emission for
   dispatch, and broad app service bundles should not enter command handlers.
 - 未来状态修改必须通过 command/transaction services。
+- `EditorTransaction` failure paths must preserve the visible document contract: execute failure rolls back already-executed
+  commands, undo failure restores already-undone commands, and failed undo/redo keeps the transaction on its original stack.
 
 ### Input 扩展
 
-`EditorInputRouter` 是 editor host 的输入归属事实源。它当前记录 ImGui capture flags、
-Scene View hover/focus state、`sceneViewCanReceiveMouse` 和 `shortcutsEnabled`。
+`EditorInputRouter` 是 editor host 的输入归属事实源。它当前记录 ImGui capture flags、raw mouse
+drag/wheel facts、Scene View hover/focus state、`sceneViewCanReceiveMouse`、Scene View camera
+input intent 和 `shortcutsEnabled`。Scene View camera navigation consumes this snapshot instead of
+reading global ImGui/GLFW input state in the panel. Because Scene View is itself an ImGui-hosted viewport,
+global `imguiWantsMouse` remains a recorded fact; local camera ownership is derived from the Scene View
+viewport hover/focus report, overlay exclusion and text-input capture.
 
 `EditorShortcutRouter` 消费 input router snapshot。它只在 `shortcutsEnabled` 为 true 时把
 registered action shortcuts 转为 ImGui key chord，并调用 `EditorActionRegistry::invoke()`。
 菜单、快捷键和未来 command palette 必须共享 action id，不要各自实现命令语义。
 
-后续 viewport camera、gizmo 和 selection picking 也应先消费 input router snapshot，不要在各自模块里
-重新读取全局 ImGui/GLFW 状态。
+后续 gizmo 和 selection picking 也应先消费 input router snapshot，不要在各自模块里重新读取全局
+ImGui/GLFW 状态。
 
 ### Viewports 扩展
 
@@ -423,10 +510,11 @@ Add new viewport consumers through `EditorViewportKind` and the `EditorViewportP
 Game View and Preview View should share renderer/RHI caches but own view-local request state.
 
 `EditorViewportOverlayFlags` currently carries grid、transform gizmo、wire、selection outline、debug overlay and debug gizmo intent.
-The Scene View panel owns the current grid, transform gizmo and selection-outline toggle state through its viewport overlay
-strip and submits those flags with each on-demand request. `EditorViewportCoordinator` strips Scene-only authoring flags from
-Game/Preview requests, but Game View may retain explicitly requested debug overlay/debug gizmo flags for future runtime
-diagnostics.
+Only Grid is enabled in the Scene View overlay strip today. Transform Gizmo and Select / selection-outline contributions keep
+their stable ids, but the controls are disabled and marked pending until `SelectionSet`, gizmo provider data and renderer
+bridge work exist. `EditorViewportCoordinator` strips pending Scene authoring flags from the effective Scene View request
+and strips Scene-only authoring flags from Game/Preview requests, while Game View may retain explicitly requested debug
+overlay/debug gizmo flags for future runtime diagnostics.
 
 Game View 不能隐式包含 grid、transform gizmo、wire overlay、selection outline 这类 Scene View authoring pass；如果用户需要在 Game View 里看 runtime debug gizmo，必须通过明确的 debug overlay/debug gizmo flag 进入 graph。
 
@@ -488,16 +576,20 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-re
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 ```
 
-`--smoke-editor-viewport` also validates Scene View flag defaults, verifies that Scene-only authoring flags are cleared from
-Game/Preview, verifies that Game View can retain explicit debug overlay/debug gizmo intent, verifies that a flagged Scene View
-texture is rendered and acquired back through the panel-facing texture result, and checks that the recorded RenderView exposes
-a view-local diagnostics snapshot. It also validates the editor-only Scene View camera bridge, center viewport unproject ray,
+`--smoke-editor-viewport` also validates Scene View flag defaults, verifies that pending Gizmo/Select authoring flags are
+cleared from effective Scene View diagnostics, verifies that Scene-only authoring flags are cleared from Game/Preview,
+verifies that Game View can retain explicit debug overlay/debug gizmo intent, verifies that a flagged Scene View texture is
+rendered and acquired back through the panel-facing texture result, and checks that the recorded RenderView exposes a
+view-local diagnostics snapshot. It also validates the editor-only Scene View camera bridge, center viewport unproject ray,
 near-plane origin, viewport corner orientation, invalid matrix rejection and resize aspect handling. It also verifies idle
 Scene View on-demand reuse by checking that UI frames can reuse the last completed texture without incrementing
 `viewportFramesRendered` every frame.
 `--smoke-editor-asset-browser` validates that editor startup can load a snapshot-backed project catalog into
 `EditorAssetCatalogStore`, route catalog rows and diagnostics through the frame context, and present a clean
-`AssetCatalogView` without direct panel-side scanning, import execution, product cache writes or runtime loading.
+`AssetCatalogView` without direct panel-side scanning, import execution, product cache writes or runtime loading. It also
+seeds an editor-owned pending reimport marker from the temporary texture-profile row and verifies that the frame path
+reports one reimport request, one pending reimport entry and one matching pending catalog row without treating that state
+as product truth.
 `--smoke-editor-frame-debugger` validates the editor-controlled `Running -> CaptureRequested -> CapturingFrame ->
 WaitingGpuFence -> PausedFrameDebug -> Resume -> Running` flow. While waiting/paused, the editor keeps ImGui rendering alive
 but skips normal RenderView recording, so the captured render inputs and diagnostics snapshot stay frozen until Resume. The
@@ -508,10 +600,12 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 
 ## 当前缺口
 
-- Selection, transaction, dirty state, inspector, writable asset operations and richer asset browser workflows are blocked on
+- Scene Tree and Inspector now exist as read-only shell panels in the default workbench. Real selection, transaction,
+  dirty state, inspector data model, writable asset operations and richer asset browser workflows are still blocked on
   scene/asset/schema ownership becoming concrete enough.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
-  renderer-side view pass work. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
+  renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
+  bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
   camera-height LOD/fade, source overlay diagnostics, Frame Debug replay preservation and a `sceneGrid` settings bridge
   for plane, spacing, fade, opacity and color. The Scene grid overlay contribution declares the same built-in default used by
   settings bootstrap, and Editor Settings consumes built-in category contributions for the left-nav/right-content General

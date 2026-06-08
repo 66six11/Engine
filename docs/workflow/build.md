@@ -91,9 +91,12 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe execute
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
+powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 ```
 
 - `check-text-encoding.ps1` 验证 C/C++ 源码 UTF-8 with BOM、其他文本 UTF-8 without BOM。
 - `check-doc-sync.ps1` 在 code/build/tooling 变更缺少文档同步时失败；临时验证未跟踪文件时可加 `-IncludeUntracked`。
+- `check-asset-boundaries.ps1` 验证 `asset-core` 没有重新引入 texture profile/importer 解释或 `asset-pipeline`
+  依赖。
 - `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。

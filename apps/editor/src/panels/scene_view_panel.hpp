@@ -4,6 +4,8 @@
 
 namespace asharia::editor {
 
+    struct EditorInputSnapshot;
+
     class SceneViewPanel final : public ImGuiSceneViewEditorPanel {
     public:
         [[nodiscard]] const EditorPanelDesc& desc() const override;
@@ -13,7 +15,8 @@ namespace asharia::editor {
         void drawSceneViewPanel(EditorSceneViewPanelDrawContext& context,
                                 EditorPanelState& state) override;
         void updateCameraForViewportExtent(EditorExtent2D viewportExtent);
-        [[nodiscard]] bool handleCameraNavigation(EditorExtent2D viewportExtent);
+        [[nodiscard]] bool handleCameraNavigation(EditorExtent2D viewportExtent,
+                                                  const EditorInputSnapshot& input);
 
         EditorViewportOverlayFlags overlayFlags_{defaultEditorSceneViewOverlayFlags()};
         EditorViewportCamera camera_;

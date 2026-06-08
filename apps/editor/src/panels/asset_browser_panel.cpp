@@ -5,15 +5,23 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <imgui.h>
+#include <memory>
+#include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "asharia/asset_core/asset_catalog_view.hpp"
+#include "asharia/asset_core/asset_guid.hpp"
+#include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 
 #include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
+#include "editor_asset_import_settings_command.hpp"
+#include "editor_command.hpp"
 #include "editor_i18n.hpp"
 #include "editor_ui.hpp"
 
@@ -71,6 +79,17 @@ namespace {
         std::string* selectedImportProfileFilter{};
         std::string* selectedProductStateFilter{};
         std::string* selectedAssetKey{};
+        std::string* selectedSubAssetStableId{};
+    };
+
+    struct AssetBrowserNavigationTreeState {
+        std::string* selectedFolderScope{};
+        std::string* selectedAssetTypeFilter{};
+        std::string* selectedImportProfileFilter{};
+        std::string* selectedProductStateFilter{};
+        std::string* selectedAssetKey{};
+        std::string* selectedNavigationKey{};
+        std::string* selectedSubAssetStableId{};
     };
 
     struct AssetBrowserImportProfileFilterQuery {
@@ -89,6 +108,49 @@ namespace {
         std::string_view stableId;
         std::string_view tooltipKey;
         std::string_view tooltipFallback;
+    };
+
+    struct AssetBrowserRowsState {
+        std::string* selectedAssetKey{};
+        std::string* selectedNavigationKey{};
+        std::string* selectedSubAssetStableId{};
+    };
+
+    struct AssetBrowserImportSettingsUiState {
+        std::string* selectionKey{};
+        std::string* textureProfileDraft{};
+        std::string* textureProfileBaseline{};
+        std::string* message{};
+        bool* messageIsError{};
+    };
+
+    struct AssetBrowserTextureProfileOption {
+        std::string_view value;
+        std::string_view textKey;
+        std::string_view fallback;
+    };
+
+    constexpr std::array<AssetBrowserTextureProfileOption, 4> kTextureProfileOptions{
+        AssetBrowserTextureProfileOption{
+            .value = asharia::asset::kTextureImportProfileTexture2D,
+            .textKey = "assetBrowser.importSettings.profile.texture2d",
+            .fallback = "Texture2D",
+        },
+        AssetBrowserTextureProfileOption{
+            .value = asharia::asset::kTextureImportProfileSpriteSheet,
+            .textKey = "assetBrowser.importSettings.profile.spriteSheet",
+            .fallback = "Sprite Sheet",
+        },
+        AssetBrowserTextureProfileOption{
+            .value = asharia::asset::kTextureImportProfileTextureCube,
+            .textKey = "assetBrowser.importSettings.profile.textureCube",
+            .fallback = "Texture Cube",
+        },
+        AssetBrowserTextureProfileOption{
+            .value = asharia::asset::kTextureImportProfileSkybox,
+            .textKey = "assetBrowser.importSettings.profile.skybox",
+            .fallback = "Skybox",
+        },
     };
 
     struct AssetBrowserTextCompareQuery {
@@ -118,6 +180,11 @@ namespace {
 
     void text(std::string_view value) {
         ImGui::TextUnformatted(value.data(), value.data() + value.size());
+    }
+
+    [[nodiscard]] std::string pathUtf8String(const std::filesystem::path& path) {
+        const std::u8string value = path.generic_u8string();
+        return std::string{value.begin(), value.end()};
     }
 
     [[nodiscard]] std::string_view textOrDash(const std::string& value) {
@@ -232,6 +299,14 @@ namespace {
             return scope;
         }
         return scope.substr(slash + 1U);
+    }
+
+    [[nodiscard]] std::string_view folderScopeForSourcePath(std::string_view sourcePath) {
+        const std::size_t slash = sourcePath.find_last_of('/');
+        if (slash == std::string_view::npos) {
+            return {};
+        }
+        return sourcePath.substr(0U, slash);
     }
 
     [[nodiscard]] std::vector<std::string> folderBreadcrumbScopes(std::string_view folderScope) {
@@ -595,6 +670,20 @@ namespace {
         return firstVisible;
     }
 
+    [[nodiscard]] const asharia::asset::AssetCatalogSubAssetViewEntry*
+    findSubAssetByStableId(const asharia::asset::AssetCatalogViewEntry& row,
+                           std::string_view stableId) {
+        if (stableId.empty()) {
+            return nullptr;
+        }
+        const auto found = std::ranges::find_if(
+            row.subAssets,
+            [stableId](const asharia::asset::AssetCatalogSubAssetViewEntry& subAsset) {
+                return subAsset.stableId == stableId;
+            });
+        return found == row.subAssets.end() ? nullptr : &*found;
+    }
+
     [[nodiscard]] AssetBrowserSummary
     summarizeVisibleRows(const asharia::asset::AssetCatalogView& catalogView,
                          AssetBrowserVisibilityQuery query) {
@@ -624,39 +713,6 @@ namespace {
             }
         }
         return summary;
-    }
-
-    [[nodiscard]] asharia::editor::EditorAssetIconDiagnosticState
-    diagnosticStateForRow(const asharia::asset::AssetCatalogViewEntry& row) {
-        switch (row.productState) {
-        case asharia::asset::AssetCatalogProductState::MissingProduct:
-            return asharia::editor::EditorAssetIconDiagnosticState::Missing;
-        case asharia::asset::AssetCatalogProductState::StaleProduct:
-            return asharia::editor::EditorAssetIconDiagnosticState::Warning;
-        case asharia::asset::AssetCatalogProductState::InvalidProduct:
-            return asharia::editor::EditorAssetIconDiagnosticState::Invalid;
-        case asharia::asset::AssetCatalogProductState::NotTracked:
-        case asharia::asset::AssetCatalogProductState::Ready:
-            return asharia::editor::EditorAssetIconDiagnosticState::None;
-        }
-        return asharia::editor::EditorAssetIconDiagnosticState::None;
-    }
-
-    [[nodiscard]] asharia::editor::EditorAssetIconQuery
-    iconQueryForRow(const asharia::asset::AssetCatalogViewEntry& row) {
-        return asharia::editor::EditorAssetIconQuery{
-            .folder = false,
-            .assetType = row.assetTypeName,
-            .importerId = row.importerName,
-            .extension = row.extension,
-            .diagnostic = diagnosticStateForRow(row),
-            .sourcePath = row.sourcePath,
-            .displayName = row.displayName,
-            .guidText = row.guidText,
-            .importProfile = row.importProfileName,
-            .assetRole = row.assetRoleName,
-            .subAssetCount = row.subAssets.size(),
-        };
     }
 
     [[nodiscard]] asharia::editor::EditorUiTone
@@ -763,6 +819,75 @@ namespace {
         })};
     }
 
+    [[nodiscard]] std::string
+    targetProfileForSnapshot(const asharia::editor::EditorAssetBrowserPanelDrawContext& context) {
+        if (context.catalogSnapshot != nullptr && !context.catalogSnapshot->targetProfile.empty()) {
+            return context.catalogSnapshot->targetProfile;
+        }
+        return "editor-preview";
+    }
+
+    [[nodiscard]] std::string textureProfileLabel(const asharia::editor::EditorI18n& i18n,
+                                                  std::string_view profile) {
+        for (const AssetBrowserTextureProfileOption& option : kTextureProfileOptions) {
+            if (option.value == profile) {
+                return textValue(i18n, option.textKey, option.fallback);
+            }
+        }
+        return profile.empty() ? std::string{"-"} : std::string{profile};
+    }
+
+    [[nodiscard]] asharia::asset::AssetGuid
+    parseRowGuid(const asharia::asset::AssetCatalogViewEntry& row) {
+        if (row.guidText.empty()) {
+            return {};
+        }
+        auto parsed = asharia::asset::parseAssetGuid(row.guidText);
+        return parsed ? *parsed : asharia::asset::AssetGuid{};
+    }
+
+    [[nodiscard]] const asharia::editor::EditorAssetPendingReimport*
+    findPendingReimportForRow(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                              const asharia::asset::AssetCatalogViewEntry& row) {
+        return context.pendingReimports.findPending(asharia::editor::EditorAssetReimportSourceKey{
+            .guid = parseRowGuid(row),
+            .sourcePath = row.sourcePath,
+            .targetProfile = targetProfileForSnapshot(context),
+        });
+    }
+
+    [[nodiscard]] std::size_t
+    recordNewPendingRequests(asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                             std::size_t oldRequestCount) {
+        const std::vector<asharia::editor::EditorAssetReimportRequest>& requests =
+            context.reimportRequests.requests();
+        if (oldRequestCount >= requests.size()) {
+            return 0U;
+        }
+
+        const std::span<const asharia::editor::EditorAssetReimportRequest> allRequests{requests};
+        const std::span<const asharia::editor::EditorAssetReimportRequest> newRequests =
+            allRequests.subspan(oldRequestCount);
+        context.pendingReimports.recordAll(newRequests);
+        return newRequests.size();
+    }
+
+    [[nodiscard]] bool
+    isTextureImportSettingsRow(const asharia::asset::AssetCatalogViewEntry& row) {
+        return !row.importProfileName.empty() && !row.sourcePath.empty() && !row.guidText.empty();
+    }
+
+    [[nodiscard]] std::string joinChangedSettingKeys(std::span<const std::string> keys) {
+        std::string joined;
+        for (const std::string& key : keys) {
+            if (!joined.empty()) {
+                joined += ", ";
+            }
+            joined += key;
+        }
+        return joined;
+    }
+
     [[nodiscard]] asharia::editor::EditorIconDescriptor
     localizedIconDescriptor(const asharia::editor::EditorI18n& i18n,
                             asharia::editor::EditorIconDescriptor descriptor) {
@@ -801,11 +926,74 @@ namespace {
         firstPill = false;
     }
 
+    void drawAssetRowStatePills(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                                const asharia::asset::AssetCatalogViewEntry& row) {
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const std::string productStateLabel{i18n.text(asharia::editor::EditorI18nTextQuery{
+            .key = stateTextKey(row.productState),
+            .fallback = stateFallback(row.productState),
+        })};
+        const asharia::editor::EditorAssetPendingReimport* pending =
+            findPendingReimportForRow(context, row);
+        const std::string pendingLabel =
+            textValue(i18n, "assetBrowser.state.pendingReimport", "pending");
+        const float contentWidth = ImGui::GetContentRegionAvail().x;
+        const float combinedWidth = statusPillWidth(productStateLabel) +
+                                    ImGui::GetStyle().ItemSpacing.x +
+                                    (pending == nullptr ? 0.0F : statusPillWidth(pendingLabel));
+
+        asharia::editor::drawEditorUiStatusPill(productStateLabel, toneForState(row.productState));
+        if (pending == nullptr) {
+            return;
+        }
+
+        if (combinedWidth <= contentWidth) {
+            ImGui::SameLine();
+        }
+        asharia::editor::drawEditorUiStatusPill(pendingLabel,
+                                                asharia::editor::EditorUiTone::Warning);
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            text(textValue(i18n, "assetBrowser.importSettings.pending", "Pending reimport"));
+            text(countLabel(i18n, "assetBrowser.importSettings.requests", "Requests",
+                            pending->requestCount));
+            if (!pending->request.targetProfile.empty()) {
+                text(pending->request.targetProfile);
+            }
+            const std::string changedSettings =
+                joinChangedSettingKeys(pending->request.changedSettingKeys);
+            if (!changedSettings.empty()) {
+                text(changedSettings);
+            }
+            ImGui::EndTooltip();
+        }
+    }
+
     void drawAssetRowIcon(const asharia::editor::EditorAssetIconRegistry& icons,
                           const asharia::editor::EditorI18n& i18n,
                           const asharia::asset::AssetCatalogViewEntry& row) {
+        const asharia::editor::EditorIconDescriptor descriptor = localizedIconDescriptor(
+            i18n, icons.resolveAssetIcon(asharia::editor::makeEditorAssetIconQuery(row)));
+        asharia::editor::drawEditorIconGlyph(descriptor, 16.0F);
+    }
+
+    [[nodiscard]] asharia::editor::EditorAssetIconQuery
+    subAssetIconQuery(const asharia::asset::AssetCatalogViewEntry& row,
+                      const asharia::asset::AssetCatalogSubAssetViewEntry& subAsset) {
+        asharia::editor::EditorAssetIconQuery query =
+            asharia::editor::makeEditorAssetIconQuery(row);
+        query.displayName = subAsset.displayName;
+        query.assetRole = subAsset.assetRoleName;
+        query.subAssetCount = 0U;
+        return query;
+    }
+
+    void drawSubAssetIcon(const asharia::editor::EditorAssetIconRegistry& icons,
+                          const asharia::editor::EditorI18n& i18n,
+                          const asharia::asset::AssetCatalogViewEntry& row,
+                          const asharia::asset::AssetCatalogSubAssetViewEntry& subAsset) {
         const asharia::editor::EditorIconDescriptor descriptor =
-            localizedIconDescriptor(i18n, icons.resolveAssetIcon(iconQueryForRow(row)));
+            localizedIconDescriptor(i18n, icons.resolveAssetIcon(subAssetIconQuery(row, subAsset)));
         asharia::editor::drawEditorIconGlyph(descriptor, 16.0F);
     }
 
@@ -818,10 +1006,46 @@ namespace {
         asharia::editor::drawEditorIconGlyph(descriptor, 16.0F);
     }
 
+    [[nodiscard]] asharia::editor::EditorAssetIconQuery
+    navigationNodeIconQuery(const asharia::editor::EditorAssetCatalogNavigationNode& node) {
+        const bool folderNode =
+            node.kind == asharia::editor::EditorAssetCatalogNavigationNodeKind::SourceRoot ||
+            node.kind == asharia::editor::EditorAssetCatalogNavigationNodeKind::Folder;
+        return asharia::editor::EditorAssetIconQuery{
+            .folder = folderNode,
+            .assetType = node.assetTypeName,
+            .importerId = node.importerName,
+            .extension = node.extension,
+            .diagnostic =
+                asharia::editor::editorAssetIconDiagnosticStateForProductState(node.productState),
+            .sourcePath = node.sourcePath.empty() ? node.scopePath : node.sourcePath,
+            .displayName = node.displayName,
+            .guidText = node.guidText,
+            .importProfile = node.importProfileName,
+            .assetRole = node.assetRoleName,
+            .subAssetCount = node.subAssetCount,
+        };
+    }
+
+    void drawNavigationNodeIcon(const asharia::editor::EditorAssetIconRegistry& icons,
+                                const asharia::editor::EditorI18n& i18n,
+                                const asharia::editor::EditorAssetCatalogNavigationNode& node) {
+        const asharia::editor::EditorIconDescriptor descriptor =
+            localizedIconDescriptor(i18n, icons.resolveAssetIcon(navigationNodeIconQuery(node)));
+        asharia::editor::drawEditorIconGlyph(descriptor, 16.0F);
+    }
+
     void drawAssetBrowserSummary(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
                                  AssetBrowserVisibilityQuery query) {
         const asharia::editor::EditorI18n& i18n = context.ui.i18n;
         const AssetBrowserSummary summary = summarizeVisibleRows(context.catalogView, query);
+        std::size_t pendingRows = 0U;
+        for (const asharia::asset::AssetCatalogViewEntry& row : context.catalogView.entries) {
+            if (rowMatchesVisibility(row, query) &&
+                findPendingReimportForRow(context, row) != nullptr) {
+                ++pendingRows;
+            }
+        }
         bool firstPill = true;
 
         const std::string visible = visibleCountLabel(i18n, summary);
@@ -855,6 +1079,122 @@ namespace {
                            summary.rowDiagnostics + context.catalogDiagnostics.size());
             drawWrappedStatusPill(diagnostics, asharia::editor::EditorUiTone::Info, firstPill);
         }
+
+        if (pendingRows != 0U) {
+            const std::string pending = countLabel(i18n, "assetBrowser.summary.pendingReimport",
+                                                   "Pending reimport", pendingRows);
+            drawWrappedStatusPill(pending, asharia::editor::EditorUiTone::Warning, firstPill);
+        }
+    }
+
+    void drawAssetBrowserCatalogSource(
+        const asharia::editor::EditorAssetBrowserPanelDrawContext& context) {
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const std::string header = textValue(i18n, "assetBrowser.catalogSource", "Catalog Source");
+        asharia::editor::drawEditorUiSectionHeader(header);
+
+        if (context.catalogSnapshot == nullptr) {
+            asharia::editor::drawEditorUiStatusPill(
+                textValue(i18n, "assetBrowser.catalogSource.fixture", "Fixture catalog"),
+                asharia::editor::EditorUiTone::Muted);
+            return;
+        }
+
+        const asharia::editor::EditorAssetCatalogSnapshot& snapshot = *context.catalogSnapshot;
+        asharia::editor::drawEditorUiStatusPill(
+            textValue(i18n, "assetBrowser.catalogSource.project", "Project snapshot"),
+            asharia::editor::EditorUiTone::Info);
+        ImGui::SameLine();
+        asharia::editor::drawEditorUiStatusPill(
+            snapshot.productManifestFile.empty()
+                ? textValue(i18n, "assetBrowser.catalogSource.noManifest", "No product manifest")
+                : textValue(i18n, "assetBrowser.catalogSource.manifest", "Product manifest"),
+            snapshot.productManifestFile.empty() ? asharia::editor::EditorUiTone::Warning
+                                                 : asharia::editor::EditorUiTone::Success);
+
+        const std::string projectNameLabel =
+            textValue(i18n, "assetBrowser.catalogSource.projectName", "Project");
+        const std::string projectFileLabel =
+            textValue(i18n, "assetBrowser.catalogSource.projectFile", "Project File");
+        const std::string manifestLabel =
+            textValue(i18n, "assetBrowser.catalogSource.productManifest", "Product Manifest");
+        const std::string targetProfileLabel =
+            textValue(i18n, "assetBrowser.catalogSource.targetProfile", "Target Profile");
+        const std::string sourceRootsLabel =
+            textValue(i18n, "assetBrowser.catalogSource.sourceRoots", "Source Roots");
+        const std::string noManifestValue =
+            textValue(i18n, "assetBrowser.catalogSource.none", "None");
+        const std::string projectFileValue = pathUtf8String(snapshot.projectFile);
+        const std::string productManifestValue = snapshot.productManifestFile.empty()
+                                                     ? noManifestValue
+                                                     : pathUtf8String(snapshot.productManifestFile);
+        const std::string sourceRootsValue =
+            std::to_string(snapshot.project.assetSourceRoots.size());
+
+        if (asharia::editor::beginEditorUiPropertyTable("asset-browser-catalog-source", 128.0F)) {
+            asharia::editor::drawEditorUiProperty(asharia::editor::EditorUiProperty{
+                .label = std::string_view{projectNameLabel},
+                .value = textOrDash(snapshot.project.projectName)});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{projectFileLabel},
+                                                  .value = textOrDash(projectFileValue)});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{manifestLabel},
+                                                  .value = std::string_view{productManifestValue}});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{targetProfileLabel},
+                                                  .value = textOrDash(snapshot.targetProfile)});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{sourceRootsLabel},
+                                                  .value = std::string_view{sourceRootsValue}});
+            asharia::editor::endEditorUiPropertyTable();
+        }
+
+        const std::vector<asharia::editor::EditorAssetCatalogResolvedSourceRoot> sourceRoots =
+            asharia::editor::resolveEditorAssetCatalogSourceRoots(snapshot);
+        if (sourceRoots.empty()) {
+            return;
+        }
+
+        const std::string sourceRootNameColumn =
+            textValue(i18n, "assetBrowser.catalogSource.rootName", "Root");
+        const std::string sourceRootPrefixColumn =
+            textValue(i18n, "assetBrowser.catalogSource.rootPrefix", "Prefix");
+        const std::string sourceRootDirectoryColumn =
+            textValue(i18n, "assetBrowser.catalogSource.rootDirectory", "Directory");
+        if (!ImGui::BeginTable("asset-browser-source-roots", 3,
+                               ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                                   ImGuiTableFlags_SizingStretchProp)) {
+            return;
+        }
+        ImGui::TableSetupColumn(sourceRootNameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch,
+                                0.24F, ImGui::GetID("asset-browser-source-root-name-column"));
+        ImGui::TableSetupColumn(sourceRootPrefixColumn.c_str(), ImGuiTableColumnFlags_WidthStretch,
+                                0.24F, ImGui::GetID("asset-browser-source-root-prefix-column"));
+        ImGui::TableSetupColumn(sourceRootDirectoryColumn.c_str(),
+                                ImGuiTableColumnFlags_WidthStretch, 0.52F,
+                                ImGui::GetID("asset-browser-source-root-directory-column"));
+        ImGui::TableHeadersRow();
+
+        for (const asharia::editor::EditorAssetCatalogResolvedSourceRoot& root : sourceRoots) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            drawFolderIcon(context.icons, i18n);
+            ImGui::SameLine();
+            text(root.rootName.empty() ? "-" : root.rootName);
+            ImGui::TableSetColumnIndex(1);
+            text(root.sourcePathPrefix.empty() ? "-" : root.sourcePathPrefix);
+            ImGui::TableSetColumnIndex(2);
+            const std::string resolvedDirectory = pathUtf8String(root.resolvedDirectory);
+            text(resolvedDirectory.empty() ? "-" : resolvedDirectory);
+            if (ImGui::IsItemHovered() && !root.directory.empty()) {
+                ImGui::BeginTooltip();
+                text(pathUtf8String(root.directory));
+                ImGui::EndTooltip();
+            }
+        }
+
+        ImGui::EndTable();
     }
 
     void selectFolderScope(AssetBrowserFolderScopeState state, std::string_view folderScope) {
@@ -867,6 +1207,178 @@ namespace {
         state.selectedImportProfileFilter->clear();
         state.selectedProductStateFilter->clear();
         state.selectedAssetKey->clear();
+        if (state.selectedSubAssetStableId != nullptr) {
+            state.selectedSubAssetStableId->clear();
+        }
+    }
+
+    [[nodiscard]] std::string_view assetSelectionKeyForNavigationNode(
+        const asharia::editor::EditorAssetCatalogNavigationNode& node) {
+        if (!node.guidText.empty()) {
+            return node.guidText;
+        }
+        if (!node.sourcePath.empty()) {
+            return node.sourcePath;
+        }
+        return node.displayName;
+    }
+
+    void selectNavigationNode(AssetBrowserNavigationTreeState state,
+                              const asharia::editor::EditorAssetCatalogNavigationNode& node) {
+        state.selectedNavigationKey->assign(node.key);
+
+        switch (node.kind) {
+        case asharia::editor::EditorAssetCatalogNavigationNodeKind::SourceRoot:
+        case asharia::editor::EditorAssetCatalogNavigationNodeKind::Folder:
+            selectFolderScope(
+                AssetBrowserFolderScopeState{
+                    .selectedFolderScope = state.selectedFolderScope,
+                    .selectedAssetTypeFilter = state.selectedAssetTypeFilter,
+                    .selectedImportProfileFilter = state.selectedImportProfileFilter,
+                    .selectedProductStateFilter = state.selectedProductStateFilter,
+                    .selectedAssetKey = state.selectedAssetKey,
+                    .selectedSubAssetStableId = state.selectedSubAssetStableId,
+                },
+                node.scopePath);
+            return;
+        case asharia::editor::EditorAssetCatalogNavigationNodeKind::Asset:
+        case asharia::editor::EditorAssetCatalogNavigationNodeKind::SubAsset: {
+            const std::string_view folderScope = folderScopeForSourcePath(node.sourcePath);
+            state.selectedFolderScope->assign(folderScope.data(), folderScope.size());
+            state.selectedAssetTypeFilter->clear();
+            state.selectedImportProfileFilter->clear();
+            state.selectedProductStateFilter->clear();
+            const std::string_view assetSelectionKey = assetSelectionKeyForNavigationNode(node);
+            state.selectedAssetKey->assign(assetSelectionKey.data(), assetSelectionKey.size());
+            if (state.selectedSubAssetStableId == nullptr) {
+                return;
+            }
+            if (node.kind == asharia::editor::EditorAssetCatalogNavigationNodeKind::SubAsset) {
+                state.selectedSubAssetStableId->assign(node.stableId);
+            } else {
+                state.selectedSubAssetStableId->clear();
+            }
+            return;
+        }
+        }
+    }
+
+    [[nodiscard]] bool navigationNodeHasChildren(
+        std::span<const asharia::editor::EditorAssetCatalogNavigationNode> nodes,
+        std::string_view parentKey) {
+        return std::ranges::any_of(
+            nodes, [parentKey](const asharia::editor::EditorAssetCatalogNavigationNode& candidate) {
+                return candidate.parentKey == parentKey;
+            });
+    }
+
+    void
+    drawNavigationTreeNode(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                           std::span<const asharia::editor::EditorAssetCatalogNavigationNode> nodes,
+                           const asharia::editor::EditorAssetCatalogNavigationNode& node,
+                           AssetBrowserNavigationTreeState state) {
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const bool hasChildren = navigationNodeHasChildren(nodes, node.key);
+        const bool selected = *state.selectedNavigationKey == node.key;
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                   ImGuiTreeNodeFlags_SpanAvailWidth |
+                                   ImGuiTreeNodeFlags_DefaultOpen;
+        if (!hasChildren) {
+            flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+        }
+
+        ImGui::PushID(node.key.c_str());
+        const bool open = ImGui::TreeNodeEx("##asset-browser-navigation-node", flags);
+        ImGui::SameLine();
+        drawNavigationNodeIcon(context.icons, i18n, node);
+        ImGui::SameLine();
+        std::string label = node.displayName.empty() ? node.key : node.displayName;
+        label += "###asset-browser-navigation-label";
+        if (ImGui::Selectable(label.c_str(), selected)) {
+            selectNavigationNode(state, node);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            text(node.sourcePath.empty() ? node.scopePath : node.sourcePath);
+            if (!node.stableId.empty()) {
+                text(node.stableId);
+            }
+            ImGui::EndTooltip();
+        }
+
+        if (hasChildren && open) {
+            for (const asharia::editor::EditorAssetCatalogNavigationNode& child : nodes) {
+                if (child.parentKey == node.key) {
+                    drawNavigationTreeNode(context, nodes, child, state);
+                }
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+
+    void
+    drawNavigationTreeControls(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                               AssetBrowserNavigationTreeState state) {
+        if (context.catalogSnapshot == nullptr) {
+            return;
+        }
+
+        const std::vector<asharia::editor::EditorAssetCatalogNavigationNode> nodes =
+            asharia::editor::makeEditorAssetCatalogNavigationNodes(*context.catalogSnapshot);
+        if (nodes.empty()) {
+            state.selectedNavigationKey->clear();
+            return;
+        }
+
+        if (!state.selectedNavigationKey->empty() &&
+            !std::ranges::any_of(
+                nodes, [state](const asharia::editor::EditorAssetCatalogNavigationNode& node) {
+                    return node.key == *state.selectedNavigationKey;
+                })) {
+            state.selectedNavigationKey->clear();
+            if (state.selectedSubAssetStableId != nullptr) {
+                state.selectedSubAssetStableId->clear();
+            }
+        }
+
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const std::string header = textValue(i18n, "assetBrowser.navigation", "Navigation");
+        asharia::editor::drawEditorUiSectionHeader(header);
+
+        const std::string allLabel = textValue(i18n, "assetBrowser.scope.all", "All");
+        std::string allButtonLabel = allLabel;
+        allButtonLabel += "###asset-browser-navigation-all";
+        if (ImGui::SmallButton(allButtonLabel.c_str())) {
+            selectFolderScope(
+                AssetBrowserFolderScopeState{
+                    .selectedFolderScope = state.selectedFolderScope,
+                    .selectedAssetTypeFilter = state.selectedAssetTypeFilter,
+                    .selectedImportProfileFilter = state.selectedImportProfileFilter,
+                    .selectedProductStateFilter = state.selectedProductStateFilter,
+                    .selectedAssetKey = state.selectedAssetKey,
+                    .selectedSubAssetStableId = state.selectedSubAssetStableId,
+                },
+                {});
+            state.selectedNavigationKey->clear();
+            if (state.selectedSubAssetStableId != nullptr) {
+                state.selectedSubAssetStableId->clear();
+            }
+        }
+
+        const float treeHeight =
+            std::min(220.0F, std::max(120.0F, ImGui::GetTextLineHeight() * 9.0F));
+        if (!ImGui::BeginChild("asset-browser-navigation-tree", ImVec2{0.0F, treeHeight}, 0,
+                               ImGuiWindowFlags_HorizontalScrollbar)) {
+            ImGui::EndChild();
+            return;
+        }
+        for (const asharia::editor::EditorAssetCatalogNavigationNode& node : nodes) {
+            if (node.parentKey.empty()) {
+                drawNavigationTreeNode(context, nodes, node, state);
+            }
+        }
+        ImGui::EndChild();
     }
 
     void drawFolderScopeControls(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
@@ -932,12 +1444,11 @@ namespace {
         }
     }
 
-    void
-    drawAssetTypeFilterControl(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
-                               std::string_view folderScope, std::string& selectedAssetTypeFilter,
-                               std::string& selectedImportProfileFilter,
-                               std::string& selectedProductStateFilter,
-                               std::string& selectedAssetKey) {
+    void drawAssetTypeFilterControl(
+        const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+        std::string_view folderScope, std::string& selectedAssetTypeFilter,
+        std::string& selectedImportProfileFilter, std::string& selectedProductStateFilter,
+        std::string& selectedAssetKey, std::string& selectedSubAssetStableId) {
         const asharia::editor::EditorI18n& i18n = context.ui.i18n;
         const std::string comboLabel = label(i18n, "assetBrowser.filter.assetType",
                                              "asset-browser-asset-type-filter", "Asset Type");
@@ -956,6 +1467,7 @@ namespace {
                 selectedImportProfileFilter.clear();
                 selectedProductStateFilter.clear();
                 selectedAssetKey.clear();
+                selectedSubAssetStableId.clear();
             }
             if (allSelected) {
                 ImGui::SetItemDefaultFocus();
@@ -971,6 +1483,7 @@ namespace {
                     selectedImportProfileFilter.clear();
                     selectedProductStateFilter.clear();
                     selectedAssetKey.clear();
+                    selectedSubAssetStableId.clear();
                 }
                 if (selected) {
                     ImGui::SetItemDefaultFocus();
@@ -983,7 +1496,8 @@ namespace {
     void drawImportProfileFilterControl(
         const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
         AssetBrowserImportProfileFilterQuery query, std::string& selectedImportProfileFilter,
-        std::string& selectedProductStateFilter, std::string& selectedAssetKey) {
+        std::string& selectedProductStateFilter, std::string& selectedAssetKey,
+        std::string& selectedSubAssetStableId) {
         const asharia::editor::EditorI18n& i18n = context.ui.i18n;
         const std::string comboLabel =
             label(i18n, "assetBrowser.filter.importProfile", "asset-browser-import-profile-filter",
@@ -1004,6 +1518,7 @@ namespace {
                 selectedImportProfileFilter.clear();
                 selectedProductStateFilter.clear();
                 selectedAssetKey.clear();
+                selectedSubAssetStableId.clear();
             }
             if (allSelected) {
                 ImGui::SetItemDefaultFocus();
@@ -1018,6 +1533,7 @@ namespace {
                     selectedImportProfileFilter = filter;
                     selectedProductStateFilter.clear();
                     selectedAssetKey.clear();
+                    selectedSubAssetStableId.clear();
                 }
                 if (selected) {
                     ImGui::SetItemDefaultFocus();
@@ -1043,7 +1559,7 @@ namespace {
     void drawProductStateFilterControl(
         const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
         AssetBrowserProductStateFilterQuery query, std::string& selectedProductStateFilter,
-        std::string& selectedAssetKey) {
+        std::string& selectedAssetKey, std::string& selectedSubAssetStableId) {
         const asharia::editor::EditorI18n& i18n = context.ui.i18n;
         const std::string comboLabel = label(i18n, "assetBrowser.filter.productState",
                                              "asset-browser-product-state-filter", "Product State");
@@ -1060,6 +1576,7 @@ namespace {
             if (ImGui::Selectable(allItemLabel.c_str(), allSelected)) {
                 selectedProductStateFilter.clear();
                 selectedAssetKey.clear();
+                selectedSubAssetStableId.clear();
             }
             if (allSelected) {
                 ImGui::SetItemDefaultFocus();
@@ -1075,6 +1592,7 @@ namespace {
                 if (ImGui::Selectable(itemLabel.c_str(), selected)) {
                     selectedProductStateFilter.assign(stateName.data(), stateName.size());
                     selectedAssetKey.clear();
+                    selectedSubAssetStableId.clear();
                 }
                 if (selected) {
                     ImGui::SetItemDefaultFocus();
@@ -1118,7 +1636,7 @@ namespace {
                     text(diagnostic.sourcePath);
                 }
                 if (!diagnostic.path.empty()) {
-                    text(diagnostic.path.generic_string());
+                    text(pathUtf8String(diagnostic.path));
                 }
                 ImGui::EndTooltip();
             }
@@ -1129,7 +1647,7 @@ namespace {
     }
 
     void drawAssetBrowserRows(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
-                              AssetBrowserVisibilityQuery query, std::string& selectedAssetKey) {
+                              AssetBrowserVisibilityQuery query, AssetBrowserRowsState state) {
         const asharia::editor::EditorI18n& i18n = context.ui.i18n;
         if (!ImGui::BeginTable("asset-browser-table", 5, kAssetTableFlags)) {
             return;
@@ -1152,7 +1670,7 @@ namespace {
                                 ImGui::GetID("asset-browser-column-import-profile"));
         ImGui::TableSetupColumn(importerColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.16F,
                                 ImGui::GetID("asset-browser-column-importer"));
-        ImGui::TableSetupColumn(stateColumn.c_str(), ImGuiTableColumnFlags_WidthFixed, 104.0F,
+        ImGui::TableSetupColumn(stateColumn.c_str(), ImGuiTableColumnFlags_WidthFixed, 176.0F,
                                 ImGui::GetID("asset-browser-column-state"));
         ImGui::TableHeadersRow();
 
@@ -1169,14 +1687,16 @@ namespace {
             drawAssetRowIcon(context.icons, i18n, row);
             ImGui::SameLine();
             const std::string_view selectionKey = selectionKeyForRow(row);
-            const bool selected =
-                !selectedAssetKey.empty() && std::string_view{selectedAssetKey} == selectionKey;
+            const bool selected = !state.selectedAssetKey->empty() &&
+                                  std::string_view{*state.selectedAssetKey} == selectionKey;
             std::string rowLabel = row.displayName.empty() ? row.sourcePath : row.displayName;
             rowLabel += "###asset-browser-row-";
             rowLabel.append(selectionKey.data(), selectionKey.size());
             if (ImGui::Selectable(rowLabel.c_str(), selected,
                                   ImGuiSelectableFlags_SpanAllColumns)) {
-                selectedAssetKey.assign(selectionKey.data(), selectionKey.size());
+                state.selectedAssetKey->assign(selectionKey.data(), selectionKey.size());
+                state.selectedNavigationKey->clear();
+                state.selectedSubAssetStableId->clear();
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
@@ -1194,11 +1714,7 @@ namespace {
             text(row.importerName.empty() ? "-" : row.importerName);
 
             ImGui::TableSetColumnIndex(4);
-            asharia::editor::drawEditorUiStatusPill(i18n.text(asharia::editor::EditorI18nTextQuery{
-                                                        .key = stateTextKey(row.productState),
-                                                        .fallback = stateFallback(row.productState),
-                                                    }),
-                                                    toneForState(row.productState));
+            drawAssetRowStatePills(context, row);
         }
 
         if (rows.empty()) {
@@ -1263,15 +1779,301 @@ namespace {
         }
     }
 
+    void
+    drawSelectedAssetPendingReimport(asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                                     const asharia::asset::AssetCatalogViewEntry& row) {
+        const asharia::editor::EditorAssetPendingReimport* pending =
+            findPendingReimportForRow(context, row);
+        if (pending == nullptr) {
+            return;
+        }
+
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const asharia::editor::EditorAssetReimportRequest request = pending->request;
+        const std::size_t requestCount = pending->requestCount;
+        const asharia::asset::AssetGuid guid = parseRowGuid(row);
+        const std::string targetProfile = targetProfileForSnapshot(context);
+        const bool canClearPending = guid || !row.sourcePath.empty();
+
+        const std::string pendingLabel =
+            textValue(i18n, "assetBrowser.importSettings.pending", "Pending reimport") + ": " +
+            std::to_string(requestCount);
+        asharia::editor::drawEditorUiStatusPill(pendingLabel,
+                                                asharia::editor::EditorUiTone::Warning);
+        ImGui::SameLine();
+
+        const std::string clearTooltip =
+            textValue(i18n, "assetBrowser.importSettings.clearPending", "Clear pending reimport");
+        const asharia::editor::EditorIconDescriptor clearIcon =
+            asharia::editor::makeLucideEditorIconDescriptor(
+                "x", asharia::editor::editorIconTint(0.78F, 0.80F, 0.84F),
+                "assetBrowser.importSettings.clearPending", clearTooltip);
+        if (!canClearPending) {
+            ImGui::BeginDisabled();
+        }
+        if (asharia::editor::drawEditorIconButton(
+                clearIcon, "asset-browser-import-settings-clear-pending", 14.0F) &&
+            canClearPending) {
+            static_cast<void>(context.pendingReimports.clearForSource(
+                asharia::editor::EditorAssetReimportSourceKey{
+                    .guid = guid,
+                    .sourcePath = row.sourcePath,
+                    .targetProfile = targetProfile,
+                }));
+        }
+        if (!canClearPending) {
+            ImGui::EndDisabled();
+        }
+
+        const std::string targetProfileLabel =
+            textValue(i18n, "assetBrowser.catalogSource.targetProfile", "Target Profile");
+        const std::string changedSettingsLabel =
+            textValue(i18n, "assetBrowser.importSettings.changedSettings", "Changed Settings");
+        const std::string metadataFileLabel =
+            textValue(i18n, "assetBrowser.detail.metadataFile", "Metadata File");
+        const std::string changedSettingsValue = joinChangedSettingKeys(request.changedSettingKeys);
+        const std::string metadataFileValue = pathUtf8String(request.metadataFile);
+        if (asharia::editor::beginEditorUiPropertyTable("asset-browser-selected-pending-reimport",
+                                                        144.0F)) {
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{targetProfileLabel},
+                                                  .value = textOrDash(request.targetProfile)});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{changedSettingsLabel},
+                                                  .value = textOrDash(changedSettingsValue)});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{metadataFileLabel},
+                                                  .value = textOrDash(metadataFileValue)});
+            asharia::editor::endEditorUiPropertyTable();
+        }
+    }
+
+    [[nodiscard]] bool validImportSettingsUiState(AssetBrowserImportSettingsUiState state) {
+        return state.selectionKey != nullptr && state.textureProfileDraft != nullptr &&
+               state.textureProfileBaseline != nullptr && state.message != nullptr &&
+               state.messageIsError != nullptr;
+    }
+
+    [[nodiscard]] std::string
+    currentTextureProfileForImportSettings(const asharia::asset::AssetCatalogViewEntry& row,
+                                           const std::filesystem::path& metadataFile) {
+        if (!metadataFile.empty()) {
+            auto profile = asharia::editor::readEditorTextureProfileSetting(metadataFile);
+            if (profile) {
+                return std::move(*profile);
+            }
+        }
+        return row.importProfileName;
+    }
+
+    void syncTextureProfileDraftState(const asharia::asset::AssetCatalogViewEntry& row,
+                                      const std::filesystem::path& metadataFile,
+                                      AssetBrowserImportSettingsUiState state) {
+        const std::string_view selectionKey = selectionKeyForRow(row);
+        const std::string currentProfile =
+            currentTextureProfileForImportSettings(row, metadataFile);
+        if (*state.selectionKey != selectionKey) {
+            state.selectionKey->assign(selectionKey.data(), selectionKey.size());
+            state.textureProfileDraft->assign(currentProfile);
+            state.textureProfileBaseline->assign(currentProfile);
+            state.message->clear();
+            *state.messageIsError = false;
+            return;
+        }
+
+        const bool userIsNotEditing = *state.textureProfileDraft == *state.textureProfileBaseline;
+        if (userIsNotEditing && *state.textureProfileBaseline != currentProfile) {
+            state.textureProfileDraft->assign(currentProfile);
+            state.textureProfileBaseline->assign(currentProfile);
+        }
+    }
+
+    void drawTextureProfileCombo(const asharia::editor::EditorI18n& i18n,
+                                 AssetBrowserImportSettingsUiState state) {
+        const std::string profileLabel = label(i18n, "assetBrowser.importSettings.profile",
+                                               "asset-browser-import-settings-profile", "Profile");
+        const std::string currentProfileLabel =
+            textureProfileLabel(i18n, *state.textureProfileDraft);
+        constexpr float kApplyButtonWidth = 32.0F;
+        const float comboWidth =
+            std::max(140.0F, ImGui::GetContentRegionAvail().x - kApplyButtonWidth -
+                                 ImGui::GetStyle().ItemSpacing.x);
+        ImGui::SetNextItemWidth(comboWidth);
+        if (!ImGui::BeginCombo(profileLabel.c_str(), currentProfileLabel.c_str())) {
+            return;
+        }
+
+        for (const AssetBrowserTextureProfileOption& option : kTextureProfileOptions) {
+            const bool selected = *state.textureProfileDraft == option.value;
+            const std::string optionLabel = textureProfileLabel(i18n, option.value);
+            if (ImGui::Selectable(optionLabel.c_str(), selected)) {
+                state.textureProfileDraft->assign(option.value.data(), option.value.size());
+                state.message->clear();
+                *state.messageIsError = false;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    void applyTextureProfileDraft(asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                                  const std::filesystem::path& metadataFile,
+                                  AssetBrowserImportSettingsUiState state) {
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const std::size_t oldRequestCount = context.reimportRequests.size();
+        auto command = asharia::editor::makeEditorTextureProfileEditCommand(
+            metadataFile, targetProfileForSnapshot(context), *state.textureProfileDraft,
+            context.reimportRequests);
+        if (!command) {
+            *state.message = command.error().message;
+            *state.messageIsError = true;
+            return;
+        }
+
+        asharia::editor::EditorTransaction transaction;
+        transaction.addCommand(std::move(*command));
+        if (auto executed = transaction.executeAll(); !executed) {
+            *state.message = executed.error().message;
+            *state.messageIsError = true;
+            return;
+        }
+
+        const std::size_t recordedRequests = recordNewPendingRequests(context, oldRequestCount);
+        if (auto currentProfile = asharia::editor::readEditorTextureProfileSetting(metadataFile)) {
+            state.textureProfileBaseline->assign(*currentProfile);
+            state.textureProfileDraft->assign(*currentProfile);
+        } else {
+            state.textureProfileBaseline->assign(*state.textureProfileDraft);
+        }
+        if (recordedRequests != 0U) {
+            context.commandHistory.push(std::move(transaction));
+            *state.message =
+                textValue(i18n, "assetBrowser.importSettings.applied", "Applied; pending reimport");
+        } else {
+            *state.message = textValue(i18n, "assetBrowser.importSettings.noChange", "No change");
+        }
+        *state.messageIsError = false;
+    }
+
+    void drawTextureProfileApplyButton(asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                                       const std::filesystem::path& metadataFile,
+                                       AssetBrowserImportSettingsUiState state) {
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const bool canApply = !metadataFile.empty() && !state.textureProfileDraft->empty() &&
+                              *state.textureProfileDraft != *state.textureProfileBaseline;
+        const std::string applyTooltip =
+            textValue(i18n, "assetBrowser.importSettings.apply", "Apply import settings");
+        const asharia::editor::EditorIconDescriptor applyIcon =
+            asharia::editor::makeLucideEditorIconDescriptor(
+                "check", asharia::editor::editorIconTint(0.70F, 0.86F, 0.68F),
+                "assetBrowser.importSettings.apply", applyTooltip);
+        if (!canApply) {
+            ImGui::BeginDisabled();
+        }
+        if (asharia::editor::drawEditorIconButton(applyIcon, "asset-browser-import-settings-apply",
+                                                  14.0F) &&
+            canApply) {
+            applyTextureProfileDraft(context, metadataFile, state);
+        }
+        if (!canApply) {
+            ImGui::EndDisabled();
+        }
+    }
+
+    void drawImportSettingsMessage(AssetBrowserImportSettingsUiState state) {
+        if (state.message->empty()) {
+            return;
+        }
+
+        asharia::editor::drawEditorUiStatusPill(
+            *state.message, *state.messageIsError ? asharia::editor::EditorUiTone::Danger
+                                                  : asharia::editor::EditorUiTone::Info);
+    }
+
+    void
+    drawSelectedAssetImportSettings(asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                                    const asharia::asset::AssetCatalogViewEntry& row,
+                                    const std::filesystem::path& metadataFile,
+                                    AssetBrowserImportSettingsUiState state) {
+        if (!isTextureImportSettingsRow(row) || context.catalogSnapshot == nullptr ||
+            !validImportSettingsUiState(state)) {
+            return;
+        }
+
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        syncTextureProfileDraftState(row, metadataFile, state);
+
+        const std::string header =
+            textValue(i18n, "assetBrowser.importSettings", "Import Settings");
+        asharia::editor::drawEditorUiSectionHeader(header);
+        drawSelectedAssetPendingReimport(context, row);
+
+        drawTextureProfileCombo(i18n, state);
+        ImGui::SameLine();
+        drawTextureProfileApplyButton(context, metadataFile, state);
+        drawImportSettingsMessage(state);
+    }
+
+    void
+    drawSelectedSubAssetDetails(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                                const asharia::asset::AssetCatalogViewEntry& row,
+                                const asharia::asset::AssetCatalogSubAssetViewEntry* subAsset) {
+        if (subAsset == nullptr) {
+            return;
+        }
+
+        const asharia::editor::EditorI18n& i18n = context.ui.i18n;
+        const std::string header =
+            textValue(i18n, "assetBrowser.detail.selectedSubAsset", "Selected Sub-asset");
+        asharia::editor::drawEditorUiSectionHeader(header);
+        drawSubAssetIcon(context.icons, i18n, row, *subAsset);
+        ImGui::SameLine();
+        text(subAsset->displayName.empty() ? subAsset->stableId : subAsset->displayName);
+        ImGui::Spacing();
+        drawSelectedAssetCopyButton(i18n, AssetBrowserCopyButtonQuery{
+                                              .value = subAsset->stableId,
+                                              .stableId = "asset-browser-copy-selected-subasset-id",
+                                              .tooltipKey = "assetBrowser.copy.subAssetStableId",
+                                              .tooltipFallback = "Copy sub-asset ID",
+                                          });
+
+        const std::string stableIdLabel = textValue(i18n, "assetBrowser.detail.subAssetId", "ID");
+        const std::string nameLabel = textValue(i18n, "assetBrowser.detail.subAssetName", "Name");
+        const std::string roleLabel = textValue(i18n, "assetBrowser.detail.subAssetRole", "Role");
+        const std::string parentSourcePathLabel =
+            textValue(i18n, "assetBrowser.detail.subAssetParentSourcePath", "Parent Source Path");
+        const std::string parentGuidLabel =
+            textValue(i18n, "assetBrowser.detail.subAssetParentGuid", "Parent GUID");
+        if (asharia::editor::beginEditorUiPropertyTable("asset-browser-selected-subasset-details",
+                                                        144.0F)) {
+            asharia::editor::drawEditorUiProperty(asharia::editor::EditorUiProperty{
+                .label = std::string_view{stableIdLabel}, .value = textOrDash(subAsset->stableId)});
+            asharia::editor::drawEditorUiProperty(asharia::editor::EditorUiProperty{
+                .label = std::string_view{nameLabel}, .value = textOrDash(subAsset->displayName)});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{roleLabel},
+                                                  .value = textOrDash(subAsset->assetRoleName)});
+            asharia::editor::drawEditorUiProperty(
+                asharia::editor::EditorUiProperty{.label = std::string_view{parentSourcePathLabel},
+                                                  .value = textOrDash(row.sourcePath)});
+            asharia::editor::drawEditorUiProperty(asharia::editor::EditorUiProperty{
+                .label = std::string_view{parentGuidLabel}, .value = textOrDash(row.guidText)});
+            asharia::editor::endEditorUiPropertyTable();
+        }
+    }
+
     void drawSelectedAssetSubAssets(const asharia::editor::EditorI18n& i18n,
-                                    const asharia::asset::AssetCatalogViewEntry& row) {
+                                    const asharia::asset::AssetCatalogViewEntry& row,
+                                    std::string& selectedSubAssetStableId) {
         if (row.subAssets.empty()) {
             return;
         }
 
         const std::string header = textValue(i18n, "assetBrowser.detail.subAssets", "Sub-assets");
         asharia::editor::drawEditorUiSectionHeader(header);
-        if (!ImGui::BeginTable("asset-browser-sub-assets", 3,
+        if (!ImGui::BeginTable("asset-browser-sub-assets", 4,
                                ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg |
                                    ImGuiTableFlags_SizingStretchProp)) {
             return;
@@ -1280,30 +2082,63 @@ namespace {
         const std::string idColumn = textValue(i18n, "assetBrowser.detail.subAssetId", "ID");
         const std::string nameColumn = textValue(i18n, "assetBrowser.detail.subAssetName", "Name");
         const std::string roleColumn = textValue(i18n, "assetBrowser.detail.subAssetRole", "Role");
-        ImGui::TableSetupColumn(idColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.34F,
+        const std::string actionColumn = textValue(i18n, "assetBrowser.detail.subAssetActions", "");
+        ImGui::TableSetupColumn(idColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.32F,
                                 ImGui::GetID("asset-browser-subasset-column-id"));
-        ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.34F,
+        ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.32F,
                                 ImGui::GetID("asset-browser-subasset-column-name"));
-        ImGui::TableSetupColumn(roleColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.32F,
+        ImGui::TableSetupColumn(roleColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 0.28F,
                                 ImGui::GetID("asset-browser-subasset-column-role"));
+        ImGui::TableSetupColumn(actionColumn.c_str(), ImGuiTableColumnFlags_WidthFixed, 32.0F,
+                                ImGui::GetID("asset-browser-subasset-column-actions"));
         ImGui::TableHeadersRow();
 
+        std::size_t subAssetIndex = 0U;
         for (const asharia::asset::AssetCatalogSubAssetViewEntry& subAsset : row.subAssets) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            text(subAsset.stableId);
+            const bool selected =
+                !selectedSubAssetStableId.empty() && selectedSubAssetStableId == subAsset.stableId;
+            std::string stableIdLabel = subAsset.stableId.empty() ? "-" : subAsset.stableId;
+            stableIdLabel += "###asset-browser-subasset-row-";
+            stableIdLabel += row.guidText;
+            stableIdLabel += "-";
+            stableIdLabel += std::to_string(subAssetIndex);
+            if (ImGui::Selectable(stableIdLabel.c_str(), selected,
+                                  ImGuiSelectableFlags_SpanAllColumns)) {
+                selectedSubAssetStableId = subAsset.stableId;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                text(subAsset.stableId);
+                ImGui::EndTooltip();
+            }
             ImGui::TableSetColumnIndex(1);
             text(subAsset.displayName.empty() ? "-" : subAsset.displayName);
             ImGui::TableSetColumnIndex(2);
             text(subAsset.assetRoleName.empty() ? "-" : subAsset.assetRoleName);
+            ImGui::TableSetColumnIndex(3);
+            std::string copyStableId{"asset-browser-copy-subasset-stable-id-"};
+            copyStableId += row.guidText;
+            copyStableId += "-";
+            copyStableId += std::to_string(subAssetIndex);
+            drawSelectedAssetCopyButton(i18n,
+                                        AssetBrowserCopyButtonQuery{
+                                            .value = subAsset.stableId,
+                                            .stableId = copyStableId,
+                                            .tooltipKey = "assetBrowser.copy.subAssetStableId",
+                                            .tooltipFallback = "Copy sub-asset ID",
+                                        });
+            ++subAssetIndex;
         }
 
         ImGui::EndTable();
     }
 
-    void
-    drawSelectedAssetDetails(const asharia::editor::EditorAssetBrowserPanelDrawContext& context,
-                             const asharia::asset::AssetCatalogViewEntry* selectedRow) {
+    void drawSelectedAssetDetails(asharia::editor::EditorAssetBrowserPanelDrawContext& context,
+                                  const asharia::asset::AssetCatalogViewEntry* selectedRow,
+                                  std::string& selectedSubAssetStableId,
+                                  AssetBrowserImportSettingsUiState importSettingsState) {
         const asharia::editor::EditorI18n& i18n = context.ui.i18n;
         const std::string detailsHeader = textValue(i18n, "assetBrowser.details", "Selected Asset");
         asharia::editor::drawEditorUiSectionHeader(detailsHeader);
@@ -1315,6 +2150,9 @@ namespace {
             }));
             return;
         }
+
+        const asharia::asset::AssetCatalogSubAssetViewEntry* selectedSubAsset =
+            findSubAssetByStableId(*selectedRow, selectedSubAssetStableId);
 
         drawAssetRowIcon(context.icons, i18n, *selectedRow);
         ImGui::SameLine();
@@ -1340,10 +2178,61 @@ namespace {
                                               .tooltipKey = "assetBrowser.copy.sourcePath",
                                               .tooltipFallback = "Copy source path",
                                           });
+        const bool hasSnapshot = context.catalogSnapshot != nullptr;
+        const std::filesystem::path sourceFile =
+            hasSnapshot ? asharia::editor::resolveEditorAssetCatalogSourceFilePath(
+                              *context.catalogSnapshot, selectedRow->sourcePath)
+                        : std::filesystem::path{};
+        const std::filesystem::path metadataFile =
+            hasSnapshot ? asharia::editor::resolveEditorAssetCatalogMetadataFilePath(
+                              *context.catalogSnapshot, selectedRow->sourcePath)
+                        : std::filesystem::path{};
+        const std::string sourceFileValue =
+            hasSnapshot ? pathUtf8String(sourceFile) : std::string{};
+        const std::string metadataFileValue =
+            hasSnapshot ? pathUtf8String(metadataFile) : std::string{};
+        const asharia::editor::EditorAssetCatalogResolvedSourceRoot sourceRoot =
+            hasSnapshot ? asharia::editor::resolveEditorAssetCatalogSourceRootForSourcePath(
+                              *context.catalogSnapshot, selectedRow->sourcePath)
+                        : asharia::editor::EditorAssetCatalogResolvedSourceRoot{};
+        const std::string sourceRootValue =
+            sourceRoot.rootName.empty() ? sourceRoot.sourcePathPrefix : sourceRoot.rootName;
+        const std::string sourceRootDirectoryValue = pathUtf8String(sourceRoot.resolvedDirectory);
+        if (hasSnapshot) {
+            ImGui::SameLine();
+            drawSelectedAssetCopyButton(i18n, AssetBrowserCopyButtonQuery{
+                                                  .value = sourceFileValue,
+                                                  .stableId = "asset-browser-copy-source-file",
+                                                  .tooltipKey = "assetBrowser.copy.sourceFile",
+                                                  .tooltipFallback = "Copy source file path",
+                                              });
+            ImGui::SameLine();
+            drawSelectedAssetCopyButton(i18n, AssetBrowserCopyButtonQuery{
+                                                  .value = metadataFileValue,
+                                                  .stableId = "asset-browser-copy-metadata-file",
+                                                  .tooltipKey = "assetBrowser.copy.metadataFile",
+                                                  .tooltipFallback = "Copy metadata file path",
+                                              });
+            ImGui::SameLine();
+            drawSelectedAssetCopyButton(i18n, AssetBrowserCopyButtonQuery{
+                                                  .value = sourceRootDirectoryValue,
+                                                  .stableId = "asset-browser-copy-source-root",
+                                                  .tooltipKey = "assetBrowser.copy.sourceRoot",
+                                                  .tooltipFallback = "Copy source root path",
+                                              });
+        }
 
         const std::string guidLabel = textValue(i18n, "assetBrowser.detail.guid", "GUID");
         const std::string sourcePathLabel =
             textValue(i18n, "assetBrowser.detail.sourcePath", "Source Path");
+        const std::string sourceFileLabel =
+            textValue(i18n, "assetBrowser.detail.sourceFile", "Source File");
+        const std::string metadataFileLabel =
+            textValue(i18n, "assetBrowser.detail.metadataFile", "Metadata File");
+        const std::string sourceRootLabel =
+            textValue(i18n, "assetBrowser.detail.sourceRoot", "Source Root");
+        const std::string sourceRootDirectoryLabel =
+            textValue(i18n, "assetBrowser.detail.sourceRootDirectory", "Source Root Directory");
         const std::string typeLabel = textValue(i18n, "assetBrowser.detail.type", "Type");
         const std::string importerLabel =
             textValue(i18n, "assetBrowser.detail.importer", "Importer");
@@ -1379,6 +2268,20 @@ namespace {
             asharia::editor::drawEditorUiProperty(
                 asharia::editor::EditorUiProperty{.label = std::string_view{sourcePathLabel},
                                                   .value = textOrDash(selectedRow->sourcePath)});
+            if (hasSnapshot) {
+                asharia::editor::drawEditorUiProperty(
+                    asharia::editor::EditorUiProperty{.label = std::string_view{sourceFileLabel},
+                                                      .value = textOrDash(sourceFileValue)});
+                asharia::editor::drawEditorUiProperty(
+                    asharia::editor::EditorUiProperty{.label = std::string_view{metadataFileLabel},
+                                                      .value = textOrDash(metadataFileValue)});
+                asharia::editor::drawEditorUiProperty(
+                    asharia::editor::EditorUiProperty{.label = std::string_view{sourceRootLabel},
+                                                      .value = textOrDash(sourceRootValue)});
+                asharia::editor::drawEditorUiProperty(asharia::editor::EditorUiProperty{
+                    .label = std::string_view{sourceRootDirectoryLabel},
+                    .value = textOrDash(sourceRootDirectoryValue)});
+            }
             asharia::editor::drawEditorUiProperty(
                 asharia::editor::EditorUiProperty{.label = std::string_view{typeLabel},
                                                   .value = textOrDash(selectedRow->assetTypeName)});
@@ -1412,7 +2315,9 @@ namespace {
             asharia::editor::endEditorUiPropertyTable();
         }
 
-        drawSelectedAssetSubAssets(i18n, *selectedRow);
+        drawSelectedAssetImportSettings(context, *selectedRow, metadataFile, importSettingsState);
+        drawSelectedSubAssetDetails(context, *selectedRow, selectedSubAsset);
+        drawSelectedAssetSubAssets(i18n, *selectedRow, selectedSubAssetStableId);
         drawSelectedAssetDiagnostics(*selectedRow);
     }
 
@@ -1449,7 +2354,8 @@ namespace asharia::editor {
         const bool clearEnabled =
             filter_[0] != '\0' || !selectedFolderScope_.empty() ||
             !selectedAssetTypeFilter_.empty() || !selectedImportProfileFilter_.empty() ||
-            !selectedProductStateFilter_.empty() || !selectedAssetKey_.empty();
+            !selectedProductStateFilter_.empty() || !selectedAssetKey_.empty() ||
+            !selectedNavigationKey_.empty() || !selectedSubAssetStableId_.empty();
         const std::string clearTooltip =
             textValue(i18n, "assetBrowser.filter.clear", "Clear filters");
         const EditorIconDescriptor clearIcon = makeLucideEditorIconDescriptor(
@@ -1464,6 +2370,8 @@ namespace asharia::editor {
             selectedImportProfileFilter_.clear();
             selectedProductStateFilter_.clear();
             selectedAssetKey_.clear();
+            selectedNavigationKey_.clear();
+            selectedSubAssetStableId_.clear();
         }
         if (!clearEnabled) {
             ImGui::EndDisabled();
@@ -1477,6 +2385,7 @@ namespace asharia::editor {
             selectedImportProfileFilter_.clear();
             selectedProductStateFilter_.clear();
             selectedAssetKey_.clear();
+            selectedSubAssetStableId_.clear();
         }
         if (!importProfileFilterExists(context.catalogView,
                                        AssetBrowserImportProfileFilterQuery{
@@ -1487,6 +2396,7 @@ namespace asharia::editor {
             selectedImportProfileFilter_.clear();
             selectedProductStateFilter_.clear();
             selectedAssetKey_.clear();
+            selectedSubAssetStableId_.clear();
         }
         if (!productStateFilterExists(context.catalogView,
                                       AssetBrowserProductStateFilterQuery{
@@ -1497,6 +2407,7 @@ namespace asharia::editor {
                                       selectedProductStateFilter_)) {
             selectedProductStateFilter_.clear();
             selectedAssetKey_.clear();
+            selectedSubAssetStableId_.clear();
         }
         const asharia::asset::AssetCatalogViewEntry* selectedRow = selectedVisibleRow(
             context.catalogView, AssetBrowserSelectionQuery{
@@ -1511,35 +2422,56 @@ namespace asharia::editor {
             std::string_view{selectedAssetKey_} != selectionKeyForRow(*selectedRow)) {
             const std::string_view selectionKey = selectionKeyForRow(*selectedRow);
             selectedAssetKey_.assign(selectionKey.data(), selectionKey.size());
+            if (findSubAssetByStableId(*selectedRow, selectedSubAssetStableId_) == nullptr) {
+                selectedSubAssetStableId_.clear();
+            }
         } else if (selectedRow == nullptr) {
             selectedAssetKey_.clear();
+            selectedSubAssetStableId_.clear();
         }
 
-        drawFolderScopeControls(context,
-                                AssetBrowserFolderScopeState{
-                                    .selectedFolderScope = &selectedFolderScope_,
-                                    .selectedAssetTypeFilter = &selectedAssetTypeFilter_,
-                                    .selectedImportProfileFilter = &selectedImportProfileFilter_,
-                                    .selectedProductStateFilter = &selectedProductStateFilter_,
-                                    .selectedAssetKey = &selectedAssetKey_,
-                                });
+        if (context.catalogSnapshot == nullptr) {
+            selectedNavigationKey_.clear();
+            selectedSubAssetStableId_.clear();
+            drawFolderScopeControls(
+                context, AssetBrowserFolderScopeState{
+                             .selectedFolderScope = &selectedFolderScope_,
+                             .selectedAssetTypeFilter = &selectedAssetTypeFilter_,
+                             .selectedImportProfileFilter = &selectedImportProfileFilter_,
+                             .selectedProductStateFilter = &selectedProductStateFilter_,
+                             .selectedAssetKey = &selectedAssetKey_,
+                             .selectedSubAssetStableId = &selectedSubAssetStableId_,
+                         });
+        } else {
+            drawNavigationTreeControls(
+                context, AssetBrowserNavigationTreeState{
+                             .selectedFolderScope = &selectedFolderScope_,
+                             .selectedAssetTypeFilter = &selectedAssetTypeFilter_,
+                             .selectedImportProfileFilter = &selectedImportProfileFilter_,
+                             .selectedProductStateFilter = &selectedProductStateFilter_,
+                             .selectedAssetKey = &selectedAssetKey_,
+                             .selectedNavigationKey = &selectedNavigationKey_,
+                             .selectedSubAssetStableId = &selectedSubAssetStableId_,
+                         });
+        }
         drawAssetTypeFilterControl(context, selectedFolderScope_, selectedAssetTypeFilter_,
                                    selectedImportProfileFilter_, selectedProductStateFilter_,
-                                   selectedAssetKey_);
+                                   selectedAssetKey_, selectedSubAssetStableId_);
         drawImportProfileFilterControl(context,
                                        AssetBrowserImportProfileFilterQuery{
                                            .folderScope = selectedFolderScope_,
                                            .assetTypeFilter = selectedAssetTypeFilter_,
                                        },
                                        selectedImportProfileFilter_, selectedProductStateFilter_,
-                                       selectedAssetKey_);
+                                       selectedAssetKey_, selectedSubAssetStableId_);
         drawProductStateFilterControl(context,
                                       AssetBrowserProductStateFilterQuery{
                                           .folderScope = selectedFolderScope_,
                                           .assetTypeFilter = selectedAssetTypeFilter_,
                                           .importProfileFilter = selectedImportProfileFilter_,
                                       },
-                                      selectedProductStateFilter_, selectedAssetKey_);
+                                      selectedProductStateFilter_, selectedAssetKey_,
+                                      selectedSubAssetStableId_);
         ImGui::Separator();
         const AssetBrowserVisibilityQuery visibility{
             .filter = filter,
@@ -1550,8 +2482,15 @@ namespace asharia::editor {
         };
         drawAssetBrowserSummary(context, visibility);
         ImGui::Separator();
+        drawAssetBrowserCatalogSource(context);
+        ImGui::Separator();
         drawCatalogDiagnostics(context);
-        drawAssetBrowserRows(context, visibility, selectedAssetKey_);
+        drawAssetBrowserRows(context, visibility,
+                             AssetBrowserRowsState{
+                                 .selectedAssetKey = &selectedAssetKey_,
+                                 .selectedNavigationKey = &selectedNavigationKey_,
+                                 .selectedSubAssetStableId = &selectedSubAssetStableId_,
+                             });
         selectedRow = selectedVisibleRow(context.catalogView,
                                          AssetBrowserSelectionQuery{
                                              .filter = filter,
@@ -1562,7 +2501,18 @@ namespace asharia::editor {
                                              .selectedAssetKey = selectedAssetKey_,
                                          });
         ImGui::Separator();
-        drawSelectedAssetDetails(context, selectedRow);
+        if (selectedRow != nullptr &&
+            findSubAssetByStableId(*selectedRow, selectedSubAssetStableId_) == nullptr) {
+            selectedSubAssetStableId_.clear();
+        }
+        drawSelectedAssetDetails(context, selectedRow, selectedSubAssetStableId_,
+                                 AssetBrowserImportSettingsUiState{
+                                     .selectionKey = &importSettingsSelectionKey_,
+                                     .textureProfileDraft = &textureProfileDraft_,
+                                     .textureProfileBaseline = &textureProfileBaseline_,
+                                     .message = &importSettingsMessage_,
+                                     .messageIsError = &importSettingsMessageIsError_,
+                                 });
     }
 
 } // namespace asharia::editor

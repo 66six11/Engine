@@ -31,6 +31,8 @@ namespace asharia::editor {
 
     struct EditorPanelDrawContext {
         EditorSceneViewPanelDrawContext sceneView;
+        EditorSceneTreePanelDrawContext sceneTree;
+        EditorInspectorPanelDrawContext inspector;
         EditorLogPanelDrawContext log;
         EditorRenderGraphPanelDrawContext renderGraph;
         EditorFrameDebuggerPanelDrawContext frameDebugger;
@@ -47,6 +49,16 @@ namespace asharia::editor {
 
     void ImGuiSceneViewEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
         drawSceneViewPanel(context.sceneView, state);
+    }
+
+    void ImGuiSceneTreeEditorPanel::draw(EditorPanelDrawContext& context,
+                                         EditorPanelState& state) {
+        drawSceneTreePanel(context.sceneTree, state);
+    }
+
+    void ImGuiInspectorEditorPanel::draw(EditorPanelDrawContext& context,
+                                         EditorPanelState& state) {
+        drawInspectorPanel(context.inspector, state);
     }
 
     void ImGuiLogEditorPanel::draw(EditorPanelDrawContext& context, EditorPanelState& state) {
@@ -207,6 +219,15 @@ namespace asharia::editor {
                     .inputRouter = context.input.router,
                     .viewportHost = context.viewport.host,
                 },
+            .sceneTree =
+                EditorSceneTreePanelDrawContext{
+                    .ui = context.ui,
+                },
+            .inspector =
+                EditorInspectorPanelDrawContext{
+                    .ui = context.ui,
+                    .commandHistory = context.commandHistory,
+                },
             .log =
                 EditorLogPanelDrawContext{
                     .ui = context.ui,
@@ -237,7 +258,11 @@ namespace asharia::editor {
                     .ui = context.ui,
                     .icons = context.assetIcons,
                     .catalogView = context.assetCatalogView,
+                    .catalogSnapshot = context.assetCatalogSnapshot,
                     .catalogDiagnostics = context.assetCatalogDiagnostics,
+                    .commandHistory = context.commandHistory,
+                    .reimportRequests = context.assetReimportRequests,
+                    .pendingReimports = context.assetPendingReimports,
                 },
         };
         for (PanelEntry& entry : panels_) {

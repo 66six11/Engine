@@ -285,10 +285,10 @@ namespace asharia::editor {
             return false;
         }
         if (!capturedSourceOverlayId(capture->diagnostics.overlay, kEditorSceneGridOverlayId) ||
-            !capturedSourceOverlayId(capture->diagnostics.overlay,
-                                     kEditorSceneTransformGizmoOverlayId) ||
-            !capturedSourceOverlayId(capture->diagnostics.overlay,
-                                     kEditorSceneSelectionOutlineOverlayId)) {
+            capturedSourceOverlayId(capture->diagnostics.overlay,
+                                    kEditorSceneTransformGizmoOverlayId) ||
+            capturedSourceOverlayId(capture->diagnostics.overlay,
+                                    kEditorSceneSelectionOutlineOverlayId)) {
             asharia::logError(
                 "Editor frame debugger smoke did not preserve overlay source diagnostics.");
             return false;

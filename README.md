@@ -81,6 +81,10 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-seri
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --help
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --version
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --project path\to\project-dir
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --check-project path\to\project-dir
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --check-project-json path\to\project-dir
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --check-project-json path\to\asharia.project.json --product-manifest path\to\products.aproducts.json
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-shell
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-browser
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport

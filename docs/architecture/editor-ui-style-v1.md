@@ -10,19 +10,24 @@
 
 ## 定位
 
-Asharia Editor UI Style v1 的定位是：
+Asharia Editor UI Style v1 的定位从自定义 “Theme Workbench” 优先，收敛为直接对齐 Unity
+Editor 的生产工具设置模型：
 
 ```text
-Technical Slate Editor
+Unity-aligned Technical Editor
 ```
 
-目标是做一套技术型深色编辑器界面：
+目标是做一套技术型编辑器界面，但功能组织优先参考 Unity 的 Editor / Preferences / Project
+Settings / dockable workspace 关系，而不是建立一套独立的样式实验产品：
 
 - UI 面板清晰、紧凑、低噪音。
 - Viewport 沉浸、克制，不抢场景内容。
 - Debug 信息高密度但可扫视。
 - 交互状态明确、稳定、少动画。
 - 主题系统分离设计色、ImGui 表示和渲染色。
+- 用户可见的样式配置优先进入 Editor Settings / Preferences 风格的分类页。
+- Project-wide 设置后续进入 Project Settings 风格的项目配置面，不混入 per-user editor preferences。
+- UI Style Preview / Theme Workbench 只作为开发者验证面板，不作为默认生产工作流入口。
 
 禁止方向：
 
@@ -31,6 +36,36 @@ Technical Slate Editor
 - 不做过大圆角。
 - 不让表格线、边框和 hover 状态铺满整屏。
 - 不把 `ImVec4` 当成主题数据模型。
+
+## Unity 对齐口径
+
+Unity 对齐不是复制外观皮肤，而是复制功能归属和生产关系：
+
+| Unity 概念 | Asharia 对齐 |
+| --- | --- |
+| Preferences | `Editor Settings` 的 per-user 分类页，例如 General、Colors、Scene View、Overlays、Diagnostics、Search |
+| Project Settings | 后续 project descriptor / project settings 面板，承载 project-wide graphics、asset pipeline、UI Toolkit-like 和 version-control 设置 |
+| Colors preferences | Editor / Scene View / Gizmo / Diagnostic semantic color 设置；颜色必须是语义 token，不暴露 ImGui color index |
+| Scene View preferences | grid、gizmo line thickness、Scene View filtering、overlay 可见性等 viewport 编辑偏好 |
+| Overlays preferences | overlay 默认显示、位置、可见性和 per-view 状态；真实 provider 前只显示 pending/disabled 状态 |
+| Workspace layouts | dockable tabs、layout reset/save/load；不要让 UI style 面板成为默认主工作区 |
+| Custom package preferences | 后续 extension / tool contribution 可贡献 settings category，但不能拥有 ImGui/Vulkan lifetime |
+
+执行规则：
+
+- `Editor Settings` 是用户可见的样式设置入口；`UI Style Preview` 是 Tools / diagnostics 面板，默认关闭。
+- 颜色、grid、gizmo、diagnostics、search、package/tool 偏好按 Unity-style category 拆分，不堆在一个
+  Theme Workbench 页面。
+- 主题 selector 只能是 General/Colors 中的一项设置；不要把主题切换做成主要工作流。
+- Scene View 颜色和 gizmo/overlay 样式只有在对应真实 provider/render bridge 存在时才可编辑；否则显示为
+  disabled 或 pending。
+- 后续 project-wide 样式或 UI Toolkit-like 设置必须和 per-user editor preferences 分开持久化。
+
+参考：
+
+- Unity Preferences reference: https://docs.unity3d.com/Manual/Preferences.html
+- Unity Project Settings reference: https://docs.unity3d.com/Manual/comp-ManagerGroup.html
+- Unity workspace layout: https://docs.unity3d.com/Manual/CustomizingYourWorkspace.html
 
 ## 布局模型
 
@@ -275,11 +310,24 @@ Texture Viewer / Frame Debugger Viewport：
 - Header 显示资源名、format、extent、mip、slice、color-space。
 - Pixel inspect 使用 mono 字体。
 
-## Theme Workbench
+## Editor Settings / Theme Preview
 
-当前 UI Style Preview 后续应演进成 Theme Workbench。它不是营销页面，而是编辑器内的工程化主题验证工具。
+当前 UI Style Preview 不再作为用户主功能演进成大型 Theme Workbench。用户可见样式功能直接进入
+Unity-style `Editor Settings` 分类页；UI Style Preview 保留为开发者验证工具，用来检查 token、组件状态、
+viewport mock、texture viewer mock 和颜色空间接入是否正确。
 
-推荐布局：
+优先进入 `Editor Settings` 的分类：
+
+| 分类 | 内容 |
+| --- | --- |
+| General | language、theme、UI scale、layout defaults |
+| Colors | editor semantic colors、selection、warning/error、diagnostic tones |
+| Scene View | grid、viewport background、focus border、Scene-only overlay defaults |
+| Gizmos / Overlays | gizmo axis colors、selection outline、overlay visibility；真实 provider 前保持 pending/disabled |
+| Diagnostics | Log / Console severity display、Frame Debug / RG View visual density |
+| Extensions | 后续 tool/package contribution settings，不拥有 ImGui/Vulkan/backend lifetime |
+
+UI Style Preview 的开发者验证布局可以继续保持：
 
 ```text
 Tokens | Component Preview | Inspector
@@ -418,7 +466,8 @@ Stage 1 - 基础 UI：
 
 Stage 2 - Theme Workbench：
 
-- Three-column Tokens / Preview / Inspector layout.
+- Unity-style `Editor Settings` categories for General / Colors / Scene View / Overlays / Diagnostics.
+- Keep UI Style Preview as a developer-only token/component/viewport validation surface.
 - Component Preview.
 - Viewport mock.
 - Texture Viewer mock.
@@ -500,13 +549,14 @@ Implemented:
 - custom ImGui fragment shader with vertex color sRGB decode.
 - UI texture color-space metadata propagation for editor viewport textures.
 - Editor shell command bar and status bar using the current editor theme tokens.
-- Default docking layout that places Scene/RG/debug panels around the center viewport area.
+- Default docking layout with Left Scene Tree, Center Scene/RG, Right Inspector/debug and Bottom Asset Browser/Log shells.
 - Theme Workbench three-column Tokens / Component Preview / Inspector layout with viewport and texture viewer mocks.
 
 Planned:
 
 - Theme JSON externalization.
+- Unity-style Editor Settings categories for Colors / Scene View / Overlays / Diagnostics.
 - Viewport-specific tokens.
-- Theme Workbench contrast checks and richer usage diagnostics.
+- UI Style Preview contrast checks and richer usage diagnostics.
 - Viewport header, grid fade, selection outline and gizmo styling.
 - Texture Viewer style and pixel inspect UI.

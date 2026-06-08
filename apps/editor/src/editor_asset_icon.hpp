@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "asharia/asset_core/asset_catalog_view.hpp"
 #include "asharia/core/result.hpp"
 
 namespace asharia::editor {
@@ -99,6 +100,10 @@ namespace asharia::editor {
                                    std::string_view tooltipKey, std::string_view tooltipFallback);
     [[nodiscard]] std::string normalizeEditorAssetIconExtension(std::string_view extension);
     [[nodiscard]] std::string normalizeEditorAssetIconToken(std::string_view value);
+    [[nodiscard]] EditorAssetIconDiagnosticState editorAssetIconDiagnosticStateForProductState(
+        asharia::asset::AssetCatalogProductState productState) noexcept;
+    [[nodiscard]] EditorAssetIconQuery
+    makeEditorAssetIconQuery(const asharia::asset::AssetCatalogViewEntry& row);
     [[nodiscard]] bool editorAssetIconRuleMatches(const EditorAssetIconRule& rule,
                                                   const EditorAssetIconQuery& query);
     [[nodiscard]] EditorAssetIconResolver makeEditorAssetIconRuleResolver(EditorAssetIconRule rule);
