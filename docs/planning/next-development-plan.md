@@ -80,9 +80,11 @@
 - #122 已完成最小 `--smoke-texture-upload`：用 deterministic placeholder Texture2D product payload 验证
   staging buffer -> GPU image -> sampled view -> readback，copy command 与 final transition 进入
   RenderGraph diagnostics。
-- #124 正在推进 CPU-only runtime resource handle baseline：先稳定 pending / ready / failed、generation 和
-  source-path-free diagnostics，再接真实 importer、GPU owner 或热更新。
-- 仍未完成真实 texture importer、cache hit/missing product/upload failure 诊断矩阵和 mesh product/runtime 闭环。
+- #124 已完成 CPU-only runtime resource handle baseline：稳定 pending / ready / failed、generation 和
+  source-path-free diagnostics。
+- #127 正在推进 product records -> runtime resource state：把 exact ready、missing、stale/mismatched 和 invalid
+  product record 转成 source-path-free runtime state/diagnostics，再接真实 importer、GPU owner 或热更新。
+- 仍未完成真实 texture importer、upload failure 诊断矩阵、GPU resource owner 和 mesh product/runtime 闭环。
 
 ### Phase C：Scene Draw Packet MVP
 

@@ -34,6 +34,12 @@ namespace asharia::resource {
             return productKey.guid == key.guid && productKey.assetType == key.assetType;
         }
 
+        [[nodiscard]] std::string failedResolutionMessage(RuntimeResourceKey key,
+                                                          std::string reason) {
+            return "Runtime resource product resolution for " + keyLabel(key) + " " +
+                   std::move(reason) + ".";
+        }
+
     } // namespace
 
     Result<RuntimeResourceTicket>
@@ -179,6 +185,84 @@ namespace asharia::resource {
         return *existing;
     }
 
+    Result<RuntimeResourceRecord> RuntimeResourceRegistry::resolveProductRecords(
+        RuntimeResourceTicket ticket, std::span<const asset::AssetProductRecord> products) {
+        if (!ticket) {
+            return std::unexpected{runtimeResourceError(
+                RuntimeResourceDiagnosticCode::InvalidResourceKey,
+                "Runtime resource product resolution rejected invalid ticket.")};
+        }
+
+        auto existing =
+            std::ranges::find_if(records_, [key = ticket.key](const RuntimeResourceRecord& record) {
+                return record.key == key;
+            });
+        if (existing == records_.end()) {
+            return std::unexpected{
+                runtimeResourceError(RuntimeResourceDiagnosticCode::MissingResource,
+                                     "Runtime resource product resolution could not find " +
+                                         keyLabel(ticket.key) + ".")};
+        }
+
+        if (existing->generation != ticket.generation) {
+            return std::unexpected{runtimeResourceError(
+                RuntimeResourceDiagnosticCode::GenerationMismatch,
+                "Runtime resource product resolution for " + keyLabel(ticket.key) +
+                    " rejected stale generation expected=" + std::to_string(existing->generation) +
+                    " actual=" + std::to_string(ticket.generation) + ".")};
+        }
+
+        if (existing->state != RuntimeResourceState::Pending) {
+            return std::unexpected{runtimeResourceError(
+                RuntimeResourceDiagnosticCode::ResourceNotPending,
+                "Runtime resource product resolution for " + keyLabel(ticket.key) +
+                    " rejected state=\"" + runtimeResourceStateName(existing->state) + "\".")};
+        }
+
+        const asset::AssetProductRecord* invalidExpectedProduct = nullptr;
+        const asset::AssetProductRecord* staleProduct = nullptr;
+        for (const asset::AssetProductRecord& product : products) {
+            if (product.key == existing->expectedProductKey) {
+                if (product) {
+                    return markReady(ticket, product);
+                }
+
+                invalidExpectedProduct = &product;
+            } else if (productKeyMatches(ticket.key, product.key)) {
+                staleProduct = &product;
+            }
+        }
+
+        if (invalidExpectedProduct != nullptr) {
+            return markFailed(ticket,
+                              RuntimeResourceFailure{
+                                  .reason = RuntimeResourceFailureReason::InvalidProductRecord,
+                                  .message = failedResolutionMessage(
+                                      ticket.key, "found invalid expected " +
+                                                      productKeyLabel(invalidExpectedProduct->key)),
+                              });
+        }
+
+        if (staleProduct != nullptr) {
+            return markFailed(
+                ticket, RuntimeResourceFailure{
+                            .reason = RuntimeResourceFailureReason::StaleProduct,
+                            .message = failedResolutionMessage(
+                                ticket.key, "found stale " + productKeyLabel(staleProduct->key) +
+                                                " expected " +
+                                                productKeyLabel(existing->expectedProductKey)),
+                        });
+        }
+
+        return markFailed(ticket,
+                          RuntimeResourceFailure{
+                              .reason = RuntimeResourceFailureReason::MissingProduct,
+                              .message = failedResolutionMessage(
+                                  ticket.key, "could not find expected " +
+                                                  productKeyLabel(existing->expectedProductKey)),
+                          });
+    }
+
     const RuntimeResourceRecord*
     RuntimeResourceRegistry::find(RuntimeResourceKey key) const noexcept {
         const auto found = std::ranges::find_if(
@@ -226,6 +310,10 @@ namespace asharia::resource {
         switch (reason) {
         case RuntimeResourceFailureReason::MissingProduct:
             return "missing-product";
+        case RuntimeResourceFailureReason::StaleProduct:
+            return "stale-product";
+        case RuntimeResourceFailureReason::InvalidProductRecord:
+            return "invalid-product-record";
         case RuntimeResourceFailureReason::ProductReadFailed:
             return "product-read-failed";
         case RuntimeResourceFailureReason::UnsupportedProduct:

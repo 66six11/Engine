@@ -110,8 +110,8 @@ packages/resource-runtime/
   public API 只依赖 `asset-core`，实现内部通过 `asset_core_io` 读取 `.ameta`，不拥有 watcher、importer、
   product cache 或 GPU upload。
 - `asharia::resource_runtime` 只依赖 `asset-core`，当前提供 CPU-only runtime resource key、ticket、
-  pending / ready / failed 状态和 diagnostics；不依赖 `asset-pipeline`、RenderGraph、renderer、RHI、editor
-  或 ImGui。
+  pending / ready / failed 状态、product-record resolution 和 diagnostics；不依赖 `asset-pipeline`、RenderGraph、
+  renderer、RHI、editor 或 ImGui。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
 - `apps/editor`、`packages/scene-core`、`packages/material-core` 和未来 `packages/scripting` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
@@ -469,6 +469,8 @@ struct RuntimeResourceRecord {
 - scene、material、script 保存 `AssetHandle<T>` 或 `AssetReference`。
 - runtime resource registry 只保存 GUID / asset type / product key / generation / diagnostics，不保存 source
   path 或 editor-only pending marker。
+- product manifest records 可以被解析为 runtime state：exact expected product key 进入 `Ready`，
+  missing/stale/mismatched/invalid product record 进入 `Failed`，但这仍只是 CPU state，不读取 product blob。
 - renderer 和 RHI 只消费已经解析好的 resource packet，不直接读 `.ameta`。
 - missing asset 必须能返回 fallback resource 或明确错误；不允许崩在 render recording 阶段。
 - hot reload 只能通过 asset/resource manager 发布新 product，不直接修改 live World 或 command buffer。
@@ -978,13 +980,17 @@ scan-to-planning bridge baseline 稳定。
 - `packages/resource-runtime` 新增 `asharia::resource_runtime` target，target 只依赖 `asset-core`。
 - `RuntimeResourceRegistry` 提供 `Pending` / `Ready` / `Failed` 状态、`RuntimeResourceTicket`
   generation、expected `AssetProductKey` 和 failure reason。
+- `resolveProductRecords()` 把 product manifest records 解析为 runtime state：exact match -> `Ready`；
+  missing/stale/mismatched/invalid records -> `Failed` with deterministic diagnostics。
 - package-local smoke 覆盖 invalid handle、pending -> ready、pending -> failed、stale generation rejection、
-  product key mismatch 和 source-path-free diagnostics。
+  product key mismatch、product record resolution matrix 和 source-path-free diagnostics。
 
 验收：
 
 - runtime resource state 不暴露 source path，不持有 Vulkan / RenderGraph / editor 对象。
 - `Ready` 必须绑定完整 `AssetProductKey`；旧 generation 或 product key mismatch 会 fail early。
+- product-cache truth 可以进入 runtime state，但 product blob 读取、GPU resource owner、upload scheduling 和
+  hot reload 仍是后续切片。
 - `resource-runtime` 可独立构建测试，后续 GPU texture/mesh owner 只能消费它的状态合同，不能把 loader
   逻辑塞回 `asset-core` 或 Asset Browser。
 

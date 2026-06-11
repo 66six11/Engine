@@ -29,6 +29,8 @@ namespace asharia::resource {
 
     enum class RuntimeResourceFailureReason : std::uint8_t {
         MissingProduct,
+        StaleProduct,
+        InvalidProductRecord,
         ProductReadFailed,
         UnsupportedProduct,
         RuntimeCreationFailed,
@@ -104,6 +106,10 @@ namespace asharia::resource {
 
         [[nodiscard]] Result<RuntimeResourceRecord> markFailed(RuntimeResourceTicket ticket,
                                                                RuntimeResourceFailure failure);
+
+        [[nodiscard]] Result<RuntimeResourceRecord>
+        resolveProductRecords(RuntimeResourceTicket ticket,
+                              std::span<const asset::AssetProductRecord> products);
 
         [[nodiscard]] const RuntimeResourceRecord* find(RuntimeResourceKey key) const noexcept;
 
