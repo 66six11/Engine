@@ -169,6 +169,8 @@ namespace asharia {
         FillBuffer,
         CopyImage,
         CopyBuffer,
+        CopyBufferToImage,
+        CopyImageToBuffer,
         Dispatch,
     };
 

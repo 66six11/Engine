@@ -79,6 +79,7 @@ flowchart TD
     App --> Serialization
     App --> Window
     App --> RG
+    App -->|asset product/upload smoke| AssetPipeline
     App -->|current MVP/smoke wiring| RhiVk
     App -->|smoke validation only| RhiVkRG
     App -->|CPU-only benchmark schemas| Renderer
@@ -223,6 +224,7 @@ flowchart TD
     DescriptorSmoke["--smoke-descriptor-layout"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
     ComputeDispatchSmoke["--smoke-compute-dispatch"]
+    TextureUploadSmoke["--smoke-texture-upload"]
     FormatContractSmoke["--smoke-renderer-format-contract"]
     DeferredDeletionSmoke["--smoke-deferred-deletion"]
     GLFW["GlfwInstance / GlfwWindow"]
@@ -232,6 +234,7 @@ flowchart TD
     ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d / compute SPIR-V + reflection JSON"]
     RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer / BasicComputeDispatchRenderer<br/>shader modules / pipeline layout / buffers / pipeline<br/>BasicDrawItem / BasicDrawListItem / MVP push constants / dispatch params"]
     DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout<br/>descriptor allocator-backed pool/set<br/>buffer + image + sampler write"]
+    TextureProduct["asset_pipeline execute<br/>placeholder Texture2D product blob"]
 
     Start --> Args
     Args --> WindowSmoke
@@ -250,6 +253,7 @@ flowchart TD
     Args --> DescriptorSmoke
     Args --> FullscreenTextureSmoke
     Args --> ComputeDispatchSmoke
+    Args --> TextureUploadSmoke
     Args --> FormatContractSmoke
     Args --> DeferredDeletionSmoke
     WindowSmoke --> GLFW
@@ -305,6 +309,10 @@ flowchart TD
     ComputeDispatchSmoke --> Context
     ComputeDispatchSmoke --> ShaderBuild
     ComputeDispatchSmoke --> RendererObject
+    TextureUploadSmoke --> GLFW
+    TextureUploadSmoke --> Ext
+    TextureUploadSmoke --> Context
+    TextureUploadSmoke --> TextureProduct
     Context --> Device
 ```
 
@@ -337,6 +345,10 @@ flowchart TD
   再 transition 到 `ShaderRead(fragment)`，作为 sampled image + sampler + uniform buffer 绑定后由
   fullscreen dynamic-rendering pass 采样并写入 backbuffer；smoke 同时验证 descriptor allocator 和 buffer
   upload counters。
+- `--smoke-texture-upload` 已接入最小 asset product -> GPU sampled texture 路径：用
+  `asset_pipeline::executeAssetProducts()` 生成 deterministic Texture2D placeholder product blob，把 product
+  payload 写入 staging buffer，经 RenderGraph-visible `CopyBufferToImage` 上传到 imported Vulkan image，再用
+  `CopyImageToBuffer` 读回验证字节，并确认最终 image 进入 `ShaderRead(fragment)` sampled view。
 - `--smoke-offscreen-viewport` 已接入基于 `VulkanRenderTarget` 的持久 offscreen color target：先把
   viewport color image 作为 imported RenderGraph image 写入 `ColorAttachment`，再 transition 到
   `ShaderRead(fragment)` 并由 fullscreen composite pass 采样写回 backbuffer；smoke 验证 viewport
@@ -726,7 +738,8 @@ flowchart TD
 - RenderGraph transition 录制通过 `RenderGraphImageHandle -> VkImage/imageView/aspect` binding 查找真实
   Vulkan resource；pass callback 侧通过 `RenderGraphPassContext` 的 named slots 反查 `source`、
   `target` 或 `depth` 对应 binding，Backbuffer、`--smoke-transient` 的 transient color image 和
-  `--smoke-depth-triangle` 的 transient depth image 都已显式加入 binding 表。
+  `--smoke-depth-triangle` 的 transient depth image、`--smoke-texture-upload` 的 staging/readback buffers
+  和 product texture image 都已显式加入 binding 表。
 - `--smoke-rendergraph` 已验证 `StorageReadWrite(compute)` buffer access、`Dispatch` command summary、
   `builtin.compute-dispatch` / `builtin.compute-readback` schema 负向路径，以及
   `TransferWrite -> StorageReadWrite(compute)`、`StorageReadWrite(compute) -> TransferRead` 和
@@ -850,6 +863,8 @@ flowchart TD
   GPU-side copy/read 操作；旧的无 slot API 暂时等价于 `"source"`。
 - `copyImage("source", "target")` 只描述同一 pass 内从 `TransferRead` source 到 `TransferWrite` target 的
   RenderGraph command；实际 Vulkan copy 仍由后端执行器基于 slot binding 录制。
+- `copyBufferToImage("source", "target")` / `copyImageToBuffer("source", "target")` 分别描述 buffer/image
+  transfer copy command；实际 Vulkan copy 仍由后端执行器基于 slot binding 录制。
 - `readTexture("source", image, shaderStage)` 会要求 image 进入 `ShaderRead(shaderStage)`；当前 smoke
   已验证 fragment shader-read，fullscreen texture 路径已执行真实 descriptor sampling。
 - `writeDepth("depth", image)` 会要求 image 进入 `DepthAttachmentWrite`。
@@ -914,6 +929,8 @@ flowchart TD
   `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`。
 - `--smoke-rendergraph` 已验证 `TransferRead`/`TransferSrc` dependency、diagnostics、`copyImage` command schema、
   missing/invalid slot 失败路径，以及 `TransferSrc -> TransferDst` copy 准备 barrier 的 Vulkan 字段。
+- `--smoke-texture-upload` 已验证 texture product upload/readback 的 RenderGraph diagnostics 同时暴露
+  `CopyBufferToImage` 和 `CopyImageToBuffer`，并通过真实 Vulkan copy 对比 product payload 字节。
 - `--smoke-rendergraph` 已验证 buffer `Undefined -> TransferWrite`、`TransferWrite -> ShaderRead(fragment)`、
   `ShaderRead(compute)` usage、`TransferWrite -> StorageReadWrite(compute)`、
   `StorageReadWrite(compute) -> TransferRead` 和 `TransferWrite -> HostRead` 映射到

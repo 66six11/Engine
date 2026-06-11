@@ -9,7 +9,9 @@ namespace asharia::rendergraph_header_tests {
             .setVec4("tint", {1.0F, 0.5F, 0.25F, 1.0F})
             .drawFullscreenTriangle()
             .fillBuffer("upload", 42)
-            .copyBuffer("staging", "device");
+            .copyBuffer("staging", "device")
+            .copyBufferToImage("staging", "texture")
+            .copyImageToBuffer("texture", "readback");
 
         (void)commands.commands();
     }

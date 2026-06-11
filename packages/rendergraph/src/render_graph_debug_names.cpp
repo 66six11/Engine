@@ -1,7 +1,7 @@
-﻿#include <string>
-#include <string_view>
+﻿#include "render_graph_debug_names.hpp"
 
-#include "render_graph_debug_names.hpp"
+#include <string>
+#include <string_view>
 
 namespace asharia::rendergraph_internal {
 
@@ -113,6 +113,10 @@ namespace asharia::rendergraph_internal {
             return "CopyImage";
         case RenderGraphCommandKind::CopyBuffer:
             return "CopyBuffer";
+        case RenderGraphCommandKind::CopyBufferToImage:
+            return "CopyBufferToImage";
+        case RenderGraphCommandKind::CopyImageToBuffer:
+            return "CopyImageToBuffer";
         case RenderGraphCommandKind::Dispatch:
             return "Dispatch";
         }
@@ -138,6 +142,8 @@ namespace asharia::rendergraph_internal {
             return command.name + " = " + std::to_string(command.uintValues[0]);
         case RenderGraphCommandKind::CopyImage:
         case RenderGraphCommandKind::CopyBuffer:
+        case RenderGraphCommandKind::CopyBufferToImage:
+        case RenderGraphCommandKind::CopyImageToBuffer:
             return command.name + " -> " + command.secondaryName;
         case RenderGraphCommandKind::DrawFullscreenTriangle:
             return "-";
@@ -149,8 +155,7 @@ namespace asharia::rendergraph_internal {
         return "-";
     }
 
-    std::string imageAccessName(RenderGraphImageState state,
-                                RenderGraphShaderStage shaderStage) {
+    std::string imageAccessName(RenderGraphImageState state, RenderGraphShaderStage shaderStage) {
         std::string name{imageStateName(state)};
         if ((state == RenderGraphImageState::ShaderRead ||
              state == RenderGraphImageState::DepthSampledRead) &&
@@ -162,8 +167,7 @@ namespace asharia::rendergraph_internal {
         return name;
     }
 
-    std::string bufferAccessName(RenderGraphBufferState state,
-                                 RenderGraphShaderStage shaderStage) {
+    std::string bufferAccessName(RenderGraphBufferState state, RenderGraphShaderStage shaderStage) {
         std::string name{bufferStateName(state)};
         if (state == RenderGraphBufferState::ShaderRead &&
             shaderStage != RenderGraphShaderStage::None) {

@@ -78,6 +78,7 @@ $smokes = @(
     "--smoke-offscreen-viewport",
     "--smoke-compute-dispatch",
     "--smoke-buffer-upload",
+    "--smoke-texture-upload",
     "--smoke-renderer-format-contract",
     "--smoke-deferred-deletion",
     "--smoke-reflection-registry",
