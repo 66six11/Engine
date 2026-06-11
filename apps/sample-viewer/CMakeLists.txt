@@ -9,6 +9,7 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
 asharia_require_package_target(asharia::profiling packages/profiling)
 asharia_require_package_target(asharia::reflection packages/reflection)
 asharia_require_package_target(asharia::serialization packages/serialization)
@@ -25,6 +26,7 @@ add_dependencies(asharia-sample-viewer asharia-renderer-basic-shaders)
 
 target_link_libraries(asharia-sample-viewer
     PRIVATE
+        asharia::asset_pipeline
         asharia::core
         asharia::profiling
         asharia::reflection

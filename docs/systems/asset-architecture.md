@@ -99,7 +99,7 @@ packages/project-core/
   public API 只依赖 `asset-core`，实现内部通过 `asset_core_io` 读取 `.ameta`，不拥有 watcher、importer、
   product cache 或 GPU upload。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
-- `apps/editor`、`packages/scene-core`、`packages/material` 和 `packages/scripting` 可以消费
+- `apps/editor`、`packages/scene-core`、`packages/material-core` 和未来 `packages/scripting` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
 
 建议顶层依赖：
@@ -936,14 +936,20 @@ scan-to-planning bridge baseline 稳定。
 - 当前第一步已落地 graph-visible buffer copy baseline：`builtin.transfer-copy-buffer`、`CopyBuffer`
   command summary 和 `--smoke-buffer-upload` 覆盖显式 upload payload 经 staging buffer 到 device-local
   buffer 再到 readback buffer。
-- 后续仍需 Mesh/texture product record 到 runtime resource request 的桥接。
+- 最小 texture product/upload smoke 已接入：`--smoke-texture-upload` 使用 `asset-pipeline` 的 deterministic
+  placeholder product execution 生成 Texture2D product blob，从 product payload 上传到 Vulkan image，再通过
+  RenderGraph-visible `CopyBufferToImage` / `CopyImageToBuffer` readback 验证。
+- 后续仍需 Mesh product record、runtime resource handle、product cache hit/missing-product 诊断矩阵和真实
+  texture importer。
 - staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`、`project-core` 或 `.ameta`。
 
 验收：
 
 - `--smoke-buffer-upload` 证明基础 buffer upload/copy work 是 RenderGraph-visible，且输入来自显式
   upload payload，不来自 source path 或 metadata IO。
-- 后续 `--smoke-mesh-resource` 和 `--smoke-texture-upload` 证明 runtime 不直接依赖 source path。
+- `--smoke-texture-upload` 证明 texture upload 输入来自 deterministic product payload，最终 GPU image
+  能作为 sampled view 暴露；runtime 不直接依赖 source path。
+- 后续 `--smoke-mesh-resource` 证明 mesh runtime resource 不直接依赖 source path。
 
 ## 并行开发建议
 

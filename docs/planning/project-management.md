@@ -132,6 +132,7 @@ AshariaEngine/
     asset-core/
     asset-pipeline/
     cpp-binding/
+    material-core/
     persistence/
     profiling/
     project-core/
@@ -139,19 +140,23 @@ AshariaEngine/
     rendergraph/
     renderer-basic/
     rhi-vulkan/
+    scene-core/
     schema/
     serialization/
     shader-slang/
     window-glfw/
   scripts/
   tools/
+    asset-processor/
+    check-asset-boundaries.ps1
     check-doc-sync.ps1
     check-text-encoding.ps1
     count-code-lines.ps1
+    pre-pr.ps1
 ```
 
-后续可能新增 `tests/`、`package-registry/`、`packages/scene-core/`、`packages/editor-core/`、
-`packages/input/` 等目录，但新增前应先明确 package 边界、CMake target 关系和文档归属。
+后续可能新增 `tests/`、`package-registry/`、`packages/editor-core/`、`packages/input/` 等目录，
+但新增前应先明确 package 边界、CMake target 关系和文档归属。
 
 ## 变更策略
 
@@ -171,58 +176,10 @@ AshariaEngine/
 - Gate 4 Validation：build、shader validation、Vulkan validation 已运行或明确阻塞原因。
 - Gate 5 Review：记录 findings、风险和后续任务。
 
-## 初始任务拆分
+## 历史进度记录
 
-1. 创建 CMake、Conan、preset、dependency profile 骨架。[x]
-2. 建立 `apps/`、`engine/`、`packages/` 的 package-first 目录和 CMake target 边界。[x]
-3. 添加 `engine/core` 日志、错误、断言工具。[x]
-4. 添加 `packages/window-glfw` 的 GLFW window 和 Vulkan surface。[x]
-5. 添加 `packages/rhi-vulkan` 的 Vulkan instance/device/queue/allocator。[x]
-6. 添加 swapchain 和 frame pacing。[x]
-7. 添加 `packages/rendergraph` builder/compiler 骨架。[x]
-8. 添加 clear pass。[x]
-9. 添加 `packages/shader-slang` shader build 路径和 triangle pass。[x]
-10. 添加基础 resize/recreate 路径和专项 smoke。[x]
-11. 添加 validation checklist 和 smoke test 文档。[x]
+本文件只维护 Project / Issue / PR 的操作规则，不再保存已完成任务拆分、阶段 DoD 或风险流水账。
 
-## 第一版引擎 Definition Of Done
-
-- 开发者能根据文档 configure、build、run，并能无参数启动交互式 sample viewer。
-- 窗口能通过 render graph execution 持续呈现 triangle，并保留 clear/dynamic clear smoke。
-- validation layer 在普通 startup-frame-shutdown 路径没有已知 error。
-- resource lifetime 和 synchronization 决策在代码和日志中可见。
-- shader 语言决策已确认，或已改为可工作的编译链路。
-
-## 已完成阶段任务拆分
-
-1. 增加 Slang reflection 基线，输出可审查的 `*.reflection.json`。[x]
-2. 基于 reflection 建立 descriptor set/binding 和 pipeline layout 契约。[x]
-3. 增加 RenderGraph transient image 声明、Vulkan binding 和 `--smoke-transient`。[x]
-4. 增加 depth attachment 抽象状态、Vulkan 翻译和 `--smoke-depth-triangle`。[x]
-5. 从固定顶点数据扩展到最小 mesh asset/index buffer 路线和 `--smoke-mesh`。[x]
-6. 增加最小 3D mesh、depth 和 MVP push constants 路线，不提前引入全局相机系统。[x]
-
-后续完整开发计划只维护在 `docs/planning/next-development-plan.md`，避免项目管理文档、RenderGraph 专项路线图和
-性能文档各自维护一套阶段顺序。新增里程碑时先更新 `docs/planning/next-development-plan.md`，本文件只记录已经完成
-或需要项目管理视角补充的门禁事项。
-
-## 风险表
-
-- Slang 工具链集成：Slang 支持 Vulkan SPIR-V，但 compiler 获取、版本 pin 和 Conan/CMake
-  集成需要明确。
-  缓解：shader metadata 记录 `slangc` 路径/版本，shader 输出统一走 `spirv-val`。
-- Vulkan 1.4 可用性：本机驱动可能不暴露 Vulkan 1.4。
-  缓解：请求 1.4，输出能力报告，再决定 fail fast 或支持 1.3 fallback。
-- 同步复杂度：render graph barrier 很容易细节错误。
-  缓解：首版单 queue、只用 synchronization2、开启详细 debug log 和 sync validation。
-- Swapchain resize：自动 smoke 已覆盖 zero extent 和主动 recreate；真实交互 resize/minimize
-  已在无参数 sample viewer 中手动验证通过。
-  缓解：保留 `--smoke-resize` 作为回归门禁；后续若接入平台 resize 事件回调，再补充事件级验证记录。
-- 依赖漂移：未审查的 Conan 依赖升级可能改变行为。
-  缓解：提交 `conan.lock` 并让 bootstrap 自动使用；依赖改动时审查 lockfile diff。
-- 包边界膨胀：为了快速跑通，代码容易滑向 monolithic app。
-  缓解：从第一版 CMake target 开始按 `apps/engine/packages` 分层，app 只组合 package。
-- Shader reflection 风险：Slang reflection 需要接入 API，而不是只靠 `slangc` 命令行。
-  缓解：先生成 JSON 作为构建产物，不直接生成 C++ 代码；descriptor/layout 自动化放到下一步。
-- Transient/depth 同步风险：新增 image 状态会扩大 layout、stage、access 组合。
-  缓解：每新增一种 RenderGraph state 都同时增加 Vulkan adapter 单元验证和 smoke。
+- 当前路线和下一阶段顺序维护在 `docs/planning/next-development-plan.md`。
+- 已完成阶段、历史风险和跨 PR 清理记录维护在 GitHub Issues / Project；#20 `[Epic] Workflow: roadmap, docs, and Project sync` 是长期同步入口。
+- 需要保留的新进度先按本文件规则查重，再写入对应 Epic / Slice 的正文或评论。
