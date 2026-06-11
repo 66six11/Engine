@@ -120,8 +120,9 @@ flowchart TD
   输出 deterministic manifest、`AssetCatalog` 输入和 diagnostics；它不做 watcher、import 调度、product
   cache manifest、GPU upload 或 editor UI。
 - `resource-runtime` 当前只做 CPU-only runtime resource handle 状态合同：消费 `asset-core` 的
-  `AssetHandle<T>` / `AssetProductKey`，表达 pending / ready / failed、generation 和 diagnostics；它不依赖
-  `asset-pipeline`、RenderGraph、renderer、RHI 或 editor，也不创建 GPU resource。
+  `AssetHandle<T>` / `AssetProductKey` / `AssetProductRecord`，表达 pending / ready / failed、generation 和
+  product-cache diagnostics；它不依赖 `asset-pipeline`、RenderGraph、renderer、RHI 或 editor，也不创建
+  GPU resource。
 - `material-core` 当前只做 CPU-only material resource signature、shader/signature compatibility validation 和
   material pipeline key hash；它不做 `.amat` IO、asset import、GPU upload、Vulkan descriptor/pipeline cache、
   RenderGraph/RHI changes 或 editor UI。

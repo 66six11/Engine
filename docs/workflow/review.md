@@ -134,8 +134,9 @@ profile/sub-asset 语义时，还必须跑资产边界检查，确保 `asset-cor
 powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 ```
 
-涉及 `packages/resource-runtime` runtime handle/status/diagnostics 时，必须跑 package-local tests，证明
-pending / ready / failed、generation 和 product key mismatch 语义没有漂移：
+涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
+package-local tests，证明 pending / ready / failed、generation、product key mismatch 和 product record
+诊断矩阵没有漂移：
 
 ```powershell
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\resource-runtime -B build\cmake\package-resource-runtime-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-resource-runtime-tests-msvc-debug && ctest --test-dir build\cmake\package-resource-runtime-tests-msvc-debug --output-on-failure"

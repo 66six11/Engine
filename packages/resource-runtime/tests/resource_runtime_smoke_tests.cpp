@@ -229,10 +229,146 @@ namespace {
         return true;
     }
 
+    bool expectFailedResolution(const asharia::resource::RuntimeResourceRecord& record,
+                                asharia::resource::RuntimeResourceFailureReason reason,
+                                std::string_view expectedMessageToken) {
+        if (record.state != asharia::resource::RuntimeResourceState::Failed ||
+            record.failure.reason != reason ||
+            !messageContains(record.failure.message, expectedMessageToken) ||
+            !messageExcludes(record.failure.message, "Content/Textures")) {
+            logFailure("Runtime resource smoke saw invalid failed product resolution.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeRuntimeResourceProductResolution() {
+        const asharia::asset::SourceAssetRecord source = makeTextureSource();
+        const asharia::asset::AssetProductRecord product = makeTextureProduct(source);
+        const asharia::resource::RuntimeResourceKey key{
+            .guid = source.guid,
+            .assetType = source.assetType,
+        };
+
+        asharia::resource::RuntimeResourceRegistry readyRegistry;
+        auto readyTicket = readyRegistry.request(key, product.key);
+        if (!readyTicket) {
+            logFailure(readyTicket.error().message);
+            return false;
+        }
+
+        const std::array readyProducts{product};
+        auto ready = readyRegistry.resolveProductRecords(*readyTicket, readyProducts);
+        if (!ready || ready->state != asharia::resource::RuntimeResourceState::Ready ||
+            ready->product != product) {
+            logFailure("Runtime resource smoke failed exact product resolution.");
+            return false;
+        }
+
+        asharia::resource::RuntimeResourceRegistry missingRegistry;
+        auto missingTicket = missingRegistry.request(key, product.key);
+        if (!missingTicket) {
+            logFailure(missingTicket.error().message);
+            return false;
+        }
+        auto missing = missingRegistry.resolveProductRecords(*missingTicket, {});
+        if (!missing ||
+            !expectFailedResolution(*missing,
+                                    asharia::resource::RuntimeResourceFailureReason::MissingProduct,
+                                    "could not find expected")) {
+            return false;
+        }
+
+        asharia::resource::RuntimeResourceRegistry invalidRegistry;
+        auto invalidTicket = invalidRegistry.request(key, product.key);
+        if (!invalidTicket) {
+            logFailure(invalidTicket.error().message);
+            return false;
+        }
+        asharia::asset::AssetProductRecord invalidProduct = product;
+        invalidProduct.relativeProductPath.clear();
+        invalidProduct.productHash = 0;
+        const std::array invalidProducts{invalidProduct};
+        auto invalid = invalidRegistry.resolveProductRecords(*invalidTicket, invalidProducts);
+        if (!invalid ||
+            !expectFailedResolution(
+                *invalid, asharia::resource::RuntimeResourceFailureReason::InvalidProductRecord,
+                "invalid expected productKey")) {
+            return false;
+        }
+
+        asharia::resource::RuntimeResourceRegistry staleRegistry;
+        auto staleTicket = staleRegistry.request(key, product.key);
+        if (!staleTicket) {
+            logFailure(staleTicket.error().message);
+            return false;
+        }
+        asharia::asset::SourceAssetRecord staleSource = source;
+        staleSource.sourceHash ^= 0x100ULL;
+        const asharia::asset::AssetProductRecord staleProduct = makeTextureProduct(staleSource);
+        const std::array staleProducts{staleProduct};
+        auto stale = staleRegistry.resolveProductRecords(*staleTicket, staleProducts);
+        if (!stale || !expectFailedResolution(
+                          *stale, asharia::resource::RuntimeResourceFailureReason::StaleProduct,
+                          "found stale productKey")) {
+            return false;
+        }
+
+        asharia::resource::RuntimeResourceRegistry staleTypeRegistry;
+        auto staleTypeTicket = staleTypeRegistry.request(key, product.key);
+        if (!staleTypeTicket) {
+            logFailure(staleTypeTicket.error().message);
+            return false;
+        }
+        asharia::asset::SourceAssetRecord staleTypeSource = source;
+        staleTypeSource.assetType = asharia::asset::makeAssetTypeId("com.asharia.asset.Mesh");
+        staleTypeSource.assetTypeName = "com.asharia.asset.Mesh";
+        const asharia::asset::AssetProductRecord staleTypeProduct =
+            makeTextureProduct(staleTypeSource);
+        const std::array staleTypeProducts{staleTypeProduct};
+        auto staleType =
+            staleTypeRegistry.resolveProductRecords(*staleTypeTicket, staleTypeProducts);
+        if (!staleType ||
+            !expectFailedResolution(*staleType,
+                                    asharia::resource::RuntimeResourceFailureReason::StaleProduct,
+                                    "found stale productKey")) {
+            return false;
+        }
+
+        asharia::resource::RuntimeResourceRegistry generationRegistry;
+        auto firstTicket = generationRegistry.request(key, product.key);
+        auto secondTicket = generationRegistry.request(key, product.key);
+        if (!firstTicket || !secondTicket) {
+            logFailure("Runtime resource smoke failed generation setup.");
+            return false;
+        }
+        auto staleGeneration =
+            generationRegistry.resolveProductRecords(*firstTicket, readyProducts);
+        if (staleGeneration ||
+            !expectErrorCode(staleGeneration.error(),
+                             asharia::resource::RuntimeResourceDiagnosticCode::GenerationMismatch,
+                             "stale generation")) {
+            return false;
+        }
+        if (asharia::resource::runtimeResourceFailureReasonName(
+                asharia::resource::RuntimeResourceFailureReason::StaleProduct) !=
+                std::string_view{"stale-product"} ||
+            asharia::resource::runtimeResourceFailureReasonName(
+                asharia::resource::RuntimeResourceFailureReason::InvalidProductRecord) !=
+                std::string_view{"invalid-product-record"}) {
+            logFailure("Runtime resource smoke saw invalid failure reason labels.");
+            return false;
+        }
+
+        return true;
+    }
+
 } // namespace
 
 int main() {
     const bool passed = smokeRuntimeResourceInvalids() && smokeRuntimeResourceReadyAndFailed() &&
-                        smokeRuntimeResourceProductMismatch();
+                        smokeRuntimeResourceProductMismatch() &&
+                        smokeRuntimeResourceProductResolution();
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
