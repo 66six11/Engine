@@ -15,6 +15,7 @@ asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 
 add_library(asharia-asset-pipeline STATIC
     src/asset_import_planning.cpp
+    src/asset_product_blob.cpp
     src/asset_product_execution.cpp
     src/asset_product_manifest_io.cpp
     src/asset_scanned_import_planning.cpp
@@ -51,6 +52,7 @@ if(ASHARIA_BUILD_TESTS)
   add_executable(asharia-asset-pipeline-header-tests
       tests/asset_pipeline_header_tests.cpp
       tests/asset_import_planning_header_test.cpp
+      tests/asset_product_blob_header_test.cpp
       tests/asset_product_execution_header_test.cpp
       tests/asset_product_manifest_io_header_test.cpp
       tests/asset_scanned_import_planning_header_test.cpp

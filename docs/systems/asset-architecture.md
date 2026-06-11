@@ -961,8 +961,10 @@ scan-to-planning bridge baseline 稳定。
 - 最小 texture product/upload smoke 已接入：`--smoke-texture-upload` 使用 `asset-pipeline` 的 deterministic
   placeholder product execution 生成 Texture2D product blob，从 product payload 上传到 Vulkan image，再通过
   RenderGraph-visible `CopyBufferToImage` / `CopyImageToBuffer` readback 验证。
-- 后续仍需 Mesh product record、runtime resource handle、product cache hit/missing-product 诊断矩阵和真实
-  texture importer。
+- `asset-pipeline` 提供 placeholder product blob 读取 helper，当前用于把 deterministic product blob 中的
+  source payload 解析为显式 bytes，并报告 missing/malformed/unterminated payload diagnostics；它仍不做真实
+  texture decode 或 GPU owner。
+- 后续仍需 Mesh product record、真实 texture importer、完整 GPU resource owner 和 runtime texture/mesh lifetime。
 - staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`、`project-core` 或 `.ameta`。
 
 验收：
@@ -1011,6 +1013,7 @@ scan-to-planning bridge baseline 稳定。
 | asset-pipeline scan-to-planning bridge | 只组合既有 scan/discovery/snapshot/planning 阶段，可用 package-local tests 验证。 | 不做 CLI、不执行 importer、不写 manifest/blob/cache、不做 watcher 或 editor UI。 |
 | asset-processor dry-run CLI | 只做 read-only CLI reporting，可用 `--smoke-dry-run` 验证。 | 不执行 importer、不写 manifest/blob/cache、不做 watcher、hot reload、editor UI 或 GPU upload。 |
 | asset-pipeline / asset-processor product execution | 只消费已有 import plan 和显式 source bytes，写 deterministic placeholder product blob/manifest。 | 不接真实 importer、不做 watcher、dependency invalidation、runtime resource loading 或 GPU upload。 |
+| asset-pipeline placeholder product blob read | 只读取当前 deterministic placeholder blob 的 source payload 并返回稳定 diagnostics。 | 不解析 PNG/KTX/HDR，不创建 runtime texture，不拥有 Vulkan/RenderGraph upload。 |
 | material-core signature / pipeline key | 只定义 CPU-side material resource signature、compatibility diagnostics 和 deterministic pipeline key hash，可用 package-local tests 验证。 | 不做 `.amat` IO、不执行 importer、不写 product cache、不创建 Vulkan pipeline/cache、不做 editor UI。 |
 
 等待后再做：

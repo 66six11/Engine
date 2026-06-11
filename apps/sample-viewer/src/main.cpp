@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_product_execution.hpp"
 #include "asharia/core/error.hpp"
 #include "asharia/core/log.hpp"
@@ -3070,7 +3071,8 @@ namespace {
     constexpr VkExtent2D kSmokeTextureUploadExtent{.width = 4, .height = 4};
     constexpr VkFormat kSmokeTextureUploadFormat = VK_FORMAT_B8G8R8A8_SRGB;
     constexpr std::size_t kSmokeTextureUploadPixelBytes =
-        kSmokeTextureUploadExtent.width * kSmokeTextureUploadExtent.height * 4U;
+        static_cast<std::size_t>(kSmokeTextureUploadExtent.width) *
+        static_cast<std::size_t>(kSmokeTextureUploadExtent.height) * 4U;
     constexpr std::string_view kSmokeTextureCopyBufferToImagePassType =
         "smoke.transfer-copy-buffer-to-image";
     constexpr std::string_view kSmokeTextureCopyImageToBufferPassType =
@@ -3094,69 +3096,16 @@ namespace {
     [[nodiscard]] std::vector<std::uint8_t> smokeTexturePixels() {
         std::vector<std::uint8_t> pixels(kSmokeTextureUploadPixelBytes);
         std::size_t offset = 0;
-        for (std::uint32_t y = 0; y < kSmokeTextureUploadExtent.height; ++y) {
-            for (std::uint32_t x = 0; x < kSmokeTextureUploadExtent.width; ++x) {
-                pixels[offset++] = static_cast<std::uint8_t>(20U + x * 31U);           // B
-                pixels[offset++] = static_cast<std::uint8_t>(40U + y * 43U);           // G
-                pixels[offset++] = static_cast<std::uint8_t>(80U + x * 19U + y * 17U); // R
-                pixels[offset++] = 255U;                                               // A
+        for (std::uint32_t row = 0; row < kSmokeTextureUploadExtent.height; ++row) {
+            for (std::uint32_t column = 0; column < kSmokeTextureUploadExtent.width; ++column) {
+                pixels[offset++] = static_cast<std::uint8_t>(20U + (column * 31U)); // B
+                pixels[offset++] = static_cast<std::uint8_t>(40U + (row * 43U));    // G
+                pixels[offset++] =
+                    static_cast<std::uint8_t>(80U + (column * 19U) + (row * 17U)); // R
+                pixels[offset++] = 255U;                                           // A
             }
         }
         return pixels;
-    }
-
-    [[nodiscard]] asharia::Result<std::vector<std::uint8_t>>
-    readSmokeTextureProductFile(const std::filesystem::path& path) {
-        std::error_code sizeError;
-        const std::uintmax_t size = std::filesystem::file_size(path, sizeError);
-        if (sizeError) {
-            return std::unexpected{asharia::Error{
-                asharia::ErrorDomain::Asset, 0,
-                "Texture upload smoke could not stat product file: " + sizeError.message()}};
-        }
-
-        std::ifstream file(path, std::ios::binary);
-        if (!file) {
-            return std::unexpected{
-                asharia::Error{asharia::ErrorDomain::Asset, 0,
-                               "Texture upload smoke could not open product file."}};
-        }
-
-        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
-        if (!bytes.empty()) {
-            file.read(reinterpret_cast<char*>(bytes.data()),
-                      static_cast<std::streamsize>(bytes.size()));
-            if (!file) {
-                return std::unexpected{
-                    asharia::Error{asharia::ErrorDomain::Asset, 0,
-                                   "Texture upload smoke could not read product file."}};
-            }
-        }
-        return bytes;
-    }
-
-    [[nodiscard]] asharia::Result<std::vector<std::uint8_t>>
-    extractSmokeTexturePayload(std::span<const std::uint8_t> productBytes) {
-        const std::string_view text{reinterpret_cast<const char*>(productBytes.data()),
-                                    productBytes.size()};
-        constexpr std::string_view kBegin = "sourceBytes.begin\n";
-        constexpr std::string_view kEnd = "\nsourceBytes.end";
-        const std::size_t begin = text.find(kBegin);
-        if (begin == std::string_view::npos) {
-            return std::unexpected{
-                asharia::Error{asharia::ErrorDomain::Asset, 0,
-                               "Texture product smoke blob does not contain source payload."}};
-        }
-        const std::size_t payloadBegin = begin + kBegin.size();
-        const std::size_t payloadEnd = text.find(kEnd, payloadBegin);
-        if (payloadEnd == std::string_view::npos || payloadEnd < payloadBegin) {
-            return std::unexpected{
-                asharia::Error{asharia::ErrorDomain::Asset, 0,
-                               "Texture product smoke blob has an unterminated source payload."}};
-        }
-
-        return std::vector<std::uint8_t>{productBytes.begin() + payloadBegin,
-                                         productBytes.begin() + payloadEnd};
     }
 
     [[nodiscard]] asharia::Result<SmokeTextureProduct> createSmokeTextureProduct() {
@@ -3246,17 +3195,16 @@ namespace {
                 asharia::Error{asharia::ErrorDomain::Asset, 0, std::move(message)}};
         }
 
-        auto productBytes =
-            readSmokeTextureProductFile(execution.writtenProducts.front().productFilePath);
-        if (!productBytes) {
-            return std::unexpected{std::move(productBytes.error())};
-        }
-        auto payload = extractSmokeTexturePayload(
-            std::span<const std::uint8_t>{productBytes->data(), productBytes->size()});
+        const asharia::asset::AssetProductWrite& writtenProduct = execution.writtenProducts.front();
+        auto payload = asharia::asset::readPlaceholderProductSourceBytes(
+            asharia::asset::AssetProductBlobReadRequest{
+                .productFilePath = writtenProduct.productFilePath,
+                .relativeProductPath = writtenProduct.product.relativeProductPath,
+            });
         if (!payload) {
             return std::unexpected{std::move(payload.error())};
         }
-        if (*payload != pixels) {
+        if (payload->sourceBytes != pixels) {
             return std::unexpected{
                 asharia::Error{asharia::ErrorDomain::Asset, 0,
                                "Texture upload smoke product payload changed during execution."}};
@@ -3267,8 +3215,8 @@ namespace {
 
         return SmokeTextureProduct{
             .source = source,
-            .product = execution.writtenProducts.front().product,
-            .pixelBytes = std::move(*payload),
+            .product = writtenProduct.product,
+            .pixelBytes = std::move(payload->sourceBytes),
         };
     }
 
