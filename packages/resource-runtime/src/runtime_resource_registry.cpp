@@ -34,6 +34,12 @@ namespace asharia::resource {
             return productKey.guid == key.guid && productKey.assetType == key.assetType;
         }
 
+        [[nodiscard]] bool
+        productKeyHasResourceGuid(RuntimeResourceKey key,
+                                  const asset::AssetProductKey& productKey) noexcept {
+            return productKey.guid == key.guid;
+        }
+
         [[nodiscard]] std::string failedResolutionMessage(RuntimeResourceKey key,
                                                           std::string reason) {
             return "Runtime resource product resolution for " + keyLabel(key) + " " +
@@ -228,7 +234,7 @@ namespace asharia::resource {
                 }
 
                 invalidExpectedProduct = &product;
-            } else if (productKeyMatches(ticket.key, product.key)) {
+            } else if (productKeyHasResourceGuid(ticket.key, product.key)) {
                 staleProduct = &product;
             }
         }

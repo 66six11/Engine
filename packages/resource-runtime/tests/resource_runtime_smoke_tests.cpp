@@ -315,6 +315,27 @@ namespace {
             return false;
         }
 
+        asharia::resource::RuntimeResourceRegistry staleTypeRegistry;
+        auto staleTypeTicket = staleTypeRegistry.request(key, product.key);
+        if (!staleTypeTicket) {
+            logFailure(staleTypeTicket.error().message);
+            return false;
+        }
+        asharia::asset::SourceAssetRecord staleTypeSource = source;
+        staleTypeSource.assetType = asharia::asset::makeAssetTypeId("com.asharia.asset.Mesh");
+        staleTypeSource.assetTypeName = "com.asharia.asset.Mesh";
+        const asharia::asset::AssetProductRecord staleTypeProduct =
+            makeTextureProduct(staleTypeSource);
+        const std::array staleTypeProducts{staleTypeProduct};
+        auto staleType =
+            staleTypeRegistry.resolveProductRecords(*staleTypeTicket, staleTypeProducts);
+        if (!staleType ||
+            !expectFailedResolution(*staleType,
+                                    asharia::resource::RuntimeResourceFailureReason::StaleProduct,
+                                    "found stale productKey")) {
+            return false;
+        }
+
         asharia::resource::RuntimeResourceRegistry generationRegistry;
         auto firstTicket = generationRegistry.request(key, product.key);
         auto secondTicket = generationRegistry.request(key, product.key);
