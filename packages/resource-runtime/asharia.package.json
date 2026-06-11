@@ -1,0 +1,13 @@
+{
+  "name": "com.asharia.resource-runtime",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Resource Runtime",
+  "description": "CPU-only runtime resource handle state and diagnostics contracts.",
+  "dependencies": ["com.asharia.asset-core"],
+  "targets": ["asharia-resource-runtime"],
+  "testTargets": ["asharia-resource-runtime-smoke-tests"],
+  "targetDependencies": {
+    "asharia-resource-runtime": ["asharia-asset-core"],
+    "asharia-resource-runtime-smoke-tests": ["asharia-resource-runtime"]
+  }
+}
