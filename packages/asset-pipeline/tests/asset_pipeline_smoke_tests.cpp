@@ -1,4 +1,5 @@
-﻿#include <array>
+﻿#include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -12,6 +13,7 @@
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_pipeline/asset_import_planning.hpp"
+#include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_product_execution.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
@@ -1200,6 +1202,20 @@ namespace {
         return false;
     }
 
+    [[nodiscard]] bool
+    expectProductBlobError(const asharia::Result<asharia::asset::AssetProductBlobPayload>& result,
+                           asharia::asset::AssetProductBlobDiagnosticCode expectedCode,
+                           std::string_view expectedToken) {
+        if (result || result.error().domain != asharia::ErrorDomain::Asset ||
+            result.error().code != static_cast<int>(expectedCode) ||
+            !messageContains(result.error().message, expectedToken)) {
+            logFailure("Asset product blob smoke did not find the expected diagnostic.");
+            return false;
+        }
+
+        return true;
+    }
+
     [[nodiscard]] bool smokeProductExecutionWritesDeterministicProducts() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-product-execution");
@@ -1271,6 +1287,21 @@ namespace {
                 logFailure("Asset product execution smoke did not write product file.");
                 return false;
             }
+
+            const auto expectedSource = std::ranges::find_if(
+                sourceBytes, [&product](const asharia::asset::AssetProductSourceBytes& source) {
+                    return source.sourcePath == product.source.sourcePath;
+                });
+            auto payload = asharia::asset::readPlaceholderProductSourceBytes(
+                asharia::asset::AssetProductBlobReadRequest{
+                    .productFilePath = product.productFilePath,
+                    .relativeProductPath = product.product.relativeProductPath,
+                });
+            if (expectedSource == sourceBytes.end() || !payload ||
+                payload->sourceBytes != expectedSource->bytes) {
+                logFailure("Asset product execution smoke could not read product payload.");
+                return false;
+            }
         }
 
         auto parsedManifest = asharia::asset::readAssetProductManifestFile(manifestPath);
@@ -1299,6 +1330,65 @@ namespace {
         }
 
         std::cout << "Asset product execution products: " << first.writtenProducts.size() << '\n';
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductBlobReadDiagnostics() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-product-blob-read");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::filesystem::path missingProduct = root / "missing.product";
+        auto missing = asharia::asset::readPlaceholderProductSourceBytes(
+            asharia::asset::AssetProductBlobReadRequest{
+                .productFilePath = missingProduct,
+                .relativeProductPath = "textures/missing.product",
+            });
+        if (!expectProductBlobError(missing,
+                                    asharia::asset::AssetProductBlobDiagnosticCode::MissingProduct,
+                                    "missing from the product cache")) {
+            return false;
+        }
+
+        auto empty =
+            asharia::asset::readPlaceholderProductSourceBytes({}, "textures/empty.product");
+        if (!expectProductBlobError(
+                empty, asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "is empty")) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> noPayload = bytesFromText("schema=placeholder\n");
+        auto missingPayload = asharia::asset::readPlaceholderProductSourceBytes(
+            std::span<const std::uint8_t>{noPayload.data(), noPayload.size()},
+            "textures/no-payload.product");
+        if (!expectProductBlobError(missingPayload,
+                                    asharia::asset::AssetProductBlobDiagnosticCode::MissingPayload,
+                                    "sourceBytes.begin")) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> unterminated =
+            bytesFromText("schema=placeholder\nsourceBytes.begin\nabc");
+        auto unterminatedPayload = asharia::asset::readPlaceholderProductSourceBytes(
+            std::span<const std::uint8_t>{unterminated.data(), unterminated.size()},
+            "textures/unterminated.product");
+        if (!expectProductBlobError(
+                unterminatedPayload,
+                asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                "unterminated sourceBytes payload")) {
+            return false;
+        }
+
+        if (std::string_view{asharia::asset::assetProductBlobDiagnosticCodeName(
+                asharia::asset::AssetProductBlobDiagnosticCode::ProductReadFailed)} !=
+            "product-read-failed") {
+            logFailure("Asset product blob smoke saw an unstable diagnostic label.");
+            return false;
+        }
+
         return true;
     }
 
@@ -1815,7 +1905,7 @@ int main() {
         smokeScannedImportPlanningStopsOnScanDiagnostics() &&
         smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
         smokeScannedImportPlanningPlanDiagnostics() &&
-        smokeProductExecutionWritesDeterministicProducts() &&
+        smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobReadDiagnostics() &&
         smokeProductExecutionSourceBytesHashMismatch() && smokeImportPlanningCacheHitAndMiss() &&
         smokeImportPlanningSourceChanged() && smokeImportPlanningMetadataSourceHashDriftWarning() &&
         smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&

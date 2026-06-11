@@ -82,9 +82,12 @@
   RenderGraph diagnostics。
 - #124 已完成 CPU-only runtime resource handle baseline：稳定 pending / ready / failed、generation 和
   source-path-free diagnostics。
-- #127 正在推进 product records -> runtime resource state：把 exact ready、missing、stale/mismatched 和 invalid
-  product record 转成 source-path-free runtime state/diagnostics，再接真实 importer、GPU owner 或热更新。
-- 仍未完成真实 texture importer、upload failure 诊断矩阵、GPU resource owner 和 mesh product/runtime 闭环。
+- #127 已完成 product records -> runtime resource state：把 exact ready、missing、stale/mismatched 和 invalid
+  product record 转成 source-path-free runtime state/diagnostics。
+- #101 已关闭 source-format / texture profile / catalog sub-asset / product-runtime-GPU 边界 guardrail。
+- #129 正在推进 texture product blob read + upload diagnostics：把 placeholder product blob 读取和 malformed/missing
+  payload 诊断从 sample-viewer ad hoc 逻辑收敛到 asset-pipeline helper，再接 texture upload smoke。
+- 仍未完成真实 texture importer、完整 GPU resource owner 和 mesh product/runtime 闭环。
 
 ### Phase C：Scene Draw Packet MVP
 
