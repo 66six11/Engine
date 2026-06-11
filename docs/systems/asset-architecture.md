@@ -9,8 +9,9 @@ AssetDatabase、不做 editor UI、不做 GPU resource owner。
 
 核心结论：`asset-core` 先负责稳定身份、source metadata、import settings、product/cache key、依赖摘要和
 runtime-safe asset handle。文件修改监听、source hash、metadata IO、import 调度、product cache manifest
-和 dependency invalidation 由独立 `asset-pipeline` / `asset-processor` 逐步承担；真实 importer、GPU upload、
-shader/material pipeline key、editor browser 和热重载分别在后续 package 或工具层接入，不能反向污染
+和 dependency invalidation 由独立 `asset-pipeline` / `asset-processor` 逐步承担；runtime loaded-resource
+状态由独立 `resource-runtime` 承担；真实 importer、GPU upload、shader/material pipeline key、editor browser
+和热重载分别在后续 package 或工具层接入，不能反向污染
 `asset-core`。
 
 ## 资料结论
@@ -82,6 +83,16 @@ packages/project-core/
     project_descriptor_io.cpp
   tests/
     project_core_smoke_tests.cpp
+
+packages/resource-runtime/
+  CMakeLists.txt
+  asharia.package.json
+  include/asharia/resource_runtime/
+    runtime_resource_registry.hpp
+  src/
+    runtime_resource_registry.cpp
+  tests/
+    resource_runtime_smoke_tests.cpp
 ```
 
 依赖原则：
@@ -98,6 +109,9 @@ packages/project-core/
 - `asharia::asset_pipeline` 第一阶段只提供显式 source/.ameta 条目的 metadata discovery 和诊断；
   public API 只依赖 `asset-core`，实现内部通过 `asset_core_io` 读取 `.ameta`，不拥有 watcher、importer、
   product cache 或 GPU upload。
+- `asharia::resource_runtime` 只依赖 `asset-core`，当前提供 CPU-only runtime resource key、ticket、
+  pending / ready / failed 状态和 diagnostics；不依赖 `asset-pipeline`、RenderGraph、renderer、RHI、editor
+  或 ImGui。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
 - `apps/editor`、`packages/scene-core`、`packages/material-core` 和未来 `packages/scripting` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
@@ -118,7 +132,7 @@ flowchart TD
     Material["future packages/material"]
     AssetPipeline["packages/asset-pipeline"]
     ImportTool["future tools/asset-processor"]
-    ResourceRuntime["future resource runtime"]
+    ResourceRuntime["packages/resource-runtime"]
     Editor["apps/editor / editor-core"]
 
     ProjectCore --> Core
@@ -427,28 +441,34 @@ struct AssetDependency {
 
 ## Runtime 引用与加载状态
 
-`AssetHandle<T>` 不等同于 loaded resource。后续 resource runtime 可以提供：
+`AssetHandle<T>` 不等同于 loaded resource。当前 `packages/resource-runtime` 提供第一版 CPU-only
+状态合同：
 
 ```cpp
-enum class AssetLoadState {
-    Unloaded,
-    Loading,
+enum class RuntimeResourceState {
+    Pending,
     Ready,
     Failed,
-    Missing,
 };
 
-template <class T>
-struct AssetLoadResult {
-    AssetHandle<T> handle;
-    AssetLoadState state;
-    const T* resource;
+struct RuntimeResourceTicket {
+    RuntimeResourceKey key;
+    std::uint64_t generation;
+};
+
+struct RuntimeResourceRecord {
+    RuntimeResourceKey key;
+    RuntimeResourceState state;
+    std::uint64_t generation;
+    AssetProductKey expectedProductKey;
 };
 ```
 
 规则：
 
 - scene、material、script 保存 `AssetHandle<T>` 或 `AssetReference`。
+- runtime resource registry 只保存 GUID / asset type / product key / generation / diagnostics，不保存 source
+  path 或 editor-only pending marker。
 - renderer 和 RHI 只消费已经解析好的 resource packet，不直接读 `.ameta`。
 - missing asset 必须能返回 fallback resource 或明确错误；不允许崩在 render recording 阶段。
 - hot reload 只能通过 asset/resource manager 发布新 product，不直接修改 live World 或 command buffer。
@@ -950,6 +970,23 @@ scan-to-planning bridge baseline 稳定。
 - `--smoke-texture-upload` 证明 texture upload 输入来自 deterministic product payload，最终 GPU image
   能作为 sampled view 暴露；runtime 不直接依赖 source path。
 - 后续 `--smoke-mesh-resource` 证明 mesh runtime resource 不直接依赖 source path。
+
+### 切片 P：Runtime resource handle baseline
+
+交付：
+
+- `packages/resource-runtime` 新增 `asharia::resource_runtime` target，target 只依赖 `asset-core`。
+- `RuntimeResourceRegistry` 提供 `Pending` / `Ready` / `Failed` 状态、`RuntimeResourceTicket`
+  generation、expected `AssetProductKey` 和 failure reason。
+- package-local smoke 覆盖 invalid handle、pending -> ready、pending -> failed、stale generation rejection、
+  product key mismatch 和 source-path-free diagnostics。
+
+验收：
+
+- runtime resource state 不暴露 source path，不持有 Vulkan / RenderGraph / editor 对象。
+- `Ready` 必须绑定完整 `AssetProductKey`；旧 generation 或 product key mismatch 会 fail early。
+- `resource-runtime` 可独立构建测试，后续 GPU texture/mesh owner 只能消费它的状态合同，不能把 loader
+  逻辑塞回 `asset-core` 或 Asset Browser。
 
 ## 并行开发建议
 

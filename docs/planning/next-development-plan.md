@@ -42,7 +42,7 @@
 | --- | --- | --- |
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics | 引入真实 scene draw packet、material/resource binding 和 lighting/postprocess feature |
-| Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline | texture/mesh importer 最小闭环、runtime resource handle、GPU upload 与 dependency invalidation |
+| Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke | runtime resource handle baseline、texture/mesh importer 最小闭环、dependency invalidation |
 | Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke | 接入 shader reflection、renderer descriptor binding、material asset IO/editor path |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
@@ -77,10 +77,12 @@
 
 当前进度：
 
-- 最小 `--smoke-texture-upload` 切片正在推进：用 deterministic placeholder Texture2D product payload 验证
+- #122 已完成最小 `--smoke-texture-upload`：用 deterministic placeholder Texture2D product payload 验证
   staging buffer -> GPU image -> sampled view -> readback，copy command 与 final transition 进入
   RenderGraph diagnostics。
-- 仍未完成真实 texture importer、runtime resource handle、cache hit/missing product/upload failure 诊断矩阵。
+- #124 正在推进 CPU-only runtime resource handle baseline：先稳定 pending / ready / failed、generation 和
+  source-path-free diagnostics，再接真实 importer、GPU owner 或热更新。
+- 仍未完成真实 texture importer、cache hit/missing product/upload failure 诊断矩阵和 mesh product/runtime 闭环。
 
 ### Phase C：Scene Draw Packet MVP
 
