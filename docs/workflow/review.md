@@ -134,9 +134,10 @@ profile/sub-asset 语义时，还必须跑资产边界检查，确保 `asset-cor
 powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 ```
 
-涉及 `packages/asset-pipeline` product blob read/execution diagnostics 或 `--smoke-texture-upload` 的 product payload
-读取路径时，必须跑 asset-pipeline package-local tests，证明 placeholder product blob payload 和 missing/malformed
-diagnostics 没有漂移：
+涉及 `packages/asset-pipeline` product blob read/execution diagnostics、texture import contract/diagnostics、
+`.ameta` texture import settings 或 `--smoke-texture-upload` 的 product payload 读取路径时，必须跑资产边界检查
+和 asset-pipeline package-local tests，证明 texture profile 解释仍留在 `asset-pipeline`，且 placeholder product
+blob payload、raw `.rgba8` CPU texture payload 和 missing/malformed/unsupported/payload-size diagnostics 没有漂移：
 
 ```powershell
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\asset-pipeline -B build\cmake\package-asset-pipeline-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-asset-pipeline-tests-msvc-debug && ctest --test-dir build\cmake\package-asset-pipeline-tests-msvc-debug --output-on-failure"
