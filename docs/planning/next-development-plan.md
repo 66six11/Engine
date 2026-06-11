@@ -42,7 +42,7 @@
 | --- | --- | --- |
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics | 引入真实 scene draw packet、material/resource binding 和 lighting/postprocess feature |
-| Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke | runtime resource handle baseline、texture/mesh importer 最小闭环、dependency invalidation |
+| Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
 | Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke | 接入 shader reflection、renderer descriptor binding、material asset IO/editor path |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
@@ -85,9 +85,12 @@
 - #127 已完成 product records -> runtime resource state：把 exact ready、missing、stale/mismatched 和 invalid
   product record 转成 source-path-free runtime state/diagnostics。
 - #101 已关闭 source-format / texture profile / catalog sub-asset / product-runtime-GPU 边界 guardrail。
-- #129 正在推进 texture product blob read + upload diagnostics：把 placeholder product blob 读取和 malformed/missing
-  payload 诊断从 sample-viewer ad hoc 逻辑收敛到 asset-pipeline helper，再接 texture upload smoke。
-- 仍未完成真实 texture importer、完整 GPU resource owner 和 mesh product/runtime 闭环。
+- #129 已完成 texture product blob read + upload diagnostics：把 placeholder product blob 读取和 malformed/missing
+  payload 诊断从 sample-viewer ad hoc 逻辑收敛到 asset-pipeline helper，并接入 texture upload smoke。
+- #131 正在推进 CPU texture importer contract：先用 raw `.rgba8` fixture 验证显式 CPU bytes、`texture.profile`
+  / dimensions / format / settings version 和 payload-size diagnostics；它不引入 PNG/KTX/HDR decoder，也不改变
+  Conan 依赖或 GPU owner。
+- 仍未完成真实 texture decoder 集成、完整 GPU resource owner、dependency invalidation 和 mesh product/runtime 闭环。
 
 ### Phase C：Scene Draw Packet MVP
 
@@ -185,7 +188,7 @@
 ## 下一批 PR-sized Slice
 
 1. `[Slice] Workflow: audit Project duplicate roadmap items`：只处理 Project 重复标题候选，避免路线图和 Project 双轨漂移。
-2. `[Slice] Assets: add texture product and upload smoke`：从 deterministic product output 到 RenderGraph-visible texture upload。
+2. `[Slice] Assets: add CPU texture importer contract and diagnostics`：用 raw `.rgba8` fixture 固化 importer settings、payload shape 和诊断矩阵，为后续 PNG/KTX/Basis/HDR decoder 决策留出明确接口。
 3. `[Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
 4. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 descriptor/pipeline binding smoke。
 5. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
