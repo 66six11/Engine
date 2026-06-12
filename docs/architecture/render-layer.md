@@ -55,6 +55,7 @@
 - `basic_renderer_stats.hpp` 放 pipeline、viewport、compute 等统计结构。
 - `render_view.hpp` 放 RenderView target、camera、frame params、scene input、overlay、diagnostics、execution event 和 debug preview contract。
 - `descriptor_layout_smoke.hpp` 放 descriptor layout smoke 验证入口。
+- `material_binding_smoke.hpp` 放 material signature 到 Vulkan descriptor/pipeline layout 的 smoke 验证入口。
 - `fullscreen_texture_renderer.hpp` 放 fullscreen texture、RenderView、offscreen viewport renderer。
 - `basic_scene_renderers.hpp` 放 MRT、compute、triangle、mesh 3D 和 draw-list sample renderers。
 
@@ -73,6 +74,7 @@
 - `render_view_recording.inl`：持有私有 `BasicRenderViewPassRecordingContext`，把 RenderView pass insertion 需要的
   graph、target、policy、frame、bindings 和 event recorder 收拢在 renderer-basic-vulkan 内部。
 - `descriptor_layout_smoke.inl`
+- `material_binding_smoke.inl`
 - `fullscreen_texture_renderer.inl`
 - `mrt_renderer.inl`
 - `compute_dispatch_renderer.inl`

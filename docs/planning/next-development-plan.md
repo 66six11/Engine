@@ -198,7 +198,7 @@
 ## 下一批 PR-sized Slice
 
 1. `#139 [Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
-2. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 descriptor/pipeline binding smoke。
+2. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 renderer-basic-vulkan 的 descriptor/pipeline binding smoke，并先证明 mismatch / stale pipeline key 能 fail early；Slang reflection adapter、`.amat`、asset cache 和 editor path 留给后续 slice。
 3. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 4. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 

@@ -83,7 +83,8 @@ namespace {
                      "[--smoke-triangle] [--smoke-depth-triangle] [--smoke-mesh] "
                      "[--smoke-mesh-3d] [--smoke-draw-list] "
                      "[--smoke-mrt [--frames N] [--hold]] "
-                     "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                     "[--smoke-descriptor-layout] [--smoke-material-binding] "
+                     "[--smoke-fullscreen-texture] "
                      "[--smoke-scene-draw-packet] "
                      "[--smoke-render-view-grid-readback] "
                      "[--smoke-offscreen-viewport] [--smoke-compute-dispatch] "
@@ -2563,6 +2564,60 @@ namespace {
         }
 
         std::cout << "Descriptor layout smoke: set 0 bindings 0-2 buffer/image/sampler allocated\n";
+        window->requestClose();
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeMaterialBinding() {
+        auto glfw = asharia::GlfwInstance::create();
+        if (!glfw) {
+            asharia::logError(glfw.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto extensions = asharia::glfwRequiredVulkanInstanceExtensions(*glfw);
+        if (!extensions) {
+            asharia::logError(extensions.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto window = asharia::GlfwWindow::create(
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Material Binding Smoke"});
+        if (!window) {
+            asharia::logError(window.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const asharia::VulkanContextDesc contextDesc{
+            .applicationName = "Asharia Engine Material Binding Smoke",
+            .requiredInstanceExtensions = *extensions,
+            .createSurface =
+                [&window](VkInstance instance) {
+                    return asharia::glfwCreateVulkanSurface(*window, instance);
+                },
+            .debugLabels = kSmokeDebugLabels,
+        };
+
+        auto context = asharia::VulkanContext::create(contextDesc);
+        if (!context) {
+            asharia::logError(context.error().message);
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path shaderDir{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+        auto validated =
+            asharia::validateBasicMaterialBindingSmoke(asharia::BasicMaterialBindingSmokeDesc{
+                .device = context->device(),
+                .allocator = context->allocator(),
+                .shaderDirectory = shaderDir,
+            });
+        if (!validated) {
+            asharia::logError(validated.error().message);
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Material binding smoke: signature drove set 0 bindings 0-2 "
+                     "buffer/image/sampler\n";
         window->requestClose();
         return EXIT_SUCCESS;
     }
@@ -7664,6 +7719,7 @@ namespace {
             SmokeCommand{.option = "--smoke-mesh-3d", .run = runSmokeMesh3D},
             SmokeCommand{.option = "--smoke-draw-list", .run = runSmokeDrawList},
             SmokeCommand{.option = "--smoke-descriptor-layout", .run = runSmokeDescriptorLayout},
+            SmokeCommand{.option = "--smoke-material-binding", .run = runSmokeMaterialBinding},
             SmokeCommand{.option = "--smoke-fullscreen-texture", .run = runSmokeFullscreenTexture},
             SmokeCommand{.option = "--smoke-scene-draw-packet", .run = runSmokeSceneDrawPacket},
             SmokeCommand{.option = "--smoke-render-view-grid-readback",
