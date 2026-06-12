@@ -62,7 +62,8 @@ com.asharia.scene.TransformComponent.scale
 | Prefab | `.aprefab` |
 | Asset metadata | `.ameta` |
 | Material | `.amat` |
-| RenderGraph / tool graph | `.agraph` |
+| Shader/material authoring root | `.ashader` |
+| RenderGraph / tool / material graph | `.agraph` |
 | World | `.aworld` |
 
 后缀职责是表达文件类型并减少冲突；品牌识别由 `Asharia Engine`、`Asharia Editor` 和 `com.asharia.*`

@@ -102,6 +102,9 @@ Vulkan loader/binding 策略：
 
 ## Shader 策略
 
+Shader/material authoring 的分层路线见
+[systems/shader-material-authoring.md](../systems/shader-material-authoring.md)；本节只记录当前技术栈事实。
+
 MVP 默认路线：
 
 - shader 源码使用 Slang。
