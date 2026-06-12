@@ -10,6 +10,7 @@ endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
+asharia_require_package_target(asharia::material_core packages/material-core)
 asharia_require_package_target(asharia::rendergraph packages/rendergraph)
 asharia_require_package_target(asharia::shader_slang packages/shader-slang)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
@@ -23,6 +24,7 @@ set(ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS
     src/basic_renderers/draw_list_renderer.inl
     src/basic_renderers/fullscreen_texture_renderer.inl
     src/basic_renderers/graph_recording.inl
+    src/basic_renderers/material_binding_smoke.inl
     src/basic_renderers/mesh3d_renderer.inl
     src/basic_renderers/mrt_renderer.inl
     src/basic_renderers/pipeline_layouts.inl
@@ -327,6 +329,8 @@ target_link_libraries(asharia-renderer-basic-vulkan
         asharia::renderer_basic
         asharia::rhi_vulkan
         asharia::rhi_vulkan_rendergraph
+    PRIVATE
+        asharia::material_core
 )
 
 target_compile_definitions(asharia-renderer-basic

@@ -25,6 +25,12 @@ namespace asharia {
         std::filesystem::path shaderDirectory;
     };
 
+    struct BasicMaterialBindingSmokeDesc {
+        VkDevice device{VK_NULL_HANDLE};
+        VmaAllocator allocator{};
+        std::filesystem::path shaderDirectory;
+    };
+
     struct BasicFullscreenTextureRendererDesc {
         VkDevice device{VK_NULL_HANDLE};
         VmaAllocator allocator{};

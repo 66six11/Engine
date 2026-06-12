@@ -228,6 +228,7 @@ flowchart TD
     DrawListSmoke["--smoke-draw-list"]
     MrtSmoke["--smoke-mrt"]
     DescriptorSmoke["--smoke-descriptor-layout"]
+    MaterialBindingSmoke["--smoke-material-binding"]
     FullscreenTextureSmoke["--smoke-fullscreen-texture"]
     ComputeDispatchSmoke["--smoke-compute-dispatch"]
     TextureUploadSmoke["--smoke-texture-upload"]
@@ -240,6 +241,7 @@ flowchart TD
     ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d / compute SPIR-V + reflection JSON"]
     RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer / BasicComputeDispatchRenderer<br/>shader modules / pipeline layout / buffers / pipeline<br/>BasicDrawItem / BasicDrawListItem / MVP push constants / dispatch params"]
     DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout<br/>descriptor allocator-backed pool/set<br/>buffer + image + sampler write"]
+    MaterialBinding["Material binding smoke<br/>material signature -> descriptor set layout -> pipeline layout<br/>stale pipeline key and signature mismatch diagnostics"]
     TextureProduct["asset_pipeline execute<br/>PNG Texture2D product blob"]
 
     Start --> Args
@@ -257,6 +259,7 @@ flowchart TD
     Args --> DrawListSmoke
     Args --> MrtSmoke
     Args --> DescriptorSmoke
+    Args --> MaterialBindingSmoke
     Args --> FullscreenTextureSmoke
     Args --> ComputeDispatchSmoke
     Args --> TextureUploadSmoke
@@ -305,6 +308,11 @@ flowchart TD
     DescriptorSmoke --> Context
     DescriptorSmoke --> ShaderBuild
     DescriptorSmoke --> DescriptorLayout
+    MaterialBindingSmoke --> GLFW
+    MaterialBindingSmoke --> Ext
+    MaterialBindingSmoke --> Context
+    MaterialBindingSmoke --> ShaderBuild
+    MaterialBindingSmoke --> MaterialBinding
     FullscreenTextureSmoke --> GLFW
     FullscreenTextureSmoke --> Ext
     FullscreenTextureSmoke --> Context
@@ -730,6 +738,11 @@ flowchart TD
 - `--smoke-descriptor-layout` 已验证 `descriptor_layout.slang` 的非空 reflection signature 可映射为固定
   descriptor set layout 和 pipeline layout，并能分配 descriptor set、写入 set 0 / binding 0 的 uniform
   buffer、binding 1 的 sampled image 和 binding 2 的 sampler descriptor。
+- `--smoke-material-binding` 已验证 `MaterialResourceSignature` 能在 `renderer_basic_vulkan` 中驱动同一类
+  set 0 / binding 0-2 descriptor set layout、pipeline layout、descriptor allocation 和 buffer/image/sampler
+  write；它还覆盖 material/signature kind mismatch、pipeline key resource signature hash 过期和 visibility
+  缺失的负向诊断。这个 smoke 不是通用 Slang reflection adapter，也不引入 `.amat`、asset cache 或 editor
+  材质路径。
 - `--smoke-fullscreen-texture` 已验证 draw call 中的 descriptor set 绑定、fullscreen pipeline 绑定和
   transient source texture 采样；`BasicFullscreenTextureRenderer::recordFrame()` 现在是
   `recordViewFrame()` 的 swapchain target 便捷包装；renderer 为 view write 和 composite 各持有一个

@@ -73,6 +73,7 @@ $smokes = @(
     "--smoke-draw-list",
     "--smoke-mrt",
     "--smoke-descriptor-layout",
+    "--smoke-material-binding",
     "--smoke-fullscreen-texture",
     "--smoke-scene-draw-packet",
     "--smoke-render-view-grid-readback",

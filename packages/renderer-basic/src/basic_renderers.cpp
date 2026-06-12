@@ -17,6 +17,8 @@
 #include <vector>
 
 #include "asharia/core/error.hpp"
+#include "asharia/material/material_pipeline_key.hpp"
+#include "asharia/material/material_resource_signature.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "asharia/rendergraph/render_graph_builder.hpp"
@@ -2122,6 +2124,7 @@ namespace asharia {
     // without promoting those helpers to a public or cross-translation-unit API.
 // clang-format off
 #include "basic_renderers/descriptor_layout_smoke.inl"
+#include "basic_renderers/material_binding_smoke.inl"
 #include "basic_renderers/fullscreen_texture_renderer.inl"
 #include "basic_renderers/mrt_renderer.inl"
 #include "basic_renderers/compute_dispatch_renderer.inl"
