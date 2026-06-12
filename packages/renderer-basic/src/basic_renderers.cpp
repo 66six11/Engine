@@ -187,14 +187,33 @@ namespace asharia {
                     "RenderView scene draw item count exceeds command summary limits",
                 }};
             }
-            for (const BasicDrawListItem& item : view.scene.drawItems) {
+            auto sceneInputItemContext = [](const BasicDrawListItem& item, std::size_t itemIndex) {
+                std::string context = " (item " + std::to_string(itemIndex);
+                if (item.context.sourceObject) {
+                    context += ", source object " +
+                               std::to_string(item.context.sourceObject.index) + ":" +
+                               std::to_string(item.context.sourceObject.generation);
+                }
+                if (item.context.meshResource) {
+                    context += ", mesh resource " + std::to_string(item.context.meshResource.value);
+                }
+                if (item.context.materialResource) {
+                    context += ", material resource " +
+                               std::to_string(item.context.materialResource.value);
+                }
+                context += ")";
+                return context;
+            };
+            for (std::size_t itemIndex = 0; itemIndex < view.scene.drawItems.size(); ++itemIndex) {
+                const BasicDrawListItem& item = view.scene.drawItems[itemIndex];
                 if ((item.drawItem.vertexCount == 0 && item.drawItem.indexCount == 0) ||
                     item.drawItem.instanceCount == 0) {
                     return std::unexpected{Error{
                         ErrorDomain::RenderGraph,
                         0,
                         "RenderView scene input item must declare vertices or indices and a "
-                        "non-zero instance count",
+                        "non-zero instance count" +
+                            sceneInputItemContext(item, itemIndex),
                     }};
                 }
             }

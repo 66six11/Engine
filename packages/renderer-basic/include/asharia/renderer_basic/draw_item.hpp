@@ -27,9 +27,39 @@ namespace asharia {
 
     using BasicTransformMatrix3D = std::array<float, 16>;
 
+    struct BasicDrawSourceId {
+        std::uint32_t index{};
+        std::uint32_t generation{};
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept {
+            return index != 0U && generation != 0U;
+        }
+
+        [[nodiscard]] friend constexpr bool operator==(BasicDrawSourceId,
+                                                       BasicDrawSourceId) = default;
+    };
+
+    struct BasicDrawResourceKey {
+        std::uint64_t value{};
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept {
+            return value != 0U;
+        }
+
+        [[nodiscard]] friend constexpr bool operator==(BasicDrawResourceKey,
+                                                       BasicDrawResourceKey) = default;
+    };
+
+    struct BasicDrawPacketContext {
+        BasicDrawSourceId sourceObject{};
+        BasicDrawResourceKey meshResource{};
+        BasicDrawResourceKey materialResource{};
+    };
+
     struct BasicDrawListItem {
         BasicDrawItem drawItem{};
         BasicTransformMatrix3D modelMatrix{};
+        BasicDrawPacketContext context{};
     };
 
     enum class BasicMeshKind {

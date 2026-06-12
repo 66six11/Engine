@@ -104,6 +104,8 @@
 
 目标：让 `scene-core` 的最小 world 能产生 renderer 可消费的 immutable draw packet，打通多个 mesh object 的 Scene View 渲染。
 
+当前执行：#139 `[Slice] Renderer: add scene draw packet contract`。
+
 范围：
 
 - scene snapshot：entity id、transform、mesh resource handle、material handle。
@@ -195,11 +197,10 @@
 
 ## 下一批 PR-sized Slice
 
-1. `#137 [Slice] Assets: define KTX/Basis/compressed texture policy`：在 PNG Texture2D product writer 之后单独评估 container、compression、transcode、runtime format 和 GPU upload owner 边界。
-2. `[Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
-3. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 descriptor/pipeline binding smoke。
-4. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
-5. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
+1. `#139 [Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
+2. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 descriptor/pipeline binding smoke。
+3. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
+4. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 
 ## 暂缓事项
 
