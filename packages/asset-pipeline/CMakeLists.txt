@@ -9,6 +9,7 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+find_package(stb CONFIG REQUIRED)
 asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
@@ -39,6 +40,7 @@ target_link_libraries(asharia-asset-pipeline
     PRIVATE
         asharia::archive
         asharia::asset_core_io
+        stb::stb
 )
 
 asharia_configure_target(asharia-asset-pipeline)

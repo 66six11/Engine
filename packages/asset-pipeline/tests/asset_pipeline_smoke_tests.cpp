@@ -166,12 +166,30 @@ namespace {
         };
     }
 
-    [[nodiscard]] asharia::asset::SourceAssetRecord
-    makeTextureImportContractRecord(std::string_view sourcePath,
-                                    std::span<const asharia::asset::AssetImportSetting> settings) {
+    [[nodiscard]] std::vector<asharia::asset::AssetImportSetting>
+    textureImportPngSettings(std::string_view profile = "Texture 2D",
+                             std::string_view format = "rgba8-unorm",
+                             std::string_view settingsVersion = "1") {
+        return {
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = std::string{profile},
+            },
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportSettingsVersionSettingKey},
+                .value = std::string{settingsVersion},
+            },
+            asharia::asset::AssetImportSetting{
+                .key = std::string{asharia::asset::kTextureImportFormatSettingKey},
+                .value = std::string{format},
+            },
+        };
+    }
+
+    [[nodiscard]] asharia::asset::SourceAssetRecord makeTextureImportContractRecord(
+        std::string_view sourcePath, std::span<const asharia::asset::AssetImportSetting> settings,
+        const asharia::asset::AssetTextureImporterDescriptor& importer) {
         auto guid = asharia::asset::parseAssetGuid("5f690533-517e-4b52-9bf0-1c0f210527ab");
-        const asharia::asset::AssetTextureImporterDescriptor importer =
-            asharia::asset::makeRawRgba8TextureImporterDescriptor();
         return asharia::asset::SourceAssetRecord{
             .guid = guid ? *guid : asharia::asset::AssetGuid{},
             .assetType = asharia::asset::makeAssetTypeId(asharia::asset::kTextureRoleTexture2D),
@@ -200,17 +218,30 @@ namespace {
         return bytes;
     }
 
+    [[nodiscard]] std::vector<std::uint8_t> validPngTextureBytes() {
+        return {
+            0x89U, 0x50U, 0x4EU, 0x47U, 0x0DU, 0x0AU, 0x1AU, 0x0AU, 0x00U, 0x00U, 0x00U, 0x0DU,
+            0x49U, 0x48U, 0x44U, 0x52U, 0x00U, 0x00U, 0x00U, 0x01U, 0x00U, 0x00U, 0x00U, 0x01U,
+            0x08U, 0x06U, 0x00U, 0x00U, 0x00U, 0x1FU, 0x15U, 0xC4U, 0x89U, 0x00U, 0x00U, 0x00U,
+            0x0DU, 0x49U, 0x44U, 0x41U, 0x54U, 0x78U, 0xDAU, 0x63U, 0x10U, 0x50U, 0x30U, 0xF8U,
+            0x0FU, 0x00U, 0x02U, 0x04U, 0x01U, 0x60U, 0x52U, 0xE2U, 0xA9U, 0x61U, 0x00U, 0x00U,
+            0x00U, 0x00U, 0x49U, 0x45U, 0x4EU, 0x44U, 0xAEU, 0x42U, 0x60U, 0x82U,
+        };
+    }
+
     [[nodiscard]] asharia::asset::AssetTextureImportRequest
     makeTextureImportContractRequest(std::string_view sourcePath,
                                      std::vector<asharia::asset::AssetImportSetting> settings,
-                                     std::vector<std::uint8_t> bytes) {
+                                     std::vector<std::uint8_t> bytes,
+                                     asharia::asset::AssetTextureImporterDescriptor importer =
+                                         asharia::asset::makeRawRgba8TextureImporterDescriptor()) {
         const asharia::asset::SourceAssetRecord source =
-            makeTextureImportContractRecord(sourcePath, settings);
+            makeTextureImportContractRecord(sourcePath, settings, importer);
         return asharia::asset::AssetTextureImportRequest{
             .source = source,
             .settings = std::move(settings),
             .sourceBytes = std::move(bytes),
-            .importer = asharia::asset::makeRawRgba8TextureImporterDescriptor(),
+            .importer = std::move(importer),
         };
     }
 
@@ -249,6 +280,26 @@ namespace {
             result->mips[0].level != 0U || result->mips[0].byteOffset != 0U ||
             result->mips[0].byteSize != expectedBytes.size() || result->payload != expectedBytes) {
             logFailure("Texture import contract smoke rejected valid raw RGBA8 payload.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeTextureImportContractPng() {
+        auto result = asharia::asset::importTextureCpuPayload(makeTextureImportContractRequest(
+            "Content/Textures/Crate.png", textureImportPngSettings("Texture 2D", "rgba8-srgb"),
+            validPngTextureBytes(), asharia::asset::makePngTextureImporterDescriptor()));
+        const std::vector<std::uint8_t> expectedBytes{0x10U, 0x20U, 0x30U, 0xFFU};
+        if (!result || result->sourceExtension != asharia::asset::kTextureImportPngExtension ||
+            result->importProfileName != asharia::asset::kTextureImportProfileTexture2D ||
+            result->settingsVersion != asharia::asset::kTextureImportContractSettingsVersion ||
+            result->productTypeName != asharia::asset::kTextureRoleTexture2D ||
+            result->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
+            result->width != 1U || result->height != 1U || result->mips.size() != 1U ||
+            result->mips[0].level != 0U || result->mips[0].byteOffset != 0U ||
+            result->mips[0].byteSize != expectedBytes.size() || result->payload != expectedBytes) {
+            logFailure("Texture import contract smoke rejected valid PNG payload.");
             return false;
         }
 
@@ -324,10 +375,39 @@ namespace {
             return false;
         }
 
+        auto decodeFailed =
+            asharia::asset::importTextureCpuPayload(makeTextureImportContractRequest(
+                "Content/Textures/Broken.png", textureImportPngSettings(),
+                std::vector<std::uint8_t>{0x89U, 0x50U, 0x4EU, 0x47U},
+                asharia::asset::makePngTextureImporterDescriptor()));
+        if (!expectTextureImportError(
+                decodeFailed, asharia::asset::AssetTextureImportDiagnosticCode::DecodeFailed,
+                "decode PNG")) {
+            return false;
+        }
+
+        auto pngUnsupportedFormat =
+            asharia::asset::importTextureCpuPayload(makeTextureImportContractRequest(
+                "Content/Textures/Crate.png", textureImportPngSettings("Texture 2D", "bc7-unorm"),
+                validPngTextureBytes(), asharia::asset::makePngTextureImporterDescriptor()));
+        if (!expectTextureImportError(
+                pngUnsupportedFormat,
+                asharia::asset::AssetTextureImportDiagnosticCode::UnsupportedFormat,
+                "texture format")) {
+            return false;
+        }
+
         if (std::string_view{asharia::asset::assetTextureImportDiagnosticCodeName(
                 asharia::asset::AssetTextureImportDiagnosticCode::PayloadSizeMismatch)} !=
             "payload-size-mismatch") {
             logFailure("Texture import contract smoke saw an unstable diagnostic label.");
+            return false;
+        }
+
+        if (std::string_view{asharia::asset::assetTextureImportDiagnosticCodeName(
+                asharia::asset::AssetTextureImportDiagnosticCode::DecodeFailed)} !=
+            "decode-failed") {
+            logFailure("Texture import contract smoke saw an unstable PNG diagnostic label.");
             return false;
         }
 
@@ -2108,12 +2188,12 @@ int main() {
         smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&
         smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
         smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&
-        smokeTextureImportContractDiagnostics() && smokeTextureImportProfiles() &&
-        smokeProductManifestRoundTrip() && smokeProductManifestMalformedInput() &&
-        smokeProductManifestDuplicateField() && smokeProductManifestMissingField() &&
-        smokeProductManifestUnknownField() && smokeProductManifestDuplicateProductKey() &&
-        smokeProductManifestDuplicateProductPath() && smokeProductManifestInvalidProductPath() &&
-        smokeProductManifestProductKeyHashMismatch() &&
+        smokeTextureImportContractPng() && smokeTextureImportContractDiagnostics() &&
+        smokeTextureImportProfiles() && smokeProductManifestRoundTrip() &&
+        smokeProductManifestMalformedInput() && smokeProductManifestDuplicateField() &&
+        smokeProductManifestMissingField() && smokeProductManifestUnknownField() &&
+        smokeProductManifestDuplicateProductKey() && smokeProductManifestDuplicateProductPath() &&
+        smokeProductManifestInvalidProductPath() && smokeProductManifestProductKeyHashMismatch() &&
         smokeSourceSnapshotValidAndDeterministic() && smokeSourceSnapshotContentChange() &&
         smokeSourceSnapshotMissingFile() && smokeSourceSnapshotDirectory() &&
         smokeSourceSnapshotInvalidSourcePath() && smokeSourceSnapshotDuplicateSourcePath() &&

@@ -26,6 +26,9 @@
 - `nlohmann_json`：严格 JSON 读写实现，必须隐藏在 archive facade 后。当前 schema-first 路线已由
   `packages/archive` 暴露 `ArchiveValue` 和 JSON facade；旧 `packages/serialization` 仅作为过渡兼容面，
   不向其他 package 泄漏第三方 JSON 类型。
+- `stb`：`packages/asset-pipeline` 的 PNG-first CPU texture decoder，当前只通过 `stb_image` 把 `.png`
+  source bytes 标准化为 RGBA8 payload；不作为 runtime dependency，也不进入 `asset-core`、editor、RHI 或
+  RenderGraph。
 
 Vulkan loader/binding 策略：
 

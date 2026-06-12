@@ -87,10 +87,13 @@
 - #101 已关闭 source-format / texture profile / catalog sub-asset / product-runtime-GPU 边界 guardrail。
 - #129 已完成 texture product blob read + upload diagnostics：把 placeholder product blob 读取和 malformed/missing
   payload 诊断从 sample-viewer ad hoc 逻辑收敛到 asset-pipeline helper，并接入 texture upload smoke。
-- #131 正在推进 CPU texture importer contract：先用 raw `.rgba8` fixture 验证显式 CPU bytes、`texture.profile`
-  / dimensions / format / settings version 和 payload-size diagnostics；它不引入 PNG/KTX/HDR decoder，也不改变
-  Conan 依赖或 GPU owner。
-- 仍未完成真实 texture decoder 集成、完整 GPU resource owner、dependency invalidation 和 mesh product/runtime 闭环。
+- #131 已完成 CPU texture importer contract：先用 raw `.rgba8` fixture 验证显式 CPU bytes、`texture.profile`
+  / dimensions / format / settings version 和 payload-size diagnostics。
+- #133 新增 PNG-first decoder：通过 Conan `stb/cci.20240531` 把 `.png` source bytes 解码为同一套 normalized
+  RGBA8 CPU texture payload/result，decoder 代码只在 `asset-pipeline`，不进入 `asset-core`、`resource-runtime`、
+  editor、RenderGraph、RHI 或 GPU owner。
+- 仍未完成 KTX/KTX2/Basis/HDR/compressed texture policy、完整 GPU resource owner、dependency invalidation 和
+  mesh product/runtime 闭环。
 
 ### Phase C：Scene Draw Packet MVP
 
@@ -188,7 +191,7 @@
 ## 下一批 PR-sized Slice
 
 1. `[Slice] Workflow: audit Project duplicate roadmap items`：只处理 Project 重复标题候选，避免路线图和 Project 双轨漂移。
-2. `[Slice] Assets: add CPU texture importer contract and diagnostics`：用 raw `.rgba8` fixture 固化 importer settings、payload shape 和诊断矩阵，为后续 PNG/KTX/Basis/HDR decoder 决策留出明确接口。
+2. `[Slice] Assets: define KTX/Basis/compressed texture policy`：在 PNG-first decoder 之后单独评估 container、compression、transcode、runtime format 和 GPU upload owner 边界。
 3. `[Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
 4. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 descriptor/pipeline binding smoke。
 5. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。

@@ -19,6 +19,7 @@ namespace asharia::asset {
     inline constexpr std::string_view kTextureImportFormatRgba8Unorm = "rgba8-unorm";
     inline constexpr std::string_view kTextureImportFormatRgba8Srgb = "rgba8-srgb";
     inline constexpr std::string_view kTextureImportRawRgba8Extension = ".rgba8";
+    inline constexpr std::string_view kTextureImportPngExtension = ".png";
     inline constexpr std::uint32_t kTextureImportContractSettingsVersion = 1;
 
     enum class AssetTextureImportDiagnosticCode {
@@ -29,6 +30,7 @@ namespace asharia::asset {
         InvalidDimensions,
         UnsupportedFormat,
         PayloadSizeMismatch,
+        DecodeFailed,
     };
 
     enum class AssetTextureImportFormat {
@@ -86,6 +88,7 @@ namespace asharia::asset {
     };
 
     [[nodiscard]] AssetTextureImporterDescriptor makeRawRgba8TextureImporterDescriptor();
+    [[nodiscard]] AssetTextureImporterDescriptor makePngTextureImporterDescriptor();
 
     [[nodiscard]] const char*
     assetTextureImportDiagnosticCodeName(AssetTextureImportDiagnosticCode code) noexcept;
