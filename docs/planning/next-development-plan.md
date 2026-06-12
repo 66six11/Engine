@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-06-11
+更新日期：2026-06-12
 
 本文是全项目下一阶段的唯一主路线图。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`，V2 规格见 `docs/specs/ashader-v2.md` 和 `docs/specs/material-runtime-products-v2.md`，近期 MVP 计划见 `docs/planning/shader-material-mvp-plan.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
 
@@ -92,6 +92,9 @@
 - #133 新增 PNG-first decoder：通过 Conan `stb/cci.20240531` 把 `.png` source bytes 解码为同一套 normalized
   RGBA8 CPU texture payload/result，decoder 代码只在 `asset-pipeline`，不进入 `asset-core`、`resource-runtime`、
   editor、RenderGraph、RHI 或 GPU owner。
+- #135 新增 PNG Texture2D product writer：`asset-pipeline` product execution 对 PNG Texture2D request 写出
+  deterministic `texture2d-product.v1` blob，记录 source/import/profile/settings/format/尺寸/mip/payload hash；
+  `asset-processor --smoke-product-execution` 和 `--smoke-texture-upload` 均从 product blob reader 消费该 payload。
 - 仍未完成 KTX/KTX2/Basis/HDR/compressed texture policy、完整 GPU resource owner、dependency invalidation 和
   mesh product/runtime 闭环。
 

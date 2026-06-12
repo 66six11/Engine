@@ -73,8 +73,9 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe
 需要自动验证时使用 `--smoke-*` 入口。完整提交前 smoke 清单见 `docs/workflow/review.md`。
 
 根构建也会生成开发期工具。当前 `tools/asset-processor` 提供 read-only dry-run 和受控 product
-execution baseline；`execute` 只写 deterministic placeholder product blob/manifest，不接真实 importer、watcher、
-GPU upload 或 editor UI：
+execution baseline；`execute` 可为 PNG Texture2D request 写 deterministic texture product blob/manifest，
+其他 product request 仍走 placeholder blob baseline。它不接 watcher、dependency invalidation、GPU upload 或
+editor UI：
 
 ```powershell
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe --smoke-dry-run

@@ -160,7 +160,7 @@ flowchart TD
 
 - `packages/asset-pipeline`：当前已落地 deterministic source tree scan baseline、metadata discovery baseline、
   显式 source file snapshot/hash baseline、product manifest IO baseline、import planning baseline、
-  scan-to-planning bridge baseline、deterministic product execution baseline、placeholder product blob read helper，
+  scan-to-planning bridge baseline、deterministic product execution baseline、product blob read helper，
   以及 CPU texture import contract baseline。source scan 只遍历显式 source root，配对 `<source-file>.ameta`
   sidecar，产出 canonical sourcePath、source file path 和 metadata path；discovery 消费显式 source/.ameta
   条目，复用 `asset_core_io` 读取 `.ameta`，校验 duplicate GUID、duplicate source path、missing/malformed
@@ -170,18 +170,20 @@ flowchart TD
   product key、product key hash、relative product path、product size 和 product hash；import planning 比较
   discovered source、current source snapshot、target profile 和 existing product manifest，产出 cache hit
   或 import request；scan-to-planning bridge 只顺序复用 scan、discovery、snapshot 和 planning，并保留分阶段
-  diagnostics，供 dry-run CLI 报告；product execution 消费已有 import request 和显式 source bytes，写入
-  deterministic placeholder product blob 与 product manifest，用作真实 importer 前的稳定 product/cache 输出基线；
-  product blob read helper 只解析当前 placeholder blob 的 source payload；texture import contract 可把 raw
-  `.rgba8` fixture 标准化为 Texture2D CPU payload，并验证 source extension、profile、settings version、width、
-  height、format 和 payload byte size；PNG-first decoder 通过 Conan `stb/cci.20240531` 在 `asset-pipeline`
+  diagnostics，供 dry-run CLI 报告；product execution 消费已有 import request 和显式 source bytes，PNG
+  Texture2D request 会通过 PNG importer 写入 deterministic `texture2d-product.v1` blob 与 product manifest，
+  其他 request 仍写 deterministic placeholder blob，用作未接真实 importer 路径的稳定 product/cache 输出基线；
+  product blob read helper 可解析 placeholder source payload 和 Texture2D product payload；texture import contract
+  可把 raw `.rgba8` fixture 标准化为 Texture2D CPU payload，并验证 source extension、profile、settings version、
+  width、height、format 和 payload byte size；PNG-first decoder 通过 Conan `stb/cci.20240531` 在 `asset-pipeline`
   内部把 `.png` source bytes 解码为同一套 normalized RGBA8 CPU payload/result。后续再扩展 KTX/Basis/HDR、
   import scheduling 和 dependency invalidation 规则。
 - `tools/asset-processor`：当前提供 read-only dry-run CLI 和受控 `execute` CLI。dry-run 可读取显式 source root，或读取
   `asharia.project.json` 中的 `assetSourceRoots` / `assetDiscovery.ignoredDirectories`，再使用显式
   `--target-profile` 和可选 product manifest 输出稳定文本报告；execute 可读取显式 source root、target
-  profile、输出根目录和可选旧 product manifest，执行 placeholder product writer 并写出 product blob/cache
-  与 product manifest。它仍不接真实 importer、watcher、后台 worker、热重载、GPU upload 或 editor UI。
+  profile、输出根目录和可选旧 product manifest，执行 product execution writer 并写出 product blob/cache
+  与 product manifest。当前只有 PNG Texture2D request 接真实 PNG decode/write，其余路径仍是 placeholder；
+  它仍不接 watcher、后台 worker、热重载、GPU upload 或 editor UI。
   未来可扩展为开发期/后台进程或 CLI host，使用文件 watcher 调用 `asset-pipeline`，执行具体 importer，
   写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向
   editor/resource runtime 发布 product 更新通知。
@@ -665,9 +667,10 @@ struct RuntimeResourceRecord {
 - 已落地 `AssetProductKey`、`AssetProductRecord`、`AssetDependency`、dependency hash、
   target profile hash 和 product key hash helper。Product manifest IO 已由 `asset-pipeline`
   拥有；import planning 已由 `asset-pipeline` 负责生成 deterministic product path proposal、
-  cache hit/miss 和 import request；deterministic placeholder product execution 已由 `asset-pipeline`
-  负责把 import request + explicit source bytes 写成 product blob 与 manifest。真实 importer 执行和 invalidation 调度仍由后续
-  asset-processor / asset-pipeline 切片实现。
+  cache hit/miss 和 import request；deterministic product execution 已由 `asset-pipeline`
+  负责把 import request + explicit source bytes 写成 product blob 与 manifest，其中 PNG Texture2D request
+  已接 PNG decoder/product writer，其余 importer 执行和 invalidation 调度仍由后续 asset-processor /
+  asset-pipeline 切片实现。
 
 验收：
 
@@ -934,8 +937,9 @@ scan-to-planning bridge baseline 稳定。
 
 - `packages/asset-pipeline` 增加 `AssetProductExecutionRequest` / `AssetProductExecutionResult`，
   消费已有 import plan、旧 product manifest、显式 source bytes、product output root 和 manifest output path。
-- 第一版只提供 deterministic placeholder product writer：输出记录 source/product/importer/settings/hash
-  上下文和原始 source bytes，不接 glTF、PNG、DDS、shader、material 或 texture importer。
+- 第一版提供 deterministic product writer：PNG Texture2D request 输出 `texture2d-product.v1`，
+  记录 source/product/importer/settings/hash、format、extent、mip 和 payload hash；未接真实 importer 的
+  request 仍输出 placeholder source-bytes blob，不接 glTF、DDS、shader、material 或 mesh importer。
 - Product manifest 继续使用既有 manifest IO；product path 仍由 product key 派生，写入输出根目录下的
   manifest-relative path，不保存绝对 source path 或 machine-local cache path。
 - `tools/asset-processor execute ...` 写入 product blob/cache 与 product manifest；`--smoke-product-execution`
@@ -944,15 +948,16 @@ scan-to-planning bridge baseline 稳定。
 当前状态：
 
 - 已落地 `executeAssetProducts()` 和 `asharia-asset-processor execute`。
-- 仍不做真实 source-format importer、watcher、background worker、dependency invalidation、hot reload、
-  Asset Browser、Material Editor、runtime resource loading、RenderGraph、RHI、renderer 或 GPU upload changes。
+- 已落地 PNG Texture2D product 写入与读取；仍不做 watcher、background worker、dependency invalidation、
+  hot reload、Asset Browser、Material Editor、runtime resource loading、RenderGraph、RHI、renderer 或 GPU
+  upload owner changes。
 
 验收：
 
 - `asharia-asset-pipeline-smoke-tests` 覆盖 deterministic product write、unchanged-input cache hit rerun
-  和 source-bytes/hash mismatch diagnostic。
+  source-bytes/hash mismatch diagnostic、PNG Texture2D product write/read 和 invalid PNG decode diagnostic。
 - `asharia-asset-processor --smoke-product-execution` 覆盖 CLI product output、manifest output、rerun cache hit
-  和 source bytes change 触发的新 product 输出。
+  source bytes change 触发的新 product 输出，以及 PNG Texture2D product payload readback。
 
 ### 切片 O：Resource upload baseline
 
@@ -964,11 +969,11 @@ scan-to-planning bridge baseline 稳定。
   command summary 和 `--smoke-buffer-upload` 覆盖显式 upload payload 经 staging buffer 到 device-local
   buffer 再到 readback buffer。
 - 最小 texture product/upload smoke 已接入：`--smoke-texture-upload` 使用 `asset-pipeline` 的 deterministic
-  placeholder product execution 生成 Texture2D product blob，从 product payload 上传到 Vulkan image，再通过
+  PNG Texture2D product execution 生成 `texture2d-product.v1` blob，从 product payload 上传到 Vulkan image，再通过
   RenderGraph-visible `CopyBufferToImage` / `CopyImageToBuffer` readback 验证。
-- `asset-pipeline` 提供 placeholder product blob 读取 helper，当前用于把 deterministic product blob 中的
-  source payload 解析为显式 bytes，并报告 missing/malformed/unterminated payload diagnostics；它仍不做真实
-  texture decode 或 GPU owner。
+- `asset-pipeline` 提供 product blob 读取 helper，当前用于把 deterministic placeholder blob 中的 source
+  payload 或 `texture2d-product.v1` 中的 Texture2D payload 解析为显式 bytes，并报告 missing/malformed/
+  unterminated/hash mismatch diagnostics；它仍不拥有 GPU upload 或 runtime texture lifetime。
 - `asset-pipeline` 提供 CPU texture import contract：raw `.rgba8` + `texture.profile=texture2d` 仍使用显式
   dimensions/format/settings version，PNG source 通过 `stb_image` 解码尺寸和 RGBA8 payload；两条路径都返回
   同一套 stable CPU payload result，并为 unsupported extension/profile/version/format、invalid dimensions、
@@ -1023,9 +1028,9 @@ scan-to-planning bridge baseline 稳定。
 | asset-pipeline source scan | 只扫描显式 source root 并配对 `.ameta` sidecar，可用 package-local tests 验证。 | 不读取 metadata、不 hash bytes、不桥接 plan、不执行 importer、不做 watcher 或 editor UI。 |
 | asset-pipeline scan-to-planning bridge | 只组合既有 scan/discovery/snapshot/planning 阶段，可用 package-local tests 验证。 | 不做 CLI、不执行 importer、不写 manifest/blob/cache、不做 watcher 或 editor UI。 |
 | asset-processor dry-run CLI | 只做 read-only CLI reporting，可用 `--smoke-dry-run` 验证。 | 不执行 importer、不写 manifest/blob/cache、不做 watcher、hot reload、editor UI 或 GPU upload。 |
-| asset-pipeline / asset-processor product execution | 只消费已有 import plan 和显式 source bytes，写 deterministic placeholder product blob/manifest。 | 不接真实 importer、不做 watcher、dependency invalidation、runtime resource loading 或 GPU upload。 |
-| asset-pipeline placeholder product blob read | 只读取当前 deterministic placeholder blob 的 source payload 并返回稳定 diagnostics。 | 不解析 PNG/KTX/HDR，不创建 runtime texture，不拥有 Vulkan/RenderGraph upload。 |
-| asset-pipeline CPU texture import contract | 只消费显式 source bytes 和 `.ameta` texture settings，把 raw `.rgba8` fixture 或 PNG source bytes 标准化为 Texture2D RGBA8 CPU payload，并返回稳定 diagnostics。 | 不接 KTX/HDR decoder，不压缩 Basis，不写 product cache，不创建 GPU resource 或 editor preview。 |
+| asset-pipeline / asset-processor product execution | 只消费已有 import plan 和显式 source bytes；PNG Texture2D request 写 deterministic texture product blob/manifest，其他 request 写 placeholder blob/manifest。 | 不做 watcher、dependency invalidation、runtime resource loading、GPU upload，且不接 KTX/HDR/Basis/mesh/material importer。 |
+| asset-pipeline product blob read | 只读取当前 deterministic placeholder source payload 或 `texture2d-product.v1` Texture2D payload 并返回稳定 diagnostics。 | 不创建 runtime texture，不拥有 Vulkan/RenderGraph upload，不解释 KTX/HDR/Basis container。 |
+| asset-pipeline CPU texture import contract | 只消费显式 source bytes 和 `.ameta` texture settings，把 raw `.rgba8` fixture 或 PNG source bytes 标准化为 Texture2D RGBA8 CPU payload，并返回稳定 diagnostics。 | 不接 KTX/HDR decoder，不压缩 Basis，不创建 GPU resource 或 editor preview。 |
 | material-core signature / pipeline key | 只定义 CPU-side material resource signature、compatibility diagnostics 和 deterministic pipeline key hash，可用 package-local tests 验证。 | 不做 `.amat` IO、不执行 importer、不写 product cache、不创建 Vulkan pipeline/cache、不做 editor UI。 |
 
 等待后再做：
@@ -1041,7 +1046,8 @@ scan-to-planning bridge baseline 稳定。
 
 - 文件系统 watcher。
 - 后台 import worker。
-- 完整 glTF/texture importer；当前只有 raw `.rgba8` 和 PNG-first CPU texture import contract，不解析 KTX/HDR，也不压缩 Basis。
+- 完整 glTF/texture importer；当前只有 raw `.rgba8` / PNG-first CPU texture import contract 和 PNG Texture2D
+  product writer，不解析 KTX/HDR，也不压缩 Basis。
 - 完整 GPU upload owner；当前只允许保留 graph-visible buffer/texture upload baseline 和 source-path-free runtime state。
 - 热重载。
 - 资产数据库 UI。
@@ -1059,14 +1065,15 @@ Package-local tests：
   discovery、source snapshot/hash、product manifest IO、import planning、缺失/坏 metadata、路径不匹配、重复
   GUID/path、缺失/非普通 source file、非规范 sourcePath、malformed product manifest、duplicate product key/path、
   product key hash mismatch、import planning diagnostics、deterministic product execution、placeholder product blob
-  read diagnostics、raw `.rgba8` / PNG texture import contract 和 texture import diagnostics。
+  read diagnostics、PNG Texture2D product read diagnostics、raw `.rgba8` / PNG texture import contract 和 texture
+  import diagnostics。
 
 未来 CLI smoke：
 
 - `asharia-asset-processor --smoke-dry-run`：read-only dry-run 覆盖 request/cache-hit 报告、scan diagnostic
   和 product manifest read diagnostic。
 - `asharia-asset-processor --smoke-product-execution`：product execution 覆盖 product blob/manifest 写入、
-  unchanged-input cache hit rerun 和 source bytes change 后的新 product 输出。
+  unchanged-input cache hit rerun、source bytes change 后的新 product 输出和 PNG Texture2D product payload readback。
 - `--smoke-asset-metadata-roundtrip`：`.ameta` deterministic round-trip。
 - `--smoke-buffer-upload`：显式 upload payload 通过 RenderGraph `CopyBuffer` 进入 device-local buffer 并读回。
 - `--smoke-mesh-resource`：mesh product 解析为 runtime draw resource，不依赖 source path。

@@ -240,7 +240,7 @@ flowchart TD
     ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d / compute SPIR-V + reflection JSON"]
     RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer / BasicComputeDispatchRenderer<br/>shader modules / pipeline layout / buffers / pipeline<br/>BasicDrawItem / BasicDrawListItem / MVP push constants / dispatch params"]
     DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout<br/>descriptor allocator-backed pool/set<br/>buffer + image + sampler write"]
-    TextureProduct["asset_pipeline execute<br/>placeholder Texture2D product blob"]
+    TextureProduct["asset_pipeline execute<br/>PNG Texture2D product blob"]
 
     Start --> Args
     Args --> WindowSmoke
@@ -352,8 +352,8 @@ flowchart TD
   fullscreen dynamic-rendering pass 采样并写入 backbuffer；smoke 同时验证 descriptor allocator 和 buffer
   upload counters。
 - `--smoke-texture-upload` 已接入最小 asset product -> GPU sampled texture 路径：用
-  `asset_pipeline::executeAssetProducts()` 生成 deterministic Texture2D placeholder product blob，通过
-  asset-pipeline product blob helper 读取 source payload，把 product payload 写入 staging buffer，经
+  `asset_pipeline::executeAssetProducts()` 从嵌入 PNG source 生成 deterministic `texture2d-product.v1`
+  product blob，通过 asset-pipeline product blob helper 读取 Texture2D payload，把 product payload 写入 staging buffer，经
   RenderGraph-visible `CopyBufferToImage` 上传到 imported Vulkan image，再用 `CopyImageToBuffer` 读回验证字节，
   并确认最终 image 进入 `ShaderRead(fragment)` sampled view。
 - `--smoke-offscreen-viewport` 已接入基于 `VulkanRenderTarget` 的持久 offscreen color target：先把

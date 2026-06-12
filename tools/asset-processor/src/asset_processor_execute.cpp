@@ -164,6 +164,8 @@ namespace asharia::asset_processor {
                 return "ProductWriteFailed";
             case Code::ManifestWriteFailed:
                 return "ManifestWriteFailed";
+            case Code::TextureImportFailed:
+                return "TextureImportFailed";
             }
             return "Unknown";
         }
@@ -352,9 +354,8 @@ namespace asharia::asset_processor {
         }
 
         [[nodiscard]] std::optional<std::filesystem::path>
-        defaultExistingProjectManifestPath(
-            const ProductExecutionOptions& options,
-            const std::filesystem::path& productManifestOutputPath) {
+        defaultExistingProjectManifestPath(const ProductExecutionOptions& options,
+                                           const std::filesystem::path& productManifestOutputPath) {
             if (options.productManifestPath) {
                 return options.productManifestPath;
             }
@@ -363,8 +364,7 @@ namespace asharia::asset_processor {
             }
 
             std::error_code existsError;
-            if (std::filesystem::exists(productManifestOutputPath, existsError) &&
-                !existsError) {
+            if (std::filesystem::exists(productManifestOutputPath, existsError) && !existsError) {
                 return productManifestOutputPath;
             }
             return std::nullopt;

@@ -583,6 +583,15 @@ namespace {
         return bytes;
     }
 
+    [[nodiscard]] std::uint64_t smokeHashBytes(std::span<const std::uint8_t> bytes) noexcept {
+        std::uint64_t hash = 14695981039346656037ULL;
+        for (const std::uint8_t byte : bytes) {
+            hash ^= byte;
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    }
+
     [[nodiscard]] bool createDirectories(const std::filesystem::path& path) {
         std::error_code createError;
         std::filesystem::create_directories(path, createError);
@@ -1610,6 +1619,140 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] asharia::asset::AssetImportPlanResult
+    makeTextureProductExecutionPlan(const asharia::asset::SourceAssetRecord& source,
+                                    std::span<const asharia::asset::AssetImportSetting> settings) {
+        constexpr std::string_view kTargetProfile = "windows-msvc-debug";
+        const std::uint64_t targetProfileHash =
+            asharia::asset::makeAssetTargetProfileHash(kTargetProfile);
+        const std::array dependencies{
+            asharia::asset::AssetDependency{
+                .owner = source.guid,
+                .kind = asharia::asset::AssetDependencyKind::SourceFile,
+                .path = source.sourcePath,
+                .hash = source.sourceHash,
+            },
+            asharia::asset::AssetDependency{
+                .owner = source.guid,
+                .kind = asharia::asset::AssetDependencyKind::ImportSettings,
+                .path = {},
+                .hash = source.settingsHash,
+            },
+        };
+        const std::uint64_t dependencyHash = asharia::asset::hashAssetDependencies(dependencies);
+        const asharia::asset::AssetProductKey productKey =
+            asharia::asset::makeAssetProductKey(source, dependencyHash, targetProfileHash);
+        const std::string productPath =
+            asharia::asset::makeAssetImportProductPath(productKey, kTargetProfile);
+        return asharia::asset::AssetImportPlanResult{
+            .targetProfile = std::string{kTargetProfile},
+            .targetProfileHash = targetProfileHash,
+            .requests =
+                {
+                    asharia::asset::AssetImportRequest{
+                        .source = source,
+                        .settings = {settings.begin(), settings.end()},
+                        .dependencies = {dependencies.begin(), dependencies.end()},
+                        .productKey = productKey,
+                        .relativeProductPath = productPath,
+                        .reason = asharia::asset::AssetImportRequestReason::MissingProduct,
+                    },
+                },
+            .cacheHits = {},
+            .diagnostics = {},
+        };
+    }
+
+    [[nodiscard]] bool smokeProductExecutionWritesPngTextureProduct() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-png-texture-product");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        std::vector<asharia::asset::AssetImportSetting> settings =
+            textureImportPngSettings("Texture 2D", "rgba8-srgb");
+        std::vector<std::uint8_t> sourceBytes = validPngTextureBytes();
+        asharia::asset::SourceAssetRecord source =
+            makeTextureImportContractRecord("Content/Textures/Crate.png", settings,
+                                            asharia::asset::makePngTextureImporterDescriptor());
+        source.sourceHash = smokeHashBytes(sourceBytes);
+        source.settingsHash = asharia::asset::hashAssetImportSettings(settings);
+
+        const std::filesystem::path outputRoot = root / "ProductCache";
+        const asharia::asset::AssetProductExecutionResult execution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = makeTextureProductExecutionPlan(source, settings),
+                .existingManifest = {},
+                .sourceBytes =
+                    {
+                        asharia::asset::AssetProductSourceBytes{
+                            .sourcePath = source.sourcePath,
+                            .bytes = sourceBytes,
+                        },
+                    },
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = outputRoot / "product-manifest.json",
+            });
+        if (!execution.succeeded() || execution.writtenProducts.size() != 1U ||
+            execution.manifest.products.size() != 1U || !execution.manifestWritten) {
+            logFailure("Asset product execution smoke failed PNG texture product write.");
+            return false;
+        }
+
+        const asharia::asset::AssetProductWrite& written = execution.writtenProducts.front();
+        auto payload =
+            asharia::asset::readTexture2DProductPayload(asharia::asset::AssetProductBlobReadRequest{
+                .productFilePath = written.productFilePath,
+                .relativeProductPath = written.product.relativeProductPath,
+            });
+        const std::vector<std::uint8_t> expectedBytes{0x10U, 0x20U, 0x30U, 0xFFU};
+        if (!payload || payload->sourcePath != source.sourcePath ||
+            payload->productTypeName != asharia::asset::kTextureRoleTexture2D ||
+            payload->importProfileName != asharia::asset::kTextureImportProfileTexture2D ||
+            payload->settingsVersion != asharia::asset::kTextureImportContractSettingsVersion ||
+            payload->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
+            payload->width != 1U || payload->height != 1U || payload->mips.size() != 1U ||
+            payload->mips[0].level != 0U || payload->mips[0].byteOffset != 0U ||
+            payload->mips[0].byteSize != expectedBytes.size() ||
+            payload->payload != expectedBytes) {
+            logFailure("Asset product execution smoke could not read PNG texture product.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductExecutionPngTextureDiagnostics() {
+        std::vector<asharia::asset::AssetImportSetting> settings = textureImportPngSettings();
+        std::vector<std::uint8_t> sourceBytes{0x89U, 0x50U, 0x4EU, 0x47U};
+        asharia::asset::SourceAssetRecord source =
+            makeTextureImportContractRecord("Content/Textures/Broken.png", settings,
+                                            asharia::asset::makePngTextureImporterDescriptor());
+        source.sourceHash = smokeHashBytes(sourceBytes);
+        source.settingsHash = asharia::asset::hashAssetImportSettings(settings);
+
+        const asharia::asset::AssetProductExecutionResult execution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = makeTextureProductExecutionPlan(source, settings),
+                .existingManifest = {},
+                .sourceBytes =
+                    {
+                        asharia::asset::AssetProductSourceBytes{
+                            .sourcePath = source.sourcePath,
+                            .bytes = sourceBytes,
+                        },
+                    },
+                .productOutputRoot = "unused-product-cache",
+                .productManifestOutputPath = {},
+            });
+        return execution.writtenProducts.empty() &&
+               expectExecutionDiagnostic(
+                   execution,
+                   asharia::asset::AssetProductExecutionDiagnosticCode::TextureImportFailed,
+                   "decode-failed");
+    }
+
     [[nodiscard]] bool smokeProductBlobReadDiagnostics() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-product-blob-read");
@@ -2183,6 +2326,8 @@ int main() {
         smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
         smokeScannedImportPlanningPlanDiagnostics() &&
         smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobReadDiagnostics() &&
+        smokeProductExecutionWritesPngTextureProduct() &&
+        smokeProductExecutionPngTextureDiagnostics() &&
         smokeProductExecutionSourceBytesHashMismatch() && smokeImportPlanningCacheHitAndMiss() &&
         smokeImportPlanningSourceChanged() && smokeImportPlanningMetadataSourceHashDriftWarning() &&
         smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&

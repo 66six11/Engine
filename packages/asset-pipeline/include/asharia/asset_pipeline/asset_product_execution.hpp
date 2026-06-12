@@ -20,6 +20,7 @@ namespace asharia::asset {
         InvalidProductPath,
         ProductWriteFailed,
         ManifestWriteFailed,
+        TextureImportFailed,
     };
 
     struct AssetProductSourceBytes {

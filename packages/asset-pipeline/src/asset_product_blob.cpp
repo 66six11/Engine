@@ -1,17 +1,41 @@
 ﻿#include "asharia/asset_pipeline/asset_product_blob.hpp"
 
+#include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <ios>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "asharia/core/error.hpp"
 
 namespace asharia::asset {
     namespace {
+
+        constexpr std::uint64_t kFnv1a64Offset = 14695981039346656037ULL;
+        constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
+        constexpr std::string_view kTextureProductSchema = "com.asharia.asset.texture2d-product.v1";
+
+        [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
+                                                       std::uint8_t byte) noexcept {
+            hash ^= byte;
+            hash *= kFnv1a64Prime;
+            return hash;
+        }
+
+        [[nodiscard]] std::uint64_t hashBytes(std::span<const std::uint8_t> bytes) noexcept {
+            std::uint64_t hash = kFnv1a64Offset;
+            for (const std::uint8_t byte : bytes) {
+                hash = hashByte(hash, byte);
+            }
+            return hash;
+        }
 
         [[nodiscard]] Error blobError(AssetProductBlobDiagnosticCode code,
                                       std::string relativeProductPath, std::string message) {
@@ -22,36 +46,334 @@ namespace asharia::asset {
                          "Asset product blob " + product + " " + std::move(message) + "."};
         }
 
+        [[nodiscard]] Result<std::vector<std::uint8_t>>
+        readProductFileBytes(const AssetProductBlobReadRequest& request) {
+            if (request.productFilePath.empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingProduct,
+                                                 request.relativeProductPath,
+                                                 "has no product file path")};
+            }
+
+            std::ifstream file(request.productFilePath, std::ios::binary);
+            if (!file) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingProduct,
+                                                 request.relativeProductPath,
+                                                 "is missing from the product cache")};
+            }
+
+            std::vector<std::uint8_t> bytes;
+            char byte{};
+            while (file.get(byte)) {
+                bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(byte)));
+            }
+            if (!file.eof()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::ProductReadFailed,
+                                                 request.relativeProductPath,
+                                                 "could not be read completely")};
+            }
+
+            return bytes;
+        }
+
+        struct HeaderLookupRequest {
+            std::string_view header;
+            std::string_view key;
+        };
+
+        [[nodiscard]] std::optional<std::string_view>
+        findHeaderValue(const HeaderLookupRequest& request) {
+            std::size_t lineBegin = 0;
+            while (lineBegin <= request.header.size()) {
+                std::size_t lineEnd = request.header.find('\n', lineBegin);
+                if (lineEnd == std::string_view::npos) {
+                    lineEnd = request.header.size();
+                }
+
+                const std::string_view line = request.header.substr(lineBegin, lineEnd - lineBegin);
+                const std::size_t equals = line.find('=');
+                if (equals != std::string_view::npos && line.substr(0, equals) == request.key) {
+                    return line.substr(equals + 1);
+                }
+
+                if (lineEnd == request.header.size()) {
+                    break;
+                }
+                lineBegin = lineEnd + 1;
+            }
+
+            return std::nullopt;
+        }
+
+        [[nodiscard]] Result<std::string> requireStringField(std::string_view header,
+                                                             std::string_view key,
+                                                             std::string_view relativeProductPath) {
+            const std::optional<std::string_view> value = findHeaderValue({
+                .header = header,
+                .key = key,
+            });
+            if (!value || value->empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "is missing field '" + std::string{key} + "'")};
+            }
+
+            return std::string{*value};
+        }
+
+        [[nodiscard]] Result<std::uint64_t>
+        requireUint64Field(std::string_view header, std::string_view key,
+                           std::string_view relativeProductPath) {
+            const std::optional<std::string_view> value = findHeaderValue({
+                .header = header,
+                .key = key,
+            });
+            if (!value || value->empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "is missing field '" + std::string{key} + "'")};
+            }
+
+            std::uint64_t parsed{};
+            const char* begin = value->data();
+            const char* end = value->data() + value->size();
+            const auto result = std::from_chars(begin, end, parsed);
+            if (result.ec != std::errc{} || result.ptr != end) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has invalid integer field '" + std::string{key} + "'")};
+            }
+
+            return parsed;
+        }
+
+        [[nodiscard]] Result<std::uint32_t>
+        requireUint32Field(std::string_view header, std::string_view key,
+                           std::string_view relativeProductPath) {
+            auto value = requireUint64Field(header, key, relativeProductPath);
+            if (!value) {
+                return std::unexpected{std::move(value.error())};
+            }
+            if (*value > UINT32_MAX) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has out-of-range integer field '" + std::string{key} + "'")};
+            }
+            return static_cast<std::uint32_t>(*value);
+        }
+
+        [[nodiscard]] Result<std::uint64_t>
+        requireHexUint64Field(std::string_view header, std::string_view key,
+                              std::string_view relativeProductPath) {
+            const std::optional<std::string_view> value = findHeaderValue({
+                .header = header,
+                .key = key,
+            });
+            if (!value || value->empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "is missing field '" + std::string{key} + "'")};
+            }
+
+            std::uint64_t parsed{};
+            const char* begin = value->data();
+            const char* end = value->data() + value->size();
+            const auto result = std::from_chars(begin, end, parsed, 16);
+            if (result.ec != std::errc{} || result.ptr != end) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has invalid hex field '" + std::string{key} + "'")};
+            }
+
+            return parsed;
+        }
+
+        [[nodiscard]] Result<AssetTextureImportFormat>
+        requireTextureFormatField(std::string_view header, std::string_view relativeProductPath) {
+            auto value = requireStringField(header, "format", relativeProductPath);
+            if (!value) {
+                return std::unexpected{std::move(value.error())};
+            }
+            if (*value == kTextureImportFormatRgba8Unorm) {
+                return AssetTextureImportFormat::Rgba8Unorm;
+            }
+            if (*value == kTextureImportFormatRgba8Srgb) {
+                return AssetTextureImportFormat::Rgba8Srgb;
+            }
+
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath},
+                                             "has unsupported texture format '" + *value + "'")};
+        }
+
+        [[nodiscard]] Result<void> validateTextureSchema(std::string_view header,
+                                                         std::string_view relativeProductPath) {
+            auto schema = requireStringField(header, "schema", relativeProductPath);
+            if (!schema) {
+                return std::unexpected{std::move(schema.error())};
+            }
+            if (*schema != kTextureProductSchema) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has unsupported schema '" + *schema + "'")};
+            }
+
+            return {};
+        }
+
+        struct TextureProductHeaderFields {
+            std::string sourcePath;
+            std::string productTypeName;
+            std::string importProfileName;
+            std::uint32_t settingsVersion{};
+            AssetTextureImportFormat format{AssetTextureImportFormat::Rgba8Unorm};
+            std::uint32_t width{};
+            std::uint32_t height{};
+            std::uint64_t mipCount{};
+            std::uint64_t payloadSize{};
+            std::uint64_t payloadHash{};
+        };
+
+        struct TextureProductMipParseRequest {
+            std::string_view header;
+            std::uint64_t mipCount{};
+            std::uint64_t payloadSize{};
+            std::string_view relativeProductPath;
+        };
+
+        [[nodiscard]] Result<TextureProductHeaderFields>
+        parseTextureProductHeaderFields(std::string_view header,
+                                        std::string_view relativeProductPath) {
+            auto validSchema = validateTextureSchema(header, relativeProductPath);
+            if (!validSchema) {
+                return std::unexpected{std::move(validSchema.error())};
+            }
+
+            auto sourcePath = requireStringField(header, "sourcePath", relativeProductPath);
+            auto productType = requireStringField(header, "productType", relativeProductPath);
+            auto profile = requireStringField(header, "importProfile", relativeProductPath);
+            auto settingsVersion =
+                requireUint32Field(header, "settingsVersion", relativeProductPath);
+            auto format = requireTextureFormatField(header, relativeProductPath);
+            auto width = requireUint32Field(header, "width", relativeProductPath);
+            auto height = requireUint32Field(header, "height", relativeProductPath);
+            auto mipCount = requireUint64Field(header, "mip.count", relativeProductPath);
+            auto payloadSize = requireUint64Field(header, "payload.size", relativeProductPath);
+            auto payloadHash = requireHexUint64Field(header, "payloadHash", relativeProductPath);
+            if (!sourcePath) {
+                return std::unexpected{std::move(sourcePath.error())};
+            }
+            if (!productType) {
+                return std::unexpected{std::move(productType.error())};
+            }
+            if (!profile) {
+                return std::unexpected{std::move(profile.error())};
+            }
+            if (!settingsVersion) {
+                return std::unexpected{std::move(settingsVersion.error())};
+            }
+            if (!format) {
+                return std::unexpected{std::move(format.error())};
+            }
+            if (!width) {
+                return std::unexpected{std::move(width.error())};
+            }
+            if (!height) {
+                return std::unexpected{std::move(height.error())};
+            }
+            if (!mipCount) {
+                return std::unexpected{std::move(mipCount.error())};
+            }
+            if (!payloadSize) {
+                return std::unexpected{std::move(payloadSize.error())};
+            }
+            if (!payloadHash) {
+                return std::unexpected{std::move(payloadHash.error())};
+            }
+            if (*mipCount == 0) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has no mip payload records")};
+            }
+
+            return TextureProductHeaderFields{
+                .sourcePath = std::move(*sourcePath),
+                .productTypeName = std::move(*productType),
+                .importProfileName = std::move(*profile),
+                .settingsVersion = *settingsVersion,
+                .format = *format,
+                .width = *width,
+                .height = *height,
+                .mipCount = *mipCount,
+                .payloadSize = *payloadSize,
+                .payloadHash = *payloadHash,
+            };
+        }
+
+        [[nodiscard]] Result<std::vector<AssetTextureMipPayload>>
+        parseTextureProductMips(const TextureProductMipParseRequest& request) {
+            std::vector<AssetTextureMipPayload> mips;
+            mips.reserve(static_cast<std::size_t>(request.mipCount));
+            for (std::uint64_t mipIndex = 0; mipIndex < request.mipCount; ++mipIndex) {
+                const std::string prefix = "mip." + std::to_string(mipIndex) + ".";
+                auto level = requireUint32Field(request.header, prefix + "level",
+                                                request.relativeProductPath);
+                auto mipWidth = requireUint32Field(request.header, prefix + "width",
+                                                   request.relativeProductPath);
+                auto mipHeight = requireUint32Field(request.header, prefix + "height",
+                                                    request.relativeProductPath);
+                auto byteOffset = requireUint64Field(request.header, prefix + "byteOffset",
+                                                     request.relativeProductPath);
+                auto byteSize = requireUint64Field(request.header, prefix + "byteSize",
+                                                   request.relativeProductPath);
+                if (!level) {
+                    return std::unexpected{std::move(level.error())};
+                }
+                if (!mipWidth) {
+                    return std::unexpected{std::move(mipWidth.error())};
+                }
+                if (!mipHeight) {
+                    return std::unexpected{std::move(mipHeight.error())};
+                }
+                if (!byteOffset) {
+                    return std::unexpected{std::move(byteOffset.error())};
+                }
+                if (!byteSize) {
+                    return std::unexpected{std::move(byteSize.error())};
+                }
+                if (*byteOffset > request.payloadSize ||
+                    *byteSize > request.payloadSize - *byteOffset) {
+                    return std::unexpected{
+                        blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                  std::string{request.relativeProductPath},
+                                  "has an out-of-range mip payload record")};
+                }
+
+                mips.push_back(AssetTextureMipPayload{
+                    .level = *level,
+                    .width = *mipWidth,
+                    .height = *mipHeight,
+                    .byteOffset = *byteOffset,
+                    .byteSize = *byteSize,
+                });
+            }
+            return mips;
+        }
+
     } // namespace
 
     Result<AssetProductBlobPayload>
     readPlaceholderProductSourceBytes(const AssetProductBlobReadRequest& request) {
-        if (request.productFilePath.empty()) {
-            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingProduct,
-                                             request.relativeProductPath,
-                                             "has no product file path")};
-        }
-
-        std::ifstream file(request.productFilePath, std::ios::binary);
-        if (!file) {
-            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingProduct,
-                                             request.relativeProductPath,
-                                             "is missing from the product cache")};
-        }
-
-        std::vector<std::uint8_t> bytes;
-        char byte{};
-        while (file.get(byte)) {
-            bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(byte)));
-        }
-        if (!file.eof()) {
-            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::ProductReadFailed,
-                                             request.relativeProductPath,
-                                             "could not be read completely")};
+        auto bytes = readProductFileBytes(request);
+        if (!bytes) {
+            return std::unexpected{std::move(bytes.error())};
         }
 
         return readPlaceholderProductSourceBytes(
-            std::span<const std::uint8_t>{bytes.data(), bytes.size()}, request.relativeProductPath);
+            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
+            request.relativeProductPath);
     }
 
     Result<AssetProductBlobPayload>
@@ -92,6 +414,97 @@ namespace asharia::asset {
         }
 
         return AssetProductBlobPayload{.sourceBytes = std::move(sourceBytes)};
+    }
+
+    Result<AssetTextureProductPayload>
+    readTexture2DProductPayload(const AssetProductBlobReadRequest& request) {
+        auto bytes = readProductFileBytes(request);
+        if (!bytes) {
+            return std::unexpected{std::move(bytes.error())};
+        }
+
+        return readTexture2DProductPayload(
+            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
+            request.relativeProductPath);
+    }
+
+    Result<AssetTextureProductPayload>
+    readTexture2DProductPayload(std::span<const std::uint8_t> productBytes,
+                                std::string_view relativeProductPath) {
+        if (productBytes.empty()) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath}, "is empty")};
+        }
+
+        constexpr std::string_view kBegin = "payload.begin\n";
+        constexpr std::string_view kEnd = "\npayload.end\n";
+        std::string productText;
+        productText.reserve(productBytes.size());
+        for (const std::uint8_t byte : productBytes) {
+            productText.push_back(static_cast<char>(byte));
+        }
+
+        const std::size_t markerOffset = productText.find(kBegin);
+        if (markerOffset == std::string_view::npos) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingPayload,
+                                             std::string{relativeProductPath},
+                                             "does not contain payload.begin")};
+        }
+
+        const std::size_t payloadBegin = markerOffset + kBegin.size();
+        const std::string headerText = productText.substr(0, markerOffset);
+        auto header = parseTextureProductHeaderFields(headerText, relativeProductPath);
+        if (!header) {
+            return std::unexpected{std::move(header.error())};
+        }
+        if (header->payloadSize > SIZE_MAX || payloadBegin > productBytes.size() ||
+            header->payloadSize > productBytes.size() - payloadBegin) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                                             std::string{relativeProductPath},
+                                             "has an unterminated texture payload")};
+        }
+
+        const auto payloadByteCount = static_cast<std::size_t>(header->payloadSize);
+        const std::size_t payloadEnd = payloadBegin + payloadByteCount;
+        if (productBytes.size() < payloadEnd + kEnd.size() ||
+            productText.substr(payloadEnd, kEnd.size()) != kEnd) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                                             std::string{relativeProductPath},
+                                             "has an unterminated texture payload")};
+        }
+
+        std::vector<std::uint8_t> payload;
+        payload.reserve(payloadByteCount);
+        for (std::size_t index = payloadBegin; index < payloadEnd; ++index) {
+            payload.push_back(productBytes[index]);
+        }
+        if (hashBytes(payload) != header->payloadHash) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath},
+                                             "has a texture payload hash mismatch")};
+        }
+
+        auto mips = parseTextureProductMips({
+            .header = headerText,
+            .mipCount = header->mipCount,
+            .payloadSize = header->payloadSize,
+            .relativeProductPath = relativeProductPath,
+        });
+        if (!mips) {
+            return std::unexpected{std::move(mips.error())};
+        }
+
+        return AssetTextureProductPayload{
+            .sourcePath = std::move(header->sourcePath),
+            .productTypeName = std::move(header->productTypeName),
+            .importProfileName = std::move(header->importProfileName),
+            .settingsVersion = header->settingsVersion,
+            .format = header->format,
+            .width = header->width,
+            .height = header->height,
+            .mips = std::move(*mips),
+            .payload = std::move(payload),
+        };
     }
 
     const char* assetProductBlobDiagnosticCodeName(AssetProductBlobDiagnosticCode code) noexcept {
