@@ -100,6 +100,13 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
+`--scriptlab-host` is not part of the automatic `$smokes` loop because it needs an external
+ScriptLab bridge manifest, managed bridge assembly, and ready/go files. Changes to that path
+must at minimum build `asharia-sample-viewer` for `clangcl-debug` and `msvc-debug`, run
+`asharia-sample-viewer.exe --scriptlab-host` to verify the invalid-command-line path, run a bad
+manifest to verify exit code `10`, and run the full ScriptLab attach runner when a real bridge
+manifest is available.
+
 如果某个 smoke 命令尚不存在，审查回复必须说明原因，不能默默跳过。
 
 涉及 `apps/editor` shell、menu、panel registry、action registry、event queue 或 ImGui runtime 时，必须跑：
