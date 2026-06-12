@@ -7,8 +7,10 @@ namespace asharia::asset_pipeline_header_tests {
         [[maybe_unused]] asharia::asset::AssetTextureImportResult result{};
         [[maybe_unused]] const asharia::asset::AssetTextureImporterDescriptor descriptor =
             asharia::asset::makeRawRgba8TextureImporterDescriptor();
+        [[maybe_unused]] const asharia::asset::AssetTextureImporterDescriptor pngDescriptor =
+            asharia::asset::makePngTextureImporterDescriptor();
         [[maybe_unused]] const asharia::asset::AssetTextureImportDiagnosticCode diagnostic =
-            asharia::asset::AssetTextureImportDiagnosticCode::PayloadSizeMismatch;
+            asharia::asset::AssetTextureImportDiagnosticCode::DecodeFailed;
     }
 
 } // namespace asharia::asset_pipeline_header_tests

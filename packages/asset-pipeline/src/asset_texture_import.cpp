@@ -3,12 +3,19 @@
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
+#include <cstring>
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
+
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/error.hpp"
@@ -39,6 +46,14 @@ namespace asharia::asset {
             std::uint32_t width{};
             std::uint32_t height{};
         };
+
+        struct StbiImageDeleter {
+            void operator()(stbi_uc* pixels) const noexcept {
+                stbi_image_free(pixels);
+            }
+        };
+
+        using StbiImage = std::unique_ptr<stbi_uc, StbiImageDeleter>;
 
         [[nodiscard]] std::string lowerAscii(std::string_view value) {
             std::string text;
@@ -136,8 +151,7 @@ namespace asharia::asset {
         }
 
         [[nodiscard]] Result<std::uint64_t>
-        expectedRawRgba8Bytes(const AssetTextureImportRequest& request,
-                              TextureImportExtent extent) {
+        expectedRgba8Bytes(const AssetTextureImportRequest& request, TextureImportExtent extent) {
             constexpr std::uint64_t kBytesPerPixel = 4U;
             constexpr std::uint64_t kMax = std::numeric_limits<std::uint64_t>::max();
             const std::uint64_t width64 = extent.width;
@@ -156,6 +170,23 @@ namespace asharia::asset {
             }
 
             return pixels * kBytesPerPixel;
+        }
+
+        [[nodiscard]] Result<std::size_t>
+        expectedRgba8ByteCount(const AssetTextureImportRequest& request,
+                               TextureImportExtent extent) {
+            auto bytes = expectedRgba8Bytes(request, extent);
+            if (!bytes) {
+                return std::unexpected{std::move(bytes.error())};
+            }
+
+            if (*bytes > std::numeric_limits<std::size_t>::max()) {
+                return std::unexpected{textureImportError(
+                    AssetTextureImportDiagnosticCode::InvalidDimensions, request.source,
+                    "dimensions overflow the CPU texture payload size")};
+            }
+
+            return static_cast<std::size_t>(*bytes);
         }
 
         [[nodiscard]] Result<std::uint32_t>
@@ -214,6 +245,101 @@ namespace asharia::asset {
             return {};
         }
 
+        [[nodiscard]] Result<std::vector<std::uint8_t>>
+        decodePngRgba8Payload(const AssetTextureImportRequest& request,
+                              TextureImportExtent& extent) {
+            if (request.sourceBytes.empty()) {
+                return std::unexpected{
+                    textureImportError(AssetTextureImportDiagnosticCode::DecodeFailed,
+                                       request.source, "could not decode PNG source bytes")};
+            }
+
+            if (request.sourceBytes.size() >
+                static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                return std::unexpected{
+                    textureImportError(AssetTextureImportDiagnosticCode::InvalidRequest,
+                                       request.source, "is too large for the PNG decoder input")};
+            }
+
+            int width = 0;
+            int height = 0;
+            int sourceChannels = 0;
+            StbiImage decoded{stbi_load_from_memory(
+                request.sourceBytes.data(), static_cast<int>(request.sourceBytes.size()), &width,
+                &height, &sourceChannels, STBI_rgb_alpha)};
+            if (!decoded) {
+                return std::unexpected{
+                    textureImportError(AssetTextureImportDiagnosticCode::DecodeFailed,
+                                       request.source, "could not decode PNG source bytes")};
+            }
+
+            if (width <= 0 || height <= 0) {
+                return std::unexpected{
+                    textureImportError(AssetTextureImportDiagnosticCode::InvalidDimensions,
+                                       request.source, "decoded non-positive PNG dimensions")};
+            }
+            if (sourceChannels <= 0) {
+                return std::unexpected{textureImportError(
+                    AssetTextureImportDiagnosticCode::DecodeFailed, request.source,
+                    "decoded PNG without source channel metadata")};
+            }
+
+            extent = TextureImportExtent{
+                .width = static_cast<std::uint32_t>(width),
+                .height = static_cast<std::uint32_t>(height),
+            };
+
+            auto expectedBytes = expectedRgba8ByteCount(request, extent);
+            if (!expectedBytes) {
+                return std::unexpected{std::move(expectedBytes.error())};
+            }
+
+            std::vector<std::uint8_t> payload(*expectedBytes);
+            std::memcpy(payload.data(), decoded.get(), payload.size());
+            return payload;
+        }
+
+        [[nodiscard]] Result<AssetTextureImportResult>
+        makeTextureImportResult(const AssetTextureImportRequest& request, std::string extension,
+                                std::string importProfileName, std::uint32_t settingsVersion,
+                                AssetTextureImportFormat format, TextureImportExtent extent,
+                                std::vector<std::uint8_t> payload, std::string_view payloadLabel) {
+            auto expectedBytes = expectedRgba8ByteCount(request, extent);
+            if (!expectedBytes) {
+                return std::unexpected{std::move(expectedBytes.error())};
+            }
+
+            if (payload.size() != *expectedBytes) {
+                return std::unexpected{textureImportError(
+                    AssetTextureImportDiagnosticCode::PayloadSizeMismatch, request.source,
+                    "expected " + std::to_string(*expectedBytes) + " bytes for " +
+                        std::string{payloadLabel} + " payload but received " +
+                        std::to_string(payload.size()))};
+            }
+
+            return AssetTextureImportResult{
+                .source = request.source,
+                .sourceExtension = std::move(extension),
+                .importProfileName = std::move(importProfileName),
+                .settingsVersion = settingsVersion,
+                .productTypeName = request.importer.productTypeName,
+                .format = format,
+                .width = extent.width,
+                .height = extent.height,
+                .mips =
+                    {
+                        AssetTextureMipPayload{
+                            .level = 0U,
+                            .width = extent.width,
+                            .height = extent.height,
+                            .byteOffset = 0U,
+                            .byteSize = *expectedBytes,
+                        },
+                    },
+                .payload = std::move(payload),
+            };
+        }
+
     } // namespace
 
     AssetTextureImporterDescriptor makeRawRgba8TextureImporterDescriptor() {
@@ -222,6 +348,17 @@ namespace asharia::asset {
             .importerVersion = ImporterVersion{1},
             .settingsVersion = kTextureImportContractSettingsVersion,
             .supportedSourceExtensions = {std::string{kTextureImportRawRgba8Extension}},
+            .supportedProfiles = {std::string{kTextureImportProfileTexture2D}},
+            .productTypeName = std::string{kTextureRoleTexture2D},
+        };
+    }
+
+    AssetTextureImporterDescriptor makePngTextureImporterDescriptor() {
+        return AssetTextureImporterDescriptor{
+            .importerName = "com.asharia.importer.texture.png",
+            .importerVersion = ImporterVersion{1},
+            .settingsVersion = kTextureImportContractSettingsVersion,
+            .supportedSourceExtensions = {std::string{kTextureImportPngExtension}},
             .supportedProfiles = {std::string{kTextureImportProfileTexture2D}},
             .productTypeName = std::string{kTextureRoleTexture2D},
         };
@@ -244,6 +381,8 @@ namespace asharia::asset {
             return "unsupported-format";
         case AssetTextureImportDiagnosticCode::PayloadSizeMismatch:
             return "payload-size-mismatch";
+        case AssetTextureImportDiagnosticCode::DecodeFailed:
+            return "decode-failed";
         }
         return "unknown";
     }
@@ -292,6 +431,23 @@ namespace asharia::asset {
                     std::to_string(request.importer.settingsVersion) + "\"")};
         }
 
+        auto format = parseTextureFormat(request);
+        if (!format) {
+            return std::unexpected{std::move(format.error())};
+        }
+
+        if (extension == kTextureImportPngExtension) {
+            TextureImportExtent extent{};
+            auto payload = decodePngRgba8Payload(request, extent);
+            if (!payload) {
+                return std::unexpected{std::move(payload.error())};
+            }
+
+            return makeTextureImportResult(request, extension, std::move(*profile),
+                                           *settingsVersion, *format, extent, std::move(*payload),
+                                           "decoded PNG RGBA8");
+        }
+
         auto width = parseUint32Setting(request, kTextureImportWidthSettingKey,
                                         AssetTextureImportDiagnosticCode::InvalidDimensions,
                                         "texture width");
@@ -306,49 +462,10 @@ namespace asharia::asset {
             return std::unexpected{std::move(height.error())};
         }
 
-        auto format = parseTextureFormat(request);
-        if (!format) {
-            return std::unexpected{std::move(format.error())};
-        }
-
-        const TextureImportExtent extent{
-            .width = *width,
-            .height = *height,
-        };
-        auto expectedBytes = expectedRawRgba8Bytes(request, extent);
-        if (!expectedBytes) {
-            return std::unexpected{std::move(expectedBytes.error())};
-        }
-
-        if (request.sourceBytes.size() != *expectedBytes) {
-            return std::unexpected{textureImportError(
-                AssetTextureImportDiagnosticCode::PayloadSizeMismatch, request.source,
-                "expected " + std::to_string(*expectedBytes) +
-                    " bytes for raw RGBA8 payload but received " +
-                    std::to_string(request.sourceBytes.size()))};
-        }
-
-        return AssetTextureImportResult{
-            .source = request.source,
-            .sourceExtension = extension,
-            .importProfileName = std::move(*profile),
-            .settingsVersion = *settingsVersion,
-            .productTypeName = request.importer.productTypeName,
-            .format = *format,
-            .width = *width,
-            .height = *height,
-            .mips =
-                {
-                    AssetTextureMipPayload{
-                        .level = 0U,
-                        .width = *width,
-                        .height = *height,
-                        .byteOffset = 0U,
-                        .byteSize = *expectedBytes,
-                    },
-                },
-            .payload = request.sourceBytes,
-        };
+        return makeTextureImportResult(request, extension, std::move(*profile), *settingsVersion,
+                                       *format,
+                                       TextureImportExtent{.width = *width, .height = *height},
+                                       request.sourceBytes, "raw RGBA8");
     }
 
 } // namespace asharia::asset

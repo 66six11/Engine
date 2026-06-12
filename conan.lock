@@ -3,6 +3,7 @@
     "requires": [
         "vulkan-memory-allocator/3.3.0#5393b5bc9a6b8a2fb9612df877706608%1761667136.618",
         "vulkan-headers/1.4.313.0#83efc4aabdbe58d53aeae9494a720f7e%1747979764.107",
+        "stb/cci.20240531#ede183dce303916dab0c1b835df3926a%1720366012.336",
         "opengl/system#cfcf523b9d2bad75cbf377f56562634c%1762526044.744",
         "nlohmann_json/3.12.0#2d634ab0ec8d9f56353e5ccef6d6612c%1744735883.94",
         "imgui/1.92.7-docking#68ccdf36419cc5fd296f2fb8ab52aa6c%1775244190.633",

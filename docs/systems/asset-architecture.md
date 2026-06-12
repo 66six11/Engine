@@ -172,9 +172,11 @@ flowchart TD
   或 import request；scan-to-planning bridge 只顺序复用 scan、discovery、snapshot 和 planning，并保留分阶段
   diagnostics，供 dry-run CLI 报告；product execution 消费已有 import request 和显式 source bytes，写入
   deterministic placeholder product blob 与 product manifest，用作真实 importer 前的稳定 product/cache 输出基线；
-  product blob read helper 只解析当前 placeholder blob 的 source payload；texture import contract 只把 raw
+  product blob read helper 只解析当前 placeholder blob 的 source payload；texture import contract 可把 raw
   `.rgba8` fixture 标准化为 Texture2D CPU payload，并验证 source extension、profile、settings version、width、
-  height、format 和 payload byte size。后续再扩展具体 decoder、import scheduling 和 dependency invalidation 规则。
+  height、format 和 payload byte size；PNG-first decoder 通过 Conan `stb/cci.20240531` 在 `asset-pipeline`
+  内部把 `.png` source bytes 解码为同一套 normalized RGBA8 CPU payload/result。后续再扩展 KTX/Basis/HDR、
+  import scheduling 和 dependency invalidation 规则。
 - `tools/asset-processor`：当前提供 read-only dry-run CLI 和受控 `execute` CLI。dry-run 可读取显式 source root，或读取
   `asharia.project.json` 中的 `assetSourceRoots` / `assetDiscovery.ignoredDirectories`，再使用显式
   `--target-profile` 和可选 product manifest 输出稳定文本报告；execute 可读取显式 source root、target
@@ -967,11 +969,13 @@ scan-to-planning bridge baseline 稳定。
 - `asset-pipeline` 提供 placeholder product blob 读取 helper，当前用于把 deterministic product blob 中的
   source payload 解析为显式 bytes，并报告 missing/malformed/unterminated payload diagnostics；它仍不做真实
   texture decode 或 GPU owner。
-- `asset-pipeline` 提供第一版 CPU texture import contract，当前只支持 raw `.rgba8` + `texture.profile=texture2d`
-  的显式 RGBA8 bytes，把 `.ameta` import settings 里的 dimensions、format 和 settings version 变成稳定
-  CPU payload result，并为 unsupported extension/profile/version/format、invalid dimensions 和 payload-size
-  mismatch 提供 deterministic diagnostics。它仍不解析 PNG/KTX/HDR，不压缩 Basis，也不创建 Vulkan image。
-- 后续仍需 Mesh product record、真实 texture importer、完整 GPU resource owner 和 runtime texture/mesh lifetime。
+- `asset-pipeline` 提供 CPU texture import contract：raw `.rgba8` + `texture.profile=texture2d` 仍使用显式
+  dimensions/format/settings version，PNG source 通过 `stb_image` 解码尺寸和 RGBA8 payload；两条路径都返回
+  同一套 stable CPU payload result，并为 unsupported extension/profile/version/format、invalid dimensions、
+  payload-size mismatch 和 decode failure 提供 deterministic diagnostics。它仍不解析 KTX/HDR，不压缩 Basis，
+  也不创建 Vulkan image。
+- 后续仍需 Mesh product record、KTX/Basis/compressed texture policy、完整 GPU resource owner 和 runtime
+  texture/mesh lifetime。
 - staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`、`project-core` 或 `.ameta`。
 
 验收：
@@ -1021,7 +1025,7 @@ scan-to-planning bridge baseline 稳定。
 | asset-processor dry-run CLI | 只做 read-only CLI reporting，可用 `--smoke-dry-run` 验证。 | 不执行 importer、不写 manifest/blob/cache、不做 watcher、hot reload、editor UI 或 GPU upload。 |
 | asset-pipeline / asset-processor product execution | 只消费已有 import plan 和显式 source bytes，写 deterministic placeholder product blob/manifest。 | 不接真实 importer、不做 watcher、dependency invalidation、runtime resource loading 或 GPU upload。 |
 | asset-pipeline placeholder product blob read | 只读取当前 deterministic placeholder blob 的 source payload 并返回稳定 diagnostics。 | 不解析 PNG/KTX/HDR，不创建 runtime texture，不拥有 Vulkan/RenderGraph upload。 |
-| asset-pipeline CPU texture import contract | 只消费显式 source bytes 和 `.ameta` texture settings，把 raw `.rgba8` fixture 标准化为 Texture2D CPU payload，并返回稳定 diagnostics。 | 不接 PNG/KTX/HDR decoder，不压缩 Basis，不写 product cache，不创建 GPU resource 或 editor preview。 |
+| asset-pipeline CPU texture import contract | 只消费显式 source bytes 和 `.ameta` texture settings，把 raw `.rgba8` fixture 或 PNG source bytes 标准化为 Texture2D RGBA8 CPU payload，并返回稳定 diagnostics。 | 不接 KTX/HDR decoder，不压缩 Basis，不写 product cache，不创建 GPU resource 或 editor preview。 |
 | material-core signature / pipeline key | 只定义 CPU-side material resource signature、compatibility diagnostics 和 deterministic pipeline key hash，可用 package-local tests 验证。 | 不做 `.amat` IO、不执行 importer、不写 product cache、不创建 Vulkan pipeline/cache、不做 editor UI。 |
 
 等待后再做：
@@ -1037,7 +1041,7 @@ scan-to-planning bridge baseline 稳定。
 
 - 文件系统 watcher。
 - 后台 import worker。
-- 完整 glTF/texture importer；当前只有 raw `.rgba8` CPU texture import contract，不解析 PNG/KTX/HDR，也不压缩 Basis。
+- 完整 glTF/texture importer；当前只有 raw `.rgba8` 和 PNG-first CPU texture import contract，不解析 KTX/HDR，也不压缩 Basis。
 - 完整 GPU upload owner；当前只允许保留 graph-visible buffer/texture upload baseline 和 source-path-free runtime state。
 - 热重载。
 - 资产数据库 UI。
@@ -1055,7 +1059,7 @@ Package-local tests：
   discovery、source snapshot/hash、product manifest IO、import planning、缺失/坏 metadata、路径不匹配、重复
   GUID/path、缺失/非普通 source file、非规范 sourcePath、malformed product manifest、duplicate product key/path、
   product key hash mismatch、import planning diagnostics、deterministic product execution、placeholder product blob
-  read diagnostics、raw `.rgba8` texture import contract 和 texture import diagnostics。
+  read diagnostics、raw `.rgba8` / PNG texture import contract 和 texture import diagnostics。
 
 未来 CLI smoke：
 
