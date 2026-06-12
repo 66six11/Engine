@@ -40,6 +40,9 @@
   每个 item 至少声明 vertex 或 index，且 instance count 非零。该 pass 暂不绘制 mesh、上传 GPU 资源或读取
   asset/editor object；真实 scene mesh pass 后续必须消费同一类 renderer-owned input，再显式声明 color/depth/buffer
   resource usage。
+- `BasicDrawListItem` 携带 renderer-owned `BasicDrawPacketContext`：稳定 source object id、mesh resource key
+  和 material resource key。该 context 只进入 diagnostics / invalid-input error context，不把 `World*`、
+  `Entity*`、editor pointer、source asset path、importer state 或 Vulkan handle 传进 renderer API。
 - 当前阶段不交付 SRP 接入。SRP 只作为后续消费者约束：RenderView policy / recording 的职责划分不能把
   pipeline authoring、asset upload、script callback 或 editor state 塞进 `rendergraph`、`rhi_vulkan`
   或 `apps/editor` 的捷径；未来 SRP 应通过 renderer-owned scene/pass input 和 RenderGraph 声明接到同一

@@ -81,6 +81,7 @@ namespace asharia {
 
     struct BasicRenderViewSceneDiagnostics {
         std::uint64_t drawItemCount{};
+        std::vector<BasicDrawPacketContext> drawPacketContexts;
     };
 
     enum class BasicRenderViewOverlayColorLoadOp {

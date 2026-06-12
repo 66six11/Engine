@@ -74,6 +74,7 @@ $smokes = @(
     "--smoke-mrt",
     "--smoke-descriptor-layout",
     "--smoke-fullscreen-texture",
+    "--smoke-scene-draw-packet",
     "--smoke-render-view-grid-readback",
     "--smoke-offscreen-viewport",
     "--smoke-compute-dispatch",

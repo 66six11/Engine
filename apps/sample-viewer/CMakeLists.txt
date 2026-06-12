@@ -12,6 +12,7 @@ asharia_package_init()
 asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
 asharia_require_package_target(asharia::profiling packages/profiling)
 asharia_require_package_target(asharia::reflection packages/reflection)
+asharia_require_package_target(asharia::scene_core packages/scene-core)
 asharia_require_package_target(asharia::serialization packages/serialization)
 asharia_require_package_target(asharia::window_glfw packages/window-glfw)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
@@ -33,6 +34,7 @@ target_link_libraries(asharia-sample-viewer
         asharia::rendergraph
         asharia::rhi_vulkan
         asharia::rhi_vulkan_rendergraph
+        asharia::scene_core
         asharia::serialization
         asharia::window_glfw
         asharia::renderer_basic

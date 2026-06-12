@@ -54,6 +54,16 @@
             return copied;
         }
 
+        [[nodiscard]] std::vector<BasicDrawPacketContext>
+        basicRenderViewDrawPacketContexts(std::span<const BasicDrawListItem> drawItems) {
+            std::vector<BasicDrawPacketContext> contexts;
+            contexts.reserve(drawItems.size());
+            for (const BasicDrawListItem& item : drawItems) {
+                contexts.push_back(item.context);
+            }
+            return contexts;
+        }
+
         void setBasicRenderViewDiagnostics(
             const BasicRenderViewDesc& view, const RenderGraph& graph,
             const RenderGraphCompileResult& compiled,
@@ -64,6 +74,8 @@
 
             std::vector<std::string> sourceOverlayIds =
                 basicRenderViewSourceOverlayIds(view.overlay.sourceOverlayIds);
+            std::vector<BasicDrawPacketContext> drawPacketContexts =
+                basicRenderViewDrawPacketContexts(view.scene.drawItems);
             *view.diagnostics = BasicRenderViewDiagnostics{
                 .viewName = std::string{view.viewName},
                 .viewKind = view.viewKind,
@@ -73,6 +85,7 @@
                     BasicRenderViewSceneDiagnostics{
                         .drawItemCount =
                             static_cast<std::uint64_t>(view.scene.drawItems.size()),
+                        .drawPacketContexts = std::move(drawPacketContexts),
                     },
                 .overlay =
                     BasicRenderViewOverlayDiagnostics{

@@ -45,6 +45,7 @@
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vulkan_image.hpp"
 #include "asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp"
+#include "asharia/scene/world.hpp"
 #include "asharia/serialization/migration.hpp"
 #include "asharia/serialization/serializer.hpp"
 #include "asharia/serialization/storage_attributes.hpp"
@@ -83,6 +84,7 @@ namespace {
                      "[--smoke-mesh-3d] [--smoke-draw-list] "
                      "[--smoke-mrt [--frames N] [--hold]] "
                      "[--smoke-descriptor-layout] [--smoke-fullscreen-texture] "
+                     "[--smoke-scene-draw-packet] "
                      "[--smoke-render-view-grid-readback] "
                      "[--smoke-offscreen-viewport] [--smoke-compute-dispatch] "
                      "[--smoke-buffer-upload] [--smoke-texture-upload] "
@@ -3967,15 +3969,118 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    constexpr asharia::BasicDrawResourceKey kSmokeSceneMeshA{.value = 0xA501U};
+    constexpr asharia::BasicDrawResourceKey kSmokeSceneMeshB{.value = 0xA502U};
+    constexpr asharia::BasicDrawResourceKey kSmokeSceneMaterial{.value = 0xB501U};
+
+    [[nodiscard]] constexpr asharia::BasicTransformMatrix3D
+    smokeSceneModelMatrix(const asharia::TransformComponent& transform) {
+        return asharia::BasicTransformMatrix3D{
+            transform.scale.x,
+            0.0F,
+            0.0F,
+            transform.position.x,
+            0.0F,
+            transform.scale.y,
+            0.0F,
+            transform.position.y,
+            0.0F,
+            0.0F,
+            transform.scale.z,
+            transform.position.z,
+            0.0F,
+            0.0F,
+            0.0F,
+            1.0F,
+        };
+    }
+
+    [[nodiscard]] constexpr asharia::BasicDrawSourceId
+    smokeSceneSourceId(asharia::EntityId entity) {
+        return asharia::BasicDrawSourceId{
+            .index = entity.index,
+            .generation = entity.generation,
+        };
+    }
+
+    [[nodiscard]] asharia::Result<std::array<asharia::BasicDrawListItem, 2>>
+    smokeSceneDrawPackets() {
+        asharia::World world;
+        auto left = world.createEntity("SceneDrawPacketLeft");
+        if (!left) {
+            return std::unexpected{std::move(left.error())};
+        }
+        auto right = world.createEntity("SceneDrawPacketRight");
+        if (!right) {
+            return std::unexpected{std::move(right.error())};
+        }
+
+        auto leftTransform = world.setTransform(
+            *left, asharia::TransformComponent{.position = {.x = -0.72F, .y = 0.0F, .z = 3.0F}});
+        if (!leftTransform) {
+            return std::unexpected{std::move(leftTransform.error())};
+        }
+        auto rightTransform = world.setTransform(
+            *right, asharia::TransformComponent{.position = {.x = 0.72F, .y = 0.0F, .z = 3.0F}});
+        if (!rightTransform) {
+            return std::unexpected{std::move(rightTransform.error())};
+        }
+
+        const asharia::TransformComponent* leftStored = world.tryGetTransform(*left);
+        const asharia::TransformComponent* rightStored = world.tryGetTransform(*right);
+        if (leftStored == nullptr || rightStored == nullptr) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::Scene,
+                0,
+                "Scene draw packet smoke failed to read entity transforms",
+            }};
+        }
+
+        return std::array{
+            asharia::BasicDrawListItem{
+                .drawItem = asharia::basicIndexedCubeDrawItem(),
+                .modelMatrix = smokeSceneModelMatrix(*leftStored),
+                .context =
+                    asharia::BasicDrawPacketContext{
+                        .sourceObject = smokeSceneSourceId(*left),
+                        .meshResource = kSmokeSceneMeshA,
+                        .materialResource = kSmokeSceneMaterial,
+                    },
+            },
+            asharia::BasicDrawListItem{
+                .drawItem = asharia::basicIndexedCubeDrawItem(),
+                .modelMatrix = smokeSceneModelMatrix(*rightStored),
+                .context =
+                    asharia::BasicDrawPacketContext{
+                        .sourceObject = smokeSceneSourceId(*right),
+                        .meshResource = kSmokeSceneMeshB,
+                        .materialResource = kSmokeSceneMaterial,
+                    },
+            },
+        };
+    }
+
     [[nodiscard]] bool validateFullscreenTextureOverlayDiagnostics(
         const asharia::BasicRenderViewDiagnostics& diagnostics, bool diagnosticsRecorded) {
         if (!diagnosticsRecorded) {
             asharia::logError("Fullscreen texture smoke did not record overlay diagnostics.");
             return false;
         }
-        constexpr auto expectedDrawItems = asharia::basicDrawListSmokeItems();
-        if (diagnostics.scene.drawItemCount != expectedDrawItems.size()) {
+        if (diagnostics.scene.drawItemCount != 2U) {
             asharia::logError("Fullscreen texture smoke did not record scene input diagnostics.");
+            return false;
+        }
+        if (diagnostics.scene.drawPacketContexts.size() != 2U ||
+            diagnostics.scene.drawPacketContexts[0].sourceObject.index != 1U ||
+            diagnostics.scene.drawPacketContexts[0].sourceObject.generation != 1U ||
+            diagnostics.scene.drawPacketContexts[0].meshResource != kSmokeSceneMeshA ||
+            diagnostics.scene.drawPacketContexts[0].materialResource != kSmokeSceneMaterial ||
+            diagnostics.scene.drawPacketContexts[1].sourceObject.index != 2U ||
+            diagnostics.scene.drawPacketContexts[1].sourceObject.generation != 1U ||
+            diagnostics.scene.drawPacketContexts[1].meshResource != kSmokeSceneMeshB ||
+            diagnostics.scene.drawPacketContexts[1].materialResource != kSmokeSceneMaterial) {
+            asharia::logError(
+                "Fullscreen texture smoke did not preserve scene draw packet diagnostics.");
             return false;
         }
         const auto sceneInputPass = std::ranges::find_if(
@@ -4038,13 +4143,17 @@ namespace {
         asharia::BasicRenderViewDiagnostics overlayDiagnostics;
         bool overlayDiagnosticsRecorded{};
         bool invalidSceneInputRejected{};
+        bool invalidSceneInputContextReported{};
     };
 
     [[nodiscard]] asharia::Result<asharia::VulkanFrameRecordResult>
     recordSmokeFullscreenTextureOverlayFrame(const asharia::VulkanFrameRecordContext& recordContext,
                                              asharia::BasicFullscreenTextureRenderer& renderer,
                                              SmokeFullscreenTextureState& state, int frame) {
-        constexpr auto drawItems = asharia::basicDrawListSmokeItems();
+        auto drawItems = smokeSceneDrawPackets();
+        if (!drawItems) {
+            return std::unexpected{std::move(drawItems.error())};
+        }
         const std::array debugLines{
             asharia::BasicDebugWorldLine{
                 .start = {-0.65F, 0.0F, 0.0F},
@@ -4072,7 +4181,8 @@ namespace {
                     },
                 .scene =
                     asharia::BasicRenderViewSceneDesc{
-                        .drawItems = drawItems,
+                        .drawItems = std::span<const asharia::BasicDrawListItem>{drawItems->data(),
+                                                                                 drawItems->size()},
                     },
                 .overlay =
                     asharia::BasicRenderViewOverlayDesc{
@@ -4104,6 +4214,12 @@ namespace {
                         .instanceCount = 1,
                     },
                 .modelMatrix = asharia::basicIdentityTransform3D(),
+                .context =
+                    asharia::BasicDrawPacketContext{
+                        .sourceObject = asharia::BasicDrawSourceId{.index = 1U, .generation = 1U},
+                        .meshResource = kSmokeSceneMeshA,
+                        .materialResource = kSmokeSceneMaterial,
+                    },
             },
         };
         auto rejected = renderer.recordViewFrame(
@@ -4142,8 +4258,20 @@ namespace {
         state.invalidSceneInputRejected =
             rejected.error().message.find(kInvalidSceneInputSmokeExpectedError) !=
             std::string::npos;
+        state.invalidSceneInputContextReported =
+            rejected.error().message.find("source object 1:1") != std::string::npos &&
+            rejected.error().message.find("mesh resource 42241") != std::string::npos &&
+            rejected.error().message.find("material resource 46337") != std::string::npos;
         if (!state.invalidSceneInputRejected) {
             return std::unexpected{std::move(rejected.error())};
+        }
+        if (!state.invalidSceneInputContextReported) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::RenderGraph,
+                0,
+                "Fullscreen texture smoke did not preserve invalid scene input context: " +
+                    rejected.error().message,
+            }};
         }
         return renderer.recordFrame(recordContext);
     }
@@ -4857,6 +4985,11 @@ namespace {
             asharia::logError("Fullscreen texture smoke did not reject invalid scene input.");
             return EXIT_FAILURE;
         }
+        if (!smokeState.invalidSceneInputContextReported) {
+            asharia::logError(
+                "Fullscreen texture smoke did not report invalid scene input context.");
+            return EXIT_FAILURE;
+        }
 
         if (!validatePipelineCacheStats(renderer->pipelineCacheStats(),
                                         "Fullscreen texture smoke")) {
@@ -4891,6 +5024,14 @@ namespace {
 
         window->requestClose();
         return EXIT_SUCCESS;
+    }
+
+    int runSmokeSceneDrawPacket() {
+        const int result = runSmokeFullscreenTexture();
+        if (result == EXIT_SUCCESS) {
+            std::cout << "Validated scene draw packet smoke.\n";
+        }
+        return result;
     }
 
     int runSmokeOffscreenViewport() {
@@ -7524,6 +7665,7 @@ namespace {
             SmokeCommand{.option = "--smoke-draw-list", .run = runSmokeDrawList},
             SmokeCommand{.option = "--smoke-descriptor-layout", .run = runSmokeDescriptorLayout},
             SmokeCommand{.option = "--smoke-fullscreen-texture", .run = runSmokeFullscreenTexture},
+            SmokeCommand{.option = "--smoke-scene-draw-packet", .run = runSmokeSceneDrawPacket},
             SmokeCommand{.option = "--smoke-render-view-grid-readback",
                          .run = runSmokeRenderViewGridReadback},
             SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},
