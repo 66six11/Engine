@@ -176,8 +176,9 @@ flowchart TD
   product blob read helper 可解析 placeholder source payload 和 Texture2D product payload；texture import contract
   可把 raw `.rgba8` fixture 标准化为 Texture2D CPU payload，并验证 source extension、profile、settings version、
   width、height、format 和 payload byte size；PNG-first decoder 通过 Conan `stb/cci.20240531` 在 `asset-pipeline`
-  内部把 `.png` source bytes 解码为同一套 normalized RGBA8 CPU payload/result。后续再扩展 KTX/Basis/HDR、
-  import scheduling 和 dependency invalidation 规则。
+  内部把 `.png` source bytes 解码为同一套 normalized RGBA8 CPU payload/result。#137 正在把 KTX/KTX2/Basis、
+  DDS、HDR/EXR 和 compressed texture product policy 收敛为文档合同；后续再按该合同扩展 importer、
+  transcode/cook、import scheduling 和 dependency invalidation 规则。
 - `tools/asset-processor`：当前提供 read-only dry-run CLI 和受控 `execute` CLI。dry-run 可读取显式 source root，或读取
   `asharia.project.json` 中的 `assetSourceRoots` / `assetDiscovery.ignoredDirectories`，再使用显式
   `--target-profile` 和可选 product manifest 输出稳定文本报告；execute 可读取显式 source root、target
@@ -221,6 +222,83 @@ flowchart LR
 - Product asset 是 generated output；它可以被删除并重新生成，默认不提交。
 - Runtime resource 是加载后的 CPU/GPU 对象；它不进入 `.ameta` 或 scene 文件。
 - Product cache miss 只能触发 import 或 fallback，不应让 scene/material 引用改写 source path。
+
+## Texture format / product policy
+
+#137 defines the current boundary after PNG Texture2D product writing and before adding KTX/Basis
+decoder dependencies or a runtime GPU texture owner.
+
+Primary references:
+
+- KTX 2.0 specification: <https://registry.khronos.org/KTX/specs/2.0/ktxspec.v2.html>
+- Khronos KTX-Software: <https://github.com/KhronosGroup/KTX-Software>
+- Basis Universal reference repository: <https://github.com/BinomialLLC/basis_universal>
+- Vulkan compressed image formats: <https://docs.vulkan.org/spec/latest/appendices/compressedtex.html>
+- Vulkan physical-device texture compression features:
+  <https://registry.khronos.org/vulkan/specs/latest/man/html/VkPhysicalDeviceFeatures.html>
+- Microsoft DDS programming guide:
+  <https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-pguide>
+- OpenEXR overview: <https://openexr.com/>
+
+Policy:
+
+- PNG remains the current proven source decode path. `texture2d-product.v1` is an uncompressed
+  RGBA8 Texture2D product payload used to validate deterministic product execution and
+  graph-visible texture upload. It is not the long-term compressed texture container.
+- KTX2 is the preferred future product-container candidate for GPU-ready texture products because
+  it can carry Vulkan-facing texture facts such as format, dimensions, mip levels, arrays/cubes
+  and supercompression. Asharia should not commit a KTX2 product schema or libktx dependency until
+  a follow-up slice validates deterministic fixture IO, validation diagnostics and package
+  isolation.
+- Basis Universal is a transcode/cook strategy, not a runtime package dependency by default.
+  BasisLZ/ETC1S and UASTC data should enter runtime through a product container such as KTX2 or a
+  clearly versioned product payload. Any encoder/transcoder must stay in `asset-pipeline` or future
+  cook tooling and must record tool version, mode, quality, color-space assumptions and
+  determinism controls in the product key.
+- DDS is an acceptable future source/import path for existing authored BC/DXT-style texture data,
+  mip chains, cube maps or texture arrays. It is not the default Asharia product container because
+  its Direct3D-oriented envelope is less aligned with the engine's Vulkan/package boundary than KTX2.
+- HDR and OpenEXR are source/import paths for scene-linear, high-dynamic-range image data such as
+  environment maps, skyboxes, light probes or authoring references. They must normalize into engine
+  texture facts or a later KTX2/HDR product; runtime/RHI packages must not parse OpenEXR directly.
+- Platform-specific compressed products such as BC, ETC2/EAC, ASTC and future HDR ASTC are selected
+  by target profile or cook policy. Runtime upload must still validate actual Vulkan support before
+  creating an image; a product saying `BC7` or `ASTC` is not sufficient by itself.
+
+Product facts that a future GPU texture owner may consume:
+
+- asset/product identity: GUID, asset type, product key and product hash.
+- texture shape: width, height, depth, layer count, face/cube semantics and mip count.
+- format facts: engine format id, optional Vulkan `VkFormat` mapping, compressed/uncompressed
+  family, block extent, bytes per block or pixel, color space and transfer/primaries where known.
+- payload layout: per-level/per-layer offsets, byte sizes, row/slice alignment and total payload
+  size/hash.
+- usage diagnostics: missing level, invalid dimensions, unsupported format family, unsupported
+  target profile, malformed container, payload-size mismatch and unsupported Vulkan format.
+
+Boundary rules:
+
+- Concrete decoder/transcoder libraries stay in `asset-pipeline` or future cook tools. They do not
+  enter `asset-core`, `resource-runtime`, editor, RenderGraph, renderer or RHI targets.
+- Runtime/resource packages consume product facts and payload ranges. They do not read source path,
+  `.ameta`, editor import settings, decoder state or KTX/Basis/OpenEXR library objects.
+- Product keys for compressed textures must include source hash, importer id/version, settings
+  hash, dependency hash, target profile, texture product schema version, encoder/transcoder tool
+  version and quality/mode settings.
+- GPU upload paths must query Vulkan feature/format support such as BC/ETC2/ASTC compression
+  features and per-format properties before accepting a compressed product. Unsupported formats
+  fail early with product/entity/context diagnostics rather than falling back silently.
+
+Follow-up implementation slices:
+
+- `[Slice] Assets: validate KTX2 texture product fixture`：read/validate a tiny KTX2 fixture in
+  `asset-pipeline`, emit deterministic product facts, no runtime GPU owner.
+- `[Slice] Assets: define mip and compression cook policy`：decide mip generation authority,
+  quality settings, deterministic tool flags and target-profile mapping.
+- `[Slice] Assets/RHI: add runtime GPU texture owner`：consume product facts, validate Vulkan
+  format support, own image lifetime and preserve source-path-free diagnostics.
+- `[Slice] Assets: add DDS/HDR/EXR source import contracts`：normalize those source formats into
+  CPU texture import results or KTX2-style product facts without leaking decoder libraries.
 
 ## 稳定身份
 
@@ -979,7 +1057,8 @@ scan-to-planning bridge baseline 稳定。
   同一套 stable CPU payload result，并为 unsupported extension/profile/version/format、invalid dimensions、
   payload-size mismatch 和 decode failure 提供 deterministic diagnostics。它仍不解析 KTX/HDR，不压缩 Basis，
   也不创建 Vulkan image。
-- 后续仍需 Mesh product record、KTX/Basis/compressed texture policy、完整 GPU resource owner 和 runtime
+- #137 已定义 KTX/KTX2/Basis、DDS、HDR/EXR 和 compressed texture policy 的文档入口；后续仍需
+  Mesh product record、KTX2/Basis fixture validation、完整 GPU resource owner 和 runtime
   texture/mesh lifetime。
 - staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`、`project-core` 或 `.ameta`。
 

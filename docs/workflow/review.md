@@ -145,6 +145,13 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake -S packages\asset-pipeline -B build\cmake\package-asset-pipeline-tests-clangcl-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/clangcl-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-asset-pipeline-tests-clangcl-debug && ctest --test-dir build\cmake\package-asset-pipeline-tests-clangcl-debug --output-on-failure"
 ```
 
+只修改 texture format / product policy 文档时，至少跑 encoding、doc sync 和 whitespace
+门禁；如果文档 PR 同时修改 decoder/transcoder dependency、Conan lockfile、product payload schema、
+public asset-pipeline headers、asset-processor tool code、runtime texture owner、RenderGraph/RHI upload
+路径或 Vulkan format handling，则必须升级到对应 package-local tests、资产边界检查、repository build
+和 sample-viewer smoke。KTX/KTX2/Basis/DDS/HDR/EXR policy 不等于 decoder implementation，不能因为
+文档提到格式就让 runtime、editor、RenderGraph、renderer 或 RHI 直接依赖具体 decoder/transcoder library。
+
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
 package-local tests，证明 pending / ready / failed、generation、product key mismatch 和 product record
 诊断矩阵没有漂移：
