@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include "editor_asset_icon.hpp"
 #include "editor_command.hpp"
 #include "editor_i18n.hpp"
 #include "editor_inspector_model.hpp"
@@ -51,6 +52,17 @@ namespace {
         default:
             return textValue(i18n, "inspector.validation.info", "Info");
         }
+    }
+
+    [[nodiscard]] asharia::editor::EditorIconDescriptor inspectorIcon(std::string_view iconName,
+                                                                      std::string_view tooltip) {
+        const asharia::editor::EditorUiTheme& theme = asharia::editor::editorUiTheme();
+        return asharia::editor::makeLucideEditorIconDescriptor(
+            iconName,
+            asharia::editor::editorIconTint(static_cast<float>(theme.textSecondary.r) / 255.0F,
+                                            static_cast<float>(theme.textSecondary.g) / 255.0F,
+                                            static_cast<float>(theme.textSecondary.b) / 255.0F),
+            {}, tooltip);
     }
 
     void drawInspectorSection(const asharia::editor::EditorI18n& i18n,
@@ -111,11 +123,19 @@ namespace asharia::editor {
         drawEditorUiStatusPill(textValue(i18n, "inspector.state.readOnly", "Read-only"),
                                EditorUiTone::Info);
         ImGui::SameLine();
-        static_cast<void>(drawEditorUiToolbarToggle(
-            "Lock", false, false, "Inspector lock is pending pinned-object support."));
+        static_cast<void>(drawEditorUiIconButton(
+            inspectorIcon("lock",
+                          "Lock Inspector\nDisabled: Inspector lock is pending pinned-object "
+                          "support."),
+            "inspector-lock", false, false,
+            "Lock Inspector\nDisabled: Inspector lock is pending pinned-object support."));
         ImGui::SameLine();
-        static_cast<void>(drawEditorUiToolbarToggle(
-            "Pin", false, false, "Inspector pin is pending comparison workflow support."));
+        static_cast<void>(drawEditorUiIconButton(
+            inspectorIcon("pin",
+                          "Pin Inspector\nDisabled: Inspector pin is pending comparison workflow "
+                          "support."),
+            "inspector-pin", false, false,
+            "Pin Inspector\nDisabled: Inspector pin is pending comparison workflow support."));
         ImGui::Spacing();
 
         for (const EditorInspectorSection& section : model.sections) {

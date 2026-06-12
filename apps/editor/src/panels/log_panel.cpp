@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 
+#include "editor_asset_icon.hpp"
 #include "editor_event.hpp"
 #include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
@@ -19,6 +20,17 @@ namespace {
 
     std::string yesNo(const asharia::editor::EditorI18n& i18n, bool value) {
         return std::string{i18n.text(value ? "common.yes" : "common.no")};
+    }
+
+    [[nodiscard]] asharia::editor::EditorIconDescriptor logToolbarIcon(std::string_view iconName,
+                                                                       std::string_view tooltip) {
+        const asharia::editor::EditorUiTheme& theme = asharia::editor::editorUiTheme();
+        return asharia::editor::makeLucideEditorIconDescriptor(
+            iconName,
+            asharia::editor::editorIconTint(static_cast<float>(theme.textSecondary.r) / 255.0F,
+                                            static_cast<float>(theme.textSecondary.g) / 255.0F,
+                                            static_cast<float>(theme.textSecondary.b) / 255.0F),
+            {}, tooltip);
     }
 
 } // namespace
@@ -58,11 +70,18 @@ namespace asharia::editor {
             yesNo(i18n, input.sceneViewCanReceiveMouse) + ", " +
             std::string{i18n.text("log.shortcuts")} + "=" + yesNo(i18n, input.shortcutsEnabled);
         drawEditorUiPanelHeader(i18n.text("panel.log"), modeText);
-        static_cast<void>(drawEditorUiToolbarToggle(
-            "Clear", false, false, "Console clear is pending severity filter support."));
+        static_cast<void>(drawEditorUiIconButton(
+            logToolbarIcon("x", "Clear Console\nDisabled: Console clear is pending severity filter "
+                                "support."),
+            "console-clear", false, false,
+            "Clear Console\nDisabled: Console clear is pending severity filter support."));
         ImGui::SameLine();
-        static_cast<void>(drawEditorUiToolbarToggle(
-            "Collapse", false, false, "Console collapse is pending event grouping support."));
+        static_cast<void>(drawEditorUiIconButton(
+            logToolbarIcon("list-tree",
+                           "Collapse Duplicates\nDisabled: Console collapse is pending event "
+                           "grouping support."),
+            "console-collapse", false, false,
+            "Collapse Duplicates\nDisabled: Console collapse is pending event grouping support."));
         ImGui::SameLine();
         drawEditorUiToolbarSeparator();
         ImGui::SameLine();

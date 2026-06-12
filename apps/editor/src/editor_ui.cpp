@@ -63,10 +63,10 @@ namespace asharia::editor {
                     .warning = rgb(210, 164, 72),
                     .danger = rgb(210, 92, 92),
                     .windowRounding = 4.0F,
-                    .childRounding = 8.0F,
+                    .childRounding = 3.0F,
                     .frameRounding = 2.0F,
-                    .popupRounding = 6.0F,
-                    .tabRounding = 6.0F,
+                    .popupRounding = 4.0F,
+                    .tabRounding = 3.0F,
                 },
                 EditorUiTheme{
                     .id = EditorUiThemeId::BlackDefault,

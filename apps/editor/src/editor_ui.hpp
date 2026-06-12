@@ -9,6 +9,8 @@
 
 namespace asharia::editor {
 
+    struct EditorIconDescriptor;
+
     enum class EditorUiThemeId {
         Unity6Dark,
         BlackDefault,
@@ -43,6 +45,7 @@ namespace asharia::editor {
         float rowHeight{22.0F};
         float sectionHeaderHeight{24.0F};
         float toolbarIconSize{14.0F};
+        float toolbarButtonSize{24.0F};
         float assetIconSize{16.0F};
         float panelPadding{6.0F};
         float rowPaddingX{6.0F};
@@ -118,6 +121,10 @@ namespace asharia::editor {
     [[nodiscard]] bool drawEditorUiComponentHeader(std::string_view tableIdentifier,
                                                    std::string_view label, bool defaultOpen = true);
     [[nodiscard]] bool drawEditorUiCompactButton(std::string_view label, bool active = false);
+    [[nodiscard]] bool drawEditorUiIconButton(const EditorIconDescriptor& descriptor,
+                                              std::string_view stableId, bool active = false,
+                                              bool enabled = true,
+                                              std::string_view disabledTooltip = {});
     [[nodiscard]] bool drawEditorUiToolbarToggle(std::string_view label, bool active,
                                                  bool enabled = true,
                                                  std::string_view disabledTooltip = {});

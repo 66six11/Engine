@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <imgui.h>
+#include <numbers>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -296,9 +297,179 @@ namespace asharia::editor {
             drawList.AddRect(frontMin, frontMax, color, size * 0.06F, 0, stroke);
         }
 
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+        void drawPlayShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                           float stroke) {
+            std::array<ImVec2, 3> points{iconPoint(min, size, 0.26F, 0.18F),
+                                         iconPoint(min, size, 0.26F, 0.82F),
+                                         iconPoint(min, size, 0.82F, 0.50F)};
+            drawList.AddTriangle(points[0], points[1], points[2], color, stroke);
+        }
+
+        void drawPauseShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                            float stroke) {
+            drawList.AddLine(iconPoint(min, size, 0.34F, 0.20F), iconPoint(min, size, 0.34F, 0.80F),
+                             color, stroke * 1.4F);
+            drawList.AddLine(iconPoint(min, size, 0.66F, 0.20F), iconPoint(min, size, 0.66F, 0.80F),
+                             color, stroke * 1.4F);
+        }
+
+        void drawStopShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                           float stroke) {
+            drawList.AddRect(iconPoint(min, size, 0.24F, 0.24F), iconPoint(min, size, 0.76F, 0.76F),
+                             color, size * 0.04F, 0, stroke);
+        }
+
+        void drawStepShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                           float stroke) {
+            std::array<ImVec2, 3> points{iconPoint(min, size, 0.20F, 0.20F),
+                                         iconPoint(min, size, 0.20F, 0.80F),
+                                         iconPoint(min, size, 0.64F, 0.50F)};
+            drawList.AddTriangle(points[0], points[1], points[2], color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.76F, 0.22F), iconPoint(min, size, 0.76F, 0.78F),
+                             color, stroke);
+        }
+
+        void drawSearchShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                             float stroke) {
+            drawList.AddCircle(iconPoint(min, size, 0.42F, 0.42F), size * 0.24F, color, 24, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.60F, 0.60F), iconPoint(min, size, 0.82F, 0.82F),
+                             color, stroke);
+        }
+
+        void drawCameraShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                             float stroke) {
+            drawList.AddRect(iconPoint(min, size, 0.14F, 0.30F), iconPoint(min, size, 0.86F, 0.78F),
+                             color, size * 0.06F, 0, stroke);
+            drawList.AddRect(iconPoint(min, size, 0.28F, 0.20F), iconPoint(min, size, 0.54F, 0.34F),
+                             color, size * 0.04F, 0, stroke);
+            drawList.AddCircle(iconPoint(min, size, 0.52F, 0.54F), size * 0.16F, color, 20, stroke);
+        }
+
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+        void drawRefreshShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                              float stroke) {
+            drawList.PathArcTo(iconPoint(min, size, 0.50F, 0.50F), size * 0.34F, 0.28F, 4.95F, 24);
+            drawList.PathStroke(color, 0, stroke);
+            std::array<ImVec2, 3> arrow{iconPoint(min, size, 0.72F, 0.16F),
+                                        iconPoint(min, size, 0.84F, 0.16F),
+                                        iconPoint(min, size, 0.82F, 0.30F)};
+            drawList.AddPolyline(arrow.data(), static_cast<int>(arrow.size()), color, 0, stroke);
+        }
+
+        void drawSettingsShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                               float stroke) {
+            const ImVec2 center = iconPoint(min, size, 0.50F, 0.50F);
+            drawList.AddCircle(center, size * 0.18F, color, 20, stroke);
+            constexpr float kPi = std::numbers::pi_v<float>;
+            for (float angle : {0.0F, kPi / 3.0F, (kPi * 2.0F) / 3.0F, kPi, (kPi * 4.0F) / 3.0F,
+                                (kPi * 5.0F) / 3.0F}) {
+                const float inner = size * 0.30F;
+                const float outer = size * 0.42F;
+                drawList.AddLine(ImVec2{center.x + (std::cos(angle) * inner),
+                                        center.y + (std::sin(angle) * inner)},
+                                 ImVec2{center.x + (std::cos(angle) * outer),
+                                        center.y + (std::sin(angle) * outer)},
+                                 color, stroke);
+            }
+        }
+
+        void drawLayoutShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                             float stroke) {
+            const ImVec2 outerMin = iconPoint(min, size, 0.14F, 0.18F);
+            const ImVec2 outerMax = iconPoint(min, size, 0.86F, 0.82F);
+            drawList.AddRect(outerMin, outerMax, color, size * 0.05F, 0, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.38F, 0.18F), iconPoint(min, size, 0.38F, 0.82F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.38F, 0.48F), iconPoint(min, size, 0.86F, 0.48F),
+                             color, stroke);
+        }
+
+        void drawListTreeShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                               float stroke) {
+            for (float yFraction : {0.24F, 0.50F, 0.76F}) {
+                drawList.AddCircleFilled(iconPoint(min, size, 0.18F, yFraction), size * 0.035F,
+                                         color);
+                drawList.AddLine(iconPoint(min, size, 0.30F, yFraction),
+                                 iconPoint(min, size, 0.84F, yFraction), color, stroke);
+            }
+            drawList.AddLine(iconPoint(min, size, 0.18F, 0.24F), iconPoint(min, size, 0.18F, 0.76F),
+                             color, stroke);
+        }
+
+        void drawEyeShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color, float stroke) {
+            const ImVec2 center = iconPoint(min, size, 0.50F, 0.50F);
+            std::array<ImVec2, 4> outline{
+                iconPoint(min, size, 0.12F, 0.50F), iconPoint(min, size, 0.34F, 0.28F),
+                iconPoint(min, size, 0.66F, 0.28F), iconPoint(min, size, 0.88F, 0.50F)};
+            drawList.AddPolyline(outline.data(), static_cast<int>(outline.size()), color, 0,
+                                 stroke);
+            std::array<ImVec2, 4> lower{
+                iconPoint(min, size, 0.12F, 0.50F), iconPoint(min, size, 0.34F, 0.72F),
+                iconPoint(min, size, 0.66F, 0.72F), iconPoint(min, size, 0.88F, 0.50F)};
+            drawList.AddPolyline(lower.data(), static_cast<int>(lower.size()), color, 0, stroke);
+            drawList.AddCircle(center, size * 0.10F, color, 16, stroke);
+        }
+
+        void drawLockShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                           float stroke) {
+            drawList.AddRect(iconPoint(min, size, 0.22F, 0.44F), iconPoint(min, size, 0.78F, 0.84F),
+                             color, size * 0.05F, 0, stroke);
+            constexpr float kPi = std::numbers::pi_v<float>;
+            drawList.PathArcTo(iconPoint(min, size, 0.50F, 0.46F), size * 0.22F, kPi, kPi * 2.0F,
+                               16);
+            drawList.PathStroke(color, 0, stroke);
+        }
+
+        void drawPinShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color, float stroke) {
+            drawList.AddLine(iconPoint(min, size, 0.34F, 0.18F), iconPoint(min, size, 0.66F, 0.50F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.66F, 0.18F), iconPoint(min, size, 0.34F, 0.50F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.50F, 0.50F), iconPoint(min, size, 0.50F, 0.86F),
+                             color, stroke);
+        }
+
+        void drawGridShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                           float stroke) {
+            drawList.AddRect(iconPoint(min, size, 0.18F, 0.18F), iconPoint(min, size, 0.82F, 0.82F),
+                             color, size * 0.04F, 0, stroke);
+            for (float xFraction : {0.39F, 0.61F}) {
+                drawList.AddLine(iconPoint(min, size, xFraction, 0.18F),
+                                 iconPoint(min, size, xFraction, 0.82F), color, stroke);
+            }
+            for (float yFraction : {0.39F, 0.61F}) {
+                drawList.AddLine(iconPoint(min, size, 0.18F, yFraction),
+                                 iconPoint(min, size, 0.82F, yFraction), color, stroke);
+            }
+        }
+
+        void drawMoveShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                           float stroke) {
+            const ImVec2 center = iconPoint(min, size, 0.50F, 0.50F);
+            drawList.AddLine(iconPoint(min, size, 0.16F, 0.50F), iconPoint(min, size, 0.84F, 0.50F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.50F, 0.16F), iconPoint(min, size, 0.50F, 0.84F),
+                             color, stroke);
+            drawList.AddCircleFilled(center, size * 0.04F, color);
+        }
+
+        void drawFilterShape(ImDrawList& drawList, ImVec2 min, float size, ImU32 color,
+                             float stroke) {
+            std::array<ImVec2, 4> points{
+                iconPoint(min, size, 0.18F, 0.22F), iconPoint(min, size, 0.82F, 0.22F),
+                iconPoint(min, size, 0.58F, 0.54F), iconPoint(min, size, 0.58F, 0.82F)};
+            drawList.AddPolyline(points.data(), static_cast<int>(points.size()), color, 0, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.58F, 0.82F), iconPoint(min, size, 0.42F, 0.72F),
+                             color, stroke);
+            drawList.AddLine(iconPoint(min, size, 0.42F, 0.72F), iconPoint(min, size, 0.42F, 0.54F),
+                             color, stroke);
+        }
+
+        // NOLINTNEXTLINE(readability-function-cognitive-complexity)
         void drawGlyphById(ImDrawList& drawList, const EditorIconDescriptor& descriptor, ImVec2 min,
                            float size, ImU32 color, float stroke) {
-            if (iconIs(descriptor, "lucide.folder")) {
+            if (iconIs(descriptor, "lucide.folder") || iconIs(descriptor, "lucide.folder-open")) {
                 drawFolderShape(drawList, min, size, color, stroke);
             } else if (iconIs(descriptor, "lucide.image")) {
                 drawImageShape(drawList, min, size, color, stroke);
@@ -323,6 +494,39 @@ namespace asharia::editor {
                 drawXShape(drawList, min, size, color, stroke);
             } else if (iconIs(descriptor, "lucide.copy")) {
                 drawCopyShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.play")) {
+                drawPlayShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.pause")) {
+                drawPauseShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.square")) {
+                drawStopShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.step-forward")) {
+                drawStepShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.search")) {
+                drawSearchShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.camera")) {
+                drawCameraShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.rotate-ccw") ||
+                       iconIs(descriptor, "lucide.refresh-cw")) {
+                drawRefreshShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.settings")) {
+                drawSettingsShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.layout-dashboard")) {
+                drawLayoutShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.list-tree")) {
+                drawListTreeShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.eye")) {
+                drawEyeShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.lock")) {
+                drawLockShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.pin")) {
+                drawPinShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.grid-3x3")) {
+                drawGridShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.move-3d")) {
+                drawMoveShape(drawList, min, size, color, stroke);
+            } else if (iconIs(descriptor, "lucide.filter")) {
+                drawFilterShape(drawList, min, size, color, stroke);
             } else {
                 drawFileShape(drawList, min, size, color, stroke);
             }

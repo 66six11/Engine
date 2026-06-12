@@ -4,6 +4,7 @@ namespace asharia::editor {
 
     class EditorActionRegistry;
     class EditorDirtyState;
+    class EditorDiagnosticsLog;
     class EditorFrameDebugger;
     class EditorI18n;
     class EditorPanelRegistry;
@@ -15,7 +16,8 @@ namespace asharia::editor {
     void drawEditorShellFrame(EditorActionRegistry& actionRegistry,
                               EditorActionServices& actionServices,
                               EditorFrameDebugger& frameDebugger,
-                              const EditorDirtyState& dirtyState, EditorI18n& i18n,
+                              const EditorDirtyState& dirtyState,
+                              const EditorDiagnosticsLog& diagnosticsLog, EditorI18n& i18n,
                               EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
                               EditorWorkspaceController& workspace,
                               const EditorFrameUiContext& uiContext);

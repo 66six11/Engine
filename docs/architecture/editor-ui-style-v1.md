@@ -8,6 +8,22 @@
 配色值以当前 `Unity 6 Dark` 默认主题实现为准。本文不重新定义具体 hex 色表，重点约束布局、
 密度、组件状态、viewport 视觉系统、主题数据结构和颜色空间接入方式。
 
+## 当前落地切片：Visual Target Bridge
+
+2026-06-12 的 ImGui visual bridge 已把 `editor-ui-visual-target.md` 的部分目标落到当前
+editor shell：
+
+- 顶部 command bar 的 View / Debug / Utility 常用入口改为固定尺寸 `icon-only` action button，并保留命令名、快捷键和 disabled 原因 tooltip。
+- Play / Pause / Step / Stop 仍是 pending 功能，但显示方式已经切到 `icon-only`，避免占用工具栏宽度。
+- Scene View overlay strip 的 Grid / Gizmo / Selection 从文字按钮改为 `icon-only` toggle，尺寸不再随文本变化。
+- Inspector 的 Lock / Pin、Console 的 Clear / Collapse 采用 `icon-only`，破坏性或低可发现性语义仍保留 tooltip。
+- 全局状态栏接入 `EditorDiagnosticsLog`：Console 隐藏时镜像最新重要日志；Console 可见时显示日志摘要和计数。
+- 默认 Unity 6 Dark 的 child rounding 收敛到 3px，并把 panel / section header 从卡片边框改为横向工具 band。
+- 本地图标绘制器补齐播放、暂停、停止、步进、搜索、相机、刷新、设置、布局、树、可见性、锁定、固定、网格、移动和过滤等常用 Lucide 形状。
+
+仍未落地的目标包括完整命令搜索、可配置 Layout Preset、真实 Play/Game View、Inspector 字段级验证 UI、
+Console 重复折叠和完整 icon+text severity filter。
+
 ## 定位
 
 Asharia Editor UI Style v1 的定位从自定义 “Theme Workbench” 优先，收敛为直接对齐 Unity

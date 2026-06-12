@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "editor_asset_icon.hpp"
 #include "editor_i18n.hpp"
 #include "editor_input_router.hpp"
 #include "editor_settings.hpp"
@@ -108,6 +109,19 @@ namespace {
         return SceneOverlayLabel{.key = {}, .fallback = overlayId};
     }
 
+    [[nodiscard]] std::string_view sceneOverlayIconForId(std::string_view overlayId) {
+        if (overlayId == asharia::editor::kEditorSceneGridOverlayId) {
+            return "grid-3x3";
+        }
+        if (overlayId == asharia::editor::kEditorSceneTransformGizmoOverlayId) {
+            return "move-3d";
+        }
+        if (overlayId == asharia::editor::kEditorSceneSelectionOutlineOverlayId) {
+            return "eye";
+        }
+        return "circle-help";
+    }
+
     [[nodiscard]] bool
     drawSceneOverlayToggle(const asharia::editor::EditorI18n& i18n,
                            const asharia::editor::EditorToolViewportOverlayContribution& overlay,
@@ -118,45 +132,35 @@ namespace {
             .stableId = overlay.overlayId,
             .fallback = text.fallback,
         });
+        const asharia::editor::EditorUiTheme& theme = asharia::editor::editorUiTheme();
+        const auto tint =
+            asharia::editor::editorIconTint(static_cast<float>(theme.textSecondary.r) / 255.0F,
+                                            static_cast<float>(theme.textSecondary.g) / 255.0F,
+                                            static_cast<float>(theme.textSecondary.b) / 255.0F);
+        std::string tooltip = label;
+        if (!overlay.enabled &&
+            (!overlay.disabledReasonKey.empty() || !overlay.disabledReasonFallback.empty())) {
+            tooltip += "\nDisabled: ";
+            tooltip += std::string{i18n.text(asharia::editor::EditorI18nTextQuery{
+                .key = overlay.disabledReasonKey,
+                .fallback = overlay.disabledReasonFallback,
+            })};
+        }
+        const asharia::editor::EditorIconDescriptor icon =
+            asharia::editor::makeLucideEditorIconDescriptor(
+                sceneOverlayIconForId(overlay.overlayId), tint, {}, tooltip);
 
         if (!overlay.enabled) {
             const bool changed = value;
             value = false;
 
-            ImGui::BeginDisabled();
-            ImGui::Button(label.c_str());
-            ImGui::EndDisabled();
-
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-                (!overlay.disabledReasonKey.empty() || !overlay.disabledReasonFallback.empty())) {
-                const std::string tooltip =
-                    std::string{i18n.text(asharia::editor::EditorI18nTextQuery{
-                        .key = overlay.disabledReasonKey,
-                        .fallback = overlay.disabledReasonFallback,
-                    })};
-                if (!tooltip.empty()) {
-                    ImGui::BeginTooltip();
-                    ImGui::TextUnformatted(tooltip.c_str());
-                    ImGui::EndTooltip();
-                }
-            }
+            static_cast<void>(asharia::editor::drawEditorUiIconButton(icon, overlay.overlayId,
+                                                                      false, false, tooltip));
             return changed;
         }
 
-        if (value) {
-            const asharia::editor::EditorUiTheme& theme = asharia::editor::editorUiTheme();
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  asharia::editor::toImGuiEncodedSrgbVec4(theme.accent));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                  asharia::editor::toImGuiEncodedSrgbVec4(theme.accentHover));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                                  asharia::editor::toImGuiEncodedSrgbVec4(theme.accentActive));
-        }
-
-        const bool pressed = ImGui::Button(label.c_str());
-        if (value) {
-            ImGui::PopStyleColor(3);
-        }
+        const bool pressed =
+            asharia::editor::drawEditorUiIconButton(icon, overlay.overlayId, value);
         if (pressed) {
             value = !value;
         }
@@ -170,8 +174,8 @@ namespace {
                           asharia::editor::EditorViewportOverlayFlags& flags) {
         constexpr float kOverlayPadding = 8.0F;
         const ImVec2 stripPadding{6.0F, 4.0F};
-        const ImVec2 buttonPadding{6.0F, 2.0F};
         const ImGuiStyle& style = ImGui::GetStyle();
+        const asharia::editor::EditorUiMetrics& metrics = asharia::editor::editorUiMetrics();
         float controlsWidth = 0.0F;
         int controlCount = 0;
         tools.visitViewportOverlays(
@@ -181,13 +185,7 @@ namespace {
                 if (sceneOverlayFlagForId(flags, overlay.overlayId) == nullptr) {
                     return;
                 }
-                const SceneOverlayLabel text = sceneOverlayLabelForId(overlay.overlayId);
-                const std::string label = uiContext.i18n.label(asharia::editor::EditorI18nLabelDesc{
-                    .key = text.key,
-                    .stableId = overlay.overlayId,
-                    .fallback = text.fallback,
-                });
-                controlsWidth += ImGui::CalcTextSize(label.c_str()).x + (buttonPadding.x * 2.0F);
+                controlsWidth += metrics.toolbarButtonSize;
                 ++controlCount;
             });
 
@@ -199,8 +197,7 @@ namespace {
 
         const ImVec2 stripPos{viewportMin.x + kOverlayPadding, viewportMin.y + kOverlayPadding};
         const ImVec2 stripSize{controlsWidth + (stripPadding.x * 2.0F),
-                               ImGui::GetTextLineHeight() + (buttonPadding.y * 2.0F) +
-                                   (stripPadding.y * 2.0F)};
+                               metrics.toolbarButtonSize + (stripPadding.y * 2.0F)};
         const ImVec2 stripMax{stripPos.x + stripSize.x, stripPos.y + stripSize.y};
         const asharia::editor::EditorUiTheme& theme = asharia::editor::editorUiTheme();
         ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -212,7 +209,6 @@ namespace {
 
         SceneOverlayStripResult result;
         ImGui::SetCursorScreenPos(ImVec2{stripPos.x + stripPadding.x, stripPos.y + stripPadding.y});
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, buttonPadding);
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{4.0F, 0.0F});
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0F);
         ImGui::BeginGroup();
@@ -233,7 +229,7 @@ namespace {
                 drewToggle = true;
             });
         ImGui::EndGroup();
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(2);
         result.hovered = ImGui::IsMouseHoveringRect(stripPos, stripMax, false);
         return result;
     }

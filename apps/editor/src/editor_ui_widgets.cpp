@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 
+#include "editor_asset_icon.hpp"
 #include "editor_ui.hpp"
 
 namespace asharia::editor {
@@ -91,6 +92,36 @@ namespace asharia::editor {
             ImGui::TextUnformatted(text.data(), text.data() + text.size());
         }
 
+        [[nodiscard]] std::string visibleLabel(std::string_view label) {
+            const std::size_t stableIdStart = label.find("###");
+            if (stableIdStart == std::string_view::npos) {
+                return std::string{label};
+            }
+            return std::string{label.substr(0U, stableIdStart)};
+        }
+
+        [[nodiscard]] std::string hiddenId(std::string_view label) {
+            const std::size_t stableIdStart = label.find("###");
+            if (stableIdStart == std::string_view::npos) {
+                std::string imguiId{"##"};
+                imguiId.append(label.data(), label.size());
+                return imguiId;
+            }
+            std::string imguiId{"##"};
+            const std::string_view stableId = label.substr(stableIdStart + 3U);
+            imguiId.append(stableId.data(), stableId.size());
+            return imguiId;
+        }
+
+        void tooltipText(std::string_view text) {
+            if (text.empty()) {
+                return;
+            }
+            ImGui::BeginTooltip();
+            textUnformatted(text);
+            ImGui::EndTooltip();
+        }
+
         void disabledText(std::string_view text) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             textUnformatted(text);
@@ -109,9 +140,11 @@ namespace asharia::editor {
         const float width = ImGui::GetContentRegionAvail().x;
         const ImVec2 max{min.x + width, min.y + metrics.panelHeaderHeight};
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-        drawList->AddRectFilled(min, max, toImGuiEncodedSrgbU32(theme.titleBackground),
-                                theme.childRounding);
-        drawList->AddRect(min, max, toImGuiEncodedSrgbU32(theme.borderStrong), theme.childRounding);
+        drawList->AddRectFilled(min, max, toImGuiEncodedSrgbU32(theme.titleBackground), 0.0F);
+        drawList->AddRectFilled(min, ImVec2{min.x + 2.0F, max.y},
+                                toImGuiEncodedSrgbU32(theme.accent), 0.0F);
+        drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F},
+                          toImGuiEncodedSrgbU32(theme.divider));
         drawList->AddText(ImVec2{min.x + metrics.rowPaddingX, min.y + 5.0F},
                           toImGuiEncodedSrgbU32(theme.text), titleText.c_str());
         if (!subtitleText.empty()) {
@@ -132,9 +165,9 @@ namespace asharia::editor {
         const float width = ImGui::GetContentRegionAvail().x;
         const ImVec2 max{min.x + width, min.y + metrics.sectionHeaderHeight};
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-        drawList->AddRectFilled(min, max, toImGuiEncodedSrgbU32(theme.panelBackgroundAlt),
-                                theme.childRounding);
-        drawList->AddRect(min, max, toImGuiEncodedSrgbU32(theme.border), theme.childRounding);
+        drawList->AddRectFilled(min, max, toImGuiEncodedSrgbU32(theme.panelBackgroundAlt), 0.0F);
+        drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F},
+                          toImGuiEncodedSrgbU32(theme.divider));
         drawList->AddText(ImVec2{min.x + metrics.rowPaddingX, min.y + 4.0F},
                           toImGuiEncodedSrgbU32(theme.text), text.c_str());
         ImGui::Dummy(ImVec2{width, metrics.sectionHeaderHeight});
@@ -178,6 +211,38 @@ namespace asharia::editor {
         return pressed;
     }
 
+    bool drawEditorUiIconButton(const EditorIconDescriptor& descriptor, std::string_view stableId,
+                                bool active, bool enabled, std::string_view disabledTooltip) {
+        const EditorUiTheme& theme = editorUiTheme();
+        const EditorUiMetrics& metrics = editorUiMetrics();
+        if (!enabled) {
+            ImGui::BeginDisabled();
+        }
+        if (active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, toImGuiEncodedSrgbVec4(theme.surfaceActive));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                  toImGuiEncodedSrgbVec4(theme.surfaceActive));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                  toImGuiEncodedSrgbVec4(theme.accentActive));
+        }
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                            ImVec2{(metrics.toolbarButtonSize - metrics.toolbarIconSize) * 0.5F,
+                                   (metrics.toolbarButtonSize - metrics.toolbarIconSize) * 0.5F});
+        const bool pressed = drawEditorIconButton(descriptor, stableId, metrics.toolbarIconSize);
+        ImGui::PopStyleVar();
+        if (active) {
+            ImGui::PopStyleColor(3);
+        }
+        if (!enabled) {
+            ImGui::EndDisabled();
+            if (!disabledTooltip.empty() &&
+                ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                tooltipText(disabledTooltip);
+            }
+        }
+        return enabled && pressed;
+    }
+
     bool drawEditorUiToolbarToggle(std::string_view label, bool active, bool enabled,
                                    std::string_view disabledTooltip) {
         if (!enabled) {
@@ -188,9 +253,7 @@ namespace asharia::editor {
             ImGui::EndDisabled();
             if (!disabledTooltip.empty() &&
                 ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::BeginTooltip();
-                textUnformatted(disabledTooltip);
-                ImGui::EndTooltip();
+                tooltipText(disabledTooltip);
             }
         }
         return enabled && pressed;
@@ -209,12 +272,14 @@ namespace asharia::editor {
 
     bool drawEditorUiSearchField(std::string_view label, char* buffer, std::size_t bufferSize,
                                  bool enabled) {
-        const std::string stableLabel{label};
+        const std::string stableLabel = hiddenId(label);
+        const std::string hint = visibleLabel(label);
         if (!enabled) {
             ImGui::BeginDisabled();
         }
         ImGui::SetNextItemWidth(-1.0F);
-        const bool changed = ImGui::InputText(stableLabel.c_str(), buffer, bufferSize);
+        const bool changed =
+            ImGui::InputTextWithHint(stableLabel.c_str(), hint.c_str(), buffer, bufferSize);
         if (!enabled) {
             ImGui::EndDisabled();
         }

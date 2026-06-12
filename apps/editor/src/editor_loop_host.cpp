@@ -162,8 +162,9 @@ namespace asharia::editor {
                 .assetReimportRequests = assetReimportRequests,
                 .assetPendingReimports = assetPendingReimports,
             };
-            drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, dirtyState, i18n,
-                                 panelRegistry, toolRegistry, workspace, frameContext.ui);
+            drawEditorShellFrame(actionRegistry, actionServices, frameDebugger, dirtyState,
+                                 diagnosticsLog, i18n, panelRegistry, toolRegistry, workspace,
+                                 frameContext.ui);
             panelRegistry.drawPanels(frameContext);
             requestSyntheticMultiViewSmoke(mode, viewportHost);
             inputRouter.finalizeFrame();

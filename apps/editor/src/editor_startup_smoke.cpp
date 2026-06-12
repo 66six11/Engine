@@ -139,7 +139,7 @@ namespace asharia::editor {
                 asharia::logError("Editor theme smoke found an invalid Unity 6 Dark theme byte.");
                 return false;
             }
-            if (unityTheme.childRounding != 8.0F || unityTheme.windowRounding != 4.0F) {
+            if (unityTheme.childRounding != 3.0F || unityTheme.windowRounding != 4.0F) {
                 asharia::logError("Editor theme smoke found invalid Unity 6 Dark panel metrics.");
                 return false;
             }
@@ -172,7 +172,7 @@ namespace asharia::editor {
             const bool validUnityStyle =
                 unityStyle.WindowBorderSize == 0.0F && unityStyle.ChildBorderSize == 0.0F &&
                 unityStyle.WindowPadding.x == 8.0F && unityStyle.WindowPadding.y == 8.0F &&
-                unityStyle.ChildRounding == 8.0F &&
+                unityStyle.ChildRounding == 3.0F &&
                 ImGui::GetColorU32(ImGuiCol_WindowBg) == IM_COL32(0x30U, 0x30U, 0x30U, 0xFFU) &&
                 ImGui::GetColorU32(ImGuiCol_ChildBg) == IM_COL32(0x20U, 0x20U, 0x20U, 0xFFU) &&
                 ImGui::GetColorU32(ImGuiCol_Border) == IM_COL32(0x30U, 0x30U, 0x30U, 0xFFU);
