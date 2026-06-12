@@ -18,6 +18,7 @@
 #include "editor_id.hpp"
 #include "editor_render_graph_snapshot.hpp"
 #include "editor_viewport.hpp"
+#include "editor_viewport_tool_state.hpp"
 
 namespace asharia::editor {
 
@@ -106,6 +107,7 @@ namespace asharia::editor {
         const EditorFrameUiContext& ui;
         const EditorSettings& settings;
         const EditorFrameToolContext& tools;
+        EditorViewportToolState& viewportToolState;
         EditorInputRouter& inputRouter;
         EditorViewportPanelHost& viewportHost;
     };
@@ -168,6 +170,7 @@ namespace asharia::editor {
         EditorFrameInputContext input;
         EditorFrameRenderGraphContext renderGraph;
         EditorFrameViewportContext viewport;
+        EditorViewportToolState& viewportToolState;
         const EditorSelectionSet& selection;
         const EditorDirtyState& dirtyState;
         const EditorAssetIconRegistry& assetIcons;

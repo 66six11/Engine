@@ -18,7 +18,6 @@ namespace asharia::editor {
         [[nodiscard]] bool handleCameraNavigation(EditorExtent2D viewportExtent,
                                                   const EditorInputSnapshot& input);
 
-        EditorViewportOverlayFlags overlayFlags_{defaultEditorSceneViewOverlayFlags()};
         EditorViewportCamera camera_;
         EditorExtent2D cameraExtent_;
         bool cameraInitialized_{false};

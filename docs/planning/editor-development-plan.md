@@ -158,6 +158,9 @@ Unity-like workbench UI 只改变可见产品语言：Scene Tree 显示为 Hiera
   command bar、status bar、Scene View、Hierarchy、Inspector、Project 和 Console shell 调整为 Unity-like 暗色工作台口径。
 - Play、Search、Console filters、Inspector lock/pin、Gizmo/Select 等未接真实 provider 的控件保持 disabled/pending，
   不伪装成可用功能。
+- #118 当前执行 Scene View viewport mode/tool state contract：先把 active tool、space、pivot、snap、view mode、
+  overlay visibility 和 edit/play preview state 收敛到 app-local `EditorViewportToolState`，并通过 smoke/event 验证；
+  本 slice 不实现 gizmo、picking、selection outline 或 writable Inspector。
 
 阶段 1 非目标：
 

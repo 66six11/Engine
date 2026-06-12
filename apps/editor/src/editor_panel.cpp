@@ -219,6 +219,7 @@ namespace asharia::editor {
                     .ui = context.ui,
                     .settings = context.settings.controller.settings(),
                     .tools = context.tools,
+                    .viewportToolState = context.viewportToolState,
                     .inputRouter = context.input.router,
                     .viewportHost = context.viewport.host,
                 },

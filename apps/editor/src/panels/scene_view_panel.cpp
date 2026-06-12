@@ -14,6 +14,7 @@
 #include "editor_ui.hpp"
 #include "editor_viewport.hpp"
 #include "editor_viewport_overlay_provider.hpp"
+#include "editor_viewport_tool_state.hpp"
 
 namespace {
 
@@ -38,6 +39,7 @@ namespace {
         const asharia::editor::EditorFrameUiContext* ui{};
         const asharia::editor::EditorSettings* settings{};
         const asharia::editor::EditorFrameToolContext* tools{};
+        asharia::editor::EditorViewportToolState* viewportToolState{};
         asharia::editor::EditorInputRouter* inputRouter{};
         asharia::editor::EditorViewportPanelHost* viewportHost{};
     };
@@ -234,6 +236,98 @@ namespace {
         return result;
     }
 
+    [[nodiscard]] std::string_view activeToolKey(asharia::editor::EditorViewportActiveTool tool) {
+        switch (tool) {
+        case asharia::editor::EditorViewportActiveTool::View:
+            return "scene.tool.view";
+        case asharia::editor::EditorViewportActiveTool::Select:
+            return "scene.tool.select";
+        case asharia::editor::EditorViewportActiveTool::Move:
+            return "scene.tool.move";
+        case asharia::editor::EditorViewportActiveTool::Rotate:
+            return "scene.tool.rotate";
+        case asharia::editor::EditorViewportActiveTool::Scale:
+            return "scene.tool.scale";
+        }
+        return {};
+    }
+
+    [[nodiscard]] std::string_view
+    transformSpaceKey(asharia::editor::EditorViewportTransformSpace space) {
+        switch (space) {
+        case asharia::editor::EditorViewportTransformSpace::Local:
+            return "scene.space.local";
+        case asharia::editor::EditorViewportTransformSpace::World:
+            return "scene.space.world";
+        }
+        return {};
+    }
+
+    [[nodiscard]] std::string_view pivotModeKey(asharia::editor::EditorViewportPivotMode mode) {
+        switch (mode) {
+        case asharia::editor::EditorViewportPivotMode::Pivot:
+            return "scene.pivot";
+        case asharia::editor::EditorViewportPivotMode::Center:
+            return "scene.pivot.center";
+        }
+        return {};
+    }
+
+    [[nodiscard]] std::string_view viewModeKey(asharia::editor::EditorViewportViewMode mode) {
+        switch (mode) {
+        case asharia::editor::EditorViewportViewMode::Shaded:
+            return "scene.viewMode.shaded";
+        case asharia::editor::EditorViewportViewMode::Wireframe:
+            return "scene.viewMode.wireframe";
+        }
+        return {};
+    }
+
+    [[nodiscard]] std::string_view
+    playPreviewStateKey(asharia::editor::EditorViewportPlayPreviewState state) {
+        switch (state) {
+        case asharia::editor::EditorViewportPlayPreviewState::Edit:
+            return "scene.playPreview.edit";
+        case asharia::editor::EditorViewportPlayPreviewState::PlayPreview:
+            return "scene.playPreview.play";
+        }
+        return {};
+    }
+
+    [[nodiscard]] std::string localizedText(const asharia::editor::EditorI18n& i18n,
+                                            std::string_view key, std::string_view fallback) {
+        return std::string{i18n.text(asharia::editor::EditorI18nTextQuery{
+            .key = key,
+            .fallback = fallback,
+        })};
+    }
+
+    [[nodiscard]] std::string
+    sceneHeaderStatus(const asharia::editor::EditorI18n& i18n,
+                      const asharia::editor::EditorViewportToolStateSnapshot& snapshot) {
+        std::string status =
+            localizedText(i18n, activeToolKey(snapshot.activeTool),
+                          asharia::editor::editorViewportActiveToolName(snapshot.activeTool));
+        status += " | ";
+        status += localizedText(i18n, viewModeKey(snapshot.viewMode),
+                                asharia::editor::editorViewportViewModeName(snapshot.viewMode));
+        status += " | ";
+        status += localizedText(i18n, pivotModeKey(snapshot.pivotMode),
+                                asharia::editor::editorViewportPivotModeName(snapshot.pivotMode));
+        status += " | ";
+        status += localizedText(
+            i18n, transformSpaceKey(snapshot.transformSpace),
+            asharia::editor::editorViewportTransformSpaceName(snapshot.transformSpace));
+        status += " | ";
+        status += localizedText(i18n, snapshot.snapEnabled ? "scene.snap.on" : "scene.snap.off",
+                                snapshot.snapEnabled ? "Snap On" : "Snap Off");
+        status += " | ";
+        status += localizedText(
+            i18n, playPreviewStateKey(snapshot.playPreviewState),
+            asharia::editor::editorViewportPlayPreviewStateName(snapshot.playPreviewState));
+        return status;
+    }
+
 } // namespace
 
 namespace asharia::editor {
@@ -309,15 +403,15 @@ namespace asharia::editor {
             .ui = &context.ui,
             .settings = &context.settings,
             .tools = &context.tools,
+            .viewportToolState = &context.viewportToolState,
             .inputRouter = &context.inputRouter,
             .viewportHost = &context.viewportHost,
         };
 
         const EditorI18n& i18n = panelContext.ui->i18n;
-        const std::string sceneHeaderStatus = std::string{i18n.text("scene.viewMode.shaded")} +
-                                              " | " + std::string{i18n.text("scene.pivot")} +
-                                              " | " + std::string{i18n.text("scene.space.local")};
-        asharia::editor::drawEditorUiPanelHeader(i18n.text("panel.sceneView"), sceneHeaderStatus);
+        EditorViewportToolStateSnapshot toolState = panelContext.viewportToolState->snapshot();
+        asharia::editor::drawEditorUiPanelHeader(i18n.text("panel.sceneView"),
+                                                 sceneHeaderStatus(i18n, toolState));
         ImVec2 viewportSize = ImGui::GetContentRegionAvail();
         viewportSize.y = std::max(1.0F, viewportSize.y);
         const EditorExtent2D viewportExtent = viewportExtentFromAvailableSize(viewportSize);
@@ -355,7 +449,7 @@ namespace asharia::editor {
             viewportMin, viewportMax);
         const SceneOverlayStripResult overlayStrip =
             drawSceneOverlayStrip(*panelContext.ui, panelContext.tools->registry, desc_.id.value,
-                                  viewportMin, viewportMax, overlayFlags_);
+                                  viewportMin, viewportMax, toolState.overlayFlags);
         panelContext.inputRouter->reportSceneView(EditorSceneViewInputState{
             .hovered = viewportHovered && !overlayStrip.hovered,
             .focused = state.focused,
@@ -367,6 +461,9 @@ namespace asharia::editor {
             .policy = EditorViewportRefreshPolicy::OnDemand,
         };
         if (overlayStrip.changed) {
+            static_cast<void>(panelContext.viewportToolState->setOverlayFlags(
+                toolState.overlayFlags, "scene view overlay strip"));
+            toolState = panelContext.viewportToolState->snapshot();
             addEditorViewportRepaintReason(refresh.repaintReasons,
                                            EditorViewportRepaintReason::OverlayFlagsChanged);
         }
@@ -379,7 +476,7 @@ namespace asharia::editor {
             .kind = EditorViewportKind::Scene,
             .extent = viewportExtent,
             .camera = camera_,
-            .overlayFlags = overlayFlags_,
+            .overlayFlags = toolState.overlayFlags,
             .worldGrid = panelContext.settings->sceneGrid,
             .refresh = refresh,
         });

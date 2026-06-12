@@ -17,6 +17,7 @@
 #include "editor_settings.hpp"
 #include "editor_tool.hpp"
 #include "editor_tool_manager.hpp"
+#include "editor_viewport_tool_state.hpp"
 #include "editor_workspace.hpp"
 
 namespace asharia::editor {
@@ -39,6 +40,7 @@ namespace asharia::editor {
         EditorActionRegistry actionRegistry;
         EditorToolRegistry toolRegistry;
         EditorToolManager toolManager;
+        EditorViewportToolState viewportToolState;
         EditorAssetCatalogStore assetCatalogStore;
         EditorAssetIconRegistry assetIconRegistry;
         EditorCommandHistory commandHistory;

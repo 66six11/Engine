@@ -24,6 +24,8 @@ namespace asharia::editor {
             return "DirtyStateChanged";
         case EditorEventKind::CommandHistoryChanged:
             return "CommandHistoryChanged";
+        case EditorEventKind::ViewportToolStateChanged:
+            return "ViewportToolStateChanged";
         case EditorEventKind::ValidationReported:
             return "ValidationReported";
         }

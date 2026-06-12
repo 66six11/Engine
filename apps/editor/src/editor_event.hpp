@@ -20,6 +20,7 @@ namespace asharia::editor {
         SelectionChanged,
         DirtyStateChanged,
         CommandHistoryChanged,
+        ViewportToolStateChanged,
         ValidationReported,
     };
 
