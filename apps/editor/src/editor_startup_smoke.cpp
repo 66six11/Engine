@@ -130,11 +130,17 @@ namespace asharia::editor {
 
         [[nodiscard]] bool validateEditorThemeColorSmoke() {
             const EditorUiTheme& unityTheme = editorUiTheme(EditorUiThemeId::Unity6Dark);
-            if (!colorMatches(unityTheme.appBackground, 0x20U, 0x20U, 0x20U, 0xFFU) ||
+            if (!colorMatches(unityTheme.appBackground, 0x30U, 0x30U, 0x30U, 0xFFU) ||
+                !colorMatches(unityTheme.panelBackground, 0x20U, 0x20U, 0x20U, 0xFFU) ||
+                !colorMatches(unityTheme.border, 0x30U, 0x30U, 0x30U, 0xFFU) ||
                 !colorMatches(unityTheme.viewportBackground, 0x30U, 0x30U, 0x30U, 0xFFU) ||
                 toImGuiEncodedSrgbU32(unityTheme.appBackground) !=
-                    IM_COL32(0x20U, 0x20U, 0x20U, 0xFFU)) {
+                    IM_COL32(0x30U, 0x30U, 0x30U, 0xFFU)) {
                 asharia::logError("Editor theme smoke found an invalid Unity 6 Dark theme byte.");
+                return false;
+            }
+            if (unityTheme.childRounding != 8.0F || unityTheme.windowRounding != 4.0F) {
+                asharia::logError("Editor theme smoke found invalid Unity 6 Dark panel metrics.");
                 return false;
             }
 
@@ -153,6 +159,31 @@ namespace asharia::editor {
                 toImGuiEncodedSrgbU32(classicTheme.appBackground) !=
                     IM_COL32(0x17U, 0x1DU, 0x24U, 0xFFU)) {
                 asharia::logError("Editor theme smoke found an invalid encoded sRGB theme byte.");
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool validateEditorThemeStyleSmoke(EditorUiThemeId expectedTheme) {
+            const EditorUiThemeId previousTheme = currentEditorUiThemeId();
+            applyEditorUiTheme(EditorUiThemeId::Unity6Dark);
+
+            const ImGuiStyle& unityStyle = ImGui::GetStyle();
+            const bool validUnityStyle =
+                unityStyle.WindowBorderSize == 0.0F && unityStyle.ChildBorderSize == 0.0F &&
+                unityStyle.WindowPadding.x == 8.0F && unityStyle.WindowPadding.y == 8.0F &&
+                unityStyle.ChildRounding == 8.0F &&
+                ImGui::GetColorU32(ImGuiCol_WindowBg) == IM_COL32(0x30U, 0x30U, 0x30U, 0xFFU) &&
+                ImGui::GetColorU32(ImGuiCol_ChildBg) == IM_COL32(0x20U, 0x20U, 0x20U, 0xFFU) &&
+                ImGui::GetColorU32(ImGuiCol_Border) == IM_COL32(0x30U, 0x30U, 0x30U, 0xFFU);
+
+            applyEditorUiTheme(previousTheme);
+            if (!validUnityStyle) {
+                asharia::logError("Editor theme smoke found invalid Unity 6 Dark ImGui styling.");
+                return false;
+            }
+            if (currentEditorUiThemeId() != expectedTheme) {
+                asharia::logError("Editor theme smoke did not restore the startup theme.");
                 return false;
             }
             return true;
@@ -194,7 +225,8 @@ namespace asharia::editor {
             }
 
             if (!validateEditorThemeCatalogSmoke(editorUiThemes()) ||
-                !validateEditorThemeColorSmoke() || !validateEditorThemeNameResolutionSmoke()) {
+                !validateEditorThemeColorSmoke() || !validateEditorThemeNameResolutionSmoke() ||
+                !validateEditorThemeStyleSmoke(expectedTheme)) {
                 return false;
             }
             if (currentEditorUiThemeId() != expectedTheme) {

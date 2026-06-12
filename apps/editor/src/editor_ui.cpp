@@ -36,19 +36,19 @@ namespace asharia::editor {
                     .id = EditorUiThemeId::Unity6Dark,
                     .storageName = "unity-6-dark",
                     .name = "Unity 6 Dark",
-                    .appBackground = rgb(32, 32, 32),
-                    .panelBackground = rgb(56, 56, 56),
-                    .floatingBackground = rgb(64, 64, 64),
-                    .panelBackgroundAlt = rgb(48, 48, 48),
-                    .titleBackground = rgb(42, 42, 42),
-                    .menuBackground = rgb(37, 37, 37),
-                    .inputBackground = rgb(44, 44, 44),
-                    .surface = rgb(53, 53, 53),
+                    .appBackground = rgb(48, 48, 48),
+                    .panelBackground = rgb(32, 32, 32),
+                    .floatingBackground = rgb(44, 44, 44),
+                    .panelBackgroundAlt = rgb(36, 36, 36),
+                    .titleBackground = rgb(36, 36, 36),
+                    .menuBackground = rgb(42, 42, 42),
+                    .inputBackground = rgb(26, 26, 26),
+                    .surface = rgb(42, 42, 42),
                     .surfaceHover = rgb(68, 68, 68),
                     .surfaceActive = rgb(67, 95, 123),
-                    .border = rgb(30, 30, 30),
-                    .borderStrong = rgb(22, 22, 22),
-                    .divider = rgb(45, 45, 45),
+                    .border = rgb(48, 48, 48),
+                    .borderStrong = rgb(48, 48, 48),
+                    .divider = rgb(48, 48, 48),
                     .text = rgb(220, 220, 220),
                     .textSecondary = rgb(188, 188, 188),
                     .textMuted = rgb(142, 142, 142),
@@ -62,11 +62,11 @@ namespace asharia::editor {
                     .success = rgb(105, 173, 93),
                     .warning = rgb(210, 164, 72),
                     .danger = rgb(210, 92, 92),
-                    .windowRounding = 1.0F,
-                    .childRounding = 1.0F,
+                    .windowRounding = 4.0F,
+                    .childRounding = 8.0F,
                     .frameRounding = 2.0F,
-                    .popupRounding = 2.0F,
-                    .tabRounding = 2.0F,
+                    .popupRounding = 6.0F,
+                    .tabRounding = 6.0F,
                 },
                 EditorUiTheme{
                     .id = EditorUiThemeId::BlackDefault,
@@ -499,7 +499,9 @@ namespace asharia::editor {
         const ColorSrgba8 caret = isClassicBlueGray ? rgb(158, 220, 255) : theme.accent;
         ImGuiStyle& style = ImGui::GetStyle();
         const EditorUiMetrics& metrics = editorUiMetrics();
-        style.WindowPadding = ImVec2{metrics.panelPadding, metrics.panelPadding};
+        const bool isUnity6Dark = theme.id == EditorUiThemeId::Unity6Dark;
+        style.WindowPadding =
+            isUnity6Dark ? ImVec2{8.0F, 8.0F} : ImVec2{metrics.panelPadding, metrics.panelPadding};
         style.FramePadding = ImVec2{6.0F, 2.0F};
         style.CellPadding = ImVec2{5.0F, 2.0F};
         style.ItemSpacing = ImVec2{6.0F, 4.0F};
@@ -507,8 +509,8 @@ namespace asharia::editor {
         style.IndentSpacing = 15.0F;
         style.ScrollbarSize = 12.0F;
         style.GrabMinSize = 8.0F;
-        style.WindowBorderSize = 1.0F;
-        style.ChildBorderSize = 1.0F;
+        style.WindowBorderSize = isUnity6Dark ? 0.0F : 1.0F;
+        style.ChildBorderSize = isUnity6Dark ? 0.0F : 1.0F;
         style.PopupBorderSize = 1.0F;
         style.FrameBorderSize = 1.0F;
         style.TabBorderSize = 0.0F;
@@ -530,8 +532,9 @@ namespace asharia::editor {
         };
         setThemeColor(ImGuiCol_Text, theme.text);
         setThemeColor(ImGuiCol_TextDisabled, theme.textDisabled);
-        setThemeColor(ImGuiCol_WindowBg, theme.panelBackground);
-        setThemeColor(ImGuiCol_ChildBg, theme.appBackground);
+        setThemeColor(ImGuiCol_WindowBg,
+                      isUnity6Dark ? theme.appBackground : theme.panelBackground);
+        setThemeColor(ImGuiCol_ChildBg, isUnity6Dark ? theme.panelBackground : theme.appBackground);
         setThemeColor(ImGuiCol_PopupBg, theme.floatingBackground);
         setThemeColor(ImGuiCol_Border, theme.border);
         setColor(ImGuiCol_BorderShadow, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
@@ -561,10 +564,16 @@ namespace asharia::editor {
         setColor(ImGuiCol_ResizeGrip, withAlpha(theme.accent, 0.28F));
         setColor(ImGuiCol_ResizeGripHovered, withAlpha(theme.accentHover, 0.48F));
         setColor(ImGuiCol_ResizeGripActive, withAlpha(theme.accentActive, 0.68F));
-        setThemeColor(ImGuiCol_Tab, theme.panelBackgroundAlt);
+        setThemeColor(ImGuiCol_Tab,
+                      isUnity6Dark ? theme.panelBackground : theme.panelBackgroundAlt);
         setThemeColor(ImGuiCol_TabHovered, theme.surfaceHover);
-        setThemeColor(ImGuiCol_TabSelected, theme.titleBackground);
-        setThemeColor(ImGuiCol_TabSelectedOverline, theme.accent);
+        setThemeColor(ImGuiCol_TabSelected,
+                      isUnity6Dark ? theme.panelBackground : theme.titleBackground);
+        if (isUnity6Dark) {
+            setColor(ImGuiCol_TabSelectedOverline, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
+        } else {
+            setThemeColor(ImGuiCol_TabSelectedOverline, theme.accent);
+        }
         setThemeColor(ImGuiCol_TabDimmed, theme.panelBackground);
         setThemeColor(ImGuiCol_TabDimmedSelected, theme.surface);
         setColor(ImGuiCol_TabDimmedSelectedOverline, withAlpha(theme.accent, 0.56F));

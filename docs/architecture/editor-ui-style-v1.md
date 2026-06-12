@@ -375,8 +375,9 @@ Inspector：
   "density": "compact",
   "colorEncoding": "srgb8",
   "ui": {
-    "appBg": "#202020",
-    "panelBg": "#383838"
+    "appBg": "#303030",
+    "panelBg": "#202020",
+    "border": "#303030"
   },
   "viewport": {
     "bg": "#303030",
@@ -388,7 +389,7 @@ Inspector：
     "itemSpacing": [6, 4],
     "cellPadding": [6, 3],
     "windowRounding": 4,
-    "childRounding": 3,
+    "childRounding": 8,
     "frameRounding": 3,
     "popupRounding": 4,
     "tabRounding": 3,
@@ -550,6 +551,7 @@ Implemented:
 - UI texture color-space metadata propagation for editor viewport textures.
 - `EditorUiMetrics` for compact Unity-like toolbar, status bar, panel header, viewport header, row and property label sizing.
 - Editor shell command bar and status bar using compact Unity-like theme tokens and disabled/pending affordances for work not yet wired.
+- `Unity 6 Dark` maps panel seam borders to the workbench background and uses darker, softly rounded panel content surfaces.
 - Default docking layout with internal Scene Tree / Asset Browser / Log panel ids displayed as Hierarchy / Project / Console.
 - Scene View, Hierarchy, Inspector, Project and Console shells use shared compact headers, status chips, property rows and disabled pending controls.
 - Theme Workbench three-column Tokens / Component Preview / Inspector layout with viewport and texture viewer mocks.

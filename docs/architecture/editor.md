@@ -692,9 +692,10 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   scene/asset/schema ownership becoming concrete enough.
 - The Unity-like workbench UI baseline is visual and presentational only. It adds the `Unity 6 Dark` default theme,
   compact toolbar/status/panel metrics, Hierarchy/Project/Console visible labels, a Scene View header, a Project split
-  navigation/content layout and disabled/pending controls for play, search, Console filters, Inspector lock/pin and
-  not-yet-wired authoring affordances. It does not implement writable Inspector fields, scene hierarchy mutation,
-  picking, transform gizmos, selection outlines or a new `packages/editor-core`.
+  navigation/content layout, a gray workbench shell behind darker rounded panel content blocks and disabled/pending controls
+  for play, search, Console filters, Inspector lock/pin and not-yet-wired authoring affordances. It does not implement
+  writable Inspector fields, scene hierarchy mutation, picking, transform gizmos, selection outlines or a new
+  `packages/editor-core`.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for

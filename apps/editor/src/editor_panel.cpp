@@ -10,6 +10,7 @@
 #include "editor_event.hpp"
 #include "editor_i18n.hpp"
 #include "editor_settings.hpp"
+#include "editor_ui.hpp"
 
 namespace asharia::editor {
 
@@ -25,6 +26,10 @@ namespace asharia::editor {
                 return EditorEventKind::PanelFocused;
             }
             return EditorEventKind::PanelFocused;
+        }
+
+        [[nodiscard]] bool usesInsetPanelContentSurface() {
+            return currentEditorUiThemeId() == EditorUiThemeId::Unity6Dark;
         }
 
     } // namespace
@@ -292,14 +297,39 @@ namespace asharia::editor {
                 emit(EditorPanelLifecycleEventKind::Focused, entry.desc.id);
             }
 
-            const ImVec2 available = ImGui::GetContentRegionAvail();
-            entry.state.contentWidth =
-                std::max(1U, static_cast<std::uint32_t>(std::max(available.x, 1.0F)));
-            entry.state.contentHeight =
-                std::max(1U, static_cast<std::uint32_t>(std::max(available.y, 1.0F)));
+            const auto updateContentExtent = [&entry]() {
+                const ImVec2 available = ImGui::GetContentRegionAvail();
+                entry.state.contentWidth =
+                    std::max(1U, static_cast<std::uint32_t>(std::max(available.x, 1.0F)));
+                entry.state.contentHeight =
+                    std::max(1U, static_cast<std::uint32_t>(std::max(available.y, 1.0F)));
+            };
+            updateContentExtent();
 
             if (visible && entry.state.open) {
-                entry.panel->draw(drawContext, entry.state);
+                if (usesInsetPanelContentSurface()) {
+                    const EditorUiTheme& theme = editorUiTheme();
+                    const EditorUiMetrics& metrics = editorUiMetrics();
+                    std::string contentId{"##panel-content-"};
+                    contentId += entry.desc.id.value;
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg,
+                                          toImGuiEncodedSrgbVec4(theme.panelBackground));
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, theme.childRounding);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0F);
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                                        ImVec2{metrics.panelPadding, metrics.panelPadding});
+                    if (ImGui::BeginChild(contentId.c_str(), ImVec2{0.0F, 0.0F},
+                                          ImGuiChildFlags_AlwaysUseWindowPadding,
+                                          ImGuiWindowFlags_None)) {
+                        updateContentExtent();
+                        entry.panel->draw(drawContext, entry.state);
+                    }
+                    ImGui::EndChild();
+                    ImGui::PopStyleVar(3);
+                    ImGui::PopStyleColor();
+                } else {
+                    entry.panel->draw(drawContext, entry.state);
+                }
             }
             ImGui::End();
         }
@@ -341,6 +371,7 @@ namespace asharia::editor {
             eventQueue_->push(EditorEvent{
                 .kind = panelEventKind(kind),
                 .sourceId = panelId,
+                .metadata = {},
             });
         }
     }
