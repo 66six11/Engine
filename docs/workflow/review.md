@@ -236,6 +236,9 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 - 状态模型：功能是单实例还是多实例；viewport、view、panel、world、document、selection、capture、refresh reason 等状态必须有 owner，不能用最后一次请求覆盖多视图需求。
 - 隐式执行：GPU work、上传、clear、copy、barrier、descriptor update 或 debug probe 是否藏在声明式 graph / frame loop 之外；若保留 external pre-pass，必须在 diagnostics 和审查结论中显式暴露。
 - 错误与能力合同：format、feature、queue capability、shader reflection、resource signature、descriptor layout 和 material/pipeline key 不匹配时，是否能 fail early 并保留上下文。
+- shader/material adapter 改动必须验证 reflection model 到 `MaterialResourceSignature` 的 descriptor kind、
+  stage visibility、set/binding/name/count、hash stability 和 negative diagnostics；不能让 `material-core`
+  依赖 Slang、renderer、Vulkan、RenderGraph、asset-pipeline 或 editor。
 - Editor 内部设计：panel 不直接修改持久状态；持久 mutation 应通过 command/transaction 或明确 owner；宽 `Context` / service locator 只能作为过渡，并需要 capability-scoped 收敛计划。
 - Public API 与实现：大型 header-only 组件、public inline 实现、app-level glue 文件和 god object 必须审查 API/implementation split；暂不拆时要记录触发拆分的阈值。
 - 测试与 smoke：新增或修改的内部语义必须有 smoke、package test、counter、diagnostics snapshot 或负向测试证明；只靠编译通过不算内部设计通过。
