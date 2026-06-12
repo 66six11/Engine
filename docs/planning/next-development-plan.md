@@ -95,7 +95,9 @@
 - #135 新增 PNG Texture2D product writer：`asset-pipeline` product execution 对 PNG Texture2D request 写出
   deterministic `texture2d-product.v1` blob，记录 source/import/profile/settings/format/尺寸/mip/payload hash；
   `asset-processor --smoke-product-execution` 和 `--smoke-texture-upload` 均从 product blob reader 消费该 payload。
-- 仍未完成 KTX/KTX2/Basis/HDR/compressed texture policy、完整 GPU resource owner、dependency invalidation 和
+- #137 正在收敛 KTX/KTX2/Basis/HDR/DDS/compressed texture policy：先定义 source/import、product container、
+  transcode/cook、runtime format facts 和 GPU owner 边界，不引入新 decoder、Conan dependency 或 Vulkan owner。
+- 仍未完成完整 GPU resource owner、dependency invalidation 和
   mesh product/runtime 闭环。
 
 ### Phase C：Scene Draw Packet MVP
@@ -193,12 +195,11 @@
 
 ## 下一批 PR-sized Slice
 
-1. `[Slice] Workflow: audit Project duplicate roadmap items`：只处理 Project 重复标题候选，避免路线图和 Project 双轨漂移。
-2. `[Slice] Assets: define KTX/Basis/compressed texture policy`：在 PNG-first decoder 之后单独评估 container、compression、transcode、runtime format 和 GPU upload owner 边界。
-3. `[Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
-4. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 descriptor/pipeline binding smoke。
-5. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
-6. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
+1. `#137 [Slice] Assets: define KTX/Basis/compressed texture policy`：在 PNG Texture2D product writer 之后单独评估 container、compression、transcode、runtime format 和 GPU upload owner 边界。
+2. `[Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
+3. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 descriptor/pipeline binding smoke。
+4. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
+5. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 
 ## 暂缓事项
 
