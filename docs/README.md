@@ -10,7 +10,7 @@
 | 编码和文本规则 | [standards/coding.md](standards/coding.md)、[standards/encoding.md](standards/encoding.md)、[standards/naming.md](standards/naming.md) |
 | 当前架构和真实数据流 | [architecture/overview.md](architecture/overview.md)、[architecture/flow.md](architecture/flow.md)、[architecture/package-first.md](architecture/package-first.md) |
 | RenderGraph / RHI 边界 | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[rendergraph/roadmap.md](rendergraph/roadmap.md) |
-| Editor 架构和 UI | [architecture/editor.md](architecture/editor.md)、[architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[planning/editor-development-plan.md](planning/editor-development-plan.md) |
+| Editor 架构和 UI | [architecture/editor.md](architecture/editor.md)、[architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[architecture/editor-ui-visual-target.md](architecture/editor-ui-visual-target.md)、[planning/editor-development-plan.md](planning/editor-development-plan.md) |
 | 系统设计 | [systems/reflection-serialization.md](systems/reflection-serialization.md)、[systems/asset-architecture.md](systems/asset-architecture.md)、[systems/scene-world.md](systems/scene-world.md)、[systems/scripting.md](systems/scripting.md)、[systems/performance-profiling.md](systems/performance-profiling.md) |
 | 计划和项目管理 | [planning/next-development-plan.md](planning/next-development-plan.md)、[planning/project-management.md](planning/project-management.md) |
 | 研究资料 | [research/sources.md](research/sources.md) |
