@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -18,8 +19,11 @@
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_core/asset_product.hpp"
 #include "asharia/asset_core/asset_type.hpp"
+#include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
+#include "asharia/asset_pipeline/asset_texture_import.hpp"
+#include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/project/project_descriptor_io.hpp"
 
 #include "asset_processor_dry_run.hpp"
@@ -109,6 +113,44 @@ namespace asharia::asset_processor {
             return static_cast<bool>(stream);
         }
 
+        [[nodiscard]] bool writeBytesFile(const std::filesystem::path& path,
+                                          std::span<const std::uint8_t> bytes) {
+            std::ofstream stream{path, std::ios::binary};
+            if (!stream) {
+                std::cerr << "Failed to open smoke file " << pathText(path) << ".\n";
+                return false;
+            }
+
+            for (const std::uint8_t byte : bytes) {
+                stream.put(static_cast<char>(byte));
+                if (!stream) {
+                    std::cerr << "Failed to write smoke file " << pathText(path) << ".\n";
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        [[nodiscard]] std::vector<std::uint8_t> validPngTextureBytes() {
+            return {
+                0x89U, 0x50U, 0x4EU, 0x47U, 0x0DU, 0x0AU, 0x1AU, 0x0AU, 0x00U, 0x00U, 0x00U, 0x0DU,
+                0x49U, 0x48U, 0x44U, 0x52U, 0x00U, 0x00U, 0x00U, 0x01U, 0x00U, 0x00U, 0x00U, 0x01U,
+                0x08U, 0x06U, 0x00U, 0x00U, 0x00U, 0x1FU, 0x15U, 0xC4U, 0x89U, 0x00U, 0x00U, 0x00U,
+                0x0DU, 0x49U, 0x44U, 0x41U, 0x54U, 0x78U, 0xDAU, 0x63U, 0x10U, 0x50U, 0x30U, 0xF8U,
+                0x0FU, 0x00U, 0x02U, 0x04U, 0x01U, 0x60U, 0x52U, 0xE2U, 0xA9U, 0x61U, 0x00U, 0x00U,
+                0x00U, 0x00U, 0x49U, 0x45U, 0x4EU, 0x44U, 0xAEU, 0x42U, 0x60U, 0x82U,
+            };
+        }
+
+        [[nodiscard]] std::uint64_t smokeHashBytes(std::span<const std::uint8_t> bytes) noexcept {
+            std::uint64_t hash = 14695981039346656037ULL;
+            for (const std::uint8_t byte : bytes) {
+                hash ^= byte;
+                hash *= 1099511628211ULL;
+            }
+            return hash;
+        }
+
         [[nodiscard]] bool createDirectories(const std::filesystem::path& path) {
             std::error_code error;
             std::filesystem::create_directories(path, error);
@@ -177,6 +219,62 @@ namespace asharia::asset_processor {
 
             auto written =
                 asharia::asset::writeAssetMetadataFile(metadataSidecarPath(sourcePath), *document);
+            if (!written) {
+                std::cerr << written.error().message << '\n';
+                return false;
+            }
+
+            return true;
+        }
+
+        [[nodiscard]] bool writePngTextureSmokeSource(const std::filesystem::path& contentRoot) {
+            const std::filesystem::path sourcePath = contentRoot / "Textures" / "Crate.png";
+            const std::vector<std::uint8_t> sourceBytes = validPngTextureBytes();
+            if (!createDirectories(sourcePath.parent_path()) ||
+                !writeBytesFile(sourcePath, sourceBytes)) {
+                return false;
+            }
+
+            auto guid = asharia::asset::parseAssetGuid("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21");
+            if (!guid) {
+                std::cerr << guid.error().message << '\n';
+                return false;
+            }
+
+            std::vector<asharia::asset::AssetImportSetting> settings{
+                asharia::asset::AssetImportSetting{
+                    .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                    .value = std::string{asharia::asset::kTextureImportProfileTexture2D},
+                },
+                asharia::asset::AssetImportSetting{
+                    .key = std::string{asharia::asset::kTextureImportSettingsVersionSettingKey},
+                    .value = std::to_string(asharia::asset::kTextureImportContractSettingsVersion),
+                },
+                asharia::asset::AssetImportSetting{
+                    .key = std::string{asharia::asset::kTextureImportFormatSettingKey},
+                    .value = std::string{asharia::asset::kTextureImportFormatRgba8Srgb},
+                },
+            };
+            const asharia::asset::AssetTextureImporterDescriptor importer =
+                asharia::asset::makePngTextureImporterDescriptor();
+            auto written = asharia::asset::writeAssetMetadataFile(
+                metadataSidecarPath(sourcePath),
+                asharia::asset::AssetMetadataDocument{
+                    .source =
+                        asharia::asset::SourceAssetRecord{
+                            .guid = *guid,
+                            .assetType =
+                                asharia::asset::makeAssetTypeId("com.asharia.asset.Texture2D"),
+                            .assetTypeName = "com.asharia.asset.Texture2D",
+                            .sourcePath = "Content/Textures/Crate.png",
+                            .importerId = asharia::asset::makeImporterId(importer.importerName),
+                            .importerName = importer.importerName,
+                            .importerVersion = importer.importerVersion,
+                            .sourceHash = smokeHashBytes(sourceBytes),
+                            .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+                        },
+                    .settings = std::move(settings),
+                });
             if (!written) {
                 std::cerr << written.error().message << '\n';
                 return false;
@@ -428,9 +526,8 @@ namespace asharia::asset_processor {
             !expectReportText(firstExecution.text, "asset-processor execute") ||
             !expectReportText(firstExecution.text,
                               "planning requests=2 cacheHits=0 diagnostics=2") ||
-            !expectReportText(firstExecution.text,
-                              "diagnostic stage=planning severity=Warning "
-                              "code=MetadataSourceHashDrift") ||
+            !expectReportText(firstExecution.text, "diagnostic stage=planning severity=Warning "
+                                                   "code=MetadataSourceHashDrift") ||
             !expectReportText(firstExecution.text,
                               "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
                               "manifestWritten=true") ||
@@ -489,8 +586,7 @@ namespace asharia::asset_processor {
         if (projectExecution.exitCode != EXIT_SUCCESS ||
             !expectReportText(projectExecution.text, "projectPath=") ||
             !expectReportText(projectExecution.text, "assetCacheRoot=\".asharia/cache/assets\"") ||
-            !expectReportText(projectExecution.text,
-                              "source-root rootName=\"project-assets\"") ||
+            !expectReportText(projectExecution.text, "source-root rootName=\"project-assets\"") ||
             !expectReportText(projectExecution.text, "planning requests=2 cacheHits=0") ||
             !expectReportText(projectExecution.text,
                               "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
@@ -510,12 +606,9 @@ namespace asharia::asset_processor {
                 .projectPath = projectPath,
             });
         if (projectCacheHitExecution.exitCode != EXIT_SUCCESS ||
-            !expectReportText(projectCacheHitExecution.text,
-                              "productManifest=") ||
-            !expectReportText(projectCacheHitExecution.text,
-                              "products.aproducts.json") ||
-            !expectReportText(projectCacheHitExecution.text,
-                              "planning requests=0 cacheHits=2") ||
+            !expectReportText(projectCacheHitExecution.text, "productManifest=") ||
+            !expectReportText(projectCacheHitExecution.text, "products.aproducts.json") ||
+            !expectReportText(projectCacheHitExecution.text, "planning requests=0 cacheHits=2") ||
             !expectReportText(projectCacheHitExecution.text,
                               "execution written=0 cacheHits=2 diagnostics=0 manifestProducts=2 "
                               "manifestWritten=true")) {
@@ -546,6 +639,58 @@ namespace asharia::asset_processor {
                               "product-written source=\"Content/Textures/Crate.png\"") ||
             !expectReportText(changedExecution.text,
                               "cache-hit source=\"Content/Textures/Decal.png\"")) {
+            return EXIT_FAILURE;
+        }
+
+        std::optional<SmokeWorkspace> pngWorkspace = makeSmokeWorkspace();
+        if (!pngWorkspace) {
+            return EXIT_FAILURE;
+        }
+        const std::filesystem::path pngContentRoot = pngWorkspace->root / "Content";
+        if (!writePngTextureSmokeSource(pngContentRoot)) {
+            return EXIT_FAILURE;
+        }
+
+        const std::filesystem::path pngOutputRoot = pngWorkspace->root / "PngProductCache";
+        const std::filesystem::path pngManifestPath = pngOutputRoot / "product-manifest.json";
+        const ProductExecution pngExecution = runProductExecution(ProductExecutionOptions{
+            .sourceRoot = pngContentRoot,
+            .sourcePathPrefix = "Content",
+            .targetProfile = "windows-msvc-debug",
+            .outputRoot = pngOutputRoot,
+            .productManifestPath = std::nullopt,
+            .productManifestOutputPath = pngManifestPath,
+            .ignoredDirectoryNames = {},
+            .projectPath = std::nullopt,
+        });
+        if (pngExecution.exitCode != EXIT_SUCCESS ||
+            !expectReportText(pngExecution.text, "planning requests=1 cacheHits=0 diagnostics=0") ||
+            !expectReportText(pngExecution.text,
+                              "execution written=1 cacheHits=0 diagnostics=0 manifestProducts=1 "
+                              "manifestWritten=true") ||
+            !expectReportText(pngExecution.text,
+                              "product-written source=\"Content/Textures/Crate.png\"")) {
+            return EXIT_FAILURE;
+        }
+
+        auto pngManifest = asharia::asset::readAssetProductManifestFile(pngManifestPath);
+        if (!pngManifest || pngManifest->products.size() != 1U) {
+            std::cerr << "asset-processor product execution smoke could not read PNG product "
+                         "manifest.\n";
+            return EXIT_FAILURE;
+        }
+        const asharia::asset::AssetProductRecord& pngProduct = pngManifest->products.front();
+        auto texturePayload =
+            asharia::asset::readTexture2DProductPayload(asharia::asset::AssetProductBlobReadRequest{
+                .productFilePath = pngOutputRoot / pngProduct.relativeProductPath,
+                .relativeProductPath = pngProduct.relativeProductPath,
+            });
+        const std::vector<std::uint8_t> expectedPngPayload{0x10U, 0x20U, 0x30U, 0xFFU};
+        if (!texturePayload || texturePayload->width != 1U || texturePayload->height != 1U ||
+            texturePayload->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
+            texturePayload->payload != expectedPngPayload) {
+            std::cerr << "asset-processor product execution smoke could not read PNG texture "
+                         "product payload.\n";
             return EXIT_FAILURE;
         }
 

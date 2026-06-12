@@ -26,6 +26,8 @@
 
 #include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_product_execution.hpp"
+#include "asharia/asset_pipeline/asset_texture_import.hpp"
+#include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/error.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/core/version.hpp"
@@ -3068,8 +3070,8 @@ namespace {
         return EXIT_SUCCESS;
     }
 
-    constexpr VkExtent2D kSmokeTextureUploadExtent{.width = 4, .height = 4};
-    constexpr VkFormat kSmokeTextureUploadFormat = VK_FORMAT_B8G8R8A8_SRGB;
+    constexpr VkExtent2D kSmokeTextureUploadExtent{.width = 1, .height = 1};
+    constexpr VkFormat kSmokeTextureUploadFormat = VK_FORMAT_R8G8B8A8_SRGB;
     constexpr std::size_t kSmokeTextureUploadPixelBytes =
         static_cast<std::size_t>(kSmokeTextureUploadExtent.width) *
         static_cast<std::size_t>(kSmokeTextureUploadExtent.height) * 4U;
@@ -3093,19 +3095,19 @@ namespace {
         return hash;
     }
 
+    [[nodiscard]] std::vector<std::uint8_t> smokeTexturePngSourceBytes() {
+        return {
+            0x89U, 0x50U, 0x4EU, 0x47U, 0x0DU, 0x0AU, 0x1AU, 0x0AU, 0x00U, 0x00U, 0x00U, 0x0DU,
+            0x49U, 0x48U, 0x44U, 0x52U, 0x00U, 0x00U, 0x00U, 0x01U, 0x00U, 0x00U, 0x00U, 0x01U,
+            0x08U, 0x06U, 0x00U, 0x00U, 0x00U, 0x1FU, 0x15U, 0xC4U, 0x89U, 0x00U, 0x00U, 0x00U,
+            0x0DU, 0x49U, 0x44U, 0x41U, 0x54U, 0x78U, 0xDAU, 0x63U, 0x10U, 0x50U, 0x30U, 0xF8U,
+            0x0FU, 0x00U, 0x02U, 0x04U, 0x01U, 0x60U, 0x52U, 0xE2U, 0xA9U, 0x61U, 0x00U, 0x00U,
+            0x00U, 0x00U, 0x49U, 0x45U, 0x4EU, 0x44U, 0xAEU, 0x42U, 0x60U, 0x82U,
+        };
+    }
+
     [[nodiscard]] std::vector<std::uint8_t> smokeTexturePixels() {
-        std::vector<std::uint8_t> pixels(kSmokeTextureUploadPixelBytes);
-        std::size_t offset = 0;
-        for (std::uint32_t row = 0; row < kSmokeTextureUploadExtent.height; ++row) {
-            for (std::uint32_t column = 0; column < kSmokeTextureUploadExtent.width; ++column) {
-                pixels[offset++] = static_cast<std::uint8_t>(20U + (column * 31U)); // B
-                pixels[offset++] = static_cast<std::uint8_t>(40U + (row * 43U));    // G
-                pixels[offset++] =
-                    static_cast<std::uint8_t>(80U + (column * 19U) + (row * 17U)); // R
-                pixels[offset++] = 255U;                                           // A
-            }
-        }
-        return pixels;
+        return {0x10U, 0x20U, 0x30U, 0xFFU};
     }
 
     [[nodiscard]] asharia::Result<SmokeTextureProduct> createSmokeTextureProduct() {
@@ -3114,22 +3116,33 @@ namespace {
             return std::unexpected{std::move(guid.error())};
         }
 
-        std::vector<std::uint8_t> pixels = smokeTexturePixels();
+        std::vector<std::uint8_t> pngSourceBytes = smokeTexturePngSourceBytes();
         const std::vector<asharia::asset::AssetImportSetting> settings{
-            {.key = "format", .value = "B8G8R8A8Srgb"},
-            {.key = "width", .value = std::to_string(kSmokeTextureUploadExtent.width)},
-            {.key = "height", .value = std::to_string(kSmokeTextureUploadExtent.height)},
+            {
+                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
+                .value = std::string{asharia::asset::kTextureImportProfileTexture2D},
+            },
+            {
+                .key = std::string{asharia::asset::kTextureImportSettingsVersionSettingKey},
+                .value = std::to_string(asharia::asset::kTextureImportContractSettingsVersion),
+            },
+            {
+                .key = std::string{asharia::asset::kTextureImportFormatSettingKey},
+                .value = std::string{asharia::asset::kTextureImportFormatRgba8Srgb},
+            },
         };
+        const asharia::asset::AssetTextureImporterDescriptor importer =
+            asharia::asset::makePngTextureImporterDescriptor();
         const asharia::asset::SourceAssetRecord source{
             .guid = *guid,
-            .assetType = asharia::asset::makeAssetTypeId("Texture2D"),
-            .assetTypeName = "Texture2D",
-            .sourcePath = "textures/smoke-texture.texture2d",
-            .importerId = asharia::asset::makeImporterId("asharia.texture2d-smoke"),
-            .importerName = "asharia.texture2d-smoke",
-            .importerVersion = asharia::asset::ImporterVersion{1},
-            .sourceHash =
-                smokeHashBytes(std::span<const std::uint8_t>{pixels.data(), pixels.size()}),
+            .assetType = asharia::asset::makeAssetTypeId(asharia::asset::kTextureRoleTexture2D),
+            .assetTypeName = std::string{asharia::asset::kTextureRoleTexture2D},
+            .sourcePath = "textures/smoke-texture.png",
+            .importerId = asharia::asset::makeImporterId(importer.importerName),
+            .importerName = importer.importerName,
+            .importerVersion = importer.importerVersion,
+            .sourceHash = smokeHashBytes(
+                std::span<const std::uint8_t>{pngSourceBytes.data(), pngSourceBytes.size()}),
             .settingsHash = asharia::asset::hashAssetImportSettings(
                 std::span<const asharia::asset::AssetImportSetting>{settings.data(),
                                                                     settings.size()}),
@@ -3178,7 +3191,7 @@ namespace {
                     {
                         asharia::asset::AssetProductSourceBytes{
                             .sourcePath = source.sourcePath,
-                            .bytes = pixels,
+                            .bytes = pngSourceBytes,
                         },
                     },
                 .productOutputRoot = productRoot,
@@ -3196,15 +3209,21 @@ namespace {
         }
 
         const asharia::asset::AssetProductWrite& writtenProduct = execution.writtenProducts.front();
-        auto payload = asharia::asset::readPlaceholderProductSourceBytes(
-            asharia::asset::AssetProductBlobReadRequest{
+        auto payload =
+            asharia::asset::readTexture2DProductPayload(asharia::asset::AssetProductBlobReadRequest{
                 .productFilePath = writtenProduct.productFilePath,
                 .relativeProductPath = writtenProduct.product.relativeProductPath,
             });
         if (!payload) {
             return std::unexpected{std::move(payload.error())};
         }
-        if (payload->sourceBytes != pixels) {
+        const std::vector<std::uint8_t> expectedPixels = smokeTexturePixels();
+        if (payload->sourcePath != source.sourcePath ||
+            payload->productTypeName != asharia::asset::kTextureRoleTexture2D ||
+            payload->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
+            payload->width != kSmokeTextureUploadExtent.width ||
+            payload->height != kSmokeTextureUploadExtent.height ||
+            payload->payload != expectedPixels) {
             return std::unexpected{
                 asharia::Error{asharia::ErrorDomain::Asset, 0,
                                "Texture upload smoke product payload changed during execution."}};
@@ -3216,7 +3235,7 @@ namespace {
         return SmokeTextureProduct{
             .source = source,
             .product = writtenProduct.product,
-            .pixelBytes = std::move(payload->sourceBytes),
+            .pixelBytes = std::move(payload->payload),
         };
     }
 

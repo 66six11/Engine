@@ -13,6 +13,8 @@
 #include <vector>
 
 #include "asharia/asset_core/asset_guid.hpp"
+#include "asharia/asset_pipeline/asset_texture_import.hpp"
+#include "asharia/core/error.hpp"
 
 namespace asharia::asset {
     namespace {
@@ -66,6 +68,25 @@ namespace asharia::asset {
             return std::filesystem::path{utf8};
         }
 
+        [[nodiscard]] char asciiLower(char value) noexcept {
+            return (value >= 'A' && value <= 'Z') ? static_cast<char>(value - 'A' + 'a') : value;
+        }
+
+        [[nodiscard]] std::string sourceExtension(std::string_view sourcePath) {
+            const std::size_t slash = sourcePath.find_last_of('/');
+            const std::size_t dot = sourcePath.find_last_of('.');
+            if (dot == std::string_view::npos || (slash != std::string_view::npos && dot < slash) ||
+                dot + 1 >= sourcePath.size()) {
+                return {};
+            }
+
+            std::string extension{sourcePath.substr(dot)};
+            for (char& value : extension) {
+                value = asciiLower(value);
+            }
+            return extension;
+        }
+
         [[nodiscard]] std::string productLabel(const AssetImportRequest& request) {
             return "guid=\"" + formatAssetGuid(request.source.guid) + "\" source=\"" +
                    request.source.sourcePath + "\" assetType=\"" + request.source.assetTypeName +
@@ -83,6 +104,27 @@ namespace asharia::asset {
                 .relativeProductPath = std::move(productPath),
                 .message = std::move(message),
             });
+        }
+
+        [[nodiscard]] std::string textureImportDiagnosticLabel(const Error& error) {
+            if (error.domain != ErrorDomain::Asset) {
+                return "unknown";
+            }
+
+            switch (static_cast<AssetTextureImportDiagnosticCode>(error.code)) {
+            case AssetTextureImportDiagnosticCode::InvalidRequest:
+            case AssetTextureImportDiagnosticCode::UnsupportedSourceExtension:
+            case AssetTextureImportDiagnosticCode::UnsupportedProfile:
+            case AssetTextureImportDiagnosticCode::UnsupportedSettingsVersion:
+            case AssetTextureImportDiagnosticCode::InvalidDimensions:
+            case AssetTextureImportDiagnosticCode::UnsupportedFormat:
+            case AssetTextureImportDiagnosticCode::PayloadSizeMismatch:
+            case AssetTextureImportDiagnosticCode::DecodeFailed:
+                return std::string{assetTextureImportDiagnosticCodeName(
+                    static_cast<AssetTextureImportDiagnosticCode>(error.code))};
+            }
+
+            return "unknown";
         }
 
         void addRequestDiagnostic(AssetProductExecutionResult& result,
@@ -166,6 +208,63 @@ namespace asharia::asset {
             bytes.insert(bytes.end(), sourceBytes.begin(), sourceBytes.end());
             appendLine(bytes, "");
             appendLine(bytes, "sourceBytes.end");
+            return bytes;
+        }
+
+        [[nodiscard]] bool isPngTextureProductRequest(const AssetImportRequest& request) {
+            const AssetTextureImporterDescriptor importer = makePngTextureImporterDescriptor();
+            return request.source.importerName == importer.importerName &&
+                   request.source.importerVersion == importer.importerVersion &&
+                   sourceExtension(request.source.sourcePath) == kTextureImportPngExtension;
+        }
+
+        [[nodiscard]] std::vector<std::uint8_t>
+        makeTexture2DProductBytes(const AssetImportRequest& request,
+                                  const AssetTextureImportResult& texture) {
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(768 + texture.payload.size());
+            appendLine(bytes, "schema=com.asharia.asset.texture2d-product.v1");
+            appendLine(bytes, "guid=" + formatAssetGuid(request.source.guid));
+            appendLine(bytes, "sourcePath=" + request.source.sourcePath);
+            appendLine(bytes, "assetType=" + request.source.assetTypeName);
+            appendLine(bytes, "importer=" + request.source.importerName);
+            appendLine(bytes,
+                       "importerVersion=" + std::to_string(request.source.importerVersion.value));
+            appendLine(bytes, "sourceExtension=" + texture.sourceExtension);
+            appendLine(bytes, "importProfile=" + texture.importProfileName);
+            appendLine(bytes, "productType=" + texture.productTypeName);
+            appendLine(bytes, "settingsVersion=" + std::to_string(texture.settingsVersion));
+            appendLine(bytes,
+                       "format=" + std::string{assetTextureImportFormatName(texture.format)});
+            appendLine(bytes, "width=" + std::to_string(texture.width));
+            appendLine(bytes, "height=" + std::to_string(texture.height));
+            appendLine(bytes, "sourceHash=" + formatHash64(request.source.sourceHash));
+            appendLine(bytes, "settingsHash=" + formatHash64(request.source.settingsHash));
+            appendLine(bytes, "dependencyHash=" + formatHash64(request.productKey.dependencyHash));
+            appendLine(bytes,
+                       "targetProfileHash=" + formatHash64(request.productKey.targetProfileHash));
+            appendLine(bytes,
+                       "productKeyHash=" + formatHash64(hashAssetProductKey(request.productKey)));
+            appendLine(bytes, "settings.count=" + std::to_string(request.settings.size()));
+            for (const AssetImportSetting& setting : request.settings) {
+                appendLine(bytes, "setting." + setting.key + "=" + setting.value);
+            }
+            appendLine(bytes, "mip.count=" + std::to_string(texture.mips.size()));
+            for (std::size_t index = 0; index < texture.mips.size(); ++index) {
+                const AssetTextureMipPayload& mip = texture.mips[index];
+                const std::string prefix = "mip." + std::to_string(index) + ".";
+                appendLine(bytes, prefix + "level=" + std::to_string(mip.level));
+                appendLine(bytes, prefix + "width=" + std::to_string(mip.width));
+                appendLine(bytes, prefix + "height=" + std::to_string(mip.height));
+                appendLine(bytes, prefix + "byteOffset=" + std::to_string(mip.byteOffset));
+                appendLine(bytes, prefix + "byteSize=" + std::to_string(mip.byteSize));
+            }
+            appendLine(bytes, "payload.size=" + std::to_string(texture.payload.size()));
+            appendLine(bytes, "payloadHash=" + formatHash64(hashBytes(texture.payload)));
+            appendLine(bytes, "payload.begin");
+            bytes.insert(bytes.end(), texture.payload.begin(), texture.payload.end());
+            appendLine(bytes, "");
+            appendLine(bytes, "payload.end");
             return bytes;
         }
 
@@ -334,8 +433,29 @@ namespace asharia::asset {
                 continue;
             }
 
-            std::vector<std::uint8_t> productBytes =
-                makePlaceholderProductBytes(importRequest, sourceBytes->bytes);
+            std::vector<std::uint8_t> productBytes;
+            if (isPngTextureProductRequest(importRequest)) {
+                auto texture = importTextureCpuPayload(AssetTextureImportRequest{
+                    .source = importRequest.source,
+                    .settings = importRequest.settings,
+                    .sourceBytes = sourceBytes->bytes,
+                    .importer = makePngTextureImporterDescriptor(),
+                });
+                if (!texture) {
+                    addRequestDiagnostic(result,
+                                         AssetProductExecutionDiagnosticCode::TextureImportFailed,
+                                         importRequest,
+                                         "Asset product execution texture import failed for " +
+                                             productLabel(importRequest) + " diagnostic=\"" +
+                                             textureImportDiagnosticLabel(texture.error()) +
+                                             "\": " + texture.error().message);
+                    continue;
+                }
+
+                productBytes = makeTexture2DProductBytes(importRequest, *texture);
+            } else {
+                productBytes = makePlaceholderProductBytes(importRequest, sourceBytes->bytes);
+            }
             AssetProductRecord product{
                 .key = importRequest.productKey,
                 .relativeProductPath = importRequest.relativeProductPath,

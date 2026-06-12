@@ -5,6 +5,7 @@ namespace asharia::asset_pipeline_header_tests {
     void touchProductBlobHeader() {
         [[maybe_unused]] asharia::asset::AssetProductBlobReadRequest request{};
         [[maybe_unused]] asharia::asset::AssetProductBlobPayload payload{};
+        [[maybe_unused]] asharia::asset::AssetTextureProductPayload texturePayload{};
         [[maybe_unused]] const asharia::asset::AssetProductBlobDiagnosticCode diagnostic =
             asharia::asset::AssetProductBlobDiagnosticCode::MissingProduct;
     }

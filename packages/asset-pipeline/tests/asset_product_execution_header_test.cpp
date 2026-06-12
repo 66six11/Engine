@@ -7,6 +7,9 @@ namespace asharia::asset_pipeline_header_tests {
         [[maybe_unused]] asharia::asset::AssetProductExecutionResult result{};
         [[maybe_unused]] const asharia::asset::AssetProductExecutionDiagnosticCode diagnostic =
             asharia::asset::AssetProductExecutionDiagnosticCode::InvalidPlan;
+        [[maybe_unused]] const asharia::asset::AssetProductExecutionDiagnosticCode
+            textureDiagnostic =
+                asharia::asset::AssetProductExecutionDiagnosticCode::TextureImportFailed;
     }
 
 } // namespace asharia::asset_pipeline_header_tests

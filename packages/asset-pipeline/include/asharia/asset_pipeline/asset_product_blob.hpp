@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/result.hpp"
 
 namespace asharia::asset {
@@ -34,6 +35,21 @@ namespace asharia::asset {
                                              const AssetProductBlobPayload&) = default;
     };
 
+    struct AssetTextureProductPayload {
+        std::string sourcePath;
+        std::string productTypeName;
+        std::string importProfileName;
+        std::uint32_t settingsVersion{};
+        AssetTextureImportFormat format{AssetTextureImportFormat::Rgba8Unorm};
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::vector<AssetTextureMipPayload> mips;
+        std::vector<std::uint8_t> payload;
+
+        [[nodiscard]] friend bool operator==(const AssetTextureProductPayload&,
+                                             const AssetTextureProductPayload&) = default;
+    };
+
     [[nodiscard]] const char*
     assetProductBlobDiagnosticCodeName(AssetProductBlobDiagnosticCode code) noexcept;
 
@@ -43,5 +59,12 @@ namespace asharia::asset {
     [[nodiscard]] Result<AssetProductBlobPayload>
     readPlaceholderProductSourceBytes(std::span<const std::uint8_t> productBytes,
                                       std::string_view relativeProductPath);
+
+    [[nodiscard]] Result<AssetTextureProductPayload>
+    readTexture2DProductPayload(const AssetProductBlobReadRequest& request);
+
+    [[nodiscard]] Result<AssetTextureProductPayload>
+    readTexture2DProductPayload(std::span<const std::uint8_t> productBytes,
+                                std::string_view relativeProductPath);
 
 } // namespace asharia::asset
