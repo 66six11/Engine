@@ -51,16 +51,16 @@ packages/
   shader-slang         shader build/reflection/SPIR-V validation
   profiling            CPU/GPU/profile data model
   asset-core           GUID/type/handle/reference metadata baseline
-  schema               future type/field/version metadata
-  archive              future ArchiveValue / JSON IO facade
-  cpp-binding          future C++ object binding
-  persistence          future save/load/migration
-  scene-core           future world/entity/component/prefab model
+  schema               stable type/field/value metadata baseline
+  archive              ArchiveValue / strict JSON IO facade
+  cpp-binding          C++ object/member binding baseline
+  persistence          save/load/default/migration baseline
+  material-core        CPU-side material signature and pipeline-key contract
+  scene-core           headless world/entity/transform baseline
   input                future device/action/context snapshots
   editor-core          future editor services and transactions
 tools/
-  asset-processor      future offline/background asset processing
-  shader-build         existing/future shader tooling
+  asset-processor      offline asset dry-run/product execution baseline
 ```
 
 `engine/core` 只放跨 package 的基础设施，不吸收 asset database、scene graph、editor UI、Vulkan 或 script VM。

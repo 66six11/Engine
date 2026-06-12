@@ -51,7 +51,7 @@ flowchart TD
     EditorCore["packages/editor-core future"]
     Scripting["packages/scripting"]
     VM["VM target<br/>lua/dotnet/future"]
-    Scene["packages/scene-core future"]
+    Scene["packages/scene-core"]
     Asset["packages/asset-core"]
     Schema["packages/schema / reflection"]
     Renderer["packages/renderer-basic-vulkan"]
