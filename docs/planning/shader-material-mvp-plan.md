@@ -73,7 +73,7 @@ docs/planning/shader-material-mvp-plan.md
 
 目标：把 `shader-slang` reflection 映射成 `MaterialResourceSignature`。
 
-Status: In progress via #143.
+Status: Done via #143 / PR #144. The remaining MVP path starts at Milestone 2.
 
 交付物：
 

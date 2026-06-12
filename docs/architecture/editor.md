@@ -87,6 +87,7 @@ renderer/GPU lifetime。
 | `editor_inspector_model` | app-local data-only Inspector sections, rows, display values, mixed-value placeholders and validation messages | ImGui widgets, runtime mutable object pointers, scene serialization, dirty state or writable component editing |
 | `editor_input_router` | ImGui capture snapshot、Scene View hover/focus state、derived viewport/shortcut input flags | raw GLFW callback ownership、camera/gizmo behavior |
 | `editor_shortcut_router` | shortcut metadata parsing、ImGui shortcut polling、input-gated action invocation | command transaction semantics、raw GLFW callback ownership |
+| `editor_viewport_tool_state` | app-local Scene View active tool、transform space、pivot mode、snap、overlay visibility、view mode、edit/play preview state and `ViewportToolStateChanged` events | scene picking, transform gizmo execution, selection outline rendering, saved scene data or renderer pass ownership |
 | `editor_viewport` | backend-neutral viewport request/result structs、Scene/debug viewport flags and panel-facing host interface | ImGui descriptor allocation、Vulkan command recording |
 | `editor_viewport_coordinator` | viewport request collection、Scene-only flag filtering、explicit Game debug flag retention、RenderView recording bridge、pending/presented/retired viewport targets | panel widgets、ImGui backend lifecycle |
 | `imgui_texture_registry` | `ImTextureID` / descriptor registration、Scene View flag metadata and delayed descriptor retirement | `VulkanRenderTarget`、`VkImage`、`VkImageView` ownership |
@@ -207,6 +208,8 @@ Current state event kinds:
 - `SelectionChanged`: emitted by `EditorSelectionSet` with selection revision/reason/count metadata.
 - `DirtyStateChanged`: emitted by `EditorDirtyState` for real dirty bucket changes.
 - `CommandHistoryChanged`: emitted by `EditorCommandHistory` for push/undo/redo/clear success and undo/redo failure facts.
+- `ViewportToolStateChanged`: emitted by `EditorViewportToolState` when Scene View mode/tool state changes, or when a pending
+  tool activation is rejected as a no-op warning.
 - `ValidationReported`: reserved for row/object validation facts; this slice defines the diagnostics route but does not
   turn the read-only Inspector model into writable validation fixing UI.
 
@@ -575,6 +578,16 @@ registered action shortcuts 转为 ImGui key chord，并调用 `EditorActionRegi
 
 后续 gizmo 和 selection picking 也应先消费 input router snapshot，不要在各自模块里重新读取全局
 ImGui/GLFW 状态。
+
+### Viewport tool state
+
+`EditorViewportToolState` 是 Scene View mode/tool chrome 的 app-local 单一事实源。它记录 active tool、transform
+space、pivot mode、snap enabled、overlay flags、view mode 和 edit/play preview state，并通过 frame-local
+`ViewportToolStateChanged` 事件进入 Log / Console diagnostics。
+
+当前只有 View/Grid 这类 shell-level 状态可用；Select、Move、Rotate、Scale、Gizmo 和 selection outline 仍是 pending
+provider/render bridge 状态。尝试激活 pending transform / selection tool 不会改变 active tool revision，只会产生 no-op warning
+event。Scene View panel 只消费 snapshot 并把 overlay strip 的受限切换写回该 owner，不再持久保存自己的 overlay flag 副本。
 
 ### Viewports 扩展
 

@@ -41,9 +41,9 @@
 | 主线 | 当前状态 | 下一步缺口 |
 | --- | --- | --- |
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
-| Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics | 引入真实 scene draw packet、material/resource binding 和 lighting/postprocess feature |
+| Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke | 接入 shader reflection adapter、material asset IO/editor path |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter | 接入 `.ashader` parser、material asset IO/editor path |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -104,7 +104,10 @@
 
 目标：让 `scene-core` 的最小 world 能产生 renderer 可消费的 immutable draw packet，打通多个 mesh object 的 Scene View 渲染。
 
-当前执行：#139 `[Slice] Renderer: add scene draw packet contract`。
+当前进度：
+
+- #139 已完成 backend-neutral scene draw packet contract；后续真实 mesh/material/resource-backed scene rendering
+  继续从当前 renderer/resource owner 缺口拆分。
 
 范围：
 
@@ -197,8 +200,10 @@
 
 ## 下一批 PR-sized Slice
 
-1. `#139 [Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
-2. `#143 [Slice] Materials: add shader reflection signature adapter`：新增 CPU-only `shader-material-adapter`，把 `shader-slang` reflection model 映射成 `MaterialResourceSignature` / signature hash；`.ashader`、`.amat`、asset cache 和 editor path 留给后续 slice。
+1. `#118 [Slice] Editor: add viewport mode/tool state contract`：把 Scene View active tool、space、pivot、snap、view mode、
+   overlay visibility 和 edit/play preview state 收敛为 app-local state contract；Gizmo / Select 仍保持 pending。
+2. `[Slice] Materials: add .ashader parser + document model`：进入 shader/material MVP Milestone 2，只解析 `.ashader`
+   document 与 diagnostics，不做 generated Slang、`.amat`、asset cook 或 editor UI。
 3. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 4. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 

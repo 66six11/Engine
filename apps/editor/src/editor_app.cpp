@@ -269,9 +269,10 @@ namespace asharia::editor {
             services.frameDebugger, services.actionRegistry, services.actionServices,
             services.eventQueue, services.diagnosticsLog, services.i18n, services.selectionSet,
             services.settingsController, services.panelRegistry, services.toolRegistry,
-            services.toolManager, services.workspaceController, services.assetCatalogStore,
-            services.assetIconRegistry, services.commandHistory, services.dirtyState,
-            services.assetReimportRequests, services.assetPendingReimports, mode);
+            services.toolManager, services.workspaceController, services.viewportToolState,
+            services.assetCatalogStore, services.assetIconRegistry, services.commandHistory,
+            services.dirtyState, services.assetReimportRequests, services.assetPendingReimports,
+            mode);
         if (!runResult) {
             asharia::logError(runResult.error().message);
             return EXIT_FAILURE;

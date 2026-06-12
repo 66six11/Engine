@@ -8,6 +8,7 @@
 #include "editor_selection_smoke.hpp"
 #include "editor_startup_smoke.hpp"
 #include "editor_state_event_smoke.hpp"
+#include "editor_viewport_tool_state_smoke.hpp"
 
 namespace asharia::editor {
     [[nodiscard]] bool validateEditorStartupGates(
@@ -21,6 +22,6 @@ namespace asharia::editor {
                                                toolRegistry, toolManager) &&
                validateEditorCommandSmoke(mode) && validateEditorSelectionSmoke(mode) &&
                validateEditorInspectorModelSmoke(mode) && validateEditorDirtyStateSmoke(mode) &&
-               validateEditorStateEventSmoke(mode);
+               validateEditorStateEventSmoke(mode) && validateEditorViewportToolStateSmoke(mode);
     }
 } // namespace asharia::editor

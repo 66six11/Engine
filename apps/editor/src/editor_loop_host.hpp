@@ -28,6 +28,7 @@ namespace asharia::editor {
     class EditorToolManager;
     class EditorToolRegistry;
     class EditorViewportCoordinator;
+    class EditorViewportToolState;
     class EditorWorkspaceController;
     struct EditorActionServices;
 
@@ -39,6 +40,7 @@ namespace asharia::editor {
         const EditorSelectionSet& selectionSet, EditorSettingsController& settingsController,
         EditorPanelRegistry& panelRegistry, EditorToolRegistry& toolRegistry,
         EditorToolManager& toolManager, EditorWorkspaceController& workspace,
+        EditorViewportToolState& viewportToolState,
         const EditorAssetCatalogStore& assetCatalogStore,
         EditorAssetIconRegistry& assetIconRegistry, EditorCommandHistory& commandHistory,
         EditorDirtyState& dirtyState, EditorAssetReimportRequestLog& assetReimportRequests,

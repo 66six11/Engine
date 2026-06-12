@@ -126,6 +126,8 @@ add_executable(asharia-editor
     src/editor_viewport_coordinator.cpp
     src/editor_viewport_overlay_provider.cpp
     src/editor_viewport_smoke.cpp
+    src/editor_viewport_tool_state.cpp
+    src/editor_viewport_tool_state_smoke.cpp
     src/editor_vulkan_host.cpp
     src/editor_workspace.cpp
     src/imgui_editor_shell.cpp
