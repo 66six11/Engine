@@ -2,7 +2,7 @@
 
 更新日期：2026-06-11
 
-本文是全项目下一阶段的唯一主路线图。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
+本文是全项目下一阶段的唯一主路线图。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`，V2 规格见 `docs/specs/ashader-v2.md` 和 `docs/specs/material-runtime-products-v2.md`，近期 MVP 计划见 `docs/planning/shader-material-mvp-plan.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
 
 ## 规划依据
 

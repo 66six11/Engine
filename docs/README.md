@@ -12,7 +12,8 @@
 | RenderGraph / RHI 边界 | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[rendergraph/roadmap.md](rendergraph/roadmap.md) |
 | Editor 架构和 UI | [architecture/editor.md](architecture/editor.md)、[architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[architecture/editor-ui-visual-target.md](architecture/editor-ui-visual-target.md)、[planning/editor-development-plan.md](planning/editor-development-plan.md) |
 | 系统设计 | [systems/reflection-serialization.md](systems/reflection-serialization.md)、[systems/asset-architecture.md](systems/asset-architecture.md)、[systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[systems/scene-world.md](systems/scene-world.md)、[systems/scripting.md](systems/scripting.md)、[systems/performance-profiling.md](systems/performance-profiling.md) |
-| 计划和项目管理 | [planning/next-development-plan.md](planning/next-development-plan.md)、[planning/project-management.md](planning/project-management.md) |
+| 格式规格 | [specs/ashader-v2.md](specs/ashader-v2.md)、[specs/material-runtime-products-v2.md](specs/material-runtime-products-v2.md) |
+| 计划和项目管理 | [planning/next-development-plan.md](planning/next-development-plan.md)、[planning/shader-material-mvp-plan.md](planning/shader-material-mvp-plan.md)、[planning/project-management.md](planning/project-management.md) |
 | 研究资料 | [research/sources.md](research/sources.md) |
 
 ## 阅读顺序
