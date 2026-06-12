@@ -43,7 +43,7 @@
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics | 引入真实 scene draw packet、material/resource binding 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke | 接入 shader reflection、renderer descriptor binding、material asset IO/editor path |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke | 接入 shader reflection adapter、material asset IO/editor path |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -198,7 +198,7 @@
 ## 下一批 PR-sized Slice
 
 1. `#139 [Slice] Renderer: add scene draw packet contract`：定义 scene snapshot / draw packet / invalid handle diagnostics。
-2. `[Slice] Materials: connect material signature to renderer binding`：让 material-core signature 驱动 renderer-basic-vulkan 的 descriptor/pipeline binding smoke，并先证明 mismatch / stale pipeline key 能 fail early；Slang reflection adapter、`.amat`、asset cache 和 editor path 留给后续 slice。
+2. `#143 [Slice] Materials: add shader reflection signature adapter`：新增 CPU-only `shader-material-adapter`，把 `shader-slang` reflection model 映射成 `MaterialResourceSignature` / signature hash；`.ashader`、`.amat`、asset cache 和 editor path 留给后续 slice。
 3. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 4. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 

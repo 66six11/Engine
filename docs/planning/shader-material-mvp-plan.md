@@ -73,6 +73,8 @@ docs/planning/shader-material-mvp-plan.md
 
 目标：把 `shader-slang` reflection 映射成 `MaterialResourceSignature`。
 
+Status: In progress via #143.
+
 交付物：
 
 ```text
