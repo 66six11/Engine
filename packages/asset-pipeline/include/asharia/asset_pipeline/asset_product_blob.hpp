@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/result.hpp"
 
@@ -50,6 +51,18 @@ namespace asharia::asset {
                                              const AssetTextureProductPayload&) = default;
     };
 
+    struct AssetMaterialInstanceProductPayload {
+        std::string sourcePath;
+        AssetGuid materialTypeAssetGuid{};
+        std::string stableTypeId;
+        std::uint64_t expectedTypeHash{};
+        std::uint64_t lastCookedSignatureHash{};
+        std::string canonicalAmatText;
+
+        [[nodiscard]] friend bool operator==(const AssetMaterialInstanceProductPayload&,
+                                             const AssetMaterialInstanceProductPayload&) = default;
+    };
+
     [[nodiscard]] const char*
     assetProductBlobDiagnosticCodeName(AssetProductBlobDiagnosticCode code) noexcept;
 
@@ -66,5 +79,12 @@ namespace asharia::asset {
     [[nodiscard]] Result<AssetTextureProductPayload>
     readTexture2DProductPayload(std::span<const std::uint8_t> productBytes,
                                 std::string_view relativeProductPath);
+
+    [[nodiscard]] Result<AssetMaterialInstanceProductPayload>
+    readMaterialInstanceProductPayload(const AssetProductBlobReadRequest& request);
+
+    [[nodiscard]] Result<AssetMaterialInstanceProductPayload>
+    readMaterialInstanceProductPayload(std::span<const std::uint8_t> productBytes,
+                                       std::string_view relativeProductPath);
 
 } // namespace asharia::asset

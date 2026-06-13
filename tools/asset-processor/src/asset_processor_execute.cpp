@@ -166,6 +166,8 @@ namespace asharia::asset_processor {
                 return "ManifestWriteFailed";
             case Code::TextureImportFailed:
                 return "TextureImportFailed";
+            case Code::MaterialInstanceImportFailed:
+                return "MaterialInstanceImportFailed";
             }
             return "Unknown";
         }

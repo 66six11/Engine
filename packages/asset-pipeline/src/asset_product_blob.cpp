@@ -13,7 +13,9 @@
 #include <utility>
 #include <vector>
 
+#include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/core/error.hpp"
+#include "asharia/material_instance/amat_io.hpp"
 
 namespace asharia::asset {
     namespace {
@@ -21,6 +23,8 @@ namespace asharia::asset {
         constexpr std::uint64_t kFnv1a64Offset = 14695981039346656037ULL;
         constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
         constexpr std::string_view kTextureProductSchema = "com.asharia.asset.texture2d-product.v1";
+        constexpr std::string_view kMaterialInstanceProductSchema =
+            "com.asharia.asset.material-instance-product.v1";
 
         [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
                                                        std::uint8_t byte) noexcept {
@@ -190,6 +194,24 @@ namespace asharia::asset {
             return parsed;
         }
 
+        [[nodiscard]] Result<AssetGuid>
+        requireAssetGuidField(std::string_view header, std::string_view key,
+                              std::string_view relativeProductPath) {
+            auto value = requireStringField(header, key, relativeProductPath);
+            if (!value) {
+                return std::unexpected{std::move(value.error())};
+            }
+
+            auto guid = parseAssetGuid(*value);
+            if (!guid) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has invalid GUID field '" + std::string{key} +
+                                                     "': " + guid.error().message)};
+            }
+            return *guid;
+        }
+
         [[nodiscard]] Result<AssetTextureImportFormat>
         requireTextureFormatField(std::string_view header, std::string_view relativeProductPath) {
             auto value = requireStringField(header, "format", relativeProductPath);
@@ -215,6 +237,22 @@ namespace asharia::asset {
                 return std::unexpected{std::move(schema.error())};
             }
             if (*schema != kTextureProductSchema) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has unsupported schema '" + *schema + "'")};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateMaterialInstanceSchema(std::string_view header,
+                                       std::string_view relativeProductPath) {
+            auto schema = requireStringField(header, "schema", relativeProductPath);
+            if (!schema) {
+                return std::unexpected{std::move(schema.error())};
+            }
+            if (*schema != kMaterialInstanceProductSchema) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                                  std::string{relativeProductPath},
                                                  "has unsupported schema '" + *schema + "'")};
@@ -362,6 +400,73 @@ namespace asharia::asset {
             return mips;
         }
 
+        struct MaterialInstanceProductHeaderFields {
+            std::string sourcePath;
+            AssetGuid materialTypeAssetGuid{};
+            std::string stableTypeId;
+            std::uint64_t expectedTypeHash{};
+            std::uint64_t lastCookedSignatureHash{};
+            std::uint64_t amatSize{};
+            std::uint64_t amatHash{};
+        };
+
+        [[nodiscard]] Result<MaterialInstanceProductHeaderFields>
+        parseMaterialInstanceProductHeaderFields(std::string_view header,
+                                                 std::string_view relativeProductPath) {
+            auto validSchema = validateMaterialInstanceSchema(header, relativeProductPath);
+            if (!validSchema) {
+                return std::unexpected{std::move(validSchema.error())};
+            }
+
+            auto sourcePath = requireStringField(header, "sourcePath", relativeProductPath);
+            auto materialTypeAssetGuid =
+                requireAssetGuidField(header, "materialType.assetGuid", relativeProductPath);
+            auto stableTypeId =
+                requireStringField(header, "materialType.stableTypeId", relativeProductPath);
+            auto expectedTypeHash =
+                requireHexUint64Field(header, "materialType.expectedTypeHash", relativeProductPath);
+            auto lastCookedSignatureHash = requireHexUint64Field(
+                header, "import.lastCookedSignatureHash", relativeProductPath);
+            auto amatSize = requireUint64Field(header, "amat.size", relativeProductPath);
+            auto amatHash = requireHexUint64Field(header, "amatHash", relativeProductPath);
+            if (!sourcePath) {
+                return std::unexpected{std::move(sourcePath.error())};
+            }
+            if (!materialTypeAssetGuid) {
+                return std::unexpected{std::move(materialTypeAssetGuid.error())};
+            }
+            if (!stableTypeId) {
+                return std::unexpected{std::move(stableTypeId.error())};
+            }
+            if (!expectedTypeHash) {
+                return std::unexpected{std::move(expectedTypeHash.error())};
+            }
+            if (!lastCookedSignatureHash) {
+                return std::unexpected{std::move(lastCookedSignatureHash.error())};
+            }
+            if (!amatSize) {
+                return std::unexpected{std::move(amatSize.error())};
+            }
+            if (!amatHash) {
+                return std::unexpected{std::move(amatHash.error())};
+            }
+            if (stableTypeId->empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has an empty material type id")};
+            }
+
+            return MaterialInstanceProductHeaderFields{
+                .sourcePath = std::move(*sourcePath),
+                .materialTypeAssetGuid = *materialTypeAssetGuid,
+                .stableTypeId = std::move(*stableTypeId),
+                .expectedTypeHash = *expectedTypeHash,
+                .lastCookedSignatureHash = *lastCookedSignatureHash,
+                .amatSize = *amatSize,
+                .amatHash = *amatHash,
+            };
+        }
+
     } // namespace
 
     Result<AssetProductBlobPayload>
@@ -504,6 +609,105 @@ namespace asharia::asset {
             .height = header->height,
             .mips = std::move(*mips),
             .payload = std::move(payload),
+        };
+    }
+
+    Result<AssetMaterialInstanceProductPayload>
+    readMaterialInstanceProductPayload(const AssetProductBlobReadRequest& request) {
+        auto bytes = readProductFileBytes(request);
+        if (!bytes) {
+            return std::unexpected{std::move(bytes.error())};
+        }
+
+        return readMaterialInstanceProductPayload(
+            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
+            request.relativeProductPath);
+    }
+
+    Result<AssetMaterialInstanceProductPayload>
+    readMaterialInstanceProductPayload(std::span<const std::uint8_t> productBytes,
+                                       std::string_view relativeProductPath) {
+        if (productBytes.empty()) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath}, "is empty")};
+        }
+
+        constexpr std::string_view kBegin = "amat.begin\n";
+        constexpr std::string_view kEnd = "\namat.end\n";
+        std::string productText;
+        productText.reserve(productBytes.size());
+        for (const std::uint8_t byte : productBytes) {
+            productText.push_back(static_cast<char>(byte));
+        }
+
+        const std::size_t markerOffset = productText.find(kBegin);
+        if (markerOffset == std::string_view::npos) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingPayload,
+                                             std::string{relativeProductPath},
+                                             "does not contain amat.begin")};
+        }
+
+        const std::size_t payloadBegin = markerOffset + kBegin.size();
+        const std::string headerText = productText.substr(0, markerOffset);
+        auto header = parseMaterialInstanceProductHeaderFields(headerText, relativeProductPath);
+        if (!header) {
+            return std::unexpected{std::move(header.error())};
+        }
+        if (header->amatSize > SIZE_MAX || payloadBegin > productBytes.size() ||
+            header->amatSize > productBytes.size() - payloadBegin) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                                             std::string{relativeProductPath},
+                                             "has an unterminated .amat payload")};
+        }
+
+        const auto payloadByteCount = static_cast<std::size_t>(header->amatSize);
+        const std::size_t payloadEnd = payloadBegin + payloadByteCount;
+        if (productBytes.size() < payloadEnd + kEnd.size() ||
+            productText.substr(payloadEnd, kEnd.size()) != kEnd) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                                             std::string{relativeProductPath},
+                                             "has an unterminated .amat payload")};
+        }
+
+        const std::span<const std::uint8_t> payloadBytes{
+            productBytes.data() + payloadBegin,
+            payloadByteCount,
+        };
+        if (hashBytes(payloadBytes) != header->amatHash) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath},
+                                             "has an .amat payload hash mismatch")};
+        }
+
+        std::string canonicalAmatText;
+        canonicalAmatText.reserve(payloadByteCount);
+        for (const std::uint8_t byte : payloadBytes) {
+            canonicalAmatText.push_back(static_cast<char>(byte));
+        }
+
+        auto document = material_instance::readAmatText(canonicalAmatText);
+        if (!document) {
+            return std::unexpected{
+                blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                          std::string{relativeProductPath},
+                          "contains invalid canonical .amat payload: " + document.error().message)};
+        }
+        if (document->materialType.assetGuid != header->materialTypeAssetGuid ||
+            document->materialType.stableTypeId != header->stableTypeId ||
+            document->materialType.expectedTypeHash != header->expectedTypeHash ||
+            document->import.lastCookedSignatureHash != header->lastCookedSignatureHash) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath},
+                                             "has mismatched material instance header fields")};
+        }
+
+        return AssetMaterialInstanceProductPayload{
+            .sourcePath = std::move(header->sourcePath),
+            .materialTypeAssetGuid = header->materialTypeAssetGuid,
+            .stableTypeId = std::move(header->stableTypeId),
+            .expectedTypeHash = header->expectedTypeHash,
+            .lastCookedSignatureHash = header->lastCookedSignatureHash,
+            .canonicalAmatText = std::move(canonicalAmatText),
         };
     }
 

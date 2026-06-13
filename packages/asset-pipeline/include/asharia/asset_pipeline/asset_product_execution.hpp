@@ -21,6 +21,7 @@ namespace asharia::asset {
         ProductWriteFailed,
         ManifestWriteFailed,
         TextureImportFailed,
+        MaterialInstanceImportFailed,
     };
 
     struct AssetProductSourceBytes {

@@ -13,6 +13,7 @@ find_package(stb CONFIG REQUIRED)
 asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
+asharia_require_package_target(asharia::material_instance packages/material-instance)
 
 add_library(asharia-asset-pipeline STATIC
     src/asset_import_planning.cpp
@@ -40,6 +41,7 @@ target_link_libraries(asharia-asset-pipeline
     PRIVATE
         asharia::archive
         asharia::asset_core_io
+        asharia::material_instance
         stb::stb
 )
 

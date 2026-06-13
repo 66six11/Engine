@@ -95,9 +95,10 @@ package 用来承载可选能力：
 - `asset-core` 提供最小资产身份、asset type、runtime-safe handle/reference、source metadata model、
   product/cache key、dependency 和 catalog；`.ameta` metadata IO 位于可选 `asharia::asset_core_io`
   target，依赖 `archive` facade，不把 JSON/persistence 依赖强加给 identity/handle API。
-- `asset-pipeline` 第一阶段提供 CPU-only metadata discovery baseline：读取显式 source/.ameta 条目，
-  产出 deterministic manifest / catalog 输入和诊断；不拥有 watcher、import 调度、product cache、
-  GPU upload 或 editor UI。
+- `asset-pipeline` 第一阶段提供 CPU-only metadata discovery / product execution baseline：读取显式
+  source/.ameta 条目，产出 deterministic manifest / catalog 输入、product blob 和诊断；它可以私有复用
+  texture importer 或 `material-instance` 等 importer-specific package，但不把这些语义推入 `asset-core`，
+  也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
   当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
 - `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
