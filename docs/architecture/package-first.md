@@ -33,6 +33,7 @@ AshariaEngine/
     asset-pipeline/
     material-core/
     shader-authoring/
+    material-instance/
     scene-core/
     cpp-binding/
     persistence/
@@ -102,6 +103,9 @@ package 用来承载可选能力：
 - `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
   generated Slang skeleton 和 line mapping；它只依赖 `core`，不调用 Slang compiler，不生成 SPIR-V，
   不进入 renderer、RHI、asset-pipeline 或 editor。
+- `material-instance` 提供 CPU-only `.amat` document IO、property override model 和 material type
+  reference validation；它可依赖 `archive`、`asset-core` 和 `shader-authoring`，但不依赖 asset-pipeline、
+  renderer、RHI 或 editor。
 - `editor-core` 未来提供 editor service、selection、inspector、package browser。
 
 ## Package Manifest

@@ -43,7 +43,7 @@
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke；#152 正在接入 generated entry manifest | material asset IO/editor path、`.amat` 最小 IO、asset cook 和 renderer material product 消费 |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest；#154 正在接入 CPU-only `.amat` minimal IO | material asset import/cook、product cache、renderer material product 消费和 editor preview |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -200,9 +200,9 @@
 
 ## 下一批 PR-sized Slice
 
-1. `#152 [Slice] Materials: add generated Slang entry manifest`：继续 shader/material MVP Milestone 3，
-   让 generated Slang result 记录 pass/stage/source entry/compile entry/generated wrapper/source span，并由该 manifest
-   驱动 compile/reflection smoke；generated wrapper skeleton 仍只是 shim hook，不作为最终 ABI。
+1. `#154 [Slice] Materials: add .amat minimal IO`：继续 shader/material MVP Milestone 4，
+   新增 CPU-only `material-instance` 包，读写 `.amat` JSON，并针对 `.ashader` document 校验 property override、
+   material type id 和 stale signature hash；不做 asset import/cook、renderer/RHI 或 editor UI。
 2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 
