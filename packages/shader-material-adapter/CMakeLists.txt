@@ -34,6 +34,23 @@ asharia_configure_target(asharia-shader-material-adapter)
 
 if(ASHARIA_BUILD_TESTS)
   enable_testing()
+  asharia_require_package_target(asharia::shader_authoring packages/shader-authoring)
+
+  find_program(ASHARIA_TEST_SLANGC_EXECUTABLE
+      NAMES slangc slangc.exe
+      HINTS
+          "$ENV{VULKAN_SDK}/Bin"
+          "C:/VulkanSDK/1.4.321.1/Bin"
+      REQUIRED
+  )
+
+  find_program(ASHARIA_TEST_SPIRV_VAL_EXECUTABLE
+      NAMES spirv-val spirv-val.exe
+      HINTS
+          "$ENV{VULKAN_SDK}/Bin"
+          "C:/VulkanSDK/1.4.321.1/Bin"
+      REQUIRED
+  )
 
   add_executable(asharia-shader-material-adapter-smoke-tests
       tests/reflection_to_material_signature_smoke_tests.cpp
@@ -48,4 +65,27 @@ if(ASHARIA_BUILD_TESTS)
 
   add_test(NAME asharia-shader-material-adapter-smoke-tests
            COMMAND asharia-shader-material-adapter-smoke-tests)
+
+  add_executable(asharia-generated-slang-reflection-smoke-tests
+      tests/generated_slang_reflection_smoke_tests.cpp
+  )
+
+  target_link_libraries(asharia-generated-slang-reflection-smoke-tests
+      PRIVATE
+          asharia::shader_authoring
+          asharia::shader_material_adapter
+  )
+
+  add_dependencies(asharia-generated-slang-reflection-smoke-tests
+      asharia-slang-reflect
+  )
+
+  asharia_configure_target(asharia-generated-slang-reflection-smoke-tests)
+
+  add_test(NAME asharia-generated-slang-reflection-smoke-tests
+           COMMAND asharia-generated-slang-reflection-smoke-tests
+               --slangc "${ASHARIA_TEST_SLANGC_EXECUTABLE}"
+               --spirv-val "${ASHARIA_TEST_SPIRV_VAL_EXECUTABLE}"
+               --reflect "$<TARGET_FILE:asharia-slang-reflect>"
+               --work-dir "${CMAKE_CURRENT_BINARY_DIR}/generated-slang-reflection-smoke")
 endif()

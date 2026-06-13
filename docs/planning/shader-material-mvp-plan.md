@@ -156,9 +156,10 @@ raw slang block span 正确
 
 目标：根据 `.ashader` 生成可编译 Slang。
 
-Status: In progress via #148. This slice generates deterministic Slang skeleton text and line
-mapping data, but still stops before invoking Slang, producing SPIR-V/reflection, `.amat`, asset
-cook, or editor UI.
+Status: In progress via #150. #148 / PR #149 completed deterministic Slang skeleton text and line
+mapping data. #150 validates the generated source through Slang compile, `spirv-val`, reflection
+JSON, and reflection-to-material-signature smoke coverage, while still stopping before `.amat`,
+asset cook, product cache, renderer/RHI, or editor UI.
 
 交付物：
 
