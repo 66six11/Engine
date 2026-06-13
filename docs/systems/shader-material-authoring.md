@@ -242,7 +242,9 @@ Preview service 服务三种入口：
 - `material-core` package tests 覆盖 signature validation、compatibility、hash stability 和 pipeline key。
 - `shader-slang` tests 覆盖 reflection JSON 的 descriptor、push constant、entry/stage、vertex input。
 - `shader-material-adapter` tests 覆盖 Slang reflection model -> `MaterialResourceSignature` 正反例、
-  visibility 映射、descriptor kind 映射、hash stability 和 deterministic diagnostics。
+  visibility 映射、descriptor kind 映射、hash stability 和 deterministic diagnostics；集成 smoke 覆盖
+  generated `.ashader` Slang source -> SPIR-V -> reflection JSON -> material signature 的最小正例和 mismatch
+  negative path。
 - `shader-authoring` tests 覆盖 `.ashader` parse 正例、raw Slang span、重复 property、未知类型、
   非法默认值、缺少 pass entry、缺少 Slang 引用、raw block brace 平衡、generated Slang skeleton、
   deterministic binding declarations 和 line mapping。
