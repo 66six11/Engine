@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-06-12
+更新日期：2026-06-13
 
 本文是全项目下一阶段的唯一主路线图。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`，V2 规格见 `docs/specs/ashader-v2.md` 和 `docs/specs/material-runtime-products-v2.md`，近期 MVP 计划见 `docs/planning/shader-material-mvp-plan.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
 
@@ -43,7 +43,7 @@
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter | 接入 `.ashader` parser、material asset IO/editor path |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter；#146 正在接入 CPU-only `.ashader` parser/document diagnostics | material asset IO/editor path、generated Slang 和 asset cook |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -200,12 +200,10 @@
 
 ## 下一批 PR-sized Slice
 
-1. `#118 [Slice] Editor: add viewport mode/tool state contract`：把 Scene View active tool、space、pivot、snap、view mode、
-   overlay visibility 和 edit/play preview state 收敛为 app-local state contract；Gizmo / Select 仍保持 pending。
-2. `[Slice] Materials: add .ashader parser + document model`：进入 shader/material MVP Milestone 2，只解析 `.ashader`
+1. `#146 [Slice] Materials: add .ashader parser and document model`：进入 shader/material MVP Milestone 2，只解析 `.ashader`
    document 与 diagnostics，不做 generated Slang、`.amat`、asset cook 或 editor UI。
-3. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
-4. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
+2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
+3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 
 ## 暂缓事项
 

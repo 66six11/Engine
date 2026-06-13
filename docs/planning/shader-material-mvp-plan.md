@@ -1,6 +1,6 @@
 # Shader / Material Authoring V2 MVP Plan
 
-更新日期：2026-06-12
+更新日期：2026-06-13
 
 状态：V2 近期执行计划。旧 V1 milestone、`*-v1.md` spec 拆分和 graph-first 主路径已弃用。
 
@@ -112,6 +112,9 @@ golden tests 通过
 ## Milestone 2：`.ashader` Parser + Document Model
 
 目标：能读 `.ashader`，生成 document model，并产生基础 diagnostics。
+
+Status: In progress via #146. This milestone is intentionally CPU-only and stops before generated
+Slang, `.amat`, asset cook, or editor UI.
 
 交付物：
 
