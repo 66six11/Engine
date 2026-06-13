@@ -141,6 +141,19 @@ namespace asharia::shader_authoring {
                    pass.computeEntry.has_value();
         }
 
+        void addEntryPoint(GeneratedSlangResult& result, const AshaderPassDecl& pass,
+                           GeneratedSlangStage stage, std::string_view sourceEntryName,
+                           std::string_view generatedWrapperName) {
+            result.entryPoints.push_back(GeneratedSlangEntryPoint{
+                .passName = pass.name,
+                .stage = stage,
+                .sourceEntryName = std::string{sourceEntryName},
+                .compileEntryName = std::string{sourceEntryName},
+                .generatedWrapperName = std::string{generatedWrapperName},
+                .sourceSpan = pass.span,
+            });
+        }
+
         void appendMaterialParameters(SlangEmitter& emitter, GeneratedSlangResult& result,
                                       const AshaderDocument& document,
                                       const GeneratedSlangOptions& options) {
@@ -290,19 +303,28 @@ namespace asharia::shader_authoring {
                     emitter.appendLine("// Tag: " + *pass.tag);
                 }
                 if (pass.vertexEntry) {
-                    emitter.appendLine("void __asharia_" + passId + "_vertex() {");
+                    const std::string wrapperName = "__asharia_" + passId + "_vertex";
+                    emitter.appendLine("void " + wrapperName + "() {");
                     emitter.appendLine("    " + *pass.vertexEntry + "();");
                     emitter.appendLine("}");
+                    addEntryPoint(result, pass, GeneratedSlangStage::Vertex, *pass.vertexEntry,
+                                  wrapperName);
                 }
                 if (pass.fragmentEntry) {
-                    emitter.appendLine("void __asharia_" + passId + "_fragment() {");
+                    const std::string wrapperName = "__asharia_" + passId + "_fragment";
+                    emitter.appendLine("void " + wrapperName + "() {");
                     emitter.appendLine("    " + *pass.fragmentEntry + "();");
                     emitter.appendLine("}");
+                    addEntryPoint(result, pass, GeneratedSlangStage::Fragment, *pass.fragmentEntry,
+                                  wrapperName);
                 }
                 if (pass.computeEntry) {
-                    emitter.appendLine("void __asharia_" + passId + "_compute() {");
+                    const std::string wrapperName = "__asharia_" + passId + "_compute";
+                    emitter.appendLine("void " + wrapperName + "() {");
                     emitter.appendLine("    " + *pass.computeEntry + "();");
                     emitter.appendLine("}");
+                    addEntryPoint(result, pass, GeneratedSlangStage::Compute, *pass.computeEntry,
+                                  wrapperName);
                 }
                 const std::uint32_t endLine = emitter.nextLine() - 1U;
                 emitter.appendLine();
@@ -330,6 +352,18 @@ namespace asharia::shader_authoring {
             return "raw-slang-block";
         case GeneratedSlangSection::PassWrapper:
             return "pass-wrapper";
+        }
+        return "unknown";
+    }
+
+    std::string_view toString(GeneratedSlangStage stage) {
+        switch (stage) {
+        case GeneratedSlangStage::Vertex:
+            return "vertex";
+        case GeneratedSlangStage::Fragment:
+            return "fragment";
+        case GeneratedSlangStage::Compute:
+            return "compute";
         }
         return "unknown";
     }
