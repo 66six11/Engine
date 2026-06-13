@@ -203,6 +203,15 @@ float4 shadeMaterial() {
 用户侧不手写 `[[vk::binding]]`。工具负责生成和验证 binding；内置 engine shader 可以手写 binding，但必须由
 tests 和 reflection contract 覆盖。
 
+Current MVP entry strategy:
+
+- Generated output records an entry manifest for each pass-declared `vertex`, `fragment`, and
+  `compute` entry.
+- `compileEntryName` is currently the source entry declared in `.ashader`; Slang compile/reflection
+  receives that entry name plus the explicit stage.
+- Generated wrapper names are recorded as stable shim hooks, but they are not the final compile ABI
+  until a later slice defines return/parameter adaptation for arbitrary user Slang entry shapes.
+
 ## `.agraph` V2
 
 `.agraph` 是 graph authoring 数据，不是 runtime format。V2 MVP 不实现完整 Material Graph，只为后续保留

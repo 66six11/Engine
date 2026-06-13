@@ -147,9 +147,11 @@ namespace {
         return std::nullopt;
     }
 
-    [[nodiscard]] bool compileAndReflectEntry(const Options& options,
-                                              const std::filesystem::path& source,
-                                              std::string_view entry, std::string_view stage) {
+    [[nodiscard]] bool
+    compileAndReflectEntry(const Options& options, const std::filesystem::path& source,
+                           const asharia::shader_authoring::GeneratedSlangEntryPoint& entryPoint) {
+        const std::string_view entry = entryPoint.compileEntryName;
+        const std::string_view stage = asharia::shader_authoring::toString(entryPoint.stage);
         const std::filesystem::path spirvPath =
             options.workDir / (std::string{entry} + "." + std::string{stage} + ".spv");
         const std::filesystem::path reflectionPath =
@@ -173,6 +175,17 @@ namespace {
             std::string{entry} + " --stage " + std::string{stage} +
             " --profile glsl_450 --target spirv --output " + quotePath(reflectionPath);
         return runCommand("asharia-slang-reflect " + std::string{stage}, reflectionCommand);
+    }
+
+    [[nodiscard]] const asharia::shader_authoring::GeneratedSlangEntryPoint*
+    findEntryPoint(const asharia::shader_authoring::GeneratedSlangResult& generated,
+                   asharia::shader_authoring::GeneratedSlangStage stage) {
+        for (const auto& entryPoint : generated.entryPoints) {
+            if (entryPoint.stage == stage) {
+                return &entryPoint;
+            }
+        }
+        return nullptr;
     }
 
     [[nodiscard]] bool smokeGeneratedSlangCompileReflection(const Options& options) {
@@ -234,8 +247,23 @@ shader "asharia.material.generated_reflection" {
             return false;
         }
 
-        if (!compileAndReflectEntry(options, generatedPath, "vertexMain", "vertex") ||
-            !compileAndReflectEntry(options, generatedPath, "fragmentMain", "fragment")) {
+        const auto* vertexEntry =
+            findEntryPoint(generated, asharia::shader_authoring::GeneratedSlangStage::Vertex);
+        const auto* fragmentEntry =
+            findEntryPoint(generated, asharia::shader_authoring::GeneratedSlangStage::Fragment);
+        if (vertexEntry == nullptr || fragmentEntry == nullptr ||
+            vertexEntry->sourceEntryName != "vertexMain" ||
+            vertexEntry->compileEntryName != "vertexMain" ||
+            vertexEntry->generatedWrapperName != "__asharia_Forward_vertex" ||
+            fragmentEntry->sourceEntryName != "fragmentMain" ||
+            fragmentEntry->compileEntryName != "fragmentMain" ||
+            fragmentEntry->generatedWrapperName != "__asharia_Forward_fragment") {
+            logFailure("Generated Slang reflection smoke did not produce expected entry manifest.");
+            return false;
+        }
+
+        if (!compileAndReflectEntry(options, generatedPath, *vertexEntry) ||
+            !compileAndReflectEntry(options, generatedPath, *fragmentEntry)) {
             return false;
         }
 

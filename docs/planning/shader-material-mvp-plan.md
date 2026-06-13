@@ -156,10 +156,11 @@ raw slang block span 正确
 
 目标：根据 `.ashader` 生成可编译 Slang。
 
-Status: In progress via #150. #148 / PR #149 completed deterministic Slang skeleton text and line
-mapping data. #150 validates the generated source through Slang compile, `spirv-val`, reflection
-JSON, and reflection-to-material-signature smoke coverage, while still stopping before `.amat`,
-asset cook, product cache, renderer/RHI, or editor UI.
+Status: In progress via #152. #148 / PR #149 completed deterministic Slang skeleton text and line
+mapping data. #150 / PR #151 validates the generated source through Slang compile, `spirv-val`,
+reflection JSON, and reflection-to-material-signature smoke coverage. #152 records a deterministic
+entry manifest for pass-declared source entries and generated wrapper hooks, while still stopping
+before `.amat`, asset cook, product cache, renderer/RHI, or editor UI.
 
 交付物：
 
@@ -178,6 +179,7 @@ constant buffer binding
 texture/sampler declarations
 Material.* access shim
 pass entry wrapper
+entry manifest
 #line mapping
 user raw slang / external slang include
 ```
@@ -189,6 +191,7 @@ generated .slang 可读
 shader-slang 能编译
 spirv-val 通过
 reflection.json 生成
+entry manifest 驱动 compile/reflection entry 选择
 diagnostics 能回到 .ashader 行号
 ```
 

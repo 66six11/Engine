@@ -32,6 +32,19 @@ namespace {
         });
     }
 
+    bool hasEntryPoint(const asharia::shader_authoring::GeneratedSlangResult& result,
+                       asharia::shader_authoring::GeneratedSlangStage stage,
+                       std::string_view passName, std::string_view sourceEntryName,
+                       std::string_view generatedWrapperName) {
+        return std::ranges::any_of(result.entryPoints, [&](const auto& entry) {
+            return entry.stage == stage && entry.passName == passName &&
+                   entry.sourceEntryName == sourceEntryName &&
+                   entry.compileEntryName == sourceEntryName &&
+                   entry.generatedWrapperName == generatedWrapperName &&
+                   entry.sourceSpan.begin.line > 0;
+        });
+    }
+
     bool expectNoErrors(const asharia::shader_authoring::AshaderParseResult& result,
                         std::string_view label) {
         if (!result.document) {
@@ -145,6 +158,10 @@ shader "asharia.material.unlit" {
     fragment fragmentMain
     slang "Unlit.slang"
   }
+
+  pass "LightTiles" {
+    compute computeMain
+  }
 }
 )ashader";
 
@@ -178,7 +195,9 @@ shader "asharia.material.unlit" {
             generated.source.find("void __asharia_Forward_vertex()") == std::string::npos ||
             generated.source.find("vertexMain();") == std::string::npos ||
             generated.source.find("void __asharia_Forward_fragment()") == std::string::npos ||
-            generated.source.find("fragmentMain();") == std::string::npos) {
+            generated.source.find("fragmentMain();") == std::string::npos ||
+            generated.source.find("void __asharia_LightTiles_compute()") == std::string::npos ||
+            generated.source.find("computeMain();") == std::string::npos) {
             logFailure("generated Slang skeleton text is missing expected sections.");
             return false;
         }
@@ -189,6 +208,19 @@ shader "asharia.material.unlit" {
             generated.bindings[4].inMaterialParameterBlock ||
             generated.bindings[5].name != "linearSampler" || generated.bindings[5].binding != 2) {
             logFailure("generated Slang binding facts are not deterministic.");
+            return false;
+        }
+
+        if (generated.entryPoints.size() != 3 ||
+            !hasEntryPoint(generated, asharia::shader_authoring::GeneratedSlangStage::Vertex,
+                           "Forward", "vertexMain", "__asharia_Forward_vertex") ||
+            !hasEntryPoint(generated, asharia::shader_authoring::GeneratedSlangStage::Fragment,
+                           "Forward", "fragmentMain", "__asharia_Forward_fragment") ||
+            !hasEntryPoint(generated, asharia::shader_authoring::GeneratedSlangStage::Compute,
+                           "LightTiles", "computeMain", "__asharia_LightTiles_compute") ||
+            asharia::shader_authoring::toString(
+                asharia::shader_authoring::GeneratedSlangStage::Compute) != "compute") {
+            logFailure("generated Slang entry manifest is not deterministic.");
             return false;
         }
 

@@ -19,6 +19,12 @@ namespace asharia::shader_authoring {
         PassWrapper,
     };
 
+    enum class GeneratedSlangStage {
+        Vertex,
+        Fragment,
+        Compute,
+    };
+
     struct GeneratedSlangLineMapEntry {
         GeneratedSlangSection section{GeneratedSlangSection::Header};
         std::string label;
@@ -36,6 +42,15 @@ namespace asharia::shader_authoring {
         bool inMaterialParameterBlock{false};
     };
 
+    struct GeneratedSlangEntryPoint {
+        std::string passName;
+        GeneratedSlangStage stage{GeneratedSlangStage::Vertex};
+        std::string sourceEntryName;
+        std::string compileEntryName;
+        std::string generatedWrapperName;
+        SourceSpan sourceSpan{};
+    };
+
     struct GeneratedSlangOptions {
         std::string sourceName{"<ashader>"};
         std::string generatedName{"<generated-ashader>"};
@@ -50,10 +65,12 @@ namespace asharia::shader_authoring {
         std::string source;
         std::vector<GeneratedSlangLineMapEntry> lineMap;
         std::vector<GeneratedSlangBinding> bindings;
+        std::vector<GeneratedSlangEntryPoint> entryPoints;
         std::vector<AshaderDiagnostic> diagnostics;
     };
 
     std::string_view toString(GeneratedSlangSection section);
+    std::string_view toString(GeneratedSlangStage stage);
     GeneratedSlangResult buildGeneratedSlang(const AshaderDocument& document,
                                              const GeneratedSlangOptions& options = {});
 
