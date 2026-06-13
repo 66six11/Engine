@@ -44,6 +44,7 @@ namespace asharia::shader_authoring {
         MissingPassEntry,
         MissingSlangReference,
         UnbalancedRawSlangBlock,
+        GeneratedSlangUnsupportedInput,
     };
 
     struct AshaderDiagnostic {

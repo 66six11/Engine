@@ -1029,6 +1029,8 @@ namespace asharia::shader_authoring {
             return "missing-slang-reference";
         case AshaderDiagnosticCode::UnbalancedRawSlangBlock:
             return "unbalanced-raw-slang-block";
+        case AshaderDiagnosticCode::GeneratedSlangUnsupportedInput:
+            return "generated-slang-unsupported-input";
         }
         return "unknown";
     }

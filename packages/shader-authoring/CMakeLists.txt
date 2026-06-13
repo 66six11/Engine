@@ -12,6 +12,7 @@ asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
 
 add_library(asharia-shader-authoring STATIC
+    src/ashader_generated_slang.cpp
     src/ashader_parser.cpp
 )
 add_library(asharia::shader_authoring ALIAS asharia-shader-authoring)
