@@ -156,11 +156,11 @@ raw slang block span 正确
 
 目标：根据 `.ashader` 生成可编译 Slang。
 
-Status: In progress via #152. #148 / PR #149 completed deterministic Slang skeleton text and line
-mapping data. #150 / PR #151 validates the generated source through Slang compile, `spirv-val`,
-reflection JSON, and reflection-to-material-signature smoke coverage. #152 records a deterministic
-entry manifest for pass-declared source entries and generated wrapper hooks, while still stopping
-before `.amat`, asset cook, product cache, renderer/RHI, or editor UI.
+Status: Done through #152 / PR #153. #148 / PR #149 completed deterministic Slang skeleton text
+and line mapping data. #150 / PR #151 validates the generated source through Slang compile,
+`spirv-val`, reflection JSON, and reflection-to-material-signature smoke coverage. #152 records a
+deterministic entry manifest for pass-declared source entries and generated wrapper hooks, while
+still stopping before `.amat`, asset cook, product cache, renderer/RHI, or editor UI.
 
 交付物：
 
@@ -198,6 +198,10 @@ diagnostics 能回到 .ashader 行号
 ## Milestone 4：`.amat` Minimal IO
 
 目标：材质实例能引用 `.ashader` 并覆盖参数。
+
+Status: In progress via #154. This slice adds CPU-only `packages/material-instance` `.amat`
+read/write and override validation against `.ashader` document facts, while still stopping before
+asset import/cook, product cache, renderer/RHI, editor UI, or final material binding packets.
 
 交付物：
 

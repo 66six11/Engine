@@ -1,0 +1,11 @@
+{
+  "name": "com.asharia.material-instance",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Material Instance",
+  "description": "CPU-only .amat document IO and override validation.",
+  "dependencies": ["com.asharia.core", "com.asharia.archive", "com.asharia.asset-core", "com.asharia.shader-authoring"],
+  "targets": ["asharia-material-instance"],
+  "targetDependencies": {
+    "asharia-material-instance": ["asharia-core", "asharia-archive", "asharia-asset-core", "asharia-shader-authoring"]
+  }
+}
