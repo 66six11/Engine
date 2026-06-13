@@ -43,6 +43,7 @@ add_subdirectory(packages/asset-pipeline)
 add_subdirectory(packages/material-core)
 add_subdirectory(packages/rhi-vulkan)
 add_subdirectory(packages/shader-slang)
+add_subdirectory(packages/shader-authoring)
 add_subdirectory(packages/shader-material-adapter)
 add_subdirectory(packages/renderer-basic)
 

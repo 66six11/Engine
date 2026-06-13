@@ -27,9 +27,12 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
 - `packages/shader-material-adapter` 提供从 `shader-slang` reflection model 到
   `MaterialResourceSignature` / signature hash 的 CPU-only 适配层；它依赖 `shader-slang` 与
   `material-core`，但不引入 renderer、Vulkan、RenderGraph、asset-pipeline 或 editor 依赖。
+- `packages/shader-authoring` 提供 CPU-only `.ashader` document model、parser、source span 和基础 diagnostics；
+  它只依赖 `core`，不调用 Slang compiler，不生成 Slang prelude，不读取 reflection，也不进入 asset-pipeline、
+  renderer、RHI 或 editor。
 - `asset-core` / `asset-pipeline` 已有 source discovery、metadata、product manifest/cache 的基线。
 - editor 已有 Asset Browser / RenderView / Preview view request 等基础，但还没有完整 Material Editor、
-  `.ashader` parser、`.agraph` lowering 或 `.amat` IO。
+  `.agraph` lowering、`.amat` IO 或 `.ashader` editor workflow。
 - RenderGraph pass type 表达 execution model，不表达 material pass tag、LightMode、shader pass 名称或材质业务语义。
 
 ## 核心决定
@@ -240,6 +243,8 @@ Preview service 服务三种入口：
 - `shader-slang` tests 覆盖 reflection JSON 的 descriptor、push constant、entry/stage、vertex input。
 - `shader-material-adapter` tests 覆盖 Slang reflection model -> `MaterialResourceSignature` 正反例、
   visibility 映射、descriptor kind 映射、hash stability 和 deterministic diagnostics。
+- `shader-authoring` tests 覆盖 `.ashader` parse 正例、raw Slang span、重复 property、未知类型、
+  非法默认值、缺少 pass entry、缺少 Slang 引用和 raw block brace 平衡。
 - asset-pipeline tests 覆盖 `.ashader` lowering、generated product、dependency invalidation 和 stale diagnostics。
 - editor smoke 覆盖打开 `.ashader` / `.amat`、修改 property、preview 成功/失败和 diagnostics 定位。
 - 文档和格式变更至少运行 `tools/check-text-encoding.ps1` 与 `git diff --check`。

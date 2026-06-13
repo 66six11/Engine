@@ -1,0 +1,11 @@
+{
+  "name": "com.asharia.shader-authoring",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Shader Authoring",
+  "description": "CPU-only .ashader document parsing, source spans, and authoring diagnostics.",
+  "dependencies": ["com.asharia.core"],
+  "targets": ["asharia-shader-authoring"],
+  "targetDependencies": {
+    "asharia-shader-authoring": ["asharia-core"]
+  }
+}
