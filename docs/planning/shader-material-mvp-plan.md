@@ -113,8 +113,8 @@ golden tests 通过
 
 目标：能读 `.ashader`，生成 document model，并产生基础 diagnostics。
 
-Status: In progress via #146. This milestone is intentionally CPU-only and stops before generated
-Slang, `.amat`, asset cook, or editor UI.
+Status: Done via #146 / PR #147. This milestone is intentionally CPU-only and stops before
+generated Slang, `.amat`, asset cook, or editor UI.
 
 交付物：
 
@@ -155,6 +155,10 @@ raw slang block span 正确
 ## Milestone 3：Generated Slang Skeleton
 
 目标：根据 `.ashader` 生成可编译 Slang。
+
+Status: In progress via #148. This slice generates deterministic Slang skeleton text and line
+mapping data, but still stops before invoking Slang, producing SPIR-V/reflection, `.amat`, asset
+cook, or editor UI.
 
 交付物：
 

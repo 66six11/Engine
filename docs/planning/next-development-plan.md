@@ -43,7 +43,7 @@
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter；#146 正在接入 CPU-only `.ashader` parser/document diagnostics | material asset IO/editor path、generated Slang 和 asset cook |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics；#148 正在接入 generated Slang skeleton | material asset IO/editor path、Slang compile/reflection integration 和 asset cook |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -200,8 +200,8 @@
 
 ## 下一批 PR-sized Slice
 
-1. `#146 [Slice] Materials: add .ashader parser and document model`：进入 shader/material MVP Milestone 2，只解析 `.ashader`
-   document 与 diagnostics，不做 generated Slang、`.amat`、asset cook 或 editor UI。
+1. `#148 [Slice] Materials: add generated Slang skeleton`：进入 shader/material MVP Milestone 3，只生成 deterministic
+   Slang skeleton、binding declarations 和 line mapping，不调用 Slang compiler，不做 `.amat`、asset cook 或 editor UI。
 2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 

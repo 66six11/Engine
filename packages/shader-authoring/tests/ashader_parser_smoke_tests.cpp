@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string_view>
 
+#include "asharia/shader_authoring/ashader_generated_slang.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
 
 namespace {
@@ -15,6 +16,20 @@ namespace {
                       asharia::shader_authoring::AshaderDiagnosticCode code) {
         return std::ranges::any_of(
             result.diagnostics, [code](const auto& diagnostic) { return diagnostic.code == code; });
+    }
+
+    bool generatedContainsCode(const asharia::shader_authoring::GeneratedSlangResult& result,
+                               asharia::shader_authoring::AshaderDiagnosticCode code) {
+        return std::ranges::any_of(
+            result.diagnostics, [code](const auto& diagnostic) { return diagnostic.code == code; });
+    }
+
+    bool hasLineMapSection(const asharia::shader_authoring::GeneratedSlangResult& result,
+                           asharia::shader_authoring::GeneratedSlangSection section,
+                           std::string_view label) {
+        return std::ranges::any_of(result.lineMap, [section, label](const auto& entry) {
+            return entry.section == section && entry.label == label;
+        });
     }
 
     bool expectNoErrors(const asharia::shader_authoring::AshaderParseResult& result,
@@ -110,6 +125,89 @@ shader "asharia.material.unlit" {
         return true;
     }
 
+    bool smokeGeneratedSlangSkeleton() {
+        constexpr std::string_view kSource = R"ashader(
+schema 2
+
+shader "asharia.material.unlit" {
+  properties {
+    color baseColor = [1, 1, 1, 1]
+    texture2D albedoMap
+    sampler linearSampler
+    float roughness = 0.5
+    uint layer = 2
+    bool enabled = true
+  }
+
+  pass "Forward" {
+    tag "SceneForward"
+    vertex vertexMain
+    fragment fragmentMain
+    slang "Unlit.slang"
+  }
+}
+)ashader";
+
+        const auto parsed = asharia::shader_authoring::parseAshaderDocument(kSource);
+        if (!expectNoErrors(parsed, "generated slang .ashader")) {
+            return false;
+        }
+
+        const auto generated = asharia::shader_authoring::buildGeneratedSlang(
+            *parsed.document, asharia::shader_authoring::GeneratedSlangOptions{
+                                  .sourceName = "Assets/Shaders/Unlit/Unlit.ashader",
+                                  .generatedName = "Unlit.generated.slang",
+                              });
+
+        if (asharia::shader_authoring::hasErrors(generated.diagnostics)) {
+            logFailure("generated Slang skeleton produced diagnostics unexpectedly.");
+            return false;
+        }
+
+        if (generated.source.find("struct __AshariaMaterialParams") == std::string::npos ||
+            generated.source.find("[[vk::binding(0, 0)]]") == std::string::npos ||
+            generated.source.find("ConstantBuffer<__AshariaMaterialParams> __ashariaMaterial;") ==
+                std::string::npos ||
+            generated.source.find("#define Material __ashariaMaterial") == std::string::npos ||
+            generated.source.find("[[vk::binding(1, 0)]]") == std::string::npos ||
+            generated.source.find("Texture2D<float4> albedoMap;") == std::string::npos ||
+            generated.source.find("[[vk::binding(2, 0)]]") == std::string::npos ||
+            generated.source.find("SamplerState linearSampler;") == std::string::npos ||
+            generated.source.find("// External Slang reference: Unlit.slang") ==
+                std::string::npos ||
+            generated.source.find("void __asharia_Forward_vertex()") == std::string::npos ||
+            generated.source.find("vertexMain();") == std::string::npos ||
+            generated.source.find("void __asharia_Forward_fragment()") == std::string::npos ||
+            generated.source.find("fragmentMain();") == std::string::npos) {
+            logFailure("generated Slang skeleton text is missing expected sections.");
+            return false;
+        }
+
+        if (generated.bindings.size() != 6 || generated.bindings[0].name != "baseColor" ||
+            generated.bindings[0].binding != 0 || !generated.bindings[0].inMaterialParameterBlock ||
+            generated.bindings[4].name != "albedoMap" || generated.bindings[4].binding != 1 ||
+            generated.bindings[4].inMaterialParameterBlock ||
+            generated.bindings[5].name != "linearSampler" || generated.bindings[5].binding != 2) {
+            logFailure("generated Slang binding facts are not deterministic.");
+            return false;
+        }
+
+        if (!hasLineMapSection(
+                generated, asharia::shader_authoring::GeneratedSlangSection::MaterialParameterBlock,
+                "material-parameters") ||
+            !hasLineMapSection(
+                generated, asharia::shader_authoring::GeneratedSlangSection::ExternalSlangReference,
+                "Unlit.slang") ||
+            !hasLineMapSection(generated,
+                               asharia::shader_authoring::GeneratedSlangSection::PassWrapper,
+                               "Forward")) {
+            logFailure("generated Slang line map is missing expected entries.");
+            return false;
+        }
+
+        return true;
+    }
+
     bool smokeRawSlangBlock() {
         constexpr std::string_view kSource = R"ashader(
 schema 2
@@ -145,6 +243,51 @@ shader "asharia.material.debug_color" {
         if (!raw || raw->text.find("return Material.tint") == std::string::npos ||
             raw->bodySpan.begin.line >= raw->bodySpan.end.line) {
             logFailure("raw slang block body/span was not captured.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool smokeGeneratedRawSlangMapping() {
+        constexpr std::string_view kSource = R"ashader(
+schema 2
+
+shader "asharia.material.debug_color" {
+  properties {
+    color tint = [1, 0, 1, 1]
+  }
+
+  pass "Forward" {
+    vertex vertexMain
+    fragment fragmentMain
+  }
+
+  slang {
+    float4 shadeMaterial() {
+      return Material.tint;
+    }
+  }
+}
+)ashader";
+
+        const auto parsed = asharia::shader_authoring::parseAshaderDocument(kSource);
+        if (!expectNoErrors(parsed, "generated raw slang .ashader")) {
+            return false;
+        }
+
+        const auto generated = asharia::shader_authoring::buildGeneratedSlang(
+            *parsed.document, asharia::shader_authoring::GeneratedSlangOptions{
+                                  .sourceName = "Debug.ashader",
+                                  .generatedName = "Debug.generated.slang",
+                              });
+
+        if (generated.source.find("#line") == std::string::npos ||
+            generated.source.find("return Material.tint;") == std::string::npos ||
+            !hasLineMapSection(generated,
+                               asharia::shader_authoring::GeneratedSlangSection::RawSlangBlock,
+                               "raw-slang")) {
+            logFailure("generated raw Slang block or line mapping is missing.");
             return false;
         }
 
@@ -245,11 +388,38 @@ shader "raw.bad" {
                    "unbalanced raw slang");
     }
 
+    bool smokeGeneratedSlangDiagnostics() {
+        constexpr std::string_view kSource = R"ashader(
+schema 2
+shader "missing.entry" {
+  properties { float value = 1 }
+  pass "Forward" { tag "SceneForward" slang "Missing.slang" }
+}
+)ashader";
+
+        const auto parsed = asharia::shader_authoring::parseAshaderDocument(kSource);
+        if (!parsed.document) {
+            logFailure("generated Slang diagnostic fixture did not parse.");
+            return false;
+        }
+
+        const auto generated = asharia::shader_authoring::buildGeneratedSlang(*parsed.document);
+        if (!generatedContainsCode(
+                generated, asharia::shader_authoring::AshaderDiagnosticCode::MissingPassEntry)) {
+            logFailure("generated Slang builder did not report missing pass entry.");
+            return false;
+        }
+
+        return true;
+    }
+
 } // namespace
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
 int main() {
-    if (!smokeUnlitDocument() || !smokeRawSlangBlock() || !smokeDiagnostics()) {
+    if (!smokeUnlitDocument() || !smokeGeneratedSlangSkeleton() || !smokeRawSlangBlock() ||
+        !smokeGeneratedRawSlangMapping() || !smokeDiagnostics() ||
+        !smokeGeneratedSlangDiagnostics()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

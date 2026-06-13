@@ -99,8 +99,9 @@ package 用来承载可选能力：
   GPU upload 或 editor UI。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
   当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
-- `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans 和 authoring diagnostics；
-  它只依赖 `core`，不调用 Slang compiler，不生成 SPIR-V，不进入 renderer、RHI、asset-pipeline 或 editor。
+- `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
+  generated Slang skeleton 和 line mapping；它只依赖 `core`，不调用 Slang compiler，不生成 SPIR-V，
+  不进入 renderer、RHI、asset-pipeline 或 editor。
 - `editor-core` 未来提供 editor service、selection、inspector、package browser。
 
 ## Package Manifest
@@ -217,5 +218,6 @@ app integration 层，不能为了方便把 package/private 实现直接并进 a
 - 性能数据底座位于 `packages/profiling`，不依赖 Vulkan、RenderGraph 或 editor UI。
 - render graph 位于 `packages/rendergraph`。
 - Slang shader 构建位于 `packages/shader-slang` 或 `tools/shader-build`。
-- `.ashader` authoring parser 位于 `packages/shader-authoring`，与 Slang 编译和 material runtime model 分离。
+- `.ashader` authoring parser 与 generated Slang skeleton 位于 `packages/shader-authoring`，与 Slang 编译和
+  material runtime model 分离。
 - 不出现 `src/engine_all.cpp` 这类聚合一切的巨型实现文件。
