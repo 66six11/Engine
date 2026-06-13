@@ -12,6 +12,11 @@ viewport texture lifetime。
 `docs/systems/scripting.md` 的脚本系统 ABI 设计。工具、插件、viewport overlay、renderer bridge 和 hot reload
 的分层 contract 见 `docs/architecture/editor-extension-architecture.md`。
 
+长期 managed plugin / script / Avalonia Studio 分层见
+[managed-extension-model.md](managed-extension-model.md)。该 ADR 将第一版 managed 扩展范围收窄为
+contract-only 方向，并要求 `PluginHost`、`ScriptExecutionHost`、`ManagedRuntimeSubstrate` 和 C++ owner
+分离；本文中较早的 `Permission` 术语应按 `FacadeCapability` 理解。
+
 ## 目标
 
 - 保持 `apps/editor` 是 editor host，不让 runtime app 链接 editor UI。

@@ -6,6 +6,11 @@
 Vulkan/RHI 的逃生口。它应作为一等系统，通过 schema/script context、scene public API、
 asset public API 和 editor transaction 操作引擎数据。
 
+Managed extension 的长期分层和第一版 ABI 收窄见
+[../architecture/managed-extension-model.md](../architecture/managed-extension-model.md)。该 ADR 将
+`PreRenderConfig` / renderer scripting 明确后置为 future ADR，并把早期 permission 术语收敛为
+`FacadeCapability`。本文保留较宽的脚本系统背景和未来上下文清单；实现入口以 managed extension ADR 的阶段门槛为准。
+
 ## 设计目标
 
 - 脚本语言可替换或可多语言共存，核心引擎不绑定某个 VM 的对象模型。

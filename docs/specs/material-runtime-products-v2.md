@@ -137,9 +137,13 @@ diagnostics.json
 ```text
 resolved material instance
 validated property overrides
-material instance product
+material-instance-product.v1 blob
 diagnostics
 ```
+
+当前 #156 的最小 product blob 只规范化 `.amat` material instance source bytes，并记录 material type
+asset GUID、stable type id、expected type hash、last cooked signature hash、product key/hash 和 canonical
+`.amat` payload。它不解析 `.ashader`，不生成 shader product，也不做 cross-asset dependency invalidation。
 
 ## Product Manifest Schema
 

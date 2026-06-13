@@ -199,7 +199,7 @@ diagnostics 能回到 .ashader 行号
 
 目标：材质实例能引用 `.ashader` 并覆盖参数。
 
-Status: In progress via #154. This slice adds CPU-only `packages/material-instance` `.amat`
+Status: Done via #154 / PR #155. This slice added CPU-only `packages/material-instance` `.amat`
 read/write and override validation against `.ashader` document facts, while still stopping before
 asset import/cook, product cache, renderer/RHI, editor UI, or final material binding packets.
 
@@ -243,6 +243,11 @@ sampler
 ## Milestone 5：Asset Pipeline Import / Cook
 
 目标：`.ashader` 和 `.amat` 纳入 asset pipeline。
+
+Status: In progress via #156. The first slice only cooks `.amat` material instance source bytes
+into deterministic `material-instance-product.v1` blobs through `asset-pipeline`, reusing
+`material-instance` strict IO privately and stopping before `.ashader` cook, cross-asset dependency
+invalidation, renderer/RHI, editor UI, or final binding packets.
 
 交付物：
 

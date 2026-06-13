@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -15,12 +16,16 @@
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/error.hpp"
+#include "asharia/material_instance/amat_io.hpp"
 
 namespace asharia::asset {
     namespace {
 
         constexpr std::uint64_t kFnv1a64Offset = 14695981039346656037ULL;
         constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
+        constexpr std::string_view kMaterialInstanceImporterName =
+            "com.asharia.importer.material-instance";
+        constexpr std::uint32_t kMaterialInstanceImporterVersion = 1;
 
         struct PreparedProduct {
             const AssetImportRequest* request{};
@@ -268,6 +273,74 @@ namespace asharia::asset {
             return bytes;
         }
 
+        [[nodiscard]] bool isMaterialInstanceProductRequest(const AssetImportRequest& request) {
+            return request.source.importerName == kMaterialInstanceImporterName &&
+                   request.source.importerVersion ==
+                       ImporterVersion{kMaterialInstanceImporterVersion} &&
+                   sourceExtension(request.source.sourcePath) == ".amat";
+        }
+
+        [[nodiscard]] Result<std::vector<std::uint8_t>>
+        makeMaterialInstanceProductBytes(const AssetImportRequest& request,
+                                         std::span<const std::uint8_t> sourceBytes) {
+            std::string sourceText;
+            sourceText.reserve(sourceBytes.size());
+            for (const std::uint8_t byte : sourceBytes) {
+                sourceText.push_back(static_cast<char>(byte));
+            }
+
+            auto document = material_instance::readAmatText(sourceText);
+            if (!document) {
+                return std::unexpected{std::move(document.error())};
+            }
+            auto canonicalText = material_instance::writeAmatText(*document);
+            if (!canonicalText) {
+                return std::unexpected{std::move(canonicalText.error())};
+            }
+
+            std::vector<std::uint8_t> canonicalBytes;
+            canonicalBytes.reserve(canonicalText->size());
+            for (const char value : *canonicalText) {
+                canonicalBytes.push_back(
+                    static_cast<std::uint8_t>(static_cast<unsigned char>(value)));
+            }
+
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(1024 + canonicalBytes.size());
+            appendLine(bytes, "schema=com.asharia.asset.material-instance-product.v1");
+            appendLine(bytes, "guid=" + formatAssetGuid(request.source.guid));
+            appendLine(bytes, "sourcePath=" + request.source.sourcePath);
+            appendLine(bytes, "assetType=" + request.source.assetTypeName);
+            appendLine(bytes, "importer=" + request.source.importerName);
+            appendLine(bytes,
+                       "importerVersion=" + std::to_string(request.source.importerVersion.value));
+            appendLine(bytes, "materialType.assetGuid=" +
+                                  formatAssetGuid(document->materialType.assetGuid));
+            appendLine(bytes, "materialType.stableTypeId=" + document->materialType.stableTypeId);
+            appendLine(bytes, "materialType.expectedTypeHash=" +
+                                  formatHash64(document->materialType.expectedTypeHash));
+            appendLine(bytes, "import.lastCookedSignatureHash=" +
+                                  formatHash64(document->import.lastCookedSignatureHash));
+            appendLine(bytes, "sourceHash=" + formatHash64(request.source.sourceHash));
+            appendLine(bytes, "settingsHash=" + formatHash64(request.source.settingsHash));
+            appendLine(bytes, "dependencyHash=" + formatHash64(request.productKey.dependencyHash));
+            appendLine(bytes,
+                       "targetProfileHash=" + formatHash64(request.productKey.targetProfileHash));
+            appendLine(bytes,
+                       "productKeyHash=" + formatHash64(hashAssetProductKey(request.productKey)));
+            appendLine(bytes, "settings.count=" + std::to_string(request.settings.size()));
+            for (const AssetImportSetting& setting : request.settings) {
+                appendLine(bytes, "setting." + setting.key + "=" + setting.value);
+            }
+            appendLine(bytes, "amat.size=" + std::to_string(canonicalBytes.size()));
+            appendLine(bytes, "amatHash=" + formatHash64(hashBytes(canonicalBytes)));
+            appendLine(bytes, "amat.begin");
+            bytes.insert(bytes.end(), canonicalBytes.begin(), canonicalBytes.end());
+            appendLine(bytes, "");
+            appendLine(bytes, "amat.end");
+            return bytes;
+        }
+
         [[nodiscard]] std::filesystem::path makeOutputPath(const std::filesystem::path& outputRoot,
                                                            std::string_view productPath) {
             return outputRoot / pathFromUtf8(productPath);
@@ -279,6 +352,94 @@ namespace asharia::asset {
                 return left.relativeProductPath < right.relativeProductPath;
             }
             return hashAssetProductKey(left.key) < hashAssetProductKey(right.key);
+        }
+
+        [[nodiscard]] std::optional<PreparedProduct>
+        prepareProduct(AssetProductExecutionResult& result, const std::filesystem::path& outputRoot,
+                       const AssetImportRequest& importRequest,
+                       std::span<const AssetProductSourceBytes> sourceBytesList) {
+            const AssetProductSourceBytes* sourceBytes =
+                findSourceBytes(sourceBytesList, importRequest.source.sourcePath);
+            if (sourceBytes == nullptr) {
+                addRequestDiagnostic(
+                    result, AssetProductExecutionDiagnosticCode::MissingSourceBytes, importRequest,
+                    "Asset product execution could not find explicit source bytes for " +
+                        productLabel(importRequest) + ".");
+                return std::nullopt;
+            }
+
+            const std::uint64_t actualSourceHash = hashBytes(sourceBytes->bytes);
+            if (actualSourceHash != importRequest.source.sourceHash) {
+                addRequestDiagnostic(result,
+                                     AssetProductExecutionDiagnosticCode::SourceBytesHashMismatch,
+                                     importRequest,
+                                     "Asset product execution source bytes hash mismatch for " +
+                                         productLabel(importRequest) + " expected=\"" +
+                                         formatHash64(importRequest.source.sourceHash) +
+                                         "\" actual=\"" + formatHash64(actualSourceHash) + "\".");
+                return std::nullopt;
+            }
+
+            if (auto validPath = validateAssetProductPath(importRequest.relativeProductPath);
+                !validPath) {
+                addRequestDiagnostic(
+                    result, AssetProductExecutionDiagnosticCode::InvalidProductPath, importRequest,
+                    "Asset product execution rejected product path for " +
+                        productLabel(importRequest) + ": " + validPath.error().message);
+                return std::nullopt;
+            }
+
+            std::vector<std::uint8_t> productBytes;
+            if (isPngTextureProductRequest(importRequest)) {
+                auto texture = importTextureCpuPayload(AssetTextureImportRequest{
+                    .source = importRequest.source,
+                    .settings = importRequest.settings,
+                    .sourceBytes = sourceBytes->bytes,
+                    .importer = makePngTextureImporterDescriptor(),
+                });
+                if (!texture) {
+                    addRequestDiagnostic(result,
+                                         AssetProductExecutionDiagnosticCode::TextureImportFailed,
+                                         importRequest,
+                                         "Asset product execution texture import failed for " +
+                                             productLabel(importRequest) + " diagnostic=\"" +
+                                             textureImportDiagnosticLabel(texture.error()) +
+                                             "\": " + texture.error().message);
+                    return std::nullopt;
+                }
+
+                productBytes = makeTexture2DProductBytes(importRequest, *texture);
+            } else if (isMaterialInstanceProductRequest(importRequest)) {
+                auto materialProductBytes =
+                    makeMaterialInstanceProductBytes(importRequest, sourceBytes->bytes);
+                if (!materialProductBytes) {
+                    addRequestDiagnostic(
+                        result, AssetProductExecutionDiagnosticCode::MaterialInstanceImportFailed,
+                        importRequest,
+                        "Asset product execution material instance import failed for " +
+                            productLabel(importRequest) + ": " +
+                            materialProductBytes.error().message);
+                    return std::nullopt;
+                }
+
+                productBytes = std::move(*materialProductBytes);
+            } else {
+                productBytes = makePlaceholderProductBytes(importRequest, sourceBytes->bytes);
+            }
+
+            AssetProductRecord product{
+                .key = importRequest.productKey,
+                .relativeProductPath = importRequest.relativeProductPath,
+                .productSizeBytes = static_cast<std::uint64_t>(productBytes.size()),
+                .productHash = hashBytes(productBytes),
+            };
+
+            return PreparedProduct{
+                .request = &importRequest,
+                .product = std::move(product),
+                .outputPath = makeOutputPath(outputRoot, importRequest.relativeProductPath),
+                .bytes = std::move(productBytes),
+            };
         }
 
         [[nodiscard]] bool writeProductFile(AssetProductExecutionResult& result,
@@ -402,74 +563,11 @@ namespace asharia::asset {
         std::vector<PreparedProduct> preparedProducts;
         preparedProducts.reserve(request.plan.requests.size());
         for (const AssetImportRequest& importRequest : request.plan.requests) {
-            const AssetProductSourceBytes* sourceBytes =
-                findSourceBytes(request.sourceBytes, importRequest.source.sourcePath);
-            if (sourceBytes == nullptr) {
-                addRequestDiagnostic(
-                    result, AssetProductExecutionDiagnosticCode::MissingSourceBytes, importRequest,
-                    "Asset product execution could not find explicit source bytes for " +
-                        productLabel(importRequest) + ".");
-                continue;
+            if (auto product = prepareProduct(result, request.productOutputRoot, importRequest,
+                                              request.sourceBytes);
+                product) {
+                preparedProducts.push_back(std::move(*product));
             }
-
-            const std::uint64_t actualSourceHash = hashBytes(sourceBytes->bytes);
-            if (actualSourceHash != importRequest.source.sourceHash) {
-                addRequestDiagnostic(result,
-                                     AssetProductExecutionDiagnosticCode::SourceBytesHashMismatch,
-                                     importRequest,
-                                     "Asset product execution source bytes hash mismatch for " +
-                                         productLabel(importRequest) + " expected=\"" +
-                                         formatHash64(importRequest.source.sourceHash) +
-                                         "\" actual=\"" + formatHash64(actualSourceHash) + "\".");
-                continue;
-            }
-
-            if (auto validPath = validateAssetProductPath(importRequest.relativeProductPath);
-                !validPath) {
-                addRequestDiagnostic(
-                    result, AssetProductExecutionDiagnosticCode::InvalidProductPath, importRequest,
-                    "Asset product execution rejected product path for " +
-                        productLabel(importRequest) + ": " + validPath.error().message);
-                continue;
-            }
-
-            std::vector<std::uint8_t> productBytes;
-            if (isPngTextureProductRequest(importRequest)) {
-                auto texture = importTextureCpuPayload(AssetTextureImportRequest{
-                    .source = importRequest.source,
-                    .settings = importRequest.settings,
-                    .sourceBytes = sourceBytes->bytes,
-                    .importer = makePngTextureImporterDescriptor(),
-                });
-                if (!texture) {
-                    addRequestDiagnostic(result,
-                                         AssetProductExecutionDiagnosticCode::TextureImportFailed,
-                                         importRequest,
-                                         "Asset product execution texture import failed for " +
-                                             productLabel(importRequest) + " diagnostic=\"" +
-                                             textureImportDiagnosticLabel(texture.error()) +
-                                             "\": " + texture.error().message);
-                    continue;
-                }
-
-                productBytes = makeTexture2DProductBytes(importRequest, *texture);
-            } else {
-                productBytes = makePlaceholderProductBytes(importRequest, sourceBytes->bytes);
-            }
-            AssetProductRecord product{
-                .key = importRequest.productKey,
-                .relativeProductPath = importRequest.relativeProductPath,
-                .productSizeBytes = static_cast<std::uint64_t>(productBytes.size()),
-                .productHash = hashBytes(productBytes),
-            };
-
-            preparedProducts.push_back(PreparedProduct{
-                .request = &importRequest,
-                .product = std::move(product),
-                .outputPath =
-                    makeOutputPath(request.productOutputRoot, importRequest.relativeProductPath),
-                .bytes = std::move(productBytes),
-            });
         }
 
         if (!result.diagnostics.empty()) {
