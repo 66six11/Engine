@@ -12,7 +12,7 @@
         Height="800"
         MinWidth="720"
         MinHeight="420"
-        Background="#15171C">
+        Background="{DynamicResource EditorBrushBase00}">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,
@@ -22,8 +22,8 @@
 
     <Grid RowDefinitions="Auto,*">
         <Border Grid.Row="0"
-                Background="#20232A"
-                BorderBrush="#343842"
+                Background="{DynamicResource EditorBrushBase01}"
+                BorderBrush="{DynamicResource EditorBrushDivider}"
                 BorderThickness="0,0,0,1">
             <Menu Classes="editor-main-menu">
                 <MenuItem Header="File" Classes="editor-menu-item">
@@ -70,7 +70,7 @@
         </Border>
 
         <Border Grid.Row="1"
-                Background="#15171C" />
+                Background="{DynamicResource EditorBrushBase00}" />
     </Grid>
 
 </Window>
