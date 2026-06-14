@@ -5,6 +5,7 @@
 **/.idea/
 
 # .NET build output
+**/bin/
 **/obj/
 
 # Conan
