@@ -1,0 +1,12 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia">
+    <Style Selector="dock|DockControl.editor-dock">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+    </Style>
+
+    <Style Selector="dock|DockControl.editor-dock TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+    </Style>
+</Styles>

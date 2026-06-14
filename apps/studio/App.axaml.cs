@@ -4,8 +4,8 @@ using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
 using System.Linq;
 using Avalonia.Markup.Xaml;
-using Editor.ViewModels;
-using Editor.Views;
+using Editor.Shell.ViewModels;
+using Editor.Shell.Views;
 
 namespace Editor;
 

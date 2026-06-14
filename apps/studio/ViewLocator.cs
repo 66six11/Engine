@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
-using Editor.ViewModels;
+using Editor.Shell.ViewModels;
 
 namespace Editor;
 

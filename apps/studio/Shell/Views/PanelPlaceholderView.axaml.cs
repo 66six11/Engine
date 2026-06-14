@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace Editor.Shell.Views;
 
-public partial class MainWindow : Window
+public partial class PanelPlaceholderView : UserControl
 {
-    public MainWindow()
+    public PanelPlaceholderView()
     {
         InitializeComponent();
     }
