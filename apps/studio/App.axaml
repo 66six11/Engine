@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Editor.App"
              xmlns:local="using:Editor"
-             xmlns:dockThemes="clr-namespace:Dock.Avalonia.Themes.Fluent;assembly=Dock.Avalonia.Themes.Fluent"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
@@ -20,7 +19,6 @@
   
     <Application.Styles>
         <FluentTheme />
-        <dockThemes:DockFluentTheme DensityStyle="Compact" CacheDocumentTabContent="True" />
         <StyleInclude Source="avares://Editor/UI/Styles/Shell/MainMenu.axaml" />
         <StyleInclude Source="avares://Editor/UI/Styles/Shell/Dock.axaml" />
     </Application.Styles>

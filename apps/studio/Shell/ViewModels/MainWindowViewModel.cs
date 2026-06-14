@@ -1,4 +1,3 @@
-using Dock.Model.Controls;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Shell.Docking;
@@ -11,14 +10,10 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var panelRegistry = CreatePanelRegistry();
 
-        DockFactory = new EditorDockFactory(panelRegistry);
-        DockLayout = DockFactory.CreateLayout();
-        DockFactory.InitLayout(DockLayout);
+        DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry);
     }
 
-    public EditorDockFactory DockFactory { get; }
-
-    public IRootDock DockLayout { get; }
+    public EditorDockWorkspaceViewModel DockWorkspace { get; }
 
     private static IPanelRegistry CreatePanelRegistry()
     {

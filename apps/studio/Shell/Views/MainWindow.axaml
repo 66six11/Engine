@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Editor.Shell.ViewModels"
-        xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+        xmlns:views="using:Editor.Shell.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
@@ -68,14 +68,8 @@
             </Menu>
         </Border>
 
-        <dock:DockControl Grid.Row="1"
-                          Classes="editor-dock"
-                          Factory="{Binding DockFactory}"
-                          Layout="{Binding DockLayout}"
-                          IsDockingEnabled="True"
-                          EnableManagedWindowLayer="True"
-                          AutoCreateDataTemplates="True"
-                          Background="{DynamicResource EditorBrushBase00}" />
+        <views:EditorDockWorkspaceView Grid.Row="1"
+                                       DataContext="{Binding DockWorkspace}" />
     </Grid>
 
 </Window>

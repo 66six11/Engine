@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels"
+             x:Class="Editor.Shell.Views.EditorDockPaneView"
+             x:DataType="vm:EditorDockPaneViewModel">
+    <Border Classes="owned-dock-pane">
+        <Grid RowDefinitions="Auto,Auto,*">
+            <Grid Grid.Row="0"
+                  Classes="owned-dock-pane-titlebar"
+                  ColumnDefinitions="*,Auto"
+                  ColumnSpacing="8">
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                    <TextBlock Classes="owned-dock-pane-title"
+                               Text="{Binding Title}" />
+                    <TextBlock Classes="owned-dock-pane-role"
+                               Text="{Binding Role}" />
+                </StackPanel>
+
+                <Border Grid.Column="1"
+                        Classes="owned-dock-pane-count">
+                    <TextBlock Text="{Binding TabCountText}" />
+                </Border>
+            </Grid>
+
+            <ItemsControl Grid.Row="1"
+                          Classes="owned-dock-tabs"
+                          ItemsSource="{Binding Tabs}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:EditorDockTabViewModel">
+                        <Border Classes.active="{Binding IsActive}"
+                                Classes="owned-dock-tab"
+                                PointerPressed="OnTabPointerPressed"
+                                PointerMoved="OnTabPointerMoved"
+                                PointerReleased="OnTabPointerReleased"
+                                PointerCaptureLost="OnTabPointerCaptureLost">
+                            <Grid ColumnDefinitions="Auto,*,Auto"
+                                  ColumnSpacing="8">
+                                <Border Grid.Column="0"
+                                        Classes="owned-dock-tab-tag">
+                                    <TextBlock Text="{Binding Tag}" />
+                                </Border>
+
+                                <StackPanel Grid.Column="1"
+                                            Classes="owned-dock-tab-title-stack">
+                                    <TextBlock Classes="owned-dock-tab-title"
+                                               Text="{Binding Title}" />
+                                    <TextBlock Classes="owned-dock-tab-detail"
+                                               Text="{Binding TitleDetail}" />
+                                </StackPanel>
+
+                                <Border Grid.Column="2"
+                                        Classes="owned-dock-tab-status">
+                                    <TextBlock Text="{Binding StatusText}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border Grid.Row="2"
+                    Classes="owned-dock-content">
+                <ContentControl Content="{Binding ActiveTab.Content}" />
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

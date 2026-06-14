@@ -1,0 +1,94 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels"
+             xmlns:views="using:Editor.Shell.Views"
+             x:Class="Editor.Shell.Views.EditorDockWorkspaceView"
+             x:DataType="vm:EditorDockWorkspaceViewModel">
+    <Grid x:Name="DockRoot"
+          Classes="owned-dock-root"
+          ClipToBounds="True">
+        <Grid x:Name="DockLayout"
+              ColumnDefinitions="260,6,*,6,320"
+              RowDefinitions="*,6,210">
+            <views:EditorDockPaneView x:Name="LeftPaneHost"
+                                      Grid.Column="0"
+                                      Grid.Row="0"
+                                      Grid.RowSpan="3"
+                                      Classes="owned-dock-pane-host"
+                                      DataContext="{Binding LeftPane}" />
+
+            <GridSplitter Grid.Column="1"
+                          Grid.Row="0"
+                          Grid.RowSpan="3"
+                          ResizeDirection="Columns"
+                          Classes="owned-dock-splitter vertical" />
+
+            <views:EditorDockPaneView x:Name="CenterPaneHost"
+                                      Grid.Column="2"
+                                      Grid.Row="0"
+                                      Classes="owned-dock-pane-host"
+                                      DataContext="{Binding CenterPane}" />
+
+            <GridSplitter Grid.Column="2"
+                          Grid.Row="1"
+                          ResizeDirection="Rows"
+                          Classes="owned-dock-splitter horizontal" />
+
+            <views:EditorDockPaneView x:Name="BottomPaneHost"
+                                      Grid.Column="2"
+                                      Grid.Row="2"
+                                      Classes="owned-dock-pane-host"
+                                      DataContext="{Binding BottomPane}" />
+
+            <GridSplitter Grid.Column="3"
+                          Grid.Row="0"
+                          Grid.RowSpan="3"
+                          ResizeDirection="Columns"
+                          Classes="owned-dock-splitter vertical" />
+
+            <views:EditorDockPaneView x:Name="RightPaneHost"
+                                      Grid.Column="4"
+                                      Grid.Row="0"
+                                      Grid.RowSpan="3"
+                                      Classes="owned-dock-pane-host"
+                                      DataContext="{Binding RightPane}" />
+        </Grid>
+
+        <Canvas x:Name="DockOverlay"
+                Panel.ZIndex="20"
+                IsHitTestVisible="False">
+            <Border Classes="owned-dock-drop-preview"
+                    IsVisible="{Binding DragState.IsActive}"
+                    Canvas.Left="{Binding DragState.PreviewX}"
+                    Canvas.Top="{Binding DragState.PreviewY}"
+                    Width="{Binding DragState.PreviewWidth}"
+                    Height="{Binding DragState.PreviewHeight}">
+                <Grid RowDefinitions="*,Auto,*">
+                    <Border Grid.Row="1"
+                            Classes="owned-dock-drop-label">
+                        <TextBlock Text="{Binding DragState.DropLabel}" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <Border Classes="owned-dock-drag-adorner"
+                    IsVisible="{Binding DragState.IsActive}"
+                    Canvas.Left="{Binding DragState.AdornerX}"
+                    Canvas.Top="{Binding DragState.AdornerY}">
+                <Grid ColumnDefinitions="Auto,*"
+                      ColumnSpacing="8">
+                    <Border Grid.Column="0"
+                            Classes="owned-dock-drag-tag">
+                        <TextBlock Text="{Binding DragState.Tag}" />
+                    </Border>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Classes="owned-dock-drag-title"
+                                   Text="{Binding DragState.Title}" />
+                        <TextBlock Classes="owned-dock-drag-subtitle"
+                                   Text="custom drag layer" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Canvas>
+    </Grid>
+</UserControl>
