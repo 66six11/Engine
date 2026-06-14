@@ -156,6 +156,12 @@ namespace asharia::asset_processor {
                 return "DuplicateSourceBytes";
             case Code::SourceBytesHashMismatch:
                 return "SourceBytesHashMismatch";
+            case Code::InvalidDependencyProductBytes:
+                return "InvalidDependencyProductBytes";
+            case Code::DuplicateDependencyProductBytes:
+                return "DuplicateDependencyProductBytes";
+            case Code::DependencyProductBytesHashMismatch:
+                return "DependencyProductBytesHashMismatch";
             case Code::InvalidOutputRoot:
                 return "InvalidOutputRoot";
             case Code::InvalidProductPath:
@@ -529,6 +535,7 @@ namespace asharia::asset_processor {
                 .plan = std::move(plan.plan),
                 .existingManifest = std::move(manifest.manifest),
                 .sourceBytes = std::move(sourceBytes),
+                .dependencyProductBytes = {},
                 .productOutputRoot = input.outputRoot,
                 .productManifestOutputPath = input.productManifestOutputPath,
             });

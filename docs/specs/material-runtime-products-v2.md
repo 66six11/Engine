@@ -140,6 +140,11 @@ invalidation。#163 是后续 compile/reflection product 层，目标是从该 g
 manifest facts 产出 deterministic SPIR-V/reflection facts，但仍不生成 material signature product 或 renderer
 binding packet。
 
+截至 2026-06-14，#163 的第一步先在 `asset-pipeline` execution request 中显式接收上游 product bytes
+（relative product path + product hash + bytes），并在执行前校验路径、重复项和 hash 漂移；后续
+Slang compile/reflection cook 应消费该输入契约，而不是从 cache 路径或 `dependencyHash` 反推上游
+product 内容。
+
 `.amat` import 输出：
 
 ```text

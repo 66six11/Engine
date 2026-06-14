@@ -3251,6 +3251,7 @@ namespace {
                             .bytes = pngSourceBytes,
                         },
                     },
+                .dependencyProductBytes = {},
                 .productOutputRoot = productRoot,
                 .productManifestOutputPath = productRoot / "asset-products.json",
             });

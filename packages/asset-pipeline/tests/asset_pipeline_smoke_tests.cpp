@@ -1546,6 +1546,7 @@ namespace {
                 .plan = plan.plan,
                 .existingManifest = {},
                 .sourceBytes = sourceBytes,
+                .dependencyProductBytes = {},
                 .productOutputRoot = outputRoot,
                 .productManifestOutputPath = manifestPath,
             });
@@ -1554,6 +1555,7 @@ namespace {
                 .plan = plan.plan,
                 .existingManifest = {},
                 .sourceBytes = sourceBytes,
+                .dependencyProductBytes = {},
                 .productOutputRoot = outputRoot,
                 .productManifestOutputPath = manifestPath,
             });
@@ -1606,6 +1608,7 @@ namespace {
                 .plan = cachePlan.plan,
                 .existingManifest = first.manifest,
                 .sourceBytes = sourceBytes,
+                .dependencyProductBytes = {},
                 .productOutputRoot = outputRoot,
                 .productManifestOutputPath = manifestPath,
             });
@@ -1618,6 +1621,26 @@ namespace {
 
         std::cout << "Asset product execution products: " << first.writtenProducts.size() << '\n';
         return true;
+    }
+
+    [[nodiscard]] asharia::asset::SourceAssetRecord makeDependencyProductBytesSmokeRecord(
+        std::span<const std::uint8_t> sourceBytes,
+        std::span<const asharia::asset::AssetImportSetting> settings) {
+        auto guid = asharia::asset::parseAssetGuid("8f46fdc4-99d9-48c3-8989-af7ca23690b7");
+        constexpr std::string_view kAssetTypeName = "com.asharia.asset.DependencyProductBytesSmoke";
+        constexpr std::string_view kImporterName =
+            "com.asharia.importer.dependency-product-bytes-smoke";
+        return asharia::asset::SourceAssetRecord{
+            .guid = guid ? *guid : asharia::asset::AssetGuid{},
+            .assetType = asharia::asset::makeAssetTypeId(kAssetTypeName),
+            .assetTypeName = std::string{kAssetTypeName},
+            .sourcePath = "Content/Generated/Input.asset",
+            .importerId = asharia::asset::makeImporterId(kImporterName),
+            .importerName = std::string{kImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = smokeHashBytes(sourceBytes),
+            .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+        };
     }
 
     [[nodiscard]] asharia::asset::AssetImportPlanResult
@@ -1692,6 +1715,7 @@ namespace {
                             .bytes = sourceBytes,
                         },
                     },
+                .dependencyProductBytes = {},
                 .productOutputRoot = outputRoot,
                 .productManifestOutputPath = outputRoot / "product-manifest.json",
             });
@@ -1744,6 +1768,7 @@ namespace {
                             .bytes = sourceBytes,
                         },
                     },
+                .dependencyProductBytes = {},
                 .productOutputRoot = "unused-product-cache",
                 .productManifestOutputPath = {},
             });
@@ -1869,6 +1894,7 @@ shader "asharia.material.unlit" {
                         .bytes = sourceBytes,
                     },
                 },
+            .dependencyProductBytes = {},
             .productOutputRoot = outputRoot,
             .productManifestOutputPath = outputRoot / "product-manifest.json",
         };
@@ -1928,6 +1954,7 @@ shader "asharia.material.unlit" {
                             .bytes = sourceBytes,
                         },
                     },
+                .dependencyProductBytes = {},
                 .productOutputRoot = "unused-product-cache",
                 .productManifestOutputPath = {},
             });
@@ -1966,6 +1993,7 @@ shader "asharia.material.unlit" {
                         .bytes = sourceBytes,
                     },
                 },
+            .dependencyProductBytes = {},
             .productOutputRoot = outputRoot,
             .productManifestOutputPath = outputRoot / "product-manifest.json",
         };
@@ -2041,6 +2069,7 @@ shader "asharia.material.unlit" {
                             .bytes = sourceBytes,
                         },
                     },
+                .dependencyProductBytes = {},
                 .productOutputRoot = "unused-product-cache",
                 .productManifestOutputPath = {},
             });
@@ -2255,6 +2284,7 @@ shader "asharia.material.unlit" {
                 .plan = plan.plan,
                 .existingManifest = {},
                 .sourceBytes = sourceBytes,
+                .dependencyProductBytes = {},
                 .productOutputRoot = root / "ProductCache",
                 .productManifestOutputPath = root / "ProductCache" / "product-manifest.json",
             });
@@ -2264,6 +2294,128 @@ shader "asharia.material.unlit" {
                    execution,
                    asharia::asset::AssetProductExecutionDiagnosticCode::SourceBytesHashMismatch,
                    "hash mismatch");
+    }
+
+    [[nodiscard]] bool smokeProductExecutionDependencyProductBytesDiagnostics() {
+        const std::filesystem::path root = smokeRoot(
+            "asharia-asset-pipeline-smoke-product-execution-dependency-product-diagnostics");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::vector<asharia::asset::AssetImportSetting> settings{
+            asharia::asset::AssetImportSetting{
+                .key = "product.kind",
+                .value = "dependency-product-bytes-smoke",
+            },
+        };
+        const std::vector<std::uint8_t> sourceBytes = bytesFromText("source bytes");
+        const asharia::asset::SourceAssetRecord source =
+            makeDependencyProductBytesSmokeRecord(sourceBytes, settings);
+        const std::vector<std::uint8_t> invalidPathBytes = bytesFromText("invalid path product");
+        const std::vector<std::uint8_t> duplicateBytes = bytesFromText("duplicate product");
+        const std::vector<std::uint8_t> mismatchBytes = bytesFromText("mismatch product");
+
+        const asharia::asset::AssetProductExecutionResult
+            execution =
+                asharia::asset::executeAssetProducts(
+                    asharia::asset::AssetProductExecutionRequest{
+                        .plan = makeSingleProductExecutionPlan(source, settings),
+                        .existingManifest = {},
+                        .sourceBytes =
+                            {
+                                asharia::asset::AssetProductSourceBytes{
+                                    .sourcePath = source.sourcePath,
+                                    .bytes = sourceBytes,
+                                },
+                            },
+                        .dependencyProductBytes =
+                            {
+                                asharia::asset::AssetProductDependencyBytes{
+                                    .relativeProductPath = "generated\\bad.product",
+                                    .productHash = smokeHashBytes(invalidPathBytes),
+                                    .bytes = invalidPathBytes,
+                                },
+                                asharia::asset::AssetProductDependencyBytes{
+                                    .relativeProductPath = "generated/Unlit.ashader.product",
+                                    .productHash = smokeHashBytes(duplicateBytes),
+                                    .bytes = duplicateBytes,
+                                },
+                                asharia::asset::AssetProductDependencyBytes{
+                                    .relativeProductPath = "generated/Unlit.ashader.product",
+                                    .productHash = smokeHashBytes(duplicateBytes),
+                                    .bytes = duplicateBytes,
+                                },
+                                asharia::asset::AssetProductDependencyBytes{
+                                    .relativeProductPath = "generated/Mismatch.ashader.product",
+                                    .productHash = 0x1234ULL,
+                                    .bytes = mismatchBytes,
+                                },
+                            },
+                        .productOutputRoot = root / "ProductCache",
+                        .productManifestOutputPath =
+                            root / "ProductCache" / "product-manifest.json",
+                    });
+
+        return execution.writtenProducts.empty() && !execution.manifestWritten &&
+               expectExecutionDiagnostic(execution,
+                                         asharia::asset::AssetProductExecutionDiagnosticCode::
+                                             InvalidDependencyProductBytes,
+                                         "must use '/' separators") &&
+               expectExecutionDiagnostic(execution,
+                                         asharia::asset::AssetProductExecutionDiagnosticCode::
+                                             DuplicateDependencyProductBytes,
+                                         "duplicates dependency product bytes") &&
+               expectExecutionDiagnostic(execution,
+                                         asharia::asset::AssetProductExecutionDiagnosticCode::
+                                             DependencyProductBytesHashMismatch,
+                                         "hash mismatch");
+    }
+
+    [[nodiscard]] bool smokeProductExecutionAcceptsDependencyProductBytes() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-product-execution-dependency-product-bytes");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::vector<asharia::asset::AssetImportSetting> settings{
+            asharia::asset::AssetImportSetting{
+                .key = "product.kind",
+                .value = "dependency-product-bytes-smoke",
+            },
+        };
+        const std::vector<std::uint8_t> sourceBytes = bytesFromText("source bytes");
+        const std::vector<std::uint8_t> dependencyBytes =
+            bytesFromText("generated slang product bytes");
+        const asharia::asset::SourceAssetRecord source =
+            makeDependencyProductBytesSmokeRecord(sourceBytes, settings);
+
+        const asharia::asset::AssetProductExecutionResult execution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = makeSingleProductExecutionPlan(source, settings),
+                .existingManifest = {},
+                .sourceBytes =
+                    {
+                        asharia::asset::AssetProductSourceBytes{
+                            .sourcePath = source.sourcePath,
+                            .bytes = sourceBytes,
+                        },
+                    },
+                .dependencyProductBytes =
+                    {
+                        asharia::asset::AssetProductDependencyBytes{
+                            .relativeProductPath = "generated/Unlit.ashader.product",
+                            .productHash = smokeHashBytes(dependencyBytes),
+                            .bytes = dependencyBytes,
+                        },
+                    },
+                .productOutputRoot = root / "ProductCache",
+                .productManifestOutputPath = root / "ProductCache" / "product-manifest.json",
+            });
+
+        return execution.succeeded() && execution.writtenProducts.size() == 1U &&
+               execution.manifest.products.size() == 1U && execution.manifestWritten;
     }
 
     [[nodiscard]] bool smokeSourceSnapshotValidAndDeterministic() {
@@ -2742,8 +2894,11 @@ int main() {
         smokeProductExecutionAmatDiagnostics() &&
         smokeProductExecutionWritesAshaderShaderProduct() &&
         smokeProductExecutionAshaderDiagnostics() &&
-        smokeProductExecutionSourceBytesHashMismatch() && smokeImportPlanningCacheHitAndMiss() &&
-        smokeImportPlanningSourceChanged() && smokeImportPlanningMetadataSourceHashDriftWarning() &&
+        smokeProductExecutionSourceBytesHashMismatch() &&
+        smokeProductExecutionDependencyProductBytesDiagnostics() &&
+        smokeProductExecutionAcceptsDependencyProductBytes() &&
+        smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
+        smokeImportPlanningMetadataSourceHashDriftWarning() &&
         smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&
         smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
         smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&

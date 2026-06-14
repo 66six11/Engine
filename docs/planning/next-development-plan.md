@@ -204,7 +204,9 @@
    Milestone 5，复用 #158 的 `shader-authoring-product.v1` generated Slang payload 和 entry
    manifest facts，生成 deterministic Slang compile/reflection product facts；覆盖 manifest-selected
    entries、SPIR-V/reflection payload hash、compiler diagnostics 和 bad product diagnostics。该 Slice 仍不做
-   material signature product、cross-asset dependency invalidation、renderer/RHI 或 editor UI。
+   material signature product、cross-asset dependency invalidation、renderer/RHI 或 editor UI。当前推进顺序是
+   先落地 request-level dependency product bytes contract，再接 `slangc` / `spirv-val` / reflection product
+   writer。
 2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 

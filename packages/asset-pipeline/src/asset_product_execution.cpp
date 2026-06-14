@@ -202,6 +202,55 @@ namespace asharia::asset {
             return valid;
         }
 
+        [[nodiscard]] bool validateDependencyProductBytes(
+            AssetProductExecutionResult& result,
+            std::span<const AssetProductDependencyBytes> dependencyProducts) {
+            bool valid = true;
+            for (std::size_t index = 0; index < dependencyProducts.size(); ++index) {
+                const AssetProductDependencyBytes& product = dependencyProducts[index];
+                if (auto validPath = validateAssetProductPath(product.relativeProductPath);
+                    !validPath) {
+                    addDiagnostic(
+                        result, AssetProductExecutionDiagnosticCode::InvalidDependencyProductBytes,
+                        {}, product.relativeProductPath,
+                        "Asset product execution rejected dependency product bytes[" +
+                            std::to_string(index) + "]: " + validPath.error().message);
+                    valid = false;
+                }
+
+                for (std::size_t otherIndex = index + 1; otherIndex < dependencyProducts.size();
+                     ++otherIndex) {
+                    if (product.relativeProductPath ==
+                        dependencyProducts[otherIndex].relativeProductPath) {
+                        addDiagnostic(
+                            result,
+                            AssetProductExecutionDiagnosticCode::DuplicateDependencyProductBytes,
+                            {}, product.relativeProductPath,
+                            "Asset product execution dependency product bytes[" +
+                                std::to_string(index) + "] duplicates dependency product bytes[" +
+                                std::to_string(otherIndex) + "] product=\"" +
+                                product.relativeProductPath + "\".");
+                        valid = false;
+                    }
+                }
+
+                const std::uint64_t actualProductHash = hashBytes(product.bytes);
+                if (actualProductHash != product.productHash) {
+                    addDiagnostic(
+                        result,
+                        AssetProductExecutionDiagnosticCode::DependencyProductBytesHashMismatch, {},
+                        product.relativeProductPath,
+                        "Asset product execution dependency product bytes[" +
+                            std::to_string(index) + "] hash mismatch for product=\"" +
+                            product.relativeProductPath + "\" expected=\"" +
+                            formatHash64(product.productHash) + "\" actual=\"" +
+                            formatHash64(actualProductHash) + "\".");
+                    valid = false;
+                }
+            }
+            return valid;
+        }
+
         void appendLine(std::vector<std::uint8_t>& bytes, std::string_view line) {
             bytes.insert(bytes.end(), line.begin(), line.end());
             bytes.push_back(static_cast<std::uint8_t>('\n'));
@@ -719,6 +768,10 @@ namespace asharia::asset {
         }
 
         if (!validateSourceBytes(result, request.sourceBytes)) {
+            return result;
+        }
+
+        if (!validateDependencyProductBytes(result, request.dependencyProductBytes)) {
             return result;
         }
 
