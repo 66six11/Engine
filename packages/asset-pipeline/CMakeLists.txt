@@ -14,6 +14,7 @@ asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::material_instance packages/material-instance)
+asharia_require_package_target(asharia::shader_authoring packages/shader-authoring)
 
 add_library(asharia-asset-pipeline STATIC
     src/asset_import_planning.cpp
@@ -42,6 +43,7 @@ target_link_libraries(asharia-asset-pipeline
         asharia::archive
         asharia::asset_core_io
         asharia::material_instance
+        asharia::shader_authoring
         stb::stb
 )
 

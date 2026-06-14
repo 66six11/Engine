@@ -1,6 +1,6 @@
 # Shader / Material Authoring V2 架构
 
-更新日期：2026-06-12
+更新日期：2026-06-14
 
 状态：V2 设计合同。旧 V1 authoring 路线已弃用，不再作为实现或文档拆分依据。
 
@@ -29,11 +29,13 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
   `material-core`，但不引入 renderer、Vulkan、RenderGraph、asset-pipeline 或 editor 依赖。
 - `packages/shader-authoring` 提供 CPU-only `.ashader` document model、parser、source span、基础 diagnostics
   和 generated Slang skeleton / line mapping / entry manifest；它只依赖 `core`，不调用 Slang compiler，
-  不生成 SPIR-V，不读取 reflection，也不进入 asset-pipeline、renderer、RHI 或 editor。
+  不生成 SPIR-V，不读取 reflection，也不依赖 asset-pipeline、renderer、RHI 或 editor。
 - `packages/material-instance` 已通过 #154 接入 CPU-only `.amat` document IO、property override model
   和 material type reference validation；它不进入 renderer、RHI 或 editor。
-- `asset-core` / `asset-pipeline` 已有 source discovery、metadata、product manifest/cache 的基线；#156 正在让
-  `asset-pipeline` 私有复用 `material-instance`，把 `.amat` cook 成 deterministic material instance product blob。
+- `asset-core` / `asset-pipeline` 已有 source discovery、metadata、product manifest/cache 的基线；#156 已让
+  `asset-pipeline` 私有复用 `material-instance`，把 `.amat` cook 成 deterministic material instance product blob；
+  #158 正在让 `asset-pipeline` 私有复用 `shader-authoring`，把 `.ashader` cook 成 deterministic generated
+  Slang product blob。
 - editor 已有 Asset Browser / RenderView / Preview view request 等基础，但还没有完整 Material Editor、
   `.agraph` lowering、`.amat` IO 或 `.ashader` editor workflow。
 - RenderGraph pass type 表达 execution model，不表达 material pass tag、LightMode、shader pass 名称或材质业务语义。

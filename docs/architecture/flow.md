@@ -67,6 +67,7 @@ flowchart TD
     AssetCoreIo --> Archive
     AssetPipeline --> AssetCore
     AssetPipeline -.metadata read.-> AssetCoreIo
+    AssetPipeline --> ShaderAuthoring
     ResourceRuntime --> AssetCore
     MaterialCore --> Core
     ShaderAuthoring --> Core
@@ -134,9 +135,10 @@ flowchart TD
 - `project-core` 目前只拥有最小 project descriptor model；`asharia::project_core_io` 通过 `archive`
   strict JSON facade 读写 `asharia.project.json`，不保存 cook/package profiles、editor workspace 或 runtime
   resource state。
-- `asset-pipeline` 当前只做 CPU-only metadata discovery：显式 source/.ameta 条目进入 discovery facade，
-  输出 deterministic manifest、`AssetCatalog` 输入和 diagnostics；它不做 watcher、import 调度、product
-  cache manifest、GPU upload 或 editor UI。
+- `asset-pipeline` 当前做 CPU-only metadata discovery / product execution：显式 source/.ameta 条目进入
+  discovery facade，输出 deterministic manifest、`AssetCatalog` 输入、product blob 和 diagnostics；它可以
+  私有复用 importer-specific package，例如 texture importer、`material-instance` 和 `shader-authoring`，但不做
+  watcher、后台 import 调度、GPU upload 或 editor UI，也不把 authoring/importer 语义推入 `asset-core`。
 - `resource-runtime` 当前只做 CPU-only runtime resource handle 状态合同：消费 `asset-core` 的
   `AssetHandle<T>` / `AssetProductKey` / `AssetProductRecord`，表达 pending / ready / failed、generation 和
   product-cache diagnostics；它不依赖 `asset-pipeline`、RenderGraph、renderer、RHI 或 editor，也不创建

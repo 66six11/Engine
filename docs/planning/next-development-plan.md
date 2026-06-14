@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-06-13
+更新日期：2026-06-14
 
 本文是全项目下一阶段的唯一主路线图。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`，V2 规格见 `docs/specs/ashader-v2.md` 和 `docs/specs/material-runtime-products-v2.md`，近期 MVP 计划见 `docs/planning/shader-material-mvp-plan.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
 
@@ -43,7 +43,7 @@
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO；#156 正在把 `.amat` cook 成 deterministic material instance product blob | `.ashader` import/cook、material product dependency invalidation、renderer material product 消费和 editor preview |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO 和 #156 deterministic `.amat` product blob；#158 正在把 `.ashader` cook 成 generated Slang product blob | Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -200,10 +200,12 @@
 
 ## 下一批 PR-sized Slice
 
-1. `#156 [Slice] Materials: cook .amat product blobs`：开启 shader/material MVP Milestone 5，
-   让 `asset-pipeline` 把 `.amat` source bytes cook 成 deterministic `material-instance-product.v1` blob，
-   并用 package-local reader/smoke 验证 product payload、manifest/hash 和 malformed input diagnostics；
-   不做 `.ashader` cook、cross-asset dependency invalidation、renderer/RHI 或 editor UI。
+1. `#158 [Slice] Materials: cook .ashader generated Slang product blobs`：继续 shader/material MVP
+   Milestone 5，让 `asset-pipeline` 把 `.ashader` source bytes cook 成 deterministic
+   `shader-authoring-product.v1` generated Slang blob，并用 package-local reader/smoke 验证 product
+   payload、entry manifest facts、property/pass summary facts、manifest/hash 和 malformed input diagnostics；
+   不调用 `slangc`，不生成 SPIR-V、reflection/signature product，不做 cross-asset dependency invalidation、
+   renderer/RHI 或 editor UI。
 2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 

@@ -63,6 +63,63 @@ namespace asharia::asset {
                                              const AssetMaterialInstanceProductPayload&) = default;
     };
 
+    struct AssetShaderAuthoringProductProperty {
+        std::string name;
+        std::string typeName;
+        std::string defaultText;
+
+        [[nodiscard]] friend bool operator==(const AssetShaderAuthoringProductProperty&,
+                                             const AssetShaderAuthoringProductProperty&) = default;
+    };
+
+    struct AssetShaderAuthoringProductPass {
+        std::string name;
+        std::string tag;
+        std::string vertexEntry;
+        std::string fragmentEntry;
+        std::string computeEntry;
+
+        [[nodiscard]] friend bool operator==(const AssetShaderAuthoringProductPass&,
+                                             const AssetShaderAuthoringProductPass&) = default;
+    };
+
+    struct AssetShaderAuthoringProductBinding {
+        std::string name;
+        std::string typeName;
+        std::uint32_t set{};
+        std::uint32_t binding{};
+        bool inMaterialParameterBlock{};
+
+        [[nodiscard]] friend bool operator==(const AssetShaderAuthoringProductBinding&,
+                                             const AssetShaderAuthoringProductBinding&) = default;
+    };
+
+    struct AssetShaderAuthoringProductEntry {
+        std::string passName;
+        std::string stage;
+        std::string sourceEntryName;
+        std::string compileEntryName;
+        std::string generatedWrapperName;
+
+        [[nodiscard]] friend bool operator==(const AssetShaderAuthoringProductEntry&,
+                                             const AssetShaderAuthoringProductEntry&) = default;
+    };
+
+    struct AssetShaderAuthoringProductPayload {
+        std::string sourcePath;
+        std::string stableTypeId;
+        std::uint32_t schemaVersion{};
+        std::uint64_t generatedSlangHash{};
+        std::vector<AssetShaderAuthoringProductProperty> properties;
+        std::vector<AssetShaderAuthoringProductPass> passes;
+        std::vector<AssetShaderAuthoringProductBinding> bindings;
+        std::vector<AssetShaderAuthoringProductEntry> entries;
+        std::string generatedSlangText;
+
+        [[nodiscard]] friend bool operator==(const AssetShaderAuthoringProductPayload&,
+                                             const AssetShaderAuthoringProductPayload&) = default;
+    };
+
     [[nodiscard]] const char*
     assetProductBlobDiagnosticCodeName(AssetProductBlobDiagnosticCode code) noexcept;
 
@@ -86,5 +143,12 @@ namespace asharia::asset {
     [[nodiscard]] Result<AssetMaterialInstanceProductPayload>
     readMaterialInstanceProductPayload(std::span<const std::uint8_t> productBytes,
                                        std::string_view relativeProductPath);
+
+    [[nodiscard]] Result<AssetShaderAuthoringProductPayload>
+    readShaderAuthoringProductPayload(const AssetProductBlobReadRequest& request);
+
+    [[nodiscard]] Result<AssetShaderAuthoringProductPayload>
+    readShaderAuthoringProductPayload(std::span<const std::uint8_t> productBytes,
+                                      std::string_view relativeProductPath);
 
 } // namespace asharia::asset
