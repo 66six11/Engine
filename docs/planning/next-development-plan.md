@@ -207,10 +207,11 @@
    `shader.authoringProductPath` 消费上游 authoring product bytes，调用 `slangc -reflection-json`，再用
    `spirv-val` 验证 SPIR-V，覆盖 SPIR-V/reflection payload hash、缺失上游 product bytes 和 bad product
    diagnostics；当前增量继续记录 `slangc` / `spirv-val` exit code、diagnostic payload size/hash 和坏
-   generated Slang source 的 deterministic compiler diagnostic。官方 Slang 资料中更结构化的 diagnostic
-   flags 暂不作为 hard dependency，因为当前 Vulkan SDK 1.4.321.1 的 `slangc` 不支持这些选项。该 Slice
-   仍不做 material signature product、cross-asset dependency invalidation、renderer/RHI 或 editor UI。下一步
-   收敛 manifest-selected entries 的产品契约边界，并准备 material signature product 的独立 Slice。
+   generated Slang source 的 deterministic compiler diagnostic；本轮又补齐同一 compile request 两次执行的
+   manifest/product/payload determinism smoke。官方 Slang 资料中更结构化的 diagnostic flags 暂不作为 hard
+   dependency，因为当前 Vulkan SDK 1.4.321.1 的 `slangc` 不支持这些选项。该 Slice 仍不做 material
+   signature product、cross-asset dependency invalidation、renderer/RHI 或 editor UI。下一步收敛
+   manifest-selected entries 的产品契约边界，并准备 material signature product 的独立 Slice。
 2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 

@@ -2293,30 +2293,31 @@ shader "asharia.material.compile_reflection" {
         };
         const asharia::asset::SourceAssetRecord compileSource =
             makeShaderCompileReflectionRecord(sourceBytes, compileSettings);
+        const asharia::asset::AssetProductExecutionRequest compileRequest{
+            .plan = makeShaderCompileReflectionPlan(compileSource, compileSettings,
+                                                    authoringWrite.product.relativeProductPath,
+                                                    authoringWrite.product.productHash),
+            .existingManifest = authoringExecution.manifest,
+            .sourceBytes =
+                {
+                    asharia::asset::AssetProductSourceBytes{
+                        .sourcePath = compileSource.sourcePath,
+                        .bytes = sourceBytes,
+                    },
+                },
+            .dependencyProductBytes =
+                {
+                    asharia::asset::AssetProductDependencyBytes{
+                        .relativeProductPath = authoringWrite.product.relativeProductPath,
+                        .productHash = authoringWrite.product.productHash,
+                        .bytes = authoringProductBytes,
+                    },
+                },
+            .productOutputRoot = outputRoot,
+            .productManifestOutputPath = outputRoot / "compile-product-manifest.json",
+        };
         const asharia::asset::AssetProductExecutionResult compileExecution =
-            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
-                .plan = makeShaderCompileReflectionPlan(compileSource, compileSettings,
-                                                        authoringWrite.product.relativeProductPath,
-                                                        authoringWrite.product.productHash),
-                .existingManifest = authoringExecution.manifest,
-                .sourceBytes =
-                    {
-                        asharia::asset::AssetProductSourceBytes{
-                            .sourcePath = compileSource.sourcePath,
-                            .bytes = sourceBytes,
-                        },
-                    },
-                .dependencyProductBytes =
-                    {
-                        asharia::asset::AssetProductDependencyBytes{
-                            .relativeProductPath = authoringWrite.product.relativeProductPath,
-                            .productHash = authoringWrite.product.productHash,
-                            .bytes = authoringProductBytes,
-                        },
-                    },
-                .productOutputRoot = outputRoot,
-                .productManifestOutputPath = outputRoot / "compile-product-manifest.json",
-            });
+            asharia::asset::executeAssetProducts(compileRequest);
         if (!compileExecution.succeeded() || compileExecution.writtenProducts.size() != 1U ||
             compileExecution.manifest.products.size() != 2U || !compileExecution.manifestWritten) {
             logFailure("Asset product execution smoke failed shader compile/reflection write.");
@@ -2330,6 +2331,29 @@ shader "asharia.material.compile_reflection" {
                 .productFilePath = compiledWrite.productFilePath,
                 .relativeProductPath = compiledWrite.product.relativeProductPath,
             });
+        const asharia::asset::AssetProductExecutionResult secondCompileExecution =
+            asharia::asset::executeAssetProducts(compileRequest);
+        auto firstCompileManifestText =
+            asharia::asset::writeAssetProductManifestText(compileExecution.manifest);
+        auto secondCompileManifestText =
+            asharia::asset::writeAssetProductManifestText(secondCompileExecution.manifest);
+        if (!secondCompileExecution.succeeded() ||
+            secondCompileExecution.writtenProducts.size() != 1U ||
+            secondCompileExecution.manifest.products.size() != 2U ||
+            !secondCompileExecution.manifestWritten || !firstCompileManifestText ||
+            !secondCompileManifestText || *firstCompileManifestText != *secondCompileManifestText ||
+            compiledWrite.product.productHash !=
+                secondCompileExecution.writtenProducts.front().product.productHash) {
+            logFailure(
+                "Asset product execution smoke found nondeterministic compile/reflection output.");
+            return false;
+        }
+        auto secondPayload = asharia::asset::readShaderCompileReflectionProductPayload(
+            asharia::asset::AssetProductBlobReadRequest{
+                .productFilePath = secondCompileExecution.writtenProducts.front().productFilePath,
+                .relativeProductPath =
+                    secondCompileExecution.writtenProducts.front().product.relativeProductPath,
+            });
         if (!payload || payload->sourcePath != compileSource.sourcePath ||
             payload->stableTypeId != "asharia.material.compile_reflection" ||
             payload->authoringProductPath != authoringWrite.product.relativeProductPath ||
@@ -2337,6 +2361,11 @@ shader "asharia.material.compile_reflection" {
             payload->profile != "glsl_450" || payload->target != "spirv" ||
             payload->entries.size() != 2U) {
             logFailure("Asset product execution smoke could not read compile/reflection product.");
+            return false;
+        }
+        if (!secondPayload || *payload != *secondPayload) {
+            logFailure(
+                "Asset product execution smoke found nondeterministic compile/reflection payload.");
             return false;
         }
 
