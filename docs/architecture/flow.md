@@ -32,12 +32,16 @@ flowchart TD
     AssetPipeline["packages/asset-pipeline"]
     ResourceRuntime["packages/resource-runtime"]
     MaterialCore["packages/material-core"]
+    ShaderAuthoring["packages/shader-authoring"]
+    MaterialInstance["packages/material-instance"]
+    ShaderMaterialAdapter["packages/shader-material-adapter"]
     RG["packages/rendergraph"]
     RhiVk["packages/rhi-vulkan<br/>asharia::rhi_vulkan"]
     RhiVkRG["packages/rhi-vulkan<br/>asharia::rhi_vulkan_rendergraph"]
     Renderer["packages/renderer-basic<br/>asharia::renderer_basic"]
     RendererVk["packages/renderer-basic<br/>asharia::renderer_basic_vulkan"]
     Shader["packages/shader-slang"]
+    AssetProcessor["tools/asset-processor"]
     ImGui["Dear ImGui<br/>Conan package + GLFW/Vulkan backends"]
 
     Platform --> Core
@@ -65,6 +69,15 @@ flowchart TD
     AssetPipeline -.metadata read.-> AssetCoreIo
     ResourceRuntime --> AssetCore
     MaterialCore --> Core
+    ShaderAuthoring --> Core
+    MaterialInstance --> Core
+    MaterialInstance --> Archive
+    MaterialInstance --> AssetCore
+    MaterialInstance --> ShaderAuthoring
+    ShaderMaterialAdapter --> Core
+    ShaderMaterialAdapter --> MaterialCore
+    ShaderMaterialAdapter --> Shader
+    ShaderMaterialAdapter -.generated reflection smoke.-> ShaderAuthoring
     RG --> Core
     RhiVk --> Core
     RhiVkRG --> RhiVk
@@ -86,6 +99,9 @@ flowchart TD
     App -->|smoke validation only| RhiVkRG
     App -->|CPU-only benchmark schemas| Renderer
     App -->|selected sample renderer| RendererVk
+    AssetProcessor --> AssetCoreIo
+    AssetProcessor --> AssetPipeline
+    AssetProcessor --> ProjectCoreIo
     EditorApp --> Core
     EditorApp --> Archive
     EditorApp -->|project descriptor IO| ProjectCoreIo
@@ -104,6 +120,8 @@ flowchart TD
 
 - 这张图按 CMake target 事实和已落地 package manifests 的 `targetDependencies` 校准；`dependencies`
   是 package-level 粗粒度边界，不能替代 target-level 依赖审查。
+- `engine/platform` 当前是预留 boundary target，只传递 `core` 依赖，不导出公共 header；真实
+  GLFW/window/surface glue 仍在 `window-glfw`。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。

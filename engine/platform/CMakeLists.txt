@@ -14,11 +14,6 @@ asharia_require_package_target(asharia::core engine/core)
 add_library(asharia-platform INTERFACE)
 add_library(asharia::platform ALIAS asharia-platform)
 
-target_include_directories(asharia-platform
-    INTERFACE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-)
-
 target_link_libraries(asharia-platform
     INTERFACE
         asharia::core

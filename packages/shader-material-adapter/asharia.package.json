@@ -1,0 +1,32 @@
+{
+  "name": "com.asharia.shader-material-adapter",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Shader Material Adapter",
+  "description": "Adapter from Slang shader reflection to material resource signatures.",
+  "dependencies": [
+    "com.asharia.core",
+    "com.asharia.material-core",
+    "com.asharia.shader-authoring",
+    "com.asharia.shader-slang"
+  ],
+  "targets": ["asharia-shader-material-adapter"],
+  "testTargets": [
+    "asharia-shader-material-adapter-smoke-tests",
+    "asharia-generated-slang-reflection-smoke-tests"
+  ],
+  "targetDependencies": {
+    "asharia-shader-material-adapter": [
+      "asharia-core",
+      "asharia-material-core",
+      "asharia-shader-slang"
+    ],
+    "asharia-shader-material-adapter-smoke-tests": [
+      "asharia-shader-material-adapter"
+    ],
+    "asharia-generated-slang-reflection-smoke-tests": [
+      "asharia-shader-authoring",
+      "asharia-shader-material-adapter",
+      "asharia-slang-reflect"
+    ]
+  }
+}
