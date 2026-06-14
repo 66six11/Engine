@@ -11,5 +11,6 @@
   
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://Editor/UI/Styles/Shell/MainMenu.axaml" />
     </Application.Styles>
 </Application>

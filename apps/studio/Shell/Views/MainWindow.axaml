@@ -7,7 +7,12 @@
         x:Class="Editor.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="Editor">
+        Title="Editor"
+        Width="1280"
+        Height="800"
+        MinWidth="720"
+        MinHeight="420"
+        Background="#15171C">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,
@@ -15,6 +20,57 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0"
+                Background="#20232A"
+                BorderBrush="#343842"
+                BorderThickness="0,0,0,1">
+            <Menu Classes="editor-main-menu">
+                <MenuItem Header="File" Classes="editor-menu-item">
+                    <MenuItem Header="New" Classes="editor-menu-item" />
+                    <MenuItem Header="Open" Classes="editor-menu-item" />
+                    <MenuItem Header="Save" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="Save As" Classes="editor-menu-item" IsEnabled="False" />
+                    <Separator Classes="editor-menu-separator" />
+                    <MenuItem Header="Exit" Classes="editor-menu-item" IsEnabled="False" />
+                </MenuItem>
+                <MenuItem Header="Edit" Classes="editor-menu-item">
+                    <MenuItem Header="Undo" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="Redo" Classes="editor-menu-item" IsEnabled="False" />
+                    <Separator Classes="editor-menu-separator" />
+                    <MenuItem Header="Cut" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="Copy" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="Paste" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="Delete" Classes="editor-menu-item" IsEnabled="False" />
+                </MenuItem>
+                <MenuItem Header="View" Classes="editor-menu-item">
+                    <MenuItem Header="Layout" Classes="editor-menu-item">
+                        <MenuItem Header="Reset Layout" Classes="editor-menu-item" IsEnabled="False" />
+                        <MenuItem Header="Save Layout" Classes="editor-menu-item" IsEnabled="False" />
+                    </MenuItem>
+                </MenuItem>
+                <MenuItem Header="Window" Classes="editor-menu-item">
+                    <MenuItem Header="Panels" Classes="editor-menu-item">
+                        <MenuItem Header="Scene View" Classes="editor-menu-item" IsEnabled="False" />
+                        <MenuItem Header="Hierarchy" Classes="editor-menu-item" IsEnabled="False" />
+                        <MenuItem Header="Inspector" Classes="editor-menu-item" IsEnabled="False" />
+                        <MenuItem Header="Console" Classes="editor-menu-item" IsEnabled="False" />
+                        <MenuItem Header="Problems" Classes="editor-menu-item" IsEnabled="False" />
+                    </MenuItem>
+                </MenuItem>
+                <MenuItem Header="Tools" Classes="editor-menu-item">
+                    <MenuItem Header="Command Palette" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="Settings" Classes="editor-menu-item" IsEnabled="False" />
+                </MenuItem>
+                <MenuItem Header="Help" Classes="editor-menu-item">
+                    <MenuItem Header="Documentation" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="About" Classes="editor-menu-item" IsEnabled="False" />
+                </MenuItem>
+            </Menu>
+        </Border>
+
+        <Border Grid.Row="1"
+                Background="#15171C" />
+    </Grid>
 
 </Window>
