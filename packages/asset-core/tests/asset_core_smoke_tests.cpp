@@ -134,6 +134,8 @@ namespace {
             !expectInvalidSourcePath("C:/Content/Textures/Crate.png", "drive prefix") ||
             !expectInvalidSourcePath("Content/./Crate.png", "'.' or '..'") ||
             !expectInvalidSourcePath("Content/../Crate.png", "'.' or '..'") ||
+            !expectInvalidSourcePath("Content/Textures/\nCrate.png", "control characters") ||
+            !expectInvalidSourcePath("Content/Textures/\rCrate.png", "control characters") ||
             !expectInvalidSourcePath("Content//Textures/Crate.png", "empty segment") ||
             !expectInvalidSourcePath("Content/Textures/", "empty segment")) {
             return false;

@@ -3,8 +3,10 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -590,6 +592,29 @@ namespace {
             hash *= 1099511628211ULL;
         }
         return hash;
+    }
+
+    [[nodiscard]] std::string formatSmokeHash64(std::uint64_t value) {
+        std::ostringstream stream;
+        stream << std::hex << std::nouppercase << std::setw(16) << std::setfill('0') << value;
+        return stream.str();
+    }
+
+    [[nodiscard]] std::vector<std::uint8_t>
+    makePlaceholderProductBytesForSmoke(std::span<const std::uint8_t> sourceBytes,
+                                        std::string_view hashOverride = {}) {
+        const std::string hashText = hashOverride.empty()
+                                         ? formatSmokeHash64(smokeHashBytes(sourceBytes))
+                                         : std::string{hashOverride};
+        std::vector<std::uint8_t> bytes =
+            bytesFromText("schema=com.asharia.asset.placeholder-product.v1\n"
+                          "sourceBytes.size=" +
+                          std::to_string(sourceBytes.size()) + "\nsourceBytesHash=" + hashText +
+                          "\nsourceBytes.begin\n");
+        bytes.insert(bytes.end(), sourceBytes.begin(), sourceBytes.end());
+        std::vector<std::uint8_t> footer = bytesFromText("\nsourceBytes.end\n");
+        bytes.insert(bytes.end(), footer.begin(), footer.end());
+        return bytes;
     }
 
     [[nodiscard]] bool createDirectories(const std::filesystem::path& path) {
@@ -1708,8 +1733,7 @@ namespace {
                 .relativeProductPath = written.product.relativeProductPath,
             });
         const std::vector<std::uint8_t> expectedBytes{0x10U, 0x20U, 0x30U, 0xFFU};
-        if (!payload || payload->sourcePath != source.sourcePath ||
-            payload->productTypeName != asharia::asset::kTextureRoleTexture2D ||
+        if (!payload || payload->productTypeName != asharia::asset::kTextureRoleTexture2D ||
             payload->importProfileName != asharia::asset::kTextureImportProfileTexture2D ||
             payload->settingsVersion != asharia::asset::kTextureImportContractSettingsVersion ||
             payload->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
@@ -1855,8 +1879,7 @@ namespace {
                 .productFilePath = written.productFilePath,
                 .relativeProductPath = written.product.relativeProductPath,
             });
-        if (!payload || payload->sourcePath != source.sourcePath ||
-            payload->stableTypeId != "asharia.material.unlit" ||
+        if (!payload || payload->stableTypeId != "asharia.material.unlit" ||
             payload->expectedTypeHash != 0x00000000000000AAULL ||
             payload->lastCookedSignatureHash != 0x00000000000000BBULL ||
             payload->canonicalAmatText.find(R"("baseColor")") == std::string::npos) {
@@ -1936,13 +1959,58 @@ namespace {
             return false;
         }
 
-        const std::vector<std::uint8_t> unterminated =
-            bytesFromText("schema=placeholder\nsourceBytes.begin\nabc");
+        const std::vector<std::uint8_t> sourceBytes = bytesFromText("abc");
+        const std::vector<std::uint8_t> unterminated = bytesFromText(
+            "schema=com.asharia.asset.placeholder-product.v1\n"
+            "sourceBytes.size=3\n"
+            "sourceBytesHash=" +
+            formatSmokeHash64(smokeHashBytes(sourceBytes)) + "\nsourceBytes.begin\nabc");
         auto unterminatedPayload = asharia::asset::readPlaceholderProductSourceBytes(
             std::span<const std::uint8_t>{unterminated.data(), unterminated.size()},
             "textures/unterminated.product");
         if (!expectProductBlobError(
                 unterminatedPayload,
+                asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                "unterminated sourceBytes payload")) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> sourceBytesWithSentinel =
+            bytesFromText("abc\nsourceBytes.end\nstill payload");
+        const std::vector<std::uint8_t> sentinelProduct =
+            makePlaceholderProductBytesForSmoke(sourceBytesWithSentinel);
+        auto sentinelPayload = asharia::asset::readPlaceholderProductSourceBytes(
+            std::span<const std::uint8_t>{sentinelProduct.data(), sentinelProduct.size()},
+            "textures/sentinel.product");
+        if (!sentinelPayload || sentinelPayload->sourceBytes != sourceBytesWithSentinel) {
+            logFailure("Asset product blob smoke truncated a placeholder sourceBytes payload.");
+            return false;
+        }
+
+        const std::vector<std::uint8_t> hashMismatchProduct =
+            makePlaceholderProductBytesForSmoke(sourceBytes, "0000000000000001");
+        auto hashMismatchPayload = asharia::asset::readPlaceholderProductSourceBytes(
+            std::span<const std::uint8_t>{hashMismatchProduct.data(), hashMismatchProduct.size()},
+            "textures/hash-mismatch.product");
+        if (!expectProductBlobError(
+                hashMismatchPayload,
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "sourceBytes hash mismatch")) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> sizeMismatch =
+            bytesFromText("schema=com.asharia.asset.placeholder-product.v1\n"
+                          "sourceBytes.size=4\n"
+                          "sourceBytesHash=" +
+                          formatSmokeHash64(smokeHashBytes(sourceBytes)) +
+                          "\nsourceBytes.begin\nabc\n"
+                          "sourceBytes.end\n");
+        auto sizeMismatchPayload = asharia::asset::readPlaceholderProductSourceBytes(
+            std::span<const std::uint8_t>{sizeMismatch.data(), sizeMismatch.size()},
+            "textures/size-mismatch.product");
+        if (!expectProductBlobError(
+                sizeMismatchPayload,
                 asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
                 "unterminated sourceBytes payload")) {
             return false;

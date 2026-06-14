@@ -262,7 +262,6 @@ namespace asharia::asset {
         }
 
         struct TextureProductHeaderFields {
-            std::string sourcePath;
             std::string productTypeName;
             std::string importProfileName;
             std::uint32_t settingsVersion{};
@@ -289,7 +288,6 @@ namespace asharia::asset {
                 return std::unexpected{std::move(validSchema.error())};
             }
 
-            auto sourcePath = requireStringField(header, "sourcePath", relativeProductPath);
             auto productType = requireStringField(header, "productType", relativeProductPath);
             auto profile = requireStringField(header, "importProfile", relativeProductPath);
             auto settingsVersion =
@@ -300,9 +298,6 @@ namespace asharia::asset {
             auto mipCount = requireUint64Field(header, "mip.count", relativeProductPath);
             auto payloadSize = requireUint64Field(header, "payload.size", relativeProductPath);
             auto payloadHash = requireHexUint64Field(header, "payloadHash", relativeProductPath);
-            if (!sourcePath) {
-                return std::unexpected{std::move(sourcePath.error())};
-            }
             if (!productType) {
                 return std::unexpected{std::move(productType.error())};
             }
@@ -337,7 +332,6 @@ namespace asharia::asset {
             }
 
             return TextureProductHeaderFields{
-                .sourcePath = std::move(*sourcePath),
                 .productTypeName = std::move(*productType),
                 .importProfileName = std::move(*profile),
                 .settingsVersion = *settingsVersion,
@@ -401,7 +395,6 @@ namespace asharia::asset {
         }
 
         struct MaterialInstanceProductHeaderFields {
-            std::string sourcePath;
             AssetGuid materialTypeAssetGuid{};
             std::string stableTypeId;
             std::uint64_t expectedTypeHash{};
@@ -418,7 +411,6 @@ namespace asharia::asset {
                 return std::unexpected{std::move(validSchema.error())};
             }
 
-            auto sourcePath = requireStringField(header, "sourcePath", relativeProductPath);
             auto materialTypeAssetGuid =
                 requireAssetGuidField(header, "materialType.assetGuid", relativeProductPath);
             auto stableTypeId =
@@ -429,9 +421,6 @@ namespace asharia::asset {
                 header, "import.lastCookedSignatureHash", relativeProductPath);
             auto amatSize = requireUint64Field(header, "amat.size", relativeProductPath);
             auto amatHash = requireHexUint64Field(header, "amatHash", relativeProductPath);
-            if (!sourcePath) {
-                return std::unexpected{std::move(sourcePath.error())};
-            }
             if (!materialTypeAssetGuid) {
                 return std::unexpected{std::move(materialTypeAssetGuid.error())};
             }
@@ -457,7 +446,6 @@ namespace asharia::asset {
             }
 
             return MaterialInstanceProductHeaderFields{
-                .sourcePath = std::move(*sourcePath),
                 .materialTypeAssetGuid = *materialTypeAssetGuid,
                 .stableTypeId = std::move(*stableTypeId),
                 .expectedTypeHash = *expectedTypeHash,
@@ -495,29 +483,54 @@ namespace asharia::asset {
             text.push_back(static_cast<char>(byte));
         }
         constexpr std::string_view kBegin = "sourceBytes.begin\n";
-        constexpr std::string_view kEnd = "\nsourceBytes.end";
+        constexpr std::string_view kEnd = "\nsourceBytes.end\n";
 
-        const std::size_t begin = text.find(kBegin);
-        if (begin == std::string_view::npos) {
+        const std::size_t markerOffset = text.find(kBegin);
+        if (markerOffset == std::string_view::npos) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingPayload,
                                              std::string{relativeProductPath},
                                              "does not contain sourceBytes.begin")};
         }
 
-        const std::size_t payloadBegin = begin + kBegin.size();
-        const std::size_t payloadEnd = text.find(kEnd, payloadBegin);
-        if (payloadEnd == std::string_view::npos || payloadEnd < payloadBegin) {
+        const std::size_t payloadBegin = markerOffset + kBegin.size();
+        const std::string headerText = text.substr(0, markerOffset);
+        auto sourceBytesSize =
+            requireUint64Field(headerText, "sourceBytes.size", relativeProductPath);
+        auto sourceBytesHash =
+            requireHexUint64Field(headerText, "sourceBytesHash", relativeProductPath);
+        if (!sourceBytesSize) {
+            return std::unexpected{std::move(sourceBytesSize.error())};
+        }
+        if (!sourceBytesHash) {
+            return std::unexpected{std::move(sourceBytesHash.error())};
+        }
+        if (*sourceBytesSize > SIZE_MAX || payloadBegin > productBytes.size() ||
+            *sourceBytesSize > productBytes.size() - payloadBegin) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
                                              "has an unterminated sourceBytes payload")};
         }
 
-        std::vector<std::uint8_t> sourceBytes;
-        sourceBytes.reserve(payloadEnd - payloadBegin);
-        for (std::size_t index = payloadBegin; index < payloadEnd; ++index) {
-            sourceBytes.push_back(productBytes[index]);
+        const auto payloadByteCount = static_cast<std::size_t>(*sourceBytesSize);
+        const std::size_t payloadEnd = payloadBegin + payloadByteCount;
+        if (productBytes.size() < payloadEnd + kEnd.size() ||
+            text.substr(payloadEnd, kEnd.size()) != kEnd) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                                             std::string{relativeProductPath},
+                                             "has an unterminated sourceBytes payload")};
         }
 
+        const std::span<const std::uint8_t> sourceByteSpan{
+            productBytes.data() + payloadBegin,
+            payloadByteCount,
+        };
+        if (hashBytes(sourceByteSpan) != *sourceBytesHash) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath},
+                                             "has a sourceBytes hash mismatch")};
+        }
+
+        std::vector<std::uint8_t> sourceBytes{sourceByteSpan.begin(), sourceByteSpan.end()};
         return AssetProductBlobPayload{.sourceBytes = std::move(sourceBytes)};
     }
 
@@ -600,7 +613,6 @@ namespace asharia::asset {
         }
 
         return AssetTextureProductPayload{
-            .sourcePath = std::move(header->sourcePath),
             .productTypeName = std::move(header->productTypeName),
             .importProfileName = std::move(header->importProfileName),
             .settingsVersion = header->settingsVersion,
@@ -702,7 +714,6 @@ namespace asharia::asset {
         }
 
         return AssetMaterialInstanceProductPayload{
-            .sourcePath = std::move(header->sourcePath),
             .materialTypeAssetGuid = header->materialTypeAssetGuid,
             .stableTypeId = std::move(header->stableTypeId),
             .expectedTypeHash = header->expectedTypeHash,

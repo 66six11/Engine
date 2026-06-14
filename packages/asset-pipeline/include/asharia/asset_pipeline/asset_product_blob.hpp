@@ -37,7 +37,6 @@ namespace asharia::asset {
     };
 
     struct AssetTextureProductPayload {
-        std::string sourcePath;
         std::string productTypeName;
         std::string importProfileName;
         std::uint32_t settingsVersion{};
@@ -52,7 +51,6 @@ namespace asharia::asset {
     };
 
     struct AssetMaterialInstanceProductPayload {
-        std::string sourcePath;
         AssetGuid materialTypeAssetGuid{};
         std::string stableTypeId;
         std::uint64_t expectedTypeHash{};

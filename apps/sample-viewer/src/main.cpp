@@ -3275,8 +3275,7 @@ namespace {
             return std::unexpected{std::move(payload.error())};
         }
         const std::vector<std::uint8_t> expectedPixels = smokeTexturePixels();
-        if (payload->sourcePath != source.sourcePath ||
-            payload->productTypeName != asharia::asset::kTextureRoleTexture2D ||
+        if (payload->productTypeName != asharia::asset::kTextureRoleTexture2D ||
             payload->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
             payload->width != kSmokeTextureUploadExtent.width ||
             payload->height != kSmokeTextureUploadExtent.height ||
