@@ -1802,6 +1802,46 @@ namespace {
         };
     }
 
+    [[nodiscard]] std::string validAshaderText() {
+        return R"ashader(
+schema 2
+
+shader "asharia.material.unlit" {
+  properties {
+    color baseColor = [1, 1, 1, 1]
+    texture2D albedoMap
+    sampler linearSampler
+  }
+
+  pass "Forward" {
+    tag "SceneForward"
+    vertex vertexMain
+    fragment fragmentMain
+    slang "Unlit.slang"
+  }
+}
+)ashader";
+    }
+
+    [[nodiscard]] asharia::asset::SourceAssetRecord
+    makeShaderAuthoringRecord(std::span<const std::uint8_t> sourceBytes,
+                              std::span<const asharia::asset::AssetImportSetting> settings) {
+        auto guid = asharia::asset::parseAssetGuid("69bc6326-c04a-49d8-a4d2-653445a0e423");
+        constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
+        constexpr std::string_view kImporterName = "com.asharia.importer.shader-authoring";
+        return asharia::asset::SourceAssetRecord{
+            .guid = guid ? *guid : asharia::asset::AssetGuid{},
+            .assetType = asharia::asset::makeAssetTypeId(kShaderTypeName),
+            .assetTypeName = std::string{kShaderTypeName},
+            .sourcePath = "Content/Shaders/Unlit.ashader",
+            .importerId = asharia::asset::makeImporterId(kImporterName),
+            .importerName = std::string{kImporterName},
+            .importerVersion = asharia::asset::ImporterVersion{1},
+            .sourceHash = smokeHashBytes(sourceBytes),
+            .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+        };
+    }
+
     [[nodiscard]] bool smokeProductExecutionWritesAmatMaterialProduct() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-amat-material-product");
@@ -1899,6 +1939,119 @@ namespace {
                                          "material instance import failed");
     }
 
+    [[nodiscard]] bool smokeProductExecutionWritesAshaderShaderProduct() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-ashader-shader-product");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::vector<asharia::asset::AssetImportSetting> settings{
+            asharia::asset::AssetImportSetting{
+                .key = "shader.product",
+                .value = "generated-slang-v1",
+            },
+        };
+        const std::vector<std::uint8_t> sourceBytes = bytesFromText(validAshaderText());
+        const asharia::asset::SourceAssetRecord source =
+            makeShaderAuthoringRecord(sourceBytes, settings);
+        const std::filesystem::path outputRoot = root / "ProductCache";
+        const asharia::asset::AssetProductExecutionRequest request{
+            .plan = makeSingleProductExecutionPlan(source, settings),
+            .existingManifest = {},
+            .sourceBytes =
+                {
+                    asharia::asset::AssetProductSourceBytes{
+                        .sourcePath = source.sourcePath,
+                        .bytes = sourceBytes,
+                    },
+                },
+            .productOutputRoot = outputRoot,
+            .productManifestOutputPath = outputRoot / "product-manifest.json",
+        };
+
+        const asharia::asset::AssetProductExecutionResult first =
+            asharia::asset::executeAssetProducts(request);
+        const asharia::asset::AssetProductExecutionResult second =
+            asharia::asset::executeAssetProducts(request);
+        auto firstText = asharia::asset::writeAssetProductManifestText(first.manifest);
+        auto secondText = asharia::asset::writeAssetProductManifestText(second.manifest);
+        if (!first.succeeded() || !second.succeeded() || first.writtenProducts.size() != 1U ||
+            second.writtenProducts.size() != 1U || first.manifest.products.size() != 1U ||
+            !first.manifestWritten || !second.manifestWritten || !firstText || !secondText ||
+            *firstText != *secondText ||
+            first.writtenProducts.front().product.productHash !=
+                second.writtenProducts.front().product.productHash) {
+            logFailure("Asset product execution smoke failed .ashader shader product write.");
+            return false;
+        }
+
+        const asharia::asset::AssetProductWrite& written = first.writtenProducts.front();
+        auto payload = asharia::asset::readShaderAuthoringProductPayload(
+            asharia::asset::AssetProductBlobReadRequest{
+                .productFilePath = written.productFilePath,
+                .relativeProductPath = written.product.relativeProductPath,
+            });
+        if (!payload || payload->sourcePath != source.sourcePath ||
+            payload->stableTypeId != "asharia.material.unlit" || payload->schemaVersion != 2U ||
+            payload->properties.size() != 3U || payload->passes.size() != 1U ||
+            payload->bindings.size() != 3U || payload->entries.size() != 2U ||
+            payload->properties.front().name != "baseColor" ||
+            payload->properties.front().typeName != "color" ||
+            payload->passes.front().name != "Forward" ||
+            payload->passes.front().tag != "SceneForward" ||
+            payload->bindings.front().name != "baseColor" ||
+            !payload->bindings.front().inMaterialParameterBlock ||
+            payload->entries.front().passName != "Forward" ||
+            payload->generatedSlangText.find("struct __AshariaMaterialParams") ==
+                std::string::npos ||
+            payload->generatedSlangText.find("Texture2D<float4> albedoMap;") == std::string::npos ||
+            payload->generatedSlangText.find("fragmentMain();") == std::string::npos) {
+            logFailure("Asset product execution smoke could not read .ashader shader product.");
+            return false;
+        }
+
+        const std::vector<std::uint8_t> generatedBytes = bytesFromText(payload->generatedSlangText);
+        if (smokeHashBytes(generatedBytes) != payload->generatedSlangHash) {
+            logFailure("Asset product execution smoke found generated Slang hash drift.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductExecutionAshaderDiagnostics() {
+        const std::vector<asharia::asset::AssetImportSetting> settings{
+            asharia::asset::AssetImportSetting{
+                .key = "shader.product",
+                .value = "generated-slang-v1",
+            },
+        };
+        const std::vector<std::uint8_t> sourceBytes = bytesFromText("{");
+        const asharia::asset::SourceAssetRecord source =
+            makeShaderAuthoringRecord(sourceBytes, settings);
+        const asharia::asset::AssetProductExecutionResult execution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = makeSingleProductExecutionPlan(source, settings),
+                .existingManifest = {},
+                .sourceBytes =
+                    {
+                        asharia::asset::AssetProductSourceBytes{
+                            .sourcePath = source.sourcePath,
+                            .bytes = sourceBytes,
+                        },
+                    },
+                .productOutputRoot = "unused-product-cache",
+                .productManifestOutputPath = {},
+            });
+
+        return execution.writtenProducts.empty() &&
+               expectExecutionDiagnostic(
+                   execution,
+                   asharia::asset::AssetProductExecutionDiagnosticCode::ShaderAuthoringImportFailed,
+                   "shader authoring import failed");
+    }
+
     [[nodiscard]] bool smokeProductBlobReadDiagnostics() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-product-blob-read");
@@ -1978,6 +2131,84 @@ namespace {
                 unterminatedAmat,
                 asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
                 "unterminated .amat payload")) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> noShaderPayload =
+            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v1\n");
+        auto missingShaderPayload = asharia::asset::readShaderAuthoringProductPayload(
+            std::span<const std::uint8_t>{noShaderPayload.data(), noShaderPayload.size()},
+            "shaders/no-generated-slang.product");
+        if (!expectProductBlobError(missingShaderPayload,
+                                    asharia::asset::AssetProductBlobDiagnosticCode::MissingPayload,
+                                    "generatedSlang.begin")) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> badShaderPayload =
+            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v1\n"
+                          "sourcePath=Content/Shaders/Unlit.ashader\n"
+                          "shader.stableTypeId=asharia.material.unlit\n"
+                          "ashader.schemaVersion=2\n"
+                          "property.count=0\n"
+                          "pass.count=1\n"
+                          "pass.0.name=Forward\n"
+                          "pass.0.tag=\n"
+                          "pass.0.vertex=vertexMain\n"
+                          "pass.0.fragment=fragmentMain\n"
+                          "pass.0.compute=\n"
+                          "binding.count=0\n"
+                          "entry.count=1\n"
+                          "entry.0.passName=Forward\n"
+                          "entry.0.stage=vertex\n"
+                          "entry.0.sourceEntry=vertexMain\n"
+                          "entry.0.compileEntry=vertexMain\n"
+                          "entry.0.generatedWrapper=__asharia_Forward_vertex\n"
+                          "generatedSlang.size=4\n"
+                          "generatedSlangHash=0000000000000001\n"
+                          "generatedSlang.begin\n"
+                          "abcd\n"
+                          "generatedSlang.end\n");
+        auto badShaderHash = asharia::asset::readShaderAuthoringProductPayload(
+            std::span<const std::uint8_t>{badShaderPayload.data(), badShaderPayload.size()},
+            "shaders/bad-generated-slang.product");
+        if (!expectProductBlobError(
+                badShaderHash, asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "generated Slang payload hash mismatch")) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> unterminatedShaderPayload =
+            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v1\n"
+                          "sourcePath=Content/Shaders/Unlit.ashader\n"
+                          "shader.stableTypeId=asharia.material.unlit\n"
+                          "ashader.schemaVersion=2\n"
+                          "property.count=0\n"
+                          "pass.count=1\n"
+                          "pass.0.name=Forward\n"
+                          "pass.0.tag=\n"
+                          "pass.0.vertex=vertexMain\n"
+                          "pass.0.fragment=fragmentMain\n"
+                          "pass.0.compute=\n"
+                          "binding.count=0\n"
+                          "entry.count=1\n"
+                          "entry.0.passName=Forward\n"
+                          "entry.0.stage=vertex\n"
+                          "entry.0.sourceEntry=vertexMain\n"
+                          "entry.0.compileEntry=vertexMain\n"
+                          "entry.0.generatedWrapper=__asharia_Forward_vertex\n"
+                          "generatedSlang.size=4\n"
+                          "generatedSlangHash=0000000000000001\n"
+                          "generatedSlang.begin\n"
+                          "abcd");
+        auto unterminatedShader = asharia::asset::readShaderAuthoringProductPayload(
+            std::span<const std::uint8_t>{unterminatedShaderPayload.data(),
+                                          unterminatedShaderPayload.size()},
+            "shaders/unterminated-generated-slang.product");
+        if (!expectProductBlobError(
+                unterminatedShader,
+                asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                "unterminated generated Slang payload")) {
             return false;
         }
 
@@ -2508,9 +2739,11 @@ int main() {
         smokeProductExecutionWritesPngTextureProduct() &&
         smokeProductExecutionPngTextureDiagnostics() &&
         smokeProductExecutionWritesAmatMaterialProduct() &&
-        smokeProductExecutionAmatDiagnostics() && smokeProductExecutionSourceBytesHashMismatch() &&
-        smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
-        smokeImportPlanningMetadataSourceHashDriftWarning() &&
+        smokeProductExecutionAmatDiagnostics() &&
+        smokeProductExecutionWritesAshaderShaderProduct() &&
+        smokeProductExecutionAshaderDiagnostics() &&
+        smokeProductExecutionSourceBytesHashMismatch() && smokeImportPlanningCacheHitAndMiss() &&
+        smokeImportPlanningSourceChanged() && smokeImportPlanningMetadataSourceHashDriftWarning() &&
         smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&
         smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
         smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&

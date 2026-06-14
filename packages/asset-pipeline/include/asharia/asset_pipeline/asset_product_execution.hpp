@@ -22,6 +22,7 @@ namespace asharia::asset {
         ManifestWriteFailed,
         TextureImportFailed,
         MaterialInstanceImportFailed,
+        ShaderAuthoringImportFailed,
     };
 
     struct AssetProductSourceBytes {

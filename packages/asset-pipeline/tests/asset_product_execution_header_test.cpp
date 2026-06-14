@@ -10,6 +10,9 @@ namespace asharia::asset_pipeline_header_tests {
         [[maybe_unused]] const asharia::asset::AssetProductExecutionDiagnosticCode
             textureDiagnostic =
                 asharia::asset::AssetProductExecutionDiagnosticCode::TextureImportFailed;
+        [[maybe_unused]] const asharia::asset::AssetProductExecutionDiagnosticCode
+            shaderDiagnostic =
+                asharia::asset::AssetProductExecutionDiagnosticCode::ShaderAuthoringImportFailed;
     }
 
 } // namespace asharia::asset_pipeline_header_tests

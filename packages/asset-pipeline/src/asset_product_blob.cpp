@@ -25,6 +25,8 @@ namespace asharia::asset {
         constexpr std::string_view kTextureProductSchema = "com.asharia.asset.texture2d-product.v1";
         constexpr std::string_view kMaterialInstanceProductSchema =
             "com.asharia.asset.material-instance-product.v1";
+        constexpr std::string_view kShaderAuthoringProductSchema =
+            "com.asharia.asset.shader-authoring-product.v1";
 
         [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
                                                        std::uint8_t byte) noexcept {
@@ -124,6 +126,22 @@ namespace asharia::asset {
             return std::string{*value};
         }
 
+        [[nodiscard]] Result<std::string>
+        requirePresentStringField(std::string_view header, std::string_view key,
+                                  std::string_view relativeProductPath) {
+            const std::optional<std::string_view> value = findHeaderValue({
+                .header = header,
+                .key = key,
+            });
+            if (!value) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "is missing field '" + std::string{key} + "'")};
+            }
+
+            return std::string{*value};
+        }
+
         [[nodiscard]] Result<std::uint64_t>
         requireUint64Field(std::string_view header, std::string_view key,
                            std::string_view relativeProductPath) {
@@ -165,6 +183,25 @@ namespace asharia::asset {
                               "has out-of-range integer field '" + std::string{key} + "'")};
             }
             return static_cast<std::uint32_t>(*value);
+        }
+
+        [[nodiscard]] Result<bool> requireBoolField(std::string_view header, std::string_view key,
+                                                    std::string_view relativeProductPath) {
+            auto value = requireStringField(header, key, relativeProductPath);
+            if (!value) {
+                return std::unexpected{std::move(value.error())};
+            }
+            if (*value == "true") {
+                return true;
+            }
+            if (*value == "false") {
+                return false;
+            }
+
+            return std::unexpected{
+                blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                          std::string{relativeProductPath},
+                          "has invalid boolean field '" + std::string{key} + "'")};
         }
 
         [[nodiscard]] Result<std::uint64_t>
@@ -253,6 +290,22 @@ namespace asharia::asset {
                 return std::unexpected{std::move(schema.error())};
             }
             if (*schema != kMaterialInstanceProductSchema) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has unsupported schema '" + *schema + "'")};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateShaderAuthoringSchema(std::string_view header,
+                                      std::string_view relativeProductPath) {
+            auto schema = requireStringField(header, "schema", relativeProductPath);
+            if (!schema) {
+                return std::unexpected{std::move(schema.error())};
+            }
+            if (*schema != kShaderAuthoringProductSchema) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                                  std::string{relativeProductPath},
                                                  "has unsupported schema '" + *schema + "'")};
@@ -465,6 +518,270 @@ namespace asharia::asset {
                 .amatSize = *amatSize,
                 .amatHash = *amatHash,
             };
+        }
+
+        struct ShaderAuthoringProductHeaderFields {
+            std::string sourcePath;
+            std::string stableTypeId;
+            std::uint32_t schemaVersion{};
+            std::uint64_t propertyCount{};
+            std::uint64_t passCount{};
+            std::uint64_t bindingCount{};
+            std::uint64_t entryCount{};
+            std::uint64_t generatedSlangSize{};
+            std::uint64_t generatedSlangHash{};
+        };
+
+        [[nodiscard]] Result<ShaderAuthoringProductHeaderFields>
+        parseShaderAuthoringProductHeaderFields(std::string_view header,
+                                                std::string_view relativeProductPath) {
+            auto validSchema = validateShaderAuthoringSchema(header, relativeProductPath);
+            if (!validSchema) {
+                return std::unexpected{std::move(validSchema.error())};
+            }
+
+            auto sourcePath = requireStringField(header, "sourcePath", relativeProductPath);
+            auto stableTypeId =
+                requireStringField(header, "shader.stableTypeId", relativeProductPath);
+            auto schemaVersion =
+                requireUint32Field(header, "ashader.schemaVersion", relativeProductPath);
+            auto propertyCount = requireUint64Field(header, "property.count", relativeProductPath);
+            auto passCount = requireUint64Field(header, "pass.count", relativeProductPath);
+            auto bindingCount = requireUint64Field(header, "binding.count", relativeProductPath);
+            auto entryCount = requireUint64Field(header, "entry.count", relativeProductPath);
+            auto generatedSlangSize =
+                requireUint64Field(header, "generatedSlang.size", relativeProductPath);
+            auto generatedSlangHash =
+                requireHexUint64Field(header, "generatedSlangHash", relativeProductPath);
+            if (!sourcePath) {
+                return std::unexpected{std::move(sourcePath.error())};
+            }
+            if (!stableTypeId) {
+                return std::unexpected{std::move(stableTypeId.error())};
+            }
+            if (!schemaVersion) {
+                return std::unexpected{std::move(schemaVersion.error())};
+            }
+            if (!propertyCount) {
+                return std::unexpected{std::move(propertyCount.error())};
+            }
+            if (!passCount) {
+                return std::unexpected{std::move(passCount.error())};
+            }
+            if (!bindingCount) {
+                return std::unexpected{std::move(bindingCount.error())};
+            }
+            if (!entryCount) {
+                return std::unexpected{std::move(entryCount.error())};
+            }
+            if (!generatedSlangSize) {
+                return std::unexpected{std::move(generatedSlangSize.error())};
+            }
+            if (!generatedSlangHash) {
+                return std::unexpected{std::move(generatedSlangHash.error())};
+            }
+            if (stableTypeId->empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has an empty shader type id")};
+            }
+            if (*schemaVersion != 2U) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has unsupported .ashader schema version")};
+            }
+            if (*passCount == 0 || *entryCount == 0) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has no generated Slang entry records")};
+            }
+
+            return ShaderAuthoringProductHeaderFields{
+                .sourcePath = std::move(*sourcePath),
+                .stableTypeId = std::move(*stableTypeId),
+                .schemaVersion = *schemaVersion,
+                .propertyCount = *propertyCount,
+                .passCount = *passCount,
+                .bindingCount = *bindingCount,
+                .entryCount = *entryCount,
+                .generatedSlangSize = *generatedSlangSize,
+                .generatedSlangHash = *generatedSlangHash,
+            };
+        }
+
+        [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductProperty>>
+        parseShaderAuthoringProperties(std::string_view header, std::uint64_t propertyCount,
+                                       std::string_view relativeProductPath) {
+            if (propertyCount > SIZE_MAX) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has too many property records")};
+            }
+
+            std::vector<AssetShaderAuthoringProductProperty> properties;
+            properties.reserve(static_cast<std::size_t>(propertyCount));
+            for (std::uint64_t index = 0; index < propertyCount; ++index) {
+                const std::string prefix = "property." + std::to_string(index) + ".";
+                auto name = requireStringField(header, prefix + "name", relativeProductPath);
+                auto type = requireStringField(header, prefix + "type", relativeProductPath);
+                auto defaultText =
+                    requirePresentStringField(header, prefix + "default", relativeProductPath);
+                if (!name) {
+                    return std::unexpected{std::move(name.error())};
+                }
+                if (!type) {
+                    return std::unexpected{std::move(type.error())};
+                }
+                if (!defaultText) {
+                    return std::unexpected{std::move(defaultText.error())};
+                }
+                properties.push_back(AssetShaderAuthoringProductProperty{
+                    .name = std::move(*name),
+                    .typeName = std::move(*type),
+                    .defaultText = std::move(*defaultText),
+                });
+            }
+            return properties;
+        }
+
+        [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductPass>>
+        parseShaderAuthoringPasses(std::string_view header, std::uint64_t passCount,
+                                   std::string_view relativeProductPath) {
+            if (passCount > SIZE_MAX) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has too many pass records")};
+            }
+
+            std::vector<AssetShaderAuthoringProductPass> passes;
+            passes.reserve(static_cast<std::size_t>(passCount));
+            for (std::uint64_t index = 0; index < passCount; ++index) {
+                const std::string prefix = "pass." + std::to_string(index) + ".";
+                auto name = requireStringField(header, prefix + "name", relativeProductPath);
+                auto tag = requirePresentStringField(header, prefix + "tag", relativeProductPath);
+                auto vertex =
+                    requirePresentStringField(header, prefix + "vertex", relativeProductPath);
+                auto fragment =
+                    requirePresentStringField(header, prefix + "fragment", relativeProductPath);
+                auto compute =
+                    requirePresentStringField(header, prefix + "compute", relativeProductPath);
+                if (!name) {
+                    return std::unexpected{std::move(name.error())};
+                }
+                if (!tag) {
+                    return std::unexpected{std::move(tag.error())};
+                }
+                if (!vertex) {
+                    return std::unexpected{std::move(vertex.error())};
+                }
+                if (!fragment) {
+                    return std::unexpected{std::move(fragment.error())};
+                }
+                if (!compute) {
+                    return std::unexpected{std::move(compute.error())};
+                }
+                passes.push_back(AssetShaderAuthoringProductPass{
+                    .name = std::move(*name),
+                    .tag = std::move(*tag),
+                    .vertexEntry = std::move(*vertex),
+                    .fragmentEntry = std::move(*fragment),
+                    .computeEntry = std::move(*compute),
+                });
+            }
+            return passes;
+        }
+
+        [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductBinding>>
+        parseShaderAuthoringBindings(std::string_view header, std::uint64_t bindingCount,
+                                     std::string_view relativeProductPath) {
+            if (bindingCount > SIZE_MAX) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has too many binding records")};
+            }
+
+            std::vector<AssetShaderAuthoringProductBinding> bindings;
+            bindings.reserve(static_cast<std::size_t>(bindingCount));
+            for (std::uint64_t index = 0; index < bindingCount; ++index) {
+                const std::string prefix = "binding." + std::to_string(index) + ".";
+                auto name = requireStringField(header, prefix + "name", relativeProductPath);
+                auto type = requireStringField(header, prefix + "type", relativeProductPath);
+                auto set = requireUint32Field(header, prefix + "set", relativeProductPath);
+                auto binding = requireUint32Field(header, prefix + "binding", relativeProductPath);
+                auto inMaterialParameterBlock = requireBoolField(
+                    header, prefix + "inMaterialParameterBlock", relativeProductPath);
+                if (!name) {
+                    return std::unexpected{std::move(name.error())};
+                }
+                if (!type) {
+                    return std::unexpected{std::move(type.error())};
+                }
+                if (!set) {
+                    return std::unexpected{std::move(set.error())};
+                }
+                if (!binding) {
+                    return std::unexpected{std::move(binding.error())};
+                }
+                if (!inMaterialParameterBlock) {
+                    return std::unexpected{std::move(inMaterialParameterBlock.error())};
+                }
+                bindings.push_back(AssetShaderAuthoringProductBinding{
+                    .name = std::move(*name),
+                    .typeName = std::move(*type),
+                    .set = *set,
+                    .binding = *binding,
+                    .inMaterialParameterBlock = *inMaterialParameterBlock,
+                });
+            }
+            return bindings;
+        }
+
+        [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductEntry>>
+        parseShaderAuthoringEntries(std::string_view header, std::uint64_t entryCount,
+                                    std::string_view relativeProductPath) {
+            if (entryCount > SIZE_MAX) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has too many entry records")};
+            }
+
+            std::vector<AssetShaderAuthoringProductEntry> entries;
+            entries.reserve(static_cast<std::size_t>(entryCount));
+            for (std::uint64_t index = 0; index < entryCount; ++index) {
+                const std::string prefix = "entry." + std::to_string(index) + ".";
+                auto passName =
+                    requireStringField(header, prefix + "passName", relativeProductPath);
+                auto stage = requireStringField(header, prefix + "stage", relativeProductPath);
+                auto sourceEntry =
+                    requireStringField(header, prefix + "sourceEntry", relativeProductPath);
+                auto compileEntry =
+                    requireStringField(header, prefix + "compileEntry", relativeProductPath);
+                auto wrapper =
+                    requireStringField(header, prefix + "generatedWrapper", relativeProductPath);
+                if (!passName) {
+                    return std::unexpected{std::move(passName.error())};
+                }
+                if (!stage) {
+                    return std::unexpected{std::move(stage.error())};
+                }
+                if (!sourceEntry) {
+                    return std::unexpected{std::move(sourceEntry.error())};
+                }
+                if (!compileEntry) {
+                    return std::unexpected{std::move(compileEntry.error())};
+                }
+                if (!wrapper) {
+                    return std::unexpected{std::move(wrapper.error())};
+                }
+                entries.push_back(AssetShaderAuthoringProductEntry{
+                    .passName = std::move(*passName),
+                    .stage = std::move(*stage),
+                    .sourceEntryName = std::move(*sourceEntry),
+                    .compileEntryName = std::move(*compileEntry),
+                    .generatedWrapperName = std::move(*wrapper),
+                });
+            }
+            return entries;
         }
 
     } // namespace
@@ -708,6 +1025,113 @@ namespace asharia::asset {
             .expectedTypeHash = header->expectedTypeHash,
             .lastCookedSignatureHash = header->lastCookedSignatureHash,
             .canonicalAmatText = std::move(canonicalAmatText),
+        };
+    }
+
+    Result<AssetShaderAuthoringProductPayload>
+    readShaderAuthoringProductPayload(const AssetProductBlobReadRequest& request) {
+        auto bytes = readProductFileBytes(request);
+        if (!bytes) {
+            return std::unexpected{std::move(bytes.error())};
+        }
+
+        return readShaderAuthoringProductPayload(
+            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
+            request.relativeProductPath);
+    }
+
+    Result<AssetShaderAuthoringProductPayload>
+    readShaderAuthoringProductPayload(std::span<const std::uint8_t> productBytes,
+                                      std::string_view relativeProductPath) {
+        if (productBytes.empty()) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath}, "is empty")};
+        }
+
+        constexpr std::string_view kBegin = "generatedSlang.begin\n";
+        constexpr std::string_view kEnd = "\ngeneratedSlang.end\n";
+        std::string productText;
+        productText.reserve(productBytes.size());
+        for (const std::uint8_t byte : productBytes) {
+            productText.push_back(static_cast<char>(byte));
+        }
+
+        const std::size_t markerOffset = productText.find(kBegin);
+        if (markerOffset == std::string_view::npos) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingPayload,
+                                             std::string{relativeProductPath},
+                                             "does not contain generatedSlang.begin")};
+        }
+
+        const std::size_t payloadBegin = markerOffset + kBegin.size();
+        const std::string headerText = productText.substr(0, markerOffset);
+        auto header = parseShaderAuthoringProductHeaderFields(headerText, relativeProductPath);
+        if (!header) {
+            return std::unexpected{std::move(header.error())};
+        }
+        if (header->generatedSlangSize > SIZE_MAX || payloadBegin > productBytes.size() ||
+            header->generatedSlangSize > productBytes.size() - payloadBegin) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                                             std::string{relativeProductPath},
+                                             "has an unterminated generated Slang payload")};
+        }
+
+        const auto payloadByteCount = static_cast<std::size_t>(header->generatedSlangSize);
+        const std::size_t payloadEnd = payloadBegin + payloadByteCount;
+        if (productBytes.size() < payloadEnd + kEnd.size() ||
+            productText.substr(payloadEnd, kEnd.size()) != kEnd) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                                             std::string{relativeProductPath},
+                                             "has an unterminated generated Slang payload")};
+        }
+
+        const std::span<const std::uint8_t> payloadBytes{
+            productBytes.data() + payloadBegin,
+            payloadByteCount,
+        };
+        if (hashBytes(payloadBytes) != header->generatedSlangHash) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath},
+                                             "has a generated Slang payload hash mismatch")};
+        }
+
+        auto properties =
+            parseShaderAuthoringProperties(headerText, header->propertyCount, relativeProductPath);
+        if (!properties) {
+            return std::unexpected{std::move(properties.error())};
+        }
+        auto passes =
+            parseShaderAuthoringPasses(headerText, header->passCount, relativeProductPath);
+        if (!passes) {
+            return std::unexpected{std::move(passes.error())};
+        }
+        auto bindings =
+            parseShaderAuthoringBindings(headerText, header->bindingCount, relativeProductPath);
+        if (!bindings) {
+            return std::unexpected{std::move(bindings.error())};
+        }
+        auto entries =
+            parseShaderAuthoringEntries(headerText, header->entryCount, relativeProductPath);
+        if (!entries) {
+            return std::unexpected{std::move(entries.error())};
+        }
+
+        std::string generatedSlangText;
+        generatedSlangText.reserve(payloadByteCount);
+        for (const std::uint8_t byte : payloadBytes) {
+            generatedSlangText.push_back(static_cast<char>(byte));
+        }
+
+        return AssetShaderAuthoringProductPayload{
+            .sourcePath = std::move(header->sourcePath),
+            .stableTypeId = std::move(header->stableTypeId),
+            .schemaVersion = header->schemaVersion,
+            .generatedSlangHash = header->generatedSlangHash,
+            .properties = std::move(*properties),
+            .passes = std::move(*passes),
+            .bindings = std::move(*bindings),
+            .entries = std::move(*entries),
+            .generatedSlangText = std::move(generatedSlangText),
         };
     }
 

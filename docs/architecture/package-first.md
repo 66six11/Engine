@@ -102,13 +102,13 @@ package 用来承载可选能力：
   target，依赖 `archive` facade，不把 JSON/persistence 依赖强加给 identity/handle API。
 - `asset-pipeline` 第一阶段提供 CPU-only metadata discovery / product execution baseline：读取显式
   source/.ameta 条目，产出 deterministic manifest / catalog 输入、product blob 和诊断；它可以私有复用
-  texture importer 或 `material-instance` 等 importer-specific package，但不把这些语义推入 `asset-core`，
-  也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
+  texture importer、`material-instance` 或 `shader-authoring` 等 importer-specific package，但不把这些语义
+  推入 `asset-core`，也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
   当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
 - `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
   generated Slang skeleton 和 line mapping；它只依赖 `core`，不调用 Slang compiler，不生成 SPIR-V，
-  不进入 renderer、RHI、asset-pipeline 或 editor。
+  不依赖 renderer、RHI、asset-pipeline 或 editor。`asset-pipeline` 可以作为 importer/cook glue 私有复用它。
 - `shader-material-adapter` 提供 Slang reflection JSON 到 material resource signature 的 CPU-only adapter；
   主 target 依赖 `core`、`material-core` 和 `shader-slang`，generated reflection smoke 可额外使用
   `shader-authoring` 和 `asharia-slang-reflect`，但不进入 renderer、RHI、asset-pipeline 或 editor。
