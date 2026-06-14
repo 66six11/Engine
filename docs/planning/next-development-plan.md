@@ -43,7 +43,7 @@
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO 和 #156 deterministic `.amat` product blob；#158 正在把 `.ashader` cook 成 generated Slang product blob | Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO、#156 deterministic `.amat` product blob 和 #158 deterministic `.ashader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、Unity-like shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -200,12 +200,11 @@
 
 ## 下一批 PR-sized Slice
 
-1. `#158 [Slice] Materials: cook .ashader generated Slang product blobs`：继续 shader/material MVP
-   Milestone 5，让 `asset-pipeline` 把 `.ashader` source bytes cook 成 deterministic
-   `shader-authoring-product.v1` generated Slang blob，并用 package-local reader/smoke 验证 product
-   payload、entry manifest facts、property/pass summary facts、manifest/hash 和 malformed input diagnostics；
-   不调用 `slangc`，不生成 SPIR-V、reflection/signature product，不做 cross-asset dependency invalidation、
-   renderer/RHI 或 editor UI。
+1. `#163 [Slice] Materials: cook Slang compile/reflection products`：继续 shader/material MVP
+   Milestone 5，复用 #158 的 `shader-authoring-product.v1` generated Slang payload 和 entry
+   manifest facts，生成 deterministic Slang compile/reflection product facts；覆盖 manifest-selected
+   entries、SPIR-V/reflection payload hash、compiler diagnostics 和 bad product diagnostics。该 Slice 仍不做
+   material signature product、cross-asset dependency invalidation、renderer/RHI 或 editor UI。
 2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 
