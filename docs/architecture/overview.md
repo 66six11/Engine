@@ -44,8 +44,10 @@ RenderGraph 资料。
 
 - `engine/core`：日志、错误/result、版本和低层通用设施。不能依赖 Vulkan、GLFW、Slang、editor UI 或
   asset importer。
-- `engine/platform`：平台抽象接口和最小 OS 集成，依赖 `engine/core`。
-- `packages/window-glfw`：GLFW window、输入轮询和 Vulkan surface 创建，依赖 `core` / `platform`。
+- `engine/platform`：当前是预留 platform abstraction boundary target，依赖 `engine/core`；尚未导出公共
+  header 或拥有具体 OS 集成。
+- `packages/window-glfw`：GLFW window、输入轮询和 Vulkan surface 创建，依赖 `core` / `platform`，实际
+  GLFW/Surface glue 仍归此 package。
 - `packages/profiling`：后端无关 CPU scope、frame profile、counter 和 benchmark 输出；当前不依赖
   renderer、Vulkan 或 editor。
 - `packages/schema`：稳定 type/field id、value kind 和 typed metadata。

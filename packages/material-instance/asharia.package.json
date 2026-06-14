@@ -5,7 +5,14 @@
   "description": "CPU-only .amat document IO and override validation.",
   "dependencies": ["com.asharia.core", "com.asharia.archive", "com.asharia.asset-core", "com.asharia.shader-authoring"],
   "targets": ["asharia-material-instance"],
+  "testTargets": ["asharia-material-instance-smoke-tests"],
   "targetDependencies": {
-    "asharia-material-instance": ["asharia-core", "asharia-archive", "asharia-asset-core", "asharia-shader-authoring"]
+    "asharia-material-instance": [
+      "asharia-core",
+      "asharia-archive",
+      "asharia-asset-core",
+      "asharia-shader-authoring"
+    ],
+    "asharia-material-instance-smoke-tests": ["asharia-material-instance"]
   }
 }
