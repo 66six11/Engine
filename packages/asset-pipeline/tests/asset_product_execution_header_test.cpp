@@ -15,6 +15,9 @@ namespace asharia::asset_pipeline_header_tests {
             shaderDiagnostic =
                 asharia::asset::AssetProductExecutionDiagnosticCode::ShaderAuthoringImportFailed;
         [[maybe_unused]] const asharia::asset::AssetProductExecutionDiagnosticCode
+            shaderCompileDiagnostic = asharia::asset::AssetProductExecutionDiagnosticCode::
+                ShaderCompileReflectionImportFailed;
+        [[maybe_unused]] const asharia::asset::AssetProductExecutionDiagnosticCode
             dependencyDiagnostic = asharia::asset::AssetProductExecutionDiagnosticCode::
                 DependencyProductBytesHashMismatch;
     }

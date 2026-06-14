@@ -140,10 +140,18 @@ invalidation。#163 是后续 compile/reflection product 层，目标是从该 g
 manifest facts 产出 deterministic SPIR-V/reflection facts，但仍不生成 material signature product 或 renderer
 binding packet。
 
-截至 2026-06-14，#163 的第一步先在 `asset-pipeline` execution request 中显式接收上游 product bytes
-（relative product path + product hash + bytes），并在执行前校验路径、重复项和 hash 漂移；后续
-Slang compile/reflection cook 应消费该输入契约，而不是从 cache 路径或 `dependencyHash` 反推上游
-product 内容。
+截至 2026-06-14，#163 已在 `asset-pipeline` execution request 中显式接收上游 product bytes
+（relative product path + product hash + bytes），并在执行前校验路径、重复项和 hash 漂移；Slang
+compile/reflection cook 消费该输入契约，而不是从 cache 路径或 `dependencyHash` 反推上游 product
+内容。
+
+同日的第二步新增 `com.asharia.importer.shader-compile-reflection` / `shader-compile-reflection-product.v1`：
+compile request 通过 `shader.authoringProductPath` 指向上游 `shader-authoring-product.v1`，读取其 generated
+Slang payload 和 entry manifest facts，逐 entry 调用 `slangc -reflection-json` 生成 SPIR-V 与 reflection
+JSON，并用 `spirv-val` 验证 SPIR-V。产品 blob 记录 profile/target、上游 authoring product path/hash、
+generated Slang hash、entry manifest、SPIR-V bytes/hash/size 和 reflection JSON/hash/size；reader 会复核
+payload size/hash。该层仍不生成 material signature product、cross-asset dependency invalidation、renderer
+binding packet 或 editor UI。
 
 `.amat` import 输出：
 

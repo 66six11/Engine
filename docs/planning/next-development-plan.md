@@ -202,11 +202,13 @@
 
 1. `#163 [Slice] Materials: cook Slang compile/reflection products`：继续 shader/material MVP
    Milestone 5，复用 #158 的 `shader-authoring-product.v1` generated Slang payload 和 entry
-   manifest facts，生成 deterministic Slang compile/reflection product facts；覆盖 manifest-selected
-   entries、SPIR-V/reflection payload hash、compiler diagnostics 和 bad product diagnostics。该 Slice 仍不做
-   material signature product、cross-asset dependency invalidation、renderer/RHI 或 editor UI。当前推进顺序是
-   先落地 request-level dependency product bytes contract，再接 `slangc` / `spirv-val` / reflection product
-   writer。
+   manifest facts，生成 deterministic Slang compile/reflection product facts；已完成 request-level dependency
+   product bytes contract，并新增 `shader-compile-reflection-product.v1` writer/reader：通过
+   `shader.authoringProductPath` 消费上游 authoring product bytes，调用 `slangc -reflection-json`，再用
+   `spirv-val` 验证 SPIR-V，覆盖 SPIR-V/reflection payload hash、缺失上游 product bytes 和 bad product
+   diagnostics。该 Slice 仍不做 material signature product、cross-asset dependency invalidation、renderer/RHI
+   或 editor UI。下一步收敛 manifest-selected entries / compiler diagnostic details，并准备 material
+   signature product 的独立 Slice。
 2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
 3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 
