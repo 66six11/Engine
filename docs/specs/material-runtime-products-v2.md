@@ -153,6 +153,14 @@ generated Slang hash、entry manifest、SPIR-V bytes/hash/size 和 reflection JS
 payload size/hash。该层仍不生成 material signature product、cross-asset dependency invalidation、renderer
 binding packet 或 editor UI。
 
+同日第三步把 compiler/validator diagnostics 纳入 `shader-compile-reflection-product.v1` entry facts：
+每个 entry 记录 `slangc` exit code、diagnostic text size/hash/payload，以及 `spirv-val` exit code、
+diagnostic text size/hash/payload；reader 会像校验 SPIR-V/reflection payload 一样复核 diagnostic payload
+size/hash。Slang 官方命令行资料列出更结构化的诊断选项，但当前 Vulkan SDK 1.4.321.1 附带的
+`slangc` 尚不支持这些 flags，因此当前 product cook 只依赖 stdout/stderr 捕获，并在写入诊断前归一化
+CRLF 和临时 work path。坏 generated Slang source 会产生 deterministic `ShaderCompileReflectionImportFailed`
+diagnostic，不写成功 product。
+
 `.amat` import 输出：
 
 ```text

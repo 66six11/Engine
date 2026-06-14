@@ -126,6 +126,12 @@ namespace asharia::asset {
         std::string sourceEntryName;
         std::string compileEntryName;
         std::string generatedWrapperName;
+        std::uint64_t slangcExitCode{};
+        std::uint64_t slangcDiagnosticHash{};
+        std::string slangcDiagnosticText;
+        std::uint64_t spirvValExitCode{};
+        std::uint64_t spirvValDiagnosticHash{};
+        std::string spirvValDiagnosticText;
         std::uint64_t spirvHash{};
         std::uint64_t reflectionJsonHash{};
         std::vector<std::uint8_t> spirvBytes;

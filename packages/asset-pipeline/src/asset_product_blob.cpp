@@ -934,6 +934,14 @@ namespace asharia::asset {
             std::string sourceEntry;
             std::string compileEntry;
             std::string wrapper;
+            std::uint64_t slangcExitCode{};
+            std::uint64_t slangcDiagnosticHash{};
+            std::uint64_t slangcDiagnosticSize{};
+            std::vector<std::uint8_t> slangcDiagnosticBytes;
+            std::uint64_t spirvValExitCode{};
+            std::uint64_t spirvValDiagnosticHash{};
+            std::uint64_t spirvValDiagnosticSize{};
+            std::vector<std::uint8_t> spirvValDiagnosticBytes;
             std::uint64_t spirvHash{};
             std::uint64_t spirvSize{};
             std::vector<std::uint8_t> spirvBytes;
@@ -954,6 +962,22 @@ namespace asharia::asset {
                 requireStringField(header, prefix + "compileEntry", relativeProductPath);
             auto wrapper =
                 requireStringField(header, prefix + "generatedWrapper", relativeProductPath);
+            auto slangcExitCode =
+                requireUint64Field(header, prefix + "slangcExitCode", relativeProductPath);
+            auto slangcDiagnosticHash =
+                requireHexUint64Field(header, prefix + "slangcDiagnosticHash", relativeProductPath);
+            auto slangcDiagnosticSize =
+                requireUint64Field(header, prefix + "slangcDiagnosticSize", relativeProductPath);
+            auto slangcDiagnosticBytes =
+                requireHexBytesField(header, prefix + "slangcDiagnosticHex", relativeProductPath);
+            auto spirvValExitCode =
+                requireUint64Field(header, prefix + "spirvValExitCode", relativeProductPath);
+            auto spirvValDiagnosticHash = requireHexUint64Field(
+                header, prefix + "spirvValDiagnosticHash", relativeProductPath);
+            auto spirvValDiagnosticSize =
+                requireUint64Field(header, prefix + "spirvValDiagnosticSize", relativeProductPath);
+            auto spirvValDiagnosticBytes =
+                requireHexBytesField(header, prefix + "spirvValDiagnosticHex", relativeProductPath);
             auto spirvHash =
                 requireHexUint64Field(header, prefix + "spirvHash", relativeProductPath);
             auto spirvSize = requireUint64Field(header, prefix + "spirvSize", relativeProductPath);
@@ -969,7 +993,14 @@ namespace asharia::asset {
             Error error;
             if (!captureError(passName, error) || !captureError(stage, error) ||
                 !captureError(sourceEntry, error) || !captureError(compileEntry, error) ||
-                !captureError(wrapper, error) || !captureError(spirvHash, error) ||
+                !captureError(wrapper, error) || !captureError(slangcExitCode, error) ||
+                !captureError(slangcDiagnosticHash, error) ||
+                !captureError(slangcDiagnosticSize, error) ||
+                !captureError(slangcDiagnosticBytes, error) ||
+                !captureError(spirvValExitCode, error) ||
+                !captureError(spirvValDiagnosticHash, error) ||
+                !captureError(spirvValDiagnosticSize, error) ||
+                !captureError(spirvValDiagnosticBytes, error) || !captureError(spirvHash, error) ||
                 !captureError(spirvSize, error) || !captureError(spirvBytes, error) ||
                 !captureError(reflectionJsonHash, error) ||
                 !captureError(reflectionJsonSize, error) ||
@@ -983,6 +1014,14 @@ namespace asharia::asset {
                 .sourceEntry = std::move(*sourceEntry),
                 .compileEntry = std::move(*compileEntry),
                 .wrapper = std::move(*wrapper),
+                .slangcExitCode = *slangcExitCode,
+                .slangcDiagnosticHash = *slangcDiagnosticHash,
+                .slangcDiagnosticSize = *slangcDiagnosticSize,
+                .slangcDiagnosticBytes = std::move(*slangcDiagnosticBytes),
+                .spirvValExitCode = *spirvValExitCode,
+                .spirvValDiagnosticHash = *spirvValDiagnosticHash,
+                .spirvValDiagnosticSize = *spirvValDiagnosticSize,
+                .spirvValDiagnosticBytes = std::move(*spirvValDiagnosticBytes),
                 .spirvHash = *spirvHash,
                 .spirvSize = *spirvSize,
                 .spirvBytes = std::move(*spirvBytes),
@@ -1005,6 +1044,17 @@ namespace asharia::asset {
                                                  std::string{relativeProductPath},
                                                  "has an empty reflection JSON payload")};
             }
+            if (fields.slangcDiagnosticBytes.size() != fields.slangcDiagnosticSize) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a slangc diagnostic payload size mismatch")};
+            }
+            if (fields.spirvValDiagnosticBytes.size() != fields.spirvValDiagnosticSize) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has a spirv-val diagnostic payload size mismatch")};
+            }
             if (fields.spirvBytes.size() != fields.spirvSize) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                                  std::string{relativeProductPath},
@@ -1024,6 +1074,17 @@ namespace asharia::asset {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                                  std::string{relativeProductPath},
                                                  "has a reflection JSON payload hash mismatch")};
+            }
+            if (hashBytes(fields.slangcDiagnosticBytes) != fields.slangcDiagnosticHash) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a slangc diagnostic payload hash mismatch")};
+            }
+            if (hashBytes(fields.spirvValDiagnosticBytes) != fields.spirvValDiagnosticHash) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has a spirv-val diagnostic payload hash mismatch")};
             }
             return {};
         }
@@ -1056,6 +1117,16 @@ namespace asharia::asset {
                 for (const std::uint8_t byte : fields->reflectionJsonBytes) {
                     reflectionJsonText.push_back(static_cast<char>(byte));
                 }
+                std::string slangcDiagnosticText;
+                slangcDiagnosticText.reserve(fields->slangcDiagnosticBytes.size());
+                for (const std::uint8_t byte : fields->slangcDiagnosticBytes) {
+                    slangcDiagnosticText.push_back(static_cast<char>(byte));
+                }
+                std::string spirvValDiagnosticText;
+                spirvValDiagnosticText.reserve(fields->spirvValDiagnosticBytes.size());
+                for (const std::uint8_t byte : fields->spirvValDiagnosticBytes) {
+                    spirvValDiagnosticText.push_back(static_cast<char>(byte));
+                }
 
                 entries.push_back(AssetShaderCompileReflectionProductEntry{
                     .passName = std::move(fields->passName),
@@ -1063,6 +1134,12 @@ namespace asharia::asset {
                     .sourceEntryName = std::move(fields->sourceEntry),
                     .compileEntryName = std::move(fields->compileEntry),
                     .generatedWrapperName = std::move(fields->wrapper),
+                    .slangcExitCode = fields->slangcExitCode,
+                    .slangcDiagnosticHash = fields->slangcDiagnosticHash,
+                    .slangcDiagnosticText = std::move(slangcDiagnosticText),
+                    .spirvValExitCode = fields->spirvValExitCode,
+                    .spirvValDiagnosticHash = fields->spirvValDiagnosticHash,
+                    .spirvValDiagnosticText = std::move(spirvValDiagnosticText),
                     .spirvHash = fields->spirvHash,
                     .reflectionJsonHash = fields->reflectionJsonHash,
                     .spirvBytes = std::move(fields->spirvBytes),

@@ -69,6 +69,12 @@ namespace asharia::asset {
             std::filesystem::path spirvValPath;
         };
 
+        struct ShaderToolExecutionResult {
+            int exitCode{};
+            std::uint64_t diagnosticHash{};
+            std::string diagnosticText;
+        };
+
         [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
                                                        std::uint8_t byte) noexcept {
             hash ^= byte;
@@ -237,6 +243,20 @@ namespace asharia::asset {
             return bytes;
         }
 
+        [[nodiscard]] Result<std::string> readToolTextFile(const std::filesystem::path& path) {
+            auto bytes = readBinaryFile(path);
+            if (!bytes) {
+                return std::unexpected{std::move(bytes.error())};
+            }
+
+            std::string text;
+            text.reserve(bytes->size());
+            for (const std::uint8_t byte : *bytes) {
+                text.push_back(static_cast<char>(byte));
+            }
+            return text;
+        }
+
         [[nodiscard]] std::optional<std::string> environmentVariable(std::string_view name) {
             const std::string nameText{name};
 #if defined(_WIN32)
@@ -313,20 +333,107 @@ namespace asharia::asset {
             return std::nullopt;
         }
 
-        [[nodiscard]] Result<void> runToolCommand(std::string_view label,
-                                                  const std::string& command) {
+        void replaceAll(std::string& text, std::string_view needle, std::string_view replacement) {
+            if (needle.empty()) {
+                return;
+            }
+
+            std::size_t offset = 0;
+            while ((offset = text.find(needle, offset)) != std::string::npos) {
+                text.replace(offset, needle.size(), replacement);
+                offset += replacement.size();
+            }
+        }
+
+        void replacePathReferences(std::string& text, const std::filesystem::path& path,
+                                   std::string_view replacement) {
+            replaceAll(text, path.string(), replacement);
+            replaceAll(text, pathText(path), replacement);
+        }
+
+        [[nodiscard]] std::string normalizeLineEndings(std::string_view text) {
+            std::string normalized;
+            normalized.reserve(text.size());
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                if (text[index] == '\r') {
+                    if (index + 1U < text.size() && text[index + 1U] == '\n') {
+                        continue;
+                    }
+                    normalized.push_back('\n');
+                    continue;
+                }
+                normalized.push_back(text[index]);
+            }
+            return normalized;
+        }
+
+        [[nodiscard]] std::string
+        normalizeToolDiagnosticText(std::string_view stdoutText, std::string_view stderrText,
+                                    const ShaderCompileReflectionWorkPaths& workPaths) {
+            std::string combined;
+            combined.reserve(stdoutText.size() + stderrText.size() + 1U);
+            combined.append(stdoutText);
+            if (!stdoutText.empty() && !stderrText.empty()) {
+                combined.push_back('\n');
+            }
+            combined.append(stderrText);
+
+            std::string normalized = normalizeLineEndings(combined);
+            replacePathReferences(normalized, workPaths.generatedSourcePath, "<generated-slang>");
+            replacePathReferences(normalized, workPaths.workDir, "<shader-work-dir>");
+            return normalized;
+        }
+
+        [[nodiscard]] std::string summarizeToolDiagnostic(std::string_view text) {
+            if (text.empty()) {
+                return "no tool diagnostics";
+            }
+            constexpr std::size_t kMaxSummaryBytes = 512U;
+            if (text.size() <= kMaxSummaryBytes) {
+                return std::string{text};
+            }
+            return std::string{text.substr(0, kMaxSummaryBytes)} + "...";
+        }
+
+        [[nodiscard]] Result<ShaderToolExecutionResult>
+        runToolCommand(std::string_view label, const std::string& command,
+                       const ShaderCompileReflectionWorkPaths& workPaths,
+                       const std::filesystem::path& stdoutPath,
+                       const std::filesystem::path& stderrPath) {
+            std::error_code removeError;
+            std::filesystem::remove(stdoutPath, removeError);
+            std::filesystem::remove(stderrPath, removeError);
+            const std::string redirectedCommand =
+                command + " > " + quotePath(stdoutPath) + " 2> " + quotePath(stderrPath);
 #if defined(_WIN32)
-            const std::string shellCommand = "cmd /S /C \"" + command + "\"";
+            const std::string shellCommand = "cmd /S /C \"" + redirectedCommand + "\"";
 #else
-            const std::string shellCommand = command;
+            const std::string shellCommand = redirectedCommand;
 #endif
             const int exitCode = std::system(shellCommand.c_str());
+            auto stdoutText = readToolTextFile(stdoutPath);
+            if (!stdoutText) {
+                return std::unexpected{std::move(stdoutText.error())};
+            }
+            auto stderrText = readToolTextFile(stderrPath);
+            if (!stderrText) {
+                return std::unexpected{std::move(stderrText.error())};
+            }
+
+            std::string diagnosticText =
+                normalizeToolDiagnosticText(*stdoutText, *stderrText, workPaths);
+            const std::vector<std::uint8_t> diagnosticBytes = bytesFromString(diagnosticText);
+            ShaderToolExecutionResult result{
+                .exitCode = exitCode,
+                .diagnosticHash = hashBytes(diagnosticBytes),
+                .diagnosticText = std::move(diagnosticText),
+            };
             if (exitCode != 0) {
                 return std::unexpected{shaderCompileReflectionImportError(
                     std::string{label} + " failed with exit code " + std::to_string(exitCode) +
-                    ".")};
+                    ": " + summarizeToolDiagnostic(result.diagnosticText))};
             }
-            return {};
+            return result;
         }
 
         [[nodiscard]] std::string productLabel(const AssetImportRequest& request) {
@@ -798,6 +905,14 @@ namespace asharia::asset {
             const std::filesystem::path spirvPath = workPaths.workDir / (entryFileStem + ".spv");
             const std::filesystem::path reflectionPath =
                 workPaths.workDir / (entryFileStem + ".reflection.json");
+            const std::filesystem::path slangcStdoutPath =
+                workPaths.workDir / (entryFileStem + ".slangc.stdout.txt");
+            const std::filesystem::path slangcStderrPath =
+                workPaths.workDir / (entryFileStem + ".slangc.stderr.txt");
+            const std::filesystem::path spirvValStdoutPath =
+                workPaths.workDir / (entryFileStem + ".spirv-val.stdout.txt");
+            const std::filesystem::path spirvValStderrPath =
+                workPaths.workDir / (entryFileStem + ".spirv-val.stderr.txt");
 
             const std::string compileCommand =
                 quotePath(toolPaths.slangcPath) + " " + quotePath(workPaths.generatedSourcePath) +
@@ -805,15 +920,17 @@ namespace asharia::asset {
                 std::string{kSlangTarget} + " -entry " + entry.compileEntryName + " -stage " +
                 entry.stage + " -reflection-json " + quotePath(reflectionPath) + " -o " +
                 quotePath(spirvPath);
-            if (auto compiled = runToolCommand("slangc " + entry.stage, compileCommand);
-                !compiled) {
+            auto compiled = runToolCommand("slangc " + entry.stage, compileCommand, workPaths,
+                                           slangcStdoutPath, slangcStderrPath);
+            if (!compiled) {
                 return std::unexpected{std::move(compiled.error())};
             }
 
-            if (auto validated =
-                    runToolCommand("spirv-val " + entry.stage,
-                                   quotePath(toolPaths.spirvValPath) + " " + quotePath(spirvPath));
-                !validated) {
+            auto validated =
+                runToolCommand("spirv-val " + entry.stage,
+                               quotePath(toolPaths.spirvValPath) + " " + quotePath(spirvPath),
+                               workPaths, spirvValStdoutPath, spirvValStderrPath);
+            if (!validated) {
                 return std::unexpected{std::move(validated.error())};
             }
 
@@ -846,6 +963,12 @@ namespace asharia::asset {
                 .sourceEntryName = entry.sourceEntryName,
                 .compileEntryName = entry.compileEntryName,
                 .generatedWrapperName = entry.generatedWrapperName,
+                .slangcExitCode = static_cast<std::uint64_t>(compiled->exitCode),
+                .slangcDiagnosticHash = compiled->diagnosticHash,
+                .slangcDiagnosticText = std::move(compiled->diagnosticText),
+                .spirvValExitCode = static_cast<std::uint64_t>(validated->exitCode),
+                .spirvValDiagnosticHash = validated->diagnosticHash,
+                .spirvValDiagnosticText = std::move(validated->diagnosticText),
                 .spirvHash = hashBytes(*spirvBytes),
                 .reflectionJsonHash = hashBytes(*reflectionBytes),
                 .spirvBytes = std::move(*spirvBytes),
@@ -947,6 +1070,10 @@ namespace asharia::asset {
             appendLine(bytes, "entry.count=" + std::to_string(compiledEntries.size()));
             for (std::size_t index = 0; index < compiledEntries.size(); ++index) {
                 const AssetShaderCompileReflectionProductEntry& entry = compiledEntries[index];
+                const std::vector<std::uint8_t> slangcDiagnosticBytes =
+                    bytesFromString(entry.slangcDiagnosticText);
+                const std::vector<std::uint8_t> spirvValDiagnosticBytes =
+                    bytesFromString(entry.spirvValDiagnosticText);
                 const std::vector<std::uint8_t> reflectionBytes =
                     bytesFromString(entry.reflectionJsonText);
                 const std::string prefix = "entry." + std::to_string(index) + ".";
@@ -955,6 +1082,22 @@ namespace asharia::asset {
                 appendLine(bytes, prefix + "sourceEntry=" + entry.sourceEntryName);
                 appendLine(bytes, prefix + "compileEntry=" + entry.compileEntryName);
                 appendLine(bytes, prefix + "generatedWrapper=" + entry.generatedWrapperName);
+                appendLine(bytes,
+                           prefix + "slangcExitCode=" + std::to_string(entry.slangcExitCode));
+                appendLine(bytes, prefix + "slangcDiagnosticHash=" +
+                                      formatHash64(entry.slangcDiagnosticHash));
+                appendLine(bytes, prefix + "slangcDiagnosticSize=" +
+                                      std::to_string(slangcDiagnosticBytes.size()));
+                appendLine(bytes,
+                           prefix + "slangcDiagnosticHex=" + hexEncode(slangcDiagnosticBytes));
+                appendLine(bytes,
+                           prefix + "spirvValExitCode=" + std::to_string(entry.spirvValExitCode));
+                appendLine(bytes, prefix + "spirvValDiagnosticHash=" +
+                                      formatHash64(entry.spirvValDiagnosticHash));
+                appendLine(bytes, prefix + "spirvValDiagnosticSize=" +
+                                      std::to_string(spirvValDiagnosticBytes.size()));
+                appendLine(bytes,
+                           prefix + "spirvValDiagnosticHex=" + hexEncode(spirvValDiagnosticBytes));
                 appendLine(bytes, prefix + "spirvHash=" + formatHash64(entry.spirvHash));
                 appendLine(bytes, prefix + "spirvSize=" + std::to_string(entry.spirvBytes.size()));
                 appendLine(bytes, prefix + "spirvHex=" + hexEncode(entry.spirvBytes));

@@ -1914,6 +1914,40 @@ shader "asharia.material.compile_reflection" {
 )ashader";
     }
 
+    [[nodiscard]] std::string invalidCompileReflectionAshaderText() {
+        return R"ashader(
+schema 2
+
+shader "asharia.material.compile_reflection" {
+  properties {
+    color baseColor = [1, 1, 1, 1]
+  }
+
+  pass "Forward" {
+    tag "SceneForward"
+    vertex vertexMain
+    fragment fragmentMain
+  }
+
+  slang {
+    struct VertexOutput {
+      float4 position : SV_Position;
+    };
+
+    VertexOutput vertexMain() {
+      VertexOutput output;
+      output.position = float4(0.0, 0.0, 0.0, 1.0);
+      return output;
+    }
+
+    float4 fragmentMain() : SV_Target {
+      return definitelyMissingSymbol;
+    }
+  }
+}
+)ashader";
+    }
+
     [[nodiscard]] asharia::asset::SourceAssetRecord makeShaderCompileReflectionRecord(
         std::span<const std::uint8_t> sourceBytes,
         std::span<const asharia::asset::AssetImportSetting> settings) {
@@ -2324,9 +2358,16 @@ shader "asharia.material.compile_reflection" {
         const bool entryPayloadsValid = std::ranges::all_of(
             payload->entries,
             [](const asharia::asset::AssetShaderCompileReflectionProductEntry& entry) {
+                const std::vector<std::uint8_t> slangcDiagnosticBytes =
+                    bytesFromText(entry.slangcDiagnosticText);
+                const std::vector<std::uint8_t> spirvValDiagnosticBytes =
+                    bytesFromText(entry.spirvValDiagnosticText);
                 const std::vector<std::uint8_t> reflectionBytes =
                     bytesFromText(entry.reflectionJsonText);
-                return !entry.spirvBytes.empty() && (entry.spirvBytes.size() % 4U) == 0U &&
+                return entry.slangcExitCode == 0U && entry.spirvValExitCode == 0U &&
+                       smokeHashBytes(slangcDiagnosticBytes) == entry.slangcDiagnosticHash &&
+                       smokeHashBytes(spirvValDiagnosticBytes) == entry.spirvValDiagnosticHash &&
+                       !entry.spirvBytes.empty() && (entry.spirvBytes.size() % 4U) == 0U &&
                        !entry.reflectionJsonText.empty() &&
                        smokeHashBytes(entry.spirvBytes) == entry.spirvHash &&
                        smokeHashBytes(reflectionBytes) == entry.reflectionJsonHash;
@@ -2377,6 +2418,104 @@ shader "asharia.material.compile_reflection" {
                                          asharia::asset::AssetProductExecutionDiagnosticCode::
                                              ShaderCompileReflectionImportFailed,
                                          "Missing dependency product bytes");
+    }
+
+    [[nodiscard]] bool smokeProductExecutionShaderCompileReflectionCompilerDiagnostics() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-shader-compile-reflection-diagnostics");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        const std::vector<std::uint8_t> sourceBytes =
+            bytesFromText(invalidCompileReflectionAshaderText());
+        const std::vector<asharia::asset::AssetImportSetting> authoringSettings{
+            asharia::asset::AssetImportSetting{
+                .key = "shader.product",
+                .value = "generated-slang-v1",
+            },
+        };
+        const asharia::asset::SourceAssetRecord authoringSource =
+            makeShaderAuthoringRecord(sourceBytes, authoringSettings);
+        const std::filesystem::path outputRoot = root / "ProductCache";
+        const asharia::asset::AssetProductExecutionResult authoringExecution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = makeSingleProductExecutionPlan(authoringSource, authoringSettings),
+                .existingManifest = {},
+                .sourceBytes =
+                    {
+                        asharia::asset::AssetProductSourceBytes{
+                            .sourcePath = authoringSource.sourcePath,
+                            .bytes = sourceBytes,
+                        },
+                    },
+                .dependencyProductBytes = {},
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = outputRoot / "authoring-product-manifest.json",
+            });
+        if (!authoringExecution.succeeded() || authoringExecution.writtenProducts.size() != 1U) {
+            logFailure(
+                "Asset product execution smoke could not write invalid authoring dependency.");
+            return false;
+        }
+
+        const asharia::asset::AssetProductWrite& authoringWrite =
+            authoringExecution.writtenProducts.front();
+        const std::vector<std::uint8_t> authoringProductBytes =
+            readFileBytes(authoringWrite.productFilePath);
+        if (authoringProductBytes.empty() ||
+            smokeHashBytes(authoringProductBytes) != authoringWrite.product.productHash) {
+            logFailure(
+                "Asset product execution smoke could not read invalid authoring dependency.");
+            return false;
+        }
+
+        const std::vector<asharia::asset::AssetImportSetting> compileSettings{
+            asharia::asset::AssetImportSetting{
+                .key = "shader.product",
+                .value = "compiled-reflection-v1",
+            },
+            asharia::asset::AssetImportSetting{
+                .key = "shader.authoringProductPath",
+                .value = authoringWrite.product.relativeProductPath,
+            },
+        };
+        const asharia::asset::SourceAssetRecord compileSource =
+            makeShaderCompileReflectionRecord(sourceBytes, compileSettings);
+        const asharia::asset::AssetProductExecutionResult compileExecution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = makeShaderCompileReflectionPlan(compileSource, compileSettings,
+                                                        authoringWrite.product.relativeProductPath,
+                                                        authoringWrite.product.productHash),
+                .existingManifest = authoringExecution.manifest,
+                .sourceBytes =
+                    {
+                        asharia::asset::AssetProductSourceBytes{
+                            .sourcePath = compileSource.sourcePath,
+                            .bytes = sourceBytes,
+                        },
+                    },
+                .dependencyProductBytes =
+                    {
+                        asharia::asset::AssetProductDependencyBytes{
+                            .relativeProductPath = authoringWrite.product.relativeProductPath,
+                            .productHash = authoringWrite.product.productHash,
+                            .bytes = authoringProductBytes,
+                        },
+                    },
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = outputRoot / "compile-product-manifest.json",
+            });
+
+        return compileExecution.writtenProducts.empty() &&
+               expectExecutionDiagnostic(compileExecution,
+                                         asharia::asset::AssetProductExecutionDiagnosticCode::
+                                             ShaderCompileReflectionImportFailed,
+                                         "slangc") &&
+               expectExecutionDiagnostic(compileExecution,
+                                         asharia::asset::AssetProductExecutionDiagnosticCode::
+                                             ShaderCompileReflectionImportFailed,
+                                         "definitelyMissingSymbol");
     }
 
     [[nodiscard]] bool smokeProductBlobReadDiagnostics() {
@@ -2554,6 +2693,14 @@ shader "asharia.material.compile_reflection" {
                           "entry.0.sourceEntry=vertexMain\n"
                           "entry.0.compileEntry=vertexMain\n"
                           "entry.0.generatedWrapper=__asharia_Forward_vertex\n"
+                          "entry.0.slangcExitCode=0\n"
+                          "entry.0.slangcDiagnosticHash=cbf29ce484222325\n"
+                          "entry.0.slangcDiagnosticSize=0\n"
+                          "entry.0.slangcDiagnosticHex=\n"
+                          "entry.0.spirvValExitCode=0\n"
+                          "entry.0.spirvValDiagnosticHash=cbf29ce484222325\n"
+                          "entry.0.spirvValDiagnosticSize=0\n"
+                          "entry.0.spirvValDiagnosticHex=\n"
                           "entry.0.spirvHash=0000000000000001\n"
                           "entry.0.spirvSize=2\n"
                           "entry.0.spirvHex=abcd\n"
@@ -3226,6 +3373,7 @@ int main() {
         smokeProductExecutionAshaderDiagnostics() &&
         smokeProductExecutionWritesShaderCompileReflectionProduct() &&
         smokeProductExecutionShaderCompileReflectionDiagnostics() &&
+        smokeProductExecutionShaderCompileReflectionCompilerDiagnostics() &&
         smokeProductExecutionSourceBytesHashMismatch() &&
         smokeProductExecutionDependencyProductBytesDiagnostics() &&
         smokeProductExecutionAcceptsDependencyProductBytes() &&
