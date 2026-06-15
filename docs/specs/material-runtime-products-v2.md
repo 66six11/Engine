@@ -177,6 +177,12 @@ renderer/RHI fallback 纳入 #163。
 request 的 `hashAssetProductKey(productKey)`。这补齐 #163 对 product facts / reader facts 中 product key
 hash 的验收证据，仍不扩展到 material signature 或 renderer/RHI 消费。
 
+同日第七步补齐 compile/reflection product blob 的 missing payload-field evidence：该 product schema 将
+SPIR-V、reflection JSON 和 diagnostic payloads 编码为 entry-local hex fields，不使用 `.begin` / `.end`
+marker，因此不存在 marker-style unterminated payload；reader 现在已有 smoke 证明缺失
+`entry.0.reflectionJsonHex` 会产生 deterministic `InvalidProductBlob` diagnostic。坏 payload 仍由
+SPIR-V/reflection/diagnostic size/hash mismatch 覆盖。
+
 `.amat` import 输出：
 
 ```text

@@ -2864,6 +2864,47 @@ shader "asharia.material.compile_reflection" {
             return false;
         }
 
+        const std::vector<std::uint8_t> missingCompileReflectionPayload =
+            bytesFromText("schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
+                          "sourcePath=Content/Shaders/Unlit.ashader\n"
+                          "shader.stableTypeId=asharia.material.unlit\n"
+                          "authoringProductPath=generated/Unlit.authoring.product\n"
+                          "authoringProductHash=0000000000000001\n"
+                          "generatedSlangHash=0000000000000002\n"
+                          "productKeyHash=0000000000000003\n"
+                          "profile=glsl_450\n"
+                          "target=spirv\n"
+                          "entry.count=1\n"
+                          "entry.0.passName=Forward\n"
+                          "entry.0.stage=vertex\n"
+                          "entry.0.sourceEntry=vertexMain\n"
+                          "entry.0.compileEntry=vertexMain\n"
+                          "entry.0.generatedWrapper=__asharia_Forward_vertex\n"
+                          "entry.0.slangcExitCode=0\n"
+                          "entry.0.slangcDiagnosticHash=cbf29ce484222325\n"
+                          "entry.0.slangcDiagnosticSize=0\n"
+                          "entry.0.slangcDiagnosticHex=\n"
+                          "entry.0.spirvValExitCode=0\n"
+                          "entry.0.spirvValDiagnosticHash=cbf29ce484222325\n"
+                          "entry.0.spirvValDiagnosticSize=0\n"
+                          "entry.0.spirvValDiagnosticHex=\n"
+                          "entry.0.spirvHash=0000000000000001\n"
+                          "entry.0.spirvSize=2\n"
+                          "entry.0.spirvHex=abcd\n"
+                          "entry.0.reflectionJsonHash=0000000000000001\n"
+                          "entry.0.reflectionJsonSize=2\n");
+        auto missingCompileReflectionField =
+            asharia::asset::readShaderCompileReflectionProductPayload(
+                std::span<const std::uint8_t>{missingCompileReflectionPayload.data(),
+                                              missingCompileReflectionPayload.size()},
+                "shaders/missing-compile-reflection-payload.product");
+        if (!expectProductBlobError(
+                missingCompileReflectionField,
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "entry.0.reflectionJsonHex")) {
+            return false;
+        }
+
         if (std::string_view{asharia::asset::assetProductBlobDiagnosticCodeName(
                 asharia::asset::AssetProductBlobDiagnosticCode::ProductReadFailed)} !=
             "product-read-failed") {

@@ -253,7 +253,8 @@ Preview service 服务三种入口：
   manifest 驱动的 compile/reflection entry 选择和 mismatch negative path。`asset-pipeline` smoke 覆盖
   `shader-authoring-product.v1` dependency bytes 驱动的 compile/reflection product determinism，以及非法
   manifest-selected entry stage 的 deterministic diagnostic；compile/reflection product reader 读回
-  product key hash、target profile、entry compile facts、SPIR-V/reflection facts 和 diagnostic facts。
+  product key hash、target profile、entry compile facts、SPIR-V/reflection facts 和 diagnostic facts，并覆盖
+  missing reflection JSON hex payload field 的 deterministic blob diagnostic。
 - `shader-authoring` tests 覆盖 `.ashader` parse 正例、raw Slang span、重复 property、未知类型、
   非法默认值、缺少 pass entry、缺少 Slang 引用、raw block brace 平衡、generated Slang skeleton、
   deterministic binding declarations、entry manifest 和 line mapping。
