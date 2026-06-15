@@ -166,6 +166,12 @@ diagnostic，不写成功 product。
 reflection JSON/hash 和 diagnostic facts。该证据覆盖 #163 的 deterministic compile/reflection product
 验收点，但仍不把该 Slice 扩展到 material signature product 或 renderer/RHI 消费。
 
+同日第五步补齐 manifest-selected entry 的 negative evidence：asset-pipeline smoke 会构造一个 hash
+一致但 entry stage 不受支持的 `shader-authoring-product.v1` dependency bytes，并验证 compile/reflection
+层在调用 shader tool 前产生 deterministic `ShaderCompileReflectionImportFailed` diagnostic 且不写 product
+manifest。该证据限定在 generated product contract validation，不把 stage 纠正、material signature 或
+renderer/RHI fallback 纳入 #163。
+
 `.amat` import 输出：
 
 ```text
