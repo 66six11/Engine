@@ -852,6 +852,7 @@ namespace asharia::asset {
             std::string authoringProductPath;
             std::uint64_t authoringProductHash{};
             std::uint64_t generatedSlangHash{};
+            std::uint64_t productKeyHash{};
             std::string profile;
             std::string target;
             std::uint64_t entryCount{};
@@ -874,6 +875,8 @@ namespace asharia::asset {
                 requireHexUint64Field(header, "authoringProductHash", relativeProductPath);
             auto generatedSlangHash =
                 requireHexUint64Field(header, "generatedSlangHash", relativeProductPath);
+            auto productKeyHash =
+                requireHexUint64Field(header, "productKeyHash", relativeProductPath);
             auto profile = requireStringField(header, "profile", relativeProductPath);
             auto target = requireStringField(header, "target", relativeProductPath);
             auto entryCount = requireUint64Field(header, "entry.count", relativeProductPath);
@@ -891,6 +894,9 @@ namespace asharia::asset {
             }
             if (!generatedSlangHash) {
                 return std::unexpected{std::move(generatedSlangHash.error())};
+            }
+            if (!productKeyHash) {
+                return std::unexpected{std::move(productKeyHash.error())};
             }
             if (!profile) {
                 return std::unexpected{std::move(profile.error())};
@@ -913,6 +919,7 @@ namespace asharia::asset {
                 .authoringProductPath = std::move(*authoringProductPath),
                 .authoringProductHash = *authoringProductHash,
                 .generatedSlangHash = *generatedSlangHash,
+                .productKeyHash = *productKeyHash,
                 .profile = std::move(*profile),
                 .target = std::move(*target),
                 .entryCount = *entryCount,
@@ -1544,6 +1551,7 @@ namespace asharia::asset {
             .authoringProductPath = std::move(header->authoringProductPath),
             .authoringProductHash = header->authoringProductHash,
             .generatedSlangHash = header->generatedSlangHash,
+            .productKeyHash = header->productKeyHash,
             .profile = std::move(header->profile),
             .target = std::move(header->target),
             .entries = std::move(*entries),

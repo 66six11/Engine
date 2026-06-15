@@ -172,6 +172,11 @@ reflection JSON/hash 和 diagnostic facts。该证据覆盖 #163 的 determinist
 manifest。该证据限定在 generated product contract validation，不把 stage 纠正、material signature 或
 renderer/RHI fallback 纳入 #163。
 
+同日第六步把 `productKeyHash` 纳入 `shader-compile-reflection-product.v1` reader contract：writer 已记录
+该字段，reader 现在将其作为必需 header 读回到 payload，asset-pipeline smoke 会断言它等于当前 compile
+request 的 `hashAssetProductKey(productKey)`。这补齐 #163 对 product facts / reader facts 中 product key
+hash 的验收证据，仍不扩展到 material signature 或 renderer/RHI 消费。
+
 `.amat` import 输出：
 
 ```text

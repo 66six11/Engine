@@ -2375,6 +2375,8 @@ shader "asharia.material.compile_reflection" {
             payload->stableTypeId != "asharia.material.compile_reflection" ||
             payload->authoringProductPath != authoringWrite.product.relativeProductPath ||
             payload->authoringProductHash != authoringWrite.product.productHash ||
+            payload->productKeyHash != asharia::asset::hashAssetProductKey(
+                                           compileRequest.plan.requests.front().productKey) ||
             payload->profile != "glsl_450" || payload->target != "spirv" ||
             payload->entries.size() != 2U) {
             logFailure("Asset product execution smoke could not read compile/reflection product.");
@@ -2828,6 +2830,7 @@ shader "asharia.material.compile_reflection" {
                           "authoringProductPath=generated/Unlit.authoring.product\n"
                           "authoringProductHash=0000000000000001\n"
                           "generatedSlangHash=0000000000000002\n"
+                          "productKeyHash=0000000000000003\n"
                           "profile=glsl_450\n"
                           "target=spirv\n"
                           "entry.count=1\n"

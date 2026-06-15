@@ -148,6 +148,7 @@ namespace asharia::asset {
         std::string authoringProductPath;
         std::uint64_t authoringProductHash{};
         std::uint64_t generatedSlangHash{};
+        std::uint64_t productKeyHash{};
         std::string profile;
         std::string target;
         std::vector<AssetShaderCompileReflectionProductEntry> entries;
