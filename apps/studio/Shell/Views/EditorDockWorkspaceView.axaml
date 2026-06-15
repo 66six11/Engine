@@ -9,6 +9,7 @@
           ClipToBounds="True">
         <ContentControl x:Name="DockLayout"
                         Classes="owned-dock-node-host"
+                        IsVisible="{Binding HasRootNode}"
                         Content="{Binding RootNode}" />
 
         <Canvas x:Name="DockOverlay"

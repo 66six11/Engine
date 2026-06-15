@@ -4,7 +4,7 @@
         xmlns:views="using:Editor.Shell.Views"
         x:Class="Editor.Shell.Views.EditorDockFloatingWindow"
         x:DataType="vm:EditorDockFloatingWindowViewModel"
-        Title="{Binding Title}"
+        Title="{Binding DockWorkspace.HostTitle}"
         Width="320"
         Height="240"
         MinWidth="240"

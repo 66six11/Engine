@@ -23,7 +23,7 @@
             </Border>
         </Grid>
 
-        <Grid IsVisible="{Binding IsInsertGuideVisible}"
+        <Grid IsVisible="{Binding IsWindowInsertGuideVisible}"
               ClipToBounds="False">
             <Border Classes="owned-dock-guide-frame insert" />
             <Border Classes="owned-dock-guide-insert-line vertical"

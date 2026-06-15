@@ -137,59 +137,19 @@
         <Setter Property="VerticalContentAlignment" Value="Stretch" />
     </Style>
 
-    <Style Selector="UserControl.owned-dock-pane-host">
+    <Style Selector="UserControl.owned-dock-window-host">
         <Setter Property="MinWidth" Value="160" />
         <Setter Property="MinHeight" Value="120" />
     </Style>
 
-    <Style Selector="Border.owned-dock-pane">
+    <Style Selector="Border.owned-dock-window">
         <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
         <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
 
-    <Style Selector="Grid.owned-dock-pane-titlebar">
-        <Setter Property="MinHeight" Value="28" />
-        <Setter Property="Background" Value="{DynamicResource EditorBrushSurface02}" />
-        <Setter Property="Margin" Value="0" />
-        <Setter Property="ClipToBounds" Value="True" />
-    </Style>
-
-    <Style Selector="Grid.owned-dock-pane-titlebar > StackPanel">
-        <Setter Property="Margin" Value="8,0,0,0" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <Style Selector="TextBlock.owned-dock-pane-title">
-        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
-        <Setter Property="FontSize" Value="12" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <Style Selector="TextBlock.owned-dock-pane-role">
-        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
-        <Setter Property="FontSize" Value="11" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <Style Selector="Border.owned-dock-pane-count">
-        <Setter Property="MinWidth" Value="20" />
-        <Setter Property="Height" Value="18" />
-        <Setter Property="Margin" Value="0,0,8,0" />
-        <Setter Property="Padding" Value="5,0" />
-        <Setter Property="CornerRadius" Value="3" />
-        <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <Style Selector="Border.owned-dock-pane-count TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
-        <Setter Property="FontSize" Value="10" />
-        <Setter Property="HorizontalAlignment" Value="Center" />
-        <Setter Property="VerticalAlignment" Value="Center" />
+    <Style Selector="Border.owned-dock-window.active-window">
+        <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
     </Style>
 
     <Style Selector="ItemsControl.owned-dock-tabs">
@@ -218,6 +178,32 @@
         <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
         <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushAccent}" />
         <Setter Property="BorderThickness" Value="0,2,1,0" />
+    </Style>
+
+    <Style Selector="Border.owned-dock-tab.drag-source">
+        <Setter Property="Opacity" Value="0.36" />
+        <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+        <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+
+    <Style Selector="Border.owned-dock-tab.placeholder">
+        <Setter Property="Opacity" Value="0.92" />
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceOverlay}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushAccent}" />
+        <Setter Property="BorderThickness" Value="1,2,1,1" />
+        <Setter Property="CornerRadius" Value="4,4,0,0" />
+        <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+
+    <Style Selector="Border.owned-dock-tab.placeholder.active">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceOverlay}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushAccent}" />
+        <Setter Property="BorderThickness" Value="1,2,1,1" />
+    </Style>
+
+    <Style Selector="Border.owned-dock-tab.placeholder.drag-source">
+        <Setter Property="Opacity" Value="0.92" />
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceOverlay}" />
     </Style>
 
     <Style Selector="Border.owned-dock-tab-tag">
@@ -275,6 +261,10 @@
     <Style Selector="Border.owned-dock-content">
         <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
         <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style Selector="Border.owned-dock-content.drag-source-window">
+        <Setter Property="Opacity" Value="0.48" />
     </Style>
 
     <Style Selector="GridSplitter.owned-dock-splitter">

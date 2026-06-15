@@ -9,7 +9,8 @@ public sealed record EditorDockDropTarget(
     DockArea? TargetArea,
     string? TargetId,
     Rect PreviewBounds,
-    string Label)
+    string Label,
+    int? TargetIndex = null)
 {
     public bool IsAccepted => Operation is not EditorDockDropOperation.Reject;
 

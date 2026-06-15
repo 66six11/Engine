@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace Editor.Shell.Views;
 
-public partial class EditorDockPaneNodeView : UserControl
+public partial class EditorDockTabItemView : UserControl
 {
-    public EditorDockPaneNodeView()
+    public EditorDockTabItemView()
     {
         InitializeComponent();
     }

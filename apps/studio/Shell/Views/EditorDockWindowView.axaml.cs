@@ -7,33 +7,42 @@ using Editor.Shell.ViewModels;
 
 namespace Editor.Shell.Views;
 
-public partial class EditorDockPaneView : UserControl
+public partial class EditorDockWindowView : UserControl
 {
     private EditorDockTabViewModel? capturedTab_;
 
-    public EditorDockPaneView()
+    public EditorDockWindowView()
     {
         InitializeComponent();
     }
 
     private void OnTabPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (sender is not Control control
-            || control.DataContext is not EditorDockTabViewModel tab
-            || DataContext is not EditorDockPaneViewModel pane)
+        if (e.Source is not Control source
+            || FindTabItemView(source) is not { DataContext: EditorDockTabStripItemViewModel { IsPlaceholder: false } item } tabItem
+            || DataContext is not EditorDockWindowViewModel window)
         {
             return;
         }
 
-        var point = e.GetCurrentPoint(control);
+        var tab = item.Tab;
+        var point = e.GetCurrentPoint(tabItem);
         if (!point.Properties.IsLeftButtonPressed)
         {
             return;
         }
 
-        pane.Activate(tab);
+        BeginTabInteraction(tab, window, e);
+    }
+
+    private void BeginTabInteraction(
+        EditorDockTabViewModel tab,
+        EditorDockWindowViewModel window,
+        PointerPressedEventArgs e)
+    {
+        window.Activate(tab);
         capturedTab_ = tab;
-        e.Pointer.Capture(control);
+        e.Pointer.Capture(this);
 
         if (TryGetWorkspace(e, out var workspace, out var workspacePoint))
         {
@@ -43,8 +52,19 @@ public partial class EditorDockPaneView : UserControl
         e.Handled = true;
     }
 
-    private void OnTabPointerMoved(object? sender, PointerEventArgs e)
+    private static EditorDockTabItemView? FindTabItemView(Control source)
     {
+        if (source is EditorDockTabItemView tabItem)
+        {
+            return tabItem;
+        }
+
+        return source.FindAncestorOfType<EditorDockTabItemView>();
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
         if (capturedTab_ is null)
         {
             return;
@@ -58,8 +78,9 @@ public partial class EditorDockPaneView : UserControl
         e.Handled = true;
     }
 
-    private void OnTabPointerReleased(object? sender, PointerReleasedEventArgs e)
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        base.OnPointerReleased(e);
         if (capturedTab_ is null)
         {
             return;
@@ -74,8 +95,9 @@ public partial class EditorDockPaneView : UserControl
         e.Handled = true;
     }
 
-    private void OnTabPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
+        base.OnPointerCaptureLost(e);
         if (capturedTab_ is null)
         {
             return;
@@ -111,7 +133,7 @@ public partial class EditorDockPaneView : UserControl
 
     private void ClearCapture(IPointer pointer)
     {
-        pointer.Capture(null);
         capturedTab_ = null;
+        pointer.Capture(null);
     }
 }

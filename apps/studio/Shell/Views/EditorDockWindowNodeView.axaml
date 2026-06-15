@@ -1,0 +1,9 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels"
+             xmlns:views="using:Editor.Shell.Views"
+             x:Class="Editor.Shell.Views.EditorDockWindowNodeView"
+             x:DataType="vm:EditorDockWindowNodeViewModel">
+    <views:EditorDockWindowView Classes="owned-dock-window-host"
+                              DataContext="{Binding Window}" />
+</UserControl>

@@ -5,6 +5,7 @@ namespace Editor.Shell.ViewModels;
 public sealed class EditorDockTabViewModel : ViewModelBase
 {
     private bool isActive_;
+    private bool isDragSource_;
     private DockArea area_;
 
     public EditorDockTabViewModel(
@@ -51,5 +52,16 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     {
         get => isActive_;
         set => SetProperty(ref isActive_, value);
+    }
+
+    public bool IsDragSource
+    {
+        get => isDragSource_;
+        private set => SetProperty(ref isDragSource_, value);
+    }
+
+    internal void SetDragSourceState(bool isDragSource)
+    {
+        IsDragSource = isDragSource;
     }
 }

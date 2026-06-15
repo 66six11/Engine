@@ -10,77 +10,118 @@ namespace Editor.Shell.ViewModels;
 
 public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 {
-    private const string DynamicPaneIdPrefix = "owned-dock-surface-";
-    private readonly Dictionary<DockArea, EditorDockPaneViewModel> panesByArea_;
-    private readonly Dictionary<string, EditorDockPaneViewModel> panesById_;
-    private EditorDockNodeViewModel rootNode_;
-    private int nextDynamicPaneIndex_ = 1;
+    private const string DynamicWindowIdPrefix = "owned-dock-window-";
+    private readonly Dictionary<DockArea, EditorDockWindowViewModel> windowsByArea_;
+    private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
+    private EditorDockNodeViewModel? rootNode_;
+    private EditorDockWindowViewModel? activeWindow_;
+    private EditorDockWindowViewModel? dragSourceWindow_;
+    private EditorDockTabViewModel? dragSourceTab_;
+    private EditorDockWindowViewModel? tabInsertPreviewWindow_;
+    private int nextDynamicWindowIndex_ = 1;
     private int nextDynamicSplitIndex_ = 1;
 
     public EditorDockWorkspaceViewModel(IPanelRegistry panelRegistry)
     {
-        LeftPane = new EditorDockPaneViewModel("owned-dock-left", "Hierarchy", DockArea.Left, "Scene tree");
-        CenterPane = new EditorDockPaneViewModel("owned-dock-center", "Viewport", DockArea.Center, "Primary work area");
-        BottomPane = new EditorDockPaneViewModel("owned-dock-bottom", "Diagnostics", DockArea.Bottom, "Output and validation");
-        RightPane = new EditorDockPaneViewModel("owned-dock-right", "Inspector", DockArea.Right, "Selection context");
+        WorkspaceKind = EditorDockWorkspaceKind.MainWindow;
+        LeftWindow = new EditorDockWindowViewModel("owned-dock-left", "Hierarchy", DockArea.Left, "Scene tree");
+        CenterWindow = new EditorDockWindowViewModel("owned-dock-center", "Viewport", DockArea.Center, "Primary work area");
+        BottomWindow = new EditorDockWindowViewModel("owned-dock-bottom", "Diagnostics", DockArea.Bottom, "Output and validation");
+        RightWindow = new EditorDockWindowViewModel("owned-dock-right", "Inspector", DockArea.Right, "Selection context");
         rootNode_ = CreateDefaultLayout();
 
-        panesByArea_ = new Dictionary<DockArea, EditorDockPaneViewModel>
+        windowsByArea_ = new Dictionary<DockArea, EditorDockWindowViewModel>
         {
-            [DockArea.Left] = LeftPane,
-            [DockArea.Center] = CenterPane,
-            [DockArea.Bottom] = BottomPane,
-            [DockArea.Right] = RightPane,
+            [DockArea.Left] = LeftWindow,
+            [DockArea.Center] = CenterWindow,
+            [DockArea.Bottom] = BottomWindow,
+            [DockArea.Right] = RightWindow,
         };
-        panesById_ = new Dictionary<string, EditorDockPaneViewModel>
+        windowsById_ = new Dictionary<string, EditorDockWindowViewModel>
         {
-            [LeftPane.Id] = LeftPane,
-            [CenterPane.Id] = CenterPane,
-            [BottomPane.Id] = BottomPane,
-            [RightPane.Id] = RightPane,
+            [LeftWindow.Id] = LeftWindow,
+            [CenterWindow.Id] = CenterWindow,
+            [BottomWindow.Id] = BottomWindow,
+            [RightWindow.Id] = RightWindow,
         };
 
         foreach (var descriptor in panelRegistry.GetAll())
         {
-            var pane = panesByArea_[descriptor.DefaultArea];
-            pane.Add(CreateTab(descriptor));
+            var window = windowsByArea_[descriptor.DefaultArea];
+            window.Add(CreateTab(descriptor));
+        }
+
+        SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
+    }
+
+    private EditorDockWorkspaceViewModel(EditorDockWindowViewModel floatingDockWindow)
+    {
+        WorkspaceKind = EditorDockWorkspaceKind.FloatingWindow;
+        LeftWindow = floatingDockWindow;
+        CenterWindow = floatingDockWindow;
+        BottomWindow = floatingDockWindow;
+        RightWindow = floatingDockWindow;
+        windowsByArea_ = [];
+        windowsById_ = new Dictionary<string, EditorDockWindowViewModel>
+        {
+            [floatingDockWindow.Id] = floatingDockWindow,
+        };
+        nextDynamicWindowIndex_ = GetNextDynamicWindowIndex(windowsById_.Values);
+        rootNode_ = new EditorDockWindowNodeViewModel($"node-{floatingDockWindow.Id}", floatingDockWindow);
+        SetActiveWindow(floatingDockWindow);
+    }
+
+    public EditorDockWindowViewModel LeftWindow { get; }
+
+    public EditorDockWindowViewModel CenterWindow { get; }
+
+    public EditorDockWindowViewModel BottomWindow { get; }
+
+    public EditorDockWindowViewModel RightWindow { get; }
+
+    public EditorDockWorkspaceKind WorkspaceKind { get; }
+
+    public bool IsMainWindow => WorkspaceKind == EditorDockWorkspaceKind.MainWindow;
+
+    public bool IsFloatingWindow => WorkspaceKind == EditorDockWorkspaceKind.FloatingWindow;
+
+    public string WorkspaceKindText => IsFloatingWindow ? "Floating Window" : "Main Window";
+
+    public EditorDockWindowViewModel? ActiveWindow => activeWindow_;
+
+    public string ActiveWindowTitle => ActiveWindow?.Title ?? "No active window";
+
+    public string HostTitle => IsFloatingWindow
+        ? $"{ActiveWindowTitle} - Floating Window"
+        : ActiveWindowTitle;
+
+    public EditorDockNodeViewModel? RootNode
+    {
+        get => rootNode_;
+        private set
+        {
+            if (SetProperty(ref rootNode_, value))
+            {
+                OnPropertyChanged(nameof(HasRootNode));
+            }
         }
     }
 
-    private EditorDockWorkspaceViewModel(EditorDockPaneViewModel floatingPane)
-    {
-        LeftPane = floatingPane;
-        CenterPane = floatingPane;
-        BottomPane = floatingPane;
-        RightPane = floatingPane;
-        panesByArea_ = [];
-        panesById_ = new Dictionary<string, EditorDockPaneViewModel>
-        {
-            [floatingPane.Id] = floatingPane,
-        };
-        nextDynamicPaneIndex_ = GetNextDynamicPaneIndex(panesById_.Values);
-        rootNode_ = new EditorDockPaneNodeViewModel($"node-{floatingPane.Id}", floatingPane);
-    }
-
-    public EditorDockPaneViewModel LeftPane { get; }
-
-    public EditorDockPaneViewModel CenterPane { get; }
-
-    public EditorDockPaneViewModel BottomPane { get; }
-
-    public EditorDockPaneViewModel RightPane { get; }
-
-    public EditorDockNodeViewModel RootNode
-    {
-        get => rootNode_;
-        private set => SetProperty(ref rootNode_, value);
-    }
+    public bool HasRootNode => RootNode is not null;
 
     public EditorDockDragStateViewModel DragState { get; } = new();
 
     public void BeginDrag(EditorDockTabViewModel tab, double x, double y)
     {
-        FindPane(tab)?.Activate(tab);
+        var window = FindWindow(tab);
+        if (window is null)
+        {
+            return;
+        }
+
+        window.Activate(tab);
+        SetActiveWindow(window);
+        SetDragSourceState(window, tab);
         DragState.Begin(tab, x, y);
     }
 
@@ -89,135 +130,354 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         DragState.UpdatePointer(x, y);
     }
 
+    public void BeginExternalDragPreview(EditorDockTabViewModel tab, double x, double y)
+    {
+        if (!DragState.IsActive || !ReferenceEquals(DragState.DraggedTab, tab))
+        {
+            DragState.Begin(tab, x, y);
+            return;
+        }
+
+        DragState.UpdatePointer(x, y);
+    }
+
+    public void ClearDropPreview()
+    {
+        ClearTabInsertPreview();
+        DragState.ClearDropPreview();
+    }
+
+    public void ClearExternalDragPreview()
+    {
+        ClearTabInsertPreview();
+        DragState.Clear();
+    }
+
+    public bool PreviewTabInsert(EditorDockDropTarget target)
+    {
+        var tab = DragState.DraggedTab;
+        if (tab is null
+            || target.Operation != EditorDockDropOperation.InsertTabAtIndex
+            || target.TargetId is not { } targetWindowId
+            || target.TargetIndex is not { } targetIndex)
+        {
+            return ClearTabInsertPreview();
+        }
+
+        if (!windowsById_.TryGetValue(targetWindowId, out var targetWindow))
+        {
+            return ClearTabInsertPreview();
+        }
+
+        var changed = false;
+        if (!ReferenceEquals(tabInsertPreviewWindow_, targetWindow))
+        {
+            changed = ClearTabInsertPreview();
+            tabInsertPreviewWindow_ = targetWindow;
+        }
+
+        return targetWindow.ShowTabInsertPlaceholder(tab, targetIndex) || changed;
+    }
+
     public EditorDockFloatingWindowRequest? CompleteDrag(EditorDockDropTarget target)
     {
         var tab = DragState.DraggedTab;
-        if (tab is null)
+        try
         {
-            DragState.Clear();
-            return null;
-        }
+            if (tab is null)
+            {
+                return null;
+            }
 
-        if (target.Operation == EditorDockDropOperation.TabInto
-            && target.TargetId is { } targetPaneId
-            && panesById_.TryGetValue(targetPaneId, out var targetPane))
-        {
-            MoveTab(tab, targetPane);
-        }
-        else if (target.Operation == EditorDockDropOperation.SplitBetween
-            && target.TargetId is { } targetSplitId)
-        {
-            InsertTabAtSplitter(tab, targetSplitId);
-        }
-        else if (IsPaneInsertOperation(target.Operation)
-            && target.TargetId is { } insertTargetPaneId)
-        {
-            InsertTabAdjacentToPane(tab, insertTargetPaneId, target.Operation);
-        }
-        else if (target.Operation == EditorDockDropOperation.Float)
-        {
-            var request = FloatTab(tab, target.PreviewBounds);
-            DragState.Clear();
+            EditorDockFloatingWindowRequest? request = null;
+            if (target.Operation == EditorDockDropOperation.TabInto
+                && target.TargetId is { } targetWindowId
+                && windowsById_.TryGetValue(targetWindowId, out var targetWindow))
+            {
+                MoveTab(tab, targetWindow);
+            }
+            else if (target.Operation == EditorDockDropOperation.InsertTabAtIndex
+                && target.TargetId is { } tabInsertTargetWindowId
+                && target.TargetIndex is { } tabInsertTargetIndex)
+            {
+                InsertTabAtIndex(tab, tabInsertTargetWindowId, tabInsertTargetIndex);
+            }
+            else if (target.Operation == EditorDockDropOperation.SplitBetween
+                && target.TargetId is { } targetSplitId)
+            {
+                InsertTabAtSplitter(tab, targetSplitId);
+            }
+            else if (IsWindowInsertOperation(target.Operation)
+                && target.TargetId is { } insertTargetWindowId)
+            {
+                InsertTabAdjacentToWindow(tab, insertTargetWindowId, target.Operation);
+            }
+            else if (IsWorkspaceEdgeInsertOperation(target.Operation))
+            {
+                InsertTabAtWorkspaceEdge(tab, target.Operation);
+            }
+            else if (target.Operation == EditorDockDropOperation.Float)
+            {
+                request = FloatTab(tab, target.PreviewBounds);
+            }
+
             return request;
         }
+        finally
+        {
+            ClearTabInsertPreview();
+            ClearDragSourceState();
+            DragState.Clear();
+        }
+    }
 
-        DragState.Clear();
-        return null;
+    public EditorDockFloatingWindowRequest? CompleteDragInto(
+        EditorDockWorkspaceViewModel targetWorkspace,
+        EditorDockDropTarget target)
+    {
+        if (ReferenceEquals(this, targetWorkspace))
+        {
+            return CompleteDrag(target);
+        }
+
+        try
+        {
+            var tab = DragState.DraggedTab;
+            if (tab is null)
+            {
+                return null;
+            }
+
+            var sourceWindow = FindWindow(tab);
+            if (sourceWindow is null || !targetWorkspace.CanAcceptDetachedTab(target))
+            {
+                return null;
+            }
+
+            sourceWindow.Remove(tab);
+            targetWorkspace.InsertDetachedTab(tab, target, sourceWindow.Area);
+            RemoveWindowIfEmpty(sourceWindow);
+            NormalizeLayoutGraph();
+            SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
+            return null;
+        }
+        finally
+        {
+            ClearTabInsertPreview();
+            ClearDragSourceState();
+            DragState.Clear();
+            targetWorkspace.ClearExternalDragPreview();
+        }
     }
 
     public void CancelDrag()
     {
+        ClearTabInsertPreview();
+        ClearDragSourceState();
         DragState.Clear();
     }
 
-    private void MoveTab(EditorDockTabViewModel tab, EditorDockPaneViewModel targetPane)
+    public bool HasDockContent()
     {
-        var sourcePane = FindPane(tab);
-        if (sourcePane is null)
+        foreach (var window in windowsById_.Values)
+        {
+            if (window.Tabs.Count > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void MoveTab(EditorDockTabViewModel tab, EditorDockWindowViewModel targetWindow)
+    {
+        var sourceWindow = FindWindow(tab);
+        if (sourceWindow is null)
         {
             return;
         }
 
-        if (!ReferenceEquals(sourcePane, targetPane))
+        if (!ReferenceEquals(sourceWindow, targetWindow))
         {
-            sourcePane.Remove(tab);
-            targetPane.Add(tab);
+            sourceWindow.Remove(tab);
+            targetWindow.Add(tab);
         }
 
-        targetPane.Activate(tab);
+        targetWindow.Activate(tab);
+        SetActiveWindow(targetWindow);
     }
 
-    private EditorDockPaneViewModel? FindPane(EditorDockTabViewModel tab)
+    private void InsertTabAtIndex(
+        EditorDockTabViewModel tab,
+        string targetWindowId,
+        int targetIndex)
     {
-        foreach (var pane in panesById_.Values)
+        var sourceWindow = FindWindow(tab);
+        if (sourceWindow is null || !windowsById_.TryGetValue(targetWindowId, out var targetWindow))
         {
-            if (pane.Tabs.Contains(tab))
+            return;
+        }
+
+        if (ReferenceEquals(sourceWindow, targetWindow))
+        {
+            ReorderTabInWindow(tab, targetWindow, targetIndex);
+            return;
+        }
+
+        sourceWindow.Remove(tab);
+        targetWindow.Insert(tab, targetIndex);
+        targetWindow.Activate(tab);
+        SetActiveWindow(targetWindow);
+        RemoveWindowIfEmpty(sourceWindow);
+        NormalizeLayoutGraph();
+    }
+
+    private void ReorderTabInWindow(
+        EditorDockTabViewModel tab,
+        EditorDockWindowViewModel targetWindow,
+        int targetIndex)
+    {
+        var sourceIndex = targetWindow.Tabs.IndexOf(tab);
+        if (sourceIndex < 0)
+        {
+            return;
+        }
+
+        targetWindow.Move(tab, targetIndex);
+        targetWindow.Activate(tab);
+        SetActiveWindow(targetWindow);
+    }
+
+    private EditorDockWindowViewModel? FindWindow(EditorDockTabViewModel tab)
+    {
+        foreach (var window in windowsById_.Values)
+        {
+            if (window.Tabs.Contains(tab))
             {
-                return pane;
+                return window;
             }
         }
 
         return null;
     }
 
+    private EditorDockWindowViewModel? FindFirstWindowWithContent()
+    {
+        foreach (var window in windowsById_.Values)
+        {
+            if (window.Tabs.Count > 0)
+            {
+                return window;
+            }
+        }
+
+        return null;
+    }
+
+    private void SetActiveWindow(EditorDockWindowViewModel? window)
+    {
+        if (ReferenceEquals(activeWindow_, window))
+        {
+            return;
+        }
+
+        activeWindow_?.SetActiveWindowState(false);
+        activeWindow_ = window;
+        activeWindow_?.SetActiveWindowState(true);
+        OnPropertyChanged(nameof(ActiveWindow));
+        OnPropertyChanged(nameof(ActiveWindowTitle));
+        OnPropertyChanged(nameof(HostTitle));
+    }
+
+    private void SetDragSourceState(EditorDockWindowViewModel window, EditorDockTabViewModel tab)
+    {
+        ClearDragSourceState();
+        dragSourceWindow_ = window;
+        dragSourceTab_ = tab;
+        dragSourceWindow_.SetDragSourceWindowState(true);
+        dragSourceTab_.SetDragSourceState(true);
+    }
+
+    private void ClearDragSourceState()
+    {
+        dragSourceWindow_?.SetDragSourceWindowState(false);
+        dragSourceTab_?.SetDragSourceState(false);
+        dragSourceWindow_ = null;
+        dragSourceTab_ = null;
+    }
+
+    private bool ClearTabInsertPreview()
+    {
+        if (tabInsertPreviewWindow_ is null)
+        {
+            return false;
+        }
+
+        var changed = tabInsertPreviewWindow_.ClearTabInsertPlaceholder();
+        tabInsertPreviewWindow_ = null;
+        return changed;
+    }
+
     private EditorDockFloatingWindowRequest? FloatTab(EditorDockTabViewModel tab, Avalonia.Rect bounds)
     {
-        var sourcePane = FindPane(tab);
-        if (sourcePane is null)
+        var sourceWindow = FindWindow(tab);
+        if (sourceWindow is null)
         {
             return null;
         }
 
-        sourcePane.Remove(tab);
+        sourceWindow.Remove(tab);
 
-        var floatingPane = CreateDynamicPane(tab, sourcePane.Area);
-        floatingPane.Add(tab);
-        RemovePaneIfEmpty(sourcePane);
+        var floatingDockWindow = CreateDynamicWindow(tab, sourceWindow.Area);
+        floatingDockWindow.Add(tab);
+        RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
 
-        var floatingWorkspace = new EditorDockWorkspaceViewModel(floatingPane);
-        var floatingWindow = new EditorDockFloatingWindowViewModel(tab.Title, floatingWorkspace);
+        var floatingWorkspace = new EditorDockWorkspaceViewModel(floatingDockWindow);
+        var floatingWindow = new EditorDockFloatingWindowViewModel(floatingWorkspace);
         return new EditorDockFloatingWindowRequest(floatingWindow, bounds);
     }
 
     private void InsertTabAtSplitter(EditorDockTabViewModel tab, string splitId)
     {
-        var sourcePane = FindPane(tab);
+        var sourceWindow = FindWindow(tab);
         var targetSplit = FindSplitNode(RootNode, splitId);
-        if (sourcePane is null || targetSplit is null)
+        if (sourceWindow is null || targetSplit is null)
         {
             return;
         }
 
-        sourcePane.Remove(tab);
+        sourceWindow.Remove(tab);
 
-        var insertedPane = CreateDynamicPane(tab, sourcePane.Area);
-        insertedPane.Add(tab);
-        panesById_.Add(insertedPane.Id, insertedPane);
+        var insertedWindow = CreateDynamicWindow(tab, sourceWindow.Area);
+        insertedWindow.Add(tab);
+        windowsById_.Add(insertedWindow.Id, insertedWindow);
 
-        var insertedNode = new EditorDockPaneNodeViewModel(
-            $"node-{insertedPane.Id}",
-            insertedPane);
-        InsertPaneNodeAtSplitter(targetSplit, insertedNode);
+        var insertedNode = new EditorDockWindowNodeViewModel(
+            $"node-{insertedWindow.Id}",
+            insertedWindow);
+        InsertWindowNodeAtSplitter(targetSplit, insertedNode);
 
-        RemovePaneIfEmpty(sourcePane);
+        RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
+        SetActiveWindow(insertedWindow);
     }
 
-    private void InsertTabAdjacentToPane(
+    private void InsertTabAdjacentToWindow(
         EditorDockTabViewModel tab,
-        string targetPaneId,
+        string targetWindowId,
         EditorDockDropOperation operation)
     {
-        var sourcePane = FindPane(tab);
-        if (sourcePane is null)
+        var sourceWindow = FindWindow(tab);
+        if (sourceWindow is null)
         {
             return;
         }
 
-        if (!TryFindPaneNode(
+        if (!TryFindWindowNode(
                 RootNode,
-                targetPaneId,
+                targetWindowId,
                 parent: null,
                 out _,
                 out _,
@@ -227,48 +487,210 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        if (ReferenceEquals(sourcePane, targetNode.Pane) && sourcePane.Tabs.Count == 1)
+        if (ReferenceEquals(sourceWindow, targetNode.Window) && sourceWindow.Tabs.Count == 1)
         {
             return;
         }
 
-        sourcePane.Remove(tab);
+        sourceWindow.Remove(tab);
 
-        var insertedPane = CreateDynamicPane(tab, sourcePane.Area);
-        insertedPane.Add(tab);
-        panesById_.Add(insertedPane.Id, insertedPane);
+        var insertedWindow = CreateDynamicWindow(tab, sourceWindow.Area);
+        insertedWindow.Add(tab);
+        windowsById_.Add(insertedWindow.Id, insertedWindow);
 
-        var insertedNode = new EditorDockPaneNodeViewModel(
-            $"node-{insertedPane.Id}",
-            insertedPane);
-        var replacement = CreatePaneInsertionSplit(operation, targetNode, insertedNode);
+        var insertedNode = new EditorDockWindowNodeViewModel(
+            $"node-{insertedWindow.Id}",
+            insertedWindow);
+        var replacement = CreateWindowInsertionSplit(operation, targetNode, insertedNode);
 
         ReplaceNode(targetNode, replacement);
-        RemovePaneIfEmpty(sourcePane);
+        RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
+        SetActiveWindow(insertedWindow);
     }
 
-    private EditorDockPaneViewModel CreateDynamicPane(EditorDockTabViewModel tab, DockArea area)
+    private void InsertTabAtWorkspaceEdge(
+        EditorDockTabViewModel tab,
+        EditorDockDropOperation operation)
     {
-        var index = nextDynamicPaneIndex_++;
-        return new EditorDockPaneViewModel(
-            $"{DynamicPaneIdPrefix}{index}",
+        var sourceWindow = FindWindow(tab);
+        if (sourceWindow is null)
+        {
+            return;
+        }
+
+        sourceWindow.Remove(tab);
+
+        var insertedWindow = CreateDynamicWindow(tab, sourceWindow.Area);
+        insertedWindow.Add(tab);
+        windowsById_.Add(insertedWindow.Id, insertedWindow);
+
+        var insertedNode = new EditorDockWindowNodeViewModel(
+            $"node-{insertedWindow.Id}",
+            insertedWindow);
+        InsertWindowNodeAtWorkspaceEdge(operation, insertedNode);
+
+        RemoveWindowIfEmpty(sourceWindow);
+        NormalizeLayoutGraph();
+        SetActiveWindow(insertedWindow);
+    }
+
+    private bool CanAcceptDetachedTab(EditorDockDropTarget target)
+    {
+        if (!target.IsAccepted)
+        {
+            return false;
+        }
+
+        if (target.Operation == EditorDockDropOperation.TabInto
+            && target.TargetId is { } targetWindowId)
+        {
+            return windowsById_.ContainsKey(targetWindowId);
+        }
+
+        if (target.Operation == EditorDockDropOperation.InsertTabAtIndex
+            && target.TargetId is { } tabInsertTargetWindowId
+            && target.TargetIndex is >= 0)
+        {
+            return windowsById_.ContainsKey(tabInsertTargetWindowId);
+        }
+
+        if (target.Operation == EditorDockDropOperation.SplitBetween
+            && target.TargetId is { } targetSplitId)
+        {
+            return FindSplitNode(RootNode, targetSplitId) is not null;
+        }
+
+        if (IsWindowInsertOperation(target.Operation)
+            && target.TargetId is { } insertTargetWindowId)
+        {
+            return TryFindWindowNode(
+                RootNode,
+                insertTargetWindowId,
+                parent: null,
+                out _,
+                out _,
+                out var targetNode)
+                && targetNode is not null;
+        }
+
+        if (IsWorkspaceEdgeInsertOperation(target.Operation))
+        {
+            return RootNode is not null;
+        }
+
+        return false;
+    }
+
+    private void InsertDetachedTab(
+        EditorDockTabViewModel tab,
+        EditorDockDropTarget target,
+        DockArea fallbackArea)
+    {
+        if (target.Operation == EditorDockDropOperation.TabInto
+            && target.TargetId is { } targetWindowId
+            && windowsById_.TryGetValue(targetWindowId, out var targetWindow))
+        {
+            targetWindow.Add(tab);
+            targetWindow.Activate(tab);
+            SetActiveWindow(targetWindow);
+            return;
+        }
+
+        if (target.Operation == EditorDockDropOperation.InsertTabAtIndex
+            && target.TargetId is { } tabInsertTargetWindowId
+            && target.TargetIndex is { } tabInsertTargetIndex
+            && windowsById_.TryGetValue(tabInsertTargetWindowId, out var tabInsertTargetWindow))
+        {
+            tabInsertTargetWindow.Insert(tab, tabInsertTargetIndex);
+            tabInsertTargetWindow.Activate(tab);
+            SetActiveWindow(tabInsertTargetWindow);
+            return;
+        }
+
+        if (target.Operation == EditorDockDropOperation.SplitBetween
+            && target.TargetId is { } targetSplitId)
+        {
+            var targetSplit = FindSplitNode(RootNode, targetSplitId);
+            if (targetSplit is null)
+            {
+                return;
+            }
+
+            var insertedNode = CreateDetachedWindowNode(tab, fallbackArea);
+            InsertWindowNodeAtSplitter(targetSplit, insertedNode);
+            NormalizeLayoutGraph();
+            return;
+        }
+
+        if (IsWorkspaceEdgeInsertOperation(target.Operation))
+        {
+            InsertDetachedTabAtWorkspaceEdge(tab, target.Operation, fallbackArea);
+            NormalizeLayoutGraph();
+            return;
+        }
+
+        if (IsWindowInsertOperation(target.Operation)
+            && target.TargetId is { } insertTargetWindowId
+            && TryFindWindowNode(
+                RootNode,
+                insertTargetWindowId,
+                parent: null,
+                out _,
+                out _,
+                out var targetNode)
+            && targetNode is not null)
+        {
+            var insertedNode = CreateDetachedWindowNode(tab, fallbackArea);
+            var replacement = CreateWindowInsertionSplit(target.Operation, targetNode, insertedNode);
+            ReplaceNode(targetNode, replacement);
+            NormalizeLayoutGraph();
+        }
+    }
+
+    private void InsertDetachedTabAtWorkspaceEdge(
+        EditorDockTabViewModel tab,
+        EditorDockDropOperation operation,
+        DockArea fallbackArea)
+    {
+        var insertedNode = CreateDetachedWindowNode(tab, fallbackArea);
+        InsertWindowNodeAtWorkspaceEdge(operation, insertedNode);
+    }
+
+    private EditorDockWindowNodeViewModel CreateDetachedWindowNode(EditorDockTabViewModel tab, DockArea fallbackArea)
+    {
+        var insertedWindow = CreateDynamicWindow(tab, fallbackArea);
+        insertedWindow.Add(tab);
+        windowsById_.Add(insertedWindow.Id, insertedWindow);
+        SetActiveWindow(insertedWindow);
+        return new EditorDockWindowNodeViewModel(
+            $"node-{insertedWindow.Id}",
+            insertedWindow);
+    }
+
+    private EditorDockWindowViewModel CreateDynamicWindow(
+        EditorDockTabViewModel tab,
+        DockArea area)
+    {
+        var index = nextDynamicWindowIndex_++;
+        return new EditorDockWindowViewModel(
+            $"{DynamicWindowIdPrefix}{index}",
             tab.Title,
             area,
-            "Dock surface");
+            "Dock window");
     }
 
-    private static int GetNextDynamicPaneIndex(IEnumerable<EditorDockPaneViewModel> panes)
+    private static int GetNextDynamicWindowIndex(IEnumerable<EditorDockWindowViewModel> windows)
     {
         var nextIndex = 1;
-        foreach (var pane in panes)
+        foreach (var window in windows)
         {
-            if (!pane.Id.StartsWith(DynamicPaneIdPrefix, StringComparison.Ordinal))
+            if (!window.Id.StartsWith(DynamicWindowIdPrefix, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var suffix = pane.Id[DynamicPaneIdPrefix.Length..];
+            var suffix = window.Id[DynamicWindowIdPrefix.Length..];
             if (int.TryParse(suffix, out var index) && index >= nextIndex)
             {
                 nextIndex = index + 1;
@@ -278,9 +700,9 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         return nextIndex;
     }
 
-    private void InsertPaneNodeAtSplitter(
+    private void InsertWindowNodeAtSplitter(
         EditorDockSplitNodeViewModel targetSplit,
-        EditorDockPaneNodeViewModel insertedNode)
+        EditorDockWindowNodeViewModel insertedNode)
     {
         if (ShouldInsertIntoFirstSide(targetSplit))
         {
@@ -303,6 +725,51 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             new GridLength(1, GridUnitType.Star));
     }
 
+    private void InsertWindowNodeAtWorkspaceEdge(
+        EditorDockDropOperation operation,
+        EditorDockWindowNodeViewModel insertedNode)
+    {
+        if (RootNode is null)
+        {
+            RootNode = insertedNode;
+            return;
+        }
+
+        var currentRoot = RootNode;
+        RootNode = operation switch
+        {
+            EditorDockDropOperation.InsertWorkspaceLeft => new EditorDockSplitNodeViewModel(
+                CreateDynamicSplitId(),
+                Orientation.Horizontal,
+                insertedNode,
+                currentRoot,
+                GetInsertedNodeLength(Orientation.Horizontal),
+                new GridLength(1, GridUnitType.Star)),
+            EditorDockDropOperation.InsertWorkspaceRight => new EditorDockSplitNodeViewModel(
+                CreateDynamicSplitId(),
+                Orientation.Horizontal,
+                currentRoot,
+                insertedNode,
+                new GridLength(1, GridUnitType.Star),
+                GetInsertedNodeLength(Orientation.Horizontal)),
+            EditorDockDropOperation.InsertWorkspaceTop => new EditorDockSplitNodeViewModel(
+                CreateDynamicSplitId(),
+                Orientation.Vertical,
+                insertedNode,
+                currentRoot,
+                GetInsertedNodeLength(Orientation.Vertical),
+                new GridLength(1, GridUnitType.Star)),
+            EditorDockDropOperation.InsertWorkspaceBottom => new EditorDockSplitNodeViewModel(
+                CreateDynamicSplitId(),
+                Orientation.Vertical,
+                currentRoot,
+                insertedNode,
+                new GridLength(1, GridUnitType.Star),
+                GetInsertedNodeLength(Orientation.Vertical)),
+            _ => currentRoot,
+        };
+    }
+
     private string CreateDynamicSplitId()
     {
         return $"split-user-{nextDynamicSplitIndex_++}";
@@ -320,10 +787,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             : new GridLength(180);
     }
 
-    private EditorDockSplitNodeViewModel CreatePaneInsertionSplit(
+    private EditorDockSplitNodeViewModel CreateWindowInsertionSplit(
         EditorDockDropOperation operation,
-        EditorDockPaneNodeViewModel targetNode,
-        EditorDockPaneNodeViewModel insertedNode)
+        EditorDockWindowNodeViewModel targetNode,
+        EditorDockWindowNodeViewModel insertedNode)
     {
         return operation switch
         {
@@ -365,7 +832,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         };
     }
 
-    private static bool IsPaneInsertOperation(EditorDockDropOperation operation)
+    private static bool IsWindowInsertOperation(EditorDockDropOperation operation)
     {
         return operation is EditorDockDropOperation.InsertLeft
             or EditorDockDropOperation.InsertRight
@@ -373,7 +840,15 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             or EditorDockDropOperation.InsertBottom;
     }
 
-    private EditorDockSplitNodeViewModel? FindSplitNode(EditorDockNodeViewModel node, string splitId)
+    private static bool IsWorkspaceEdgeInsertOperation(EditorDockDropOperation operation)
+    {
+        return operation is EditorDockDropOperation.InsertWorkspaceLeft
+            or EditorDockDropOperation.InsertWorkspaceRight
+            or EditorDockDropOperation.InsertWorkspaceTop
+            or EditorDockDropOperation.InsertWorkspaceBottom;
+    }
+
+    private EditorDockSplitNodeViewModel? FindSplitNode(EditorDockNodeViewModel? node, string splitId)
     {
         if (node is not EditorDockSplitNodeViewModel split)
         {
@@ -389,16 +864,17 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             ?? FindSplitNode(split.Second, splitId);
     }
 
-    private void RemovePaneIfEmpty(EditorDockPaneViewModel pane)
+    private void RemoveWindowIfEmpty(EditorDockWindowViewModel window)
     {
-        if (pane.Tabs.Count > 0)
+        if (window.Tabs.Count > 0)
         {
             return;
         }
 
-        if (!TryFindPaneNode(
+        var isActiveWindow = ReferenceEquals(activeWindow_, window);
+        if (!TryFindWindowNode(
                 RootNode,
-                pane.Id,
+                window.Id,
                 parent: null,
                 out var parentSplit,
                 out var isFirstChild,
@@ -407,40 +883,50 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             return;
         }
 
-        panesById_.Remove(pane.Id);
+        windowsById_.Remove(window.Id);
         if (parentSplit is null)
         {
+            RootNode = null;
+            if (isActiveWindow)
+            {
+                SetActiveWindow(null);
+            }
+
             return;
         }
 
         var sibling = isFirstChild ? parentSplit.Second : parentSplit.First;
         ReplaceNode(parentSplit, sibling);
+        if (isActiveWindow)
+        {
+            SetActiveWindow(FindFirstWindowWithContent());
+        }
     }
 
-    private bool TryFindPaneNode(
-        EditorDockNodeViewModel node,
-        string paneId,
+    private bool TryFindWindowNode(
+        EditorDockNodeViewModel? node,
+        string windowId,
         EditorDockSplitNodeViewModel? parent,
         out EditorDockSplitNodeViewModel? parentSplit,
         out bool isFirstChild,
-        out EditorDockPaneNodeViewModel? paneNode)
+        out EditorDockWindowNodeViewModel? windowNode)
     {
-        if (node is EditorDockPaneNodeViewModel pane && pane.Pane.Id == paneId)
+        if (node is EditorDockWindowNodeViewModel window && window.Window.Id == windowId)
         {
             parentSplit = parent;
             isFirstChild = parent is not null && ReferenceEquals(parent.First, node);
-            paneNode = pane;
+            windowNode = window;
             return true;
         }
 
         if (node is EditorDockSplitNodeViewModel split)
         {
-            if (TryFindPaneNode(split.First, paneId, split, out parentSplit, out isFirstChild, out paneNode))
+            if (TryFindWindowNode(split.First, windowId, split, out parentSplit, out isFirstChild, out windowNode))
             {
                 return true;
             }
 
-            if (TryFindPaneNode(split.Second, paneId, split, out parentSplit, out isFirstChild, out paneNode))
+            if (TryFindWindowNode(split.Second, windowId, split, out parentSplit, out isFirstChild, out windowNode))
             {
                 return true;
             }
@@ -448,12 +934,17 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
         parentSplit = null;
         isFirstChild = false;
-        paneNode = null;
+        windowNode = null;
         return false;
     }
 
     private bool ReplaceNode(EditorDockNodeViewModel target, EditorDockNodeViewModel replacement)
     {
+        if (RootNode is null)
+        {
+            return false;
+        }
+
         if (ReferenceEquals(RootNode, target))
         {
             RootNode = replacement;
@@ -464,7 +955,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     }
 
     private bool ReplaceNode(
-        EditorDockNodeViewModel current,
+        EditorDockNodeViewModel? current,
         EditorDockNodeViewModel target,
         EditorDockNodeViewModel replacement)
     {
@@ -491,7 +982,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     private void NormalizeLayoutGraph()
     {
-        RootNode = NormalizeNode(RootNode);
+        if (RootNode is not null)
+        {
+            RootNode = NormalizeNode(RootNode);
+        }
     }
 
     private EditorDockNodeViewModel NormalizeNode(EditorDockNodeViewModel node)
@@ -596,8 +1090,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         var centerAndBottom = new EditorDockSplitNodeViewModel(
             "split-center-bottom",
             Orientation.Vertical,
-            new EditorDockPaneNodeViewModel("node-center", CenterPane),
-            new EditorDockPaneNodeViewModel("node-bottom", BottomPane),
+            new EditorDockWindowNodeViewModel("node-center", CenterWindow),
+            new EditorDockWindowNodeViewModel("node-bottom", BottomWindow),
             new GridLength(1, GridUnitType.Star),
             new GridLength(210));
 
@@ -605,14 +1099,14 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             "split-work-inspector",
             Orientation.Horizontal,
             centerAndBottom,
-            new EditorDockPaneNodeViewModel("node-right", RightPane),
+            new EditorDockWindowNodeViewModel("node-right", RightWindow),
             new GridLength(1, GridUnitType.Star),
             new GridLength(320));
 
         return new EditorDockSplitNodeViewModel(
             "split-left-work",
             Orientation.Horizontal,
-            new EditorDockPaneNodeViewModel("node-left", LeftPane),
+            new EditorDockWindowNodeViewModel("node-left", LeftWindow),
             workAndInspector,
             new GridLength(260),
             new GridLength(1, GridUnitType.Star));
