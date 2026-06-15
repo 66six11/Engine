@@ -1,4 +1,5 @@
 using Editor.Core.Models;
+using Editor.Shell.Docking;
 
 namespace Editor.Shell.ViewModels;
 
@@ -8,10 +9,20 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
     private string title_ = string.Empty;
     private string tag_ = string.Empty;
     private string dropLabel_ = string.Empty;
+    private string operationText_ = string.Empty;
     private EditorDockTabViewModel? draggedTab_;
     private DockArea? dropArea_;
+    private EditorDockDropOperation dropOperation_ = EditorDockDropOperation.Reject;
+    private EditorDockDropGuideKind guideKind_ = EditorDockDropGuideKind.None;
+    private string guideTitle_ = string.Empty;
+    private string guideDetail_ = string.Empty;
     private double adornerX_;
     private double adornerY_;
+    private double guideX_;
+    private double guideY_;
+    private double guideWidth_;
+    private double guideHeight_;
+    private bool insertGuideVertical_;
     private double previewX_;
     private double previewY_;
     private double previewWidth_;
@@ -20,7 +31,13 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
     public bool IsActive
     {
         get => isActive_;
-        private set => SetProperty(ref isActive_, value);
+        private set
+        {
+            if (SetProperty(ref isActive_, value))
+            {
+                OnGuideVisibilityChanged();
+            }
+        }
     }
 
     public string Title
@@ -41,6 +58,12 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         private set => SetProperty(ref dropLabel_, value);
     }
 
+    public string OperationText
+    {
+        get => operationText_;
+        private set => SetProperty(ref operationText_, value);
+    }
+
     public EditorDockTabViewModel? DraggedTab
     {
         get => draggedTab_;
@@ -51,6 +74,36 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
     {
         get => dropArea_;
         private set => SetProperty(ref dropArea_, value);
+    }
+
+    public EditorDockDropOperation DropOperation
+    {
+        get => dropOperation_;
+        private set => SetProperty(ref dropOperation_, value);
+    }
+
+    public EditorDockDropGuideKind GuideKind
+    {
+        get => guideKind_;
+        private set
+        {
+            if (SetProperty(ref guideKind_, value))
+            {
+                OnGuideVisibilityChanged();
+            }
+        }
+    }
+
+    public string GuideTitle
+    {
+        get => guideTitle_;
+        private set => SetProperty(ref guideTitle_, value);
+    }
+
+    public string GuideDetail
+    {
+        get => guideDetail_;
+        private set => SetProperty(ref guideDetail_, value);
     }
 
     public double AdornerX
@@ -64,6 +117,54 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         get => adornerY_;
         private set => SetProperty(ref adornerY_, value);
     }
+
+    public double GuideX
+    {
+        get => guideX_;
+        private set => SetProperty(ref guideX_, value);
+    }
+
+    public double GuideY
+    {
+        get => guideY_;
+        private set => SetProperty(ref guideY_, value);
+    }
+
+    public double GuideWidth
+    {
+        get => guideWidth_;
+        private set => SetProperty(ref guideWidth_, value);
+    }
+
+    public double GuideHeight
+    {
+        get => guideHeight_;
+        private set => SetProperty(ref guideHeight_, value);
+    }
+
+    public bool InsertGuideVertical
+    {
+        get => insertGuideVertical_;
+        private set
+        {
+            if (SetProperty(ref insertGuideVertical_, value))
+            {
+                OnPropertyChanged(nameof(InsertGuideHorizontal));
+            }
+        }
+    }
+
+    public bool InsertGuideHorizontal => !InsertGuideVertical;
+
+    public bool IsDropGuideVisible => IsActive && GuideKind is not EditorDockDropGuideKind.None;
+
+    public bool IsMergeGuideVisible => IsActive && GuideKind == EditorDockDropGuideKind.Merge;
+
+    public bool IsInsertGuideVisible => IsActive && GuideKind == EditorDockDropGuideKind.Insert;
+
+    public bool IsFloatGuideVisible => IsActive && GuideKind == EditorDockDropGuideKind.Float;
+
+    public bool IsRejectGuideVisible => IsActive && GuideKind == EditorDockDropGuideKind.Reject;
 
     public double PreviewX
     {
@@ -104,20 +205,24 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         AdornerY = y + 12;
     }
 
-    public void UpdateDropPreview(DockArea area, double x, double y, double width, double height)
+    public void UpdateDropPreview(EditorDockDropTarget target)
     {
-        DropArea = area;
-        DropLabel = area switch
-        {
-            DockArea.Left => "Dock into Left pane",
-            DockArea.Right => "Dock into Right pane",
-            DockArea.Bottom => "Dock into Bottom pane",
-            _ => "Dock into Center workspace",
-        };
-        PreviewX = x;
-        PreviewY = y;
-        PreviewWidth = width;
-        PreviewHeight = height;
+        DropArea = target.TargetArea;
+        DropOperation = target.Operation;
+        GuideKind = target.GuideKind;
+        DropLabel = target.Label;
+        OperationText = GetOperationText(target.Operation);
+        GuideTitle = GetGuideTitle(target.GuideKind);
+        GuideDetail = target.Label;
+        GuideX = target.PreviewBounds.X;
+        GuideY = target.PreviewBounds.Y;
+        GuideWidth = target.PreviewBounds.Width;
+        GuideHeight = target.PreviewBounds.Height;
+        InsertGuideVertical = target.PreviewBounds.Width <= target.PreviewBounds.Height;
+        PreviewX = target.PreviewBounds.X;
+        PreviewY = target.PreviewBounds.Y;
+        PreviewWidth = target.PreviewBounds.Width;
+        PreviewHeight = target.PreviewBounds.Height;
     }
 
     public void Clear()
@@ -126,13 +231,59 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         Title = string.Empty;
         Tag = string.Empty;
         DropLabel = string.Empty;
+        OperationText = string.Empty;
+        GuideKind = EditorDockDropGuideKind.None;
+        GuideTitle = string.Empty;
+        GuideDetail = string.Empty;
         DraggedTab = null;
         DropArea = null;
+        DropOperation = EditorDockDropOperation.Reject;
         AdornerX = 0;
         AdornerY = 0;
+        GuideX = 0;
+        GuideY = 0;
+        GuideWidth = 0;
+        GuideHeight = 0;
+        InsertGuideVertical = false;
         PreviewX = 0;
         PreviewY = 0;
         PreviewWidth = 0;
         PreviewHeight = 0;
+    }
+
+    private static string GetOperationText(EditorDockDropOperation operation)
+    {
+        return operation switch
+        {
+            EditorDockDropOperation.TabInto => "tab",
+            EditorDockDropOperation.SplitBetween => "split between",
+            EditorDockDropOperation.InsertLeft => "insert left",
+            EditorDockDropOperation.InsertRight => "insert right",
+            EditorDockDropOperation.InsertTop => "insert top",
+            EditorDockDropOperation.InsertBottom => "insert bottom",
+            EditorDockDropOperation.Float => "float",
+            _ => "reject",
+        };
+    }
+
+    private static string GetGuideTitle(EditorDockDropGuideKind guideKind)
+    {
+        return guideKind switch
+        {
+            EditorDockDropGuideKind.Merge => "Merge as tab",
+            EditorDockDropGuideKind.Insert => "Insert surface",
+            EditorDockDropGuideKind.Float => "Float surface",
+            EditorDockDropGuideKind.Reject => "Unavailable",
+            _ => string.Empty,
+        };
+    }
+
+    private void OnGuideVisibilityChanged()
+    {
+        OnPropertyChanged(nameof(IsDropGuideVisible));
+        OnPropertyChanged(nameof(IsMergeGuideVisible));
+        OnPropertyChanged(nameof(IsInsertGuideVisible));
+        OnPropertyChanged(nameof(IsFloatGuideVisible));
+        OnPropertyChanged(nameof(IsRejectGuideVisible));
     }
 }

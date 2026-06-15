@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Editor.Shell.ViewModels"
+        xmlns:views="using:Editor.Shell.Views"
+        x:Class="Editor.Shell.Views.EditorDockFloatingWindow"
+        x:DataType="vm:EditorDockFloatingWindowViewModel"
+        Title="{Binding Title}"
+        Width="320"
+        Height="240"
+        MinWidth="240"
+        MinHeight="180"
+        Background="{DynamicResource EditorBrushBase00}">
+    <views:EditorDockWorkspaceView DataContext="{Binding DockWorkspace}" />
+</Window>

@@ -7,69 +7,18 @@
     <Grid x:Name="DockRoot"
           Classes="owned-dock-root"
           ClipToBounds="True">
-        <Grid x:Name="DockLayout"
-              ColumnDefinitions="260,6,*,6,320"
-              RowDefinitions="*,6,210">
-            <views:EditorDockPaneView x:Name="LeftPaneHost"
-                                      Grid.Column="0"
-                                      Grid.Row="0"
-                                      Grid.RowSpan="3"
-                                      Classes="owned-dock-pane-host"
-                                      DataContext="{Binding LeftPane}" />
-
-            <GridSplitter Grid.Column="1"
-                          Grid.Row="0"
-                          Grid.RowSpan="3"
-                          ResizeDirection="Columns"
-                          Classes="owned-dock-splitter vertical" />
-
-            <views:EditorDockPaneView x:Name="CenterPaneHost"
-                                      Grid.Column="2"
-                                      Grid.Row="0"
-                                      Classes="owned-dock-pane-host"
-                                      DataContext="{Binding CenterPane}" />
-
-            <GridSplitter Grid.Column="2"
-                          Grid.Row="1"
-                          ResizeDirection="Rows"
-                          Classes="owned-dock-splitter horizontal" />
-
-            <views:EditorDockPaneView x:Name="BottomPaneHost"
-                                      Grid.Column="2"
-                                      Grid.Row="2"
-                                      Classes="owned-dock-pane-host"
-                                      DataContext="{Binding BottomPane}" />
-
-            <GridSplitter Grid.Column="3"
-                          Grid.Row="0"
-                          Grid.RowSpan="3"
-                          ResizeDirection="Columns"
-                          Classes="owned-dock-splitter vertical" />
-
-            <views:EditorDockPaneView x:Name="RightPaneHost"
-                                      Grid.Column="4"
-                                      Grid.Row="0"
-                                      Grid.RowSpan="3"
-                                      Classes="owned-dock-pane-host"
-                                      DataContext="{Binding RightPane}" />
-        </Grid>
+        <ContentControl x:Name="DockLayout"
+                        Classes="owned-dock-node-host"
+                        Content="{Binding RootNode}" />
 
         <Canvas x:Name="DockOverlay"
                 Panel.ZIndex="20"
                 IsHitTestVisible="False">
-            <Border Classes="owned-dock-drop-preview"
-                    IsVisible="{Binding DragState.IsActive}"
-                    Canvas.Left="{Binding DragState.PreviewX}"
-                    Canvas.Top="{Binding DragState.PreviewY}"
-                    Width="{Binding DragState.PreviewWidth}"
-                    Height="{Binding DragState.PreviewHeight}">
-                <Grid RowDefinitions="*,Auto,*">
-                    <Border Grid.Row="1"
-                            Classes="owned-dock-drop-label">
-                        <TextBlock Text="{Binding DragState.DropLabel}" />
-                    </Border>
-                </Grid>
-            </Border>
+            <views:EditorDockDropGuideView DataContext="{Binding DragState}"
+                                           Canvas.Left="{Binding GuideX}"
+                                           Canvas.Top="{Binding GuideY}"
+                                           Width="{Binding GuideWidth}"
+                                           Height="{Binding GuideHeight}" />
 
             <Border Classes="owned-dock-drag-adorner"
                     IsVisible="{Binding DragState.IsActive}"
@@ -85,7 +34,7 @@
                         <TextBlock Classes="owned-dock-drag-title"
                                    Text="{Binding DragState.Title}" />
                         <TextBlock Classes="owned-dock-drag-subtitle"
-                                   Text="custom drag layer" />
+                                   Text="{Binding DragState.OperationText}" />
                     </StackPanel>
                 </Grid>
             </Border>
