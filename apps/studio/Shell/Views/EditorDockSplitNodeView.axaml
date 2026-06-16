@@ -30,43 +30,5 @@
         </Style>
     </UserControl.Styles>
 
-    <Panel>
-        <Grid IsVisible="{Binding IsHorizontal}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="{Binding FirstLength}" />
-                <ColumnDefinition Width="6" />
-                <ColumnDefinition Width="{Binding SecondLength}" />
-            </Grid.ColumnDefinitions>
-
-            <ContentControl Grid.Column="0"
-                            Classes="owned-dock-node-host"
-                            Content="{Binding First}" />
-            <GridSplitter Grid.Column="1"
-                          ResizeDirection="Columns"
-                          Classes="owned-dock-splitter owned-dock-layout-splitter vertical"
-                          Tag="{Binding Id}" />
-            <ContentControl Grid.Column="2"
-                            Classes="owned-dock-node-host"
-                            Content="{Binding Second}" />
-        </Grid>
-
-        <Grid IsVisible="{Binding IsVertical}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="{Binding FirstLength}" />
-                <RowDefinition Height="6" />
-                <RowDefinition Height="{Binding SecondLength}" />
-            </Grid.RowDefinitions>
-
-            <ContentControl Grid.Row="0"
-                            Classes="owned-dock-node-host"
-                            Content="{Binding First}" />
-            <GridSplitter Grid.Row="1"
-                          ResizeDirection="Rows"
-                          Classes="owned-dock-splitter owned-dock-layout-splitter horizontal"
-                          Tag="{Binding Id}" />
-            <ContentControl Grid.Row="2"
-                            Classes="owned-dock-node-host"
-                            Content="{Binding Second}" />
-        </Grid>
-    </Panel>
+    <ContentControl x:Name="SplitHost" />
 </UserControl>

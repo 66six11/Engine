@@ -799,7 +799,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     {
         foreach (var window in windowsById_.Values)
         {
-            if (window.Tabs.Contains(tab))
+            if (window.ContainsTab(tab))
             {
                 return window;
             }

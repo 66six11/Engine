@@ -17,6 +17,7 @@ public partial class EditorDockWorkspaceView : UserControl
     private static readonly TimeSpan TabReorderAnimationDuration = TimeSpan.FromMilliseconds(120);
     private static readonly List<WeakReference<EditorDockWorkspaceView>> WorkspaceReferences = [];
     private readonly Dictionary<EditorDockTabViewModel, TabMoveAnimationState> tabMoveAnimations_ = [];
+    private Dictionary<EditorDockTabViewModel, Rect>? pendingTabReorderAnimationBounds_;
     private readonly DispatcherTimer tabMoveAnimationTimer_ = new()
     {
         Interval = TimeSpan.FromMilliseconds(16),
@@ -25,6 +26,7 @@ public partial class EditorDockWorkspaceView : UserControl
     private DockHitTestSnapshot? hitTestSnapshot_;
     private double draggedDockTabPointerOffsetX_;
     private Size draggedDockTabPreviewSize_;
+    private bool isTabReorderAnimationQueued_;
     private EditorDockWorkspaceView? previewWorkspace_;
 
     public EditorDockWorkspaceView()
@@ -41,6 +43,8 @@ public partial class EditorDockWorkspaceView : UserControl
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        pendingTabReorderAnimationBounds_ = null;
+        isTabReorderAnimationQueued_ = false;
         StopTabMoveAnimations();
         UnregisterWorkspace(this);
         base.OnDetachedFromVisualTree(e);
@@ -518,7 +522,26 @@ public partial class EditorDockWorkspaceView : UserControl
 
     private void AnimateTabReorder(IReadOnlyDictionary<EditorDockTabViewModel, Rect> previousBounds)
     {
-        DockLayout.UpdateLayout();
+        pendingTabReorderAnimationBounds_ ??= new Dictionary<EditorDockTabViewModel, Rect>(previousBounds);
+        if (isTabReorderAnimationQueued_)
+        {
+            return;
+        }
+
+        isTabReorderAnimationQueued_ = true;
+        Dispatcher.UIThread.Post(RunPendingTabReorderAnimation, DispatcherPriority.Loaded);
+    }
+
+    private void RunPendingTabReorderAnimation()
+    {
+        isTabReorderAnimationQueued_ = false;
+        var previousBounds = pendingTabReorderAnimationBounds_;
+        pendingTabReorderAnimationBounds_ = null;
+        if (previousBounds is null || TopLevel.GetTopLevel(DockLayout) is null)
+        {
+            return;
+        }
+
         InvalidateHitTestSnapshot();
         foreach (var (tabHost, tab) in GetTabHostsForAnimation())
         {

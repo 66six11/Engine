@@ -12,7 +12,6 @@ public partial class EditorDockWindowView : UserControl
 {
     private const double TabDragStartThreshold = 4.0;
     private const double TabReorderExitMargin = 8.0;
-    private const double TabReorderSwitchHysteresis = 5.0;
     private const double TabReorderReverseSwitchThreshold = 18.0;
     private EditorDockTabViewModel? capturedTab_;
     private EditorDockWindowViewModel? capturedWindow_;
@@ -24,6 +23,8 @@ public partial class EditorDockWindowView : UserControl
     private int reorderLastSwitchDirection_;
     private TabDragMode dragMode_;
     private int reorderTargetIndex_ = -1;
+    private int reorderSourceIndex_ = -1;
+    private ReorderTabEntry[] reorderTabEntries_ = [];
 
     public EditorDockWindowView()
     {
@@ -225,12 +226,20 @@ public partial class EditorDockWindowView : UserControl
 
     private void BeginLocalTabReorder(EditorDockWorkspaceView workspace, PointerEventArgs e)
     {
-        if (capturedTab_ is null)
+        if (capturedWindow_ is null || capturedTab_ is null)
         {
             return;
         }
 
         dragMode_ = TabDragMode.Reorder;
+        reorderSourceIndex_ = capturedWindow_.Tabs.IndexOf(capturedTab_);
+        if (reorderSourceIndex_ < 0)
+        {
+            dragMode_ = TabDragMode.None;
+            return;
+        }
+
+        reorderTabEntries_ = CaptureReorderTabEntries(capturedWindow_, this);
         capturedTab_.SetDragSourceState(true);
         ShowDraggedTabPreview(e);
         reorderLastSwitchCenterX_ = e.GetPosition(this).X
@@ -255,13 +264,10 @@ public partial class EditorDockWindowView : UserControl
         var previousTargetIndex = reorderTargetIndex_;
         var proposedTargetIndex = ResolveTabReorderTargetIndex(
             draggedTabCenterX,
-            capturedWindow_,
             capturedTab_,
             reorderTargetIndex_);
         reorderTargetIndex_ = ApplyReorderTargetHysteresis(
             draggedTabCenterX,
-            capturedWindow_,
-            capturedTab_,
             reorderTargetIndex_,
             proposedTargetIndex);
         if (previousTargetIndex >= 0 && reorderTargetIndex_ != previousTargetIndex)
@@ -285,6 +291,8 @@ public partial class EditorDockWindowView : UserControl
 
         capturedTab_?.SetDragSourceState(false);
         reorderTargetIndex_ = -1;
+        reorderSourceIndex_ = -1;
+        reorderTabEntries_ = [];
         HideDraggedTabPreview();
     }
 
@@ -343,6 +351,8 @@ public partial class EditorDockWindowView : UserControl
         reorderLastSwitchDirection_ = 0;
         dragMode_ = TabDragMode.None;
         reorderTargetIndex_ = -1;
+        reorderSourceIndex_ = -1;
+        reorderTabEntries_ = [];
     }
 
     private void CaptureDraggedTabPreviewGeometry(EditorDockTabItemView tabItem, PointerEventArgs e)
@@ -436,42 +446,40 @@ public partial class EditorDockWindowView : UserControl
 
     private int ResolveTabReorderTargetIndex(
         double draggedTabCenterX,
-        EditorDockWindowViewModel window,
         EditorDockTabViewModel draggedTab,
         int currentTargetIndex)
     {
-        var sourceIndex = window.Tabs.IndexOf(draggedTab);
-        if (sourceIndex < 0)
+        if (reorderSourceIndex_ < 0)
         {
             return currentTargetIndex >= 0 ? currentTargetIndex : 0;
         }
 
-        var targetIndex = currentTargetIndex >= 0 ? currentTargetIndex : sourceIndex;
-        while (TryResolveAdjacentReorderTargetIndex(
-                   draggedTabCenterX,
-                   window,
-                   draggedTab,
-                   targetIndex,
-                   out var nextTargetIndex)
-               && nextTargetIndex != targetIndex)
+        if (reorderTabEntries_.Length == 0)
         {
-            targetIndex = nextTargetIndex;
+            return reorderSourceIndex_;
         }
 
-        return targetIndex;
+        var targetIndex = 0;
+        foreach (var entry in reorderTabEntries_)
+        {
+            if (ReferenceEquals(entry.Tab, draggedTab))
+            {
+                continue;
+            }
+
+            if (draggedTabCenterX < entry.Bounds.Center.X)
+            {
+                break;
+            }
+
+            targetIndex = entry.TabIndex + 1;
+        }
+
+        return NormalizePreviewTargetIndex(reorderSourceIndex_, targetIndex);
     }
 
-    private static int NormalizePreviewTargetIndex(
-        EditorDockWindowViewModel window,
-        EditorDockTabViewModel draggedTab,
-        int targetIndex)
+    private static int NormalizePreviewTargetIndex(int sourceIndex, int targetIndex)
     {
-        var sourceIndex = window.Tabs.IndexOf(draggedTab);
-        if (sourceIndex < 0)
-        {
-            return targetIndex;
-        }
-
         return targetIndex == sourceIndex || targetIndex == sourceIndex + 1
             ? sourceIndex
             : targetIndex;
@@ -479,8 +487,6 @@ public partial class EditorDockWindowView : UserControl
 
     private int ApplyReorderTargetHysteresis(
         double draggedTabCenterX,
-        EditorDockWindowViewModel window,
-        EditorDockTabViewModel draggedTab,
         int currentTargetIndex,
         int proposedTargetIndex)
     {
@@ -501,60 +507,12 @@ public partial class EditorDockWindowView : UserControl
         return proposedTargetIndex;
     }
 
-    private bool TryResolveAdjacentReorderTargetIndex(
-        double draggedTabCenterX,
-        EditorDockWindowViewModel window,
-        EditorDockTabViewModel draggedTab,
-        int targetIndex,
-        out int nextTargetIndex)
-    {
-        var entries = GetIdealTabStripEntries(window, this, draggedTab, targetIndex);
-        var placeholderIndex = entries.FindIndex(entry =>
-            entry.Item.IsPlaceholder
-            && ReferenceEquals(entry.Item.Tab, draggedTab));
-        if (placeholderIndex < 0)
-        {
-            nextTargetIndex = targetIndex;
-            return false;
-        }
-
-        var placeholderBounds = entries[placeholderIndex].Bounds;
-        var placeholderCenterX = placeholderBounds.Center.X;
-        if (placeholderIndex > 0)
-        {
-            var previousEntry = entries[placeholderIndex - 1];
-            var leftBoundary = (previousEntry.Bounds.Center.X + placeholderCenterX) / 2;
-            if (draggedTabCenterX < leftBoundary - TabReorderSwitchHysteresis)
-            {
-                nextTargetIndex = window.Tabs.IndexOf(previousEntry.Item.Tab);
-                return nextTargetIndex >= 0;
-            }
-        }
-
-        if (placeholderIndex < entries.Count - 1)
-        {
-            var nextEntry = entries[placeholderIndex + 1];
-            var rightBoundary = (placeholderCenterX + nextEntry.Bounds.Center.X) / 2;
-            if (draggedTabCenterX >= rightBoundary + TabReorderSwitchHysteresis)
-            {
-                var nextTabIndex = window.Tabs.IndexOf(nextEntry.Item.Tab);
-                if (nextTabIndex >= 0)
-                {
-                    nextTargetIndex = nextTabIndex + 1;
-                    return true;
-                }
-            }
-        }
-
-        nextTargetIndex = targetIndex;
-        return false;
-    }
-
     internal IReadOnlyList<Editor.Shell.Docking.EditorDockTabBounds> GetIdealTabBounds(
         Visual relativeTo,
         EditorDockWindowViewModel window)
     {
         var tabBounds = new List<Editor.Shell.Docking.EditorDockTabBounds>();
+        var tabIndices = CreateTabIndexMap(window);
         foreach (var entry in GetIdealTabStripEntries(window, relativeTo))
         {
             if (entry.Item.IsPlaceholder
@@ -564,8 +522,9 @@ public partial class EditorDockWindowView : UserControl
                 continue;
             }
 
-            var tabIndex = window.Tabs.IndexOf(entry.Item.Tab);
-            if (tabIndex < 0 || entry.Bounds.Width <= 0 || entry.Bounds.Height <= 0)
+            if (!tabIndices.TryGetValue(entry.Item.Tab, out var tabIndex)
+                || entry.Bounds.Width <= 0
+                || entry.Bounds.Height <= 0)
             {
                 continue;
             }
@@ -581,18 +540,49 @@ public partial class EditorDockWindowView : UserControl
         return tabBounds;
     }
 
-    private List<IdealTabStripEntry> GetIdealTabStripEntries(
+    private ReorderTabEntry[] CaptureReorderTabEntries(
         EditorDockWindowViewModel window,
         Visual relativeTo)
     {
-        return GetIdealTabStripEntries(window, relativeTo, draggedTab: null, placeholderTargetIndex: null);
+        var entries = new List<ReorderTabEntry>();
+        var tabIndices = CreateTabIndexMap(window);
+        foreach (var entry in GetIdealTabStripEntries(window, relativeTo))
+        {
+            if (entry.Item.IsPlaceholder
+                || entry.Item.IsPreview
+                || entry.Item.IsSourceGhost)
+            {
+                continue;
+            }
+
+            if (!tabIndices.TryGetValue(entry.Item.Tab, out var tabIndex)
+                || entry.Bounds.Width <= 0
+                || entry.Bounds.Height <= 0)
+            {
+                continue;
+            }
+
+            entries.Add(new ReorderTabEntry(entry.Item.Tab, tabIndex, entry.Bounds));
+        }
+
+        entries.Sort((left, right) => left.TabIndex.CompareTo(right.TabIndex));
+        return entries.ToArray();
+    }
+
+    private static Dictionary<EditorDockTabViewModel, int> CreateTabIndexMap(EditorDockWindowViewModel window)
+    {
+        var tabIndices = new Dictionary<EditorDockTabViewModel, int>(window.Tabs.Count);
+        for (var index = 0; index < window.Tabs.Count; index++)
+        {
+            tabIndices[window.Tabs[index]] = index;
+        }
+
+        return tabIndices;
     }
 
     private List<IdealTabStripEntry> GetIdealTabStripEntries(
         EditorDockWindowViewModel window,
-        Visual relativeTo,
-        EditorDockTabViewModel? draggedTab,
-        int? placeholderTargetIndex)
+        Visual relativeTo)
     {
         if (DockTabStrip.TranslatePoint(new Point(0, 0), relativeTo) is not { } origin)
         {
@@ -626,11 +616,8 @@ public partial class EditorDockWindowView : UserControl
                 ? draggedTabPreviewSize_.Height
                 : 1d;
         var currentX = origin.X;
-        IReadOnlyList<EditorDockTabStripItemViewModel> items = placeholderTargetIndex is null || draggedTab is null
-            ? window.TabStripItems
-            : BuildHypotheticalTabStripItems(window, draggedTab, placeholderTargetIndex.Value);
-        var entries = new List<IdealTabStripEntry>(items.Count);
-        foreach (var item in items)
+        var entries = new List<IdealTabStripEntry>(window.TabStripItems.Count);
+        foreach (var item in window.TabStripItems)
         {
             var size = sizesByTab.TryGetValue(item.Tab, out var measuredSize)
                 ? measuredSize
@@ -641,39 +628,6 @@ public partial class EditorDockWindowView : UserControl
         }
 
         return entries;
-    }
-
-    private static List<EditorDockTabStripItemViewModel> BuildHypotheticalTabStripItems(
-        EditorDockWindowViewModel window,
-        EditorDockTabViewModel draggedTab,
-        int placeholderTargetIndex)
-    {
-        var items = new List<EditorDockTabStripItemViewModel>(window.Tabs.Count);
-        var clampedTargetIndex = System.Math.Clamp(placeholderTargetIndex, 0, window.Tabs.Count);
-        for (var index = 0; index <= window.Tabs.Count; index++)
-        {
-            if (clampedTargetIndex == index)
-            {
-                items.Add(new EditorDockTabStripItemViewModel(
-                    draggedTab,
-                    isPlaceholder: true));
-            }
-
-            if (index >= window.Tabs.Count)
-            {
-                continue;
-            }
-
-            var tab = window.Tabs[index];
-            if (ReferenceEquals(tab, draggedTab))
-            {
-                continue;
-            }
-
-            items.Add(new EditorDockTabStripItemViewModel(tab, isPlaceholder: false));
-        }
-
-        return items;
     }
 
     private double ResolveIdealTabFallbackWidth(ICollection<Size> measuredSizes)
@@ -716,5 +670,10 @@ public partial class EditorDockWindowView : UserControl
 
     private readonly record struct IdealTabStripEntry(
         EditorDockTabStripItemViewModel Item,
+        Rect Bounds);
+
+    private readonly record struct ReorderTabEntry(
+        EditorDockTabViewModel Tab,
+        int TabIndex,
         Rect Bounds);
 }

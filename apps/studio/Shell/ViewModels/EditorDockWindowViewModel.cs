@@ -6,6 +6,7 @@ namespace Editor.Shell.ViewModels;
 
 public sealed class EditorDockWindowViewModel : ViewModelBase
 {
+    private readonly HashSet<EditorDockTabViewModel> tabs_ = [];
     private readonly Dictionary<EditorDockTabViewModel, EditorDockTabStripItemViewModel> tabStripItemsByTab_ = [];
     private EditorDockTabViewModel? activeTab_;
     private bool isActiveWindow_;
@@ -67,6 +68,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     {
         tab.Area = Area;
         Tabs.Add(tab);
+        tabs_.Add(tab);
         NotifyTabCompositionChanged();
         RebuildTabStripItems();
 
@@ -80,6 +82,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     {
         tab.Area = Area;
         Tabs.Insert(System.Math.Clamp(index, 0, Tabs.Count), tab);
+        tabs_.Add(tab);
         NotifyTabCompositionChanged();
         RebuildTabStripItems();
 
@@ -121,6 +124,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
             return;
         }
 
+        tabs_.Remove(tab);
         NotifyTabCompositionChanged();
         RebuildTabStripItems();
 
@@ -146,6 +150,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
         }
 
         Tabs.Clear();
+        tabs_.Clear();
         TabStripItems.Clear();
         tabStripItemsByTab_.Clear();
         tabInsertPlaceholderTab_ = null;
@@ -190,7 +195,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
         tabInsertPlaceholderTab_ = tab;
         tabInsertPlaceholderIndex_ = insertIndex;
         tabInsertPlaceholderShowsTab_ = showsTab;
-        if (!Tabs.Contains(tab))
+        if (!tabs_.Contains(tab))
         {
             tabInsertPlaceholderItem_ = ReferenceEquals(tabInsertPlaceholderItem_?.Tab, tab)
                 ? tabInsertPlaceholderItem_
@@ -217,9 +222,14 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
             && tabInsertPlaceholderShowsTab_ == showsTab;
     }
 
+    internal bool ContainsTab(EditorDockTabViewModel tab)
+    {
+        return tabs_.Contains(tab);
+    }
+
     internal bool HideDragSourceTab(EditorDockTabViewModel tab)
     {
-        if (!Tabs.Contains(tab) || ReferenceEquals(hiddenDragSourceTab_, tab))
+        if (!tabs_.Contains(tab) || ReferenceEquals(hiddenDragSourceTab_, tab))
         {
             return false;
         }
@@ -265,9 +275,10 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     private void RebuildTabStripItems()
     {
         ResetCachedTabStripItems();
-        var targetItems = new List<EditorDockTabStripItemViewModel>();
+        var targetItems = new List<EditorDockTabStripItemViewModel>(
+            Tabs.Count + (tabInsertPlaceholderTab_ is null ? 0 : 1));
         var hasLocalPlaceholder = tabInsertPlaceholderTab_ is not null
-            && Tabs.Contains(tabInsertPlaceholderTab_);
+            && tabs_.Contains(tabInsertPlaceholderTab_);
         EditorDockTabStripItemViewModel? localPlaceholderItem = null;
         if (hasLocalPlaceholder && tabInsertPlaceholderTab_ is not null)
         {
@@ -358,6 +369,13 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
     private void SyncTabStripItems(IReadOnlyList<EditorDockTabStripItemViewModel> targetItems)
     {
+        var currentIndices = new Dictionary<EditorDockTabStripItemViewModel, int>(
+            ReferenceEqualityComparer.Instance);
+        for (var index = 0; index < TabStripItems.Count; index++)
+        {
+            currentIndices[TabStripItems[index]] = index;
+        }
+
         for (var targetIndex = 0; targetIndex < targetItems.Count; targetIndex++)
         {
             var targetItem = targetItems[targetIndex];
@@ -367,33 +385,44 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
                 continue;
             }
 
-            var existingIndex = IndexOfTabStripItem(targetItem);
-            if (existingIndex >= 0)
+            if (currentIndices.TryGetValue(targetItem, out var existingIndex))
             {
                 TabStripItems.Move(existingIndex, targetIndex);
+                RefreshTabStripItemIndices(
+                    currentIndices,
+                    System.Math.Min(existingIndex, targetIndex),
+                    System.Math.Max(existingIndex, targetIndex));
+                continue;
+            }
+
+            if (targetIndex == TabStripItems.Count)
+            {
+                TabStripItems.Add(targetItem);
+                currentIndices[targetItem] = targetIndex;
                 continue;
             }
 
             TabStripItems.Insert(targetIndex, targetItem);
+            RefreshTabStripItemIndices(currentIndices, targetIndex, TabStripItems.Count - 1);
         }
 
         while (TabStripItems.Count > targetItems.Count)
         {
-            TabStripItems.RemoveAt(TabStripItems.Count - 1);
+            var lastIndex = TabStripItems.Count - 1;
+            currentIndices.Remove(TabStripItems[lastIndex]);
+            TabStripItems.RemoveAt(lastIndex);
         }
     }
 
-    private int IndexOfTabStripItem(EditorDockTabStripItemViewModel targetItem)
+    private void RefreshTabStripItemIndices(
+        Dictionary<EditorDockTabStripItemViewModel, int> currentIndices,
+        int startIndex,
+        int endIndex)
     {
-        for (var index = 0; index < TabStripItems.Count; index++)
+        for (var index = startIndex; index <= endIndex; index++)
         {
-            if (ReferenceEquals(TabStripItems[index], targetItem))
-            {
-                return index;
-            }
+            currentIndices[TabStripItems[index]] = index;
         }
-
-        return -1;
     }
 
     private void RemoveStaleTabStripItems()
@@ -401,7 +430,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
         var removedTabs = new List<EditorDockTabViewModel>();
         foreach (var pair in tabStripItemsByTab_)
         {
-            if (!Tabs.Contains(pair.Key))
+            if (!tabs_.Contains(pair.Key))
             {
                 removedTabs.Add(pair.Key);
             }
