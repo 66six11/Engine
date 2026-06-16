@@ -26,7 +26,7 @@ Window/Split 只作为布局节点，不再承担活动面板语义
 - 旧的“活动面板”主路径已经迁移为 `EditorDockWorkspaceViewModel.ActiveWindow` 和 `EditorDockWindowViewModel.IsActiveWindow`。
 - Float drop 已迁移为直接创建独立 `EditorDockFloatingWindow`，不再使用窗口内部 overlay floating surface。
 - `EditorDockFloatingWindowViewModel` 和 `EditorDockFloatingWindow` 已存在，但目前更像预留 host。
-- `UI/Styles/Shell/Dock.axaml` 统一决定 window border/tab 颜色，窗口本身没有独立外观所有权。
+- Dock window、tab、drop guide 和 floating preview 的样式由对应 view 文件内嵌维护，窗口本身拥有可调整的外观边界。
 
 ## 网络资料复核
 

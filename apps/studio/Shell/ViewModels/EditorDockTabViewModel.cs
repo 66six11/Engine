@@ -16,7 +16,8 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         string statusText,
         PanelKind kind,
         DockArea area,
-        object content)
+        object content,
+        string? iconKey = null)
     {
         Id = id;
         Title = title;
@@ -26,6 +27,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         Kind = kind;
         area_ = area;
         Content = content;
+        IconKey = iconKey;
     }
 
     public string Id { get; }
@@ -37,6 +39,10 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     public string TitleDetail { get; }
 
     public string StatusText { get; }
+
+    public string? IconKey { get; }
+
+    public bool HasIcon => !string.IsNullOrWhiteSpace(IconKey);
 
     public PanelKind Kind { get; }
 

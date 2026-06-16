@@ -4,9 +4,20 @@
              xmlns:views="using:Editor.Shell.Views"
              x:Class="Editor.Shell.Views.EditorDockWorkspaceView"
              x:DataType="vm:EditorDockWorkspaceViewModel">
+    <UserControl.Styles>
+        <Style Selector="Grid.owned-dock-root">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+        </Style>
+
+        <Style Selector="ContentControl.owned-dock-node-host">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+    </UserControl.Styles>
+
     <Grid x:Name="DockRoot"
           Classes="owned-dock-root"
-          ClipToBounds="True">
+          ClipToBounds="False">
         <ContentControl x:Name="DockLayout"
                         Classes="owned-dock-node-host"
                         IsVisible="{Binding HasRootNode}"
@@ -14,31 +25,22 @@
 
         <Canvas x:Name="DockOverlay"
                 Panel.ZIndex="20"
+                ClipToBounds="False"
                 IsHitTestVisible="False">
+            <ContentControl x:Name="DraggedDockTabPreview"
+                            IsVisible="False">
+                <ContentControl.ContentTemplate>
+                    <DataTemplate x:DataType="vm:EditorDockTabStripItemViewModel">
+                        <views:EditorDockTabItemView />
+                    </DataTemplate>
+                </ContentControl.ContentTemplate>
+            </ContentControl>
+
             <views:EditorDockDropGuideView DataContext="{Binding DragState}"
                                            Canvas.Left="{Binding GuideX}"
                                            Canvas.Top="{Binding GuideY}"
                                            Width="{Binding GuideWidth}"
                                            Height="{Binding GuideHeight}" />
-
-            <Border Classes="owned-dock-drag-adorner"
-                    IsVisible="{Binding DragState.IsActive}"
-                    Canvas.Left="{Binding DragState.AdornerX}"
-                    Canvas.Top="{Binding DragState.AdornerY}">
-                <Grid ColumnDefinitions="Auto,*"
-                      ColumnSpacing="8">
-                    <Border Grid.Column="0"
-                            Classes="owned-dock-drag-tag">
-                        <TextBlock Text="{Binding DragState.Tag}" />
-                    </Border>
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Classes="owned-dock-drag-title"
-                                   Text="{Binding DragState.Title}" />
-                        <TextBlock Classes="owned-dock-drag-subtitle"
-                                   Text="{Binding DragState.OperationText}" />
-                    </StackPanel>
-                </Grid>
-            </Border>
         </Canvas>
     </Grid>
 </UserControl>

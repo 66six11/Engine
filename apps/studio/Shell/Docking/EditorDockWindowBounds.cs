@@ -9,6 +9,8 @@ public readonly record struct EditorDockWindowBounds(
     DockArea Area,
     Rect Bounds,
     Rect TabWellBounds,
+    int TabCount,
     IReadOnlyList<EditorDockTabBounds> TabBounds,
+    int? DragSourceTabIndex,
     bool AllowsWindowInsertion,
     bool IsDragSource);

@@ -10,25 +10,29 @@ public sealed class EditorDockHitTestService
     private const double SplitterPreviewBreadth = 76.0;
     private const double WindowGuideCenterWidth = 132.0;
     private const double WindowGuideCenterHeight = 58.0;
-    private const double WindowGuideHotspotWidth = 72.0;
-    private const double WindowGuideHotspotHeight = 44.0;
+    private const double WindowGuideHotspotWidth = 96.0;
+    private const double WindowGuideHotspotHeight = 56.0;
     private const double WindowGuideInset = 12.0;
-    private const double WindowInsertPreviewBreadth = 112.0;
-    private const double WorkspaceEdgeBandWidth = 40.0;
-    private const double WorkspaceEdgeBandHeight = 36.0;
-    private const double WorkspaceEdgePreviewBreadth = 112.0;
-    private const double TabInsertPlaceholderMinWidth = 132.0;
-    private const double TabInsertPlaceholderMaxWidth = 240.0;
+    private const double WindowInsertPreviewShare = 0.5;
+    private const double WorkspaceSideEdgePreviewShare = 1.0 / 5.0;
+    private const double WorkspaceTopBottomEdgePreviewShare = 1.0 / 3.0;
+    private const double WorkspaceSideEdgeBandWidth = 6.0;
+    private const double TabInsertPlaceholderMinWidth = 96.0;
+    private const double TabInsertPlaceholderMaxWidth = 180.0;
     private const double RejectPreviewWidth = 172.0;
     private const double RejectPreviewHeight = 48.0;
-    private const double FloatPreviewWidth = 260.0;
-    private const double FloatPreviewHeight = 180.0;
+    private const double FloatPreviewWidth = 320.0;
+    private const double FloatPreviewHeight = 220.0;
+    private const double FloatPreviewTabPointerX = 66.0;
+    private const double FloatPreviewTabPointerY = 21.0;
 
     public EditorDockDropTarget HitTest(
         Point pointer,
         Rect workspaceBounds,
         IReadOnlyList<EditorDockWindowBounds> windows,
-        IReadOnlyList<EditorDockSplitterBounds> splitters)
+        IReadOnlyList<EditorDockSplitterBounds> splitters,
+        bool allowOutOfBoundsWorkspaceEdge = false,
+        double? tabInsertProbeX = null)
     {
         if (windows.Count == 0)
         {
@@ -37,6 +41,12 @@ public sealed class EditorDockHitTestService
 
         if (!workspaceBounds.Contains(pointer))
         {
+            if (allowOutOfBoundsWorkspaceEdge
+                && TryCreateOutOfBoundsWorkspaceEdgeTarget(pointer, workspaceBounds, out var outOfBoundsTarget))
+            {
+                return outOfBoundsTarget;
+            }
+
             return CreateFloatTarget(pointer);
         }
 
@@ -44,13 +54,8 @@ public sealed class EditorDockHitTestService
         {
             if (window.TabWellBounds.Contains(pointer))
             {
-                return HitTestWindowGuide(pointer, window);
+                return HitTestWindowGuide(pointer, window, tabInsertProbeX);
             }
-        }
-
-        if (TryCreateWorkspaceEdgeTarget(pointer, workspaceBounds, out var workspaceEdgeTarget))
-        {
-            return workspaceEdgeTarget;
         }
 
         foreach (var splitter in splitters)
@@ -61,27 +66,80 @@ public sealed class EditorDockHitTestService
             }
         }
 
+        if (TryCreateWorkspaceEdgeTarget(
+                pointer,
+                workspaceBounds,
+                out var workspaceEdgeTarget))
+        {
+            return workspaceEdgeTarget;
+        }
+
         foreach (var window in windows)
         {
             if (window.Bounds.Contains(pointer))
             {
-                return HitTestWindowGuide(pointer, window);
+                return HitTestWindowGuide(pointer, window, tabInsertProbeX);
             }
         }
 
         return CreateFloatTarget(pointer);
     }
 
-    private static EditorDockDropTarget HitTestWindowGuide(Point pointer, EditorDockWindowBounds window)
+    private static bool TryCreateOutOfBoundsWorkspaceEdgeTarget(
+        Point pointer,
+        Rect workspaceBounds,
+        out EditorDockDropTarget target)
+    {
+        target = null!;
+        if (workspaceBounds.Width <= 0 || workspaceBounds.Height <= 0)
+        {
+            return false;
+        }
+
+        var leftDistance = pointer.X < workspaceBounds.X
+            ? workspaceBounds.X - pointer.X
+            : double.PositiveInfinity;
+        var rightDistance = pointer.X > workspaceBounds.Right
+            ? pointer.X - workspaceBounds.Right
+            : double.PositiveInfinity;
+        var topDistance = pointer.Y < workspaceBounds.Y
+            ? workspaceBounds.Y - pointer.Y
+            : double.PositiveInfinity;
+        var bottomDistance = pointer.Y > workspaceBounds.Bottom
+            ? pointer.Y - workspaceBounds.Bottom
+            : double.PositiveInfinity;
+        var nearestDistance = System.Math.Min(
+            System.Math.Min(leftDistance, rightDistance),
+            System.Math.Min(topDistance, bottomDistance));
+        if (double.IsPositiveInfinity(nearestDistance))
+        {
+            return false;
+        }
+
+        var operation = nearestDistance == leftDistance
+            ? EditorDockDropOperation.InsertWorkspaceLeft
+            : nearestDistance == rightDistance
+                ? EditorDockDropOperation.InsertWorkspaceRight
+                : nearestDistance == topDistance
+                    ? EditorDockDropOperation.InsertWorkspaceTop
+                    : EditorDockDropOperation.InsertWorkspaceBottom;
+        target = CreateWorkspaceEdgeTarget(operation, workspaceBounds);
+        return true;
+    }
+
+    private static EditorDockDropTarget HitTestWindowGuide(
+        Point pointer,
+        EditorDockWindowBounds window,
+        double? tabInsertProbeX = null)
     {
         if (window.TabWellBounds.Contains(pointer))
         {
             return window.TabBounds.Count > 0
-                ? CreateTabInsertTarget(window, pointer)
+                ? CreateTabInsertTarget(window, pointer, tabInsertProbeX ?? pointer.X)
                 : CreateTabTarget(window);
         }
 
-        if (window.IsDragSource)
+        if (window.IsDragSource && window.TabCount <= 1)
         {
             return CreateFloatTarget(pointer);
         }
@@ -152,18 +210,21 @@ public sealed class EditorDockHitTestService
             EditorDockDropGuideKind.Merge,
             window.Area,
             window.WindowId,
-            window.TabWellBounds,
+            window.Bounds,
             $"Tab into {window.WindowId}");
     }
 
-    private static EditorDockDropTarget CreateTabInsertTarget(EditorDockWindowBounds window, Point pointer)
+    private static EditorDockDropTarget CreateTabInsertTarget(
+        EditorDockWindowBounds window,
+        Point pointer,
+        double probeX)
     {
-        var targetIndex = window.TabBounds.Count;
+        var targetIndex = window.TabCount;
         var lineX = window.TabBounds[^1].Bounds.Right;
         var sourceTabIndex = GetDragSourceTabIndex(window);
         foreach (var tab in window.TabBounds)
         {
-            if (pointer.X >= tab.Bounds.Center.X)
+            if (probeX >= tab.Bounds.Center.X)
             {
                 continue;
             }
@@ -201,6 +262,11 @@ public sealed class EditorDockHitTestService
 
     private static int? GetDragSourceTabIndex(EditorDockWindowBounds window)
     {
+        if (window.DragSourceTabIndex is { } sourceIndex)
+        {
+            return sourceIndex;
+        }
+
         foreach (var tab in window.TabBounds)
         {
             if (tab.IsDragSource)
@@ -234,7 +300,9 @@ public sealed class EditorDockHitTestService
             null,
             splitter.SplitterId,
             GetSplitterPreviewBounds(splitter),
-            $"Split at {splitter.SplitterId}");
+            $"Split at {splitter.SplitterId}",
+            SplitterFirstExtent: GetSplitterExtent(splitter.Orientation, splitter.FirstBounds),
+            SplitterSecondExtent: GetSplitterExtent(splitter.Orientation, splitter.SecondBounds));
     }
 
     private static bool TryCreateWorkspaceEdgeTarget(
@@ -250,24 +318,15 @@ public sealed class EditorDockHitTestService
 
         var leftDistance = pointer.X - workspaceBounds.X;
         var rightDistance = workspaceBounds.Right - pointer.X;
-        var topDistance = pointer.Y - workspaceBounds.Y;
-        var bottomDistance = workspaceBounds.Bottom - pointer.Y;
         var horizontalDistance = System.Math.Min(leftDistance, rightDistance);
-        var verticalDistance = System.Math.Min(topDistance, bottomDistance);
-        var isHorizontalEdge = horizontalDistance <= WorkspaceEdgeBandWidth;
-        var isVerticalEdge = verticalDistance <= WorkspaceEdgeBandHeight;
-        if (!isHorizontalEdge && !isVerticalEdge)
+        if (horizontalDistance > WorkspaceSideEdgeBandWidth)
         {
             return false;
         }
 
-        var operation = isHorizontalEdge && (!isVerticalEdge || horizontalDistance <= verticalDistance)
-            ? leftDistance <= rightDistance
-                ? EditorDockDropOperation.InsertWorkspaceLeft
-                : EditorDockDropOperation.InsertWorkspaceRight
-            : topDistance <= bottomDistance
-                ? EditorDockDropOperation.InsertWorkspaceTop
-                : EditorDockDropOperation.InsertWorkspaceBottom;
+        var operation = leftDistance <= rightDistance
+            ? EditorDockDropOperation.InsertWorkspaceLeft
+            : EditorDockDropOperation.InsertWorkspaceRight;
         target = CreateWorkspaceEdgeTarget(operation, workspaceBounds);
         return true;
     }
@@ -301,8 +360,8 @@ public sealed class EditorDockHitTestService
     private static EditorDockDropTarget CreateFloatTarget(Point pointer)
     {
         var previewBounds = new Rect(
-            pointer.X - (FloatPreviewWidth / 2),
-            pointer.Y - 24,
+            pointer.X - FloatPreviewTabPointerX,
+            pointer.Y - FloatPreviewTabPointerY,
             FloatPreviewWidth,
             FloatPreviewHeight);
 
@@ -328,6 +387,11 @@ public sealed class EditorDockHitTestService
 
     private static Rect GetSplitterPreviewBounds(EditorDockSplitterBounds splitter)
     {
+        if (TryGetSharedSplitterPreviewBounds(splitter, out var previewBounds))
+        {
+            return previewBounds;
+        }
+
         if (splitter.Orientation == Orientation.Horizontal)
         {
             return new Rect(
@@ -344,71 +408,109 @@ public sealed class EditorDockHitTestService
             SplitterPreviewBreadth);
     }
 
+    private static bool TryGetSharedSplitterPreviewBounds(
+        EditorDockSplitterBounds splitter,
+        out Rect previewBounds)
+    {
+        previewBounds = default;
+        var first = splitter.FirstBounds;
+        var second = splitter.SecondBounds;
+        if (!IsUsableBounds(first) || !IsUsableBounds(second))
+        {
+            return false;
+        }
+
+        if (splitter.Orientation == Orientation.Horizontal)
+        {
+            var x = first.Center.X;
+            var right = second.Center.X;
+            var y = System.Math.Max(first.Y, second.Y);
+            var bottom = System.Math.Min(first.Bottom, second.Bottom);
+            if (bottom <= y)
+            {
+                y = System.Math.Min(first.Y, second.Y);
+                bottom = System.Math.Max(first.Bottom, second.Bottom);
+            }
+
+            previewBounds = new Rect(x, y, right - x, bottom - y);
+            return IsUsableBounds(previewBounds);
+        }
+
+        var verticalY = first.Center.Y;
+        var verticalBottom = second.Center.Y;
+        var verticalX = System.Math.Max(first.X, second.X);
+        var verticalRight = System.Math.Min(first.Right, second.Right);
+        if (verticalRight <= verticalX)
+        {
+            verticalX = System.Math.Min(first.X, second.X);
+            verticalRight = System.Math.Max(first.Right, second.Right);
+        }
+
+        previewBounds = new Rect(
+            verticalX,
+            verticalY,
+            verticalRight - verticalX,
+            verticalBottom - verticalY);
+        return IsUsableBounds(previewBounds);
+    }
+
     private static Rect GetWindowInsertPreviewBounds(EditorDockDropOperation operation, Rect windowBounds)
     {
+        var previewWidth = windowBounds.Width * WindowInsertPreviewShare;
+        var previewHeight = windowBounds.Height * WindowInsertPreviewShare;
         return operation switch
         {
             EditorDockDropOperation.InsertLeft => new Rect(
                 windowBounds.X,
                 windowBounds.Y,
-                System.Math.Min(WindowInsertPreviewBreadth, windowBounds.Width),
+                previewWidth,
                 windowBounds.Height),
             EditorDockDropOperation.InsertRight => new Rect(
-                windowBounds.Right - System.Math.Min(WindowInsertPreviewBreadth, windowBounds.Width),
+                windowBounds.Right - previewWidth,
                 windowBounds.Y,
-                System.Math.Min(WindowInsertPreviewBreadth, windowBounds.Width),
+                previewWidth,
                 windowBounds.Height),
             EditorDockDropOperation.InsertTop => new Rect(
                 windowBounds.X,
                 windowBounds.Y,
                 windowBounds.Width,
-                System.Math.Min(WindowInsertPreviewBreadth, windowBounds.Height)),
+                previewHeight),
             EditorDockDropOperation.InsertBottom => new Rect(
                 windowBounds.X,
-                windowBounds.Bottom - System.Math.Min(WindowInsertPreviewBreadth, windowBounds.Height),
+                windowBounds.Bottom - previewHeight,
                 windowBounds.Width,
-                System.Math.Min(WindowInsertPreviewBreadth, windowBounds.Height)),
+                previewHeight),
             _ => windowBounds,
         };
     }
 
     private static Rect GetWorkspaceEdgePreviewBounds(EditorDockDropOperation operation, Rect workspaceBounds)
     {
+        var previewWidth = workspaceBounds.Width * WorkspaceSideEdgePreviewShare;
+        var previewHeight = workspaceBounds.Height * WorkspaceTopBottomEdgePreviewShare;
         return operation switch
         {
             EditorDockDropOperation.InsertWorkspaceLeft => new Rect(
                 workspaceBounds.X,
                 workspaceBounds.Y,
-                System.Math.Min(WorkspaceEdgePreviewBreadth, workspaceBounds.Width),
+                previewWidth,
                 workspaceBounds.Height),
             EditorDockDropOperation.InsertWorkspaceRight => new Rect(
-                workspaceBounds.Right - System.Math.Min(WorkspaceEdgePreviewBreadth, workspaceBounds.Width),
+                workspaceBounds.Right - previewWidth,
                 workspaceBounds.Y,
-                System.Math.Min(WorkspaceEdgePreviewBreadth, workspaceBounds.Width),
+                previewWidth,
                 workspaceBounds.Height),
             EditorDockDropOperation.InsertWorkspaceTop => new Rect(
                 workspaceBounds.X,
                 workspaceBounds.Y,
                 workspaceBounds.Width,
-                System.Math.Min(WorkspaceEdgePreviewBreadth, workspaceBounds.Height)),
+                previewHeight),
             EditorDockDropOperation.InsertWorkspaceBottom => new Rect(
                 workspaceBounds.X,
-                workspaceBounds.Bottom - System.Math.Min(WorkspaceEdgePreviewBreadth, workspaceBounds.Height),
+                workspaceBounds.Bottom - previewHeight,
                 workspaceBounds.Width,
-                System.Math.Min(WorkspaceEdgePreviewBreadth, workspaceBounds.Height)),
+                previewHeight),
             _ => workspaceBounds,
-        };
-    }
-
-    private static string GetWindowInsertLabel(EditorDockDropOperation operation, string windowId)
-    {
-        return operation switch
-        {
-            EditorDockDropOperation.InsertLeft => $"Insert left of {windowId}",
-            EditorDockDropOperation.InsertRight => $"Insert right of {windowId}",
-            EditorDockDropOperation.InsertTop => $"Insert above {windowId}",
-            EditorDockDropOperation.InsertBottom => $"Insert below {windowId}",
-            _ => $"Insert near {windowId}",
         };
     }
 
@@ -421,6 +523,18 @@ public sealed class EditorDockHitTestService
             EditorDockDropOperation.InsertWorkspaceTop => "Insert at workspace top edge",
             EditorDockDropOperation.InsertWorkspaceBottom => "Insert at workspace bottom edge",
             _ => "Insert at workspace edge",
+        };
+    }
+
+    private static string GetWindowInsertLabel(EditorDockDropOperation operation, string windowId)
+    {
+        return operation switch
+        {
+            EditorDockDropOperation.InsertLeft => $"Insert left of {windowId}",
+            EditorDockDropOperation.InsertRight => $"Insert right of {windowId}",
+            EditorDockDropOperation.InsertTop => $"Insert above {windowId}",
+            EditorDockDropOperation.InsertBottom => $"Insert below {windowId}",
+            _ => $"Insert near {windowId}",
         };
     }
 
@@ -440,6 +554,19 @@ public sealed class EditorDockHitTestService
             rect.Y - y,
             rect.Width + (x * 2),
             rect.Height + (y * 2));
+    }
+
+    private static double? GetSplitterExtent(Orientation orientation, Rect bounds)
+    {
+        var extent = orientation == Orientation.Horizontal
+            ? bounds.Width
+            : bounds.Height;
+        return extent > 0 ? extent : null;
+    }
+
+    private static bool IsUsableBounds(Rect bounds)
+    {
+        return bounds.Width > 0 && bounds.Height > 0;
     }
 
     private static double Clamp(double value, double min, double max)

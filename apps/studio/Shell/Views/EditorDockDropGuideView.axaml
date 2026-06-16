@@ -1,69 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Editor.Shell.ViewModels"
+             xmlns:views="using:Editor.Shell.Views"
              x:Class="Editor.Shell.Views.EditorDockDropGuideView"
              x:DataType="vm:EditorDockDragStateViewModel"
-             ClipToBounds="False"
+             ClipToBounds="True"
              IsVisible="{Binding IsDropGuideVisible}">
-    <Grid ClipToBounds="False">
-        <Grid IsVisible="{Binding IsMergeGuideVisible}"
-              ClipToBounds="False">
-            <Border Classes="owned-dock-guide-frame merge" />
-            <Border Classes="owned-dock-guide-spoke top" />
-            <Border Classes="owned-dock-guide-spoke right" />
-            <Border Classes="owned-dock-guide-spoke bottom" />
-            <Border Classes="owned-dock-guide-spoke left" />
-            <Border Classes="owned-dock-guide-center">
-                <StackPanel>
-                    <TextBlock Classes="owned-dock-guide-title"
-                               Text="{Binding GuideTitle}" />
-                    <TextBlock Classes="owned-dock-guide-detail"
-                               Text="{Binding GuideDetail}" />
-                </StackPanel>
-            </Border>
-        </Grid>
-
-        <Grid IsVisible="{Binding IsWindowInsertGuideVisible}"
-              ClipToBounds="False">
-            <Border Classes="owned-dock-guide-frame insert" />
-            <Border Classes="owned-dock-guide-insert-line vertical"
-                    IsVisible="{Binding InsertGuideVertical}" />
-            <Border Classes="owned-dock-guide-insert-line horizontal"
-                    IsVisible="{Binding InsertGuideHorizontal}" />
-            <Border Classes="owned-dock-guide-badge insert">
-                <StackPanel>
-                    <TextBlock Classes="owned-dock-guide-title"
-                               Text="{Binding GuideTitle}" />
-                    <TextBlock Classes="owned-dock-guide-detail"
-                               Text="{Binding GuideDetail}" />
-                </StackPanel>
-            </Border>
-        </Grid>
-
-        <Grid IsVisible="{Binding IsFloatGuideVisible}"
-              ClipToBounds="False">
-            <Border Classes="owned-dock-guide-frame float" />
-            <Border Classes="owned-dock-guide-badge float">
-                <StackPanel>
-                    <TextBlock Classes="owned-dock-guide-title"
-                               Text="{Binding GuideTitle}" />
-                    <TextBlock Classes="owned-dock-guide-detail"
-                               Text="{Binding GuideDetail}" />
-                </StackPanel>
-            </Border>
-        </Grid>
-
-        <Grid IsVisible="{Binding IsRejectGuideVisible}"
-              ClipToBounds="False">
-            <Border Classes="owned-dock-guide-frame reject" />
-            <Border Classes="owned-dock-guide-badge reject">
-                <StackPanel>
-                    <TextBlock Classes="owned-dock-guide-title"
-                               Text="{Binding GuideTitle}" />
-                    <TextBlock Classes="owned-dock-guide-detail"
-                               Text="{Binding GuideDetail}" />
-                </StackPanel>
-            </Border>
-        </Grid>
-    </Grid>
+    <views:EditorDockFloatingPreviewView HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Stretch" />
 </UserControl>

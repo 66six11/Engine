@@ -19,7 +19,8 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,*,Auto"
+          ClipToBounds="False">
         <Border Grid.Row="0"
                 Background="{DynamicResource EditorBrushBase01}"
                 BorderBrush="{DynamicResource EditorBrushDivider}"
@@ -44,17 +45,36 @@
                 </MenuItem>
                 <MenuItem Header="View" Classes="editor-menu-item">
                     <MenuItem Header="Layout" Classes="editor-menu-item">
-                        <MenuItem Header="Reset Layout" Classes="editor-menu-item" IsEnabled="False" />
-                        <MenuItem Header="Save Layout" Classes="editor-menu-item" IsEnabled="False" />
+                        <MenuItem Header="Reset Layout"
+                                  Classes="editor-menu-item"
+                                  Command="{Binding ResetLayoutCommand}" />
+                        <MenuItem Header="Save Layout"
+                                  Classes="editor-menu-item"
+                                  Command="{Binding SaveLayoutCommand}" />
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Window" Classes="editor-menu-item">
                     <MenuItem Header="Panels" Classes="editor-menu-item">
-                        <MenuItem Header="Scene View" Classes="editor-menu-item" IsEnabled="False" />
-                        <MenuItem Header="Hierarchy" Classes="editor-menu-item" IsEnabled="False" />
-                        <MenuItem Header="Inspector" Classes="editor-menu-item" IsEnabled="False" />
-                        <MenuItem Header="Console" Classes="editor-menu-item" IsEnabled="False" />
-                        <MenuItem Header="Problems" Classes="editor-menu-item" IsEnabled="False" />
+                        <MenuItem Header="Scene View"
+                                  Classes="editor-menu-item"
+                                  Command="{Binding OpenPanelCommand}"
+                                  CommandParameter="scene-view" />
+                        <MenuItem Header="Hierarchy"
+                                  Classes="editor-menu-item"
+                                  Command="{Binding OpenPanelCommand}"
+                                  CommandParameter="hierarchy" />
+                        <MenuItem Header="Inspector"
+                                  Classes="editor-menu-item"
+                                  Command="{Binding OpenPanelCommand}"
+                                  CommandParameter="inspector" />
+                        <MenuItem Header="Console"
+                                  Classes="editor-menu-item"
+                                  Command="{Binding OpenPanelCommand}"
+                                  CommandParameter="console" />
+                        <MenuItem Header="Problems"
+                                  Classes="editor-menu-item"
+                                  Command="{Binding OpenPanelCommand}"
+                                  CommandParameter="problems" />
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Tools" Classes="editor-menu-item">
@@ -67,6 +87,12 @@
                 </MenuItem>
             </Menu>
         </Border>
+
+        <Border Grid.Row="2"
+                Height="{DynamicResource EditorMainMenuHeight}"
+                Background="{DynamicResource EditorBrushBase01}"
+                BorderBrush="{DynamicResource EditorBrushDivider}"
+                BorderThickness="0,1,0,0" />
 
         <views:EditorDockWorkspaceView Grid.Row="1"
                                        DataContext="{Binding DockWorkspace}" />

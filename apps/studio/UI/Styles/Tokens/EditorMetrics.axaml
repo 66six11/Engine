@@ -1,0 +1,29 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+    <!-- Blender-inspired density model. Change these together when user UI scale becomes runtime-configurable. -->
+    <sys:Double x:Key="EditorUiScale">1</sys:Double>
+    <sys:Double x:Key="EditorWidgetUnit">20</sys:Double>
+    <sys:Double x:Key="EditorHeaderHeight">26</sys:Double>
+    <sys:Double x:Key="EditorPanelHeaderHeight">24</sys:Double>
+
+    <FontFamily x:Key="EditorFontFamilyGlobal">avares://Editor/Assets/Fonts#Source Han Sans SC, Source Han Sans SC, Inter, Segoe UI</FontFamily>
+    <sys:Double x:Key="EditorFontSizeDefault">12</sys:Double>
+    <sys:Double x:Key="EditorFontSizeSmall">10</sys:Double>
+    <sys:Double x:Key="EditorFontSizeTiny">9</sys:Double>
+    <sys:Double x:Key="EditorFontSizeTitle">12</sys:Double>
+
+    <!-- Dock tabs -->
+    <sys:Double x:Key="EditorDockTabHeight">26</sys:Double>
+    <sys:Double x:Key="EditorDockTabMinWidth">96</sys:Double>
+    <sys:Double x:Key="EditorDockTabMaxWidth">180</sys:Double>
+    <sys:Double x:Key="EditorDockTabCloseButtonSize">18</sys:Double>
+    <sys:Double x:Key="EditorDockTabIconSize">14</sys:Double>
+    <Thickness x:Key="EditorDockTabPadding">10,0,6,0</Thickness>
+    <Thickness x:Key="EditorDockTabCloseButtonPadding">0</Thickness>
+
+    <!-- Menus -->
+    <sys:Double x:Key="EditorMainMenuHeight">26</sys:Double>
+    <Thickness x:Key="EditorMainMenuPadding">4,0</Thickness>
+    <Thickness x:Key="EditorMenuItemPadding">10,0</Thickness>
+</ResourceDictionary>

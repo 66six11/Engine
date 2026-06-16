@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Editor.Core.Models;
 using Editor.Shell.Docking;
 
@@ -6,18 +7,13 @@ namespace Editor.Shell.ViewModels;
 public sealed class EditorDockDragStateViewModel : ViewModelBase
 {
     private bool isActive_;
-    private string title_ = string.Empty;
-    private string tag_ = string.Empty;
     private string dropLabel_ = string.Empty;
-    private string operationText_ = string.Empty;
     private EditorDockTabViewModel? draggedTab_;
     private DockArea? dropArea_;
     private EditorDockDropOperation dropOperation_ = EditorDockDropOperation.Reject;
     private EditorDockDropGuideKind guideKind_ = EditorDockDropGuideKind.None;
     private string guideTitle_ = string.Empty;
     private string guideDetail_ = string.Empty;
-    private double adornerX_;
-    private double adornerY_;
     private double guideX_;
     private double guideY_;
     private double guideWidth_;
@@ -40,28 +36,10 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         }
     }
 
-    public string Title
-    {
-        get => title_;
-        private set => SetProperty(ref title_, value);
-    }
-
-    public string Tag
-    {
-        get => tag_;
-        private set => SetProperty(ref tag_, value);
-    }
-
     public string DropLabel
     {
         get => dropLabel_;
         private set => SetProperty(ref dropLabel_, value);
-    }
-
-    public string OperationText
-    {
-        get => operationText_;
-        private set => SetProperty(ref operationText_, value);
     }
 
     public EditorDockTabViewModel? DraggedTab
@@ -112,18 +90,6 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         private set => SetProperty(ref guideDetail_, value);
     }
 
-    public double AdornerX
-    {
-        get => adornerX_;
-        private set => SetProperty(ref adornerX_, value);
-    }
-
-    public double AdornerY
-    {
-        get => adornerY_;
-        private set => SetProperty(ref adornerY_, value);
-    }
-
     public double GuideX
     {
         get => guideX_;
@@ -165,6 +131,7 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
     public bool IsDropGuideVisible =>
         IsActive
         && GuideKind is not EditorDockDropGuideKind.None
+        && GuideKind is not EditorDockDropGuideKind.Reject
         && DropOperation != EditorDockDropOperation.InsertTabAtIndex;
 
     public bool IsMergeGuideVisible => IsDropGuideVisible && GuideKind == EditorDockDropGuideKind.Merge;
@@ -174,8 +141,6 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
     public bool IsWindowInsertGuideVisible => IsInsertGuideVisible;
 
     public bool IsFloatGuideVisible => IsDropGuideVisible && GuideKind == EditorDockDropGuideKind.Float;
-
-    public bool IsRejectGuideVisible => IsDropGuideVisible && GuideKind == EditorDockDropGuideKind.Reject;
 
     public double PreviewX
     {
@@ -201,19 +166,14 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         private set => SetProperty(ref previewHeight_, value);
     }
 
-    public void Begin(EditorDockTabViewModel tab, double x, double y)
+    public ObservableCollection<EditorDockTabStripItemViewModel> PreviewTabItems { get; } = [];
+
+    public void Begin(EditorDockTabViewModel tab)
     {
         DraggedTab = tab;
-        Title = tab.Title;
-        Tag = tab.Tag;
+        PreviewTabItems.Clear();
+        PreviewTabItems.Add(new EditorDockTabStripItemViewModel(tab, isPlaceholder: false, isPreview: true));
         IsActive = true;
-        UpdatePointer(x, y);
-    }
-
-    public void UpdatePointer(double x, double y)
-    {
-        AdornerX = x + 14;
-        AdornerY = y + 12;
     }
 
     public void UpdateDropPreview(EditorDockDropTarget target)
@@ -222,7 +182,6 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         DropOperation = target.Operation;
         GuideKind = target.GuideKind;
         DropLabel = target.Label;
-        OperationText = GetOperationText(target.Operation);
         GuideTitle = GetGuideTitle(target.GuideKind, target.Operation);
         GuideDetail = target.Label;
         GuideX = target.PreviewBounds.X;
@@ -242,7 +201,6 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         DropOperation = EditorDockDropOperation.Reject;
         GuideKind = EditorDockDropGuideKind.None;
         DropLabel = string.Empty;
-        OperationText = string.Empty;
         GuideTitle = string.Empty;
         GuideDetail = string.Empty;
         GuideX = 0;
@@ -259,32 +217,9 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
     public void Clear()
     {
         IsActive = false;
-        Title = string.Empty;
-        Tag = string.Empty;
         DraggedTab = null;
-        AdornerX = 0;
-        AdornerY = 0;
+        PreviewTabItems.Clear();
         ClearDropPreview();
-    }
-
-    private static string GetOperationText(EditorDockDropOperation operation)
-    {
-        return operation switch
-        {
-            EditorDockDropOperation.TabInto => "tab",
-            EditorDockDropOperation.InsertTabAtIndex => "insert tab",
-            EditorDockDropOperation.SplitBetween => "split between",
-            EditorDockDropOperation.InsertLeft => "insert left",
-            EditorDockDropOperation.InsertRight => "insert right",
-            EditorDockDropOperation.InsertTop => "insert top",
-            EditorDockDropOperation.InsertBottom => "insert bottom",
-            EditorDockDropOperation.InsertWorkspaceLeft => "insert workspace left",
-            EditorDockDropOperation.InsertWorkspaceRight => "insert workspace right",
-            EditorDockDropOperation.InsertWorkspaceTop => "insert workspace top",
-            EditorDockDropOperation.InsertWorkspaceBottom => "insert workspace bottom",
-            EditorDockDropOperation.Float => "float inside",
-            _ => "reject",
-        };
     }
 
     private static string GetGuideTitle(
@@ -302,7 +237,6 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
             EditorDockDropGuideKind.Merge => "Merge as tab",
             EditorDockDropGuideKind.Insert => "Insert window",
             EditorDockDropGuideKind.Float => "Float window",
-            EditorDockDropGuideKind.Reject => "Unavailable",
             _ => string.Empty,
         };
     }
@@ -314,6 +248,5 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsInsertGuideVisible));
         OnPropertyChanged(nameof(IsWindowInsertGuideVisible));
         OnPropertyChanged(nameof(IsFloatGuideVisible));
-        OnPropertyChanged(nameof(IsRejectGuideVisible));
     }
 }

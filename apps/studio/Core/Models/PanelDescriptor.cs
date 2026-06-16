@@ -9,4 +9,5 @@ public sealed record PanelDescriptor(
     DockArea DefaultArea,
     string MenuPath,
     DockContentCachePolicy CachePolicy,
-    Func<object> CreateContent);
+    Func<object> CreateContent,
+    string? IconKey = null);

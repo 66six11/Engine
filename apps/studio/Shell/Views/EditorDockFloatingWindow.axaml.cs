@@ -8,4 +8,16 @@ public partial class EditorDockFloatingWindow : Window
     {
         InitializeComponent();
     }
+
+    protected override void OnOpened(System.EventArgs e)
+    {
+        base.OnOpened(e);
+        EditorDockFloatingWindowRegistry.Register(this);
+    }
+
+    protected override void OnClosed(System.EventArgs e)
+    {
+        EditorDockFloatingWindowRegistry.Unregister(this);
+        base.OnClosed(e);
+    }
 }

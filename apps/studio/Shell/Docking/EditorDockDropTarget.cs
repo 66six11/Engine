@@ -10,7 +10,9 @@ public sealed record EditorDockDropTarget(
     string? TargetId,
     Rect PreviewBounds,
     string Label,
-    int? TargetIndex = null)
+    int? TargetIndex = null,
+    double? SplitterFirstExtent = null,
+    double? SplitterSecondExtent = null)
 {
     public bool IsAccepted => Operation is not EditorDockDropOperation.Reject;
 

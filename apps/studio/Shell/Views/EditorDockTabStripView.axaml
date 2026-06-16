@@ -4,6 +4,15 @@
              xmlns:views="using:Editor.Shell.Views"
              x:Class="Editor.Shell.Views.EditorDockTabStripView"
              x:DataType="vm:EditorDockWindowViewModel">
+    <UserControl.Styles>
+        <Style Selector="ItemsControl.owned-dock-tabs">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorDockTabHeight}" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,1,0,1" />
+        </Style>
+    </UserControl.Styles>
+
     <ItemsControl Classes="owned-dock-tabs owned-dock-tab-well"
                   IsVisible="{Binding HasTabs}"
                   ItemsSource="{Binding TabStripItems}">

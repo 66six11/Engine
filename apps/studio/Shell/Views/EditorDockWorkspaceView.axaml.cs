@@ -16,13 +16,21 @@ public partial class EditorDockWorkspaceView : UserControl
 {
     private static readonly TimeSpan TabReorderAnimationDuration = TimeSpan.FromMilliseconds(120);
     private static readonly List<WeakReference<EditorDockWorkspaceView>> WorkspaceReferences = [];
-    private readonly Dictionary<Control, DispatcherTimer> tabMoveAnimations_ = [];
+    private readonly Dictionary<EditorDockTabViewModel, TabMoveAnimationState> tabMoveAnimations_ = [];
+    private readonly DispatcherTimer tabMoveAnimationTimer_ = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(16),
+    };
     private readonly EditorDockHitTestService hitTestService_ = new();
+    private DockHitTestSnapshot? hitTestSnapshot_;
+    private double draggedDockTabPointerOffsetX_;
+    private Size draggedDockTabPreviewSize_;
     private EditorDockWorkspaceView? previewWorkspace_;
 
     public EditorDockWorkspaceView()
     {
         InitializeComponent();
+        tabMoveAnimationTimer_.Tick += OnTabMoveAnimationTick;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -38,16 +46,81 @@ public partial class EditorDockWorkspaceView : UserControl
         base.OnDetachedFromVisualTree(e);
     }
 
-    public void BeginTabDrag(EditorDockTabViewModel tab, Point point)
+    public void BeginTabDrag(
+        EditorDockTabViewModel tab,
+        Point point,
+        Size previewSize,
+        double pointerOffsetX)
     {
         if (DataContext is not EditorDockWorkspaceViewModel workspace)
         {
             return;
         }
 
-        workspace.BeginDrag(tab, point.X, point.Y);
+        draggedDockTabPreviewSize_ = previewSize;
+        draggedDockTabPointerOffsetX_ = pointerOffsetX;
+        InvalidateHitTestSnapshot();
+        EnsureDraggedDockTabPreviewContent(tab);
+        workspace.BeginDrag(tab);
         previewWorkspace_ = this;
         UpdateRoutedDropPreview(workspace, point);
+    }
+
+    public void ActivateTab(EditorDockTabViewModel tab)
+    {
+        if (DataContext is EditorDockWorkspaceViewModel workspace)
+        {
+            workspace.ActivateTab(tab);
+        }
+    }
+
+    public void PreviewTabReorder(
+        EditorDockWindowViewModel window,
+        EditorDockTabViewModel tab,
+        int targetIndex)
+    {
+        if (window.IsLocalTabReorderPreviewCurrent(tab, targetIndex, showsTab: false))
+        {
+            return;
+        }
+
+        var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
+        var changed = window.HideDragSourceTab(tab);
+        changed = window.ShowTabInsertPlaceholder(tab, targetIndex, showsTab: false) || changed;
+        if (changed)
+        {
+            AnimateTabReorder(tabLayoutSnapshot);
+        }
+    }
+
+    public void CompleteTabReorder(
+        EditorDockWindowViewModel window,
+        EditorDockTabViewModel tab,
+        int targetIndex)
+    {
+        var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
+        var changed = window.ClearHiddenDragSourceTab();
+        changed = window.ClearTabInsertPlaceholder() || changed;
+        if (DataContext is EditorDockWorkspaceViewModel workspace)
+        {
+            changed = workspace.ReorderTabInWindow(window, tab, targetIndex) || changed;
+        }
+
+        if (changed)
+        {
+            AnimateTabReorder(tabLayoutSnapshot);
+        }
+    }
+
+    public void CancelTabReorder(EditorDockWindowViewModel window)
+    {
+        var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
+        var changed = window.ClearHiddenDragSourceTab();
+        changed = window.ClearTabInsertPlaceholder() || changed;
+        if (changed)
+        {
+            AnimateTabReorder(tabLayoutSnapshot);
+        }
     }
 
     public void UpdateTabDrag(Point point)
@@ -57,7 +130,6 @@ public partial class EditorDockWorkspaceView : UserControl
             return;
         }
 
-        workspace.UpdateDrag(point.X, point.Y);
         UpdateRoutedDropPreview(workspace, point);
     }
 
@@ -75,7 +147,8 @@ public partial class EditorDockWorkspaceView : UserControl
             ShowFloatingWindow(floatingWindowRequest);
         }
 
-        ClearExternalPreview(routedTarget.View);
+        HideDraggedDockTabPreview();
+        ClearPreviewWorkspace(routedTarget.View);
         previewWorkspace_ = null;
         CloseEmptyFloatingHost(workspace);
     }
@@ -87,8 +160,20 @@ public partial class EditorDockWorkspaceView : UserControl
             workspace.CancelDrag();
         }
 
-        ClearExternalPreview(previewWorkspace_);
+        HideDraggedDockTabPreview();
+        ClearPreviewWorkspace(previewWorkspace_);
         previewWorkspace_ = null;
+    }
+
+    public void CloseTab(EditorDockTabViewModel tab)
+    {
+        if (DataContext is not EditorDockWorkspaceViewModel workspace)
+        {
+            return;
+        }
+
+        workspace.CloseTab(tab);
+        CloseEmptyFloatingHost(workspace);
     }
 
     private RoutedDockDropTarget UpdateRoutedDropPreview(
@@ -96,7 +181,9 @@ public partial class EditorDockWorkspaceView : UserControl
         Point sourcePoint)
     {
         var screenPoint = WorkspacePointToScreen(sourcePoint);
-        var targetView = FindWorkspaceAtScreenPoint(screenPoint) ?? this;
+        var targetView = FindWorkspaceTopLevelAtScreenPoint(screenPoint)
+            ?? FindWorkspaceAtScreenPoint(screenPoint)
+            ?? this;
         if (!targetView.TryGetLocalPoint(screenPoint, out var targetPoint)
             || targetView.DataContext is not EditorDockWorkspaceViewModel targetWorkspace)
         {
@@ -107,43 +194,95 @@ public partial class EditorDockWorkspaceView : UserControl
 
         if (!ReferenceEquals(previewWorkspace_, targetView))
         {
-            ClearExternalPreview(previewWorkspace_);
+            ClearPreviewWorkspace(previewWorkspace_);
             previewWorkspace_ = targetView;
         }
 
         if (!ReferenceEquals(targetWorkspace, sourceWorkspace))
         {
             sourceWorkspace.ClearDropPreview();
+            HideDraggedDockTabPreview();
             if (sourceWorkspace.DragState.DraggedTab is { } tab)
             {
-                targetWorkspace.BeginExternalDragPreview(tab, targetPoint.X, targetPoint.Y);
+                targetView.BeginExternalDragPreview(
+                    tab,
+                    draggedDockTabPreviewSize_,
+                    draggedDockTabPointerOffsetX_);
             }
         }
 
-        var target = targetView.UpdateDropPreview(targetWorkspace, targetPoint);
+        var target = targetView.UpdateDropPreview(
+            targetWorkspace,
+            targetPoint,
+            targetView.ContainsTopLevelScreenPoint(screenPoint));
         return new RoutedDockDropTarget(targetView, targetWorkspace, target);
     }
 
-    private EditorDockDropTarget UpdateDropPreview(EditorDockWorkspaceViewModel workspace, Point point)
+    private EditorDockDropTarget UpdateDropPreview(
+        EditorDockWorkspaceViewModel workspace,
+        Point point,
+        bool allowOutOfBoundsWorkspaceEdge)
     {
-        var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
-        var target = ResolveDropTarget(point);
+        var target = ResolveDropTarget(point, allowOutOfBoundsWorkspaceEdge);
         workspace.DragState.UpdateDropPreview(target);
-        if (workspace.PreviewTabInsert(target))
+        if (workspace.WouldPreviewTabInsertChange(target))
         {
-            AnimateTabReorder(tabLayoutSnapshot);
+            var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
+            if (workspace.PreviewTabInsert(target))
+            {
+                AnimateTabReorder(tabLayoutSnapshot);
+            }
         }
+
+        UpdateDraggedDockTabPreview(workspace, point, target);
 
         return target;
     }
 
-    private EditorDockDropTarget ResolveDropTarget(Point point)
+    private EditorDockDropTarget ResolveDropTarget(Point point, bool allowOutOfBoundsWorkspaceEdge)
     {
+        var snapshot = GetHitTestSnapshot();
         return hitTestService_.HitTest(
             point,
-            new Rect(new Point(0, 0), DockRoot.Bounds.Size),
-            GetWindowBounds(),
+            snapshot.WorkspaceBounds,
+            snapshot.Windows,
+            snapshot.Splitters,
+            allowOutOfBoundsWorkspaceEdge,
+            GetTabInsertProbeX(point));
+    }
+
+    private DockHitTestSnapshot GetHitTestSnapshot()
+    {
+        var dockRootSize = DockRoot.Bounds.Size;
+        if (hitTestSnapshot_ is { DockRootSize: var cachedSize } snapshot
+            && cachedSize == dockRootSize)
+        {
+            return snapshot;
+        }
+
+        var windows = GetWindowBounds();
+        snapshot = new DockHitTestSnapshot(
+            dockRootSize,
+            new Rect(new Point(0, 0), dockRootSize),
+            windows,
             GetSplitterBounds());
+        hitTestSnapshot_ = snapshot;
+        return snapshot;
+    }
+
+    private void InvalidateHitTestSnapshot()
+    {
+        hitTestSnapshot_ = null;
+    }
+
+    private double GetTabInsertProbeX(Point point)
+    {
+        if (draggedDockTabPreviewSize_.Width <= 0)
+        {
+            return point.X;
+        }
+
+        return point.X - draggedDockTabPointerOffsetX_ + (draggedDockTabPreviewSize_.Width / 2);
     }
 
     private IReadOnlyList<EditorDockWindowBounds> GetWindowBounds()
@@ -169,7 +308,9 @@ public partial class EditorDockWorkspaceView : UserControl
                 window.Area,
                 bounds,
                 tabWellBounds,
+                window.Tabs.Count,
                 GetTabBounds(host, window),
+                GetDragSourceTabIndex(window),
                 AllowsWindowInsertion: true,
                 IsDragSource: window.IsDragSourceWindow));
         }
@@ -203,10 +344,159 @@ public partial class EditorDockWorkspaceView : UserControl
                 continue;
             }
 
-            splitters.Add(new EditorDockSplitterBounds(split.Id, split.Orientation, bounds));
+            TryGetSplitterAdjacentBounds(splitter, split.Orientation, out var firstBounds, out var secondBounds);
+
+            splitters.Add(new EditorDockSplitterBounds(
+                split.Id,
+                split.Orientation,
+                bounds,
+                firstBounds,
+                secondBounds));
         }
 
         return splitters;
+    }
+
+    private bool TryGetSplitterAdjacentBounds(
+        GridSplitter splitter,
+        Avalonia.Layout.Orientation orientation,
+        out Rect firstBounds,
+        out Rect secondBounds)
+    {
+        firstBounds = default;
+        secondBounds = default;
+        if (splitter.Parent is not Grid grid)
+        {
+            return false;
+        }
+
+        Control? firstHost = null;
+        Control? secondHost = null;
+        foreach (var child in grid.Children.OfType<Control>())
+        {
+            if (ReferenceEquals(child, splitter))
+            {
+                continue;
+            }
+
+            if (orientation == Avalonia.Layout.Orientation.Horizontal)
+            {
+                var column = Grid.GetColumn(child);
+                if (column == 0)
+                {
+                    firstHost = child;
+                }
+                else if (column == 2)
+                {
+                    secondHost = child;
+                }
+
+                continue;
+            }
+
+            var row = Grid.GetRow(child);
+            if (row == 0)
+            {
+                firstHost = child;
+            }
+            else if (row == 2)
+            {
+                secondHost = child;
+            }
+        }
+
+        if (firstHost is null || secondHost is null)
+        {
+            return false;
+        }
+
+        firstBounds = GetSplitterEdgeBounds(
+            firstHost,
+            GetContentNode(firstHost),
+            orientation,
+            useTrailingEdge: true);
+        secondBounds = GetSplitterEdgeBounds(
+            secondHost,
+            GetContentNode(secondHost),
+            orientation,
+            useTrailingEdge: false);
+        return firstBounds.Width > 0
+            && firstBounds.Height > 0
+            && secondBounds.Width > 0
+            && secondBounds.Height > 0;
+    }
+
+    private Rect GetSplitterEdgeBounds(
+        Control host,
+        EditorDockNodeViewModel? node,
+        Avalonia.Layout.Orientation orientation,
+        bool useTrailingEdge)
+    {
+        if (node is EditorDockSplitNodeViewModel split
+            && split.Orientation == orientation
+            && TryGetSplitChildHost(host, split, useTrailingEdge, out var edgeHost))
+        {
+            var edgeNode = useTrailingEdge ? split.Second : split.First;
+            return GetSplitterEdgeBounds(edgeHost, edgeNode, orientation, useTrailingEdge);
+        }
+
+        return GetHostBounds(host);
+    }
+
+    private static bool TryGetSplitChildHost(
+        Control host,
+        EditorDockSplitNodeViewModel split,
+        bool useSecondChild,
+        out Control childHost)
+    {
+        childHost = null!;
+        var splitView = host is EditorDockSplitNodeView directSplitView
+            && ReferenceEquals(directSplitView.DataContext, split)
+                ? directSplitView
+                : host.GetVisualDescendants()
+                    .OfType<EditorDockSplitNodeView>()
+                    .FirstOrDefault(view => ReferenceEquals(view.DataContext, split));
+        if (splitView is null)
+        {
+            return false;
+        }
+
+        var layoutSplitter = splitView.GetVisualDescendants()
+            .OfType<GridSplitter>()
+            .FirstOrDefault(candidate =>
+                candidate.Classes.Contains("owned-dock-layout-splitter")
+                && ReferenceEquals(candidate.DataContext, split));
+        if (layoutSplitter?.Parent is not Grid grid)
+        {
+            return false;
+        }
+
+        var targetSlot = useSecondChild ? 2 : 0;
+        foreach (var child in grid.Children.OfType<Control>())
+        {
+            if (split.Orientation == Avalonia.Layout.Orientation.Horizontal
+                && Grid.GetColumn(child) == targetSlot)
+            {
+                childHost = child;
+                return true;
+            }
+
+            if (split.Orientation == Avalonia.Layout.Orientation.Vertical
+                && Grid.GetRow(child) == targetSlot)
+            {
+                childHost = child;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static EditorDockNodeViewModel? GetContentNode(Control host)
+    {
+        return host is ContentControl { Content: EditorDockNodeViewModel node }
+            ? node
+            : host.DataContext as EditorDockNodeViewModel;
     }
 
     private Rect GetHostBounds(Control host)
@@ -218,12 +508,9 @@ public partial class EditorDockWorkspaceView : UserControl
     private Dictionary<EditorDockTabViewModel, Rect> CaptureTabLayoutSnapshot()
     {
         var snapshot = new Dictionary<EditorDockTabViewModel, Rect>();
-        foreach (var tabHost in GetTabHostsForAnimation())
+        foreach (var (tabHost, tab) in GetTabHostsForAnimation())
         {
-            if (TryGetRealTab(tabHost, out var tab))
-            {
-                snapshot[tab] = GetHostBounds(tabHost);
-            }
+            snapshot[tab] = GetHostBounds(tabHost);
         }
 
         return snapshot;
@@ -231,91 +518,123 @@ public partial class EditorDockWorkspaceView : UserControl
 
     private void AnimateTabReorder(IReadOnlyDictionary<EditorDockTabViewModel, Rect> previousBounds)
     {
-        Dispatcher.UIThread.Post(
-            () =>
+        DockLayout.UpdateLayout();
+        InvalidateHitTestSnapshot();
+        foreach (var (tabHost, tab) in GetTabHostsForAnimation())
+        {
+            if (!previousBounds.TryGetValue(tab, out var previousBoundsForTab))
             {
-                foreach (var tabHost in GetTabHostsForAnimation())
-                {
-                    if (!TryGetRealTab(tabHost, out var tab)
-                        || !previousBounds.TryGetValue(tab, out var previousBoundsForTab))
-                    {
-                        continue;
-                    }
+                continue;
+            }
 
-                    var currentBounds = GetHostBounds(tabHost);
-                    var deltaX = previousBoundsForTab.X - currentBounds.X;
-                    var deltaY = previousBoundsForTab.Y - currentBounds.Y;
-                    if (Math.Abs(deltaX) < 0.5 && Math.Abs(deltaY) < 0.5)
-                    {
-                        continue;
-                    }
+            var currentBounds = GetHostBounds(tabHost);
+            var deltaX = previousBoundsForTab.X - currentBounds.X;
+            var deltaY = previousBoundsForTab.Y - currentBounds.Y;
+            if (Math.Abs(deltaX) < 0.5 && Math.Abs(deltaY) < 0.5)
+            {
+                continue;
+            }
 
-                    AnimateTabMove(tabHost, deltaX, deltaY);
-                }
-            },
-            DispatcherPriority.Render);
+            AnimateTabMove(tabHost, tab, deltaX, deltaY);
+        }
     }
 
-    private IEnumerable<Control> GetTabHostsForAnimation()
+    private IEnumerable<(Control Host, EditorDockTabViewModel Tab)> GetTabHostsForAnimation()
     {
-        return DockLayout.GetVisualDescendants()
-            .OfType<Control>()
-            .Where(control =>
-                control.IsVisible
-                && control.Classes.Contains("owned-dock-tab")
-                && TryGetRealTab(control, out _));
+        foreach (var control in DockLayout.GetVisualDescendants().OfType<Control>())
+        {
+            if (!control.IsVisible
+                || !control.Classes.Contains("owned-dock-tab")
+                || !TryGetRealTab(control, out var tab))
+            {
+                continue;
+            }
+
+            yield return (control, tab);
+        }
     }
 
-    private void AnimateTabMove(Control tabHost, double deltaX, double deltaY)
+    private void AnimateTabMove(
+        Control tabHost,
+        EditorDockTabViewModel tab,
+        double deltaX,
+        double deltaY)
     {
-        StopTabMoveAnimation(tabHost);
+        var startX = deltaX;
+        var startY = deltaY;
+        if (tabMoveAnimations_.TryGetValue(tab, out var existingState))
+        {
+            startX += existingState.CurrentX;
+            startY += existingState.CurrentY;
+            StopTabMoveAnimation(tab, clearTransform: false);
+        }
 
-        var transform = new TranslateTransform(deltaX, deltaY);
+        if (Math.Abs(startX) < 0.5 && Math.Abs(startY) < 0.5)
+        {
+            return;
+        }
+
+        var transform = new TranslateTransform(startX, startY);
         tabHost.RenderTransform = transform;
 
-        var startedAt = DateTime.UtcNow;
-        var timer = new DispatcherTimer
+        var state = new TabMoveAnimationState(
+            tabHost,
+            transform,
+            DateTime.UtcNow,
+            startX,
+            startY);
+        tabMoveAnimations_[tab] = state;
+        if (!tabMoveAnimationTimer_.IsEnabled)
         {
-            Interval = TimeSpan.FromMilliseconds(16),
-        };
-        timer.Tick += (_, _) =>
+            tabMoveAnimationTimer_.Start();
+        }
+    }
+
+    private void OnTabMoveAnimationTick(object? sender, EventArgs e)
+    {
+        foreach (var (tab, state) in tabMoveAnimations_.ToArray())
         {
             var progress = Math.Clamp(
-                (DateTime.UtcNow - startedAt).TotalMilliseconds / TabReorderAnimationDuration.TotalMilliseconds,
+                (DateTime.UtcNow - state.StartedAt).TotalMilliseconds / TabReorderAnimationDuration.TotalMilliseconds,
                 0d,
                 1d);
             var eased = 1d - Math.Pow(1d - progress, 3d);
-            transform.X = deltaX * (1d - eased);
-            transform.Y = deltaY * (1d - eased);
+            state.CurrentX = state.StartX * (1d - eased);
+            state.CurrentY = state.StartY * (1d - eased);
+            state.Transform.X = state.CurrentX;
+            state.Transform.Y = state.CurrentY;
 
-            if (progress < 1d)
+            if (progress >= 1d)
             {
-                return;
+                StopTabMoveAnimation(tab);
             }
-
-            StopTabMoveAnimation(tabHost);
-        };
-
-        tabMoveAnimations_[tabHost] = timer;
-        timer.Start();
+        }
     }
 
     private void StopTabMoveAnimations()
     {
-        foreach (var tabHost in tabMoveAnimations_.Keys.ToArray())
+        foreach (var tab in tabMoveAnimations_.Keys.ToArray())
         {
-            StopTabMoveAnimation(tabHost);
+            StopTabMoveAnimation(tab);
         }
     }
 
-    private void StopTabMoveAnimation(Control tabHost)
+    private void StopTabMoveAnimation(EditorDockTabViewModel tab, bool clearTransform = true)
     {
-        if (tabMoveAnimations_.Remove(tabHost, out var timer))
+        if (!tabMoveAnimations_.Remove(tab, out var state))
         {
-            timer.Stop();
+            return;
         }
 
-        tabHost.RenderTransform = null;
+        if (clearTransform)
+        {
+            state.Host.RenderTransform = null;
+        }
+
+        if (tabMoveAnimations_.Count == 0)
+        {
+            tabMoveAnimationTimer_.Stop();
+        }
     }
 
     private Rect GetTabWellBounds(EditorDockWindowView host)
@@ -328,28 +647,20 @@ public partial class EditorDockWorkspaceView : UserControl
         EditorDockWindowView host,
         EditorDockWindowViewModel window)
     {
-        var tabBounds = new List<EditorDockTabBounds>();
-        foreach (var tabHost in host.GetVisualDescendants().OfType<Control>())
+        return host.GetIdealTabBounds(DockRoot, window);
+    }
+
+    private static int? GetDragSourceTabIndex(EditorDockWindowViewModel window)
+    {
+        for (var index = 0; index < window.Tabs.Count; index++)
         {
-            if (!tabHost.IsVisible
-                || !tabHost.Classes.Contains("owned-dock-tab")
-                || !TryGetRealTab(tabHost, out var tab))
+            if (window.Tabs[index].IsDragSource)
             {
-                continue;
+                return index;
             }
-
-            var tabIndex = window.Tabs.IndexOf(tab);
-            var bounds = GetHostBounds(tabHost);
-            if (tabIndex < 0 || bounds.Width <= 0 || bounds.Height <= 0)
-            {
-                continue;
-            }
-
-            tabBounds.Add(new EditorDockTabBounds(tab.Id, tabIndex, bounds, tab.IsDragSource));
         }
 
-        tabBounds.Sort((left, right) => left.TabIndex.CompareTo(right.TabIndex));
-        return tabBounds;
+        return null;
     }
 
     private static bool TryGetRealTab(Control tabHost, out EditorDockTabViewModel tab)
@@ -360,7 +671,12 @@ public partial class EditorDockWorkspaceView : UserControl
             return true;
         }
 
-        if (tabHost.DataContext is EditorDockTabStripItemViewModel { IsPlaceholder: false } item)
+        if (tabHost.DataContext is EditorDockTabStripItemViewModel
+            {
+                IsPlaceholder: false,
+                IsPreview: false,
+                IsSourceGhost: false,
+            } item)
         {
             tab = item.Tab;
             return true;
@@ -393,6 +709,24 @@ public partial class EditorDockWorkspaceView : UserControl
         var topLeft = WorkspacePointToScreen(new Point(0, 0));
         var right = topLeft.X + (Bounds.Width * scaling);
         var bottom = topLeft.Y + (Bounds.Height * scaling);
+        return screenPoint.X >= topLeft.X
+            && screenPoint.X <= right
+            && screenPoint.Y >= topLeft.Y
+            && screenPoint.Y <= bottom;
+    }
+
+    private bool ContainsTopLevelScreenPoint(PixelPoint screenPoint)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null || topLevel.Bounds.Width <= 0 || topLevel.Bounds.Height <= 0)
+        {
+            return false;
+        }
+
+        var scaling = topLevel.RenderScaling;
+        var topLeft = topLevel.PointToScreen(new Point(0, 0));
+        var right = topLeft.X + (topLevel.Bounds.Width * scaling);
+        var bottom = topLeft.Y + (topLevel.Bounds.Height * scaling);
         return screenPoint.X >= topLeft.X
             && screenPoint.X <= right
             && screenPoint.Y >= topLeft.Y
@@ -467,10 +801,96 @@ public partial class EditorDockWorkspaceView : UserControl
             return;
         }
 
+        workspace.HideDraggedDockTabPreview();
+        workspace.InvalidateHitTestSnapshot();
         if (workspace.DataContext is EditorDockWorkspaceViewModel viewModel)
         {
             viewModel.ClearExternalDragPreview();
         }
+    }
+
+    private void BeginExternalDragPreview(
+        EditorDockTabViewModel tab,
+        Size previewSize,
+        double pointerOffsetX)
+    {
+        draggedDockTabPreviewSize_ = previewSize;
+        draggedDockTabPointerOffsetX_ = pointerOffsetX;
+        InvalidateHitTestSnapshot();
+        EnsureDraggedDockTabPreviewContent(tab);
+        if (DataContext is EditorDockWorkspaceViewModel workspace)
+        {
+            workspace.BeginExternalDragPreview(tab);
+        }
+    }
+
+    private void UpdateDraggedDockTabPreview(
+        EditorDockWorkspaceViewModel workspace,
+        Point point,
+        EditorDockDropTarget target)
+    {
+        if (workspace.DragState.DraggedTab is not { } tab
+            || target.Operation != EditorDockDropOperation.InsertTabAtIndex
+            || draggedDockTabPreviewSize_.Width <= 0
+            || draggedDockTabPreviewSize_.Height <= 0)
+        {
+            HideDraggedDockTabPreview();
+            return;
+        }
+
+        EnsureDraggedDockTabPreviewContent(tab);
+        DraggedDockTabPreview.Width = draggedDockTabPreviewSize_.Width;
+        DraggedDockTabPreview.Height = target.PreviewBounds.Height > 0
+            ? target.PreviewBounds.Height
+            : draggedDockTabPreviewSize_.Height;
+        Canvas.SetLeft(DraggedDockTabPreview, point.X - draggedDockTabPointerOffsetX_);
+        Canvas.SetTop(DraggedDockTabPreview, target.PreviewBounds.Y);
+        DraggedDockTabPreview.IsVisible = true;
+    }
+
+    private void EnsureDraggedDockTabPreviewContent(EditorDockTabViewModel tab)
+    {
+        if (DraggedDockTabPreview.Content is EditorDockTabStripItemViewModel item
+            && ReferenceEquals(item.Tab, tab)
+            && item.IsPreview)
+        {
+            return;
+        }
+
+        DraggedDockTabPreview.Content = new EditorDockTabStripItemViewModel(
+            tab,
+            isPlaceholder: false,
+            isPreview: true);
+    }
+
+    private void HideDraggedDockTabPreview()
+    {
+        DraggedDockTabPreview.IsVisible = false;
+        DraggedDockTabPreview.Content = null;
+        DraggedDockTabPreview.Width = double.NaN;
+        DraggedDockTabPreview.Height = double.NaN;
+    }
+
+    private void ClearPreviewWorkspace(EditorDockWorkspaceView? workspace)
+    {
+        if (workspace is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(workspace, this))
+        {
+            HideDraggedDockTabPreview();
+            InvalidateHitTestSnapshot();
+            if (DataContext is EditorDockWorkspaceViewModel viewModel)
+            {
+                viewModel.ClearDropPreview();
+            }
+
+            return;
+        }
+
+        ClearExternalPreview(workspace);
     }
 
     private static void RegisterWorkspace(EditorDockWorkspaceView workspace)
@@ -514,6 +934,21 @@ public partial class EditorDockWorkspaceView : UserControl
         return null;
     }
 
+    private static EditorDockWorkspaceView? FindWorkspaceTopLevelAtScreenPoint(PixelPoint screenPoint)
+    {
+        PruneWorkspaceReferences();
+        for (var index = WorkspaceReferences.Count - 1; index >= 0; index--)
+        {
+            if (WorkspaceReferences[index].TryGetTarget(out var workspace)
+                && workspace.ContainsTopLevelScreenPoint(screenPoint))
+            {
+                return workspace;
+            }
+        }
+
+        return null;
+    }
+
     private static void PruneWorkspaceReferences()
     {
         for (var index = WorkspaceReferences.Count - 1; index >= 0; index--)
@@ -529,4 +964,43 @@ public partial class EditorDockWorkspaceView : UserControl
         EditorDockWorkspaceView View,
         EditorDockWorkspaceViewModel Workspace,
         EditorDockDropTarget Target);
+
+    private sealed record DockHitTestSnapshot(
+        Size DockRootSize,
+        Rect WorkspaceBounds,
+        IReadOnlyList<EditorDockWindowBounds> Windows,
+        IReadOnlyList<EditorDockSplitterBounds> Splitters);
+
+    private sealed class TabMoveAnimationState
+    {
+        public TabMoveAnimationState(
+            Control host,
+            TranslateTransform transform,
+            DateTime startedAt,
+            double startX,
+            double startY)
+        {
+            Host = host;
+            Transform = transform;
+            StartedAt = startedAt;
+            StartX = startX;
+            StartY = startY;
+            CurrentX = startX;
+            CurrentY = startY;
+        }
+
+        public Control Host { get; }
+
+        public TranslateTransform Transform { get; }
+
+        public DateTime StartedAt { get; }
+
+        public double StartX { get; }
+
+        public double StartY { get; }
+
+        public double CurrentX { get; set; }
+
+        public double CurrentY { get; set; }
+    }
 }
