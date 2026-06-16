@@ -43,6 +43,7 @@ public partial class EditorDockWorkspaceView : UserControl
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        DockLayout.LayoutUpdated -= OnDockLayoutUpdatedForTabReorder;
         pendingTabReorderAnimationBounds_ = null;
         isTabReorderAnimationQueued_ = false;
         StopTabMoveAnimations();
@@ -529,7 +530,13 @@ public partial class EditorDockWorkspaceView : UserControl
         }
 
         isTabReorderAnimationQueued_ = true;
-        Dispatcher.UIThread.Post(RunPendingTabReorderAnimation, DispatcherPriority.Loaded);
+        DockLayout.LayoutUpdated += OnDockLayoutUpdatedForTabReorder;
+    }
+
+    private void OnDockLayoutUpdatedForTabReorder(object? sender, EventArgs e)
+    {
+        DockLayout.LayoutUpdated -= OnDockLayoutUpdatedForTabReorder;
+        RunPendingTabReorderAnimation();
     }
 
     private void RunPendingTabReorderAnimation()

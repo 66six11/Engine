@@ -12,6 +12,7 @@ public partial class EditorDockWindowView : UserControl
 {
     private const double TabDragStartThreshold = 4.0;
     private const double TabReorderExitMargin = 8.0;
+    private const double TabReorderSwitchHysteresis = 5.0;
     private const double TabReorderReverseSwitchThreshold = 18.0;
     private EditorDockTabViewModel? capturedTab_;
     private EditorDockWindowViewModel? capturedWindow_;
@@ -24,6 +25,7 @@ public partial class EditorDockWindowView : UserControl
     private TabDragMode dragMode_;
     private int reorderTargetIndex_ = -1;
     private int reorderSourceIndex_ = -1;
+    private int reorderTabCount_;
     private ReorderTabEntry[] reorderTabEntries_ = [];
 
     public EditorDockWindowView()
@@ -239,6 +241,7 @@ public partial class EditorDockWindowView : UserControl
             return;
         }
 
+        reorderTabCount_ = capturedWindow_.Tabs.Count;
         reorderTabEntries_ = CaptureReorderTabEntries(capturedWindow_, this);
         capturedTab_.SetDragSourceState(true);
         ShowDraggedTabPreview(e);
@@ -292,6 +295,7 @@ public partial class EditorDockWindowView : UserControl
         capturedTab_?.SetDragSourceState(false);
         reorderTargetIndex_ = -1;
         reorderSourceIndex_ = -1;
+        reorderTabCount_ = 0;
         reorderTabEntries_ = [];
         HideDraggedTabPreview();
     }
@@ -352,6 +356,7 @@ public partial class EditorDockWindowView : UserControl
         dragMode_ = TabDragMode.None;
         reorderTargetIndex_ = -1;
         reorderSourceIndex_ = -1;
+        reorderTabCount_ = 0;
         reorderTabEntries_ = [];
     }
 
@@ -459,30 +464,136 @@ public partial class EditorDockWindowView : UserControl
             return reorderSourceIndex_;
         }
 
-        var targetIndex = 0;
-        foreach (var entry in reorderTabEntries_)
+        var targetIndex = currentTargetIndex >= 0 ? currentTargetIndex : reorderSourceIndex_;
+        while (TryResolveAdjacentReorderTargetIndex(
+                   draggedTabCenterX,
+                   draggedTab,
+                   targetIndex,
+                   out var nextTargetIndex)
+               && nextTargetIndex != targetIndex)
         {
-            if (ReferenceEquals(entry.Tab, draggedTab))
+            targetIndex = nextTargetIndex;
+        }
+
+        return targetIndex;
+    }
+
+    private bool TryResolveAdjacentReorderTargetIndex(
+        double draggedTabCenterX,
+        EditorDockTabViewModel draggedTab,
+        int targetIndex,
+        out int nextTargetIndex)
+    {
+        nextTargetIndex = targetIndex;
+        var clampedTargetIndex = System.Math.Clamp(targetIndex, 0, reorderTabCount_);
+        var currentX = reorderTabEntries_[0].Bounds.X;
+        var placeholderWidth = ResolveReorderPlaceholderWidth(draggedTab);
+        var placeholderCenterX = 0d;
+        var hasPlaceholder = false;
+        var hasPrevious = false;
+        var previousCenterX = 0d;
+        var previousTabIndex = 0;
+        var hasNext = false;
+        var nextCenterX = 0d;
+        var nextTabIndex = 0;
+
+        for (var tabIndex = 0; tabIndex <= reorderTabCount_; tabIndex++)
+        {
+            if (clampedTargetIndex == tabIndex)
+            {
+                placeholderCenterX = currentX + (placeholderWidth / 2);
+                hasPlaceholder = true;
+                currentX += placeholderWidth;
+            }
+
+            if (tabIndex >= reorderTabCount_
+                || !TryGetReorderTabEntry(tabIndex, out var entry)
+                || ReferenceEquals(entry.Tab, draggedTab))
             {
                 continue;
             }
 
-            if (draggedTabCenterX < entry.Bounds.Center.X)
+            var entryWidth = entry.Bounds.Width > 0 ? entry.Bounds.Width : placeholderWidth;
+            var entryCenterX = currentX + (entryWidth / 2);
+            currentX += entryWidth;
+
+            if (hasPlaceholder && !hasNext)
             {
-                break;
+                hasNext = true;
+                nextCenterX = entryCenterX;
+                nextTabIndex = entry.TabIndex;
+                continue;
             }
 
-            targetIndex = entry.TabIndex + 1;
+            if (!hasPlaceholder)
+            {
+                hasPrevious = true;
+                previousCenterX = entryCenterX;
+                previousTabIndex = entry.TabIndex;
+            }
         }
 
-        return NormalizePreviewTargetIndex(reorderSourceIndex_, targetIndex);
+        if (!hasPlaceholder)
+        {
+            return false;
+        }
+
+        if (hasPrevious)
+        {
+            var leftBoundary = (previousCenterX + placeholderCenterX) / 2;
+            if (draggedTabCenterX < leftBoundary - TabReorderSwitchHysteresis)
+            {
+                nextTargetIndex = previousTabIndex;
+                return true;
+            }
+        }
+
+        if (hasNext)
+        {
+            var rightBoundary = (placeholderCenterX + nextCenterX) / 2;
+            if (draggedTabCenterX >= rightBoundary + TabReorderSwitchHysteresis)
+            {
+                nextTargetIndex = nextTabIndex + 1;
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    private static int NormalizePreviewTargetIndex(int sourceIndex, int targetIndex)
+    private double ResolveReorderPlaceholderWidth(EditorDockTabViewModel draggedTab)
     {
-        return targetIndex == sourceIndex || targetIndex == sourceIndex + 1
-            ? sourceIndex
-            : targetIndex;
+        if (TryGetReorderTabEntry(reorderSourceIndex_, out var sourceEntry)
+            && ReferenceEquals(sourceEntry.Tab, draggedTab)
+            && sourceEntry.Bounds.Width > 0)
+        {
+            return sourceEntry.Bounds.Width;
+        }
+
+        return draggedTabPreviewSize_.Width > 0 ? draggedTabPreviewSize_.Width : 1d;
+    }
+
+    private bool TryGetReorderTabEntry(int tabIndex, out ReorderTabEntry entry)
+    {
+        if (tabIndex >= 0
+            && tabIndex < reorderTabEntries_.Length
+            && reorderTabEntries_[tabIndex].TabIndex == tabIndex)
+        {
+            entry = reorderTabEntries_[tabIndex];
+            return true;
+        }
+
+        foreach (var candidate in reorderTabEntries_)
+        {
+            if (candidate.TabIndex == tabIndex)
+            {
+                entry = candidate;
+                return true;
+            }
+        }
+
+        entry = default;
+        return false;
     }
 
     private int ApplyReorderTargetHysteresis(
