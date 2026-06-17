@@ -2,11 +2,7 @@
 /build*/
 /out/
 /.vs/
-**/.idea/
-
-# .NET build output
-**/bin/
-**/obj/
+/.idea/
 
 # Conan
 /.conan/

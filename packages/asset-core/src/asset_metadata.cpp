@@ -96,14 +96,6 @@ namespace asharia::asset {
             return std::unexpected{sourcePathError(sourcePath, "source path is missing")};
         }
 
-        for (const char character : sourcePath) {
-            const auto byte = static_cast<unsigned char>(character);
-            if (byte < 0x20U || byte == 0x7FU) {
-                return std::unexpected{
-                    sourcePathError(sourcePath, "source path must not contain control characters")};
-            }
-        }
-
         if (sourcePath.find('\\') != std::string_view::npos) {
             return std::unexpected{
                 sourcePathError(sourcePath, "source path must use '/' separators")};
