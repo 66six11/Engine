@@ -30,10 +30,6 @@
             <Setter Property="CornerRadius" Value="6" />
         </Style>
 
-        <Style Selector="controls|SearchBox.command-palette-search">
-            <Setter Property="Height" Value="30" />
-        </Style>
-
         <Style Selector="ListBox.command-palette-results">
             <Setter Property="Margin" Value="0,8,0,0" />
             <Setter Property="Background" Value="Transparent" />
