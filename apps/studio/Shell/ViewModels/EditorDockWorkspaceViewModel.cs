@@ -238,27 +238,14 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     public bool ActivatePanel(string panelId)
     {
-        if (string.IsNullOrWhiteSpace(panelId))
+        if (!TryFindPanelTab(panelId, out var window, out var tab))
         {
             return false;
         }
 
-        foreach (var window in windowsById_.Values)
-        {
-            foreach (var tab in window.Tabs)
-            {
-                if (!string.Equals(tab.Id, panelId, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                window.Activate(tab);
-                SetActiveWindow(window);
-                return true;
-            }
-        }
-
-        return false;
+        window.Activate(tab);
+        SetActiveWindow(window);
+        return true;
     }
 
     public bool OpenPanel(string panelId)
@@ -566,24 +553,46 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         return true;
     }
 
+    public bool ClosePanel(string panelId)
+    {
+        return TryFindPanelTab(panelId, out _, out var tab)
+            && CloseTab(tab);
+    }
+
     public bool ContainsPanel(string panelId)
+    {
+        return TryFindPanelTab(panelId, out _, out _);
+    }
+
+    private bool TryFindPanelTab(
+        string panelId,
+        out EditorDockWindowViewModel window,
+        out EditorDockTabViewModel tab)
     {
         if (string.IsNullOrWhiteSpace(panelId))
         {
+            window = null!;
+            tab = null!;
             return false;
         }
 
-        foreach (var window in windowsById_.Values)
+        foreach (var candidateWindow in windowsById_.Values)
         {
-            foreach (var tab in window.Tabs)
+            foreach (var candidateTab in candidateWindow.Tabs)
             {
-                if (string.Equals(tab.Id, panelId, StringComparison.Ordinal))
+                if (!string.Equals(candidateTab.Id, panelId, StringComparison.Ordinal))
                 {
-                    return true;
+                    continue;
                 }
+
+                window = candidateWindow;
+                tab = candidateTab;
+                return true;
             }
         }
 
+        window = null!;
+        tab = null!;
         return false;
     }
 
