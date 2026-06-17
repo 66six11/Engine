@@ -46,6 +46,58 @@ public sealed class EditorDockWindowViewModelTests
         Assert.False(tabStripItem.IsSelectedInInactiveWindow);
     }
 
+    [Fact]
+    public void HideDragSourceTab_collapses_source_tab_until_cleared()
+    {
+        var window = new EditorDockWindowViewModel("window", "Window", DockArea.Center, "Test");
+        var first = CreateTab("first");
+        var second = CreateTab("second");
+        window.Add(first);
+        window.Add(second);
+
+        Assert.True(window.HideDragSourceTab(first));
+
+        var visibleItem = Assert.Single(window.TabStripItems);
+        Assert.Same(second, visibleItem.Tab);
+
+        Assert.True(window.ClearHiddenDragSourceTab());
+
+        Assert.Equal(2, window.TabStripItems.Count);
+        Assert.Same(first, window.TabStripItems[0].Tab);
+        Assert.Same(second, window.TabStripItems[1].Tab);
+        Assert.False(window.TabStripItems[0].IsSourceGhost);
+        Assert.False(window.TabStripItems[1].IsSourceGhost);
+    }
+
+    [Fact]
+    public void ShowLocalTabReorderPreview_collapses_source_tab_and_inserts_placeholder()
+    {
+        var window = new EditorDockWindowViewModel("window", "Window", DockArea.Center, "Test");
+        var first = CreateTab("first");
+        var second = CreateTab("second");
+        var third = CreateTab("third");
+        window.Add(first);
+        window.Add(second);
+        window.Add(third);
+
+        Assert.True(window.ShowLocalTabReorderPreview(first, 2, showsTab: false));
+        Assert.False(window.ShowLocalTabReorderPreview(first, 2, showsTab: false));
+
+        Assert.Equal(3, window.TabStripItems.Count);
+        Assert.Same(second, window.TabStripItems[0].Tab);
+        Assert.Same(first, window.TabStripItems[1].Tab);
+        Assert.True(window.TabStripItems[1].IsPlaceholder);
+        Assert.Same(third, window.TabStripItems[2].Tab);
+
+        Assert.True(window.ClearLocalTabReorderPreview());
+
+        Assert.Equal(3, window.TabStripItems.Count);
+        Assert.Same(first, window.TabStripItems[0].Tab);
+        Assert.Same(second, window.TabStripItems[1].Tab);
+        Assert.Same(third, window.TabStripItems[2].Tab);
+        Assert.All(window.TabStripItems, item => Assert.False(item.IsPlaceholder));
+    }
+
     private static EditorDockTabViewModel CreateTab(string id)
     {
         return new EditorDockTabViewModel(

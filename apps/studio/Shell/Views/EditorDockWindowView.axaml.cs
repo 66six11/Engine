@@ -12,6 +12,7 @@ namespace Editor.Shell.Views;
 public partial class EditorDockWindowView : UserControl
 {
     private const double TabDragStartThreshold = 4.0;
+    private const double TabReorderEnterMargin = 0.0;
     private const double TabReorderExitMargin = 8.0;
     private EditorDockTabViewModel? capturedTab_;
     private EditorDockWindowViewModel? capturedWindow_;
@@ -134,7 +135,7 @@ public partial class EditorDockWindowView : UserControl
             {
                 BeginDockTabDrag(workspace, workspacePoint);
             }
-            else if (IsPointerInSourceTabStrip(e, TabReorderExitMargin))
+            else if (IsPointerInSourceTabStrip(e, TabReorderEnterMargin))
             {
                 BeginLocalTabReorder(workspace, e);
             }
@@ -162,7 +163,7 @@ public partial class EditorDockWindowView : UserControl
         }
         else if (dragMode_ == TabDragMode.Dock
             && !IsPointerOutsideWorkspace(workspace, workspacePoint)
-            && IsPointerInSourceTabStrip(e, TabReorderExitMargin))
+            && IsPointerInSourceTabStrip(e, TabReorderEnterMargin))
         {
             workspace.CancelTabDrag();
             BeginLocalTabReorder(workspace, e);
@@ -231,6 +232,7 @@ public partial class EditorDockWindowView : UserControl
         }
 
         dragMode_ = TabDragMode.Reorder;
+        capturedWindow_.ClearLocalTabReorderPreview();
         reorderSourceIndex_ = capturedWindow_.Tabs.IndexOf(capturedTab_);
         if (reorderSourceIndex_ < 0)
         {
@@ -328,7 +330,7 @@ public partial class EditorDockWindowView : UserControl
     private void ClearInteractionState()
     {
         HideDraggedTabPreview();
-        capturedWindow_?.ClearHiddenDragSourceTab();
+        capturedWindow_?.ClearLocalTabReorderPreview();
         capturedTab_ = null;
         capturedWindow_ = null;
         draggedTabPreviewSize_ = default;
