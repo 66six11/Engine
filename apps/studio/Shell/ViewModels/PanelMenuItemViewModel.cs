@@ -9,12 +9,19 @@ public sealed class PanelMenuItemViewModel : ViewModelBase
     private bool isOpen_;
 
     public PanelMenuItemViewModel(
-        PanelDescriptor descriptor,
+        WorkbenchActionDescriptor action,
         Action<string> openPanel)
     {
-        PanelId = descriptor.Id;
-        Header = descriptor.Title;
-        IconKey = descriptor.IconKey;
+        ArgumentNullException.ThrowIfNull(action);
+        if (action.Kind != WorkbenchActionKind.OpenPanel
+            || string.IsNullOrWhiteSpace(action.TargetId))
+        {
+            throw new ArgumentException("Panel menu items require an OpenPanel action with a target panel id.", nameof(action));
+        }
+
+        PanelId = action.TargetId;
+        Header = action.Title;
+        IconKey = action.IconKey;
         OpenCommand = new RelayCommand(() => openPanel(PanelId));
     }
 

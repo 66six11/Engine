@@ -19,12 +19,13 @@ public class MainWindowViewModel : ViewModelBase
     private Action? closeFloatingWindows_;
 
     public MainWindowViewModel()
-        : this(CreatePanelRegistry(), EditorDockLayoutStore.TryLoad())
+        : this(CreatePanelRegistry(), CreateWorkbenchActionRegistry(), EditorDockLayoutStore.TryLoad())
     {
     }
 
     internal MainWindowViewModel(
         IPanelRegistry panelRegistry,
+        IWorkbenchActionRegistry actionRegistry,
         EditorDockLayoutSnapshot? savedLayout)
     {
         panelRegistry_ = panelRegistry;
@@ -34,7 +35,7 @@ public class MainWindowViewModel : ViewModelBase
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
-        PanelMenuItems = CreatePanelMenuItems(panelRegistry_.GetAll());
+        PanelMenuItems = CreatePanelMenuItems(actionRegistry.GetAll());
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
         {
@@ -146,19 +147,32 @@ public class MainWindowViewModel : ViewModelBase
         return registry;
     }
 
+    internal static IWorkbenchActionRegistry CreateWorkbenchActionRegistry()
+    {
+        var registry = new WorkbenchActionRegistry();
+
+        foreach (var module in EditorFeatureCatalog.CreateDefaultModules())
+        {
+            module.RegisterActions(registry);
+        }
+
+        return registry;
+    }
+
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
-        IReadOnlyList<PanelDescriptor> descriptors)
+        IReadOnlyList<WorkbenchActionDescriptor> actions)
     {
         var items = new List<PanelMenuItemViewModel>();
-        foreach (var descriptor in descriptors)
+        foreach (var action in actions)
         {
-            if (!descriptor.MenuPath.StartsWith("Window/Panels/", StringComparison.Ordinal))
+            if (action.Kind != WorkbenchActionKind.OpenPanel
+                || !action.MenuPath.StartsWith("Window/Panels/", StringComparison.Ordinal))
             {
                 continue;
             }
 
             items.Add(new PanelMenuItemViewModel(
-                descriptor,
+                action,
                 panelId => panelCommandService_.OpenOrFocusPanel(panelId)));
         }
 
