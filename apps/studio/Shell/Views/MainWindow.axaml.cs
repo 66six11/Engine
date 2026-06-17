@@ -70,7 +70,6 @@ public partial class MainWindow : Window
                 DataContext = panelItem,
                 Header = CreatePanelMenuHeader(panelItem),
                 Command = panelItem.OpenCommand,
-                Icon = EditorIconRegistry.Default.CreateIcon(panelItem.IconKey),
             };
             menuItem.Classes.Add("editor-menu-item");
             PanelsMenu.Items.Add(menuItem);
@@ -83,7 +82,6 @@ public partial class MainWindow : Window
         {
             DataContext = panelItem,
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            MinWidth = 180,
         };
 
         var title = new TextBlock
@@ -93,18 +91,26 @@ public partial class MainWindow : Window
         };
         header.Children.Add(title);
 
-        var openIndicator = EditorIconRegistry.Default.CreateRequiredIcon(
-            EditorIconKey.UiCheck,
-            size: 12,
-            strokeWidth: 2);
-        openIndicator.Margin = new Thickness(24, 0, 0, 0);
-        openIndicator.HorizontalAlignment = HorizontalAlignment.Right;
-        openIndicator.VerticalAlignment = VerticalAlignment.Center;
-        openIndicator.Bind(
+        var openIndicator = new EditorIconView
+        {
+            IconKey = EditorIconKey.UiCheck,
+            IconSize = 12,
+            StrokeWidth = 2,
+        };
+        openIndicator.Classes.Add("editor-menu-open-indicator");
+
+        var openIndicatorSlot = new Border
+        {
+            Child = openIndicator,
+            Margin = new Thickness(24, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        openIndicatorSlot.Bind(
             Visual.IsVisibleProperty,
             new Binding(nameof(PanelMenuItemViewModel.IsOpen)));
-        Grid.SetColumn(openIndicator, 1);
-        header.Children.Add(openIndicator);
+        Grid.SetColumn(openIndicatorSlot, 1);
+        header.Children.Add(openIndicatorSlot);
 
         return header;
     }

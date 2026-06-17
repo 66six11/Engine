@@ -79,6 +79,7 @@ public sealed class MainWindowViewModelTests
             savedLayout: null);
         var hierarchyItem = viewModel.PanelMenuItems.Single(item => item.PanelId == "hierarchy");
         var hierarchyTab = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+        var floatingPanels = new FloatingPanelOpenState("hierarchy");
 
         Assert.True(viewModel.DockWorkspace.CloseTab(hierarchyTab));
         Assert.False(hierarchyItem.IsOpen);
@@ -87,9 +88,14 @@ public sealed class MainWindowViewModelTests
             () => [],
             () => { },
             _ => false,
-            panelId => panelId == "hierarchy");
+            floatingPanels.ContainsPanel);
 
         Assert.True(hierarchyItem.IsOpen);
+
+        floatingPanels.Close();
+        viewModel.RefreshPanelMenuOpenStates();
+
+        Assert.False(hierarchyItem.IsOpen);
     }
 
     [Fact]
@@ -121,5 +127,20 @@ public sealed class MainWindowViewModelTests
         var tab = Assert.Single(activeWindow.Tabs);
         Assert.Equal("inspector", tab.Id);
         Assert.IsType<InspectorPanelViewModel>(tab.Content);
+    }
+
+    private sealed class FloatingPanelOpenState(string openPanelId)
+    {
+        private bool isOpen_ = true;
+
+        public bool ContainsPanel(string panelId)
+        {
+            return isOpen_ && panelId == openPanelId;
+        }
+
+        public void Close()
+        {
+            isOpen_ = false;
+        }
     }
 }

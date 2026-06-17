@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:icons="using:Editor.Shell.Icons">
     <Design.PreviewWith>
         <Border Padding="16" Background="{DynamicResource EditorBrushBase00}">
             <Menu Classes="editor-main-menu">
@@ -52,6 +53,18 @@
 
     <Style Selector="MenuItem.editor-menu-item:disabled">
         <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextDisabled}" />
+    </Style>
+
+    <Style Selector="icons|EditorIconView.editor-menu-open-indicator">
+        <Setter Property="IconBrush" Value="{DynamicResource EditorBrushTextSecondary}" />
+    </Style>
+
+    <Style Selector="MenuItem.editor-menu-item:pointerover icons|EditorIconView.editor-menu-open-indicator">
+        <Setter Property="IconBrush" Value="{DynamicResource EditorBrushTextPrimary}" />
+    </Style>
+
+    <Style Selector="MenuItem.editor-menu-item:focus icons|EditorIconView.editor-menu-open-indicator">
+        <Setter Property="IconBrush" Value="{DynamicResource EditorBrushTextPrimary}" />
     </Style>
 
     <Style Selector="Separator.editor-menu-separator">

@@ -54,7 +54,7 @@ internal static class EditorDockFloatingWindowRegistry
         var snapshots = new List<EditorDockFloatingWindowSnapshot>();
         foreach (var reference in Windows)
         {
-            if (!reference.TryGetTarget(out var window)
+            if (!TryGetOpenWindow(reference, out var window)
                 || window.DataContext is not EditorDockFloatingWindowViewModel viewModel
                 || !viewModel.DockWorkspace.HasDockContent())
             {
@@ -94,6 +94,7 @@ internal static class EditorDockFloatingWindowRegistry
         }
 
         Windows.Clear();
+        RaiseDockContentChanged();
     }
 
     public static bool TryActivatePanel(string panelId)
@@ -101,7 +102,7 @@ internal static class EditorDockFloatingWindowRegistry
         Prune();
         foreach (var reference in Windows)
         {
-            if (!reference.TryGetTarget(out var window)
+            if (!TryGetOpenWindow(reference, out var window)
                 || window.DataContext is not EditorDockFloatingWindowViewModel viewModel
                 || !viewModel.DockWorkspace.ActivatePanel(panelId))
             {
@@ -125,7 +126,7 @@ internal static class EditorDockFloatingWindowRegistry
         Prune();
         foreach (var reference in Windows)
         {
-            if (reference.TryGetTarget(out var window)
+            if (TryGetOpenWindow(reference, out var window)
                 && window.DataContext is EditorDockFloatingWindowViewModel viewModel
                 && viewModel.DockWorkspace.ContainsPanel(panelId))
             {
@@ -133,6 +134,21 @@ internal static class EditorDockFloatingWindowRegistry
             }
         }
 
+        return false;
+    }
+
+    private static bool TryGetOpenWindow(
+        WeakReference<EditorDockFloatingWindow> reference,
+        out EditorDockFloatingWindow window)
+    {
+        if (reference.TryGetTarget(out var target)
+            && target.IsVisible)
+        {
+            window = target;
+            return true;
+        }
+
+        window = null!;
         return false;
     }
 
