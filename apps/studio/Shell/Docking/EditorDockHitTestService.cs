@@ -17,6 +17,7 @@ internal static class EditorDockHitTestService
     private const double WorkspaceSideEdgePreviewShare = 1.0 / 5.0;
     private const double WorkspaceTopBottomEdgePreviewShare = 1.0 / 3.0;
     private const double WorkspaceSideEdgeBandWidth = 6.0;
+    private const double WorkspaceTopBottomEdgeBandHeight = 6.0;
     private const double TabInsertPlaceholderMinWidth = 96.0;
     private const double TabInsertPlaceholderMaxWidth = 180.0;
     private const double RejectPreviewWidth = 172.0;
@@ -425,15 +426,26 @@ internal static class EditorDockHitTestService
 
         var leftDistance = pointer.X - workspaceBounds.X;
         var rightDistance = workspaceBounds.Right - pointer.X;
+        var topDistance = pointer.Y - workspaceBounds.Y;
+        var bottomDistance = workspaceBounds.Bottom - pointer.Y;
         var horizontalDistance = System.Math.Min(leftDistance, rightDistance);
-        if (horizontalDistance > WorkspaceSideEdgeBandWidth)
+        var verticalDistance = System.Math.Min(topDistance, bottomDistance);
+        if (horizontalDistance > WorkspaceSideEdgeBandWidth
+            && verticalDistance > WorkspaceTopBottomEdgeBandHeight)
         {
             return false;
         }
 
         var operation = leftDistance <= rightDistance
-            ? EditorDockDropOperation.InsertWorkspaceLeft
-            : EditorDockDropOperation.InsertWorkspaceRight;
+            && leftDistance <= topDistance
+            && leftDistance <= bottomDistance
+                ? EditorDockDropOperation.InsertWorkspaceLeft
+                : rightDistance <= topDistance
+                  && rightDistance <= bottomDistance
+                    ? EditorDockDropOperation.InsertWorkspaceRight
+                    : topDistance <= bottomDistance
+                        ? EditorDockDropOperation.InsertWorkspaceTop
+                        : EditorDockDropOperation.InsertWorkspaceBottom;
         target = CreateWorkspaceEdgeTarget(operation, workspaceBounds);
         return true;
     }

@@ -9,6 +9,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Editor.Shell.Docking;
 using Editor.Shell.ViewModels;
+using Editor.Shell.Views.Windowing;
 
 namespace Editor.Shell.Views;
 
@@ -148,7 +149,7 @@ public partial class EditorDockWorkspaceView : UserControl
         var floatingWindowRequest = workspace.CompleteDragInto(routedTarget.Workspace, routedTarget.Target);
         if (floatingWindowRequest is not null)
         {
-            ShowFloatingWindow(floatingWindowRequest);
+            routedTarget.View.ShowFloatingWindow(floatingWindowRequest);
         }
 
         HideDraggedDockTabPreview();
@@ -811,7 +812,7 @@ public partial class EditorDockWorkspaceView : UserControl
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel is null)
         {
-            return new PixelPoint((int)point.X, (int)point.Y);
+            return EditorDockFloatingWindowPlacement.ToPixelPoint(point);
         }
 
         var topLevelPoint = this.TranslatePoint(point, topLevel) ?? point;
@@ -820,17 +821,24 @@ public partial class EditorDockWorkspaceView : UserControl
 
     private void ShowFloatingWindow(EditorDockFloatingWindowRequest request)
     {
+        var bounds = EditorDockFloatingWindowPlacement.NormalizeBounds(request.Bounds);
+        var owner = TopLevel.GetTopLevel(this);
+        var position = EditorDockFloatingWindowPlacement.ClampPosition(
+            owner,
+            WorkspacePointToScreen(new Point(bounds.X, bounds.Y)),
+            bounds.Width,
+            bounds.Height);
         var window = new EditorDockFloatingWindow
         {
             DataContext = request.Window,
-            Width = Math.Max(240, request.Bounds.Width),
-            Height = Math.Max(180, request.Bounds.Height),
-            Position = WorkspacePointToScreen(new Point(request.Bounds.X, request.Bounds.Y)),
+            Width = bounds.Width,
+            Height = bounds.Height,
+            Position = position,
         };
 
-        if (TopLevel.GetTopLevel(this) is Window owner)
+        if (owner is Window ownerWindow)
         {
-            window.Show(owner);
+            window.Show(ownerWindow);
             return;
         }
 

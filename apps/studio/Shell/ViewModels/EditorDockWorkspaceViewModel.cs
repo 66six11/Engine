@@ -15,6 +15,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     private const string LayoutNodeKindSplit = "Split";
     private const string LayoutNodeKindWindow = "Window";
     private readonly IPanelRegistry? panelRegistry_;
+    private readonly Dictionary<string, object> keptAliveContentByPanelId_ = new(StringComparer.Ordinal);
     private readonly Dictionary<DockArea, EditorDockWindowViewModel> windowsByArea_;
     private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
     private EditorDockNodeViewModel? rootNode_;
@@ -474,7 +475,17 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             }
 
             var sourceWindow = FindWindow(tab);
-            if (sourceWindow is null || !targetWorkspace.CanAcceptDetachedTab(target))
+            if (sourceWindow is null)
+            {
+                return null;
+            }
+
+            if (target.Operation == EditorDockDropOperation.Float)
+            {
+                return FloatTab(tab, target.PreviewBounds);
+            }
+
+            if (!targetWorkspace.CanAcceptDetachedTab(target))
             {
                 return null;
             }
@@ -1992,7 +2003,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         EditorDockNodeViewModel Node,
         double Weight);
 
-    private static EditorDockTabViewModel CreateTab(PanelDescriptor descriptor)
+    private EditorDockTabViewModel CreateTab(PanelDescriptor descriptor)
     {
         return new EditorDockTabViewModel(
             descriptor.Id,
@@ -2002,8 +2013,24 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             GetStatusText(descriptor),
             descriptor.Kind,
             descriptor.DefaultArea,
-            descriptor.CreateContent(),
+            CreatePanelContent(descriptor),
             descriptor.IconKey);
+    }
+
+    private object CreatePanelContent(PanelDescriptor descriptor)
+    {
+        if (descriptor.CachePolicy == DockContentCachePolicy.RecreateOnOpen)
+        {
+            return descriptor.CreateContent();
+        }
+
+        if (!keptAliveContentByPanelId_.TryGetValue(descriptor.Id, out var content))
+        {
+            content = descriptor.CreateContent();
+            keptAliveContentByPanelId_[descriptor.Id] = content;
+        }
+
+        return content;
     }
 
     private EditorDockNodeViewModel CreateDefaultLayout()

@@ -69,6 +69,22 @@ public sealed class EditorDockHitTestServiceTests
         Assert.Equal(2, target.TargetIndex);
     }
 
+    [Fact]
+    public void HitTest_returns_workspace_top_edge_inside_top_band()
+    {
+        var target = HitTestWorkspaceEdge(new Point(250, 3));
+
+        Assert.Equal(EditorDockDropOperation.InsertWorkspaceTop, target.Operation);
+    }
+
+    [Fact]
+    public void HitTest_returns_workspace_bottom_edge_inside_bottom_band()
+    {
+        var target = HitTestWorkspaceEdge(new Point(250, 297));
+
+        Assert.Equal(EditorDockDropOperation.InsertWorkspaceBottom, target.Operation);
+    }
+
     private static EditorDockDropTarget HitTestTabWell(
         EditorDockWindowBounds window,
         double tabInsertProbeX,
@@ -83,6 +99,27 @@ public sealed class EditorDockHitTestServiceTests
             tabInsertPreviewWindowId: window.WindowId,
             tabInsertCurrentTargetIndex: tabInsertCurrentTargetIndex,
             tabInsertDraggedTabWidth: 100);
+    }
+
+    private static EditorDockDropTarget HitTestWorkspaceEdge(Point pointer)
+    {
+        return EditorDockHitTestService.HitTest(
+            pointer,
+            workspaceBounds: new Rect(0, 0, 500, 300),
+            windows:
+            [
+                new EditorDockWindowBounds(
+                    WindowId: "window",
+                    Area: DockArea.Center,
+                    Bounds: new Rect(100, 80, 300, 160),
+                    TabWellBounds: new Rect(100, 80, 300, 32),
+                    TabCount: 1,
+                    TabBounds: [new EditorDockTabBounds("tab", 0, new Rect(100, 80, 100, 32), IsDragSource: false)],
+                    DragSourceTabIndex: null,
+                    AllowsWindowInsertion: true,
+                    IsDragSource: false),
+            ],
+            splitters: []);
     }
 
     private static EditorDockWindowBounds CreateWindow(

@@ -49,14 +49,17 @@ public partial class MainWindow : Window
 
     private void ShowFloatingWindow(EditorDockFloatingWindowRequest request)
     {
+        var bounds = EditorDockFloatingWindowPlacement.NormalizeBounds(request.Bounds);
         var window = new EditorDockFloatingWindow
         {
             DataContext = request.Window,
-            Width = Math.Max(240, request.Bounds.Width),
-            Height = Math.Max(180, request.Bounds.Height),
-            Position = new PixelPoint(
-                (int)Math.Round(request.Bounds.X),
-                (int)Math.Round(request.Bounds.Y)),
+            Width = bounds.Width,
+            Height = bounds.Height,
+            Position = EditorDockFloatingWindowPlacement.ClampPosition(
+                this,
+                EditorDockFloatingWindowPlacement.ToPixelPoint(new Point(bounds.X, bounds.Y)),
+                bounds.Width,
+                bounds.Height),
         };
         window.Show(this);
     }

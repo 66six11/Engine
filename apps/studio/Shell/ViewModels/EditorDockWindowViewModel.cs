@@ -127,6 +127,8 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
         }
 
         tabs_.Remove(tab);
+        tab.IsActive = false;
+        tab.SetDragSourceState(false);
         NotifyTabCompositionChanged();
         RebuildTabStripItems();
 
