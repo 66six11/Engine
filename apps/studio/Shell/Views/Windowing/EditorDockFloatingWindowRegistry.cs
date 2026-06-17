@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using Avalonia;
 using Editor.Shell.Docking;
 using Editor.Shell.ViewModels;
-using Editor.Shell.Views;
 
 namespace Editor.Shell.Views.Windowing;
 
 internal static class EditorDockFloatingWindowRegistry
 {
     private static readonly List<WeakReference<EditorDockFloatingWindow>> Windows = [];
+
+    public static event EventHandler? DockContentChanged;
 
     public static void Register(EditorDockFloatingWindow window)
     {
@@ -24,6 +25,8 @@ internal static class EditorDockFloatingWindowRegistry
         }
 
         Windows.Add(new WeakReference<EditorDockFloatingWindow>(window));
+        SubscribeDockContentChanged(window);
+        RaiseDockContentChanged();
     }
 
     public static void Unregister(EditorDockFloatingWindow window)
@@ -33,9 +36,16 @@ internal static class EditorDockFloatingWindowRegistry
             if (!Windows[index].TryGetTarget(out var existing)
                 || ReferenceEquals(existing, window))
             {
+                if (existing is not null)
+                {
+                    UnsubscribeDockContentChanged(existing);
+                }
+
                 Windows.RemoveAt(index);
             }
         }
+
+        RaiseDockContentChanged();
     }
 
     public static IReadOnlyList<EditorDockFloatingWindowSnapshot> CaptureSnapshots()
@@ -44,7 +54,7 @@ internal static class EditorDockFloatingWindowRegistry
         var snapshots = new List<EditorDockFloatingWindowSnapshot>();
         foreach (var reference in Windows)
         {
-            if (!reference.TryGetTarget(out var window)
+            if (!TryGetOpenWindow(reference, out var window)
                 || window.DataContext is not EditorDockFloatingWindowViewModel viewModel
                 || !viewModel.DockWorkspace.HasDockContent())
             {
@@ -84,6 +94,7 @@ internal static class EditorDockFloatingWindowRegistry
         }
 
         Windows.Clear();
+        RaiseDockContentChanged();
     }
 
     public static bool TryActivatePanel(string panelId)
@@ -91,7 +102,7 @@ internal static class EditorDockFloatingWindowRegistry
         Prune();
         foreach (var reference in Windows)
         {
-            if (!reference.TryGetTarget(out var window)
+            if (!TryGetOpenWindow(reference, out var window)
                 || window.DataContext is not EditorDockFloatingWindowViewModel viewModel
                 || !viewModel.DockWorkspace.ActivatePanel(panelId))
             {
@@ -102,6 +113,42 @@ internal static class EditorDockFloatingWindowRegistry
             return true;
         }
 
+        return false;
+    }
+
+    public static bool ContainsPanel(string panelId)
+    {
+        if (string.IsNullOrWhiteSpace(panelId))
+        {
+            return false;
+        }
+
+        Prune();
+        foreach (var reference in Windows)
+        {
+            if (TryGetOpenWindow(reference, out var window)
+                && window.DataContext is EditorDockFloatingWindowViewModel viewModel
+                && viewModel.DockWorkspace.ContainsPanel(panelId))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetOpenWindow(
+        WeakReference<EditorDockFloatingWindow> reference,
+        out EditorDockFloatingWindow window)
+    {
+        if (reference.TryGetTarget(out var target)
+            && target.IsVisible)
+        {
+            window = target;
+            return true;
+        }
+
+        window = null!;
         return false;
     }
 
@@ -118,10 +165,41 @@ internal static class EditorDockFloatingWindowRegistry
     {
         for (var index = Windows.Count - 1; index >= 0; index--)
         {
-            if (!Windows[index].TryGetTarget(out _))
+            if (!Windows[index].TryGetTarget(out var window))
             {
+                if (window is not null)
+                {
+                    UnsubscribeDockContentChanged(window);
+                }
+
                 Windows.RemoveAt(index);
             }
         }
+    }
+
+    private static void SubscribeDockContentChanged(EditorDockFloatingWindow window)
+    {
+        if (window.DataContext is EditorDockFloatingWindowViewModel viewModel)
+        {
+            viewModel.DockWorkspace.DockContentChanged += OnFloatingDockContentChanged;
+        }
+    }
+
+    private static void UnsubscribeDockContentChanged(EditorDockFloatingWindow window)
+    {
+        if (window.DataContext is EditorDockFloatingWindowViewModel viewModel)
+        {
+            viewModel.DockWorkspace.DockContentChanged -= OnFloatingDockContentChanged;
+        }
+    }
+
+    private static void OnFloatingDockContentChanged(object? sender, EventArgs e)
+    {
+        RaiseDockContentChanged();
+    }
+
+    private static void RaiseDockContentChanged()
+    {
+        DockContentChanged?.Invoke(null, EventArgs.Empty);
     }
 }

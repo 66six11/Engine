@@ -90,8 +90,7 @@ public partial class EditorDockWorkspaceView : UserControl
         }
 
         var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
-        var changed = window.HideDragSourceTab(tab);
-        changed = window.ShowTabInsertPlaceholder(tab, targetIndex, showsTab: false) || changed;
+        var changed = window.ShowLocalTabReorderPreview(tab, targetIndex, showsTab: false);
         if (changed)
         {
             AnimateTabReorder(tabLayoutSnapshot);
@@ -104,8 +103,7 @@ public partial class EditorDockWorkspaceView : UserControl
         int targetIndex)
     {
         var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
-        var changed = window.ClearHiddenDragSourceTab();
-        changed = window.ClearTabInsertPlaceholder() || changed;
+        var changed = window.ClearLocalTabReorderPreview();
         if (DataContext is EditorDockWorkspaceViewModel workspace)
         {
             changed = workspace.ReorderTabInWindow(window, tab, targetIndex) || changed;
@@ -120,8 +118,7 @@ public partial class EditorDockWorkspaceView : UserControl
     public void CancelTabReorder(EditorDockWindowViewModel window)
     {
         var tabLayoutSnapshot = CaptureTabLayoutSnapshot();
-        var changed = window.ClearHiddenDragSourceTab();
-        changed = window.ClearTabInsertPlaceholder() || changed;
+        var changed = window.ClearLocalTabReorderPreview();
         if (changed)
         {
             AnimateTabReorder(tabLayoutSnapshot);

@@ -54,28 +54,9 @@
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Window" Classes="editor-menu-item">
-                    <MenuItem Header="Panels" Classes="editor-menu-item">
-                        <MenuItem Header="Scene View"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding OpenPanelCommand}"
-                                  CommandParameter="scene-view" />
-                        <MenuItem Header="Hierarchy"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding OpenPanelCommand}"
-                                  CommandParameter="hierarchy" />
-                        <MenuItem Header="Inspector"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding OpenPanelCommand}"
-                                  CommandParameter="inspector" />
-                        <MenuItem Header="Console"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding OpenPanelCommand}"
-                                  CommandParameter="console" />
-                        <MenuItem Header="Problems"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding OpenPanelCommand}"
-                                  CommandParameter="problems" />
-                    </MenuItem>
+                    <MenuItem x:Name="PanelsMenu"
+                              Header="Panels"
+                              Classes="editor-menu-item" />
                 </MenuItem>
                 <MenuItem Header="Tools" Classes="editor-menu-item">
                     <MenuItem Header="Command Palette" Classes="editor-menu-item" IsEnabled="False" />

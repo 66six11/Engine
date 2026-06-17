@@ -1,6 +1,5 @@
 using System;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Editor.Shell.ViewModels;
 
@@ -8,6 +7,8 @@ namespace Editor.Shell.Views;
 
 public partial class EditorDockSplitNodeView : UserControl
 {
+    private const double SplitterBreadth = 4.0;
+
     public EditorDockSplitNodeView()
     {
         InitializeComponent();
@@ -39,7 +40,7 @@ public partial class EditorDockSplitNodeView : UserControl
             firstColumn.Bind(ColumnDefinition.WidthProperty, CreateBinding(nameof(split.FirstLength), split));
             secondColumn.Bind(ColumnDefinition.WidthProperty, CreateBinding(nameof(split.SecondLength), split));
             grid.ColumnDefinitions.Add(firstColumn);
-            grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(6)));
+            grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(SplitterBreadth)));
             grid.ColumnDefinitions.Add(secondColumn);
 
             var firstHost = CreateNodeHost(nameof(split.First));
@@ -59,7 +60,7 @@ public partial class EditorDockSplitNodeView : UserControl
             firstRow.Bind(RowDefinition.HeightProperty, CreateBinding(nameof(split.FirstLength), split));
             secondRow.Bind(RowDefinition.HeightProperty, CreateBinding(nameof(split.SecondLength), split));
             grid.RowDefinitions.Add(firstRow);
-            grid.RowDefinitions.Add(new RowDefinition(new GridLength(6)));
+            grid.RowDefinitions.Add(new RowDefinition(new GridLength(SplitterBreadth)));
             grid.RowDefinitions.Add(secondRow);
 
             var firstHost = CreateNodeHost(nameof(split.First));

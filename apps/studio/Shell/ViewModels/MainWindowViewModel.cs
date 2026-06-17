@@ -5,6 +5,7 @@ using Avalonia;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Shell.Docking;
+using Editor.Shell.Composition;
 
 namespace Editor.Shell.ViewModels;
 
@@ -15,22 +16,32 @@ public class MainWindowViewModel : ViewModelBase
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
     private Func<string, bool>? activateFloatingPanel_;
+    private Func<string, bool>? isFloatingPanelOpen_;
 
     public MainWindowViewModel()
+        : this(CreatePanelRegistry(), EditorDockLayoutStore.TryLoad())
     {
-        panelRegistry_ = CreatePanelRegistry();
+    }
 
-        var savedLayout = EditorDockLayoutStore.TryLoad();
+    internal MainWindowViewModel(
+        IPanelRegistry panelRegistry,
+        EditorDockLayoutSnapshot? savedLayout)
+    {
+        panelRegistry_ = panelRegistry;
+        OpenPanelCommand = new RelayCommand<string?>(OpenPanel);
+        PanelMenuItems = CreatePanelMenuItems(panelRegistry_.GetAll());
+
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
+        DockWorkspace.DockContentChanged += OnDockWorkspaceDockContentChanged;
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
         {
             pendingFloatingWindowSnapshots_.AddRange(floatingWindows);
         }
+        RefreshPanelMenuOpenStates();
 
         SaveLayoutCommand = new RelayCommand(SaveLayout);
         ResetLayoutCommand = new RelayCommand(ResetLayout);
-        OpenPanelCommand = new RelayCommand<string?>(OpenPanel);
     }
 
     public EditorDockWorkspaceViewModel DockWorkspace { get; }
@@ -41,14 +52,19 @@ public class MainWindowViewModel : ViewModelBase
 
     public IRelayCommand<string?> OpenPanelCommand { get; }
 
+    public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
+
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
         Action closeFloatingWindows,
-        Func<string, bool> activateFloatingPanel)
+        Func<string, bool> activateFloatingPanel,
+        Func<string, bool> isFloatingPanelOpen)
     {
         captureFloatingWindowSnapshots_ = captureFloatingWindowSnapshots;
         closeFloatingWindows_ = closeFloatingWindows;
         activateFloatingPanel_ = activateFloatingPanel;
+        isFloatingPanelOpen_ = isFloatingPanelOpen;
+        RefreshPanelMenuOpenStates();
     }
 
     public IReadOnlyList<EditorDockFloatingWindowRequest> ConsumeRestoredFloatingWindowRequests()
@@ -80,6 +96,16 @@ public class MainWindowViewModel : ViewModelBase
 
         pendingFloatingWindowSnapshots_.Clear();
         return requests;
+    }
+
+    public void RefreshPanelMenuOpenStates()
+    {
+        foreach (var item in PanelMenuItems)
+        {
+            item.SetOpenState(
+                DockWorkspace.ContainsPanel(item.PanelId)
+                || isFloatingPanelOpen_?.Invoke(item.PanelId) == true);
+        }
     }
 
     private void OpenPanel(string? panelId)
@@ -121,33 +147,37 @@ public class MainWindowViewModel : ViewModelBase
         EditorDockLayoutStore.TryDelete();
     }
 
-    private static IPanelRegistry CreatePanelRegistry()
+    private void OnDockWorkspaceDockContentChanged(object? sender, EventArgs e)
+    {
+        RefreshPanelMenuOpenStates();
+    }
+
+    internal static IPanelRegistry CreatePanelRegistry()
     {
         var registry = new PanelRegistry();
 
-        RegisterPlaceholder(registry, "scene-view", "Scene View", PanelKind.Document, DockArea.Center);
-        RegisterPlaceholder(registry, "hierarchy", "Hierarchy", PanelKind.Tool, DockArea.Left);
-        RegisterPlaceholder(registry, "inspector", "Inspector", PanelKind.Tool, DockArea.Right);
-        RegisterPlaceholder(registry, "console", "Console", PanelKind.Tool, DockArea.Bottom);
-        RegisterPlaceholder(registry, "problems", "Problems", PanelKind.Tool, DockArea.Bottom);
+        foreach (var module in EditorFeatureCatalog.CreateDefaultModules())
+        {
+            module.RegisterPanels(registry);
+        }
 
         return registry;
     }
 
-    private static void RegisterPlaceholder(
-        IPanelRegistry registry,
-        string id,
-        string title,
-        PanelKind kind,
-        DockArea defaultArea)
+    private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
+        IReadOnlyList<PanelDescriptor> descriptors)
     {
-        registry.Register(new PanelDescriptor(
-            id,
-            title,
-            kind,
-            defaultArea,
-            $"Window/Panels/{title}",
-            DockContentCachePolicy.KeepAlive,
-            () => new PanelPlaceholderViewModel(title)));
+        var items = new List<PanelMenuItemViewModel>();
+        foreach (var descriptor in descriptors)
+        {
+            if (!descriptor.MenuPath.StartsWith("Window/Panels/", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            items.Add(new PanelMenuItemViewModel(descriptor, OpenPanel));
+        }
+
+        return items;
     }
 }

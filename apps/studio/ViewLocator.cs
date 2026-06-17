@@ -1,5 +1,15 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Editor.Features.Console.ViewModels;
+using Editor.Features.Console.Views;
+using Editor.Features.Hierarchy.ViewModels;
+using Editor.Features.Hierarchy.Views;
+using Editor.Features.Inspector.ViewModels;
+using Editor.Features.Inspector.Views;
+using Editor.Features.Problems.ViewModels;
+using Editor.Features.Problems.Views;
+using Editor.Features.SceneView.ViewModels;
+using Editor.Features.SceneView.Views;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views;
 
@@ -14,6 +24,11 @@ public class ViewLocator : IDataTemplate
             null => null,
             EditorDockSplitNodeViewModel => new EditorDockSplitNodeView(),
             EditorDockWindowNodeViewModel => new EditorDockWindowNodeView(),
+            SceneViewPanelViewModel => new SceneViewPanelView(),
+            HierarchyPanelViewModel => new HierarchyPanelView(),
+            InspectorPanelViewModel => new InspectorPanelView(),
+            ConsolePanelViewModel => new ConsolePanelView(),
+            ProblemsPanelViewModel => new ProblemsPanelView(),
             PanelPlaceholderViewModel => new PanelPlaceholderView(),
             _ => new TextBlock { Text = "Not Found: " + param.GetType().Name },
         };

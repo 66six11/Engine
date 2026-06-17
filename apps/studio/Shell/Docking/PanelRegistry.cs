@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
 
@@ -9,6 +8,7 @@ namespace Editor.Shell.Docking;
 public sealed class PanelRegistry : IPanelRegistry
 {
     private readonly Dictionary<string, PanelDescriptor> descriptors_ = new(StringComparer.Ordinal);
+    private readonly List<PanelDescriptor> descriptorsInRegistrationOrder_ = [];
 
     public void Register(PanelDescriptor descriptor)
     {
@@ -23,11 +23,13 @@ public sealed class PanelRegistry : IPanelRegistry
         {
             throw new InvalidOperationException($"Panel id '{descriptor.Id}' is already registered.");
         }
+
+        descriptorsInRegistrationOrder_.Add(descriptor);
     }
 
     public IReadOnlyList<PanelDescriptor> GetAll()
     {
-        return descriptors_.Values.ToArray();
+        return descriptorsInRegistrationOrder_.ToArray();
     }
 
     public PanelDescriptor GetRequired(string id)

@@ -66,7 +66,9 @@ $IgnoredDirectories = [System.Collections.Generic.HashSet[string]]::new([System.
     ".git",
     ".idea",
     ".vs",
+    "bin",
     "build",
+    "obj",
     "out",
     "CMakeFiles",
     "__pycache__"

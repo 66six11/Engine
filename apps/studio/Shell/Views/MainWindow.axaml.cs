@@ -1,6 +1,9 @@
 using System;
-using Avalonia.Controls;
 using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Editor.Shell.Icons;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views.Windowing;
 
@@ -17,6 +20,8 @@ public partial class MainWindow : Window
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
         DataContextChanged += OnMainWindowDataContextChanged;
+        PanelsMenu.SubmenuOpened += OnPanelsMenuSubmenuOpened;
+        EditorDockFloatingWindowRegistry.DockContentChanged += OnFloatingDockContentChanged;
     }
 
     protected override void OnOpened(EventArgs e)
@@ -26,16 +31,105 @@ public partial class MainWindow : Window
         RestoreFloatingWindows();
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged;
+        base.OnClosed(e);
+    }
+
     private void OnMainWindowDataContextChanged(object? sender, EventArgs e)
     {
         if (DataContext is MainWindowViewModel viewModel)
         {
+            RebuildPanelsMenu(viewModel);
             viewModel.SetFloatingWindowCallbacks(
                 EditorDockFloatingWindowRegistry.CaptureSnapshots,
                 EditorDockFloatingWindowRegistry.CloseAll,
-                EditorDockFloatingWindowRegistry.TryActivatePanel);
+                EditorDockFloatingWindowRegistry.TryActivatePanel,
+                EditorDockFloatingWindowRegistry.ContainsPanel);
             isDockHostFocused_ = IsActive;
             viewModel.DockWorkspace.SetHostFocusState(isDockHostFocused_);
+            return;
+        }
+
+        RebuildPanelsMenu(null);
+    }
+
+    private void RebuildPanelsMenu(MainWindowViewModel? viewModel)
+    {
+        PanelsMenu.Items.Clear();
+        if (viewModel is null)
+        {
+            return;
+        }
+
+        foreach (var panelItem in viewModel.PanelMenuItems)
+        {
+            var menuItem = new MenuItem
+            {
+                DataContext = panelItem,
+                Header = CreatePanelMenuHeader(panelItem),
+                Command = panelItem.OpenCommand,
+            };
+            menuItem.Classes.Add("editor-menu-item");
+            PanelsMenu.Items.Add(menuItem);
+        }
+    }
+
+    private static Grid CreatePanelMenuHeader(PanelMenuItemViewModel panelItem)
+    {
+        var header = new Grid
+        {
+            DataContext = panelItem,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+        };
+
+        var title = new TextBlock
+        {
+            Text = panelItem.Header,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        header.Children.Add(title);
+
+        var openIndicator = new EditorIconView
+        {
+            IconKey = EditorIconKey.UiCheck,
+            IconSize = 12,
+            StrokeWidth = 2,
+        };
+        openIndicator.Classes.Add("editor-menu-open-indicator");
+
+        var openIndicatorSlot = new Border
+        {
+            Child = openIndicator,
+            Margin = new Thickness(24, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        openIndicatorSlot.Bind(
+            Visual.IsVisibleProperty,
+            new Binding(nameof(PanelMenuItemViewModel.IsOpen)));
+        Grid.SetColumn(openIndicatorSlot, 1);
+        header.Children.Add(openIndicatorSlot);
+
+        return header;
+    }
+
+    private void OnPanelsMenuSubmenuOpened(object? sender, EventArgs e)
+    {
+        RefreshPanelMenuOpenStates();
+    }
+
+    private void OnFloatingDockContentChanged(object? sender, EventArgs e)
+    {
+        RefreshPanelMenuOpenStates();
+    }
+
+    private void RefreshPanelMenuOpenStates()
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.RefreshPanelMenuOpenStates();
         }
     }
 

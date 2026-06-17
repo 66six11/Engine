@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Editor.Shell.Icons"
              xmlns:vm="using:Editor.Shell.ViewModels"
              x:Class="Editor.Shell.Views.EditorDockTabItemView"
              x:DataType="vm:EditorDockTabStripItemViewModel"
@@ -9,7 +10,6 @@
             <Setter Property="MinWidth" Value="{DynamicResource EditorDockTabMinWidth}" />
             <Setter Property="MaxWidth" Value="{DynamicResource EditorDockTabMaxWidth}" />
             <Setter Property="Height" Value="{DynamicResource EditorDockTabHeight}" />
-            <Setter Property="Padding" Value="{DynamicResource EditorDockTabPadding}" />
             <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
             <Setter Property="BorderThickness" Value="0,0,1,0" />
@@ -59,19 +59,6 @@
             <Setter Property="Cursor" Value="Arrow" />
         </Style>
 
-        <Style Selector="Border.owned-dock-tab-top-glow">
-            <Setter Property="Height" Value="6" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="VerticalAlignment" Value="Top" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushAccentHover}" />
-            <Setter Property="Opacity" Value="0" />
-            <Setter Property="IsHitTestVisible" Value="False" />
-        </Style>
-
-        <Style Selector="Border.owned-dock-tab-top-glow.focused">
-            <Setter Property="Opacity" Value="0.30" />
-        </Style>
-
         <Style Selector="Border.owned-dock-tab-top-indicator">
             <Setter Property="Height" Value="2" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -91,6 +78,10 @@
             <Setter Property="Opacity" Value="1" />
         </Style>
 
+        <Style Selector="Grid.owned-dock-tab-content">
+            <Setter Property="Margin" Value="{DynamicResource EditorDockTabPadding}" />
+        </Style>
+
         <Style Selector="Border.owned-dock-tab.placeholder.preview Grid.owned-dock-tab-content">
             <Setter Property="Opacity" Value="1" />
         </Style>
@@ -105,9 +96,10 @@
             <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
         </Style>
 
-        <Style Selector="ContentControl.owned-dock-tab-icon-slot">
+        <Style Selector="icons|EditorIconView.owned-dock-tab-icon-slot">
             <Setter Property="Width" Value="{DynamicResource EditorDockTabIconSize}" />
             <Setter Property="Height" Value="{DynamicResource EditorDockTabIconSize}" />
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="IsVisible" Value="False" />
         </Style>
@@ -146,6 +138,12 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
+        <Style Selector="Button.owned-dock-tab-close icons|EditorIconView">
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <Style Selector="Border.owned-dock-tab:pointerover Button.owned-dock-tab-close">
             <Setter Property="Opacity" Value="1" />
             <Setter Property="IsHitTestVisible" Value="True" />
@@ -158,9 +156,17 @@
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
         </Style>
 
+        <Style Selector="Button.owned-dock-tab-close:pointerover icons|EditorIconView">
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
         <Style Selector="Button.owned-dock-tab-close:pressed">
             <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close:pressed icons|EditorIconView">
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushTextPrimary}" />
         </Style>
     </UserControl.Styles>
 
@@ -172,17 +178,17 @@
             Classes="owned-dock-tab">
         <Grid>
             <Border Classes.focused="{Binding IsSelectedInFocusedWindow}"
-                    Classes="owned-dock-tab-top-glow" />
-            <Border Classes.focused="{Binding IsSelectedInFocusedWindow}"
                     Classes.inactive="{Binding IsSelectedInInactiveWindow}"
                     Classes="owned-dock-tab-top-indicator" />
 
             <Grid ColumnDefinitions="Auto,*,Auto"
                   Classes="owned-dock-tab-content"
                   ColumnSpacing="6">
-                <ContentControl Grid.Column="0"
-                                Classes="owned-dock-tab-icon-slot"
-                                IsVisible="{Binding Tab.HasIcon}" />
+                <icons:EditorIconView Grid.Column="0"
+                                      Classes="owned-dock-tab-icon-slot"
+                                      IconKey="{Binding Tab.IconKey}"
+                                      IconSize="{DynamicResource EditorDockTabIconSize}"
+                                      StrokeWidth="2" />
 
                 <TextBlock Grid.Column="1"
                            Classes="owned-dock-tab-title"
@@ -191,7 +197,9 @@
                 <Button Grid.Column="2"
                         Classes="owned-dock-tab-close"
                         Click="OnCloseButtonClick">
-                    <TextBlock Text="x" />
+                    <icons:EditorIconView IconKey="studio.ui.close"
+                                          IconSize="12"
+                                          StrokeWidth="2" />
                 </Button>
             </Grid>
         </Grid>

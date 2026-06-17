@@ -27,6 +27,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     private int nextDynamicWindowIndex_ = 1;
     private int nextDynamicSplitIndex_ = 1;
 
+    public event EventHandler? DockContentChanged;
+
     public EditorDockWorkspaceViewModel(IPanelRegistry panelRegistry)
     {
         panelRegistry_ = panelRegistry;
@@ -207,6 +209,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
                 && windowsById_.TryGetValue(snapshot.ActiveWindowId, out var activeWindow)
                     ? activeWindow
                     : FindFirstWindowWithContent());
+        NotifyDockContentChanged();
         return true;
     }
 
@@ -230,6 +233,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         }
 
         SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
+        NotifyDockContentChanged();
     }
 
     public bool ActivatePanel(string panelId)
@@ -282,6 +286,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         targetWindow.Add(tab);
         targetWindow.Activate(tab);
         SetActiveWindow(targetWindow);
+        NotifyDockContentChanged();
         return true;
     }
 
@@ -470,6 +475,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             ClearTabInsertPreview();
             ClearDragSourceState();
             DragState.Clear();
+            NotifyDockContentChanged();
         }
     }
 
@@ -519,6 +525,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             ClearDragSourceState();
             DragState.Clear();
             targetWorkspace.ClearExternalDragPreview();
+            NotifyDockContentChanged();
+            targetWorkspace.NotifyDockContentChanged();
         }
     }
 
@@ -554,7 +562,34 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
         SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
+        NotifyDockContentChanged();
         return true;
+    }
+
+    public bool ContainsPanel(string panelId)
+    {
+        if (string.IsNullOrWhiteSpace(panelId))
+        {
+            return false;
+        }
+
+        foreach (var window in windowsById_.Values)
+        {
+            foreach (var tab in window.Tabs)
+            {
+                if (string.Equals(tab.Id, panelId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void NotifyDockContentChanged()
+    {
+        DockContentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private EditorDockLayoutNodeSnapshot? CaptureLayoutNode(EditorDockNodeViewModel? node)
@@ -2081,30 +2116,17 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     private static string GetTag(PanelDescriptor descriptor)
     {
-        return descriptor.Kind == PanelKind.Document ? "DOC" : descriptor.DefaultArea.ToString().ToUpperInvariant();
+        return descriptor.Tag
+            ?? (descriptor.Kind == PanelKind.Document ? "DOC" : descriptor.DefaultArea.ToString().ToUpperInvariant());
     }
 
     private static string GetTitleDetail(PanelDescriptor descriptor)
     {
-        return descriptor.Id switch
-        {
-            "scene-view" => "custom viewport shell",
-            "hierarchy" => "selection source",
-            "inspector" => "context target",
-            "console" => "runtime log stream",
-            "problems" => "validation queue",
-            _ => descriptor.MenuPath,
-        };
+        return descriptor.TitleDetail ?? descriptor.MenuPath;
     }
 
     private static string GetStatusText(PanelDescriptor descriptor)
     {
-        return descriptor.Id switch
-        {
-            "scene-view" => "live",
-            "problems" => "0",
-            "console" => "idle",
-            _ => descriptor.Kind.ToString().ToLowerInvariant(),
-        };
+        return descriptor.StatusText ?? descriptor.Kind.ToString().ToLowerInvariant();
     }
 }

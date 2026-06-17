@@ -231,6 +231,29 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
             && IsTabInsertPlaceholderCurrent(tab, index, showsTab);
     }
 
+    internal bool ShowLocalTabReorderPreview(EditorDockTabViewModel tab, int index, bool showsTab)
+    {
+        if (!tabs_.Contains(tab))
+        {
+            return false;
+        }
+
+        var insertIndex = System.Math.Clamp(index, 0, Tabs.Count);
+        if (ReferenceEquals(hiddenDragSourceTab_, tab)
+            && IsTabInsertPlaceholderCurrent(tab, insertIndex, showsTab))
+        {
+            return false;
+        }
+
+        hiddenDragSourceTab_ = tab;
+        tabInsertPlaceholderTab_ = tab;
+        tabInsertPlaceholderIndex_ = insertIndex;
+        tabInsertPlaceholderShowsTab_ = showsTab;
+        tabInsertPlaceholderItem_ = null;
+        RebuildTabStripItems();
+        return true;
+    }
+
     internal bool IsTabInsertPlaceholderCurrent(EditorDockTabViewModel tab, int index, bool showsTab)
     {
         var insertIndex = System.Math.Clamp(index, 0, Tabs.Count);
@@ -275,6 +298,24 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
             return false;
         }
 
+        tabInsertPlaceholderTab_ = null;
+        tabInsertPlaceholderIndex_ = null;
+        tabInsertPlaceholderShowsTab_ = false;
+        tabInsertPlaceholderItem_ = null;
+        RebuildTabStripItems();
+        return true;
+    }
+
+    internal bool ClearLocalTabReorderPreview()
+    {
+        if (hiddenDragSourceTab_ is null
+            && tabInsertPlaceholderTab_ is null
+            && tabInsertPlaceholderIndex_ is null)
+        {
+            return false;
+        }
+
+        hiddenDragSourceTab_ = null;
         tabInsertPlaceholderTab_ = null;
         tabInsertPlaceholderIndex_ = null;
         tabInsertPlaceholderShowsTab_ = false;
@@ -334,12 +375,12 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
                     continue;
                 }
 
-                var item = GetOrCreateTabStripItem(tab);
                 if (ReferenceEquals(tab, hiddenDragSourceTab_))
                 {
-                    item.SetPresentation(isPlaceholder: false, isSourceGhost: true);
+                    continue;
                 }
 
+                var item = GetOrCreateTabStripItem(tab);
                 targetItems.Add(item);
             }
         }
