@@ -16,6 +16,7 @@ public class MainWindowViewModel : ViewModelBase
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
     private Func<string, bool>? activateFloatingPanel_;
+    private Func<string, bool>? isFloatingPanelOpen_;
 
     public MainWindowViewModel()
         : this(CreatePanelRegistry(), EditorDockLayoutStore.TryLoad())
@@ -31,11 +32,13 @@ public class MainWindowViewModel : ViewModelBase
         PanelMenuItems = CreatePanelMenuItems(panelRegistry_.GetAll());
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
+        DockWorkspace.DockContentChanged += OnDockWorkspaceDockContentChanged;
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
         {
             pendingFloatingWindowSnapshots_.AddRange(floatingWindows);
         }
+        RefreshPanelMenuOpenStates();
 
         SaveLayoutCommand = new RelayCommand(SaveLayout);
         ResetLayoutCommand = new RelayCommand(ResetLayout);
@@ -54,11 +57,14 @@ public class MainWindowViewModel : ViewModelBase
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
         Action closeFloatingWindows,
-        Func<string, bool> activateFloatingPanel)
+        Func<string, bool> activateFloatingPanel,
+        Func<string, bool> isFloatingPanelOpen)
     {
         captureFloatingWindowSnapshots_ = captureFloatingWindowSnapshots;
         closeFloatingWindows_ = closeFloatingWindows;
         activateFloatingPanel_ = activateFloatingPanel;
+        isFloatingPanelOpen_ = isFloatingPanelOpen;
+        RefreshPanelMenuOpenStates();
     }
 
     public IReadOnlyList<EditorDockFloatingWindowRequest> ConsumeRestoredFloatingWindowRequests()
@@ -90,6 +96,16 @@ public class MainWindowViewModel : ViewModelBase
 
         pendingFloatingWindowSnapshots_.Clear();
         return requests;
+    }
+
+    public void RefreshPanelMenuOpenStates()
+    {
+        foreach (var item in PanelMenuItems)
+        {
+            item.SetOpenState(
+                DockWorkspace.ContainsPanel(item.PanelId)
+                || isFloatingPanelOpen_?.Invoke(item.PanelId) == true);
+        }
     }
 
     private void OpenPanel(string? panelId)
@@ -129,6 +145,11 @@ public class MainWindowViewModel : ViewModelBase
         closeFloatingWindows_?.Invoke();
         DockWorkspace.ResetLayout();
         EditorDockLayoutStore.TryDelete();
+    }
+
+    private void OnDockWorkspaceDockContentChanged(object? sender, EventArgs e)
+    {
+        RefreshPanelMenuOpenStates();
     }
 
     internal static IPanelRegistry CreatePanelRegistry()

@@ -1,6 +1,8 @@
 using System;
-using Avalonia.Controls;
 using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views.Windowing;
 
@@ -17,6 +19,8 @@ public partial class MainWindow : Window
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
         DataContextChanged += OnMainWindowDataContextChanged;
+        PanelsMenu.SubmenuOpened += OnPanelsMenuSubmenuOpened;
+        EditorDockFloatingWindowRegistry.DockContentChanged += OnFloatingDockContentChanged;
     }
 
     protected override void OnOpened(EventArgs e)
@@ -24,6 +28,12 @@ public partial class MainWindow : Window
         base.OnOpened(e);
         SetDockHostFocusState(IsActive);
         RestoreFloatingWindows();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged;
+        base.OnClosed(e);
     }
 
     private void OnMainWindowDataContextChanged(object? sender, EventArgs e)
@@ -34,7 +44,8 @@ public partial class MainWindow : Window
             viewModel.SetFloatingWindowCallbacks(
                 EditorDockFloatingWindowRegistry.CaptureSnapshots,
                 EditorDockFloatingWindowRegistry.CloseAll,
-                EditorDockFloatingWindowRegistry.TryActivatePanel);
+                EditorDockFloatingWindowRegistry.TryActivatePanel,
+                EditorDockFloatingWindowRegistry.ContainsPanel);
             isDockHostFocused_ = IsActive;
             viewModel.DockWorkspace.SetHostFocusState(isDockHostFocused_);
             return;
@@ -55,11 +66,62 @@ public partial class MainWindow : Window
         {
             var menuItem = new MenuItem
             {
-                Header = panelItem.Header,
+                DataContext = panelItem,
+                Header = CreatePanelMenuHeader(panelItem),
                 Command = panelItem.OpenCommand,
             };
             menuItem.Classes.Add("editor-menu-item");
             PanelsMenu.Items.Add(menuItem);
+        }
+    }
+
+    private static Grid CreatePanelMenuHeader(PanelMenuItemViewModel panelItem)
+    {
+        var header = new Grid
+        {
+            DataContext = panelItem,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            MinWidth = 180,
+        };
+
+        var title = new TextBlock
+        {
+            Text = panelItem.Header,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        header.Children.Add(title);
+
+        var openIndicator = new TextBlock
+        {
+            Text = "\u2714",
+            Margin = new Thickness(24, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        openIndicator.Bind(
+            Visual.IsVisibleProperty,
+            new Binding(nameof(PanelMenuItemViewModel.IsOpen)));
+        Grid.SetColumn(openIndicator, 1);
+        header.Children.Add(openIndicator);
+
+        return header;
+    }
+
+    private void OnPanelsMenuSubmenuOpened(object? sender, EventArgs e)
+    {
+        RefreshPanelMenuOpenStates();
+    }
+
+    private void OnFloatingDockContentChanged(object? sender, EventArgs e)
+    {
+        RefreshPanelMenuOpenStates();
+    }
+
+    private void RefreshPanelMenuOpenStates()
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.RefreshPanelMenuOpenStates();
         }
     }
 

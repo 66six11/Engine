@@ -52,6 +52,47 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void PanelMenuItems_reflect_open_panels_in_main_workspace()
+    {
+        var viewModel = new MainWindowViewModel(
+            MainWindowViewModel.CreatePanelRegistry(),
+            savedLayout: null);
+        var hierarchyItem = viewModel.PanelMenuItems.Single(item => item.PanelId == "hierarchy");
+        var hierarchyTab = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+
+        Assert.True(hierarchyItem.IsOpen);
+
+        Assert.True(viewModel.DockWorkspace.CloseTab(hierarchyTab));
+
+        Assert.False(hierarchyItem.IsOpen);
+
+        hierarchyItem.OpenCommand.Execute(null);
+
+        Assert.True(hierarchyItem.IsOpen);
+    }
+
+    [Fact]
+    public void PanelMenuItems_include_open_panels_from_floating_windows()
+    {
+        var viewModel = new MainWindowViewModel(
+            MainWindowViewModel.CreatePanelRegistry(),
+            savedLayout: null);
+        var hierarchyItem = viewModel.PanelMenuItems.Single(item => item.PanelId == "hierarchy");
+        var hierarchyTab = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+
+        Assert.True(viewModel.DockWorkspace.CloseTab(hierarchyTab));
+        Assert.False(hierarchyItem.IsOpen);
+
+        viewModel.SetFloatingWindowCallbacks(
+            () => [],
+            () => { },
+            _ => false,
+            panelId => panelId == "hierarchy");
+
+        Assert.True(hierarchyItem.IsOpen);
+    }
+
+    [Fact]
     public void RestoreLayoutSnapshot_restores_feature_panel_by_id()
     {
         var viewModel = new MainWindowViewModel(

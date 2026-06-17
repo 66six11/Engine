@@ -6,6 +6,8 @@ namespace Editor.Shell.ViewModels;
 
 public sealed class PanelMenuItemViewModel : ViewModelBase
 {
+    private bool isOpen_;
+
     public PanelMenuItemViewModel(
         PanelDescriptor descriptor,
         Action<string> openPanel)
@@ -19,5 +21,16 @@ public sealed class PanelMenuItemViewModel : ViewModelBase
 
     public string Header { get; }
 
+    public bool IsOpen
+    {
+        get => isOpen_;
+        private set => SetProperty(ref isOpen_, value);
+    }
+
     public IRelayCommand OpenCommand { get; }
+
+    internal void SetOpenState(bool isOpen)
+    {
+        IsOpen = isOpen;
+    }
 }
