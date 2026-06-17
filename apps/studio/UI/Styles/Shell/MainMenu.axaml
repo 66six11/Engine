@@ -1,0 +1,61 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Design.PreviewWith>
+        <Border Padding="16" Background="{DynamicResource EditorBrushBase00}">
+            <Menu Classes="editor-main-menu">
+                <MenuItem Header="File" Classes="editor-menu-item">
+                    <MenuItem Header="New" Classes="editor-menu-item" />
+                    <MenuItem Header="Save" Classes="editor-menu-item" IsEnabled="False" />
+                    <Separator Classes="editor-menu-separator" />
+                    <MenuItem Header="Exit" Classes="editor-menu-item" />
+                </MenuItem>
+                <MenuItem Header="Window" Classes="editor-menu-item">
+                    <MenuItem Header="Panels" Classes="editor-menu-item">
+                        <MenuItem Header="Scene View" Classes="editor-menu-item" />
+                    </MenuItem>
+                </MenuItem>
+            </Menu>
+        </Border>
+    </Design.PreviewWith>
+
+    <Style Selector="Menu.editor-main-menu">
+        <Setter Property="Height" Value="{DynamicResource EditorMainMenuHeight}" />
+        <Setter Property="Padding" Value="{DynamicResource EditorMainMenuPadding}" />
+        <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+        <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="MenuItem.editor-menu-item">
+        <Setter Property="MinHeight" Value="{DynamicResource EditorMainMenuHeight}" />
+        <Setter Property="Padding" Value="{DynamicResource EditorMenuItemPadding}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+        <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+    </Style>
+
+    <Style Selector="MenuItem.editor-menu-item:pointerover">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSurface03}" />
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+    </Style>
+
+    <Style Selector="MenuItem.editor-menu-item:pressed">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+    </Style>
+
+    <Style Selector="MenuItem.editor-menu-item:focus">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSurface03}" />
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+    </Style>
+
+    <Style Selector="MenuItem.editor-menu-item:disabled">
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextDisabled}" />
+    </Style>
+
+    <Style Selector="Separator.editor-menu-separator">
+        <Setter Property="Margin" Value="6,4" />
+        <Setter Property="Background" Value="{DynamicResource EditorBrushDivider}" />
+    </Style>
+</Styles>

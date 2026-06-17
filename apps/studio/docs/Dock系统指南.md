@@ -1,0 +1,236 @@
+# Dock 系统指南
+
+本文记录 Studio 当前自研 Dock 的边界、组件层级和后续高级 Dock 路线。目标不是给几个固定面板换皮，而是实现一个可完全控制窗口层级、组合结构、拖拽反馈和浮动窗口层级的 Dock 布局系统。
+
+## 当前实现
+
+```text
+Core
+  PanelDescriptor
+  PanelKind
+  DockArea
+  DockContentCachePolicy
+  IPanelRegistry
+
+Shell
+  PanelRegistry
+  EditorDockWorkspaceKind
+  EditorDockWorkspaceViewModel
+  EditorDockNodeViewModel
+  EditorDockSplitNodeViewModel
+  EditorDockWindowNodeViewModel
+  EditorDockWindowViewModel
+  EditorDockTabViewModel
+  EditorDockFloatingWindowViewModel
+  EditorDockFloatingWindowRequest
+  EditorDockDragStateViewModel
+  EditorDockHitTestService
+  EditorDockDropTarget
+  EditorDockDropOperation
+  EditorDockDropGuideKind
+  EditorDockWindowBounds
+  EditorDockSplitterBounds
+  PanelPlaceholderViewModel
+  EditorDockWorkspaceView
+  EditorDockDropGuideView
+  EditorDockSplitNodeView
+  EditorDockWindowNodeView
+  EditorDockWindowView
+  EditorDockTabStripView
+  EditorDockTabItemView
+  EditorDockFloatingWindow
+  PanelPlaceholderView
+
+Styles
+  Dock 组件样式内嵌在对应 `Shell/Views/*.axaml`
+```
+
+主界面使用自研 `EditorDockWorkspaceView` 作为 Dock host。Dock.Avalonia 包和 `EditorDockFactory` 暂时保留为过渡参考路径，但不再作为主界面的视觉和交互层。
+
+## 布局模型
+
+固定四区 XAML 网格已经移除。当前工作区由 `RootNode` 布局树递归渲染：
+
+```text
+split-left-work (Horizontal)
+  node-left -> Hierarchy
+  split-work-inspector (Horizontal)
+    split-center-bottom (Vertical)
+      node-center -> Viewport
+      node-bottom -> Diagnostics
+    node-right -> Inspector
+```
+
+这仍然提供启动默认布局，但默认布局现在只是 layout graph 的种子，不是写死在 workspace 视图中的控件层级。后续 layout reset、save/restore、拖拽插入、浮动窗口和节点模板控制都应围绕 layout graph 变更，而不是修改 XAML。
+
+`DockArea` 只保留为面板注册时的默认落区 metadata，不能作为运行时布局地址。运行时布局地址必须来自 layout graph node id、split id 和 dock surface id。
+
+## 拖拽命中规则
+
+当前命中顺序：
+
+```text
+1. workspace 外部 -> Float preview
+2. tab strip -> InsertTabAtIndex
+3. workspace root edge band -> InsertWorkspaceLeft / InsertWorkspaceRight / InsertWorkspaceTop / InsertWorkspaceBottom
+4. 真实 GridSplitter bounds + hit slop -> SplitBetween preview
+5. window 可见 guide spokes -> InsertLeft / InsertRight / InsertTop / InsertBottom
+6. 没有命中明确停靠点 -> Float preview
+```
+
+Split 不再通过 window 边缘比例推导。拆分落点必须来自真实 splitter 或后续显式 drop guide。这样可以把“插入到两个 split 面板之间”的语义稳定绑定到 splitter 层，而不是绑定到某个 window 的局部坐标。
+Window 内插入命中来自可见 guide spokes 的固定几何热点，不使用 window 尺寸比例作为隐藏判定。
+拖拽源 window content 在拖拽期间只显示 disabled 态，不参与自身 window body 的插入命中；没有明确停靠点时创建 floating window。Float preview 复用 window surface 视觉结构，只展示 tab 栏加内容区，不再额外显示随鼠标移动的 drag adorner。Float preview 不参与 window/workspace 边界碰撞或停靠命中，鼠标锚点落在预览窗口的 tab 位置，释放时才创建真正的顶层 floating window。源 tab 的原地插入位置返回 Reject，避免当前未加拖拽阈值时单击 tab 直接浮动。
+
+当前已实现：
+
+```text
+1. split tree 驱动的默认布局渲染
+2. GridSplitter resize
+3. tab header 拖拽启动、移动、释放和取消
+4. TabInto 跨 window 移动
+5. SplitBetween 释放后创建真实 split node 和 dock surface
+6. 可见 guide spokes 释放后围绕目标 dock surface 创建真实 split node
+7. 源 dock surface 为空时从 layout graph 折叠
+8. 显式 drop guide overlay：Merge / Insert / Float / Reject
+9. 用户创建的同向 split 子树归一化为 balanced star split
+10. drop placeholder、window border、tab tag、title extra、status text 样式
+11. workspace 外释放 tab 后创建独立 `EditorDockFloatingWindow`
+12. floating window 内部承载独立 `EditorDockWorkspaceView`
+13. 区分 workspace 内部 active window 和独立 floating window host
+14. 根 layout window 被拖空后隐藏，不保留 0-tab 空 surface 占位
+15. docked/floating window surface 始终保留 tab strip，单 tab 也通过 tab strip 拖拽、插入和激活
+16. TabInto / InsertTabAtIndex 命中只来自真实 tab strip，window body 和 titlebar 不再默认合并
+17. workspace 边缘释放 tab 后创建新 window，并插入整棵 root layout tree 外侧
+18. 多 tab strip 支持按 tab 中线计算 `InsertTabAtIndex`，同 window 拖拽中实时 reorder，并用短位移动画交换 tab
+19. floating window 的最后一个 tab 被移走后，空的 `EditorDockFloatingWindow` host 自动关闭
+20. `InsertTabAtIndex` 预览使用 tab 形占位块，并用 FLIP 位移动画跟随目标 index，不再使用单独 caret 作为主要插入反馈
+21. 拖拽源 tab 和源 window content 进入 disabled 视觉态，源 window body 不作为自己的 drop target
+22. 没有命中明确停靠点时不再 Reject，释放后创建顶层 floating window
+23. Float preview 不再按 workspace/window bounds clamp，拖拽时只作为跟随指针的 ghost 显示
+24. Float preview 复用 `EditorDockWindowSurfaceView` 和 `EditorDockTabItemView`，呈现为 tab 栏加内容区，鼠标锚点位于 tab 上
+```
+
+当前未实现：
+
+```text
+1. tab strip overflow、自滚动和多行策略
+2. n-ary split group 组件和用户手调比例持久化
+3. floating window 拖回主窗口、跨 floating window 投放和窗口层级策略
+4. layout save/restore
+5. DPI、多显示器和 floating window 生命周期策略
+6. 面板关闭、显示/隐藏命令和生命周期策略
+```
+
+## 组件定制边界
+
+Dock 的主路径是自研组件层，不依赖第三方 Dock 控件模板：
+
+```text
+EditorDockWorkspaceView   根容器、layout tree host、overlay layer
+EditorDockDropGuideView   自研拖拽 guide overlay、目标徽标、插入线和拒绝状态
+EditorDockFloatingPreviewView  Float 拖拽预览，复用 window surface 和 tab item 视觉结构
+EditorDockSplitNodeView   split 节点、两个子节点、真实 splitter 控件
+EditorDockWindowNodeView    window leaf wrapper
+EditorDockWindowView        dock surface container、tab strip host、content host
+EditorDockWindowSurfaceView    window surface 外壳，承载 tab strip content 和 body content
+EditorDockTabStripView      tab strip 容器，后续承载 overflow、滚动、工具按钮
+EditorDockTabItemView       单个 tab 的视觉结构，后续承载关闭、pin、状态点
+EditorDockFloatingWindow  独立 Avalonia Window，承载一个 `EditorDockWorkspaceView`
+EditorDockTabViewModel    tab tag、title extra、status text、active state
+EditorDockTabStripItemViewModel  tab strip 视图投影，可包含真实 tab 或拖拽占位 tab
+EditorDockDragState       transient dragged tab、drop preview 和 Float preview tab 投影
+EditorDockHitTestService  drop operation、splitter hit-test、float/reject preview
+```
+
+## 状态边界
+
+Dock 当前明确区分两类状态：
+
+```text
+Workspace 内部活动窗口
+  EditorDockWorkspaceViewModel.ActiveWindow
+  EditorDockWindowViewModel.IsActiveWindow
+  表示当前 workspace 内获得焦点/激活语义的 dock window。
+
+独立窗口
+  EditorDockWorkspaceKind.FloatingWindow
+  EditorDockFloatingWindow
+  表示顶层 Avalonia Window host。当前 Float drop 直接创建此类窗口。
+```
+
+原则上，拖拽预览进入另一个 workspace 时不能直接改变其 active window；只有 tab 真正落入、合并、插入、独立浮动或被用户激活时，才更新目标 workspace 的 active window。当前所有 Float drop 都创建独立 Avalonia Window。
+
+Surface 当前按 host 分成两种呈现，tab strip 始终保留：
+
+```text
+Docked window
+  显示 docked tab strip；tab strip 是 TabInto / InsertTabAtIndex 入口。
+
+Floating window
+  显示 floating tab strip；tab strip 是 TabInto / InsertTabAtIndex 入口，floating chrome 继续负责移动和 resize。
+```
+
+合并命中必须绑定到 tab well：
+
+```text
+1. splitter bounds -> SplitBetween
+2. tab strip -> InsertTabAtIndex / TabInto
+3. docked window body guide hotspots -> InsertLeft / InsertRight / InsertTop / InsertBottom
+4. floating window body -> Float
+5. window body 其他区域 -> Float
+6. source tab 原地插入 -> Reject
+```
+
+Tab strip 由两层模型组成：
+
+```text
+EditorDockWindowViewModel.Tabs
+  只保存真实 tab；参与 active tab、content、关闭、移动、保存/恢复。
+
+EditorDockWindowViewModel.TabStripItems
+  只服务当前视图布局；由真实 Tabs 加上可选拖拽 placeholder 组成。
+  placeholder 不参与 active/content/persistence，释放成功后才把真实 tab 提交到 Tabs。
+```
+
+原则：
+
+```text
+1. 面板注册、菜单路径和内容创建走 Core/Shell 抽象，不绑定具体 Dock UI。
+2. Shell 自研 Dock 控制组件层级、tab chrome、title extra、drop placeholder、drag adorner 和 splitter；组件样式保存在对应 view 文件内。
+3. Split 命中优先绑定真实 layout 结构；不要回退到 window 边缘比例。
+4. 颜色必须映射到 DeepDarkColors.axaml 中的 Editor token。
+5. 模板中不引入 converter、服务访问、后台任务或深层动态集合。
+6. 真实面板内容由后续 Feature 切片实现，Shell 当前只消费注册描述。
+```
+
+## 注册规则
+
+Feature 后续只注册 `PanelDescriptor`，不要直接创建 Dock 控件或 View：
+
+```text
+Id            稳定、小写、可持久化，例如 scene-view
+Title         用户可见标题，例如 Scene View
+Kind          Document 或 Tool
+DefaultArea   Center / Left / Right / Bottom
+MenuPath      Window/Panels/{PanelTitle}
+CachePolicy   KeepAlive 或 RecreateOnOpen
+CreateContent 创建轻量内容 ViewModel
+```
+
+Dock.Avalonia 类型只允许出现在 Shell/Docking 或后续 Infrastructure 持久化适配中，不能进入 Core。
+
+## 后续切片
+
+1. Drop guide：扩展 guide 层，支持精确 tab 插入、overflow、自滚动和更明确的拒绝状态。
+2. Layout operations：关闭 window、n-ary split group、用户手调比例持久化、reset layout。
+3. Tab operations：tab reorder、跨 window 移动、关闭占位、键盘焦点和可访问状态。
+4. Floating window operations：处理 floating window 之间的合并、拆分、drop 命中、层级和持久化。
+5. Layout persistence：保存 split tree、tab 顺序、比例、浮动窗口位置和 active tab。
+6. Floating window lifecycle：完善 DPI、多显示器、关闭策略和窗口生命周期。
+7. Panel commands：`Window/Panels/*` 已接入主窗口菜单；打开时先激活主 workspace 中已有 panel，再激活已有浮动窗口中的 panel，最后按 panel 默认区域重开 dockable。
+8. Real feature panels：Scene View、Hierarchy、Inspector、Console、Problems 迁入 `Features/*`。
+
+## 性能约束
+
+默认布局面板数量保持小集合。不要把资源树、日志、问题列表或场景对象直接展开成大规模 Avalonia 控件；真实面板必须在各自 Feature 内做虚拟化、分页、批处理和资源释放。

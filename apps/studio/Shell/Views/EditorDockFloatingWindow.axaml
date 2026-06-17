@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Editor.Shell.ViewModels"
+        xmlns:views="using:Editor.Shell.Views"
+        x:Class="Editor.Shell.Views.EditorDockFloatingWindow"
+        x:DataType="vm:EditorDockFloatingWindowViewModel"
+        Title="{Binding DockWorkspace.HostTitle}"
+        Width="320"
+        Height="240"
+        MinWidth="240"
+        MinHeight="180"
+        Background="{DynamicResource EditorBrushBase00}">
+    <Grid RowDefinitions="10,*,10"
+          ColumnDefinitions="10,*,10"
+          Background="{DynamicResource EditorBrushBase00}">
+        <Border Grid.Row="0"
+                Grid.Column="0"
+                Grid.ColumnSpan="3"
+                Background="{DynamicResource EditorBrushBase00}" />
+
+        <Border Grid.Row="1"
+                Grid.Column="0"
+                Background="{DynamicResource EditorBrushBase00}" />
+
+        <views:EditorDockWorkspaceView Grid.Row="1"
+                                       Grid.Column="1"
+                                       DataContext="{Binding DockWorkspace}" />
+
+        <Border Grid.Row="1"
+                Grid.Column="2"
+                Background="{DynamicResource EditorBrushBase00}" />
+
+        <Border Grid.Row="2"
+                Grid.Column="0"
+                Grid.ColumnSpan="3"
+                Background="{DynamicResource EditorBrushBase00}" />
+    </Grid>
+</Window>
