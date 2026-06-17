@@ -5,7 +5,7 @@
              x:Class="Editor.Shell.Views.EditorDockTabStripView"
              x:DataType="vm:EditorDockWindowViewModel">
     <UserControl.Styles>
-        <Style Selector="ItemsControl.owned-dock-tabs">
+        <Style Selector="ItemsControl.owned-dock-tabs.owned-dock-tab-well">
             <Setter Property="MinHeight" Value="{DynamicResource EditorDockTabHeight}" />
             <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />

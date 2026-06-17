@@ -1,4 +1,6 @@
+using System;
 using Avalonia.Controls;
+using Editor.Shell.Views.Windowing;
 
 namespace Editor.Shell.Views;
 
@@ -9,13 +11,13 @@ public partial class EditorDockFloatingWindow : Window
         InitializeComponent();
     }
 
-    protected override void OnOpened(System.EventArgs e)
+    protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
         EditorDockFloatingWindowRegistry.Register(this);
     }
 
-    protected override void OnClosed(System.EventArgs e)
+    protected override void OnClosed(EventArgs e)
     {
         EditorDockFloatingWindowRegistry.Unregister(this);
         base.OnClosed(e);

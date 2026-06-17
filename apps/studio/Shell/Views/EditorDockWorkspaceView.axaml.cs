@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Editor.Core.Models;
 using Editor.Shell.Docking;
 using Editor.Shell.ViewModels;
 
@@ -22,7 +22,6 @@ public partial class EditorDockWorkspaceView : UserControl
     {
         Interval = TimeSpan.FromMilliseconds(16),
     };
-    private readonly EditorDockHitTestService hitTestService_ = new();
     private DockHitTestSnapshot? hitTestSnapshot_;
     private double draggedDockTabPointerOffsetX_;
     private Size draggedDockTabPreviewSize_;
@@ -228,7 +227,7 @@ public partial class EditorDockWorkspaceView : UserControl
         Point point,
         bool allowOutOfBoundsWorkspaceEdge)
     {
-        var target = ResolveDropTarget(point, allowOutOfBoundsWorkspaceEdge);
+        var target = ResolveDropTarget(workspace, point, allowOutOfBoundsWorkspaceEdge);
         workspace.DragState.UpdateDropPreview(target);
         if (workspace.WouldPreviewTabInsertChange(target))
         {
@@ -244,16 +243,25 @@ public partial class EditorDockWorkspaceView : UserControl
         return target;
     }
 
-    private EditorDockDropTarget ResolveDropTarget(Point point, bool allowOutOfBoundsWorkspaceEdge)
+    private EditorDockDropTarget ResolveDropTarget(
+        EditorDockWorkspaceViewModel workspace,
+        Point point,
+        bool allowOutOfBoundsWorkspaceEdge)
     {
         var snapshot = GetHitTestSnapshot();
-        return hitTestService_.HitTest(
+        var hasCurrentTabInsertPreview = workspace.TryGetTabInsertPreview(
+            out var tabInsertPreviewWindowId,
+            out var tabInsertCurrentTargetIndex);
+        return EditorDockHitTestService.HitTest(
             point,
             snapshot.WorkspaceBounds,
             snapshot.Windows,
             snapshot.Splitters,
             allowOutOfBoundsWorkspaceEdge,
-            GetTabInsertProbeX(point));
+            GetTabInsertProbeX(point),
+            hasCurrentTabInsertPreview ? tabInsertPreviewWindowId : null,
+            hasCurrentTabInsertPreview ? tabInsertCurrentTargetIndex : null,
+            draggedDockTabPreviewSize_.Width);
     }
 
     private DockHitTestSnapshot GetHitTestSnapshot()
@@ -349,7 +357,11 @@ public partial class EditorDockWorkspaceView : UserControl
                 continue;
             }
 
-            TryGetSplitterAdjacentBounds(splitter, split.Orientation, out var firstBounds, out var secondBounds);
+            if (!TryGetSplitterAdjacentBounds(splitter, split.Orientation, out var firstBounds, out var secondBounds))
+            {
+                firstBounds = default;
+                secondBounds = default;
+            }
 
             splitters.Add(new EditorDockSplitterBounds(
                 split.Id,
@@ -364,7 +376,7 @@ public partial class EditorDockWorkspaceView : UserControl
 
     private bool TryGetSplitterAdjacentBounds(
         GridSplitter splitter,
-        Avalonia.Layout.Orientation orientation,
+        Orientation orientation,
         out Rect firstBounds,
         out Rect secondBounds)
     {
@@ -384,7 +396,7 @@ public partial class EditorDockWorkspaceView : UserControl
                 continue;
             }
 
-            if (orientation == Avalonia.Layout.Orientation.Horizontal)
+            if (orientation == Orientation.Horizontal)
             {
                 var column = Grid.GetColumn(child);
                 if (column == 0)
@@ -434,7 +446,7 @@ public partial class EditorDockWorkspaceView : UserControl
     private Rect GetSplitterEdgeBounds(
         Control host,
         EditorDockNodeViewModel? node,
-        Avalonia.Layout.Orientation orientation,
+        Orientation orientation,
         bool useTrailingEdge)
     {
         if (node is EditorDockSplitNodeViewModel split
@@ -479,14 +491,14 @@ public partial class EditorDockWorkspaceView : UserControl
         var targetSlot = useSecondChild ? 2 : 0;
         foreach (var child in grid.Children.OfType<Control>())
         {
-            if (split.Orientation == Avalonia.Layout.Orientation.Horizontal
+            if (split.Orientation == Orientation.Horizontal
                 && Grid.GetColumn(child) == targetSlot)
             {
                 childHost = child;
                 return true;
             }
 
-            if (split.Orientation == Avalonia.Layout.Orientation.Vertical
+            if (split.Orientation == Orientation.Vertical
                 && Grid.GetRow(child) == targetSlot)
             {
                 childHost = child;
@@ -594,9 +606,16 @@ public partial class EditorDockWorkspaceView : UserControl
         var startY = deltaY;
         if (tabMoveAnimations_.TryGetValue(tab, out var existingState))
         {
-            startX += existingState.CurrentX;
-            startY += existingState.CurrentY;
-            StopTabMoveAnimation(tab, clearTransform: false);
+            if (ReferenceEquals(existingState.Host, tabHost))
+            {
+                startX += existingState.CurrentX;
+                startY += existingState.CurrentY;
+                StopTabMoveAnimation(tab, clearTransform: false);
+            }
+            else
+            {
+                StopTabMoveAnimation(tab);
+            }
         }
 
         if (Math.Abs(startX) < 0.5 && Math.Abs(startY) < 0.5)
@@ -624,6 +643,13 @@ public partial class EditorDockWorkspaceView : UserControl
     {
         foreach (var (tab, state) in tabMoveAnimations_.ToArray())
         {
+            if (!TryGetRealTab(state.Host, out var currentTab)
+                || !ReferenceEquals(currentTab, tab))
+            {
+                StopTabMoveAnimation(tab);
+                continue;
+            }
+
             var progress = Math.Clamp(
                 (DateTime.UtcNow - state.StartedAt).TotalMilliseconds / TabReorderAnimationDuration.TotalMilliseconds,
                 0d,

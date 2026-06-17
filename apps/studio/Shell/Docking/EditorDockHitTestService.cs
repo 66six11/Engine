@@ -4,7 +4,7 @@ using Avalonia.Layout;
 
 namespace Editor.Shell.Docking;
 
-public sealed class EditorDockHitTestService
+internal static class EditorDockHitTestService
 {
     private const double SplitterHitSlop = 8.0;
     private const double SplitterPreviewBreadth = 76.0;
@@ -26,13 +26,16 @@ public sealed class EditorDockHitTestService
     private const double FloatPreviewTabPointerX = 66.0;
     private const double FloatPreviewTabPointerY = 21.0;
 
-    public EditorDockDropTarget HitTest(
+    public static EditorDockDropTarget HitTest(
         Point pointer,
         Rect workspaceBounds,
         IReadOnlyList<EditorDockWindowBounds> windows,
         IReadOnlyList<EditorDockSplitterBounds> splitters,
         bool allowOutOfBoundsWorkspaceEdge = false,
-        double? tabInsertProbeX = null)
+        double? tabInsertProbeX = null,
+        string? tabInsertPreviewWindowId = null,
+        int? tabInsertCurrentTargetIndex = null,
+        double? tabInsertDraggedTabWidth = null)
     {
         if (windows.Count == 0)
         {
@@ -54,7 +57,13 @@ public sealed class EditorDockHitTestService
         {
             if (window.TabWellBounds.Contains(pointer))
             {
-                return HitTestWindowGuide(pointer, window, tabInsertProbeX);
+                return HitTestWindowGuide(
+                    pointer,
+                    window,
+                    tabInsertProbeX,
+                    tabInsertPreviewWindowId,
+                    tabInsertCurrentTargetIndex,
+                    tabInsertDraggedTabWidth);
             }
         }
 
@@ -78,7 +87,13 @@ public sealed class EditorDockHitTestService
         {
             if (window.Bounds.Contains(pointer))
             {
-                return HitTestWindowGuide(pointer, window, tabInsertProbeX);
+                return HitTestWindowGuide(
+                    pointer,
+                    window,
+                    tabInsertProbeX,
+                    tabInsertPreviewWindowId,
+                    tabInsertCurrentTargetIndex,
+                    tabInsertDraggedTabWidth);
             }
         }
 
@@ -108,21 +123,35 @@ public sealed class EditorDockHitTestService
         var bottomDistance = pointer.Y > workspaceBounds.Bottom
             ? pointer.Y - workspaceBounds.Bottom
             : double.PositiveInfinity;
-        var nearestDistance = System.Math.Min(
-            System.Math.Min(leftDistance, rightDistance),
-            System.Math.Min(topDistance, bottomDistance));
-        if (double.IsPositiveInfinity(nearestDistance))
+        if (double.IsPositiveInfinity(leftDistance)
+            && double.IsPositiveInfinity(rightDistance)
+            && double.IsPositiveInfinity(topDistance)
+            && double.IsPositiveInfinity(bottomDistance))
         {
             return false;
         }
 
-        var operation = nearestDistance == leftDistance
-            ? EditorDockDropOperation.InsertWorkspaceLeft
-            : nearestDistance == rightDistance
-                ? EditorDockDropOperation.InsertWorkspaceRight
-                : nearestDistance == topDistance
-                    ? EditorDockDropOperation.InsertWorkspaceTop
-                    : EditorDockDropOperation.InsertWorkspaceBottom;
+        EditorDockDropOperation operation;
+        if (leftDistance <= rightDistance
+            && leftDistance <= topDistance
+            && leftDistance <= bottomDistance)
+        {
+            operation = EditorDockDropOperation.InsertWorkspaceLeft;
+        }
+        else if (rightDistance <= topDistance
+                 && rightDistance <= bottomDistance)
+        {
+            operation = EditorDockDropOperation.InsertWorkspaceRight;
+        }
+        else if (topDistance <= bottomDistance)
+        {
+            operation = EditorDockDropOperation.InsertWorkspaceTop;
+        }
+        else
+        {
+            operation = EditorDockDropOperation.InsertWorkspaceBottom;
+        }
+
         target = CreateWorkspaceEdgeTarget(operation, workspaceBounds);
         return true;
     }
@@ -130,12 +159,21 @@ public sealed class EditorDockHitTestService
     private static EditorDockDropTarget HitTestWindowGuide(
         Point pointer,
         EditorDockWindowBounds window,
-        double? tabInsertProbeX = null)
+        double? tabInsertProbeX = null,
+        string? tabInsertPreviewWindowId = null,
+        int? tabInsertCurrentTargetIndex = null,
+        double? tabInsertDraggedTabWidth = null)
     {
         if (window.TabWellBounds.Contains(pointer))
         {
             return window.TabBounds.Count > 0
-                ? CreateTabInsertTarget(window, pointer, tabInsertProbeX ?? pointer.X)
+                ? CreateTabInsertTarget(
+                    window,
+                    pointer,
+                    tabInsertProbeX ?? pointer.X,
+                    tabInsertPreviewWindowId,
+                    tabInsertCurrentTargetIndex,
+                    tabInsertDraggedTabWidth)
                 : CreateTabTarget(window);
         }
 
@@ -217,22 +255,35 @@ public sealed class EditorDockHitTestService
     private static EditorDockDropTarget CreateTabInsertTarget(
         EditorDockWindowBounds window,
         Point pointer,
-        double probeX)
+        double probeX,
+        string? tabInsertPreviewWindowId,
+        int? tabInsertCurrentTargetIndex,
+        double? tabInsertDraggedTabWidth)
     {
-        var targetIndex = window.TabCount;
-        var lineX = window.TabBounds[^1].Bounds.Right;
+        var entries = CreateTabInsertEntries(window);
         var sourceTabIndex = GetDragSourceTabIndex(window);
-        foreach (var tab in window.TabBounds)
-        {
-            if (probeX >= tab.Bounds.Center.X)
-            {
-                continue;
-            }
-
-            targetIndex = tab.TabIndex;
-            lineX = tab.Bounds.X;
-            break;
-        }
+        var currentTargetIndex = window.WindowId == tabInsertPreviewWindowId
+            ? tabInsertCurrentTargetIndex
+            : null;
+        var placeholderWidth = GetTabInsertPlaceholderWidth(
+            entries,
+            currentTargetIndex ?? sourceTabIndex ?? 0,
+            tabInsertDraggedTabWidth);
+        var targetIndex = sourceTabIndex is null
+            ? EditorDockTabReorderResolver.ResolveExternalTargetIndex(
+                probeX,
+                currentTargetIndex: currentTargetIndex ?? 0,
+                window.TabCount,
+                placeholderWidth,
+                entries)
+            : EditorDockTabReorderResolver.ResolveTargetIndex(
+                probeX,
+                sourceTabIndex.Value,
+                currentTargetIndex ?? sourceTabIndex.Value,
+                window.TabCount,
+                placeholderWidth,
+                entries);
+        var lineX = ResolveTabInsertLineX(entries, targetIndex, window.TabWellBounds.X);
 
         if (sourceTabIndex is { } sourceIndex
             && (targetIndex == sourceIndex || targetIndex == sourceIndex + 1))
@@ -240,7 +291,10 @@ public sealed class EditorDockHitTestService
             return CreateRejectTarget(pointer, "Source tab disabled while dragging");
         }
 
-        var placeholderWidth = GetTabInsertPlaceholderWidth(window, targetIndex);
+        placeholderWidth = GetTabInsertPlaceholderWidth(
+            entries,
+            targetIndex,
+            tabInsertDraggedTabWidth);
         var placeholderX = Clamp(
             lineX - (placeholderWidth / 2),
             window.TabWellBounds.X,
@@ -258,6 +312,42 @@ public sealed class EditorDockHitTestService
             previewBounds,
             $"Insert tab at {targetIndex + 1} in {window.WindowId}",
             targetIndex);
+    }
+
+    private static double ResolveTabInsertLineX(
+        List<EditorDockTabReorderResolver.Entry> entries,
+        int targetIndex,
+        double fallbackX)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.TabIndex >= targetIndex)
+            {
+                return entry.Bounds.X;
+            }
+        }
+
+        return entries.Count > 0 ? entries[^1].Bounds.Right : fallbackX;
+    }
+
+    private static List<EditorDockTabReorderResolver.Entry> CreateTabInsertEntries(EditorDockWindowBounds window)
+    {
+        var tabBounds = new List<EditorDockTabBounds>(window.TabBounds);
+        tabBounds.Sort((left, right) => left.TabIndex.CompareTo(right.TabIndex));
+
+        var entries = new List<EditorDockTabReorderResolver.Entry>(tabBounds.Count);
+        var currentX = window.TabWellBounds.X;
+        foreach (var tab in tabBounds)
+        {
+            var width = tab.Bounds.Width > 0 ? tab.Bounds.Width : TabInsertPlaceholderMinWidth;
+            var height = tab.Bounds.Height > 0 ? tab.Bounds.Height : window.TabWellBounds.Height;
+            entries.Add(new EditorDockTabReorderResolver.Entry(
+                tab.TabIndex,
+                new Rect(currentX, tab.Bounds.Y, width, height)));
+            currentX += width;
+        }
+
+        return entries;
     }
 
     private static int? GetDragSourceTabIndex(EditorDockWindowBounds window)
@@ -278,16 +368,33 @@ public sealed class EditorDockHitTestService
         return null;
     }
 
-    private static double GetTabInsertPlaceholderWidth(EditorDockWindowBounds window, int targetIndex)
+    private static double GetTabInsertPlaceholderWidth(
+        List<EditorDockTabReorderResolver.Entry> entries,
+        int targetIndex,
+        double? draggedTabWidth)
     {
-        if (window.TabBounds.Count == 0)
+        if (draggedTabWidth is > 0)
+        {
+            return draggedTabWidth.Value;
+        }
+
+        if (entries.Count == 0)
         {
             return TabInsertPlaceholderMinWidth;
         }
 
-        var nearestTabIndex = System.Math.Clamp(targetIndex, 0, window.TabBounds.Count - 1);
+        var nearestTabBounds = entries[0].Bounds;
+        foreach (var entry in entries)
+        {
+            nearestTabBounds = entry.Bounds;
+            if (entry.TabIndex >= targetIndex)
+            {
+                break;
+            }
+        }
+
         return Clamp(
-            window.TabBounds[nearestTabIndex].Bounds.Width,
+            nearestTabBounds.Width,
             TabInsertPlaceholderMinWidth,
             TabInsertPlaceholderMaxWidth);
     }

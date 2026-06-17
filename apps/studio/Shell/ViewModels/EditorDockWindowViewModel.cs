@@ -64,6 +64,8 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
     public bool HasTabs => TabCount > 0;
 
+    internal int? TabInsertPlaceholderIndex => tabInsertPlaceholderIndex_;
+
     public void Add(EditorDockTabViewModel tab)
     {
         tab.Area = Area;

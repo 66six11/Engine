@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using Avalonia;
 using Editor.Shell.Docking;
 using Editor.Shell.ViewModels;
+using Editor.Shell.Views;
 
-namespace Editor.Shell.Views;
+namespace Editor.Shell.Views.Windowing;
 
 internal static class EditorDockFloatingWindowRegistry
 {

@@ -390,6 +390,20 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             || !targetWindow.IsTabInsertPlaceholderCurrent(tab, targetIndex, showsTab: false);
     }
 
+    internal bool TryGetTabInsertPreview(out string windowId, out int targetIndex)
+    {
+        if (tabInsertPreviewWindow_?.TabInsertPlaceholderIndex is { } currentTargetIndex)
+        {
+            windowId = tabInsertPreviewWindow_.Id;
+            targetIndex = currentTargetIndex;
+            return true;
+        }
+
+        windowId = string.Empty;
+        targetIndex = -1;
+        return false;
+    }
+
     public EditorDockFloatingWindowRequest? CompleteDrag(EditorDockDropTarget target)
     {
         var tab = DragState.DraggedTab;

@@ -1,14 +1,12 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core;
-using Avalonia.Data.Core.Plugins;
-using System.Linq;
 using Avalonia.Markup.Xaml;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views;
 
 namespace Editor;
 
+// ReSharper disable once PartialTypeWithSinglePart
 public partial class App : Application
 {
     public override void Initialize()

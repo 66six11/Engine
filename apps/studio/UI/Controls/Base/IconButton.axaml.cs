@@ -1,8 +1,6 @@
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
 
-namespace Editor.Features.Controls.Base;
+namespace Editor.UI.Controls.Base;
 
 public partial class IconButton : UserControl
 {

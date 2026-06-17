@@ -1,4 +1,4 @@
-using Avalonia;
+using System;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
@@ -14,7 +14,7 @@ public partial class EditorDockSplitNodeView : UserControl
         DataContextChanged += OnDataContextChanged;
     }
 
-    private void OnDataContextChanged(object? sender, System.EventArgs e)
+    private void OnDataContextChanged(object? sender, EventArgs e)
     {
         RebuildSplitHost();
     }

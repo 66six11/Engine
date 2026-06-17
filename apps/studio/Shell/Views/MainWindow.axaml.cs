@@ -2,6 +2,7 @@ using System;
 using Avalonia.Controls;
 using Avalonia;
 using Editor.Shell.ViewModels;
+using Editor.Shell.Views.Windowing;
 
 namespace Editor.Shell.Views;
 
@@ -15,13 +16,13 @@ public partial class MainWindow : Window
         DataContextChanged += OnMainWindowDataContextChanged;
     }
 
-    protected override void OnOpened(System.EventArgs e)
+    protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
         RestoreFloatingWindows();
     }
 
-    private void OnMainWindowDataContextChanged(object? sender, System.EventArgs e)
+    private void OnMainWindowDataContextChanged(object? sender, EventArgs e)
     {
         if (DataContext is MainWindowViewModel viewModel)
         {

@@ -21,7 +21,7 @@
 
         <Canvas ClipToBounds="False"
                 IsHitTestVisible="False"
-                Panel.ZIndex="20">
+                ZIndex="20">
             <ContentControl x:Name="DraggedTabPreview"
                             IsVisible="False"
                             IsHitTestVisible="False">

@@ -24,7 +24,7 @@
                         Content="{Binding RootNode}" />
 
         <Canvas x:Name="DockOverlay"
-                Panel.ZIndex="20"
+                ZIndex="20"
                 ClipToBounds="False"
                 IsHitTestVisible="False">
             <ContentControl x:Name="DraggedDockTabPreview"

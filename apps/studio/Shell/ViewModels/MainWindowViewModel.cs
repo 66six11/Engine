@@ -8,7 +8,7 @@ using Editor.Shell.Docking;
 
 namespace Editor.Shell.ViewModels;
 
-public partial class MainWindowViewModel : ViewModelBase
+public class MainWindowViewModel : ViewModelBase
 {
     private readonly IPanelRegistry panelRegistry_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];

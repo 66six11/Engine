@@ -6,7 +6,7 @@
              x:DataType="vm:EditorDockDragStateViewModel"
              ClipToBounds="True">
     <UserControl.Styles>
-        <Style Selector="ItemsControl.owned-dock-tabs.float-preview">
+        <Style Selector="ItemsControl.owned-dock-tabs.owned-dock-tab-well.float-preview">
             <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
