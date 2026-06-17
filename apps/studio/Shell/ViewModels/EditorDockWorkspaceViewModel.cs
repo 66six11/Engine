@@ -2081,30 +2081,17 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     private static string GetTag(PanelDescriptor descriptor)
     {
-        return descriptor.Kind == PanelKind.Document ? "DOC" : descriptor.DefaultArea.ToString().ToUpperInvariant();
+        return descriptor.Tag
+            ?? (descriptor.Kind == PanelKind.Document ? "DOC" : descriptor.DefaultArea.ToString().ToUpperInvariant());
     }
 
     private static string GetTitleDetail(PanelDescriptor descriptor)
     {
-        return descriptor.Id switch
-        {
-            "scene-view" => "custom viewport shell",
-            "hierarchy" => "selection source",
-            "inspector" => "context target",
-            "console" => "runtime log stream",
-            "problems" => "validation queue",
-            _ => descriptor.MenuPath,
-        };
+        return descriptor.TitleDetail ?? descriptor.MenuPath;
     }
 
     private static string GetStatusText(PanelDescriptor descriptor)
     {
-        return descriptor.Id switch
-        {
-            "scene-view" => "live",
-            "problems" => "0",
-            "console" => "idle",
-            _ => descriptor.Kind.ToString().ToLowerInvariant(),
-        };
+        return descriptor.StatusText ?? descriptor.Kind.ToString().ToLowerInvariant();
     }
 }

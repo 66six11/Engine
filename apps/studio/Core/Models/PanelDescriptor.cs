@@ -10,4 +10,7 @@ public sealed record PanelDescriptor(
     string MenuPath,
     DockContentCachePolicy CachePolicy,
     Func<object> CreateContent,
-    string? IconKey = null);
+    string? IconKey = null,
+    string? Tag = null,
+    string? TitleDetail = null,
+    string? StatusText = null);

@@ -9,7 +9,6 @@
             <Setter Property="MinWidth" Value="{DynamicResource EditorDockTabMinWidth}" />
             <Setter Property="MaxWidth" Value="{DynamicResource EditorDockTabMaxWidth}" />
             <Setter Property="Height" Value="{DynamicResource EditorDockTabHeight}" />
-            <Setter Property="Padding" Value="{DynamicResource EditorDockTabPadding}" />
             <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
             <Setter Property="BorderThickness" Value="0,0,1,0" />
@@ -59,21 +58,8 @@
             <Setter Property="Cursor" Value="Arrow" />
         </Style>
 
-        <Style Selector="Border.owned-dock-tab-top-glow">
-            <Setter Property="Height" Value="6" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="VerticalAlignment" Value="Top" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushAccentHover}" />
-            <Setter Property="Opacity" Value="0" />
-            <Setter Property="IsHitTestVisible" Value="False" />
-        </Style>
-
-        <Style Selector="Border.owned-dock-tab-top-glow.focused">
-            <Setter Property="Opacity" Value="0.30" />
-        </Style>
-
         <Style Selector="Border.owned-dock-tab-top-indicator">
-            <Setter Property="Height" Value="2" />
+            <Setter Property="Height" Value="3" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="VerticalAlignment" Value="Top" />
             <Setter Property="Background" Value="Transparent" />
@@ -89,6 +75,10 @@
         <Style Selector="Border.owned-dock-tab-top-indicator.inactive">
             <Setter Property="Background" Value="{DynamicResource EditorBrushBorderDefault}" />
             <Setter Property="Opacity" Value="1" />
+        </Style>
+
+        <Style Selector="Grid.owned-dock-tab-content">
+            <Setter Property="Margin" Value="{DynamicResource EditorDockTabPadding}" />
         </Style>
 
         <Style Selector="Border.owned-dock-tab.placeholder.preview Grid.owned-dock-tab-content">
@@ -171,8 +161,6 @@
             Classes.source-ghost="{Binding IsSourceGhost}"
             Classes="owned-dock-tab">
         <Grid>
-            <Border Classes.focused="{Binding IsSelectedInFocusedWindow}"
-                    Classes="owned-dock-tab-top-glow" />
             <Border Classes.focused="{Binding IsSelectedInFocusedWindow}"
                     Classes.inactive="{Binding IsSelectedInInactiveWindow}"
                     Classes="owned-dock-tab-top-indicator" />

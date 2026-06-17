@@ -10,23 +10,17 @@
         </Style>
 
         <Style Selector="GridSplitter.owned-dock-splitter">
-            <Setter Property="Background" Value="{DynamicResource EditorBrushDivider}" />
-        </Style>
-
-        <Style Selector="GridSplitter.owned-dock-splitter:pointerover">
-            <Setter Property="Background" Value="{DynamicResource EditorBrushBorderInteractive}" />
-        </Style>
-
-        <Style Selector="GridSplitter.owned-dock-splitter:pressed">
-            <Setter Property="Background" Value="{DynamicResource EditorBrushAccent}" />
+            <Setter Property="Background" Value="Transparent" />
         </Style>
 
         <Style Selector="GridSplitter.owned-dock-splitter.vertical">
-            <Setter Property="Width" Value="10" />
+            <Setter Property="Width" Value="4" />
+            <Setter Property="Cursor" Value="SizeWestEast" />
         </Style>
 
         <Style Selector="GridSplitter.owned-dock-splitter.horizontal">
-            <Setter Property="Height" Value="10" />
+            <Setter Property="Height" Value="4" />
+            <Setter Property="Cursor" Value="SizeNorthSouth" />
         </Style>
     </UserControl.Styles>
 

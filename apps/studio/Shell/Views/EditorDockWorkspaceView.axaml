@@ -6,7 +6,7 @@
              x:DataType="vm:EditorDockWorkspaceViewModel">
     <UserControl.Styles>
         <Style Selector="Grid.owned-dock-root">
-            <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface03}" />
         </Style>
 
         <Style Selector="ContentControl.owned-dock-node-host">
@@ -20,6 +20,7 @@
           ClipToBounds="False">
         <ContentControl x:Name="DockLayout"
                         Classes="owned-dock-node-host"
+                        Margin="4"
                         IsVisible="{Binding HasRootNode}"
                         Content="{Binding RootNode}" />
 

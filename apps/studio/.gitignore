@@ -1,0 +1,6 @@
+# .NET build output
+bin/
+obj/
+
+# IDE workspace state
+.idea/

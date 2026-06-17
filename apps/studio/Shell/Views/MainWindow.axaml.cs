@@ -30,12 +30,36 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainWindowViewModel viewModel)
         {
+            RebuildPanelsMenu(viewModel);
             viewModel.SetFloatingWindowCallbacks(
                 EditorDockFloatingWindowRegistry.CaptureSnapshots,
                 EditorDockFloatingWindowRegistry.CloseAll,
                 EditorDockFloatingWindowRegistry.TryActivatePanel);
             isDockHostFocused_ = IsActive;
             viewModel.DockWorkspace.SetHostFocusState(isDockHostFocused_);
+            return;
+        }
+
+        RebuildPanelsMenu(null);
+    }
+
+    private void RebuildPanelsMenu(MainWindowViewModel? viewModel)
+    {
+        PanelsMenu.Items.Clear();
+        if (viewModel is null)
+        {
+            return;
+        }
+
+        foreach (var panelItem in viewModel.PanelMenuItems)
+        {
+            var menuItem = new MenuItem
+            {
+                Header = panelItem.Header,
+                Command = panelItem.OpenCommand,
+            };
+            menuItem.Classes.Add("editor-menu-item");
+            PanelsMenu.Items.Add(menuItem);
         }
     }
 

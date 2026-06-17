@@ -7,15 +7,21 @@
     <UserControl.Styles>
         <Style Selector="Border.owned-dock-window">
             <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="ClipToBounds" Value="True" />
         </Style>
 
         <Style Selector="Border.owned-dock-window.preview">
             <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushAccent}" />
-            <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Opacity" Value="0.92" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-window-preview-outline">
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushAccent}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="IsHitTestVisible" Value="False" />
         </Style>
 
         <Style Selector="Border.owned-dock-content">
@@ -32,18 +38,23 @@
         </Style>
     </UserControl.Styles>
 
-    <Border Classes.preview="{Binding IsPreview, ElementName=SurfaceRoot}"
-            Classes="owned-dock-window">
-        <Grid RowDefinitions="Auto,*">
-            <ContentControl Grid.Row="0"
-                            Content="{Binding TabStripContent, ElementName=SurfaceRoot}" />
+    <Grid>
+        <Border Classes.preview="{Binding IsPreview, ElementName=SurfaceRoot}"
+                Classes="owned-dock-window">
+            <Grid RowDefinitions="Auto,*">
+                <ContentControl Grid.Row="0"
+                                Content="{Binding TabStripContent, ElementName=SurfaceRoot}" />
 
-            <Border Grid.Row="1"
-                    Classes.drag-source-window="{Binding IsDragSourceWindow, ElementName=SurfaceRoot}"
-                    Classes.preview="{Binding IsPreview, ElementName=SurfaceRoot}"
-                    Classes="owned-dock-content">
-                <ContentControl Content="{Binding BodyContent, ElementName=SurfaceRoot}" />
-            </Border>
-        </Grid>
-    </Border>
+                <Border Grid.Row="1"
+                        Classes.drag-source-window="{Binding IsDragSourceWindow, ElementName=SurfaceRoot}"
+                        Classes.preview="{Binding IsPreview, ElementName=SurfaceRoot}"
+                        Classes="owned-dock-content">
+                    <ContentControl Content="{Binding BodyContent, ElementName=SurfaceRoot}" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Classes="owned-dock-window-preview-outline"
+                IsVisible="{Binding IsPreview, ElementName=SurfaceRoot}" />
+    </Grid>
 </UserControl>
