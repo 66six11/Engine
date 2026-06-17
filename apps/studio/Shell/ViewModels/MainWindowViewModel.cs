@@ -35,7 +35,9 @@ public class MainWindowViewModel : ViewModelBase
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
-        PanelMenuItems = CreatePanelMenuItems(actionRegistry.GetAll());
+        var actions = actionRegistry.GetAll();
+        CommandPalette = new CommandPaletteViewModel(actions, ExecuteWorkbenchAction);
+        PanelMenuItems = CreatePanelMenuItems(actions);
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
         {
@@ -54,6 +56,8 @@ public class MainWindowViewModel : ViewModelBase
     public IRelayCommand ResetLayoutCommand { get; }
 
     public IRelayCommand<string?> OpenPanelCommand { get; }
+
+    public CommandPaletteViewModel CommandPalette { get; }
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
 
@@ -133,6 +137,15 @@ public class MainWindowViewModel : ViewModelBase
     private void OnPanelCommandStateChanged(object? sender, EventArgs e)
     {
         RefreshPanelMenuOpenStates();
+    }
+
+    private bool ExecuteWorkbenchAction(WorkbenchActionDescriptor action)
+    {
+        return action.Kind switch
+        {
+            WorkbenchActionKind.OpenPanel => panelCommandService_.OpenOrFocusPanel(action.TargetId),
+            _ => false,
+        };
     }
 
     internal static IPanelRegistry CreatePanelRegistry()

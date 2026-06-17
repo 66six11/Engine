@@ -1,0 +1,134 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Editor.Shell.Icons"
+             xmlns:vm="using:Editor.Shell.ViewModels"
+             x:Class="Editor.Shell.Views.CommandPaletteView"
+             x:DataType="vm:CommandPaletteViewModel"
+             IsVisible="{Binding IsOpen}"
+             KeyDown="OnCommandPaletteKeyDown">
+    <UserControl.Styles>
+        <Style Selector="Grid.command-palette-root">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <Style Selector="Border.command-palette-scrim">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushOverlayScrim}" />
+        </Style>
+
+        <Style Selector="Border.command-palette-surface">
+            <Setter Property="Width" Value="520" />
+            <Setter Property="MaxWidth" Value="680" />
+            <Setter Property="MaxHeight" Value="420" />
+            <Setter Property="Margin" Value="0,72,0,0" />
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceOverlay}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderDefault}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+
+        <Style Selector="TextBox.command-palette-search">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+
+        <Style Selector="ListBox.command-palette-results">
+            <Setter Property="Margin" Value="0,8,0,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="ListBox.command-palette-results ListBoxItem">
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <Style Selector="ListBox.command-palette-results ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface03}" />
+        </Style>
+
+        <Style Selector="ListBox.command-palette-results ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+        </Style>
+
+        <Style Selector="icons|EditorIconView.command-palette-icon">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.command-palette-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="TextBlock.command-palette-detail">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="TextBlock.command-palette-empty">
+            <Setter Property="Margin" Value="0,18,0,12" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid Classes="command-palette-root">
+        <Border Classes="command-palette-scrim" />
+
+        <Border Classes="command-palette-surface">
+            <Grid RowDefinitions="Auto,*">
+                <TextBox x:Name="CommandPaletteSearchBox"
+                         Classes="command-palette-search"
+                         PlaceholderText="Search commands"
+                         Text="{Binding Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                <Grid Grid.Row="1">
+                    <ListBox Classes="command-palette-results"
+                             ItemsSource="{Binding FilteredItems}"
+                             SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                             DoubleTapped="OnResultsDoubleTapped">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CommandPaletteItemViewModel">
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="8"
+                                      Margin="8,3">
+                                    <icons:EditorIconView Grid.Column="0"
+                                                          Classes="command-palette-icon"
+                                                          IconKey="{Binding IconKey}"
+                                                          IconSize="14"
+                                                          StrokeWidth="2" />
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="1">
+                                        <TextBlock Classes="command-palette-title"
+                                                   Text="{Binding Title}" />
+                                        <TextBlock Classes="command-palette-detail"
+                                                   Text="{Binding Detail}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Classes="command-palette-empty"
+                               Text="No commands"
+                               IsVisible="{Binding HasNoMatches}" />
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
