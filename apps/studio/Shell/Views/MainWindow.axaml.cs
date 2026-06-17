@@ -5,6 +5,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views.Windowing;
+using Lucide.Avalonia;
 
 namespace Editor.Shell.Views;
 
@@ -91,9 +92,11 @@ public partial class MainWindow : Window
         };
         header.Children.Add(title);
 
-        var openIndicator = new TextBlock
+        var openIndicator = new LucideIcon
         {
-            Text = "\u2714",
+            Kind = LucideIconKind.Check,
+            Size = 12,
+            StrokeWidth = 2,
             Margin = new Thickness(24, 0, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
