@@ -46,7 +46,8 @@ public partial class MainWindow : Window
                 EditorDockFloatingWindowRegistry.CaptureSnapshots,
                 EditorDockFloatingWindowRegistry.CloseAll,
                 EditorDockFloatingWindowRegistry.TryActivatePanel,
-                EditorDockFloatingWindowRegistry.ContainsPanel);
+                EditorDockFloatingWindowRegistry.ContainsPanel,
+                EditorDockFloatingWindowRegistry.TryClosePanel);
             isDockHostFocused_ = IsActive;
             viewModel.DockWorkspace.SetHostFocusState(isDockHostFocused_);
             return;

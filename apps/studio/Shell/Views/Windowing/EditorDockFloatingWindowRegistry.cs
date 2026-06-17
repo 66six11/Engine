@@ -137,6 +137,34 @@ internal static class EditorDockFloatingWindowRegistry
         return false;
     }
 
+    public static bool TryClosePanel(string panelId)
+    {
+        if (string.IsNullOrWhiteSpace(panelId))
+        {
+            return false;
+        }
+
+        Prune();
+        foreach (var reference in Windows)
+        {
+            if (!TryGetOpenWindow(reference, out var window)
+                || window.DataContext is not EditorDockFloatingWindowViewModel viewModel
+                || !viewModel.DockWorkspace.ClosePanel(panelId))
+            {
+                continue;
+            }
+
+            if (!viewModel.DockWorkspace.HasDockContent())
+            {
+                window.Close();
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool TryGetOpenWindow(
         WeakReference<EditorDockFloatingWindow> reference,
         out EditorDockFloatingWindow window)

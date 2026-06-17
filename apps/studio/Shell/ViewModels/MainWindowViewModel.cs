@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Avalonia;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.Composition;
 
@@ -12,11 +13,10 @@ namespace Editor.Shell.ViewModels;
 public class MainWindowViewModel : ViewModelBase
 {
     private readonly IPanelRegistry panelRegistry_;
+    private readonly PanelCommandService panelCommandService_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
-    private Func<string, bool>? activateFloatingPanel_;
-    private Func<string, bool>? isFloatingPanelOpen_;
 
     public MainWindowViewModel()
         : this(CreatePanelRegistry(), EditorDockLayoutStore.TryLoad())
@@ -28,11 +28,13 @@ public class MainWindowViewModel : ViewModelBase
         EditorDockLayoutSnapshot? savedLayout)
     {
         panelRegistry_ = panelRegistry;
-        OpenPanelCommand = new RelayCommand<string?>(OpenPanel);
-        PanelMenuItems = CreatePanelMenuItems(panelRegistry_.GetAll());
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
-        DockWorkspace.DockContentChanged += OnDockWorkspaceDockContentChanged;
+        panelCommandService_ = new PanelCommandService(DockWorkspace);
+        panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
+        OpenPanelCommand = new RelayCommand<string?>(
+            panelId => panelCommandService_.OpenOrFocusPanel(panelId));
+        PanelMenuItems = CreatePanelMenuItems(panelRegistry_.GetAll());
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
         {
@@ -58,13 +60,15 @@ public class MainWindowViewModel : ViewModelBase
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
         Action closeFloatingWindows,
         Func<string, bool> activateFloatingPanel,
-        Func<string, bool> isFloatingPanelOpen)
+        Func<string, bool> isFloatingPanelOpen,
+        Func<string, bool>? closeFloatingPanel = null)
     {
         captureFloatingWindowSnapshots_ = captureFloatingWindowSnapshots;
         closeFloatingWindows_ = closeFloatingWindows;
-        activateFloatingPanel_ = activateFloatingPanel;
-        isFloatingPanelOpen_ = isFloatingPanelOpen;
-        RefreshPanelMenuOpenStates();
+        panelCommandService_.SetExternalPanelCallbacks(
+            activateFloatingPanel,
+            isFloatingPanelOpen,
+            closeFloatingPanel);
     }
 
     public IReadOnlyList<EditorDockFloatingWindowRequest> ConsumeRestoredFloatingWindowRequests()
@@ -102,30 +106,8 @@ public class MainWindowViewModel : ViewModelBase
     {
         foreach (var item in PanelMenuItems)
         {
-            item.SetOpenState(
-                DockWorkspace.ContainsPanel(item.PanelId)
-                || isFloatingPanelOpen_?.Invoke(item.PanelId) == true);
+            item.SetOpenState(panelCommandService_.IsPanelOpen(item.PanelId));
         }
-    }
-
-    private void OpenPanel(string? panelId)
-    {
-        if (string.IsNullOrWhiteSpace(panelId))
-        {
-            return;
-        }
-
-        if (DockWorkspace.ActivatePanel(panelId))
-        {
-            return;
-        }
-
-        if (activateFloatingPanel_?.Invoke(panelId) == true)
-        {
-            return;
-        }
-
-        DockWorkspace.OpenPanel(panelId);
     }
 
     private void SaveLayout()
@@ -147,7 +129,7 @@ public class MainWindowViewModel : ViewModelBase
         EditorDockLayoutStore.TryDelete();
     }
 
-    private void OnDockWorkspaceDockContentChanged(object? sender, EventArgs e)
+    private void OnPanelCommandStateChanged(object? sender, EventArgs e)
     {
         RefreshPanelMenuOpenStates();
     }
@@ -175,7 +157,9 @@ public class MainWindowViewModel : ViewModelBase
                 continue;
             }
 
-            items.Add(new PanelMenuItemViewModel(descriptor, OpenPanel));
+            items.Add(new PanelMenuItemViewModel(
+                descriptor,
+                panelId => panelCommandService_.OpenOrFocusPanel(panelId)));
         }
 
         return items;
