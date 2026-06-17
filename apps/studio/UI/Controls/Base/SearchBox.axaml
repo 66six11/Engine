@@ -54,6 +54,11 @@
             <TextBox x:Name="SearchTextBox"
                      Grid.Column="1"
                      Classes="editor-search-box-input"
+                     Background="Transparent"
+                     BorderBrush="Transparent"
+                     BorderThickness="0"
+                     FocusAdorner="{x:Null}"
+                     Padding="0"
                      PlaceholderText="{Binding PlaceholderText, ElementName=SearchBoxRoot}"
                      Text="{Binding Text, ElementName=SearchBoxRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
         </Grid>
