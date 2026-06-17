@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 
 namespace Editor.Shell.Icons;
 
@@ -13,6 +14,9 @@ public sealed class EditorIconView : ContentControl
 
     public static readonly StyledProperty<double> StrokeWidthProperty =
         AvaloniaProperty.Register<EditorIconView, double>(nameof(StrokeWidth), 2d);
+
+    public static readonly StyledProperty<IBrush?> IconBrushProperty =
+        AvaloniaProperty.Register<EditorIconView, IBrush?>(nameof(IconBrush));
 
     public string? IconKey
     {
@@ -32,12 +36,19 @@ public sealed class EditorIconView : ContentControl
         set => SetValue(StrokeWidthProperty, value);
     }
 
+    public IBrush? IconBrush
+    {
+        get => GetValue(IconBrushProperty);
+        set => SetValue(IconBrushProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
         if (change.Property == IconKeyProperty
             || change.Property == IconSizeProperty
-            || change.Property == StrokeWidthProperty)
+            || change.Property == StrokeWidthProperty
+            || change.Property == IconBrushProperty)
         {
             RefreshIcon();
         }
@@ -45,7 +56,7 @@ public sealed class EditorIconView : ContentControl
 
     private void RefreshIcon()
     {
-        var icon = EditorIconRegistry.Default.CreateIcon(IconKey, IconSize, StrokeWidth);
+        var icon = EditorIconRegistry.Default.CreateIcon(IconKey, IconSize, StrokeWidth, IconBrush);
         Content = icon;
         IsVisible = icon is not null;
     }

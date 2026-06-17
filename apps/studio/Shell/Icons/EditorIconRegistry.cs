@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Lucide.Avalonia;
 
 namespace Editor.Shell.Icons;
@@ -42,7 +43,11 @@ public sealed class EditorIconRegistry
         return false;
     }
 
-    public Control? CreateIcon(string? key, double size = DefaultIconSize, double strokeWidth = DefaultStrokeWidth)
+    public Control? CreateIcon(
+        string? key,
+        double size = DefaultIconSize,
+        double strokeWidth = DefaultStrokeWidth,
+        IBrush? iconBrush = null)
     {
         if (string.IsNullOrWhiteSpace(key)
             || !lucideIconsByKey_.TryGetValue(key, out var kind))
@@ -55,6 +60,7 @@ public sealed class EditorIconRegistry
             Kind = kind,
             Size = NormalizePositive(size, DefaultIconSize),
             StrokeWidth = NormalizePositive(strokeWidth, DefaultStrokeWidth),
+            Foreground = iconBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -63,9 +69,10 @@ public sealed class EditorIconRegistry
     public Control CreateRequiredIcon(
         string key,
         double size = DefaultIconSize,
-        double strokeWidth = DefaultStrokeWidth)
+        double strokeWidth = DefaultStrokeWidth,
+        IBrush? iconBrush = null)
     {
-        return CreateIcon(key, size, strokeWidth)
+        return CreateIcon(key, size, strokeWidth, iconBrush)
             ?? throw new InvalidOperationException($"Editor icon '{key}' is not registered.");
     }
 
