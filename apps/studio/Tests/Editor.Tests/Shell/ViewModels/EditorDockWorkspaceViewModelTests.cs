@@ -81,20 +81,95 @@ public sealed class EditorDockWorkspaceViewModelTests
         Assert.True(request.Window.DockWorkspace.HasDockContent());
     }
 
+    [Fact]
+    public void Host_focus_state_propagates_to_active_tab_strip_item()
+    {
+        var workspace = new EditorDockWorkspaceViewModel(
+            CreateRegistry("panel", DockContentCachePolicy.KeepAlive, () => new object()));
+        var tabStripItem = workspace.CenterWindow.TabStripItems[0];
+
+        Assert.True(tabStripItem.IsSelectedInFocusedWindow);
+        Assert.False(tabStripItem.IsSelectedInInactiveWindow);
+
+        workspace.SetHostFocusState(false);
+
+        Assert.False(tabStripItem.IsSelectedInFocusedWindow);
+        Assert.True(tabStripItem.IsSelectedInInactiveWindow);
+    }
+
+    [Fact]
+    public void RestoreLayoutSnapshot_creates_only_tabs_present_in_snapshot()
+    {
+        var includedCreateCount = 0;
+        var excludedCreateCount = 0;
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "included",
+            DockContentCachePolicy.RecreateOnOpen,
+            () =>
+            {
+                includedCreateCount++;
+                return new object();
+            }));
+        registry.Register(CreateDescriptor(
+            "excluded",
+            DockContentCachePolicy.RecreateOnOpen,
+            () =>
+            {
+                excludedCreateCount++;
+                return new object();
+            }));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        includedCreateCount = 0;
+        excludedCreateCount = 0;
+
+        var restored = workspace.RestoreLayoutSnapshot(new EditorDockLayoutSnapshot
+        {
+            Version = 1,
+            ActiveWindowId = "restored-window",
+            Root = new EditorDockLayoutNodeSnapshot
+            {
+                Kind = "Window",
+                Id = "restored-node",
+                WindowId = "restored-window",
+                WindowTitle = "Restored",
+                WindowArea = DockArea.Center,
+                WindowRole = "Test",
+                TabIds = ["included"],
+                ActiveTabId = "included",
+            },
+        });
+
+        Assert.True(restored);
+        Assert.Equal(1, includedCreateCount);
+        Assert.Equal(0, excludedCreateCount);
+        var activeWindow = Assert.IsType<EditorDockWindowViewModel>(workspace.ActiveWindow);
+        Assert.Single(activeWindow.Tabs);
+        Assert.Equal("included", activeWindow.Tabs[0].Id);
+    }
+
     private static PanelRegistry CreateRegistry(
         string id,
         DockContentCachePolicy cachePolicy,
         Func<object> createContent)
     {
         var registry = new PanelRegistry();
-        registry.Register(new PanelDescriptor(
+        registry.Register(CreateDescriptor(id, cachePolicy, createContent));
+        return registry;
+    }
+
+    private static PanelDescriptor CreateDescriptor(
+        string id,
+        DockContentCachePolicy cachePolicy,
+        Func<object> createContent)
+    {
+        return new PanelDescriptor(
             id,
             "Panel",
             PanelKind.Tool,
             DockArea.Center,
             "Window/Panels/Panel",
             cachePolicy,
-            createContent));
-        return registry;
+            createContent);
     }
 }

@@ -9,6 +9,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     private readonly HashSet<EditorDockTabViewModel> tabs_ = [];
     private readonly Dictionary<EditorDockTabViewModel, EditorDockTabStripItemViewModel> tabStripItemsByTab_ = [];
     private EditorDockTabViewModel? activeTab_;
+    private bool isHostFocused_ = true;
     private bool isActiveWindow_;
     private bool isDragSourceWindow_;
 
@@ -52,6 +53,12 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     {
         get => isActiveWindow_;
         private set => SetProperty(ref isActiveWindow_, value);
+    }
+
+    public bool IsHostFocused
+    {
+        get => isHostFocused_;
+        private set => SetProperty(ref isHostFocused_, value);
     }
 
     public bool IsDragSourceWindow
@@ -183,6 +190,12 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
         UpdateTabStripWindowFocusState();
     }
 
+    internal void SetHostFocusState(bool isHostFocused)
+    {
+        IsHostFocused = isHostFocused;
+        UpdateTabStripWindowFocusState();
+    }
+
     internal void SetDragSourceWindowState(bool isDragSourceWindow)
     {
         IsDragSourceWindow = isDragSourceWindow;
@@ -204,7 +217,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
             tabInsertPlaceholderItem_ = ReferenceEquals(tabInsertPlaceholderItem_?.Tab, tab)
                 ? tabInsertPlaceholderItem_
                 : new EditorDockTabStripItemViewModel(tab, isPlaceholder: true, isPreview: showsTab);
-            tabInsertPlaceholderItem_.SetWindowFocusState(IsActiveWindow);
+            tabInsertPlaceholderItem_.SetWindowFocusState(IsTabStripFocused);
             tabInsertPlaceholderItem_.SetPresentation(isPlaceholder: true, isPreview: showsTab);
         }
 
@@ -287,14 +300,14 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
         if (hasLocalPlaceholder && tabInsertPlaceholderTab_ is not null)
         {
             localPlaceholderItem = GetOrCreateTabStripItem(tabInsertPlaceholderTab_);
-            localPlaceholderItem.SetWindowFocusState(IsActiveWindow);
+            localPlaceholderItem.SetWindowFocusState(IsTabStripFocused);
             localPlaceholderItem.SetPresentation(
                 isPlaceholder: true,
                 isPreview: tabInsertPlaceholderShowsTab_);
         }
         else if (tabInsertPlaceholderItem_ is not null)
         {
-            tabInsertPlaceholderItem_.SetWindowFocusState(IsActiveWindow);
+            tabInsertPlaceholderItem_.SetWindowFocusState(IsTabStripFocused);
             tabInsertPlaceholderItem_.SetPresentation(
                 isPlaceholder: true,
                 isPreview: tabInsertPlaceholderShowsTab_);
@@ -339,7 +352,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     {
         if (tabStripItemsByTab_.TryGetValue(tab, out var item))
         {
-            item.SetWindowFocusState(IsActiveWindow);
+            item.SetWindowFocusState(IsTabStripFocused);
             return item;
         }
 
@@ -359,7 +372,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
             isPlaceholder,
             isPreview,
             isSourceGhost);
-        item.SetWindowFocusState(IsActiveWindow);
+        item.SetWindowFocusState(IsTabStripFocused);
         return item;
     }
 
@@ -450,10 +463,10 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     {
         foreach (var item in tabStripItemsByTab_.Values)
         {
-            item.SetWindowFocusState(IsActiveWindow);
+            item.SetWindowFocusState(IsTabStripFocused);
         }
 
-        tabInsertPlaceholderItem_?.SetWindowFocusState(IsActiveWindow);
+        tabInsertPlaceholderItem_?.SetWindowFocusState(IsTabStripFocused);
     }
 
     private void RefreshTabSelectionStates()
@@ -465,4 +478,6 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
         tabInsertPlaceholderItem_?.RefreshSelectionState();
     }
+
+    private bool IsTabStripFocused => IsActiveWindow && IsHostFocused;
 }

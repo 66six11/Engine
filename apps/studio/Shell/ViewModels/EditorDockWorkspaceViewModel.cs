@@ -23,6 +23,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     private EditorDockWindowViewModel? dragSourceWindow_;
     private EditorDockTabViewModel? dragSourceTab_;
     private EditorDockWindowViewModel? tabInsertPreviewWindow_;
+    private bool isHostFocused_ = true;
     private int nextDynamicWindowIndex_ = 1;
     private int nextDynamicSplitIndex_ = 1;
 
@@ -96,11 +97,11 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         windowsByArea_ = [];
         windowsById_ = [];
 
-        var tabsById = CreateRegisteredTabsById();
+        var descriptorsById = CreatePanelDescriptorsById();
         var usedTabIds = new HashSet<string>(StringComparer.Ordinal);
         rootNode_ = snapshot.Root is null
             ? null
-            : RestoreLayoutNode(snapshot.Root, tabsById, usedTabIds);
+            : RestoreLayoutNode(snapshot.Root, descriptorsById, usedTabIds);
         nextDynamicWindowIndex_ = GetNextDynamicWindowIndex(windowsById_.Values);
         nextDynamicSplitIndex_ = GetNextDynamicSplitIndex(rootNode_);
         SetActiveWindow(
@@ -140,6 +141,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     public bool IsFloatingWindow => WorkspaceKind == EditorDockWorkspaceKind.FloatingWindow;
 
     public string WorkspaceKindText => IsFloatingWindow ? "Floating Window" : "Main Window";
+
+    public bool IsHostFocused => isHostFocused_;
 
     public EditorDockWindowViewModel? ActiveWindow => activeWindow_;
 
@@ -187,9 +190,9 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         ClearTransientDockState();
         ResetWorkspaceWindows();
 
-        var tabsById = CreateRegisteredTabsById();
+        var descriptorsById = CreatePanelDescriptorsById();
         var usedTabIds = new HashSet<string>(StringComparer.Ordinal);
-        var restoredRoot = RestoreLayoutNode(snapshot.Root, tabsById, usedTabIds);
+        var restoredRoot = RestoreLayoutNode(snapshot.Root, descriptorsById, usedTabIds);
         if (restoredRoot is null)
         {
             ResetLayout();
@@ -405,6 +408,19 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         return false;
     }
 
+    internal void SetHostFocusState(bool isHostFocused)
+    {
+        if (!SetProperty(ref isHostFocused_, isHostFocused, nameof(IsHostFocused)))
+        {
+            return;
+        }
+
+        foreach (var window in windowsById_.Values)
+        {
+            window.SetHostFocusState(isHostFocused);
+        }
+    }
+
     public EditorDockFloatingWindowRequest? CompleteDrag(EditorDockDropTarget target)
     {
         var tab = DragState.DraggedTab;
@@ -592,17 +608,17 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     private EditorDockNodeViewModel? RestoreLayoutNode(
         EditorDockLayoutNodeSnapshot snapshot,
-        IReadOnlyDictionary<string, EditorDockTabViewModel> tabsById,
+        IReadOnlyDictionary<string, PanelDescriptor> descriptorsById,
         HashSet<string> usedTabIds)
     {
         if (snapshot.Kind == LayoutNodeKindSplit)
         {
             var first = snapshot.First is null
                 ? null
-                : RestoreLayoutNode(snapshot.First, tabsById, usedTabIds);
+                : RestoreLayoutNode(snapshot.First, descriptorsById, usedTabIds);
             var second = snapshot.Second is null
                 ? null
-                : RestoreLayoutNode(snapshot.Second, tabsById, usedTabIds);
+                : RestoreLayoutNode(snapshot.Second, descriptorsById, usedTabIds);
             if (first is null)
             {
                 return second;
@@ -627,7 +643,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             return null;
         }
 
-        var window = RestoreWindow(snapshot, tabsById, usedTabIds);
+        var window = RestoreWindow(snapshot, descriptorsById, usedTabIds);
         return window is null
             ? null
             : new EditorDockWindowNodeViewModel(
@@ -637,16 +653,16 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     private EditorDockWindowViewModel? RestoreWindow(
         EditorDockLayoutNodeSnapshot snapshot,
-        IReadOnlyDictionary<string, EditorDockTabViewModel> tabsById,
+        IReadOnlyDictionary<string, PanelDescriptor> descriptorsById,
         HashSet<string> usedTabIds)
     {
         var tabs = new List<EditorDockTabViewModel>();
         foreach (var tabId in snapshot.TabIds)
         {
-            if (tabsById.TryGetValue(tabId, out var tab)
+            if (descriptorsById.TryGetValue(tabId, out var descriptor)
                 && usedTabIds.Add(tabId))
             {
-                tabs.Add(tab);
+                tabs.Add(CreateTab(descriptor));
             }
         }
 
@@ -694,6 +710,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             string.IsNullOrWhiteSpace(snapshot.WindowTitle) ? firstTab.Title : snapshot.WindowTitle,
             snapshot.WindowArea,
             string.IsNullOrWhiteSpace(snapshot.WindowRole) ? "Restored panel" : snapshot.WindowRole);
+        window.SetHostFocusState(IsHostFocused);
         windowsById_.Add(window.Id, window);
         return window;
     }
@@ -711,20 +728,20 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         return new GridLength(snapshot.Value, snapshot.Unit);
     }
 
-    private Dictionary<string, EditorDockTabViewModel> CreateRegisteredTabsById()
+    private Dictionary<string, PanelDescriptor> CreatePanelDescriptorsById()
     {
-        var tabs = new Dictionary<string, EditorDockTabViewModel>(StringComparer.Ordinal);
+        var descriptors = new Dictionary<string, PanelDescriptor>(StringComparer.Ordinal);
         if (panelRegistry_ is null)
         {
-            return tabs;
+            return descriptors;
         }
 
         foreach (var descriptor in panelRegistry_.GetAll())
         {
-            tabs[descriptor.Id] = CreateTab(descriptor);
+            descriptors[descriptor.Id] = descriptor;
         }
 
-        return tabs;
+        return descriptors;
     }
 
     private void ResetWorkspaceWindows()
@@ -1256,11 +1273,13 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         DockArea area)
     {
         var index = nextDynamicWindowIndex_++;
-        return new EditorDockWindowViewModel(
+        var window = new EditorDockWindowViewModel(
             $"{DynamicWindowIdPrefix}{index}",
             tab.Title,
             area,
             "Dock window");
+        window.SetHostFocusState(IsHostFocused);
+        return window;
     }
 
     private static int GetNextDynamicWindowIndex(IEnumerable<EditorDockWindowViewModel> windows)

@@ -827,7 +827,8 @@ public partial class EditorDockWorkspaceView : UserControl
             owner,
             WorkspacePointToScreen(new Point(bounds.X, bounds.Y)),
             bounds.Width,
-            bounds.Height);
+            bounds.Height,
+            owner?.RenderScaling ?? 1d);
         var window = new EditorDockFloatingWindow
         {
             DataContext = request.Window,

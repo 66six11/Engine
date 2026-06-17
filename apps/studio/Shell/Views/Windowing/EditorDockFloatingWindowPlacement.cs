@@ -33,7 +33,8 @@ internal static class EditorDockFloatingWindowPlacement
         TopLevel? owner,
         PixelPoint desiredPosition,
         double width,
-        double height)
+        double height,
+        double renderScaling)
     {
         if (owner is null)
         {
@@ -46,8 +47,8 @@ internal static class EditorDockFloatingWindowPlacement
             return desiredPosition;
         }
 
-        var windowWidth = Math.Max(1, (int)Math.Ceiling(width));
-        var windowHeight = Math.Max(1, (int)Math.Ceiling(height));
+        var windowWidth = ToPixelLength(width, renderScaling);
+        var windowHeight = ToPixelLength(height, renderScaling);
         var desiredBounds = new PixelRect(
             desiredPosition.X,
             desiredPosition.Y,
@@ -62,12 +63,30 @@ internal static class EditorDockFloatingWindowPlacement
             return desiredPosition;
         }
 
-        var workingArea = screen.WorkingArea;
+        return ClampPosition(screen.WorkingArea, desiredPosition, width, height, renderScaling);
+    }
+
+    internal static PixelPoint ClampPosition(
+        PixelRect workingArea,
+        PixelPoint desiredPosition,
+        double width,
+        double height,
+        double renderScaling)
+    {
+        var windowWidth = ToPixelLength(width, renderScaling);
+        var windowHeight = ToPixelLength(height, renderScaling);
         var maxX = Math.Max(workingArea.X, workingArea.Right - windowWidth);
         var maxY = Math.Max(workingArea.Y, workingArea.Bottom - windowHeight);
         return new PixelPoint(
             Math.Clamp(desiredPosition.X, workingArea.X, maxX),
             Math.Clamp(desiredPosition.Y, workingArea.Y, maxY));
+    }
+
+    private static int ToPixelLength(double value, double renderScaling)
+    {
+        var logicalValue = IsFinite(value) && value > 0 ? value : 1d;
+        var scaling = IsFinite(renderScaling) && renderScaling > 0 ? renderScaling : 1d;
+        return Math.Max(1, (int)Math.Ceiling(logicalValue * scaling));
     }
 
     private static bool IsFinite(double value)

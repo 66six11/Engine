@@ -23,6 +23,29 @@ public sealed class EditorDockWindowViewModelTests
         Assert.True(second.IsActive);
     }
 
+    [Fact]
+    public void Host_focus_controls_active_tab_focus_indicator()
+    {
+        var window = new EditorDockWindowViewModel("window", "Window", DockArea.Center, "Test");
+        var tab = CreateTab("tab");
+        window.Add(tab);
+        window.SetActiveWindowState(true);
+        var tabStripItem = window.TabStripItems[0];
+
+        Assert.True(tabStripItem.IsSelectedInFocusedWindow);
+        Assert.False(tabStripItem.IsSelectedInInactiveWindow);
+
+        window.SetHostFocusState(false);
+
+        Assert.False(tabStripItem.IsSelectedInFocusedWindow);
+        Assert.True(tabStripItem.IsSelectedInInactiveWindow);
+
+        window.SetHostFocusState(true);
+
+        Assert.True(tabStripItem.IsSelectedInFocusedWindow);
+        Assert.False(tabStripItem.IsSelectedInInactiveWindow);
+    }
+
     private static EditorDockTabViewModel CreateTab(string id)
     {
         return new EditorDockTabViewModel(
