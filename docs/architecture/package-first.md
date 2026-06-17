@@ -33,6 +33,7 @@ AshariaEngine/
     asset-pipeline/
     material-core/
     shader-authoring/
+    shader-material-adapter/
     material-instance/
     scene-core/
     cpp-binding/
@@ -47,6 +48,7 @@ AshariaEngine/
   profiles/
   scripts/
   tools/
+    asset-processor/
 ```
 
 近期规划中的目录仍包括：
@@ -74,6 +76,9 @@ AshariaEngine/
 
 `engine/core` 不应该依赖 Vulkan、GLFW、Slang、editor UI 或 asset importer。
 
+`engine/platform` 当前是预留 platform abstraction boundary target，只传递 `core` 依赖，不导出公共
+header；实际 GLFW window、input polling 和 Vulkan surface glue 仍归 `window-glfw`。
+
 package 用来承载可选能力：
 
 - `window-glfw` 提供 GLFW host 和 Vulkan surface 创建。
@@ -97,21 +102,26 @@ package 用来承载可选能力：
   target，依赖 `archive` facade，不把 JSON/persistence 依赖强加给 identity/handle API。
 - `asset-pipeline` 第一阶段提供 CPU-only metadata discovery / product execution baseline：读取显式
   source/.ameta 条目，产出 deterministic manifest / catalog 输入、product blob 和诊断；它可以私有复用
-  texture importer 或 `material-instance` 等 importer-specific package，但不把这些语义推入 `asset-core`，
-  也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
+  texture importer、`material-instance` 或 `shader-authoring` 等 importer-specific package，但不把这些语义
+  推入 `asset-core`，也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
   当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
 - `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
   generated Slang skeleton 和 line mapping；它只依赖 `core`，不调用 Slang compiler，不生成 SPIR-V，
-  不进入 renderer、RHI、asset-pipeline 或 editor。
+  不依赖 renderer、RHI、asset-pipeline 或 editor。`asset-pipeline` 可以作为 importer/cook glue 私有复用它。
+- `shader-material-adapter` 提供 Slang reflection JSON 到 material resource signature 的 CPU-only adapter；
+  主 target 依赖 `core`、`material-core` 和 `shader-slang`，generated reflection smoke 可额外使用
+  `shader-authoring` 和 `asharia-slang-reflect`，但不进入 renderer、RHI、asset-pipeline 或 editor。
 - `material-instance` 提供 CPU-only `.amat` document IO、property override model 和 material type
   reference validation；它可依赖 `archive`、`asset-core` 和 `shader-authoring`，但不依赖 asset-pipeline、
   renderer、RHI 或 editor。
+- `tools/asset-processor` 是 root-built offline CLI，组合 `asset_core_io`、`asset_pipeline` 和
+  `project_core_io` 做 dry-run / product execution smoke；它不是 renderer、RHI 或 editor host。
 - `editor-core` 未来提供 editor service、selection、inspector、package browser。
 
 ## Package Manifest
 
-每个已落地的 engine、package 和 app 入口都维护一个 manifest，命名为 `asharia.package.json`：
+每个已落地的 engine、package、app 和 root-built tool 入口都维护一个 manifest，命名为 `asharia.package.json`：
 
 ```json
 {

@@ -5,6 +5,7 @@
   "description": "Basic renderer graph descriptions plus a Vulkan recording backend target.",
   "dependencies": [
     "com.asharia.core",
+    "com.asharia.material-core",
     "com.asharia.rendergraph",
     "com.asharia.rhi-vulkan",
     "com.asharia.shader-slang"
@@ -18,6 +19,7 @@
     "asharia-renderer-basic": ["asharia-core", "asharia-rendergraph", "asharia-shader-slang"],
     "asharia-renderer-basic-vulkan": [
       "asharia-renderer-basic",
+      "asharia-material-core",
       "asharia-rhi-vulkan",
       "asharia-rhi-vulkan-rendergraph"
     ],
@@ -28,6 +30,10 @@
       "asharia-renderer-basic-descriptor-frag",
       "asharia-renderer-basic-mesh3d-vert",
       "asharia-renderer-basic-mesh3d-frag",
+      "asharia-renderer-basic-debug-line-vert",
+      "asharia-renderer-basic-debug-line-frag",
+      "asharia-renderer-basic-world-grid-vert",
+      "asharia-renderer-basic-world-grid-frag",
       "asharia-renderer-basic-compute-comp"
     ]
   }

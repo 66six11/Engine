@@ -6,6 +6,9 @@ namespace asharia::asset_pipeline_header_tests {
         [[maybe_unused]] asharia::asset::AssetProductBlobReadRequest request{};
         [[maybe_unused]] asharia::asset::AssetProductBlobPayload payload{};
         [[maybe_unused]] asharia::asset::AssetTextureProductPayload texturePayload{};
+        [[maybe_unused]] asharia::asset::AssetMaterialInstanceProductPayload materialPayload{};
+        [[maybe_unused]] asharia::asset::AssetShaderAuthoringProductPayload shaderPayload{};
+        [[maybe_unused]] asharia::asset::AssetShaderAuthoringProductEntry shaderEntry{};
         [[maybe_unused]] const asharia::asset::AssetProductBlobDiagnosticCode diagnostic =
             asharia::asset::AssetProductBlobDiagnosticCode::MissingProduct;
     }

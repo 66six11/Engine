@@ -1,6 +1,6 @@
 # Material Runtime Products V2
 
-更新日期：2026-06-12
+更新日期：2026-06-14
 
 状态：计划中的 V2 runtime product 合同。V1 `.amat`、product manifest 和 binding layout 文档已弃用，不再新增
 `amat-v1.md`、`material-product-v1.md` 或 `binding-layout-v1.md`。
@@ -131,6 +131,14 @@ signature.json
 product.json
 diagnostics.json
 ```
+
+当前 #158 的最小 `.ashader` product blob 已生成 `shader-authoring-product.v1` generated Slang
+payload，并记录 source/importer/product key/hash、shader stable type id、property/pass summary facts、
+generated binding facts 和 entry manifest facts。它不调用 `slangc`，不生成 SPIR-V、reflection JSON、
+signature JSON 或 final shader product manifest，也不做 `.ashader` / `.slang` cross-asset dependency
+invalidation。#163 是后续 compile/reflection product 层，目标是从该 generated Slang payload 和 entry
+manifest facts 产出 deterministic SPIR-V/reflection facts，但仍不生成 material signature product 或 renderer
+binding packet。
 
 `.amat` import 输出：
 

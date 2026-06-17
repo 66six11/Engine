@@ -10,11 +10,12 @@
     "com.asharia.core",
     "com.asharia.project-core",
     "com.asharia.renderer-basic",
+    "com.asharia.scene-core",
     "com.asharia.shader-slang",
     "com.asharia.window-glfw",
     "com.asharia.rhi-vulkan"
   ],
-  "targets": ["asharia-editor"],
+  "targets": ["asharia-editor", "asharia-editor-imgui-shaders"],
   "targetDependencies": {
     "asharia-editor": [
       "asharia-archive",
@@ -24,9 +25,13 @@
       "asharia-core",
       "asharia-project-core-io",
       "asharia-renderer-basic-vulkan",
+      "asharia-renderer-basic-shaders",
       "asharia-rhi-vulkan",
+      "asharia-scene-core",
       "asharia-shader-slang",
-      "asharia-window-glfw"
-    ]
+      "asharia-window-glfw",
+      "asharia-editor-imgui-shaders"
+    ],
+    "asharia-editor-imgui-shaders": ["asharia-editor-imgui-frag"]
   }
 }

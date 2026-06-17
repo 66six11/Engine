@@ -3,7 +3,12 @@
   "version": "0.1.0",
   "displayName": "Asharia Engine Asset Pipeline",
   "description": "CPU-only asset metadata discovery, planning, and deterministic product execution baseline.",
-  "dependencies": ["com.asharia.archive", "com.asharia.asset-core", "com.asharia.material-instance"],
+  "dependencies": [
+    "com.asharia.archive",
+    "com.asharia.asset-core",
+    "com.asharia.material-instance",
+    "com.asharia.shader-authoring"
+  ],
   "targets": ["asharia-asset-pipeline"],
   "testTargets": [
     "asharia-asset-pipeline-smoke-tests",
@@ -14,7 +19,8 @@
       "asharia-archive",
       "asharia-asset-core",
       "asharia-asset-core-io",
-      "asharia-material-instance"
+      "asharia-material-instance",
+      "asharia-shader-authoring"
     ],
     "asharia-asset-pipeline-smoke-tests": [
       "asharia-asset-pipeline",

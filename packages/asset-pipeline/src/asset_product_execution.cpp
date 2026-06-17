@@ -17,6 +17,8 @@
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/error.hpp"
 #include "asharia/material_instance/amat_io.hpp"
+#include "asharia/shader_authoring/ashader_generated_slang.hpp"
+#include "asharia/shader_authoring/ashader_parser.hpp"
 
 namespace asharia::asset {
     namespace {
@@ -26,6 +28,9 @@ namespace asharia::asset {
         constexpr std::string_view kMaterialInstanceImporterName =
             "com.asharia.importer.material-instance";
         constexpr std::uint32_t kMaterialInstanceImporterVersion = 1;
+        constexpr std::string_view kShaderAuthoringImporterName =
+            "com.asharia.importer.shader-authoring";
+        constexpr std::uint32_t kShaderAuthoringImporterVersion = 1;
 
         struct PreparedProduct {
             const AssetImportRequest* request{};
@@ -57,6 +62,24 @@ namespace asharia::asset {
                 text[index] = kHexDigits[(value >> shift) & 0xFU];
             }
             return text;
+        }
+
+        [[nodiscard]] Error shaderAuthoringImportError(std::string message) {
+            return Error{
+                ErrorDomain::Asset,
+                static_cast<int>(AssetProductExecutionDiagnosticCode::ShaderAuthoringImportFailed),
+                std::move(message)};
+        }
+
+        [[nodiscard]] std::string
+        ashaderDiagnosticSummary(std::span<const shader_authoring::AshaderDiagnostic> diagnostics) {
+            if (diagnostics.empty()) {
+                return "unknown .ashader diagnostic";
+            }
+
+            const shader_authoring::AshaderDiagnostic& diagnostic = diagnostics.front();
+            return std::string{shader_authoring::toString(diagnostic.code)} + ": " +
+                   diagnostic.message;
         }
 
         [[nodiscard]] std::string pathText(const std::filesystem::path& path) {
@@ -280,6 +303,13 @@ namespace asharia::asset {
                    sourceExtension(request.source.sourcePath) == ".amat";
         }
 
+        [[nodiscard]] bool isShaderAuthoringProductRequest(const AssetImportRequest& request) {
+            return request.source.importerName == kShaderAuthoringImporterName &&
+                   request.source.importerVersion ==
+                       ImporterVersion{kShaderAuthoringImporterVersion} &&
+                   sourceExtension(request.source.sourcePath) == ".ashader";
+        }
+
         [[nodiscard]] Result<std::vector<std::uint8_t>>
         makeMaterialInstanceProductBytes(const AssetImportRequest& request,
                                          std::span<const std::uint8_t> sourceBytes) {
@@ -338,6 +368,124 @@ namespace asharia::asset {
             bytes.insert(bytes.end(), canonicalBytes.begin(), canonicalBytes.end());
             appendLine(bytes, "");
             appendLine(bytes, "amat.end");
+            return bytes;
+        }
+
+        [[nodiscard]] Result<std::vector<std::uint8_t>>
+        makeShaderAuthoringProductBytes(const AssetImportRequest& request,
+                                        std::span<const std::uint8_t> sourceBytes) {
+            std::string sourceText;
+            sourceText.reserve(sourceBytes.size());
+            for (const std::uint8_t byte : sourceBytes) {
+                sourceText.push_back(static_cast<char>(byte));
+            }
+
+            shader_authoring::AshaderParseResult parsed = shader_authoring::parseAshaderDocument(
+                sourceText,
+                shader_authoring::AshaderParseOptions{.sourceName = request.source.sourcePath});
+            if (!parsed.document || shader_authoring::hasErrors(parsed.diagnostics)) {
+                return std::unexpected{
+                    shaderAuthoringImportError("Failed to parse .ashader source: " +
+                                               ashaderDiagnosticSummary(parsed.diagnostics))};
+            }
+
+            shader_authoring::GeneratedSlangResult generated =
+                shader_authoring::buildGeneratedSlang(
+                    *parsed.document,
+                    shader_authoring::GeneratedSlangOptions{
+                        .sourceName = request.source.sourcePath,
+                        .generatedName = request.relativeProductPath + ".generated.slang",
+                    });
+            if (shader_authoring::hasErrors(generated.diagnostics)) {
+                return std::unexpected{
+                    shaderAuthoringImportError("Failed to generate Slang from .ashader source: " +
+                                               ashaderDiagnosticSummary(generated.diagnostics))};
+            }
+
+            std::vector<std::uint8_t> generatedBytes;
+            generatedBytes.reserve(generated.source.size());
+            for (const char value : generated.source) {
+                generatedBytes.push_back(
+                    static_cast<std::uint8_t>(static_cast<unsigned char>(value)));
+            }
+
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(1536 + generatedBytes.size());
+            appendLine(bytes, "schema=com.asharia.asset.shader-authoring-product.v1");
+            appendLine(bytes, "guid=" + formatAssetGuid(request.source.guid));
+            appendLine(bytes, "sourcePath=" + request.source.sourcePath);
+            appendLine(bytes, "assetType=" + request.source.assetTypeName);
+            appendLine(bytes, "importer=" + request.source.importerName);
+            appendLine(bytes,
+                       "importerVersion=" + std::to_string(request.source.importerVersion.value));
+            appendLine(bytes, "shader.stableTypeId=" + parsed.document->shaderTypeId);
+            appendLine(bytes,
+                       "ashader.schemaVersion=" + std::to_string(parsed.document->schemaVersion));
+            appendLine(bytes, "sourceHash=" + formatHash64(request.source.sourceHash));
+            appendLine(bytes, "settingsHash=" + formatHash64(request.source.settingsHash));
+            appendLine(bytes, "dependencyHash=" + formatHash64(request.productKey.dependencyHash));
+            appendLine(bytes,
+                       "targetProfileHash=" + formatHash64(request.productKey.targetProfileHash));
+            appendLine(bytes,
+                       "productKeyHash=" + formatHash64(hashAssetProductKey(request.productKey)));
+            appendLine(bytes, "settings.count=" + std::to_string(request.settings.size()));
+            for (const AssetImportSetting& setting : request.settings) {
+                appendLine(bytes, "setting." + setting.key + "=" + setting.value);
+            }
+
+            appendLine(bytes,
+                       "property.count=" + std::to_string(parsed.document->properties.size()));
+            for (std::size_t index = 0; index < parsed.document->properties.size(); ++index) {
+                const shader_authoring::AshaderPropertyDecl& property =
+                    parsed.document->properties[index];
+                const std::string prefix = "property." + std::to_string(index) + ".";
+                appendLine(bytes, prefix + "name=" + property.name);
+                appendLine(bytes, prefix + "type=" + std::string{toString(property.type)});
+                appendLine(bytes, prefix + "default=" + property.defaultValue.text);
+            }
+
+            appendLine(bytes, "pass.count=" + std::to_string(parsed.document->passes.size()));
+            for (std::size_t index = 0; index < parsed.document->passes.size(); ++index) {
+                const shader_authoring::AshaderPassDecl& pass = parsed.document->passes[index];
+                const std::string prefix = "pass." + std::to_string(index) + ".";
+                appendLine(bytes, prefix + "name=" + pass.name);
+                appendLine(bytes, prefix + "tag=" + pass.tag.value_or(""));
+                appendLine(bytes, prefix + "vertex=" + pass.vertexEntry.value_or(""));
+                appendLine(bytes, prefix + "fragment=" + pass.fragmentEntry.value_or(""));
+                appendLine(bytes, prefix + "compute=" + pass.computeEntry.value_or(""));
+            }
+
+            appendLine(bytes, "binding.count=" + std::to_string(generated.bindings.size()));
+            for (std::size_t index = 0; index < generated.bindings.size(); ++index) {
+                const shader_authoring::GeneratedSlangBinding& binding = generated.bindings[index];
+                const std::string prefix = "binding." + std::to_string(index) + ".";
+                appendLine(bytes, prefix + "name=" + binding.name);
+                appendLine(bytes, prefix + "type=" + std::string{toString(binding.type)});
+                appendLine(bytes, prefix + "set=" + std::to_string(binding.set));
+                appendLine(bytes, prefix + "binding=" + std::to_string(binding.binding));
+                appendLine(bytes,
+                           prefix + "inMaterialParameterBlock=" +
+                               std::string{binding.inMaterialParameterBlock ? "true" : "false"});
+            }
+
+            appendLine(bytes, "entry.count=" + std::to_string(generated.entryPoints.size()));
+            for (std::size_t index = 0; index < generated.entryPoints.size(); ++index) {
+                const shader_authoring::GeneratedSlangEntryPoint& entry =
+                    generated.entryPoints[index];
+                const std::string prefix = "entry." + std::to_string(index) + ".";
+                appendLine(bytes, prefix + "passName=" + entry.passName);
+                appendLine(bytes, prefix + "stage=" + std::string{toString(entry.stage)});
+                appendLine(bytes, prefix + "sourceEntry=" + entry.sourceEntryName);
+                appendLine(bytes, prefix + "compileEntry=" + entry.compileEntryName);
+                appendLine(bytes, prefix + "generatedWrapper=" + entry.generatedWrapperName);
+            }
+
+            appendLine(bytes, "generatedSlang.size=" + std::to_string(generatedBytes.size()));
+            appendLine(bytes, "generatedSlangHash=" + formatHash64(hashBytes(generatedBytes)));
+            appendLine(bytes, "generatedSlang.begin");
+            bytes.insert(bytes.end(), generatedBytes.begin(), generatedBytes.end());
+            appendLine(bytes, "");
+            appendLine(bytes, "generatedSlang.end");
             return bytes;
         }
 
@@ -423,6 +571,20 @@ namespace asharia::asset {
                 }
 
                 productBytes = std::move(*materialProductBytes);
+            } else if (isShaderAuthoringProductRequest(importRequest)) {
+                auto shaderProductBytes =
+                    makeShaderAuthoringProductBytes(importRequest, sourceBytes->bytes);
+                if (!shaderProductBytes) {
+                    addRequestDiagnostic(
+                        result, AssetProductExecutionDiagnosticCode::ShaderAuthoringImportFailed,
+                        importRequest,
+                        "Asset product execution shader authoring import failed for " +
+                            productLabel(importRequest) + ": " +
+                            shaderProductBytes.error().message);
+                    return std::nullopt;
+                }
+
+                productBytes = std::move(*shaderProductBytes);
             } else {
                 productBytes = makePlaceholderProductBytes(importRequest, sourceBytes->bytes);
             }

@@ -1,6 +1,6 @@
 # Shader / Material Authoring V2 MVP Plan
 
-更新日期：2026-06-13
+更新日期：2026-06-14
 
 状态：V2 近期执行计划。旧 V1 milestone、`*-v1.md` spec 拆分和 graph-first 主路径已弃用。
 
@@ -244,10 +244,14 @@ sampler
 
 目标：`.ashader` 和 `.amat` 纳入 asset pipeline。
 
-Status: In progress via #156. The first slice only cooks `.amat` material instance source bytes
-into deterministic `material-instance-product.v1` blobs through `asset-pipeline`, reusing
-`material-instance` strict IO privately and stopping before `.ashader` cook, cross-asset dependency
-invalidation, renderer/RHI, editor UI, or final binding packets.
+Status: In progress via #163. #156 completed the first slice by cooking `.amat` material instance
+source bytes into deterministic `material-instance-product.v1` blobs through `asset-pipeline`.
+#158 completed the next slice by cooking `.ashader` source bytes into deterministic
+`shader-authoring-product.v1` generated Slang blobs, reusing `shader-authoring` parser/builder
+privately and stopping before `slangc`, SPIR-V, reflection/signature products, cross-asset
+dependency invalidation, renderer/RHI, editor UI, or final binding packets. #163 continues the same
+milestone by turning those generated Slang payloads and entry manifest facts into deterministic
+compile/reflection product facts.
 
 交付物：
 

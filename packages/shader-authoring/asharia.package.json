@@ -5,7 +5,9 @@
   "description": "CPU-only .ashader document parsing, source spans, and authoring diagnostics.",
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-shader-authoring"],
+  "testTargets": ["asharia-shader-authoring-smoke-tests"],
   "targetDependencies": {
-    "asharia-shader-authoring": ["asharia-core"]
+    "asharia-shader-authoring": ["asharia-core"],
+    "asharia-shader-authoring-smoke-tests": ["asharia-shader-authoring"]
   }
 }
