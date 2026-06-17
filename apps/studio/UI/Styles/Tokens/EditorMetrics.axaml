@@ -14,7 +14,7 @@
     <sys:Double x:Key="EditorFontSizeTitle">12</sys:Double>
 
     <!-- Dock tabs -->
-    <sys:Double x:Key="EditorDockTabHeight">20</sys:Double>
+    <sys:Double x:Key="EditorDockTabHeight">22</sys:Double>
     <sys:Double x:Key="EditorDockTabMinWidth">96</sys:Double>
     <sys:Double x:Key="EditorDockTabMaxWidth">180</sys:Double>
     <sys:Double x:Key="EditorDockTabCloseButtonSize">18</sys:Double>

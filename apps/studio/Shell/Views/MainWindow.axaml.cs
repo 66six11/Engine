@@ -3,9 +3,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
+using Editor.Shell.Icons;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views.Windowing;
-using Lucide.Avalonia;
 
 namespace Editor.Shell.Views;
 
@@ -70,6 +70,7 @@ public partial class MainWindow : Window
                 DataContext = panelItem,
                 Header = CreatePanelMenuHeader(panelItem),
                 Command = panelItem.OpenCommand,
+                Icon = EditorIconRegistry.Default.CreateIcon(panelItem.IconKey),
             };
             menuItem.Classes.Add("editor-menu-item");
             PanelsMenu.Items.Add(menuItem);
@@ -92,15 +93,13 @@ public partial class MainWindow : Window
         };
         header.Children.Add(title);
 
-        var openIndicator = new LucideIcon
-        {
-            Kind = LucideIconKind.Check,
-            Size = 12,
-            StrokeWidth = 2,
-            Margin = new Thickness(24, 0, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        var openIndicator = EditorIconRegistry.Default.CreateRequiredIcon(
+            EditorIconKey.UiCheck,
+            size: 12,
+            strokeWidth: 2);
+        openIndicator.Margin = new Thickness(24, 0, 0, 0);
+        openIndicator.HorizontalAlignment = HorizontalAlignment.Right;
+        openIndicator.VerticalAlignment = VerticalAlignment.Center;
         openIndicator.Bind(
             Visual.IsVisibleProperty,
             new Binding(nameof(PanelMenuItemViewModel.IsOpen)));

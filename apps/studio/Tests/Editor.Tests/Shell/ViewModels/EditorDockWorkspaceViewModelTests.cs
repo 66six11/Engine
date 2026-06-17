@@ -12,15 +12,11 @@ public sealed class EditorDockWorkspaceViewModelTests
     [Fact]
     public void OpenPanel_reuses_keep_alive_content_after_close()
     {
-        var createCount = 0;
+        var contentFactory = new CountingContentFactory();
         var registry = CreateRegistry(
             "panel",
             DockContentCachePolicy.KeepAlive,
-            () =>
-            {
-                createCount++;
-                return new object();
-            });
+            contentFactory.Create);
         var workspace = new EditorDockWorkspaceViewModel(registry);
         var firstTab = workspace.CenterWindow.Tabs[0];
         var firstContent = firstTab.Content;
@@ -30,21 +26,17 @@ public sealed class EditorDockWorkspaceViewModelTests
 
         var reopenedTab = workspace.CenterWindow.Tabs[0];
         Assert.Same(firstContent, reopenedTab.Content);
-        Assert.Equal(1, createCount);
+        Assert.Equal(1, contentFactory.CreateCount);
     }
 
     [Fact]
     public void OpenPanel_recreates_recreate_on_open_content_after_close()
     {
-        var createCount = 0;
+        var contentFactory = new CountingContentFactory();
         var registry = CreateRegistry(
             "panel",
             DockContentCachePolicy.RecreateOnOpen,
-            () =>
-            {
-                createCount++;
-                return new object();
-            });
+            contentFactory.Create);
         var workspace = new EditorDockWorkspaceViewModel(registry);
         var firstTab = workspace.CenterWindow.Tabs[0];
         var firstContent = firstTab.Content;
@@ -54,7 +46,7 @@ public sealed class EditorDockWorkspaceViewModelTests
 
         var reopenedTab = workspace.CenterWindow.Tabs[0];
         Assert.NotSame(firstContent, reopenedTab.Content);
-        Assert.Equal(2, createCount);
+        Assert.Equal(2, contentFactory.CreateCount);
     }
 
     [Fact]
@@ -100,28 +92,20 @@ public sealed class EditorDockWorkspaceViewModelTests
     [Fact]
     public void RestoreLayoutSnapshot_creates_only_tabs_present_in_snapshot()
     {
-        var includedCreateCount = 0;
-        var excludedCreateCount = 0;
+        var includedContentFactory = new CountingContentFactory();
+        var excludedContentFactory = new CountingContentFactory();
         var registry = new PanelRegistry();
         registry.Register(CreateDescriptor(
             "included",
             DockContentCachePolicy.RecreateOnOpen,
-            () =>
-            {
-                includedCreateCount++;
-                return new object();
-            }));
+            includedContentFactory.Create));
         registry.Register(CreateDescriptor(
             "excluded",
             DockContentCachePolicy.RecreateOnOpen,
-            () =>
-            {
-                excludedCreateCount++;
-                return new object();
-            }));
+            excludedContentFactory.Create));
         var workspace = new EditorDockWorkspaceViewModel(registry);
-        includedCreateCount = 0;
-        excludedCreateCount = 0;
+        includedContentFactory.Reset();
+        excludedContentFactory.Reset();
 
         var restored = workspace.RestoreLayoutSnapshot(new EditorDockLayoutSnapshot
         {
@@ -141,8 +125,8 @@ public sealed class EditorDockWorkspaceViewModelTests
         });
 
         Assert.True(restored);
-        Assert.Equal(1, includedCreateCount);
-        Assert.Equal(0, excludedCreateCount);
+        Assert.Equal(1, includedContentFactory.CreateCount);
+        Assert.Equal(0, excludedContentFactory.CreateCount);
         var activeWindow = Assert.IsType<EditorDockWindowViewModel>(workspace.ActiveWindow);
         Assert.Single(activeWindow.Tabs);
         Assert.Equal("included", activeWindow.Tabs[0].Id);
@@ -171,5 +155,21 @@ public sealed class EditorDockWorkspaceViewModelTests
             "Window/Panels/Panel",
             cachePolicy,
             createContent);
+    }
+
+    private sealed class CountingContentFactory
+    {
+        public int CreateCount { get; private set; }
+
+        public object Create()
+        {
+            CreateCount++;
+            return new object();
+        }
+
+        public void Reset()
+        {
+            CreateCount = 0;
+        }
     }
 }

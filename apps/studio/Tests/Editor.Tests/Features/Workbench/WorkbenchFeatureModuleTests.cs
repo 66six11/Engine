@@ -7,6 +7,7 @@ using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
 using Editor.Shell.Docking;
+using Editor.Shell.Icons;
 using Xunit;
 
 namespace Editor.Tests.Features.Workbench;
@@ -21,74 +22,97 @@ public sealed class WorkbenchFeatureModuleTests
         new WorkbenchFeatureModule().RegisterPanels(registry);
 
         var descriptors = registry.GetAll().ToArray();
-        Assert.Collection(
-            descriptors,
-            descriptor => AssertDescriptor<SceneViewPanelViewModel>(
-                descriptor,
-                "scene-view",
-                "Scene View",
-                PanelKind.Document,
-                DockArea.Center,
-                "DOC",
-                "custom viewport shell",
-                "live"),
-            descriptor => AssertDescriptor<HierarchyPanelViewModel>(
-                descriptor,
-                "hierarchy",
-                "Hierarchy",
-                PanelKind.Tool,
-                DockArea.Left,
-                "LEFT",
-                "selection source",
-                "tool"),
-            descriptor => AssertDescriptor<InspectorPanelViewModel>(
-                descriptor,
-                "inspector",
-                "Inspector",
-                PanelKind.Tool,
-                DockArea.Right,
-                "RIGHT",
-                "context target",
-                "tool"),
-            descriptor => AssertDescriptor<ConsolePanelViewModel>(
-                descriptor,
-                "console",
-                "Console",
-                PanelKind.Tool,
-                DockArea.Bottom,
-                "BOTTOM",
-                "runtime log stream",
-                "idle"),
-            descriptor => AssertDescriptor<ProblemsPanelViewModel>(
-                descriptor,
-                "problems",
-                "Problems",
-                PanelKind.Tool,
-                DockArea.Bottom,
-                "BOTTOM",
-                "validation queue",
-                "0"));
+        Assert.Equal(
+            [
+                new PanelDescriptorSnapshot(
+                    "scene-view",
+                    "Scene View",
+                    PanelKind.Document,
+                    DockArea.Center,
+                    "Window/Panels/Scene View",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelSceneView,
+                    "DOC",
+                    "custom viewport shell",
+                    "live"),
+                new PanelDescriptorSnapshot(
+                    "hierarchy",
+                    "Hierarchy",
+                    PanelKind.Tool,
+                    DockArea.Left,
+                    "Window/Panels/Hierarchy",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelHierarchy,
+                    "LEFT",
+                    "selection source",
+                    "tool"),
+                new PanelDescriptorSnapshot(
+                    "inspector",
+                    "Inspector",
+                    PanelKind.Tool,
+                    DockArea.Right,
+                    "Window/Panels/Inspector",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelInspector,
+                    "RIGHT",
+                    "context target",
+                    "tool"),
+                new PanelDescriptorSnapshot(
+                    "console",
+                    "Console",
+                    PanelKind.Tool,
+                    DockArea.Bottom,
+                    "Window/Panels/Console",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelConsole,
+                    "BOTTOM",
+                    "runtime log stream",
+                    "idle"),
+                new PanelDescriptorSnapshot(
+                    "problems",
+                    "Problems",
+                    PanelKind.Tool,
+                    DockArea.Bottom,
+                    "Window/Panels/Problems",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelProblems,
+                    "BOTTOM",
+                    "validation queue",
+                    "0"),
+            ],
+            descriptors.Select(CreateSnapshot).ToArray());
+
+        Assert.IsType<SceneViewPanelViewModel>(descriptors[0].CreateContent());
+        Assert.IsType<HierarchyPanelViewModel>(descriptors[1].CreateContent());
+        Assert.IsType<InspectorPanelViewModel>(descriptors[2].CreateContent());
+        Assert.IsType<ConsolePanelViewModel>(descriptors[3].CreateContent());
+        Assert.IsType<ProblemsPanelViewModel>(descriptors[4].CreateContent());
     }
 
-    private static void AssertDescriptor<TContent>(
-        PanelDescriptor descriptor,
-        string id,
-        string title,
-        PanelKind kind,
-        DockArea area,
-        string tag,
-        string titleDetail,
-        string statusText)
+    private static PanelDescriptorSnapshot CreateSnapshot(PanelDescriptor descriptor)
     {
-        Assert.Equal(id, descriptor.Id);
-        Assert.Equal(title, descriptor.Title);
-        Assert.Equal(kind, descriptor.Kind);
-        Assert.Equal(area, descriptor.DefaultArea);
-        Assert.Equal($"Window/Panels/{title}", descriptor.MenuPath);
-        Assert.Equal(DockContentCachePolicy.KeepAlive, descriptor.CachePolicy);
-        Assert.Equal(tag, descriptor.Tag);
-        Assert.Equal(titleDetail, descriptor.TitleDetail);
-        Assert.Equal(statusText, descriptor.StatusText);
-        Assert.IsType<TContent>(descriptor.CreateContent());
+        return new PanelDescriptorSnapshot(
+            descriptor.Id,
+            descriptor.Title,
+            descriptor.Kind,
+            descriptor.DefaultArea,
+            descriptor.MenuPath,
+            descriptor.CachePolicy,
+            descriptor.IconKey,
+            descriptor.Tag,
+            descriptor.TitleDetail,
+            descriptor.StatusText);
     }
+
+    private sealed record PanelDescriptorSnapshot(
+        string Id,
+        string Title,
+        PanelKind Kind,
+        DockArea Area,
+        string MenuPath,
+        DockContentCachePolicy CachePolicy,
+        string? IconKey,
+        string? Tag,
+        string? TitleDetail,
+        string? StatusText);
 }

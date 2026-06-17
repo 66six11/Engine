@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Editor.Shell.Icons"
              xmlns:vm="using:Editor.Shell.ViewModels"
              x:Class="Editor.Shell.Views.EditorDockTabItemView"
              x:DataType="vm:EditorDockTabStripItemViewModel"
@@ -59,7 +60,7 @@
         </Style>
 
         <Style Selector="Border.owned-dock-tab-top-indicator">
-            <Setter Property="Height" Value="3" />
+            <Setter Property="Height" Value="2" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="VerticalAlignment" Value="Top" />
             <Setter Property="Background" Value="Transparent" />
@@ -136,7 +137,7 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <Style Selector="Button.owned-dock-tab-close LucideIcon">
+        <Style Selector="Button.owned-dock-tab-close icons|EditorIconView">
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -173,9 +174,11 @@
             <Grid ColumnDefinitions="Auto,*,Auto"
                   Classes="owned-dock-tab-content"
                   ColumnSpacing="6">
-                <ContentControl Grid.Column="0"
-                                Classes="owned-dock-tab-icon-slot"
-                                IsVisible="{Binding Tab.HasIcon}" />
+                <icons:EditorIconView Grid.Column="0"
+                                      Classes="owned-dock-tab-icon-slot"
+                                      IconKey="{Binding Tab.IconKey}"
+                                      IconSize="{DynamicResource EditorDockTabIconSize}"
+                                      StrokeWidth="2" />
 
                 <TextBlock Grid.Column="1"
                            Classes="owned-dock-tab-title"
@@ -184,9 +187,9 @@
                 <Button Grid.Column="2"
                         Classes="owned-dock-tab-close"
                         Click="OnCloseButtonClick">
-                    <LucideIcon Kind="X"
-                                Size="12"
-                                StrokeWidth="2" />
+                    <icons:EditorIconView IconKey="studio.ui.close"
+                                          IconSize="12"
+                                          StrokeWidth="2" />
                 </Button>
             </Grid>
         </Grid>

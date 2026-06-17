@@ -14,12 +14,15 @@ public sealed class PanelMenuItemViewModel : ViewModelBase
     {
         PanelId = descriptor.Id;
         Header = descriptor.Title;
+        IconKey = descriptor.IconKey;
         OpenCommand = new RelayCommand(() => openPanel(PanelId));
     }
 
     public string PanelId { get; }
 
     public string Header { get; }
+
+    public string? IconKey { get; }
 
     public bool IsOpen
     {

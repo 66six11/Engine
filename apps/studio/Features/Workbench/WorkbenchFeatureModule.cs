@@ -20,6 +20,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             "Window/Panels/Scene View",
             DockContentCachePolicy.KeepAlive,
             () => new SceneViewPanelViewModel(),
+            IconKey: "studio.scene-view",
             Tag: "DOC",
             TitleDetail: "custom viewport shell",
             StatusText: "live"));
@@ -32,6 +33,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             "Window/Panels/Hierarchy",
             DockContentCachePolicy.KeepAlive,
             () => new HierarchyPanelViewModel(),
+            IconKey: "studio.hierarchy",
             Tag: "LEFT",
             TitleDetail: "selection source",
             StatusText: "tool"));
@@ -44,6 +46,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             "Window/Panels/Inspector",
             DockContentCachePolicy.KeepAlive,
             () => new InspectorPanelViewModel(),
+            IconKey: "studio.inspector",
             Tag: "RIGHT",
             TitleDetail: "context target",
             StatusText: "tool"));
@@ -56,6 +59,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             "Window/Panels/Console",
             DockContentCachePolicy.KeepAlive,
             () => new ConsolePanelViewModel(),
+            IconKey: "studio.console",
             Tag: "BOTTOM",
             TitleDetail: "runtime log stream",
             StatusText: "idle"));
@@ -68,6 +72,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             "Window/Panels/Problems",
             DockContentCachePolicy.KeepAlive,
             () => new ProblemsPanelViewModel(),
+            IconKey: "studio.problems",
             Tag: "BOTTOM",
             TitleDetail: "validation queue",
             StatusText: "0"));
