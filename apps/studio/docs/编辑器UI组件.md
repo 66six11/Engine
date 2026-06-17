@@ -37,6 +37,7 @@
 * ComboBox
 * Text Input
 * Search Input
+  * 当前实现：`UI.Controls.Base.SearchBox`，封装搜索图标、输入框、placeholder 和聚焦选中文本行为；搜索算法、Provider 和命令执行不放入控件。
 * Number Input
 * Slider
 * Drag Number

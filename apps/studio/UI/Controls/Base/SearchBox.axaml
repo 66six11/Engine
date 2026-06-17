@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Editor.Shell.Icons"
+             x:Class="Editor.UI.Controls.Base.SearchBox"
+             x:Name="SearchBoxRoot">
+    <UserControl.Styles>
+        <Style Selector="Border.editor-search-box">
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+
+        <Style Selector="icons|EditorIconView.editor-search-box-icon">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBox.editor-search-box-input">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBox.editor-search-box-input:focus">
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Classes="editor-search-box">
+        <Grid ColumnDefinitions="Auto,*"
+              ColumnSpacing="7">
+            <icons:EditorIconView Grid.Column="0"
+                                  Classes="editor-search-box-icon"
+                                  IconKey="studio.ui.search"
+                                  IconSize="14"
+                                  StrokeWidth="2" />
+
+            <TextBox x:Name="SearchTextBox"
+                     Grid.Column="1"
+                     Classes="editor-search-box-input"
+                     PlaceholderText="{Binding PlaceholderText, ElementName=SearchBoxRoot}"
+                     Text="{Binding Text, ElementName=SearchBoxRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        </Grid>
+    </Border>
+</UserControl>

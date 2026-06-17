@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Editor.UI.Controls.Base"
              xmlns:icons="using:Editor.Shell.Icons"
              xmlns:vm="using:Editor.Shell.ViewModels"
              x:Class="Editor.Shell.Views.CommandPaletteView"
@@ -29,14 +30,8 @@
             <Setter Property="CornerRadius" Value="6" />
         </Style>
 
-        <Style Selector="TextBox.command-palette-search">
+        <Style Selector="controls|SearchBox.command-palette-search">
             <Setter Property="Height" Value="30" />
-            <Setter Property="Padding" Value="8,0" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="4" />
         </Style>
 
         <Style Selector="ListBox.command-palette-results">
@@ -92,10 +87,10 @@
 
         <Border Classes="command-palette-surface">
             <Grid RowDefinitions="Auto,*">
-                <TextBox x:Name="CommandPaletteSearchBox"
-                         Classes="command-palette-search"
-                         PlaceholderText="Search commands"
-                         Text="{Binding Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <controls:SearchBox x:Name="CommandPaletteSearchBox"
+                                    Classes="command-palette-search"
+                                    PlaceholderText="Search commands"
+                                    Text="{Binding Query, Mode=TwoWay}" />
 
                 <Grid Grid.Row="1">
                     <ListBox Classes="command-palette-results"

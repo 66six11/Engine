@@ -39,8 +39,7 @@ public partial class CommandPaletteView : UserControl
             Dispatcher.UIThread.Post(
                 () =>
                 {
-                    CommandPaletteSearchBox.Focus();
-                    CommandPaletteSearchBox.SelectAll();
+                    CommandPaletteSearchBox.FocusSearchText();
                 },
                 DispatcherPriority.Input);
         }
