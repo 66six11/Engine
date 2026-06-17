@@ -7,6 +7,7 @@ using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
 using Editor.Shell.Docking;
+using Editor.Shell.Commands;
 using Editor.Shell.Icons;
 using Xunit;
 
@@ -87,6 +88,54 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.IsType<InspectorPanelViewModel>(descriptors[2].CreateContent());
         Assert.IsType<ConsolePanelViewModel>(descriptors[3].CreateContent());
         Assert.IsType<ProblemsPanelViewModel>(descriptors[4].CreateContent());
+    }
+
+    [Fact]
+    public void RegisterActions_registers_stable_workbench_panel_actions()
+    {
+        var registry = new WorkbenchActionRegistry();
+
+        new WorkbenchFeatureModule().RegisterActions(registry);
+
+        Assert.Equal(
+            [
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.scene-view",
+                    "Scene View",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Scene View",
+                    TargetId: "scene-view",
+                    IconKey: EditorIconKey.PanelSceneView),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.hierarchy",
+                    "Hierarchy",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Hierarchy",
+                    TargetId: "hierarchy",
+                    IconKey: EditorIconKey.PanelHierarchy),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.inspector",
+                    "Inspector",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Inspector",
+                    TargetId: "inspector",
+                    IconKey: EditorIconKey.PanelInspector),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.console",
+                    "Console",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Console",
+                    TargetId: "console",
+                    IconKey: EditorIconKey.PanelConsole),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.problems",
+                    "Problems",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Problems",
+                    TargetId: "problems",
+                    IconKey: EditorIconKey.PanelProblems),
+            ],
+            registry.GetAll().ToArray());
     }
 
     private static PanelDescriptorSnapshot CreateSnapshot(PanelDescriptor descriptor)

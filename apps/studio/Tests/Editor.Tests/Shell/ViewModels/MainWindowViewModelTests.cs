@@ -1,6 +1,8 @@
 using System.Linq;
+using Editor.Core.Models;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
+using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.ViewModels;
 using Xunit;
@@ -21,11 +23,9 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void PanelMenuItems_follow_registered_panel_descriptors()
+    public void PanelMenuItems_follow_registered_workbench_actions()
     {
-        var viewModel = new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
-            savedLayout: null);
+        var viewModel = CreateMainWindowViewModel();
 
         Assert.Equal(
             ["scene-view", "hierarchy", "inspector", "console", "problems"],
@@ -36,11 +36,31 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void OpenPanelCommand_opens_feature_panel_content()
+    public void PanelMenuItems_use_action_registry_instead_of_panel_descriptor_menu_data()
     {
+        var actions = new WorkbenchActionRegistry();
+        actions.Register(new WorkbenchActionDescriptor(
+            "test.open.problems",
+            "Validation",
+            WorkbenchActionKind.OpenPanel,
+            "Window/Panels/Validation",
+            TargetId: "problems",
+            IconKey: "studio.problems"));
         var viewModel = new MainWindowViewModel(
             MainWindowViewModel.CreatePanelRegistry(),
+            actions,
             savedLayout: null);
+
+        var item = Assert.Single(viewModel.PanelMenuItems);
+        Assert.Equal("problems", item.PanelId);
+        Assert.Equal("Validation", item.Header);
+        Assert.Equal("studio.problems", item.IconKey);
+    }
+
+    [Fact]
+    public void OpenPanelCommand_opens_feature_panel_content()
+    {
+        var viewModel = CreateMainWindowViewModel();
         var hierarchy = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
 
         Assert.True(viewModel.DockWorkspace.CloseTab(hierarchy));
@@ -54,9 +74,7 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public void PanelMenuItems_reflect_open_panels_in_main_workspace()
     {
-        var viewModel = new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
-            savedLayout: null);
+        var viewModel = CreateMainWindowViewModel();
         var hierarchyItem = viewModel.PanelMenuItems.Single(item => item.PanelId == "hierarchy");
         var hierarchyTab = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
 
@@ -74,9 +92,7 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public void PanelMenuItems_include_open_panels_from_floating_windows()
     {
-        var viewModel = new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
-            savedLayout: null);
+        var viewModel = CreateMainWindowViewModel();
         var hierarchyItem = viewModel.PanelMenuItems.Single(item => item.PanelId == "hierarchy");
         var hierarchyTab = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
         var floatingPanels = new FloatingPanelOpenState("hierarchy");
@@ -101,9 +117,7 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public void RestoreLayoutSnapshot_restores_feature_panel_by_id()
     {
-        var viewModel = new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
-            savedLayout: null);
+        var viewModel = CreateMainWindowViewModel();
 
         var restored = viewModel.DockWorkspace.RestoreLayoutSnapshot(new EditorDockLayoutSnapshot
         {
@@ -127,6 +141,14 @@ public sealed class MainWindowViewModelTests
         var tab = Assert.Single(activeWindow.Tabs);
         Assert.Equal("inspector", tab.Id);
         Assert.IsType<InspectorPanelViewModel>(tab.Content);
+    }
+
+    private static MainWindowViewModel CreateMainWindowViewModel()
+    {
+        return new MainWindowViewModel(
+            MainWindowViewModel.CreatePanelRegistry(),
+            MainWindowViewModel.CreateWorkbenchActionRegistry(),
+            savedLayout: null);
     }
 
     private sealed class FloatingPanelOpenState(string openPanelId)
