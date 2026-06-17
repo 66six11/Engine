@@ -5,12 +5,16 @@
              x:Name="SearchBoxRoot">
     <UserControl.Styles>
         <Style Selector="Border.editor-search-box">
-            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="MinHeight" Value="20" />
             <Setter Property="Padding" Value="8,0" />
             <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
+        </Style>
+
+        <Style Selector="Border.editor-search-box.focused">
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushFocusRing}" />
         </Style>
 
         <Style Selector="icons|EditorIconView.editor-search-box-icon">
@@ -35,7 +39,8 @@
         </Style>
     </UserControl.Styles>
 
-    <Border Classes="editor-search-box">
+    <Border Classes.focused="{Binding IsSearchFocused, ElementName=SearchBoxRoot}"
+            Classes="editor-search-box">
         <Grid ColumnDefinitions="Auto,*"
               ColumnSpacing="7">
             <icons:EditorIconView Grid.Column="0"
