@@ -37,11 +37,12 @@ public sealed class MainWindowViewModelTests
         var inspector = Assert.IsType<InspectorPanelViewModel>(
             viewModel.DockWorkspace.RightWindow.Tabs.Single(tab => tab.Id == "inspector").Content);
 
-        hierarchy.SelectItem(new EditorSelectionItem("entity:1", "scene-object", "Cube"));
+        var cube = hierarchy.Nodes.Single(node => node.Id == "scene:main/cube");
+        hierarchy.SelectedNode = cube;
 
         Assert.Same(selectionService, viewModel.SelectionService);
         Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
-        Assert.Equal("Cube", inspector.CurrentSelection.PrimaryItem?.DisplayName);
+        Assert.Equal("Demo Cube", inspector.Document?.Title);
     }
 
     [Fact]

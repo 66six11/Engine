@@ -140,7 +140,7 @@ public sealed class WorkbenchFeatureModuleTests
     }
 
     [Fact]
-    public void RegisterPanels_injects_shared_selection_service_into_selection_panels()
+    public void RegisterPanels_injects_shared_selection_and_scene_snapshot_provider_into_selection_panels()
     {
         var registry = new PanelRegistry();
         var selectionService = new EditorSelectionService();
@@ -150,11 +150,14 @@ public sealed class WorkbenchFeatureModuleTests
         var inspector = Assert.IsType<InspectorPanelViewModel>(
             registry.GetRequired("inspector").CreateContent());
 
-        Assert.NotEmpty(hierarchy.Nodes);
-        hierarchy.SelectItem(new EditorSelectionItem("entity:1", "scene-object", "Cube"));
+        var cube = hierarchy.Nodes.Single(node => node.Id == "scene:main/cube");
+        hierarchy.SelectedNode = cube;
 
         Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
-        Assert.Equal("Cube", inspector.CurrentSelection.PrimaryItem?.DisplayName);
+        Assert.Equal("Demo Cube", inspector.Document?.Title);
+        Assert.Contains(
+            inspector.Document?.Sections.SelectMany(section => section.Properties) ?? [],
+            property => property.Name == "Id" && property.Value == "scene:main/cube");
     }
 
     private static PanelDescriptorSnapshot CreateSnapshot(PanelDescriptor descriptor)
