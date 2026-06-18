@@ -1,10 +1,11 @@
-using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Metadata;
 
 namespace Editor.UI.Controls.Base;
 
-public partial class IconButton : UserControl
+[PseudoClasses(":selected", ":active")]
+public class IconButton : Button
 {
     public static readonly StyledProperty<string?> IconKeyProperty =
         AvaloniaProperty.Register<IconButton, string?>(nameof(IconKey));
@@ -15,15 +16,6 @@ public partial class IconButton : UserControl
     public static readonly StyledProperty<double> StrokeWidthProperty =
         AvaloniaProperty.Register<IconButton, double>(nameof(StrokeWidth), 2d);
 
-    public static readonly StyledProperty<ICommand?> CommandProperty =
-        AvaloniaProperty.Register<IconButton, ICommand?>(nameof(Command));
-
-    public static readonly StyledProperty<object?> CommandParameterProperty =
-        AvaloniaProperty.Register<IconButton, object?>(nameof(CommandParameter));
-
-    public static readonly StyledProperty<IconButtonVariant> VariantProperty =
-        AvaloniaProperty.Register<IconButton, IconButtonVariant>(nameof(Variant));
-
     public static readonly StyledProperty<bool> IsSelectedProperty =
         AvaloniaProperty.Register<IconButton, bool>(nameof(IsSelected));
 
@@ -32,7 +24,6 @@ public partial class IconButton : UserControl
 
     public IconButton()
     {
-        InitializeComponent();
         UpdatePseudoClasses();
     }
 
@@ -54,24 +45,6 @@ public partial class IconButton : UserControl
         set => SetValue(StrokeWidthProperty, value);
     }
 
-    public ICommand? Command
-    {
-        get => GetValue(CommandProperty);
-        set => SetValue(CommandProperty, value);
-    }
-
-    public object? CommandParameter
-    {
-        get => GetValue(CommandParameterProperty);
-        set => SetValue(CommandParameterProperty, value);
-    }
-
-    public IconButtonVariant Variant
-    {
-        get => GetValue(VariantProperty);
-        set => SetValue(VariantProperty, value);
-    }
-
     public bool IsSelected
     {
         get => GetValue(IsSelectedProperty);
@@ -87,8 +60,7 @@ public partial class IconButton : UserControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == VariantProperty
-            || change.Property == IsSelectedProperty
+        if (change.Property == IsSelectedProperty
             || change.Property == IsActiveProperty)
         {
             UpdatePseudoClasses();
@@ -97,9 +69,6 @@ public partial class IconButton : UserControl
 
     private void UpdatePseudoClasses()
     {
-        PseudoClasses.Set(":subtle", Variant == IconButtonVariant.Subtle);
-        PseudoClasses.Set(":bare", Variant == IconButtonVariant.Bare);
-        PseudoClasses.Set(":solid", Variant == IconButtonVariant.Solid);
         PseudoClasses.Set(":selected", IsSelected);
         PseudoClasses.Set(":active", IsActive);
     }

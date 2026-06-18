@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 
 namespace Editor.UI.Controls.Base;
@@ -72,5 +73,13 @@ public partial class SearchBox : UserControl
     private void OnSearchTextBoxFocusChanged(object? sender, RoutedEventArgs e)
     {
         IsSearchFocused = SearchTextBox.IsKeyboardFocusWithin;
+    }
+
+    private void OnSearchBoxPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!SearchTextBox.IsKeyboardFocusWithin)
+        {
+            SearchTextBox.Focus();
+        }
     }
 }

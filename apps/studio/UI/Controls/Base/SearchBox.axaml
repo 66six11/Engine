@@ -1,8 +1,13 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:icons="using:Editor.Shell.Icons"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              x:Class="Editor.UI.Controls.Base.SearchBox"
-             x:Name="SearchBoxRoot">
+             x:Name="SearchBoxRoot"
+             mc:Ignorable="d"
+             d:DesignWidth="260"
+             d:DesignHeight="24">
     <UserControl.Resources>
         <ControlTheme x:Key="EditorSearchBoxTextBoxTheme"
                       TargetType="TextBox">
@@ -15,12 +20,15 @@
             <Setter Property="SelectionBrush" Value="{DynamicResource EditorBrushSelectionActive}" />
             <Setter Property="Template">
                 <ControlTemplate>
-                    <ScrollViewer Name="PART_ScrollViewer">
-                        <TextPresenter Name="PART_TextPresenter"
-                                       CaretBrush="{TemplateBinding CaretBrush}"
-                                       SelectionBrush="{TemplateBinding SelectionBrush}"
-                                       Text="{TemplateBinding Text}" />
-                    </ScrollViewer>
+                    <Border Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}">
+                        <ScrollViewer Name="PART_ScrollViewer">
+                            <TextPresenter Name="PART_TextPresenter"
+                                           CaretBrush="{TemplateBinding CaretBrush}"
+                                           SelectionBrush="{TemplateBinding SelectionBrush}"
+                                           Text="{TemplateBinding Text}" />
+                        </ScrollViewer>
+                    </Border>
                 </ControlTemplate>
             </Setter>
         </ControlTheme>
@@ -52,6 +60,7 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
             <Setter Property="FocusAdorner" Value="{x:Null}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
@@ -63,7 +72,8 @@
     </UserControl.Styles>
 
     <Border Classes.focused="{Binding IsSearchFocused, ElementName=SearchBoxRoot}"
-            Classes="editor-search-box">
+            Classes="editor-search-box"
+            PointerPressed="OnSearchBoxPointerPressed">
         <Grid ColumnDefinitions="Auto,*"
               ColumnSpacing="7">
             <icons:EditorIconView Grid.Column="0"

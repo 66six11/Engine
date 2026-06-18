@@ -156,8 +156,7 @@
                                                      IconSize="14"
                                                      IsHitTestVisible="{Binding HasChildren}"
                                                      Opacity="{Binding ExpanderOpacity}"
-                                                     StrokeWidth="2"
-                                                     Variant="Bare" />
+                                                     StrokeWidth="2" />
                                 <icons:EditorIconView Grid.Column="2"
                                                       Classes="hierarchy-node-icon"
                                                       IconKey="{Binding IconKey}"
