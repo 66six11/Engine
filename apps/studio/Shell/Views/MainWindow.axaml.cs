@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Editor.Shell.Icons;
 using Editor.Shell.ViewModels;
@@ -19,6 +20,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
+        KeyDown += OnMainWindowKeyDown;
         DataContextChanged += OnMainWindowDataContextChanged;
         PanelsMenu.SubmenuOpened += OnPanelsMenuSubmenuOpened;
         EditorDockFloatingWindowRegistry.DockContentChanged += OnFloatingDockContentChanged;
@@ -33,6 +35,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        KeyDown -= OnMainWindowKeyDown;
         EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged;
         base.OnClosed(e);
     }
@@ -132,6 +135,27 @@ public partial class MainWindow : Window
         {
             viewModel.RefreshPanelMenuOpenStates();
         }
+    }
+
+    private void OnMainWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (!IsCommandPaletteShortcut(e.Key, e.KeyModifiers)
+            || DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        if (viewModel.CommandPalette.OpenCommand.CanExecute(null))
+        {
+            viewModel.CommandPalette.OpenCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    internal static bool IsCommandPaletteShortcut(Key key, KeyModifiers keyModifiers)
+    {
+        return key == Key.P
+            && keyModifiers == (KeyModifiers.Control | KeyModifiers.Shift);
     }
 
     private void OnWindowActivated(object? sender, EventArgs e)
