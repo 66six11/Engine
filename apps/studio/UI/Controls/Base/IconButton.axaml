@@ -1,8 +1,138 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-             x:Class="Editor.UI.Controls.Base.IconButton">
-    Welcome to Avalonia!
+             xmlns:base="using:Editor.UI.Controls.Base"
+             xmlns:icons="using:Editor.Shell.Icons"
+             x:Class="Editor.UI.Controls.Base.IconButton"
+             x:Name="IconButtonRoot">
+    <UserControl.Resources>
+        <ControlTheme x:Key="EditorIconButtonChromeTheme"
+                      TargetType="Button">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Button.editor-icon-button">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Button.editor-icon-button:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceOverlay}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="Button.editor-icon-button:pressed">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="Button.editor-icon-button:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconDisabled}" />
+        </Style>
+
+        <Style Selector="base|IconButton:selected Button.editor-icon-button">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushAccentHover}" />
+        </Style>
+
+        <Style Selector="base|IconButton:active Button.editor-icon-button">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushAccentHover}" />
+        </Style>
+
+        <Style Selector="base|IconButton:solid Button.editor-icon-button">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface02}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconPrimary}" />
+        </Style>
+
+        <Style Selector="base|IconButton:solid Button.editor-icon-button:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface03}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="base|IconButton:solid Button.editor-icon-button:pressed">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="base|IconButton:bare Button.editor-icon-button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconSecondary}" />
+        </Style>
+
+        <Style Selector="base|IconButton:bare Button.editor-icon-button:pointerover">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="base|IconButton:bare Button.editor-icon-button:pressed">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="base|IconButton:bare:selected Button.editor-icon-button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushAccentHover}" />
+        </Style>
+
+        <Style Selector="base|IconButton:bare:active Button.editor-icon-button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushAccentHover}" />
+        </Style>
+
+        <Style Selector="Button.editor-icon-button icons|EditorIconView.editor-icon-button-icon">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+    </UserControl.Styles>
+
+    <Button x:Name="IconButtonChrome"
+            Classes="editor-icon-button"
+            Command="{Binding Command, ElementName=IconButtonRoot}"
+            CommandParameter="{Binding CommandParameter, ElementName=IconButtonRoot}"
+            Focusable="{Binding Focusable, ElementName=IconButtonRoot}"
+            Theme="{StaticResource EditorIconButtonChromeTheme}">
+        <icons:EditorIconView Classes="editor-icon-button-icon"
+                              IconBrush="{Binding Foreground, ElementName=IconButtonChrome}"
+                              IconKey="{Binding IconKey, ElementName=IconButtonRoot}"
+                              IconSize="{Binding IconSize, ElementName=IconButtonRoot}"
+                              StrokeWidth="{Binding StrokeWidth, ElementName=IconButtonRoot}" />
+    </Button>
 </UserControl>

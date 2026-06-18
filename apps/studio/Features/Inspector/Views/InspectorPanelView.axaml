@@ -1,3 +1,118 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Editor.Features.Inspector.Views.InspectorPanelView" />
+             xmlns:models="using:Editor.Features.Inspector.Models"
+             xmlns:vm="using:Editor.Features.Inspector.ViewModels"
+             x:Class="Editor.Features.Inspector.Views.InspectorPanelView"
+             x:DataType="vm:InspectorPanelViewModel">
+    <UserControl.Styles>
+        <Style Selector="StackPanel.inspector-root">
+            <Setter Property="Margin" Value="8" />
+            <Setter Property="Spacing" Value="8" />
+        </Style>
+
+        <Style Selector="Border.inspector-summary">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInspectorSectionHeader}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+
+        <Style Selector="Border.inspector-section">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInspectorPropertyRow}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+
+        <Style Selector="TextBlock.inspector-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeTitle}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="TextBlock.inspector-subtitle">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="TextBlock.inspector-section-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style Selector="TextBlock.inspector-property-name">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.inspector-property-value">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      IsVisible="{Binding HasDocument}">
+            <ContentControl Content="{Binding Document}">
+                <ContentControl.ContentTemplate>
+                    <DataTemplate x:DataType="models:InspectorDocumentModel">
+                        <StackPanel Classes="inspector-root">
+                            <Border Classes="inspector-summary">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="inspector-title"
+                                               Text="{Binding Title}" />
+                                    <TextBlock Classes="inspector-subtitle"
+                                               Text="{Binding Subtitle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <ItemsControl ItemsSource="{Binding Sections}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:InspectorSectionModel">
+                                        <Border Classes="inspector-section"
+                                                Margin="0,0,0,8">
+                                            <StackPanel>
+                                                <Border Background="{DynamicResource EditorBrushInspectorSectionHeader}"
+                                                        Padding="8,5">
+                                                    <TextBlock Classes="inspector-section-title"
+                                                               Text="{Binding Title}" />
+                                                </Border>
+
+                                                <ItemsControl ItemsSource="{Binding Properties}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="models:InspectorPropertyModel">
+                                                            <Grid ColumnDefinitions="104,*"
+                                                                  ColumnSpacing="8"
+                                                                  MinHeight="24"
+                                                                  Margin="8,0">
+                                                                <TextBlock Grid.Column="0"
+                                                                           Classes="inspector-property-name"
+                                                                           Text="{Binding Name}" />
+                                                                <TextBlock Grid.Column="1"
+                                                                           Classes="inspector-property-value"
+                                                                           Text="{Binding Value}" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ContentControl.ContentTemplate>
+            </ContentControl>
+        </ScrollViewer>
+    </Border>
+</UserControl>

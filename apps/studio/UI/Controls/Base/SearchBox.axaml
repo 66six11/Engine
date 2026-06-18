@@ -3,6 +3,29 @@
              xmlns:icons="using:Editor.Shell.Icons"
              x:Class="Editor.UI.Controls.Base.SearchBox"
              x:Name="SearchBoxRoot">
+    <UserControl.Resources>
+        <ControlTheme x:Key="EditorSearchBoxTextBoxTheme"
+                      TargetType="TextBox">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource EditorBrushSelectionActive}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <ScrollViewer Name="PART_ScrollViewer">
+                        <TextPresenter Name="PART_TextPresenter"
+                                       CaretBrush="{TemplateBinding CaretBrush}"
+                                       SelectionBrush="{TemplateBinding SelectionBrush}"
+                                       Text="{TemplateBinding Text}" />
+                    </ScrollViewer>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+    </UserControl.Resources>
+
     <UserControl.Styles>
         <Style Selector="Border.editor-search-box">
             <Setter Property="MinHeight" Value="20" />
@@ -32,22 +55,10 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <Style Selector="TextBox.editor-search-box-input /template/ Border#PART_BorderElement">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-
-        <Style Selector="TextBox.editor-search-box-input:pointerover /template/ Border#PART_BorderElement">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-
-        <Style Selector="TextBox.editor-search-box-input:focus /template/ Border#PART_BorderElement">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
+        <Style Selector="TextBlock.editor-search-box-placeholder">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </UserControl.Styles>
 
@@ -61,11 +72,16 @@
                                   IconSize="14"
                                   StrokeWidth="2" />
 
-            <TextBox x:Name="SearchTextBox"
-                     Grid.Column="1"
-                     Classes="editor-search-box-input"
-                     PlaceholderText="{Binding PlaceholderText, ElementName=SearchBoxRoot}"
-                     Text="{Binding Text, ElementName=SearchBoxRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Grid Grid.Column="1">
+                <TextBlock Classes="editor-search-box-placeholder"
+                           IsVisible="{Binding IsPlaceholderVisible, ElementName=SearchBoxRoot}"
+                           Text="{Binding PlaceholderText, ElementName=SearchBoxRoot}" />
+
+                <TextBox x:Name="SearchTextBox"
+                         Classes="editor-search-box-input"
+                         Text="{Binding Text, ElementName=SearchBoxRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Theme="{StaticResource EditorSearchBoxTextBoxTheme}" />
+            </Grid>
         </Grid>
     </Border>
 </UserControl>

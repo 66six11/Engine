@@ -80,6 +80,8 @@ public sealed class EditorIconRegistry
     {
         var registry = new EditorIconRegistry();
         registry.RegisterLucide(EditorIconKey.UiCheck, LucideIconKind.Check);
+        registry.RegisterLucide(EditorIconKey.UiChevronDown, LucideIconKind.ChevronDown);
+        registry.RegisterLucide(EditorIconKey.UiChevronRight, LucideIconKind.ChevronRight);
         registry.RegisterLucide(EditorIconKey.UiClose, LucideIconKind.X);
         registry.RegisterLucide(EditorIconKey.UiSearch, LucideIconKind.Search);
         registry.RegisterLucide(EditorIconKey.PanelSceneView, LucideIconKind.Box);
@@ -87,6 +89,7 @@ public sealed class EditorIconRegistry
         registry.RegisterLucide(EditorIconKey.PanelInspector, LucideIconKind.SlidersHorizontal);
         registry.RegisterLucide(EditorIconKey.PanelConsole, LucideIconKind.Terminal);
         registry.RegisterLucide(EditorIconKey.PanelProblems, LucideIconKind.CircleAlert);
+        registry.RegisterLucide(EditorIconKey.ObjectDefault, LucideIconKind.Box);
         return registry;
     }
 

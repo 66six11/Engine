@@ -40,7 +40,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
         private set => SetProperty(ref isOpen_, value);
     }
 
-    public string Query
+    public string? Query
     {
         get => query_;
         set
@@ -104,7 +104,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
     private void RefreshFilteredItems()
     {
-        var query = Query.Trim();
+        var query = query_.Trim();
         var filtered = string.IsNullOrEmpty(query)
             ? allItems_
             : allItems_.Where(item => MatchesQuery(item, query)).ToArray();

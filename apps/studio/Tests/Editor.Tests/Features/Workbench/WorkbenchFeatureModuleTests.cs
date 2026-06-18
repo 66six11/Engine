@@ -150,6 +150,7 @@ public sealed class WorkbenchFeatureModuleTests
         var inspector = Assert.IsType<InspectorPanelViewModel>(
             registry.GetRequired("inspector").CreateContent());
 
+        Assert.NotEmpty(hierarchy.Nodes);
         hierarchy.SelectItem(new EditorSelectionItem("entity:1", "scene-object", "Cube"));
 
         Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);

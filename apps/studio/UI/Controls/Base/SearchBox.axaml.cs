@@ -19,6 +19,9 @@ public partial class SearchBox : UserControl
     public static readonly StyledProperty<bool> IsSearchFocusedProperty =
         AvaloniaProperty.Register<SearchBox, bool>(nameof(IsSearchFocused));
 
+    public static readonly StyledProperty<bool> IsPlaceholderVisibleProperty =
+        AvaloniaProperty.Register<SearchBox, bool>(nameof(IsPlaceholderVisible), true);
+
     public SearchBox()
     {
         InitializeComponent();
@@ -44,10 +47,26 @@ public partial class SearchBox : UserControl
         private set => SetValue(IsSearchFocusedProperty, value);
     }
 
+    public bool IsPlaceholderVisible
+    {
+        get => GetValue(IsPlaceholderVisibleProperty);
+        private set => SetValue(IsPlaceholderVisibleProperty, value);
+    }
+
     public void FocusSearchText()
     {
         SearchTextBox.Focus();
         SearchTextBox.SelectAll();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == TextProperty)
+        {
+            IsPlaceholderVisible = string.IsNullOrEmpty(Text);
+        }
     }
 
     private void OnSearchTextBoxFocusChanged(object? sender, RoutedEventArgs e)

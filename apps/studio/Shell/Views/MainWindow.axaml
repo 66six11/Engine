@@ -81,7 +81,8 @@
         <views:EditorDockWorkspaceView Grid.Row="1"
                                        DataContext="{Binding DockWorkspace}" />
 
-        <views:CommandPaletteView Grid.RowSpan="3"
+        <views:CommandPaletteView Grid.Row="0"
+                                  Grid.RowSpan="3"
                                   DataContext="{Binding CommandPalette}" />
     </Grid>
 
