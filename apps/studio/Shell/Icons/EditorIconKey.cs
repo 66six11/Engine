@@ -4,6 +4,7 @@ public static class EditorIconKey
 {
     public const string UiCheck = "studio.ui.check";
     public const string UiClose = "studio.ui.close";
+    public const string UiSearch = "studio.ui.search";
 
     public const string PanelSceneView = "studio.scene-view";
     public const string PanelHierarchy = "studio.hierarchy";

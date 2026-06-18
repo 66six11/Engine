@@ -59,7 +59,9 @@
                               Classes="editor-menu-item" />
                 </MenuItem>
                 <MenuItem Header="Tools" Classes="editor-menu-item">
-                    <MenuItem Header="Command Palette" Classes="editor-menu-item" IsEnabled="False" />
+                    <MenuItem Header="Command Palette"
+                              Classes="editor-menu-item"
+                              Command="{Binding CommandPalette.OpenCommand}" />
                     <MenuItem Header="Settings" Classes="editor-menu-item" IsEnabled="False" />
                 </MenuItem>
                 <MenuItem Header="Help" Classes="editor-menu-item">
@@ -77,6 +79,9 @@
 
         <views:EditorDockWorkspaceView Grid.Row="1"
                                        DataContext="{Binding DockWorkspace}" />
+
+        <views:CommandPaletteView Grid.RowSpan="3"
+                                  DataContext="{Binding CommandPalette}" />
     </Grid>
 
 </Window>

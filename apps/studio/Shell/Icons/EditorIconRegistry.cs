@@ -81,6 +81,7 @@ public sealed class EditorIconRegistry
         var registry = new EditorIconRegistry();
         registry.RegisterLucide(EditorIconKey.UiCheck, LucideIconKind.Check);
         registry.RegisterLucide(EditorIconKey.UiClose, LucideIconKind.X);
+        registry.RegisterLucide(EditorIconKey.UiSearch, LucideIconKind.Search);
         registry.RegisterLucide(EditorIconKey.PanelSceneView, LucideIconKind.Box);
         registry.RegisterLucide(EditorIconKey.PanelHierarchy, LucideIconKind.ListTree);
         registry.RegisterLucide(EditorIconKey.PanelInspector, LucideIconKind.SlidersHorizontal);

@@ -72,6 +72,22 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void CommandPalette_executes_panel_actions_through_panel_command_route()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var hierarchy = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+        Assert.True(viewModel.DockWorkspace.CloseTab(hierarchy));
+
+        viewModel.CommandPalette.OpenCommand.Execute(null);
+        viewModel.CommandPalette.Query = "hierarchy";
+        viewModel.CommandPalette.ExecuteSelectedCommand.Execute(null);
+
+        var reopened = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+        Assert.IsType<HierarchyPanelViewModel>(reopened.Content);
+        Assert.False(viewModel.CommandPalette.IsOpen);
+    }
+
+    [Fact]
     public void PanelMenuItems_reflect_open_panels_in_main_workspace()
     {
         var viewModel = CreateMainWindowViewModel();
