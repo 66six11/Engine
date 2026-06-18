@@ -61,6 +61,7 @@
                 <MenuItem Header="Tools" Classes="editor-menu-item">
                     <MenuItem Header="Command Palette"
                               Classes="editor-menu-item"
+                              InputGesture="Ctrl+Shift+P"
                               Command="{Binding CommandPalette.OpenCommand}" />
                     <MenuItem Header="Settings" Classes="editor-menu-item" IsEnabled="False" />
                 </MenuItem>
