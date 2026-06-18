@@ -4,8 +4,8 @@ using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
-using Editor.Features.Hierarchy.Services;
 using Editor.Shell.ViewModels;
 
 namespace Editor.Features.Hierarchy.ViewModels;
@@ -26,19 +26,22 @@ public sealed class HierarchyPanelViewModel : ViewModelBase
     private string nodeCountText_ = string.Empty;
 
     public HierarchyPanelViewModel(IEditorSelectionService selectionService)
-        : this(selectionService, new DemoHierarchyDataSource())
+        : this(selectionService, new InMemorySceneSnapshotProvider(SceneSnapshot.Empty))
     {
     }
 
     internal HierarchyPanelViewModel(
         IEditorSelectionService selectionService,
-        IHierarchyDataSource dataSource)
+        ISceneSnapshotProvider sceneSnapshotProvider)
     {
         ArgumentNullException.ThrowIfNull(selectionService);
-        ArgumentNullException.ThrowIfNull(dataSource);
+        ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
 
         selectionService_ = selectionService;
-        Nodes = dataSource.LoadNodes();
+        SceneSnapshot = sceneSnapshotProvider.Current;
+        Nodes = SceneSnapshot.Objects
+            .Select(HierarchyNodeModel.FromSceneObject)
+            .ToArray();
         nodesById_ = Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
         depthsByNodeId_ = Nodes.ToDictionary(node => node.Id, GetDepth, StringComparer.Ordinal);
         nodeIdsWithChildren_ = Nodes
@@ -53,6 +56,8 @@ public sealed class HierarchyPanelViewModel : ViewModelBase
         ToggleExpandedCommand = new RelayCommand<HierarchyNodeRowViewModel>(ToggleExpanded);
         RefreshVisibleRows();
     }
+
+    public SceneSnapshot SceneSnapshot { get; }
 
     public IReadOnlyList<HierarchyNodeModel> Nodes { get; }
 

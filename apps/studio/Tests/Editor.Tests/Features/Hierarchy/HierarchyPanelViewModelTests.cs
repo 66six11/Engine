@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
-using Editor.Features.Hierarchy.Services;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Shell.Icons;
 using Editor.Shell.Selection;
@@ -12,7 +12,7 @@ namespace Editor.Tests.Features.Hierarchy;
 public sealed class HierarchyPanelViewModelTests
 {
     [Fact]
-    public void Constructor_loads_nodes_from_data_source()
+    public void Constructor_loads_nodes_from_scene_snapshot_provider()
     {
         var viewModel = CreateViewModel();
 
@@ -32,7 +32,7 @@ public sealed class HierarchyPanelViewModelTests
 
         Assert.Equal("hierarchy", selectionService.Current.ActiveContextId);
         var item = Assert.Single(selectionService.Current.Items);
-        Assert.Equal("entity:cube", item.Id);
+        Assert.Equal("scene:test/cube", item.Id);
         Assert.Equal("Cube", item.DisplayName);
         Assert.Equal("mesh", item.Kind);
     }
@@ -47,7 +47,7 @@ public sealed class HierarchyPanelViewModelTests
 
         Assert.Equal("hierarchy", selectionService.Current.ActiveContextId);
         var item = Assert.Single(selectionService.Current.Items);
-        Assert.Equal("entity:cube", item.Id);
+        Assert.Equal("scene:test/cube", item.Id);
         Assert.Equal("Cube", item.DisplayName);
     }
 
@@ -65,11 +65,13 @@ public sealed class HierarchyPanelViewModelTests
     }
 
     [Fact]
-    public void Default_constructor_loads_demo_nodes()
+    public void Default_constructor_starts_with_empty_snapshot()
     {
         var viewModel = new HierarchyPanelViewModel(new EditorSelectionService());
 
-        Assert.NotEmpty(viewModel.Nodes);
+        Assert.Empty(viewModel.Nodes);
+        Assert.Empty(viewModel.VisibleRows);
+        Assert.Equal("0", viewModel.NodeCountText);
     }
 
     [Fact]
@@ -151,14 +153,30 @@ public sealed class HierarchyPanelViewModelTests
     {
         return new HierarchyPanelViewModel(
             selectionService ?? new EditorSelectionService(),
-            new TestHierarchyDataSource());
+            new InMemorySceneSnapshotProvider(new SceneSnapshot(
+                "scene:test",
+                "Test Scene",
+                1,
+                [
+                    new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh"),
+                    new SceneObjectSnapshot("scene:test/light", "Light", "light"),
+                ])));
     }
 
     private static HierarchyPanelViewModel CreateTreeViewModel()
     {
         return new HierarchyPanelViewModel(
             new EditorSelectionService(),
-            new TestTreeHierarchyDataSource());
+            new InMemorySceneSnapshotProvider(new SceneSnapshot(
+                "scene:test",
+                "Test Scene",
+                1,
+                [
+                    new SceneObjectSnapshot("scene:test", "Scene", "scene"),
+                    new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh", parentId: "scene:test"),
+                    new SceneObjectSnapshot("scene:test/cube/renderer", "Mesh Renderer", "component", parentId: "scene:test/cube"),
+                    new SceneObjectSnapshot("scene:test/light", "Light", "light", parentId: "scene:test"),
+                ])));
     }
 
     private static string[] GetNodeNames(IReadOnlyList<HierarchyNodeModel> nodes)
@@ -181,31 +199,5 @@ public sealed class HierarchyPanelViewModelTests
         }
 
         return names;
-    }
-
-    private sealed class TestHierarchyDataSource : IHierarchyDataSource
-    {
-        public IReadOnlyList<HierarchyNodeModel> LoadNodes()
-        {
-            return
-            [
-                new HierarchyNodeModel("entity:cube", "Cube", "mesh"),
-                new HierarchyNodeModel("entity:light", "Light", "light"),
-            ];
-        }
-    }
-
-    private sealed class TestTreeHierarchyDataSource : IHierarchyDataSource
-    {
-        public IReadOnlyList<HierarchyNodeModel> LoadNodes()
-        {
-            return
-            [
-                new HierarchyNodeModel("scene:test", "Scene", "scene"),
-                new HierarchyNodeModel("entity:cube", "Cube", "mesh", ParentId: "scene:test"),
-                new HierarchyNodeModel("component:cube-renderer", "Mesh Renderer", "component", ParentId: "entity:cube"),
-                new HierarchyNodeModel("entity:light", "Light", "light", ParentId: "scene:test"),
-            ];
-        }
     }
 }
