@@ -4,6 +4,7 @@ using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking;
+using Editor.Shell.Selection;
 using Editor.Shell.ViewModels;
 using Xunit;
 
@@ -20,6 +21,28 @@ public sealed class MainWindowViewModelTests
             registry.GetRequired("hierarchy").CreateContent());
         Assert.IsType<InspectorPanelViewModel>(
             registry.GetRequired("inspector").CreateContent());
+    }
+
+    [Fact]
+    public void Default_panel_content_shares_main_window_selection_service()
+    {
+        var selectionService = new EditorSelectionService();
+        var viewModel = new MainWindowViewModel(
+            MainWindowViewModel.CreatePanelRegistry(selectionService),
+            MainWindowViewModel.CreateWorkbenchActionRegistry(selectionService),
+            savedLayout: null,
+            selectionService);
+        var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
+            viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy").Content);
+        var inspector = Assert.IsType<InspectorPanelViewModel>(
+            viewModel.DockWorkspace.RightWindow.Tabs.Single(tab => tab.Id == "inspector").Content);
+
+        var cube = hierarchy.Nodes.Single(node => node.Id == "scene:main/cube");
+        hierarchy.SelectedNode = cube;
+
+        Assert.Same(selectionService, viewModel.SelectionService);
+        Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
+        Assert.Equal("Demo Cube", inspector.Document?.Title);
     }
 
     [Fact]

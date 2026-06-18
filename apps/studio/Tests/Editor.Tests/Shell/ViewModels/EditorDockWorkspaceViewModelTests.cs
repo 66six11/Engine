@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia;
 using Editor.Core.Models;
 using Editor.Shell.Docking;
@@ -90,6 +91,30 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
+    public void ActivateTab_moves_active_window_to_tab_owner()
+    {
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "left",
+            DockContentCachePolicy.KeepAlive,
+            () => new object(),
+            DockArea.Left));
+        registry.Register(CreateDescriptor(
+            "center",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var leftTab = workspace.LeftWindow.Tabs.Single();
+
+        workspace.ActivateTab(leftTab);
+
+        Assert.Same(workspace.LeftWindow, workspace.ActiveWindow);
+        Assert.True(leftTab.IsActive);
+        Assert.True(workspace.LeftWindow.TabStripItems.Single().IsSelectedInFocusedWindow);
+        Assert.False(workspace.CenterWindow.TabStripItems.Single().IsSelectedInFocusedWindow);
+    }
+
+    [Fact]
     public void RestoreLayoutSnapshot_creates_only_tabs_present_in_snapshot()
     {
         var includedContentFactory = new CountingContentFactory();
@@ -145,13 +170,14 @@ public sealed class EditorDockWorkspaceViewModelTests
     private static PanelDescriptor CreateDescriptor(
         string id,
         DockContentCachePolicy cachePolicy,
-        Func<object> createContent)
+        Func<object> createContent,
+        DockArea area = DockArea.Center)
     {
         return new PanelDescriptor(
             id,
             "Panel",
             PanelKind.Tool,
-            DockArea.Center,
+            area,
             "Window/Panels/Panel",
             cachePolicy,
             createContent);

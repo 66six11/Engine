@@ -1,5 +1,6 @@
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
@@ -10,6 +11,22 @@ namespace Editor.Features.Workbench;
 
 public sealed class WorkbenchFeatureModule : IEditorFeatureModule
 {
+    private readonly IEditorSelectionService selectionService_;
+    private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
+
+    public WorkbenchFeatureModule(IEditorSelectionService selectionService)
+        : this(selectionService, CreateDefaultSceneSnapshotProvider())
+    {
+    }
+
+    internal WorkbenchFeatureModule(
+        IEditorSelectionService selectionService,
+        ISceneSnapshotProvider sceneSnapshotProvider)
+    {
+        selectionService_ = selectionService;
+        sceneSnapshotProvider_ = sceneSnapshotProvider;
+    }
+
     public void RegisterPanels(IPanelRegistry panels)
     {
         foreach (var descriptor in CreatePanelDescriptors())
@@ -32,7 +49,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         }
     }
 
-    private static PanelDescriptor[] CreatePanelDescriptors()
+    private PanelDescriptor[] CreatePanelDescriptors()
     {
         return
         [
@@ -43,7 +60,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Center,
                 "Window/Panels/Scene View",
                 DockContentCachePolicy.KeepAlive,
-                () => new SceneViewPanelViewModel(),
+                () => new SceneViewPanelViewModel(selectionService_),
                 IconKey: "studio.scene-view",
                 Tag: "DOC",
                 TitleDetail: "custom viewport shell",
@@ -55,7 +72,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Left,
                 "Window/Panels/Hierarchy",
                 DockContentCachePolicy.KeepAlive,
-                () => new HierarchyPanelViewModel(),
+                () => new HierarchyPanelViewModel(selectionService_, sceneSnapshotProvider_),
                 IconKey: "studio.hierarchy",
                 Tag: "LEFT",
                 TitleDetail: "selection source",
@@ -68,7 +85,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Right,
                 "Window/Panels/Inspector",
                 DockContentCachePolicy.KeepAlive,
-                () => new InspectorPanelViewModel(),
+                () => new InspectorPanelViewModel(selectionService_, sceneSnapshotProvider_),
                 IconKey: "studio.inspector",
                 Tag: "RIGHT",
                 TitleDetail: "context target",
@@ -100,5 +117,30 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 TitleDetail: "validation queue",
                 StatusText: "0"),
         ];
+    }
+
+    private static ISceneSnapshotProvider CreateDefaultSceneSnapshotProvider()
+    {
+        return new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:main",
+            "Main Scene",
+            1,
+            [
+                new SceneObjectSnapshot("scene:main", "Main Scene", "scene"),
+                new SceneObjectSnapshot("scene:main/camera", "Main Camera", "camera", parentId: "scene:main"),
+                new SceneObjectSnapshot("scene:main/key-light", "Key Light", "light", parentId: "scene:main"),
+                new SceneObjectSnapshot(
+                    "scene:main/cube",
+                    "Demo Cube",
+                    "mesh",
+                    parentId: "scene:main",
+                    properties:
+                    [
+                        new SceneObjectPropertySnapshot("mesh", "Mesh", "Primitive Cube"),
+                        new SceneObjectPropertySnapshot("triangles", "Triangles", "12", SceneObjectPropertyValueKind.Count),
+                    ]),
+                new SceneObjectSnapshot("scene:main/cube/renderer", "Mesh Renderer", "component", parentId: "scene:main/cube"),
+                new SceneObjectSnapshot("scene:main/physics-volume", "Physics Volume", "volume", parentId: "scene:main"),
+            ]));
     }
 }

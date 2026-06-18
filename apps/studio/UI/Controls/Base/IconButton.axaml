@@ -1,8 +1,111 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-             x:Class="Editor.UI.Controls.Base.IconButton">
-    Welcome to Avalonia!
-</UserControl>
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:base="using:Editor.UI.Controls.Base"
+                    xmlns:icons="using:Editor.Shell.Icons">
+    <Design.PreviewWith>
+        <Border Background="{DynamicResource EditorBrushBase00}"
+                Padding="16">
+            <StackPanel Spacing="10">
+                <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
+                           Text="IconButton variants" />
+                <StackPanel Orientation="Horizontal"
+                            Spacing="8">
+                    <base:IconButton Height="22"
+                                     IconKey="studio.ui.chevron-right"
+                                     Width="22" />
+                    <base:IconButton Height="22"
+                                     IconKey="studio.ui.search"
+                                     Width="22" />
+                    <base:IconButton Height="22"
+                                     Classes="solid"
+                                     IconKey="studio.ui.check"
+                                     Width="22" />
+                    <base:IconButton Height="22"
+                                     IconKey="studio.ui.close"
+                                     IsActive="True"
+                                     Width="22" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Design.PreviewWith>
+
+    <ControlTheme x:Key="{x:Type base:IconButton}"
+                  TargetType="base:IconButton">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="FocusAdorner" Value="{x:Null}" />
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconSecondary}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}"
+                        Padding="{TemplateBinding Padding}">
+                    <icons:EditorIconView HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          IconBrush="{TemplateBinding Foreground}"
+                                          IconKey="{TemplateBinding IconKey}"
+                                          IconSize="{TemplateBinding IconSize}"
+                                          IsHitTestVisible="False"
+                                          StrokeWidth="{TemplateBinding StrokeWidth}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+
+        <Style Selector="^:pointerover">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="^:pressed">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="^:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconDisabled}" />
+        </Style>
+
+        <Style Selector="^:selected">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushAccentHover}" />
+        </Style>
+
+        <Style Selector="^:active">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushAccentHover}" />
+        </Style>
+
+        <Style Selector="^.solid">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface02}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushSurface02}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconPrimary}" />
+        </Style>
+
+        <Style Selector="^.solid:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface03}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushSurface03}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="^.solid:pressed">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+    </ControlTheme>
+</ResourceDictionary>

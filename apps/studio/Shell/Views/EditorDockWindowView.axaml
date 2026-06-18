@@ -14,8 +14,10 @@
             </views:EditorDockWindowSurfaceView.TabStripContent>
 
             <views:EditorDockWindowSurfaceView.BodyContent>
-                <ContentControl x:Name="DockPanelContent"
-                                Content="{Binding ActiveTab.Content}" />
+                <Border x:Name="DockPanelBody"
+                        Background="Transparent">
+                    <ContentControl Content="{Binding ActiveTab.Content}" />
+                </Border>
             </views:EditorDockWindowSurfaceView.BodyContent>
         </views:EditorDockWindowSurfaceView>
 

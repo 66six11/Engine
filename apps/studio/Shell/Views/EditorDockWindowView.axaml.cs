@@ -29,7 +29,7 @@ public partial class EditorDockWindowView : UserControl
     public EditorDockWindowView()
     {
         InitializeComponent();
-        DockPanelContent.AddHandler(
+        DockPanelBody.AddHandler(
             InputElement.PointerPressedEvent,
             OnPanelPointerPressed,
             RoutingStrategies.Bubble,

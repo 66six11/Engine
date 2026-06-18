@@ -1,0 +1,25 @@
+<Styles xmlns="https://github.com/avaloniaui">
+    <Design.PreviewWith>
+        <Border Background="{DynamicResource EditorBrushBase00}"
+                Padding="16"
+                TextElement.FontFamily="{DynamicResource EditorFontFamilyGlobal}"
+                TextElement.FontSize="{DynamicResource EditorFontSizeDefault}">
+            <StackPanel Spacing="8"
+                        Width="260">
+                <TextBlock Text="Inherited typography" />
+                <Button Content="Button text inherits" />
+                <TextBox Text="TextBox text inherits" />
+                <Menu>
+                    <MenuItem Header="Menu text inherits">
+                        <MenuItem Header="Submenu text inherits" />
+                    </MenuItem>
+                </Menu>
+            </StackPanel>
+        </Border>
+    </Design.PreviewWith>
+
+    <Style Selector="Window">
+        <Setter Property="TextElement.FontFamily" Value="{DynamicResource EditorFontFamilyGlobal}" />
+        <Setter Property="TextElement.FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+    </Style>
+</Styles>

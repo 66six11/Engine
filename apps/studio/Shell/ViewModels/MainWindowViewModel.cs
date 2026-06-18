@@ -7,6 +7,7 @@ using Editor.Core.Models;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.Composition;
+using Editor.Shell.Selection;
 
 namespace Editor.Shell.ViewModels;
 
@@ -19,15 +20,28 @@ public class MainWindowViewModel : ViewModelBase
     private Action? closeFloatingWindows_;
 
     public MainWindowViewModel()
-        : this(CreatePanelRegistry(), CreateWorkbenchActionRegistry(), EditorDockLayoutStore.TryLoad())
+        : this(new EditorSelectionService(), EditorDockLayoutStore.TryLoad())
+    {
+    }
+
+    private MainWindowViewModel(
+        IEditorSelectionService selectionService,
+        EditorDockLayoutSnapshot? savedLayout)
+        : this(
+            CreatePanelRegistry(selectionService),
+            CreateWorkbenchActionRegistry(selectionService),
+            savedLayout,
+            selectionService)
     {
     }
 
     internal MainWindowViewModel(
         IPanelRegistry panelRegistry,
         IWorkbenchActionRegistry actionRegistry,
-        EditorDockLayoutSnapshot? savedLayout)
+        EditorDockLayoutSnapshot? savedLayout,
+        IEditorSelectionService? selectionService = null)
     {
+        SelectionService = selectionService ?? new EditorSelectionService();
         panelRegistry_ = panelRegistry;
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
@@ -49,6 +63,8 @@ public class MainWindowViewModel : ViewModelBase
         SaveLayoutCommand = new RelayCommand(SaveLayout);
         ResetLayoutCommand = new RelayCommand(ResetLayout);
     }
+
+    public IEditorSelectionService SelectionService { get; }
 
     public EditorDockWorkspaceViewModel DockWorkspace { get; }
 
@@ -140,11 +156,12 @@ public class MainWindowViewModel : ViewModelBase
         RefreshPanelMenuOpenStates();
     }
 
-    internal static IPanelRegistry CreatePanelRegistry()
+    internal static IPanelRegistry CreatePanelRegistry(IEditorSelectionService? selectionService = null)
     {
+        selectionService ??= new EditorSelectionService();
         var registry = new PanelRegistry();
 
-        foreach (var module in EditorFeatureCatalog.CreateDefaultModules())
+        foreach (var module in EditorFeatureCatalog.CreateDefaultModules(selectionService))
         {
             module.RegisterPanels(registry);
         }
@@ -152,11 +169,12 @@ public class MainWindowViewModel : ViewModelBase
         return registry;
     }
 
-    internal static IWorkbenchActionRegistry CreateWorkbenchActionRegistry()
+    internal static IWorkbenchActionRegistry CreateWorkbenchActionRegistry(IEditorSelectionService? selectionService = null)
     {
+        selectionService ??= new EditorSelectionService();
         var registry = new WorkbenchActionRegistry();
 
-        foreach (var module in EditorFeatureCatalog.CreateDefaultModules())
+        foreach (var module in EditorFeatureCatalog.CreateDefaultModules(selectionService))
         {
             module.RegisterActions(registry);
         }

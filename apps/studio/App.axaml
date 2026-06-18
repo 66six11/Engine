@@ -14,13 +14,14 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://Editor/UI/Styles/Tokens/DeepDarkColors.axaml" />
                 <ResourceInclude Source="avares://Editor/UI/Styles/Tokens/EditorMetrics.axaml" />
+                <ResourceInclude Source="avares://Editor/UI/Controls/Base/IconButton.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
   
     <Application.Styles>
-        <FluentTheme />
-        <StyleInclude Source="avares://Editor/UI/Styles/Shell/EditorBase.axaml" />
+        <FluentTheme DensityStyle="Compact" />
+        <StyleInclude Source="avares://Editor/UI/Controls/Base/Native/Index.axaml" />
         <StyleInclude Source="avares://Editor/UI/Styles/Shell/MainMenu.axaml" />
     </Application.Styles>
 </Application>
