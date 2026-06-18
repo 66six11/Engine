@@ -131,6 +131,30 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void PanelMenuItems_open_command_focuses_floating_panel_before_reopening_main_panel()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var hierarchyItem = viewModel.PanelMenuItems.Single(item => item.PanelId == "hierarchy");
+        var hierarchyTab = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+        var focusCount = 0;
+        Assert.True(viewModel.DockWorkspace.CloseTab(hierarchyTab));
+        viewModel.SetFloatingWindowCallbacks(
+            () => [],
+            () => { },
+            panelId =>
+            {
+                focusCount++;
+                return panelId == "hierarchy";
+            },
+            panelId => panelId == "hierarchy");
+
+        hierarchyItem.OpenCommand.Execute(null);
+
+        Assert.Equal(1, focusCount);
+        Assert.False(viewModel.DockWorkspace.ContainsPanel("hierarchy"));
+    }
+
+    [Fact]
     public void RestoreLayoutSnapshot_restores_feature_panel_by_id()
     {
         var viewModel = CreateMainWindowViewModel();

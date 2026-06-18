@@ -32,12 +32,13 @@ public class MainWindowViewModel : ViewModelBase
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
+        var actionExecutor = new WorkbenchActionExecutor(panelCommandService_);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
         var actions = actionRegistry.GetAll();
-        CommandPalette = new CommandPaletteViewModel(actions, ExecuteWorkbenchAction);
-        PanelMenuItems = CreatePanelMenuItems(actions);
+        CommandPalette = new CommandPaletteViewModel(actions, actionExecutor.Execute);
+        PanelMenuItems = CreatePanelMenuItems(actions, actionExecutor);
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
         {
@@ -139,15 +140,6 @@ public class MainWindowViewModel : ViewModelBase
         RefreshPanelMenuOpenStates();
     }
 
-    private bool ExecuteWorkbenchAction(WorkbenchActionDescriptor action)
-    {
-        return action.Kind switch
-        {
-            WorkbenchActionKind.OpenPanel => panelCommandService_.OpenOrFocusPanel(action.TargetId),
-            _ => false,
-        };
-    }
-
     internal static IPanelRegistry CreatePanelRegistry()
     {
         var registry = new PanelRegistry();
@@ -173,7 +165,8 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
-        IReadOnlyList<WorkbenchActionDescriptor> actions)
+        IReadOnlyList<WorkbenchActionDescriptor> actions,
+        IWorkbenchActionExecutor actionExecutor)
     {
         var items = new List<PanelMenuItemViewModel>();
         foreach (var action in actions)
@@ -186,7 +179,7 @@ public class MainWindowViewModel : ViewModelBase
 
             items.Add(new PanelMenuItemViewModel(
                 action,
-                panelId => panelCommandService_.OpenOrFocusPanel(panelId)));
+                actionExecutor.Execute));
         }
 
         return items;
