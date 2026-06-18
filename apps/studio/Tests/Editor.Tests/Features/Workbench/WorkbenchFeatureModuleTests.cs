@@ -9,6 +9,7 @@ using Editor.Features.Workbench;
 using Editor.Shell.Docking;
 using Editor.Shell.Commands;
 using Editor.Shell.Icons;
+using Editor.Shell.Selection;
 using Xunit;
 
 namespace Editor.Tests.Features.Workbench;
@@ -20,7 +21,7 @@ public sealed class WorkbenchFeatureModuleTests
     {
         var registry = new PanelRegistry();
 
-        new WorkbenchFeatureModule().RegisterPanels(registry);
+        new WorkbenchFeatureModule(new EditorSelectionService()).RegisterPanels(registry);
 
         var descriptors = registry.GetAll().ToArray();
         Assert.Equal(
@@ -95,7 +96,7 @@ public sealed class WorkbenchFeatureModuleTests
     {
         var registry = new WorkbenchActionRegistry();
 
-        new WorkbenchFeatureModule().RegisterActions(registry);
+        new WorkbenchFeatureModule(new EditorSelectionService()).RegisterActions(registry);
 
         Assert.Equal(
             [
@@ -136,6 +137,23 @@ public sealed class WorkbenchFeatureModuleTests
                     IconKey: EditorIconKey.PanelProblems),
             ],
             registry.GetAll().ToArray());
+    }
+
+    [Fact]
+    public void RegisterPanels_injects_shared_selection_service_into_selection_panels()
+    {
+        var registry = new PanelRegistry();
+        var selectionService = new EditorSelectionService();
+        new WorkbenchFeatureModule(selectionService).RegisterPanels(registry);
+        var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
+            registry.GetRequired("hierarchy").CreateContent());
+        var inspector = Assert.IsType<InspectorPanelViewModel>(
+            registry.GetRequired("inspector").CreateContent());
+
+        hierarchy.SelectItem(new EditorSelectionItem("entity:1", "scene-object", "Cube"));
+
+        Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
+        Assert.Equal("Cube", inspector.CurrentSelection.PrimaryItem?.DisplayName);
     }
 
     private static PanelDescriptorSnapshot CreateSnapshot(PanelDescriptor descriptor)

@@ -10,6 +10,13 @@ namespace Editor.Features.Workbench;
 
 public sealed class WorkbenchFeatureModule : IEditorFeatureModule
 {
+    private readonly IEditorSelectionService selectionService_;
+
+    public WorkbenchFeatureModule(IEditorSelectionService selectionService)
+    {
+        selectionService_ = selectionService;
+    }
+
     public void RegisterPanels(IPanelRegistry panels)
     {
         foreach (var descriptor in CreatePanelDescriptors())
@@ -32,7 +39,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         }
     }
 
-    private static PanelDescriptor[] CreatePanelDescriptors()
+    private PanelDescriptor[] CreatePanelDescriptors()
     {
         return
         [
@@ -43,7 +50,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Center,
                 "Window/Panels/Scene View",
                 DockContentCachePolicy.KeepAlive,
-                () => new SceneViewPanelViewModel(),
+                () => new SceneViewPanelViewModel(selectionService_),
                 IconKey: "studio.scene-view",
                 Tag: "DOC",
                 TitleDetail: "custom viewport shell",
@@ -55,7 +62,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Left,
                 "Window/Panels/Hierarchy",
                 DockContentCachePolicy.KeepAlive,
-                () => new HierarchyPanelViewModel(),
+                () => new HierarchyPanelViewModel(selectionService_),
                 IconKey: "studio.hierarchy",
                 Tag: "LEFT",
                 TitleDetail: "selection source",
@@ -68,7 +75,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Right,
                 "Window/Panels/Inspector",
                 DockContentCachePolicy.KeepAlive,
-                () => new InspectorPanelViewModel(),
+                () => new InspectorPanelViewModel(selectionService_),
                 IconKey: "studio.inspector",
                 Tag: "RIGHT",
                 TitleDetail: "context target",
