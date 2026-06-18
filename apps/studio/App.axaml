@@ -21,7 +21,7 @@
   
     <Application.Styles>
         <FluentTheme DensityStyle="Compact" />
-        <StyleInclude Source="avares://Editor/UI/Styles/Shell/EditorBase.axaml" />
+        <StyleInclude Source="avares://Editor/UI/Controls/Base/Native/Index.axaml" />
         <StyleInclude Source="avares://Editor/UI/Styles/Shell/MainMenu.axaml" />
     </Application.Styles>
 </Application>

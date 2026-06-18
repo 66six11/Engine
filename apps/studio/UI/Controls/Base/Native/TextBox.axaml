@@ -1,0 +1,21 @@
+<Styles xmlns="https://github.com/avaloniaui">
+    <Design.PreviewWith>
+        <Border Background="{DynamicResource EditorBrushBase00}"
+                Padding="16">
+            <StackPanel Spacing="8"
+                        Width="260">
+                <TextBox Text="Editable text" />
+                <TextBox IsEnabled="False"
+                         Text="Disabled text" />
+            </StackPanel>
+        </Border>
+    </Design.PreviewWith>
+
+    <Style Selector="TextBox">
+        <Setter Property="Cursor" Value="Ibeam" />
+    </Style>
+
+    <Style Selector="TextBox:disabled">
+        <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+</Styles>

@@ -1,0 +1,4 @@
+<Styles xmlns="https://github.com/avaloniaui">
+    <StyleInclude Source="avares://Editor/UI/Controls/Base/Native/Typography.axaml" />
+    <StyleInclude Source="avares://Editor/UI/Controls/Base/Native/TextBox.axaml" />
+</Styles>

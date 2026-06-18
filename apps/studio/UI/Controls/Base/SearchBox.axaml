@@ -42,6 +42,11 @@
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Cursor" Value="Ibeam" />
+        </Style>
+
+        <Style Selector="Border.editor-search-box:disabled">
+            <Setter Property="Cursor" Value="Arrow" />
         </Style>
 
         <Style Selector="Border.editor-search-box.focused">

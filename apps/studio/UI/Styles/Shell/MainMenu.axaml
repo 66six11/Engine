@@ -24,7 +24,6 @@
         <Setter Property="Padding" Value="{DynamicResource EditorMainMenuPadding}" />
         <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
         <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
-        <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
@@ -33,7 +32,6 @@
         <Setter Property="Padding" Value="{DynamicResource EditorMenuItemPadding}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
-        <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
     </Style>
 
     <Style Selector="MenuItem.editor-menu-item:pointerover">
