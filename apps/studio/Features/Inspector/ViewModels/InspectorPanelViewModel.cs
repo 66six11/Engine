@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Features.Inspector.Models;
 using Editor.Shell.ViewModels;
 
@@ -10,14 +13,26 @@ namespace Editor.Features.Inspector.ViewModels;
 public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
 {
     private readonly IEditorSelectionService selectionService_;
+    private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
     private EditorSelectionSnapshot currentSelection_;
     private InspectorDocumentModel? document_;
 
     public InspectorPanelViewModel(IEditorSelectionService selectionService)
+        : this(selectionService, new InMemorySceneSnapshotProvider(SceneSnapshot.Empty))
     {
+    }
+
+    internal InspectorPanelViewModel(
+        IEditorSelectionService selectionService,
+        ISceneSnapshotProvider sceneSnapshotProvider)
+    {
+        ArgumentNullException.ThrowIfNull(selectionService);
+        ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
+
         selectionService_ = selectionService;
+        sceneSnapshotProvider_ = sceneSnapshotProvider;
         currentSelection_ = selectionService.Current;
-        document_ = CreateDocument(currentSelection_);
+        document_ = CreateDocument(currentSelection_, sceneSnapshotProvider_);
         selectionService_.SelectionChanged += OnSelectionChanged;
     }
 
@@ -49,33 +64,87 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
     private void OnSelectionChanged(object? sender, EditorSelectionChangedEventArgs e)
     {
         CurrentSelection = e.Current;
-        Document = CreateDocument(e.Current);
+        Document = CreateDocument(e.Current, sceneSnapshotProvider_);
     }
 
-    private static InspectorDocumentModel? CreateDocument(EditorSelectionSnapshot selection)
+    private static InspectorDocumentModel? CreateDocument(
+        EditorSelectionSnapshot selection,
+        ISceneSnapshotProvider sceneSnapshotProvider)
     {
         return selection.Items.Count switch
         {
             0 => null,
-            1 => CreateSingleSelectionDocument(selection),
+            1 => CreateSingleSelectionDocument(selection, sceneSnapshotProvider),
             _ => CreateMultiSelectionDocument(selection),
         };
     }
 
-    private static InspectorDocumentModel CreateSingleSelectionDocument(EditorSelectionSnapshot selection)
+    private static InspectorDocumentModel CreateSingleSelectionDocument(
+        EditorSelectionSnapshot selection,
+        ISceneSnapshotProvider sceneSnapshotProvider)
     {
         var item = selection.PrimaryItem!;
-        var properties = new List<InspectorPropertyModel>
+        if (!sceneSnapshotProvider.TryGetObject(item.Id, out var sceneObject) || sceneObject is null)
         {
-            new("Name", item.DisplayName),
-            new("Kind", item.Kind),
-            new("Id", item.Id),
+            return CreateMissingSelectionDocument(selection, item);
+        }
+
+        var selectionProperties = new List<InspectorPropertyModel>
+        {
+            new("Name", sceneObject.DisplayName),
+            new("Kind", sceneObject.Kind),
+            new("Id", sceneObject.Id),
+            new("Active", sceneObject.IsActive ? "True" : "False"),
         };
 
-        if (!string.IsNullOrWhiteSpace(item.IconKey))
+        if (!string.IsNullOrWhiteSpace(sceneObject.ParentId))
         {
-            properties.Add(new InspectorPropertyModel("Icon", item.IconKey));
+            selectionProperties.Add(new InspectorPropertyModel("Parent", sceneObject.ParentId));
         }
+
+        if (!string.IsNullOrWhiteSpace(sceneObject.IconKey))
+        {
+            selectionProperties.Add(new InspectorPropertyModel("Icon", sceneObject.IconKey));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selection.ActiveContextId))
+        {
+            selectionProperties.Add(new InspectorPropertyModel("Context", selection.ActiveContextId));
+        }
+
+        var sections = new List<InspectorSectionModel>
+        {
+            new("Selection", selectionProperties),
+        };
+
+        if (sceneObject.Properties.Count > 0)
+        {
+            sections.Add(new InspectorSectionModel(
+                "Properties",
+                sceneObject.Properties
+                    .Select(property => new InspectorPropertyModel(
+                        property.DisplayName,
+                        property.Value,
+                        MapValueKind(property.ValueKind)))
+                    .ToArray()));
+        }
+
+        return new InspectorDocumentModel(
+            sceneObject.DisplayName,
+            sceneObject.Kind,
+            1,
+            sections);
+    }
+
+    private static InspectorDocumentModel CreateMissingSelectionDocument(
+        EditorSelectionSnapshot selection,
+        EditorSelectionItem item)
+    {
+        var properties = new List<InspectorPropertyModel>
+        {
+            new("State", "Missing"),
+            new("Id", item.Id),
+        };
 
         if (!string.IsNullOrWhiteSpace(selection.ActiveContextId))
         {
@@ -84,9 +153,9 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
 
         return new InspectorDocumentModel(
             item.DisplayName,
-            item.Kind,
+            "Missing selection",
             1,
-            [new InspectorSectionModel("Selection", properties)]);
+            [new InspectorSectionModel("Validation", properties)]);
     }
 
     private static InspectorDocumentModel CreateMultiSelectionDocument(EditorSelectionSnapshot selection)
@@ -94,7 +163,7 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
         var count = selection.Items.Count;
         var properties = new List<InspectorPropertyModel>
         {
-            new("Count", count.ToString(System.Globalization.CultureInfo.InvariantCulture), InspectorPropertyValueKind.Count),
+            new("Count", count.ToString(CultureInfo.InvariantCulture), InspectorPropertyValueKind.Count),
         };
 
         if (!string.IsNullOrWhiteSpace(selection.ActiveContextId))
@@ -107,5 +176,14 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
             "Multi-selection",
             count,
             [new InspectorSectionModel("Selection", properties)]);
+    }
+
+    private static InspectorPropertyValueKind MapValueKind(SceneObjectPropertyValueKind valueKind)
+    {
+        return valueKind switch
+        {
+            SceneObjectPropertyValueKind.Count => InspectorPropertyValueKind.Count,
+            _ => InspectorPropertyValueKind.Text,
+        };
     }
 }
