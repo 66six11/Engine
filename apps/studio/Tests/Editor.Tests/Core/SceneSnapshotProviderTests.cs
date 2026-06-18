@@ -55,6 +55,56 @@ public sealed class SceneSnapshotProviderTests
     }
 
     [Fact]
+    public void Scene_snapshot_rejects_blank_scene_id()
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => new SceneSnapshot(" ", "Test Scene", 1));
+
+        Assert.Equal("id", exception.ParamName);
+    }
+
+    [Fact]
+    public void Scene_object_snapshot_rejects_required_identity_fields()
+    {
+        var idException = Assert.Throws<ArgumentException>(
+            () => new SceneObjectSnapshot(" ", "Cube", "mesh"));
+        var kindException = Assert.Throws<ArgumentException>(
+            () => new SceneObjectSnapshot("scene:test/cube", "Cube", " "));
+
+        Assert.Equal("id", idException.ParamName);
+        Assert.Equal("kind", kindException.ParamName);
+    }
+
+    [Fact]
+    public void Scene_object_property_snapshot_rejects_required_fields()
+    {
+        var idException = Assert.Throws<ArgumentException>(
+            () => new SceneObjectPropertySnapshot(" ", "Name", "Cube"));
+        var valueException = Assert.Throws<ArgumentNullException>(
+            () => new SceneObjectPropertySnapshot("name", "Name", null!));
+
+        Assert.Equal("id", idException.ParamName);
+        Assert.Equal("value", valueException.ParamName);
+    }
+
+    [Fact]
+    public void Scene_object_snapshot_converts_to_selection_item()
+    {
+        var sceneObject = new SceneObjectSnapshot(
+            "scene:test/cube",
+            "Cube",
+            "mesh",
+            iconKey: "studio.object.mesh");
+
+        var item = sceneObject.ToSelectionItem();
+
+        Assert.Equal("scene:test/cube", item.Id);
+        Assert.Equal("mesh", item.Kind);
+        Assert.Equal("Cube", item.DisplayName);
+        Assert.Equal("studio.object.mesh", item.IconKey);
+    }
+
+    [Fact]
     public void Scene_object_snapshot_exposes_read_only_property_list()
     {
         var properties = new List<SceneObjectPropertySnapshot>
