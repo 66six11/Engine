@@ -91,7 +91,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
     private void ExecuteSelected()
     {
-        if (SelectedItem is null)
+        if (SelectedItem is null || !SelectedItem.IsEnabled)
         {
             return;
         }
@@ -121,6 +121,8 @@ public sealed class CommandPaletteViewModel : ViewModelBase
     {
         return item.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
             || item.Detail.Contains(query, StringComparison.OrdinalIgnoreCase)
-            || item.Id.Contains(query, StringComparison.OrdinalIgnoreCase);
+            || item.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || item.Category.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || item.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 }

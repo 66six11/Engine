@@ -18,12 +18,42 @@ public sealed class CommandPaletteViewModelTests
 
         Assert.True(viewModel.IsOpen);
         Assert.Equal(string.Empty, viewModel.Query);
-        Assert.Equal(["Scene View", "Console"], viewModel.FilteredItems.Select(item => item.Title));
+        Assert.Equal(["Scene View", "Console", "Disabled"], viewModel.FilteredItems.Select(item => item.Title));
         Assert.Equal("Scene View", viewModel.SelectedItem?.Title);
     }
 
     [Fact]
-    public void Query_filters_by_title_menu_path_or_id()
+    public void Item_exposes_command_metadata()
+    {
+        var viewModel = CreatePalette();
+        viewModel.OpenCommand.Execute(null);
+
+        var item = viewModel.FilteredItems.Single(item => item.Id == "workbench.panel.console");
+
+        Assert.Equal("Window", item.Category);
+        Assert.Equal("Ctrl+Alt+C", item.DefaultShortcut);
+        Assert.True(item.HasDefaultShortcut);
+        Assert.True(item.IsEnabled);
+        Assert.False(item.HasDisabledReason);
+        Assert.Equal(1.0, item.RowOpacity);
+    }
+
+    [Fact]
+    public void Disabled_item_exposes_reason_and_dimmed_opacity()
+    {
+        var viewModel = CreatePalette();
+        viewModel.OpenCommand.Execute(null);
+
+        var item = viewModel.FilteredItems.Single(item => item.Id == "workbench.panel.disabled");
+
+        Assert.False(item.IsEnabled);
+        Assert.Equal("Disabled by test", item.DisabledReason);
+        Assert.True(item.HasDisabledReason);
+        Assert.Equal(0.55, item.RowOpacity);
+    }
+
+    [Fact]
+    public void Query_filters_by_title_menu_path_id_category_or_search_text()
     {
         var viewModel = CreatePalette();
         viewModel.OpenCommand.Execute(null);
@@ -37,6 +67,15 @@ public sealed class CommandPaletteViewModelTests
 
         item = Assert.Single(viewModel.FilteredItems);
         Assert.Equal("Scene View", item.Title);
+
+        viewModel.Query = "diagnostics";
+
+        item = Assert.Single(viewModel.FilteredItems);
+        Assert.Equal("Console", item.Title);
+
+        viewModel.Query = "window";
+
+        Assert.Equal(["Scene View", "Console", "Disabled"], viewModel.FilteredItems.Select(command => command.Title));
     }
 
     [Fact]
@@ -81,6 +120,24 @@ public sealed class CommandPaletteViewModelTests
         Assert.True(viewModel.IsOpen);
     }
 
+    [Fact]
+    public void ExecuteSelected_ignores_disabled_action()
+    {
+        string? executedActionId = null;
+        var viewModel = CreatePalette(action =>
+        {
+            executedActionId = action.Id;
+            return true;
+        });
+        viewModel.OpenCommand.Execute(null);
+        viewModel.Query = "disabled";
+
+        viewModel.ExecuteSelectedCommand.Execute(null);
+
+        Assert.Null(executedActionId);
+        Assert.True(viewModel.IsOpen);
+    }
+
     private static CommandPaletteViewModel CreatePalette(
         Func<WorkbenchActionDescriptor, bool>? execute = null)
     {
@@ -91,13 +148,26 @@ public sealed class CommandPaletteViewModelTests
                     "Scene View",
                     WorkbenchActionKind.OpenPanel,
                     "Window/Panels/Scene View",
-                    TargetId: "scene-view"),
+                    TargetId: "scene-view",
+                    Category: "Window"),
                 new WorkbenchActionDescriptor(
                     "workbench.panel.console",
                     "Console",
                     WorkbenchActionKind.OpenPanel,
                     "Window/Panels/Console",
-                    TargetId: "console"),
+                    TargetId: "console",
+                    Category: "Window",
+                    DefaultShortcut: "Ctrl+Alt+C",
+                    SearchText: "log output diagnostics"),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.disabled",
+                    "Disabled",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Disabled",
+                    TargetId: "disabled",
+                    Category: "Window",
+                    IsEnabled: false,
+                    DisabledReason: "Disabled by test"),
             ],
             execute ?? (_ => true));
     }

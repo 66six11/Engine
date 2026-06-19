@@ -99,9 +99,10 @@
                              DoubleTapped="OnResultsDoubleTapped">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:CommandPaletteItemViewModel">
-                                <Grid ColumnDefinitions="Auto,*"
+                                <Grid ColumnDefinitions="Auto,*,Auto"
                                       ColumnSpacing="8"
-                                      Margin="8,3">
+                                      Margin="8,3"
+                                      Opacity="{Binding RowOpacity}">
                                     <icons:EditorIconView Grid.Column="0"
                                                           Classes="command-palette-icon"
                                                           IconKey="{Binding IconKey}"
@@ -113,7 +114,15 @@
                                                    Text="{Binding Title}" />
                                         <TextBlock Classes="command-palette-detail"
                                                    Text="{Binding Detail}" />
+                                        <TextBlock Classes="command-palette-detail"
+                                                   Text="{Binding DisabledReason}"
+                                                   IsVisible="{Binding HasDisabledReason}" />
                                     </StackPanel>
+                                    <TextBlock Grid.Column="2"
+                                               Classes="command-palette-detail"
+                                               Text="{Binding DefaultShortcut}"
+                                               IsVisible="{Binding HasDefaultShortcut}"
+                                               VerticalAlignment="Center" />
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
