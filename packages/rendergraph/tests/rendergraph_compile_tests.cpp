@@ -56,6 +56,23 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool expectExecuteFailure(const asharia::Result<void>& executed,
+                                            std::string_view expectedMessage,
+                                            std::string_view context) {
+        if (executed) {
+            std::cerr << "RenderGraph executed invalid graph: " << context << '\n';
+            return false;
+        }
+
+        if (!contains(executed.error().message, expectedMessage)) {
+            std::cerr << "RenderGraph produced unexpected execute error for " << context << ": "
+                      << executed.error().message << '\n';
+            return false;
+        }
+
+        return true;
+    }
+
     [[nodiscard]] asharia::RenderGraphImageDesc importedColorDesc(std::string name) {
         return asharia::RenderGraphImageDesc{
             .name = std::move(name),
@@ -974,6 +991,347 @@ namespace {
                                     "imported buffer without final state");
     }
 
+    [[nodiscard]] bool
+    rejectsExecutingCompiledGraphAfterMutation(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph callbackGraph;
+        int callbackCount = 0;
+        auto pass = callbackGraph.addPass("MutableCallback", std::string{kSideEffectPass});
+        pass.execute([&callbackCount](asharia::RenderGraphPassContext) -> asharia::Result<void> {
+            ++callbackCount;
+            return {};
+        });
+
+        auto compiled = callbackGraph.compile(schemas);
+        if (!compiled) {
+            std::cerr << compiled.error().message << '\n';
+            return false;
+        }
+
+        pass.execute([&callbackCount](asharia::RenderGraphPassContext) -> asharia::Result<void> {
+            callbackCount += 100;
+            return {};
+        });
+        if (!expectExecuteFailure(callbackGraph.execute(*compiled), "changed since compile",
+                                  "compiled pass executed after callback mutation")) {
+            return false;
+        }
+        if (!expect(callbackCount == 0,
+                    "RenderGraph ran a callback from a stale compile result.")) {
+            return false;
+        }
+
+        asharia::RenderGraph resourceGraph;
+        resourceGraph.addPass("StablePass", std::string{kSideEffectPass})
+            .execute([](asharia::RenderGraphPassContext) -> asharia::Result<void> { return {}; });
+        auto resourceCompiled = resourceGraph.compile(schemas);
+        if (!resourceCompiled) {
+            std::cerr << resourceCompiled.error().message << '\n';
+            return false;
+        }
+
+        static_cast<void>(resourceGraph.importImage(importedColorDesc("AddedAfterCompile")));
+        static_cast<void>(resourceGraph.importBuffer(importedStorageDesc("BufferAfterCompile")));
+        return expectExecuteFailure(resourceGraph.execute(*resourceCompiled), "changed since compile",
+                                    "compiled pass executed after resource mutation");
+    }
+
+    [[nodiscard]] asharia::RenderGraphSchemaRegistry makeCommandSlotValidationSchemas() {
+        asharia::RenderGraphSchemaRegistry schemas;
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "test.invalid-set-texture",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "color",
+                        .access = asharia::RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::SetTexture},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "test.invalid-clear-color",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::ClearColor},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "test.invalid-image-copy",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::TransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyImage},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "test.invalid-buffer-copy",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::BufferShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Compute,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyBuffer},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "test.invalid-buffer-to-image-copy",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::BufferTransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Fragment,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyBufferToImage},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = "test.invalid-image-to-buffer-copy",
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "source",
+                        .access = asharia::RenderGraphSlotAccess::TransferRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::BufferShaderRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::Compute,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::CopyImageToBuffer},
+        });
+
+        return schemas;
+    }
+
+    [[nodiscard]] bool rejectsCommandsWithWrongResourceSlots() {
+        const asharia::RenderGraphSchemaRegistry schemas = makeCommandSlotValidationSchemas();
+
+        asharia::RenderGraph textureGraph;
+        const auto color = textureGraph.importImage(importedColorDesc("ColorTarget"));
+        textureGraph.addPass("SetTextureWithColorSlot", "test.invalid-set-texture")
+            .writeColor("color", color)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.setTexture("uTexture", "color");
+            });
+        if (!expectCompileFailure(textureGraph.compile(schemas),
+                                  "command 'SetTexture' references invalid slot 'color'",
+                                  "setTexture using a color write slot")) {
+            return false;
+        }
+
+        asharia::RenderGraph clearGraph;
+        const auto sampled = clearGraph.importImage(importedSampledDesc("SampledSource"));
+        clearGraph.addPass("ClearColorWithReadSlot", "test.invalid-clear-color")
+            .readTexture("source", sampled, asharia::RenderGraphShaderStage::Fragment)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.clearColor("source", {0.0F, 0.0F, 0.0F, 1.0F});
+            });
+        if (!expectCompileFailure(clearGraph.compile(schemas),
+                                  "command 'ClearColor' references invalid slot 'source'",
+                                  "clearColor using a shader read slot")) {
+            return false;
+        }
+
+        asharia::RenderGraph imageCopyGraph;
+        const auto source = imageCopyGraph.importImage(importedColorDesc("ImageCopySource"));
+        const auto target = imageCopyGraph.importImage(importedSampledDesc("ImageCopyTarget"));
+        imageCopyGraph.addPass("CopyImageWithReadTarget", "test.invalid-image-copy")
+            .readTransfer("source", source)
+            .readTexture("target", target, asharia::RenderGraphShaderStage::Fragment)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImage("source", "target");
+            });
+        if (!expectCompileFailure(imageCopyGraph.compile(schemas),
+                                  "command 'CopyImage' references invalid slot 'target'",
+                                  "copyImage using a shader read target slot")) {
+            return false;
+        }
+
+        asharia::RenderGraph bufferCopyGraph;
+        const auto bufferSource =
+            bufferCopyGraph.importBuffer(importedStorageDesc("BufferCopySource"));
+        const auto bufferTarget =
+            bufferCopyGraph.importBuffer(importedStorageDesc("BufferCopyTarget"));
+        bufferCopyGraph.addPass("CopyBufferWithReadTarget", "test.invalid-buffer-copy")
+            .readTransferBuffer("source", bufferSource)
+            .readBuffer("target", bufferTarget, asharia::RenderGraphShaderStage::Compute)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyBuffer("source", "target");
+            });
+        if (!expectCompileFailure(bufferCopyGraph.compile(schemas),
+                                  "command 'CopyBuffer' references invalid slot 'target'",
+                                  "copyBuffer using a buffer shader read target slot")) {
+            return false;
+        }
+
+        asharia::RenderGraph bufferToImageGraph;
+        const auto uploadSource =
+            bufferToImageGraph.importBuffer(importedStorageDesc("UploadSource"));
+        const auto uploadTarget = bufferToImageGraph.importImage(importedSampledDesc("UploadTarget"));
+        bufferToImageGraph.addPass("CopyBufferToImageWithReadTarget",
+                                   "test.invalid-buffer-to-image-copy")
+            .readTransferBuffer("source", uploadSource)
+            .readTexture("target", uploadTarget, asharia::RenderGraphShaderStage::Fragment)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyBufferToImage("source", "target");
+            });
+        if (!expectCompileFailure(bufferToImageGraph.compile(schemas),
+                                  "command 'CopyBufferToImage' references invalid slot 'target'",
+                                  "copyBufferToImage using a shader read image target slot")) {
+            return false;
+        }
+
+        asharia::RenderGraph imageToBufferGraph;
+        const auto readbackSource =
+            imageToBufferGraph.importImage(importedColorDesc("ReadbackSource"));
+        const auto readbackTarget =
+            imageToBufferGraph.importBuffer(importedStorageDesc("ReadbackTarget"));
+        imageToBufferGraph.addPass("CopyImageToBufferWithReadTarget",
+                                   "test.invalid-image-to-buffer-copy")
+            .readTransfer("source", readbackSource)
+            .readBuffer("target", readbackTarget, asharia::RenderGraphShaderStage::Compute)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.copyImageToBuffer("source", "target");
+            });
+        return expectCompileFailure(imageToBufferGraph.compile(schemas),
+                                    "command 'CopyImageToBuffer' references invalid slot 'target'",
+                                    "copyImageToBuffer using a buffer shader read target slot");
+    }
+
+    [[nodiscard]] bool rejectsInvalidResourceDeclarations() {
+        asharia::RenderGraph undefinedFormatGraph;
+        const auto undefinedFormat =
+            undefinedFormatGraph.importImage(asharia::RenderGraphImageDesc{
+                .name = "UndefinedFormat",
+                .format = asharia::RenderGraphImageFormat::Undefined,
+                .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+                .initialState = asharia::RenderGraphImageState::Undefined,
+                .finalState = asharia::RenderGraphImageState::Present,
+            });
+        undefinedFormatGraph.addPass("WriteUndefinedFormat", std::string{kColorWritePass})
+            .writeColor("target", undefinedFormat);
+        if (!expectCompileFailure(undefinedFormatGraph.compile(makeCompileTestSchemas()),
+                                  "must declare a defined format",
+                                  "image with undefined format")) {
+            return false;
+        }
+
+        asharia::RenderGraph zeroExtentGraph;
+        const auto zeroExtent = zeroExtentGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "ZeroExtent",
+            .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+            .extent = asharia::RenderGraphExtent2D{.width = 0, .height = 64},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
+        zeroExtentGraph.addPass("WriteZeroExtent", std::string{kColorWritePass})
+            .writeColor("target", zeroExtent);
+        if (!expectCompileFailure(zeroExtentGraph.compile(makeCompileTestSchemas()),
+                                  "must declare a non-zero extent",
+                                  "image with zero extent")) {
+            return false;
+        }
+
+        asharia::RenderGraph imageShaderStageGraph;
+        const auto imageShaderStage =
+            imageShaderStageGraph.importImage(asharia::RenderGraphImageDesc{
+                .name = "ImageShaderStageNone",
+                .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
+                .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+                .initialState = asharia::RenderGraphImageState::ShaderRead,
+                .initialShaderStage = asharia::RenderGraphShaderStage::None,
+                .finalState = asharia::RenderGraphImageState::ShaderRead,
+                .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
+            });
+        imageShaderStageGraph.addPass("ReadShaderStageNone", std::string{kTextureReadPass})
+            .readTexture("source", imageShaderStage, asharia::RenderGraphShaderStage::Fragment);
+        if (!expectCompileFailure(imageShaderStageGraph.compile(makeCompileTestSchemas()),
+                                  "ShaderRead state must declare a shader stage",
+                                  "image ShaderRead state with ShaderStage::None")) {
+            return false;
+        }
+
+        asharia::RenderGraph depthSampledStageGraph;
+        static_cast<void>(depthSampledStageGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "DepthSampledStageNone",
+            .format = asharia::RenderGraphImageFormat::D32Sfloat,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+            .initialState = asharia::RenderGraphImageState::DepthSampledRead,
+            .initialShaderStage = asharia::RenderGraphShaderStage::None,
+            .finalState = asharia::RenderGraphImageState::DepthSampledRead,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Fragment,
+        }));
+        if (!expectCompileFailure(depthSampledStageGraph.compile(makeCompileTestSchemas()),
+                                  "DepthSampledRead state must declare a shader stage",
+                                  "image DepthSampledRead state with ShaderStage::None")) {
+            return false;
+        }
+
+        asharia::RenderGraph bufferShaderStageGraph;
+        const auto bufferShaderStage =
+            bufferShaderStageGraph.importBuffer(asharia::RenderGraphBufferDesc{
+                .name = "BufferShaderStageNone",
+                .byteSize = 256,
+                .initialState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .initialShaderStage = asharia::RenderGraphShaderStage::None,
+                .finalState = asharia::RenderGraphBufferState::StorageReadWrite,
+                .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
+            });
+        bufferShaderStageGraph.addPass("ReadWriteShaderStageNone",
+                                       std::string{kStorageReadWritePass})
+            .readWriteStorageBuffer("target", bufferShaderStage,
+                                    asharia::RenderGraphShaderStage::Compute);
+        return expectCompileFailure(bufferShaderStageGraph.compile(makeCompileTestSchemas()),
+                                    "StorageReadWrite state must declare a shader stage",
+                                    "buffer StorageReadWrite state with ShaderStage::None");
+    }
+
 } // namespace
 
 int main() {
@@ -985,7 +1343,9 @@ int main() {
         keepsImportedInitialReadBeforeOverwrite(schemas) && buildsDiagnosticsSnapshot(schemas) &&
         compilesImageTransferCopy(schemas) && compilesBufferFillCommand(schemas) &&
         compilesBufferTransferCopy(schemas) && compilesImageBufferTransferCopies(schemas) &&
-        rejectsMissingProducers(schemas) && rejectsImportedResourcesWithoutFinalState(schemas);
+        rejectsMissingProducers(schemas) && rejectsImportedResourcesWithoutFinalState(schemas) &&
+        rejectsExecutingCompiledGraphAfterMutation(schemas) &&
+        rejectsCommandsWithWrongResourceSlots() && rejectsInvalidResourceDeclarations();
 
     if (passed) {
         std::cout << "RenderGraph compile tests passed.\n";

@@ -61,8 +61,9 @@ namespace asharia::asset {
             return result;
         }
 
-        result.plan = planAssetImports(result.discovery.manifest.records, result.snapshot.snapshots,
-                                       request.productManifest, request.targetProfile);
+        result.plan = planAssetImports(
+            result.discovery.manifest.records, result.snapshot.snapshots, request.productManifest,
+            request.targetProfile, AssetImportPlanOptions{.toolVersions = request.toolVersions});
         return result;
     }
 

@@ -4,16 +4,57 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
 #include "asharia/asset_core/asset_guid.hpp"
 
 namespace asharia::asset {
     namespace {
+
+        constexpr std::uint64_t kFnv1a64Offset = 14695981039346656037ULL;
+        constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
+        constexpr std::string_view kShaderCompileReflectionImporterName =
+            "com.asharia.importer.shader-compile-reflection";
+
+        [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
+                                                       std::uint8_t byte) noexcept {
+            hash ^= byte;
+            hash *= kFnv1a64Prime;
+            return hash;
+        }
+
+        [[nodiscard]] constexpr std::uint64_t hashUint64(std::uint64_t hash,
+                                                         std::uint64_t value) noexcept {
+            for (std::size_t index = 0; index < 8U; ++index) {
+                hash = hashByte(hash, static_cast<std::uint8_t>((value >> (index * 8U)) & 0xFFU));
+            }
+            return hash;
+        }
+
+        [[nodiscard]] constexpr std::uint64_t hashText(std::uint64_t hash,
+                                                       std::string_view text) noexcept {
+            for (char character : text) {
+                hash = hashByte(hash, static_cast<std::uint8_t>(character));
+            }
+            return hash;
+        }
 
         [[nodiscard]] std::string formatHash64(std::uint64_t value) {
             constexpr std::string_view kHexDigits = "0123456789abcdef";
@@ -83,6 +124,168 @@ namespace asharia::asset {
             return formatAssetGuid(left.source.guid) < formatAssetGuid(right.source.guid);
         }
 
+        [[nodiscard]] std::string toolExecutableName(std::string_view toolName) {
+            std::string executable{toolName};
+#if defined(_WIN32)
+            executable += ".exe";
+#endif
+            return executable;
+        }
+
+        [[nodiscard]] bool isRegularFile(const std::filesystem::path& path) {
+            std::error_code error;
+            return std::filesystem::is_regular_file(path, error);
+        }
+
+        [[nodiscard]] std::optional<std::string> environmentVariable(std::string_view name) {
+            const std::string variableName{name};
+#if defined(_WIN32)
+            const DWORD requiredSize = GetEnvironmentVariableA(variableName.c_str(), nullptr, 0);
+            if (requiredSize == 0) {
+                return std::nullopt;
+            }
+            std::string text(requiredSize, '\0');
+            const DWORD writtenSize =
+                GetEnvironmentVariableA(variableName.c_str(), text.data(), requiredSize);
+            if (writtenSize == 0 || writtenSize >= requiredSize) {
+                return std::nullopt;
+            }
+            text.resize(writtenSize);
+            return text;
+#else
+            if (const char* value = std::getenv(variableName.c_str()); value != nullptr) {
+                return std::string{value};
+            }
+            return std::nullopt;
+#endif
+        }
+
+        [[nodiscard]] std::optional<std::filesystem::path>
+        findToolExecutable(std::string_view toolName) {
+            const std::string executable = toolExecutableName(toolName);
+            const std::optional<std::string> pathValue = environmentVariable("PATH");
+            if (pathValue) {
+#if defined(_WIN32)
+                constexpr char kSeparator = ';';
+#else
+                constexpr char kSeparator = ':';
+#endif
+                const std::string_view pathText{*pathValue};
+                std::size_t segmentBegin = 0;
+                while (segmentBegin <= pathText.size()) {
+                    std::size_t segmentEnd = pathText.find(kSeparator, segmentBegin);
+                    if (segmentEnd == std::string_view::npos) {
+                        segmentEnd = pathText.size();
+                    }
+                    if (segmentEnd > segmentBegin) {
+                        std::filesystem::path candidate =
+                            std::filesystem::path{std::string{
+                                pathText.substr(segmentBegin, segmentEnd - segmentBegin)}} /
+                            executable;
+                        if (isRegularFile(candidate)) {
+                            return candidate;
+                        }
+                    }
+                    if (segmentEnd == pathText.size()) {
+                        break;
+                    }
+                    segmentBegin = segmentEnd + 1U;
+                }
+            }
+
+            const std::optional<std::string> vulkanSdkValue = environmentVariable("VULKAN_SDK");
+            if (vulkanSdkValue) {
+                std::filesystem::path candidate =
+                    std::filesystem::path{*vulkanSdkValue} / "Bin" / executable;
+                if (isRegularFile(candidate)) {
+                    return candidate;
+                }
+            }
+
+            return std::nullopt;
+        }
+
+        [[nodiscard]] std::uint64_t hashToolFileMetadata(std::uint64_t hash,
+                                                         const std::filesystem::path& executable) {
+#if defined(_WIN32)
+            WIN32_FILE_ATTRIBUTE_DATA data{};
+            if (GetFileAttributesExW(executable.c_str(), GetFileExInfoStandard, &data) == 0) {
+                return hash;
+            }
+            ULARGE_INTEGER fileSize{};
+            fileSize.LowPart = data.nFileSizeLow;
+            fileSize.HighPart = data.nFileSizeHigh;
+            hash = hashUint64(hash, fileSize.QuadPart);
+
+            ULARGE_INTEGER writeTime{};
+            writeTime.LowPart = data.ftLastWriteTime.dwLowDateTime;
+            writeTime.HighPart = data.ftLastWriteTime.dwHighDateTime;
+            return hashUint64(hash, writeTime.QuadPart);
+#else
+            std::error_code sizeError;
+            const std::uintmax_t fileSize = std::filesystem::file_size(executable, sizeError);
+            if (!sizeError) {
+                hash = hashUint64(hash, static_cast<std::uint64_t>(fileSize));
+            }
+
+            std::error_code timeError;
+            const std::filesystem::file_time_type writeTime =
+                std::filesystem::last_write_time(executable, timeError);
+            if (!timeError) {
+                hash = hashUint64(
+                    hash,
+                    static_cast<std::uint64_t>(writeTime.time_since_epoch().count()));
+            }
+            return hash;
+#endif
+        }
+
+        [[nodiscard]] std::uint64_t hashToolVersionFingerprint(std::string_view toolName) {
+            std::uint64_t hash = hashText(kFnv1a64Offset, "asset-tool-version");
+            hash = hashText(hash, toolName);
+            const std::optional<std::filesystem::path> executable = findToolExecutable(toolName);
+            if (!executable) {
+                return hashText(hash, "missing");
+            }
+
+            std::error_code canonicalError;
+            const std::filesystem::path canonicalPath =
+                std::filesystem::weakly_canonical(*executable, canonicalError);
+            hash = hashText(hash, canonicalError ? executable->generic_string()
+                                                 : canonicalPath.generic_string());
+
+            return hashToolFileMetadata(hash, *executable);
+        }
+
+        [[nodiscard]] bool hasToolVersionFor(
+            std::span<const AssetImportToolVersionDependency> toolVersions, ImporterId importerId,
+            std::string_view toolName) {
+            return std::ranges::any_of(
+                toolVersions, [importerId, toolName](const AssetImportToolVersionDependency&
+                                                         toolVersion) {
+                    return toolVersion.importerId == importerId &&
+                           toolVersion.toolName == toolName;
+                });
+        }
+
+        void appendDefaultShaderToolVersionDependency(
+            std::vector<AssetImportToolVersionDependency>& toolVersions, ImporterId importerId,
+            std::string_view toolName) {
+            if (hasToolVersionFor(toolVersions, importerId, toolName)) {
+                return;
+            }
+            toolVersions.push_back(AssetImportToolVersionDependency{
+                .importerId = importerId,
+                .toolName = std::string{toolName},
+                .versionHash = hashToolVersionFingerprint(toolName),
+            });
+        }
+
+        [[nodiscard]] bool isShaderCompileReflectionSource(const SourceAssetRecord& source) {
+            return source.importerName == kShaderCompileReflectionImporterName &&
+                   source.importerId == makeImporterId(kShaderCompileReflectionImporterName);
+        }
+
         [[nodiscard]] std::optional<std::size_t>
         findSnapshotIndex(std::span<const AssetSourceSnapshot> snapshots,
                           std::string_view sourcePath) {
@@ -144,8 +347,9 @@ namespace asharia::asset {
         }
 
         [[nodiscard]] std::vector<AssetDependency>
-        makeImportDependencies(const SourceAssetRecord& source) {
-            return {
+        makeImportDependencies(const SourceAssetRecord& source,
+                               std::span<const AssetImportToolVersionDependency> toolVersions) {
+            std::vector<AssetDependency> dependencies{
                 AssetDependency{
                     .owner = source.guid,
                     .kind = AssetDependencyKind::SourceFile,
@@ -159,6 +363,39 @@ namespace asharia::asset {
                     .hash = source.settingsHash,
                 },
             };
+
+            std::vector<AssetImportToolVersionDependency> matchingToolVersions;
+            for (const AssetImportToolVersionDependency& toolVersion : toolVersions) {
+                if (toolVersion.importerId == source.importerId) {
+                    matchingToolVersions.push_back(toolVersion);
+                }
+            }
+            if (isShaderCompileReflectionSource(source)) {
+                appendDefaultShaderToolVersionDependency(matchingToolVersions, source.importerId,
+                                                         "slangc");
+                appendDefaultShaderToolVersionDependency(matchingToolVersions, source.importerId,
+                                                         "spirv-val");
+            }
+            std::ranges::sort(matchingToolVersions, [](const AssetImportToolVersionDependency& left,
+                                                       const AssetImportToolVersionDependency&
+                                                           right) {
+                if (left.toolName != right.toolName) {
+                    return left.toolName < right.toolName;
+                }
+                return left.versionHash < right.versionHash;
+            });
+
+            dependencies.reserve(dependencies.size() + matchingToolVersions.size());
+            for (const AssetImportToolVersionDependency& toolVersion : matchingToolVersions) {
+                dependencies.push_back(AssetDependency{
+                    .owner = source.guid,
+                    .kind = AssetDependencyKind::ToolVersion,
+                    .path = toolVersion.toolName,
+                    .hash = toolVersion.versionHash,
+                });
+            }
+
+            return dependencies;
         }
 
         [[nodiscard]] bool validatePlanSources(AssetImportPlanResult& result,
@@ -265,7 +502,8 @@ namespace asharia::asset {
     AssetImportPlanResult planAssetImports(std::span<const DiscoveredSourceAsset> sources,
                                            std::span<const AssetSourceSnapshot> snapshots,
                                            const AssetProductManifestDocument& productManifest,
-                                           std::string_view targetProfile) {
+                                           std::string_view targetProfile,
+                                           const AssetImportPlanOptions& options) {
         AssetImportPlanResult result{
             .targetProfile = std::string{targetProfile},
             .targetProfileHash = makeAssetTargetProfileHash(targetProfile),
@@ -334,7 +572,8 @@ namespace asharia::asset {
                               AssetImportPlanDiagnosticSeverity::Warning);
             }
 
-            std::vector<AssetDependency> dependencies = makeImportDependencies(plannedSource);
+            std::vector<AssetDependency> dependencies =
+                makeImportDependencies(plannedSource, options.toolVersions);
             const std::uint64_t dependencyHash = hashAssetDependencies(dependencies);
             AssetProductKey productKey =
                 makeAssetProductKey(plannedSource, dependencyHash, result.targetProfileHash);

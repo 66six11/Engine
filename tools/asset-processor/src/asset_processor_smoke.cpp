@@ -419,9 +419,10 @@ namespace asharia::asset_processor {
                         .sourcePathPrefix = "Content",
                         .metadataSuffix = std::string{kDefaultMetadataSuffix},
                         .ignoredDirectoryNames = {},
-                    },
+                },
                 .productManifest = {},
                 .targetProfile = "windows-msvc-debug",
+                .toolVersions = {},
             });
         if (!firstPlan.succeeded() || firstPlan.plan.requests.empty()) {
             std::cerr << "asset-processor smoke could not build manifest fixture.\n";

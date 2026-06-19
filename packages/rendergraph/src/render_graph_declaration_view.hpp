@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstddef>
 #include <span>
 
 #include "asharia/rendergraph/render_graph_types.hpp"
@@ -11,11 +12,13 @@ namespace asharia::rendergraph_internal {
         std::span<const RenderGraphImageDesc> images;
         std::span<const RenderGraphBufferDesc> buffers;
         std::span<const Pass> passes;
+        std::size_t mutationGeneration{};
     };
 
     [[nodiscard]] RenderGraphDeclarationView
     makeRenderGraphDeclarationView(std::span<const RenderGraphImageDesc> images,
                                    std::span<const RenderGraphBufferDesc> buffers,
-                                   std::span<const Pass> passes);
+                                   std::span<const Pass> passes,
+                                   std::size_t mutationGeneration);
 
 } // namespace asharia::rendergraph_internal

@@ -20,7 +20,8 @@ namespace asharia {
             rendergraph_internal::makeRenderGraphDeclarationView(
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
-                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+                std::span<const rendergraph_internal::Pass>{impl_->passes_},
+                impl_->mutationGeneration_);
         return rendergraph_internal::compileRenderGraph(declarations, nullptr);
     }
 
@@ -30,7 +31,8 @@ namespace asharia {
             rendergraph_internal::makeRenderGraphDeclarationView(
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
-                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+                std::span<const rendergraph_internal::Pass>{impl_->passes_},
+                impl_->mutationGeneration_);
         return rendergraph_internal::compileRenderGraph(declarations, &schemaRegistry);
     }
 
@@ -153,6 +155,7 @@ namespace asharia::rendergraph_internal {
         }
 
         RenderGraphCompileResult result;
+        result.declarationGeneration = declarations.mutationGeneration;
         result.declaredPassCount = declarations.passes.size();
         result.declaredImageCount = declarations.images.size();
         result.declaredBufferCount = declarations.buffers.size();

@@ -8,6 +8,7 @@ namespace asharia {
     RenderGraphImageHandle RenderGraph::importImage(RenderGraphImageDesc desc) {
         desc.lifetime = RenderGraphImageLifetime::Imported;
         impl_->images_.push_back(std::move(desc));
+        ++impl_->mutationGeneration_;
         return RenderGraphImageHandle{
             .index = static_cast<std::uint32_t>(impl_->images_.size() - 1),
         };
@@ -20,6 +21,7 @@ namespace asharia {
         desc.finalState = RenderGraphImageState::Undefined;
         desc.finalShaderStage = RenderGraphShaderStage::None;
         impl_->images_.push_back(std::move(desc));
+        ++impl_->mutationGeneration_;
         return RenderGraphImageHandle{
             .index = static_cast<std::uint32_t>(impl_->images_.size() - 1),
         };
@@ -28,6 +30,7 @@ namespace asharia {
     RenderGraphBufferHandle RenderGraph::importBuffer(RenderGraphBufferDesc desc) {
         desc.lifetime = RenderGraphBufferLifetime::Imported;
         impl_->buffers_.push_back(std::move(desc));
+        ++impl_->mutationGeneration_;
         return RenderGraphBufferHandle{
             .index = static_cast<std::uint32_t>(impl_->buffers_.size() - 1),
         };
@@ -40,6 +43,7 @@ namespace asharia {
         desc.finalState = RenderGraphBufferState::Undefined;
         desc.finalShaderStage = RenderGraphShaderStage::None;
         impl_->buffers_.push_back(std::move(desc));
+        ++impl_->mutationGeneration_;
         return RenderGraphBufferHandle{
             .index = static_cast<std::uint32_t>(impl_->buffers_.size() - 1),
         };

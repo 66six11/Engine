@@ -516,6 +516,7 @@ namespace asharia {
         commandBuffer_ = std::exchange(other.commandBuffer_, VK_NULL_HANDLE);
         imageAvailable_ = std::exchange(other.imageAvailable_, VK_NULL_HANDLE);
         renderFinished_ = std::exchange(other.renderFinished_, {});
+        retiredSwapchainResources_ = std::move(other.retiredSwapchainResources_);
         inFlight_ = std::exchange(other.inFlight_, VK_NULL_HANDLE);
         deferredDeletionQueue_ = std::move(other.deferredDeletionQueue_);
         debugLabelFunctions_ = std::exchange(other.debugLabelFunctions_, {});
@@ -542,6 +543,39 @@ namespace asharia {
 
     VulkanFrameLoop::~VulkanFrameLoop() {
         destroy();
+    }
+
+    void VulkanFrameLoop::destroyRetiredSwapchainResources() {
+        for (RetiredSwapchainResources& retired : retiredSwapchainResources_) {
+            for (VkSemaphore semaphore : retired.renderFinished) {
+                vkDestroySemaphore(device_, semaphore, nullptr);
+            }
+            destroyImageViews(device_, retired.imageViews);
+            if (retired.swapchain != VK_NULL_HANDLE) {
+                vkDestroySwapchainKHR(device_, retired.swapchain, nullptr);
+            }
+        }
+        retiredSwapchainResources_.clear();
+    }
+
+    void VulkanFrameLoop::retireCurrentSwapchainResources() {
+        // Presentation waits are not tracked by the frame fence/deferred-deletion epoch.
+        // Keep retired swapchain resources alive until the frame loop is torn down.
+        RetiredSwapchainResources retired{
+            .swapchain = std::exchange(swapchain_, VK_NULL_HANDLE),
+            .imageViews = std::move(imageViews_),
+            .renderFinished = std::move(renderFinished_),
+        };
+        if (retired.swapchain != VK_NULL_HANDLE || !retired.imageViews.empty() ||
+            !retired.renderFinished.empty()) {
+            retiredSwapchainResources_.push_back(std::move(retired));
+        }
+
+        format_ = VK_FORMAT_UNDEFINED;
+        extent_ = {};
+        images_.clear();
+        imageViews_.clear();
+        renderFinished_.clear();
     }
 
     bool VulkanFrameRecordContext::deferDeletion(VulkanDeferredDeletionCallback callback) const {
@@ -679,6 +713,7 @@ namespace asharia {
         if (swapchain_ != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(device_, swapchain_, nullptr);
         }
+        destroyRetiredSwapchainResources();
 
         device_ = VK_NULL_HANDLE;
         physicalDevice_ = VK_NULL_HANDLE;
@@ -695,6 +730,7 @@ namespace asharia {
         commandBuffer_ = VK_NULL_HANDLE;
         imageAvailable_ = VK_NULL_HANDLE;
         renderFinished_.clear();
+        retiredSwapchainResources_.clear();
         inFlight_ = VK_NULL_HANDLE;
         deferredDeletionQueue_ = {};
         debugLabelFunctions_ = {};
@@ -1042,48 +1078,21 @@ namespace asharia {
             createSwapchain(physicalDevice_, device_, surface_, graphicsQueueFamily_, desc,
                             newFormat, newExtent, oldSwapchain);
         if (!newSwapchain) {
-            destroyImageViews(device_, imageViews_);
-            if (oldSwapchain != VK_NULL_HANDLE) {
-                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
-            }
-
-            swapchain_ = VK_NULL_HANDLE;
-            format_ = VK_FORMAT_UNDEFINED;
-            extent_ = {};
-            imageViews_.clear();
-            images_.clear();
+            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newSwapchain.error())};
         }
 
         auto newImages = getSwapchainImages(device_, *newSwapchain);
         if (!newImages) {
             vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
-            destroyImageViews(device_, imageViews_);
-            if (oldSwapchain != VK_NULL_HANDLE) {
-                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
-            }
-
-            swapchain_ = VK_NULL_HANDLE;
-            format_ = VK_FORMAT_UNDEFINED;
-            extent_ = {};
-            imageViews_.clear();
-            images_.clear();
+            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newImages.error())};
         }
 
         auto newImageViews = createImageViews(device_, *newImages, newFormat);
         if (!newImageViews) {
             vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
-            destroyImageViews(device_, imageViews_);
-            if (oldSwapchain != VK_NULL_HANDLE) {
-                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
-            }
-
-            swapchain_ = VK_NULL_HANDLE;
-            format_ = VK_FORMAT_UNDEFINED;
-            extent_ = {};
-            imageViews_.clear();
-            images_.clear();
+            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newImageViews.error())};
         }
 
@@ -1091,27 +1100,11 @@ namespace asharia {
         if (!newRenderFinished) {
             destroyImageViews(device_, *newImageViews);
             vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
-            destroyImageViews(device_, imageViews_);
-            if (oldSwapchain != VK_NULL_HANDLE) {
-                vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
-            }
-
-            swapchain_ = VK_NULL_HANDLE;
-            format_ = VK_FORMAT_UNDEFINED;
-            extent_ = {};
-            imageViews_.clear();
-            images_.clear();
-            for (VkSemaphore semaphore : renderFinished_) {
-                vkDestroySemaphore(device_, semaphore, nullptr);
-            }
-            renderFinished_.clear();
+            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newRenderFinished.error())};
         }
 
-        for (VkSemaphore semaphore : renderFinished_) {
-            vkDestroySemaphore(device_, semaphore, nullptr);
-        }
-        destroyImageViews(device_, imageViews_);
+        retireCurrentSwapchainResources();
 
         swapchain_ = *newSwapchain;
         format_ = newFormat;
@@ -1119,10 +1112,6 @@ namespace asharia {
         images_ = std::move(*newImages);
         imageViews_ = std::move(*newImageViews);
         renderFinished_ = std::move(*newRenderFinished);
-
-        if (oldSwapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(device_, oldSwapchain, nullptr);
-        }
 
         return VulkanFrameStatus::Recreated;
     }

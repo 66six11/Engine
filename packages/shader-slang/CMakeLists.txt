@@ -178,3 +178,21 @@ target_link_libraries(asharia-shader-slang
 )
 
 asharia_configure_target(asharia-shader-slang)
+
+if(ASHARIA_BUILD_TESTS)
+  enable_testing()
+
+  add_executable(asharia-shader-slang-smoke-tests
+      tests/shader_reflection_signature_smoke_tests.cpp
+  )
+
+  target_link_libraries(asharia-shader-slang-smoke-tests
+      PRIVATE
+          asharia::shader_slang
+  )
+
+  asharia_configure_target(asharia-shader-slang-smoke-tests)
+
+  add_test(NAME asharia-shader-slang-smoke-tests
+           COMMAND asharia-shader-slang-smoke-tests)
+endif()

@@ -1073,6 +1073,148 @@ namespace {
         return true;
     }
 
+    [[nodiscard]] bool hasToolVersionDependency(
+        std::span<const asharia::asset::AssetDependency> dependencies,
+        const asharia::asset::AssetGuid& owner, std::string_view toolName,
+        std::uint64_t versionHash) {
+        return std::ranges::any_of(
+            dependencies, [&owner, toolName, versionHash](const asharia::asset::AssetDependency&
+                                                              dependency) {
+                return dependency.owner == owner &&
+                       dependency.kind == asharia::asset::AssetDependencyKind::ToolVersion &&
+                       dependency.path == toolName && dependency.hash == versionHash;
+            });
+    }
+
+    [[nodiscard]] bool hasToolVersionDependencyNamed(
+        std::span<const asharia::asset::AssetDependency> dependencies,
+        const asharia::asset::AssetGuid& owner, std::string_view toolName) {
+        return std::ranges::any_of(
+            dependencies, [&owner, toolName](const asharia::asset::AssetDependency& dependency) {
+                return dependency.owner == owner &&
+                       dependency.kind == asharia::asset::AssetDependencyKind::ToolVersion &&
+                       dependency.path == toolName;
+            });
+    }
+
+    [[nodiscard]] bool smokeImportPlanningShaderToolVersionChanged() {
+        constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
+        constexpr std::string_view kImporterName =
+            "com.asharia.importer.shader-compile-reflection";
+        auto guid = asharia::asset::parseAssetGuid("69bc6326-c04a-49d8-a4d2-653445a0e423");
+        const std::vector<asharia::asset::AssetImportSetting> settings{
+            asharia::asset::AssetImportSetting{
+                .key = "shader.product",
+                .value = "compile-reflection-v1",
+            },
+        };
+        const asharia::asset::DiscoveredSourceAsset source{
+            .entry =
+                asharia::asset::AssetSourceDiscoveryEntry{
+                    .sourcePath = "Content/Shaders/Unlit.ashader",
+                    .metadataPath = {},
+                },
+            .source =
+                asharia::asset::SourceAssetRecord{
+                    .guid = guid ? *guid : asharia::asset::AssetGuid{},
+                    .assetType = asharia::asset::makeAssetTypeId(kShaderTypeName),
+                    .assetTypeName = std::string{kShaderTypeName},
+                    .sourcePath = "Content/Shaders/Unlit.ashader",
+                    .importerId = asharia::asset::makeImporterId(kImporterName),
+                    .importerName = std::string{kImporterName},
+                    .importerVersion = asharia::asset::ImporterVersion{1},
+                    .sourceHash = 0x1000F00D1234CAFEULL,
+                    .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+                },
+            .settings = settings,
+        };
+        const asharia::asset::AssetSourceSnapshot snapshot =
+            makeSourceSnapshot(source.source.sourcePath, source.source.sourceHash);
+        const std::array sources{source};
+        const std::array snapshots{snapshot};
+        const asharia::asset::AssetImportPlanOptions toolchainV1{
+            .toolVersions =
+                {
+                    asharia::asset::AssetImportToolVersionDependency{
+                        .importerId = source.source.importerId,
+                        .toolName = "slangc",
+                        .versionHash = 0x1111111111111111ULL,
+                    },
+                    asharia::asset::AssetImportToolVersionDependency{
+                        .importerId = source.source.importerId,
+                        .toolName = "spirv-val",
+                        .versionHash = 0x2222222222222222ULL,
+                    },
+                },
+        };
+        const asharia::asset::AssetImportPlanOptions toolchainV2{
+            .toolVersions =
+                {
+                    asharia::asset::AssetImportToolVersionDependency{
+                        .importerId = source.source.importerId,
+                        .toolName = "slangc",
+                        .versionHash = 0x3333333333333333ULL,
+                    },
+                    asharia::asset::AssetImportToolVersionDependency{
+                        .importerId = source.source.importerId,
+                        .toolName = "spirv-val",
+                        .versionHash = 0x2222222222222222ULL,
+                    },
+                },
+        };
+
+        const asharia::asset::AssetImportPlanResult first =
+            asharia::asset::planAssetImports(
+                sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+                "windows-msvc-debug", toolchainV1);
+        if (!first.succeeded() || first.requests.size() != 1U ||
+            !hasToolVersionDependency(first.requests.front().dependencies, source.source.guid,
+                                      "slangc", 0x1111111111111111ULL) ||
+            !hasToolVersionDependency(first.requests.front().dependencies, source.source.guid,
+                                      "spirv-val", 0x2222222222222222ULL) ||
+            first.requests.front().productKey.dependencyHash !=
+                asharia::asset::hashAssetDependencies(first.requests.front().dependencies)) {
+            logFailure("Asset import planning smoke missed shader tool version dependencies.");
+            return false;
+        }
+
+        const asharia::asset::AssetImportPlanResult defaultToolchain =
+            asharia::asset::planAssetImports(
+                sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+                "windows-msvc-debug");
+        if (!defaultToolchain.succeeded() || defaultToolchain.requests.size() != 1U ||
+            !hasToolVersionDependencyNamed(defaultToolchain.requests.front().dependencies,
+                                           source.source.guid, "slangc") ||
+            !hasToolVersionDependencyNamed(defaultToolchain.requests.front().dependencies,
+                                           source.source.guid, "spirv-val")) {
+            logFailure("Asset import planning smoke missed default shader tool dependencies.");
+            return false;
+        }
+
+        const asharia::asset::AssetProductManifestDocument manifest{
+            .products = {makeProductFromImportRequest(first.requests.front())},
+        };
+        const asharia::asset::AssetImportPlanResult unchanged =
+            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug",
+                                             toolchainV1);
+        const asharia::asset::AssetImportPlanResult changed =
+            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug",
+                                             toolchainV2);
+        if (!unchanged.succeeded() || unchanged.cacheHits.size() != 1U ||
+            !unchanged.requests.empty() || !changed.succeeded() || !changed.cacheHits.empty() ||
+            changed.requests.size() != 1U ||
+            changed.requests.front().reason !=
+                asharia::asset::AssetImportRequestReason::DependencyChanged ||
+            changed.requests.front().productKey == first.requests.front().productKey ||
+            !hasToolVersionDependency(changed.requests.front().dependencies, source.source.guid,
+                                      "slangc", 0x3333333333333333ULL)) {
+            logFailure("Asset import planning smoke missed a shader tool version cache miss.");
+            return false;
+        }
+
+        return true;
+    }
+
     [[nodiscard]] bool smokeImportPlanningMissingSnapshot() {
         const auto source =
             makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
@@ -3567,7 +3709,8 @@ int main() {
         smokeProductExecutionAcceptsDependencyProductBytes() &&
         smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
         smokeImportPlanningMetadataSourceHashDriftWarning() &&
-        smokeImportPlanningSettingsChanged() && smokeImportPlanningMissingSnapshot() &&
+        smokeImportPlanningSettingsChanged() &&
+        smokeImportPlanningShaderToolVersionChanged() && smokeImportPlanningMissingSnapshot() &&
         smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
         smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&
         smokeTextureImportContractPng() && smokeTextureImportContractDiagnostics() &&
