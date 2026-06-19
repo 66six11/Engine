@@ -29,6 +29,16 @@ public sealed class WorkbenchActionRegistry : IWorkbenchActionRegistry
             throw new ArgumentException("Workbench action menu path must not be empty.", nameof(descriptor));
         }
 
+        if (string.IsNullOrWhiteSpace(descriptor.Category))
+        {
+            throw new ArgumentException("Workbench action category must not be empty.", nameof(descriptor));
+        }
+
+        if (!descriptor.IsEnabled && string.IsNullOrWhiteSpace(descriptor.DisabledReason))
+        {
+            throw new ArgumentException("Disabled workbench actions must specify a disabled reason.", nameof(descriptor));
+        }
+
         if (descriptor.Kind == WorkbenchActionKind.OpenPanel
             && string.IsNullOrWhiteSpace(descriptor.TargetId))
         {
