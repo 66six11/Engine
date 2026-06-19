@@ -16,6 +16,9 @@ namespace asharia::asset {
         MissingSourceBytes,
         DuplicateSourceBytes,
         SourceBytesHashMismatch,
+        InvalidDependencyProductBytes,
+        DuplicateDependencyProductBytes,
+        DependencyProductBytesHashMismatch,
         InvalidOutputRoot,
         InvalidProductPath,
         ProductWriteFailed,
@@ -23,6 +26,7 @@ namespace asharia::asset {
         TextureImportFailed,
         MaterialInstanceImportFailed,
         ShaderAuthoringImportFailed,
+        ShaderCompileReflectionImportFailed,
     };
 
     struct AssetProductSourceBytes {
@@ -31,6 +35,15 @@ namespace asharia::asset {
 
         [[nodiscard]] friend bool operator==(const AssetProductSourceBytes&,
                                              const AssetProductSourceBytes&) = default;
+    };
+
+    struct AssetProductDependencyBytes {
+        std::string relativeProductPath;
+        std::uint64_t productHash{};
+        std::vector<std::uint8_t> bytes;
+
+        [[nodiscard]] friend bool operator==(const AssetProductDependencyBytes&,
+                                             const AssetProductDependencyBytes&) = default;
     };
 
     struct AssetProductExecutionDiagnostic {
@@ -56,6 +69,7 @@ namespace asharia::asset {
         AssetImportPlanResult plan;
         AssetProductManifestDocument existingManifest;
         std::vector<AssetProductSourceBytes> sourceBytes;
+        std::vector<AssetProductDependencyBytes> dependencyProductBytes;
         std::filesystem::path productOutputRoot;
         std::filesystem::path productManifestOutputPath;
     };

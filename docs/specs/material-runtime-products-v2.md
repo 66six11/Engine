@@ -140,6 +140,49 @@ invalidation。#163 是后续 compile/reflection product 层，目标是从该 g
 manifest facts 产出 deterministic SPIR-V/reflection facts，但仍不生成 material signature product 或 renderer
 binding packet。
 
+截至 2026-06-14，#163 已在 `asset-pipeline` execution request 中显式接收上游 product bytes
+（relative product path + product hash + bytes），并在执行前校验路径、重复项和 hash 漂移；Slang
+compile/reflection cook 消费该输入契约，而不是从 cache 路径或 `dependencyHash` 反推上游 product
+内容。
+
+同日的第二步新增 `com.asharia.importer.shader-compile-reflection` / `shader-compile-reflection-product.v1`：
+compile request 通过 `shader.authoringProductPath` 指向上游 `shader-authoring-product.v1`，读取其 generated
+Slang payload 和 entry manifest facts，逐 entry 调用 `slangc -reflection-json` 生成 SPIR-V 与 reflection
+JSON，并用 `spirv-val` 验证 SPIR-V。产品 blob 记录 profile/target、上游 authoring product path/hash、
+generated Slang hash、entry manifest、SPIR-V bytes/hash/size 和 reflection JSON/hash/size；reader 会复核
+payload size/hash。该层仍不生成 material signature product、cross-asset dependency invalidation、renderer
+binding packet 或 editor UI。
+
+同日第三步把 compiler/validator diagnostics 纳入 `shader-compile-reflection-product.v1` entry facts：
+每个 entry 记录 `slangc` exit code、diagnostic text size/hash/payload，以及 `spirv-val` exit code、
+diagnostic text size/hash/payload；reader 会像校验 SPIR-V/reflection payload 一样复核 diagnostic payload
+size/hash。Slang 官方命令行资料列出更结构化的诊断选项，但当前 Vulkan SDK 1.4.321.1 附带的
+`slangc` 尚不支持这些 flags，因此当前 product cook 只依赖 stdout/stderr 捕获，并在写入诊断前归一化
+CRLF 和临时 work path。坏 generated Slang source 会产生 deterministic `ShaderCompileReflectionImportFailed`
+diagnostic，不写成功 product。
+
+同日第四步补齐 compile/reflection determinism evidence：asset-pipeline smoke 现在对同一个 compile request
+连续执行两次，并比较 product manifest text、compiled product hash、读回 payload、SPIR-V bytes/hash、
+reflection JSON/hash 和 diagnostic facts。该证据覆盖 #163 的 deterministic compile/reflection product
+验收点，但仍不把该 Slice 扩展到 material signature product 或 renderer/RHI 消费。
+
+同日第五步补齐 manifest-selected entry 的 negative evidence：asset-pipeline smoke 会构造一个 hash
+一致但 entry stage 不受支持的 `shader-authoring-product.v1` dependency bytes，并验证 compile/reflection
+层在调用 shader tool 前产生 deterministic `ShaderCompileReflectionImportFailed` diagnostic 且不写 product
+manifest。该证据限定在 generated product contract validation，不把 stage 纠正、material signature 或
+renderer/RHI fallback 纳入 #163。
+
+同日第六步把 `productKeyHash` 纳入 `shader-compile-reflection-product.v1` reader contract：writer 已记录
+该字段，reader 现在将其作为必需 header 读回到 payload，asset-pipeline smoke 会断言它等于当前 compile
+request 的 `hashAssetProductKey(productKey)`。这补齐 #163 对 product facts / reader facts 中 product key
+hash 的验收证据，仍不扩展到 material signature 或 renderer/RHI 消费。
+
+同日第七步补齐 compile/reflection product blob 的 missing payload-field evidence：该 product schema 将
+SPIR-V、reflection JSON 和 diagnostic payloads 编码为 entry-local hex fields，不使用 `.begin` / `.end`
+marker，因此不存在 marker-style unterminated payload；reader 现在已有 smoke 证明缺失
+`entry.0.reflectionJsonHex` 会产生 deterministic `InvalidProductBlob` diagnostic。坏 payload 仍由
+SPIR-V/reflection/diagnostic size/hash mismatch 覆盖。
+
 `.amat` import 输出：
 
 ```text

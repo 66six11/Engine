@@ -388,28 +388,89 @@ namespace asharia {
             merged += stageVisibility;
         }
 
-        void mergeDescriptorBinding(std::vector<ShaderDescriptorBindingReflection>& bindings,
-                                    const ShaderDescriptorBindingReflection& binding) {
+        [[nodiscard]] std::string descriptorBindingContext(
+            const ShaderDescriptorBindingReflection& binding) {
+            return "set " + std::to_string(binding.set) + ", binding " +
+                   std::to_string(binding.binding);
+        }
+
+        [[nodiscard]] bool sameDescriptorContract(
+            const ShaderDescriptorBindingReflection& left,
+            const ShaderDescriptorBindingReflection& right) {
+            return left.name == right.name && left.kind == right.kind && left.count == right.count &&
+                   left.category == right.category;
+        }
+
+        [[nodiscard]] std::string descriptorContractSummary(
+            const ShaderDescriptorBindingReflection& binding) {
+            return "\"" + binding.name + "\", kind \"" + binding.kind + "\", category \"" +
+                   binding.category + "\", count " + std::to_string(binding.count);
+        }
+
+        [[nodiscard]] VoidResult mergeDescriptorBinding(
+            std::vector<ShaderDescriptorBindingReflection>& bindings,
+            const ShaderDescriptorBindingReflection& binding) {
             for (ShaderDescriptorBindingReflection& existing : bindings) {
                 if (existing.set == binding.set && existing.binding == binding.binding) {
+                    if (!sameDescriptorContract(existing, binding)) {
+                        return std::unexpected{reflectionError(
+                            "Shader reflection descriptor binding conflict at " +
+                            descriptorBindingContext(binding) + ": existing " +
+                            descriptorContractSummary(existing) + " differs from incoming " +
+                            descriptorContractSummary(binding) + ".")};
+                    }
                     mergeStageVisibility(existing.stageVisibility, binding.stageVisibility);
-                    return;
+                    return {};
                 }
             }
 
             bindings.push_back(binding);
+            return {};
         }
 
-        void mergePushConstant(std::vector<ShaderPushConstantReflection>& pushConstants,
-                               const ShaderPushConstantReflection& pushConstant) {
+        [[nodiscard]] std::uint64_t pushConstantEnd(
+            const ShaderPushConstantReflection& pushConstant) {
+            return static_cast<std::uint64_t>(pushConstant.offset) + pushConstant.size;
+        }
+
+        [[nodiscard]] bool samePushConstantContract(
+            const ShaderPushConstantReflection& left,
+            const ShaderPushConstantReflection& right) {
+            return left.name == right.name && left.offset == right.offset && left.size == right.size;
+        }
+
+        [[nodiscard]] bool pushConstantRangesOverlap(
+            const ShaderPushConstantReflection& left,
+            const ShaderPushConstantReflection& right) {
+            return static_cast<std::uint64_t>(left.offset) < pushConstantEnd(right) &&
+                   static_cast<std::uint64_t>(right.offset) < pushConstantEnd(left);
+        }
+
+        [[nodiscard]] std::string pushConstantContractSummary(
+            const ShaderPushConstantReflection& pushConstant) {
+            return "\"" + pushConstant.name + "\", offset " +
+                   std::to_string(pushConstant.offset) + ", size " +
+                   std::to_string(pushConstant.size);
+        }
+
+        [[nodiscard]] VoidResult mergePushConstant(
+            std::vector<ShaderPushConstantReflection>& pushConstants,
+            const ShaderPushConstantReflection& pushConstant) {
             for (ShaderPushConstantReflection& existing : pushConstants) {
-                if (existing.offset == pushConstant.offset && existing.size == pushConstant.size) {
+                if (samePushConstantContract(existing, pushConstant)) {
                     mergeStageVisibility(existing.stageVisibility, pushConstant.stageVisibility);
-                    return;
+                    return {};
+                }
+                if (pushConstantRangesOverlap(existing, pushConstant)) {
+                    return std::unexpected{reflectionError(
+                        "Shader reflection push constant conflict: existing " +
+                        pushConstantContractSummary(existing) + " overlaps incoming " +
+                        pushConstantContractSummary(pushConstant) + ".")};
                 }
             }
 
             pushConstants.push_back(pushConstant);
+            return {};
         }
 
     } // namespace
@@ -518,20 +579,38 @@ namespace asharia {
         };
     }
 
-    ShaderResourceSignature shaderResourceSignature(std::span<const ShaderReflection> shaders) {
+    Result<ShaderResourceSignature>
+    mergeShaderResourceSignature(std::span<const ShaderReflection> shaders) {
         ShaderResourceSignature signature;
         for (const ShaderReflection& shader : shaders) {
             for (const ShaderDescriptorBindingReflection& binding : shader.descriptorBindings) {
-                mergeDescriptorBinding(signature.descriptorBindings, binding);
+                if (auto merged = mergeDescriptorBinding(signature.descriptorBindings, binding);
+                    !merged) {
+                    return std::unexpected{std::move(merged.error())};
+                }
             }
             for (const ShaderPushConstantReflection& pushConstant : shader.pushConstants) {
-                mergePushConstant(signature.pushConstants, pushConstant);
+                if (auto merged = mergePushConstant(signature.pushConstants, pushConstant);
+                    !merged) {
+                    return std::unexpected{std::move(merged.error())};
+                }
             }
         }
         signature.descriptorBindingCount =
             static_cast<std::uint32_t>(signature.descriptorBindings.size());
         signature.pushConstantCount = static_cast<std::uint32_t>(signature.pushConstants.size());
         return signature;
+    }
+
+    ShaderResourceSignature shaderResourceSignature(std::span<const ShaderReflection> shaders) {
+        auto signature = mergeShaderResourceSignature(shaders);
+        if (signature) {
+            return std::move(*signature);
+        }
+
+        ShaderResourceSignature failedSignature;
+        failedSignature.error = std::move(signature.error());
+        return failedSignature;
     }
 
 } // namespace asharia

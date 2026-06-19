@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -56,9 +57,12 @@ namespace asharia {
         std::vector<ShaderPushConstantReflection> pushConstants;
         std::uint32_t descriptorBindingCount{};
         std::uint32_t pushConstantCount{};
+        std::optional<Error> error;
     };
 
     [[nodiscard]] Result<ShaderReflection> readShaderReflection(const std::filesystem::path& path);
+    [[nodiscard]] Result<ShaderResourceSignature>
+    mergeShaderResourceSignature(std::span<const ShaderReflection> shaders);
     [[nodiscard]] ShaderResourceSignature
     shaderResourceSignature(std::span<const ShaderReflection> shaders);
 

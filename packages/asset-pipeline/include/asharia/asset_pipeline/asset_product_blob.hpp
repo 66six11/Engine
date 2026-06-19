@@ -120,6 +120,44 @@ namespace asharia::asset {
                                              const AssetShaderAuthoringProductPayload&) = default;
     };
 
+    struct AssetShaderCompileReflectionProductEntry {
+        std::string passName;
+        std::string stage;
+        std::string sourceEntryName;
+        std::string compileEntryName;
+        std::string generatedWrapperName;
+        std::uint64_t slangcExitCode{};
+        std::uint64_t slangcDiagnosticHash{};
+        std::string slangcDiagnosticText;
+        std::uint64_t spirvValExitCode{};
+        std::uint64_t spirvValDiagnosticHash{};
+        std::string spirvValDiagnosticText;
+        std::uint64_t spirvHash{};
+        std::uint64_t reflectionJsonHash{};
+        std::vector<std::uint8_t> spirvBytes;
+        std::string reflectionJsonText;
+
+        [[nodiscard]] friend bool
+        operator==(const AssetShaderCompileReflectionProductEntry&,
+                   const AssetShaderCompileReflectionProductEntry&) = default;
+    };
+
+    struct AssetShaderCompileReflectionProductPayload {
+        std::string sourcePath;
+        std::string stableTypeId;
+        std::string authoringProductPath;
+        std::uint64_t authoringProductHash{};
+        std::uint64_t generatedSlangHash{};
+        std::uint64_t productKeyHash{};
+        std::string profile;
+        std::string target;
+        std::vector<AssetShaderCompileReflectionProductEntry> entries;
+
+        [[nodiscard]] friend bool
+        operator==(const AssetShaderCompileReflectionProductPayload&,
+                   const AssetShaderCompileReflectionProductPayload&) = default;
+    };
+
     [[nodiscard]] const char*
     assetProductBlobDiagnosticCodeName(AssetProductBlobDiagnosticCode code) noexcept;
 
@@ -150,5 +188,12 @@ namespace asharia::asset {
     [[nodiscard]] Result<AssetShaderAuthoringProductPayload>
     readShaderAuthoringProductPayload(std::span<const std::uint8_t> productBytes,
                                       std::string_view relativeProductPath);
+
+    [[nodiscard]] Result<AssetShaderCompileReflectionProductPayload>
+    readShaderCompileReflectionProductPayload(const AssetProductBlobReadRequest& request);
+
+    [[nodiscard]] Result<AssetShaderCompileReflectionProductPayload>
+    readShaderCompileReflectionProductPayload(std::span<const std::uint8_t> productBytes,
+                                              std::string_view relativeProductPath);
 
 } // namespace asharia::asset

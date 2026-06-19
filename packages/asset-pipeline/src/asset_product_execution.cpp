@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <ios>
 #include <optional>
@@ -13,7 +15,18 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
+
 #include "asharia/asset_core/asset_guid.hpp"
+#include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/error.hpp"
 #include "asharia/material_instance/amat_io.hpp"
@@ -31,12 +44,35 @@ namespace asharia::asset {
         constexpr std::string_view kShaderAuthoringImporterName =
             "com.asharia.importer.shader-authoring";
         constexpr std::uint32_t kShaderAuthoringImporterVersion = 1;
+        constexpr std::string_view kShaderCompileReflectionImporterName =
+            "com.asharia.importer.shader-compile-reflection";
+        constexpr std::uint32_t kShaderCompileReflectionImporterVersion = 1;
+        constexpr std::string_view kShaderAuthoringProductPathSettingKey =
+            "shader.authoringProductPath";
+        constexpr std::string_view kSlangProfile = "glsl_450";
+        constexpr std::string_view kSlangTarget = "spirv";
 
         struct PreparedProduct {
             const AssetImportRequest* request{};
             AssetProductRecord product;
             std::filesystem::path outputPath;
             std::vector<std::uint8_t> bytes;
+        };
+
+        struct ShaderCompileReflectionWorkPaths {
+            std::filesystem::path workDir;
+            std::filesystem::path generatedSourcePath;
+        };
+
+        struct ShaderCompileReflectionToolPaths {
+            std::filesystem::path slangcPath;
+            std::filesystem::path spirvValPath;
+        };
+
+        struct ShaderToolExecutionResult {
+            int exitCode{};
+            std::uint64_t diagnosticHash{};
+            std::string diagnosticText;
         };
 
         [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
@@ -68,6 +104,14 @@ namespace asharia::asset {
             return Error{
                 ErrorDomain::Asset,
                 static_cast<int>(AssetProductExecutionDiagnosticCode::ShaderAuthoringImportFailed),
+                std::move(message)};
+        }
+
+        [[nodiscard]] Error shaderCompileReflectionImportError(std::string message) {
+            return Error{
+                ErrorDomain::Asset,
+                static_cast<int>(
+                    AssetProductExecutionDiagnosticCode::ShaderCompileReflectionImportFailed),
                 std::move(message)};
         }
 
@@ -113,6 +157,283 @@ namespace asharia::asset {
                 value = asciiLower(value);
             }
             return extension;
+        }
+
+        [[nodiscard]] bool isSupportedSlangStage(std::string_view stage) noexcept {
+            return stage == "vertex" || stage == "fragment" || stage == "compute";
+        }
+
+        [[nodiscard]] bool isSlangIdentifierHeadChar(char value) noexcept {
+            return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') || value == '_';
+        }
+
+        [[nodiscard]] bool isSlangIdentifierBodyChar(char value) noexcept {
+            return isSlangIdentifierHeadChar(value) || (value >= '0' && value <= '9');
+        }
+
+        [[nodiscard]] bool isSafeSlangIdentifier(std::string_view value) noexcept {
+            if (value.empty()) {
+                return false;
+            }
+            if (!isSlangIdentifierHeadChar(value.front())) {
+                return false;
+            }
+            return std::ranges::all_of(value.substr(1), isSlangIdentifierBodyChar);
+        }
+
+        [[nodiscard]] std::string quotePath(const std::filesystem::path& path) {
+            return "\"" + path.string() + "\"";
+        }
+
+        [[nodiscard]] std::string hexEncode(std::span<const std::uint8_t> bytes) {
+            constexpr std::string_view kHexDigits = "0123456789abcdef";
+            std::string text;
+            text.reserve(bytes.size() * 2U);
+            for (const std::uint8_t byte : bytes) {
+                text.push_back(kHexDigits[(byte >> 4U) & 0x0FU]);
+                text.push_back(kHexDigits[byte & 0x0FU]);
+            }
+            return text;
+        }
+
+        [[nodiscard]] std::vector<std::uint8_t> bytesFromString(std::string_view text) {
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(text.size());
+            for (const char value : text) {
+                bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(value)));
+            }
+            return bytes;
+        }
+
+        [[nodiscard]] bool writeTextFile(const std::filesystem::path& path, std::string_view text) {
+            const std::filesystem::path parent = path.parent_path();
+            if (!parent.empty()) {
+                std::error_code createError;
+                std::filesystem::create_directories(parent, createError);
+                if (createError) {
+                    return false;
+                }
+            }
+
+            std::ofstream file(path, std::ios::binary);
+            if (!file) {
+                return false;
+            }
+            file.write(text.data(), static_cast<std::streamsize>(text.size()));
+            return static_cast<bool>(file);
+        }
+
+        [[nodiscard]] Result<std::vector<std::uint8_t>>
+        readBinaryFile(const std::filesystem::path& path) {
+            std::ifstream file(path, std::ios::binary);
+            if (!file) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Could not open tool output file '" + pathText(path) + "'.")};
+            }
+
+            std::vector<std::uint8_t> bytes;
+            char byte{};
+            while (file.get(byte)) {
+                bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(byte)));
+            }
+            if (!file.eof()) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Could not read tool output file '" + pathText(path) + "'.")};
+            }
+            return bytes;
+        }
+
+        [[nodiscard]] Result<std::string> readToolTextFile(const std::filesystem::path& path) {
+            auto bytes = readBinaryFile(path);
+            if (!bytes) {
+                return std::unexpected{std::move(bytes.error())};
+            }
+
+            std::string text;
+            text.reserve(bytes->size());
+            for (const std::uint8_t byte : *bytes) {
+                text.push_back(static_cast<char>(byte));
+            }
+            return text;
+        }
+
+        [[nodiscard]] std::optional<std::string> environmentVariable(std::string_view name) {
+            const std::string nameText{name};
+#if defined(_WIN32)
+            const DWORD requiredSize = GetEnvironmentVariableA(nameText.c_str(), nullptr, 0);
+            if (requiredSize == 0) {
+                return std::nullopt;
+            }
+            std::string text(requiredSize, '\0');
+            const DWORD writtenSize =
+                GetEnvironmentVariableA(nameText.c_str(), text.data(), requiredSize);
+            if (writtenSize == 0 || writtenSize >= requiredSize) {
+                return std::nullopt;
+            }
+            text.resize(writtenSize);
+            return text;
+#else
+            const char* value = std::getenv(nameText.c_str());
+            if (value == nullptr) {
+                return std::nullopt;
+            }
+            return std::string{value};
+#endif
+        }
+
+        [[nodiscard]] std::optional<std::filesystem::path>
+        findToolExecutable(std::string_view toolName) {
+            std::vector<std::filesystem::path> directories;
+            if (const std::optional<std::string> pathValue = environmentVariable("PATH");
+                pathValue) {
+                const std::string& pathTextValue = *pathValue;
+#if defined(_WIN32)
+                constexpr char kSeparator = ';';
+#else
+                constexpr char kSeparator = ':';
+#endif
+                std::size_t segmentBegin = 0;
+                while (segmentBegin <= pathTextValue.size()) {
+                    std::size_t segmentEnd = pathTextValue.find(kSeparator, segmentBegin);
+                    if (segmentEnd == std::string::npos) {
+                        segmentEnd = pathTextValue.size();
+                    }
+                    if (segmentEnd > segmentBegin) {
+                        directories.emplace_back(
+                            pathTextValue.substr(segmentBegin, segmentEnd - segmentBegin));
+                    }
+                    if (segmentEnd == pathTextValue.size()) {
+                        break;
+                    }
+                    segmentBegin = segmentEnd + 1U;
+                }
+            }
+            if (const std::optional<std::string> sdkPath = environmentVariable("VULKAN_SDK");
+                sdkPath) {
+                directories.emplace_back(std::filesystem::path{*sdkPath} / "Bin");
+            }
+
+            std::vector<std::string> candidateNames;
+#if defined(_WIN32)
+            candidateNames.push_back(std::string{toolName} + ".exe");
+#endif
+            candidateNames.emplace_back(toolName);
+
+            for (const std::filesystem::path& directory : directories) {
+                for (const std::string& candidateName : candidateNames) {
+                    std::filesystem::path candidate = directory / candidateName;
+                    std::error_code statusError;
+                    const std::filesystem::file_status status =
+                        std::filesystem::status(candidate, statusError);
+                    if (!statusError && std::filesystem::is_regular_file(status)) {
+                        return candidate;
+                    }
+                }
+            }
+            return std::nullopt;
+        }
+
+        void replaceAll(std::string& text, std::string_view needle, std::string_view replacement) {
+            if (needle.empty()) {
+                return;
+            }
+
+            std::size_t offset = 0;
+            while ((offset = text.find(needle, offset)) != std::string::npos) {
+                text.replace(offset, needle.size(), replacement);
+                offset += replacement.size();
+            }
+        }
+
+        void replacePathReferences(std::string& text, const std::filesystem::path& path,
+                                   std::string_view replacement) {
+            replaceAll(text, path.string(), replacement);
+            replaceAll(text, pathText(path), replacement);
+        }
+
+        [[nodiscard]] std::string normalizeLineEndings(std::string_view text) {
+            std::string normalized;
+            normalized.reserve(text.size());
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                if (text[index] == '\r') {
+                    if (index + 1U < text.size() && text[index + 1U] == '\n') {
+                        continue;
+                    }
+                    normalized.push_back('\n');
+                    continue;
+                }
+                normalized.push_back(text[index]);
+            }
+            return normalized;
+        }
+
+        [[nodiscard]] std::string
+        normalizeToolDiagnosticText(std::string_view stdoutText, std::string_view stderrText,
+                                    const ShaderCompileReflectionWorkPaths& workPaths) {
+            std::string combined;
+            combined.reserve(stdoutText.size() + stderrText.size() + 1U);
+            combined.append(stdoutText);
+            if (!stdoutText.empty() && !stderrText.empty()) {
+                combined.push_back('\n');
+            }
+            combined.append(stderrText);
+
+            std::string normalized = normalizeLineEndings(combined);
+            replacePathReferences(normalized, workPaths.generatedSourcePath, "<generated-slang>");
+            replacePathReferences(normalized, workPaths.workDir, "<shader-work-dir>");
+            return normalized;
+        }
+
+        [[nodiscard]] std::string summarizeToolDiagnostic(std::string_view text) {
+            if (text.empty()) {
+                return "no tool diagnostics";
+            }
+            constexpr std::size_t kMaxSummaryBytes = 512U;
+            if (text.size() <= kMaxSummaryBytes) {
+                return std::string{text};
+            }
+            return std::string{text.substr(0, kMaxSummaryBytes)} + "...";
+        }
+
+        [[nodiscard]] Result<ShaderToolExecutionResult>
+        runToolCommand(std::string_view label, const std::string& command,
+                       const ShaderCompileReflectionWorkPaths& workPaths,
+                       const std::filesystem::path& stdoutPath,
+                       const std::filesystem::path& stderrPath) {
+            std::error_code removeError;
+            std::filesystem::remove(stdoutPath, removeError);
+            std::filesystem::remove(stderrPath, removeError);
+            const std::string redirectedCommand =
+                command + " > " + quotePath(stdoutPath) + " 2> " + quotePath(stderrPath);
+#if defined(_WIN32)
+            const std::string shellCommand = "cmd /S /C \"" + redirectedCommand + "\"";
+#else
+            const std::string shellCommand = redirectedCommand;
+#endif
+            const int exitCode = std::system(shellCommand.c_str());
+            auto stdoutText = readToolTextFile(stdoutPath);
+            if (!stdoutText) {
+                return std::unexpected{std::move(stdoutText.error())};
+            }
+            auto stderrText = readToolTextFile(stderrPath);
+            if (!stderrText) {
+                return std::unexpected{std::move(stderrText.error())};
+            }
+
+            std::string diagnosticText =
+                normalizeToolDiagnosticText(*stdoutText, *stderrText, workPaths);
+            const std::vector<std::uint8_t> diagnosticBytes = bytesFromString(diagnosticText);
+            ShaderToolExecutionResult result{
+                .exitCode = exitCode,
+                .diagnosticHash = hashBytes(diagnosticBytes),
+                .diagnosticText = std::move(diagnosticText),
+            };
+            if (exitCode != 0) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    std::string{label} + " failed with exit code " + std::to_string(exitCode) +
+                    ": " + summarizeToolDiagnostic(result.diagnosticText))};
+            }
+            return result;
         }
 
         [[nodiscard]] std::string productLabel(const AssetImportRequest& request) {
@@ -173,6 +494,27 @@ namespace asharia::asset {
             return nullptr;
         }
 
+        [[nodiscard]] const AssetProductDependencyBytes*
+        findDependencyProductBytes(std::span<const AssetProductDependencyBytes> products,
+                                   std::string_view relativeProductPath) {
+            for (const AssetProductDependencyBytes& product : products) {
+                if (product.relativeProductPath == relativeProductPath) {
+                    return &product;
+                }
+            }
+            return nullptr;
+        }
+
+        [[nodiscard]] const AssetImportSetting*
+        findImportSetting(std::span<const AssetImportSetting> settings, std::string_view key) {
+            for (const AssetImportSetting& setting : settings) {
+                if (setting.key == key) {
+                    return &setting;
+                }
+            }
+            return nullptr;
+        }
+
         [[nodiscard]] bool validateSourceBytes(AssetProductExecutionResult& result,
                                                std::span<const AssetProductSourceBytes> sources) {
             bool valid = true;
@@ -197,6 +539,55 @@ namespace asharia::asset {
                                 "] source=\"" + source.sourcePath + "\".");
                         valid = false;
                     }
+                }
+            }
+            return valid;
+        }
+
+        [[nodiscard]] bool validateDependencyProductBytes(
+            AssetProductExecutionResult& result,
+            std::span<const AssetProductDependencyBytes> dependencyProducts) {
+            bool valid = true;
+            for (std::size_t index = 0; index < dependencyProducts.size(); ++index) {
+                const AssetProductDependencyBytes& product = dependencyProducts[index];
+                if (auto validPath = validateAssetProductPath(product.relativeProductPath);
+                    !validPath) {
+                    addDiagnostic(
+                        result, AssetProductExecutionDiagnosticCode::InvalidDependencyProductBytes,
+                        {}, product.relativeProductPath,
+                        "Asset product execution rejected dependency product bytes[" +
+                            std::to_string(index) + "]: " + validPath.error().message);
+                    valid = false;
+                }
+
+                for (std::size_t otherIndex = index + 1; otherIndex < dependencyProducts.size();
+                     ++otherIndex) {
+                    if (product.relativeProductPath ==
+                        dependencyProducts[otherIndex].relativeProductPath) {
+                        addDiagnostic(
+                            result,
+                            AssetProductExecutionDiagnosticCode::DuplicateDependencyProductBytes,
+                            {}, product.relativeProductPath,
+                            "Asset product execution dependency product bytes[" +
+                                std::to_string(index) + "] duplicates dependency product bytes[" +
+                                std::to_string(otherIndex) + "] product=\"" +
+                                product.relativeProductPath + "\".");
+                        valid = false;
+                    }
+                }
+
+                const std::uint64_t actualProductHash = hashBytes(product.bytes);
+                if (actualProductHash != product.productHash) {
+                    addDiagnostic(
+                        result,
+                        AssetProductExecutionDiagnosticCode::DependencyProductBytesHashMismatch, {},
+                        product.relativeProductPath,
+                        "Asset product execution dependency product bytes[" +
+                            std::to_string(index) + "] hash mismatch for product=\"" +
+                            product.relativeProductPath + "\" expected=\"" +
+                            formatHash64(product.productHash) + "\" actual=\"" +
+                            formatHash64(actualProductHash) + "\".");
+                    valid = false;
                 }
             }
             return valid;
@@ -307,6 +698,14 @@ namespace asharia::asset {
             return request.source.importerName == kShaderAuthoringImporterName &&
                    request.source.importerVersion ==
                        ImporterVersion{kShaderAuthoringImporterVersion} &&
+                   sourceExtension(request.source.sourcePath) == ".ashader";
+        }
+
+        [[nodiscard]] bool
+        isShaderCompileReflectionProductRequest(const AssetImportRequest& request) {
+            return request.source.importerName == kShaderCompileReflectionImporterName &&
+                   request.source.importerVersion ==
+                       ImporterVersion{kShaderCompileReflectionImporterVersion} &&
                    sourceExtension(request.source.sourcePath) == ".ashader";
         }
 
@@ -489,6 +888,280 @@ namespace asharia::asset {
             return bytes;
         }
 
+        [[nodiscard]] Result<AssetShaderCompileReflectionProductEntry>
+        compileShaderAuthoringEntry(const ShaderCompileReflectionWorkPaths& workPaths,
+                                    const ShaderCompileReflectionToolPaths& toolPaths,
+                                    const AssetShaderAuthoringProductEntry& entry) {
+            if (!isSupportedSlangStage(entry.stage)) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Unsupported Slang stage '" + entry.stage + "'.")};
+            }
+            if (!isSafeSlangIdentifier(entry.compileEntryName)) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Unsafe Slang compile entry name '" + entry.compileEntryName + "'.")};
+            }
+
+            const std::string entryFileStem = entry.compileEntryName + "." + entry.stage;
+            const std::filesystem::path spirvPath = workPaths.workDir / (entryFileStem + ".spv");
+            const std::filesystem::path reflectionPath =
+                workPaths.workDir / (entryFileStem + ".reflection.json");
+            const std::filesystem::path slangcStdoutPath =
+                workPaths.workDir / (entryFileStem + ".slangc.stdout.txt");
+            const std::filesystem::path slangcStderrPath =
+                workPaths.workDir / (entryFileStem + ".slangc.stderr.txt");
+            const std::filesystem::path spirvValStdoutPath =
+                workPaths.workDir / (entryFileStem + ".spirv-val.stdout.txt");
+            const std::filesystem::path spirvValStderrPath =
+                workPaths.workDir / (entryFileStem + ".spirv-val.stderr.txt");
+
+            const std::string compileCommand =
+                quotePath(toolPaths.slangcPath) + " " + quotePath(workPaths.generatedSourcePath) +
+                " -profile " + std::string{kSlangProfile} + " -target " +
+                std::string{kSlangTarget} + " -entry " + entry.compileEntryName + " -stage " +
+                entry.stage + " -reflection-json " + quotePath(reflectionPath) + " -o " +
+                quotePath(spirvPath);
+            auto compiled = runToolCommand("slangc " + entry.stage, compileCommand, workPaths,
+                                           slangcStdoutPath, slangcStderrPath);
+            if (!compiled) {
+                return std::unexpected{std::move(compiled.error())};
+            }
+
+            auto validated =
+                runToolCommand("spirv-val " + entry.stage,
+                               quotePath(toolPaths.spirvValPath) + " " + quotePath(spirvPath),
+                               workPaths, spirvValStdoutPath, spirvValStderrPath);
+            if (!validated) {
+                return std::unexpected{std::move(validated.error())};
+            }
+
+            auto spirvBytes = readBinaryFile(spirvPath);
+            if (!spirvBytes) {
+                return std::unexpected{std::move(spirvBytes.error())};
+            }
+            auto reflectionBytes = readBinaryFile(reflectionPath);
+            if (!reflectionBytes) {
+                return std::unexpected{std::move(reflectionBytes.error())};
+            }
+            if (spirvBytes->empty()) {
+                return std::unexpected{
+                    shaderCompileReflectionImportError("slangc produced empty SPIR-V bytes.")};
+            }
+            if (reflectionBytes->empty()) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "slangc produced empty reflection JSON bytes.")};
+            }
+
+            std::string reflectionJsonText;
+            reflectionJsonText.reserve(reflectionBytes->size());
+            for (const std::uint8_t byte : *reflectionBytes) {
+                reflectionJsonText.push_back(static_cast<char>(byte));
+            }
+
+            return AssetShaderCompileReflectionProductEntry{
+                .passName = entry.passName,
+                .stage = entry.stage,
+                .sourceEntryName = entry.sourceEntryName,
+                .compileEntryName = entry.compileEntryName,
+                .generatedWrapperName = entry.generatedWrapperName,
+                .slangcExitCode = static_cast<std::uint64_t>(compiled->exitCode),
+                .slangcDiagnosticHash = compiled->diagnosticHash,
+                .slangcDiagnosticText = std::move(compiled->diagnosticText),
+                .spirvValExitCode = static_cast<std::uint64_t>(validated->exitCode),
+                .spirvValDiagnosticHash = validated->diagnosticHash,
+                .spirvValDiagnosticText = std::move(validated->diagnosticText),
+                .spirvHash = hashBytes(*spirvBytes),
+                .reflectionJsonHash = hashBytes(*reflectionBytes),
+                .spirvBytes = std::move(*spirvBytes),
+                .reflectionJsonText = std::move(reflectionJsonText),
+            };
+        }
+
+        [[nodiscard]] Result<std::vector<AssetShaderCompileReflectionProductEntry>>
+        compileShaderAuthoringEntries(const AssetImportRequest& request,
+                                      const std::filesystem::path& outputRoot,
+                                      const AssetShaderAuthoringProductPayload& authoringPayload) {
+            const std::optional<std::filesystem::path> slangcPath = findToolExecutable("slangc");
+            if (!slangcPath) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Could not find required tool 'slangc' on PATH or under VULKAN_SDK/Bin.")};
+            }
+
+            const std::optional<std::filesystem::path> spirvValPath =
+                findToolExecutable("spirv-val");
+            if (!spirvValPath) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Could not find required tool 'spirv-val' on PATH or under VULKAN_SDK/Bin.")};
+            }
+
+            const std::filesystem::path workDir =
+                outputRoot / ".asharia-product-work" /
+                formatHash64(hashAssetProductKey(request.productKey));
+            std::error_code removeError;
+            std::filesystem::remove_all(workDir, removeError);
+            std::error_code createError;
+            std::filesystem::create_directories(workDir, createError);
+            if (createError) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Could not create shader compile work directory '" + pathText(workDir) +
+                    "': " + createError.message() + ".")};
+            }
+
+            const std::filesystem::path generatedSourcePath = workDir / "generated-authoring.slang";
+            if (!writeTextFile(generatedSourcePath, authoringPayload.generatedSlangText)) {
+                return std::unexpected{
+                    shaderCompileReflectionImportError("Could not write generated Slang source '" +
+                                                       pathText(generatedSourcePath) + "'.")};
+            }
+
+            std::vector<AssetShaderCompileReflectionProductEntry> compiledEntries;
+            compiledEntries.reserve(authoringPayload.entries.size());
+            const ShaderCompileReflectionWorkPaths workPaths{
+                .workDir = workDir,
+                .generatedSourcePath = generatedSourcePath,
+            };
+            const ShaderCompileReflectionToolPaths toolPaths{
+                .slangcPath = *slangcPath,
+                .spirvValPath = *spirvValPath,
+            };
+            for (const AssetShaderAuthoringProductEntry& entry : authoringPayload.entries) {
+                auto compiledEntry = compileShaderAuthoringEntry(workPaths, toolPaths, entry);
+                if (!compiledEntry) {
+                    return std::unexpected{std::move(compiledEntry.error())};
+                }
+                compiledEntries.push_back(std::move(*compiledEntry));
+            }
+
+            std::filesystem::remove_all(workDir, removeError);
+            return compiledEntries;
+        }
+
+        [[nodiscard]] std::vector<std::uint8_t> makeShaderCompileReflectionProductBytes(
+            const AssetImportRequest& request, const AssetProductDependencyBytes& authoringProduct,
+            const AssetShaderAuthoringProductPayload& authoringPayload,
+            std::span<const AssetShaderCompileReflectionProductEntry> compiledEntries) {
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(4096);
+            appendLine(bytes, "schema=com.asharia.asset.shader-compile-reflection-product.v1");
+            appendLine(bytes, "guid=" + formatAssetGuid(request.source.guid));
+            appendLine(bytes, "sourcePath=" + request.source.sourcePath);
+            appendLine(bytes, "assetType=" + request.source.assetTypeName);
+            appendLine(bytes, "importer=" + request.source.importerName);
+            appendLine(bytes,
+                       "importerVersion=" + std::to_string(request.source.importerVersion.value));
+            appendLine(bytes, "shader.stableTypeId=" + authoringPayload.stableTypeId);
+            appendLine(bytes, "authoringProductPath=" + authoringProduct.relativeProductPath);
+            appendLine(bytes, "authoringProductHash=" + formatHash64(authoringProduct.productHash));
+            appendLine(bytes,
+                       "generatedSlangHash=" + formatHash64(authoringPayload.generatedSlangHash));
+            appendLine(bytes, "profile=" + std::string{kSlangProfile});
+            appendLine(bytes, "target=" + std::string{kSlangTarget});
+            appendLine(bytes, "sourceHash=" + formatHash64(request.source.sourceHash));
+            appendLine(bytes, "settingsHash=" + formatHash64(request.source.settingsHash));
+            appendLine(bytes, "dependencyHash=" + formatHash64(request.productKey.dependencyHash));
+            appendLine(bytes,
+                       "targetProfileHash=" + formatHash64(request.productKey.targetProfileHash));
+            appendLine(bytes,
+                       "productKeyHash=" + formatHash64(hashAssetProductKey(request.productKey)));
+            appendLine(bytes, "settings.count=" + std::to_string(request.settings.size()));
+            for (const AssetImportSetting& setting : request.settings) {
+                appendLine(bytes, "setting." + setting.key + "=" + setting.value);
+            }
+
+            appendLine(bytes, "entry.count=" + std::to_string(compiledEntries.size()));
+            for (std::size_t index = 0; index < compiledEntries.size(); ++index) {
+                const AssetShaderCompileReflectionProductEntry& entry = compiledEntries[index];
+                const std::vector<std::uint8_t> slangcDiagnosticBytes =
+                    bytesFromString(entry.slangcDiagnosticText);
+                const std::vector<std::uint8_t> spirvValDiagnosticBytes =
+                    bytesFromString(entry.spirvValDiagnosticText);
+                const std::vector<std::uint8_t> reflectionBytes =
+                    bytesFromString(entry.reflectionJsonText);
+                const std::string prefix = "entry." + std::to_string(index) + ".";
+                appendLine(bytes, prefix + "passName=" + entry.passName);
+                appendLine(bytes, prefix + "stage=" + entry.stage);
+                appendLine(bytes, prefix + "sourceEntry=" + entry.sourceEntryName);
+                appendLine(bytes, prefix + "compileEntry=" + entry.compileEntryName);
+                appendLine(bytes, prefix + "generatedWrapper=" + entry.generatedWrapperName);
+                appendLine(bytes,
+                           prefix + "slangcExitCode=" + std::to_string(entry.slangcExitCode));
+                appendLine(bytes, prefix + "slangcDiagnosticHash=" +
+                                      formatHash64(entry.slangcDiagnosticHash));
+                appendLine(bytes, prefix + "slangcDiagnosticSize=" +
+                                      std::to_string(slangcDiagnosticBytes.size()));
+                appendLine(bytes,
+                           prefix + "slangcDiagnosticHex=" + hexEncode(slangcDiagnosticBytes));
+                appendLine(bytes,
+                           prefix + "spirvValExitCode=" + std::to_string(entry.spirvValExitCode));
+                appendLine(bytes, prefix + "spirvValDiagnosticHash=" +
+                                      formatHash64(entry.spirvValDiagnosticHash));
+                appendLine(bytes, prefix + "spirvValDiagnosticSize=" +
+                                      std::to_string(spirvValDiagnosticBytes.size()));
+                appendLine(bytes,
+                           prefix + "spirvValDiagnosticHex=" + hexEncode(spirvValDiagnosticBytes));
+                appendLine(bytes, prefix + "spirvHash=" + formatHash64(entry.spirvHash));
+                appendLine(bytes, prefix + "spirvSize=" + std::to_string(entry.spirvBytes.size()));
+                appendLine(bytes, prefix + "spirvHex=" + hexEncode(entry.spirvBytes));
+                appendLine(bytes,
+                           prefix + "reflectionJsonHash=" + formatHash64(entry.reflectionJsonHash));
+                appendLine(bytes,
+                           prefix + "reflectionJsonSize=" + std::to_string(reflectionBytes.size()));
+                appendLine(bytes, prefix + "reflectionJsonHex=" + hexEncode(reflectionBytes));
+            }
+            return bytes;
+        }
+
+        [[nodiscard]] Result<std::vector<std::uint8_t>> makeShaderCompileReflectionProductBytes(
+            const AssetImportRequest& request, const std::filesystem::path& outputRoot,
+            std::span<const AssetProductDependencyBytes> dependencyProductBytes) {
+            const AssetImportSetting* authoringProductPathSetting =
+                findImportSetting(request.settings, kShaderAuthoringProductPathSettingKey);
+            if (authoringProductPathSetting == nullptr) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Missing required setting '" +
+                    std::string{kShaderAuthoringProductPathSettingKey} + "'.")};
+            }
+            if (auto validPath = validateAssetProductPath(authoringProductPathSetting->value);
+                !validPath) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Invalid shader authoring product dependency path '" +
+                    authoringProductPathSetting->value + "': " + validPath.error().message)};
+            }
+
+            const AssetProductDependencyBytes* authoringProduct = findDependencyProductBytes(
+                dependencyProductBytes, authoringProductPathSetting->value);
+            if (authoringProduct == nullptr) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Missing dependency product bytes for shader authoring product '" +
+                    authoringProductPathSetting->value + "'.")};
+            }
+
+            auto authoringPayload = readShaderAuthoringProductPayload(
+                std::span<const std::uint8_t>{authoringProduct->bytes.data(),
+                                              authoringProduct->bytes.size()},
+                authoringProduct->relativeProductPath);
+            if (!authoringPayload) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Could not read shader authoring dependency product '" +
+                    authoringProduct->relativeProductPath +
+                    "': " + authoringPayload.error().message)};
+            }
+            if (authoringPayload->sourcePath != request.source.sourcePath) {
+                return std::unexpected{shaderCompileReflectionImportError(
+                    "Shader authoring dependency product source path '" +
+                    authoringPayload->sourcePath + "' does not match request source path '" +
+                    request.source.sourcePath + "'.")};
+            }
+
+            auto compiledEntries =
+                compileShaderAuthoringEntries(request, outputRoot, *authoringPayload);
+            if (!compiledEntries) {
+                return std::unexpected{std::move(compiledEntries.error())};
+            }
+
+            return makeShaderCompileReflectionProductBytes(request, *authoringProduct,
+                                                           *authoringPayload, *compiledEntries);
+        }
+
         [[nodiscard]] std::filesystem::path makeOutputPath(const std::filesystem::path& outputRoot,
                                                            std::string_view productPath) {
             return outputRoot / pathFromUtf8(productPath);
@@ -505,7 +1178,8 @@ namespace asharia::asset {
         [[nodiscard]] std::optional<PreparedProduct>
         prepareProduct(AssetProductExecutionResult& result, const std::filesystem::path& outputRoot,
                        const AssetImportRequest& importRequest,
-                       std::span<const AssetProductSourceBytes> sourceBytesList) {
+                       std::span<const AssetProductSourceBytes> sourceBytesList,
+                       std::span<const AssetProductDependencyBytes> dependencyProductBytes) {
             const AssetProductSourceBytes* sourceBytes =
                 findSourceBytes(sourceBytesList, importRequest.source.sourcePath);
             if (sourceBytes == nullptr) {
@@ -579,6 +1253,21 @@ namespace asharia::asset {
                         result, AssetProductExecutionDiagnosticCode::ShaderAuthoringImportFailed,
                         importRequest,
                         "Asset product execution shader authoring import failed for " +
+                            productLabel(importRequest) + ": " +
+                            shaderProductBytes.error().message);
+                    return std::nullopt;
+                }
+
+                productBytes = std::move(*shaderProductBytes);
+            } else if (isShaderCompileReflectionProductRequest(importRequest)) {
+                auto shaderProductBytes = makeShaderCompileReflectionProductBytes(
+                    importRequest, outputRoot, dependencyProductBytes);
+                if (!shaderProductBytes) {
+                    addRequestDiagnostic(
+                        result,
+                        AssetProductExecutionDiagnosticCode::ShaderCompileReflectionImportFailed,
+                        importRequest,
+                        "Asset product execution shader compile/reflection import failed for " +
                             productLabel(importRequest) + ": " +
                             shaderProductBytes.error().message);
                     return std::nullopt;
@@ -722,11 +1411,15 @@ namespace asharia::asset {
             return result;
         }
 
+        if (!validateDependencyProductBytes(result, request.dependencyProductBytes)) {
+            return result;
+        }
+
         std::vector<PreparedProduct> preparedProducts;
         preparedProducts.reserve(request.plan.requests.size());
         for (const AssetImportRequest& importRequest : request.plan.requests) {
             if (auto product = prepareProduct(result, request.productOutputRoot, importRequest,
-                                              request.sourceBytes);
+                                              request.sourceBytes, request.dependencyProductBytes);
                 product) {
                 preparedProducts.push_back(std::move(*product));
             }

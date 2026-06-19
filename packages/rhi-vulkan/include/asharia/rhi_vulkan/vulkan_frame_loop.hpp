@@ -166,7 +166,15 @@ namespace asharia {
             AcquiredImage image{};
         };
 
+        struct RetiredSwapchainResources {
+            VkSwapchainKHR swapchain{VK_NULL_HANDLE};
+            std::vector<VkImageView> imageViews;
+            std::vector<VkSemaphore> renderFinished;
+        };
+
         void destroy();
+        void destroyRetiredSwapchainResources();
+        void retireCurrentSwapchainResources();
         [[nodiscard]] Result<VulkanFrameStatus> recreateSwapchain();
         [[nodiscard]] Result<void> recoverAcquiredImageSemaphore();
         [[nodiscard]] Result<FrameAcquireResult> acquireNextImage();
@@ -210,6 +218,7 @@ namespace asharia {
         VkCommandBuffer commandBuffer_{VK_NULL_HANDLE};
         VkSemaphore imageAvailable_{VK_NULL_HANDLE};
         std::vector<VkSemaphore> renderFinished_;
+        std::vector<RetiredSwapchainResources> retiredSwapchainResources_;
         VkFence inFlight_{VK_NULL_HANDLE};
         VulkanDeferredDeletionQueue deferredDeletionQueue_;
         VulkanDebugLabelFunctions debugLabelFunctions_{};

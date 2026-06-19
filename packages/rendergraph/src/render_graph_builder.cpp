@@ -17,6 +17,7 @@ namespace asharia {
             .name = std::move(slotName),
             .image = image,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -28,6 +29,7 @@ namespace asharia {
             .image = image,
             .shaderStage = shaderStage,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -37,6 +39,7 @@ namespace asharia {
             .name = std::move(slotName),
             .image = image,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -46,6 +49,7 @@ namespace asharia {
             .name = std::move(slotName),
             .image = image,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -57,6 +61,7 @@ namespace asharia {
             .image = image,
             .shaderStage = shaderStage,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -66,6 +71,7 @@ namespace asharia {
             .name = std::move(slotName),
             .image = image,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -84,6 +90,7 @@ namespace asharia {
             .name = std::move(slotName),
             .image = image,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -95,6 +102,7 @@ namespace asharia {
             .buffer = buffer,
             .shaderStage = shaderStage,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -105,6 +113,7 @@ namespace asharia {
             .name = std::move(slotName),
             .buffer = buffer,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -119,6 +128,7 @@ namespace asharia {
             .name = std::move(slotName),
             .buffer = buffer,
         });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -130,6 +140,7 @@ namespace asharia {
                 .buffer = buffer,
                 .shaderStage = shaderStage,
             });
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
@@ -143,33 +154,39 @@ namespace asharia {
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::allowCulling(bool allow) {
         graph_->impl_->passes_[passIndex_].allowCulling = allow;
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::hasSideEffects(bool hasSideEffects) {
         graph_->impl_->passes_[passIndex_].hasSideEffects = hasSideEffects;
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::setParamsType(std::string paramsType) {
         graph_->impl_->passes_[passIndex_].paramsType = std::move(paramsType);
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::setParamsData(std::vector<std::byte> paramsData) {
         graph_->impl_->passes_[passIndex_].paramsData = std::move(paramsData);
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::execute(RenderGraphPassCallback callback) {
         graph_->impl_->passes_[passIndex_].callback = std::move(callback);
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 
     RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::setCommands(RenderGraphCommandList commands) {
         graph_->impl_->passes_[passIndex_].commands = std::move(commands).takeCommands();
+        ++graph_->impl_->mutationGeneration_;
         return *this;
     }
 

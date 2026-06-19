@@ -27,6 +27,8 @@ namespace asharia::asset {
             "com.asharia.asset.material-instance-product.v1";
         constexpr std::string_view kShaderAuthoringProductSchema =
             "com.asharia.asset.shader-authoring-product.v1";
+        constexpr std::string_view kShaderCompileReflectionProductSchema =
+            "com.asharia.asset.shader-compile-reflection-product.v1";
 
         [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
                                                        std::uint8_t byte) noexcept {
@@ -231,6 +233,50 @@ namespace asharia::asset {
             return parsed;
         }
 
+        [[nodiscard]] std::optional<std::uint8_t> hexNibble(char value) noexcept {
+            if (value >= '0' && value <= '9') {
+                return static_cast<std::uint8_t>(value - '0');
+            }
+            if (value >= 'a' && value <= 'f') {
+                return static_cast<std::uint8_t>(value - 'a' + 10);
+            }
+            if (value >= 'A' && value <= 'F') {
+                return static_cast<std::uint8_t>(value - 'A' + 10);
+            }
+            return std::nullopt;
+        }
+
+        [[nodiscard]] Result<std::vector<std::uint8_t>>
+        requireHexBytesField(std::string_view header, std::string_view key,
+                             std::string_view relativeProductPath) {
+            auto value = requirePresentStringField(header, key, relativeProductPath);
+            if (!value) {
+                return std::unexpected{std::move(value.error())};
+            }
+            if ((value->size() % 2U) != 0U) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has odd-length hex field '" + std::string{key} + "'")};
+            }
+
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(value->size() / 2U);
+            for (std::size_t index = 0; index < value->size(); index += 2U) {
+                const std::optional<std::uint8_t> high = hexNibble((*value)[index]);
+                const std::optional<std::uint8_t> low = hexNibble((*value)[index + 1U]);
+                if (!high || !low) {
+                    return std::unexpected{
+                        blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                  std::string{relativeProductPath},
+                                  "has invalid hex field '" + std::string{key} + "'")};
+                }
+                bytes.push_back(static_cast<std::uint8_t>((*high << 4U) | *low));
+            }
+
+            return bytes;
+        }
+
         [[nodiscard]] Result<AssetGuid>
         requireAssetGuidField(std::string_view header, std::string_view key,
                               std::string_view relativeProductPath) {
@@ -306,6 +352,22 @@ namespace asharia::asset {
                 return std::unexpected{std::move(schema.error())};
             }
             if (*schema != kShaderAuthoringProductSchema) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has unsupported schema '" + *schema + "'")};
+            }
+
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
+        validateShaderCompileReflectionSchema(std::string_view header,
+                                              std::string_view relativeProductPath) {
+            auto schema = requireStringField(header, "schema", relativeProductPath);
+            if (!schema) {
+                return std::unexpected{std::move(schema.error())};
+            }
+            if (*schema != kShaderCompileReflectionProductSchema) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                                  std::string{relativeProductPath},
                                                  "has unsupported schema '" + *schema + "'")};
@@ -784,6 +846,316 @@ namespace asharia::asset {
             return entries;
         }
 
+        struct ShaderCompileReflectionProductHeaderFields {
+            std::string sourcePath;
+            std::string stableTypeId;
+            std::string authoringProductPath;
+            std::uint64_t authoringProductHash{};
+            std::uint64_t generatedSlangHash{};
+            std::uint64_t productKeyHash{};
+            std::string profile;
+            std::string target;
+            std::uint64_t entryCount{};
+        };
+
+        [[nodiscard]] Result<ShaderCompileReflectionProductHeaderFields>
+        parseShaderCompileReflectionProductHeaderFields(std::string_view header,
+                                                        std::string_view relativeProductPath) {
+            auto validSchema = validateShaderCompileReflectionSchema(header, relativeProductPath);
+            if (!validSchema) {
+                return std::unexpected{std::move(validSchema.error())};
+            }
+
+            auto sourcePath = requireStringField(header, "sourcePath", relativeProductPath);
+            auto stableTypeId =
+                requireStringField(header, "shader.stableTypeId", relativeProductPath);
+            auto authoringProductPath =
+                requireStringField(header, "authoringProductPath", relativeProductPath);
+            auto authoringProductHash =
+                requireHexUint64Field(header, "authoringProductHash", relativeProductPath);
+            auto generatedSlangHash =
+                requireHexUint64Field(header, "generatedSlangHash", relativeProductPath);
+            auto productKeyHash =
+                requireHexUint64Field(header, "productKeyHash", relativeProductPath);
+            auto profile = requireStringField(header, "profile", relativeProductPath);
+            auto target = requireStringField(header, "target", relativeProductPath);
+            auto entryCount = requireUint64Field(header, "entry.count", relativeProductPath);
+            if (!sourcePath) {
+                return std::unexpected{std::move(sourcePath.error())};
+            }
+            if (!stableTypeId) {
+                return std::unexpected{std::move(stableTypeId.error())};
+            }
+            if (!authoringProductPath) {
+                return std::unexpected{std::move(authoringProductPath.error())};
+            }
+            if (!authoringProductHash) {
+                return std::unexpected{std::move(authoringProductHash.error())};
+            }
+            if (!generatedSlangHash) {
+                return std::unexpected{std::move(generatedSlangHash.error())};
+            }
+            if (!productKeyHash) {
+                return std::unexpected{std::move(productKeyHash.error())};
+            }
+            if (!profile) {
+                return std::unexpected{std::move(profile.error())};
+            }
+            if (!target) {
+                return std::unexpected{std::move(target.error())};
+            }
+            if (!entryCount) {
+                return std::unexpected{std::move(entryCount.error())};
+            }
+            if (*entryCount == 0) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has no compiled shader entry records")};
+            }
+
+            return ShaderCompileReflectionProductHeaderFields{
+                .sourcePath = std::move(*sourcePath),
+                .stableTypeId = std::move(*stableTypeId),
+                .authoringProductPath = std::move(*authoringProductPath),
+                .authoringProductHash = *authoringProductHash,
+                .generatedSlangHash = *generatedSlangHash,
+                .productKeyHash = *productKeyHash,
+                .profile = std::move(*profile),
+                .target = std::move(*target),
+                .entryCount = *entryCount,
+            };
+        }
+
+        template <typename ValueT>
+        [[nodiscard]] bool captureError(Result<ValueT>& value, Error& error) {
+            if (value) {
+                return true;
+            }
+            error = std::move(value.error());
+            return false;
+        }
+
+        struct ShaderCompileReflectionEntryFields {
+            std::string passName;
+            std::string stage;
+            std::string sourceEntry;
+            std::string compileEntry;
+            std::string wrapper;
+            std::uint64_t slangcExitCode{};
+            std::uint64_t slangcDiagnosticHash{};
+            std::uint64_t slangcDiagnosticSize{};
+            std::vector<std::uint8_t> slangcDiagnosticBytes;
+            std::uint64_t spirvValExitCode{};
+            std::uint64_t spirvValDiagnosticHash{};
+            std::uint64_t spirvValDiagnosticSize{};
+            std::vector<std::uint8_t> spirvValDiagnosticBytes;
+            std::uint64_t spirvHash{};
+            std::uint64_t spirvSize{};
+            std::vector<std::uint8_t> spirvBytes;
+            std::uint64_t reflectionJsonHash{};
+            std::uint64_t reflectionJsonSize{};
+            std::vector<std::uint8_t> reflectionJsonBytes;
+        };
+
+        [[nodiscard]] Result<ShaderCompileReflectionEntryFields>
+        parseShaderCompileReflectionEntryFields(std::string_view header, std::uint64_t index,
+                                                std::string_view relativeProductPath) {
+            const std::string prefix = "entry." + std::to_string(index) + ".";
+            auto passName = requireStringField(header, prefix + "passName", relativeProductPath);
+            auto stage = requireStringField(header, prefix + "stage", relativeProductPath);
+            auto sourceEntry =
+                requireStringField(header, prefix + "sourceEntry", relativeProductPath);
+            auto compileEntry =
+                requireStringField(header, prefix + "compileEntry", relativeProductPath);
+            auto wrapper =
+                requireStringField(header, prefix + "generatedWrapper", relativeProductPath);
+            auto slangcExitCode =
+                requireUint64Field(header, prefix + "slangcExitCode", relativeProductPath);
+            auto slangcDiagnosticHash =
+                requireHexUint64Field(header, prefix + "slangcDiagnosticHash", relativeProductPath);
+            auto slangcDiagnosticSize =
+                requireUint64Field(header, prefix + "slangcDiagnosticSize", relativeProductPath);
+            auto slangcDiagnosticBytes =
+                requireHexBytesField(header, prefix + "slangcDiagnosticHex", relativeProductPath);
+            auto spirvValExitCode =
+                requireUint64Field(header, prefix + "spirvValExitCode", relativeProductPath);
+            auto spirvValDiagnosticHash = requireHexUint64Field(
+                header, prefix + "spirvValDiagnosticHash", relativeProductPath);
+            auto spirvValDiagnosticSize =
+                requireUint64Field(header, prefix + "spirvValDiagnosticSize", relativeProductPath);
+            auto spirvValDiagnosticBytes =
+                requireHexBytesField(header, prefix + "spirvValDiagnosticHex", relativeProductPath);
+            auto spirvHash =
+                requireHexUint64Field(header, prefix + "spirvHash", relativeProductPath);
+            auto spirvSize = requireUint64Field(header, prefix + "spirvSize", relativeProductPath);
+            auto spirvBytes =
+                requireHexBytesField(header, prefix + "spirvHex", relativeProductPath);
+            auto reflectionJsonHash =
+                requireHexUint64Field(header, prefix + "reflectionJsonHash", relativeProductPath);
+            auto reflectionJsonSize =
+                requireUint64Field(header, prefix + "reflectionJsonSize", relativeProductPath);
+            auto reflectionJsonBytes =
+                requireHexBytesField(header, prefix + "reflectionJsonHex", relativeProductPath);
+
+            Error error;
+            if (!captureError(passName, error) || !captureError(stage, error) ||
+                !captureError(sourceEntry, error) || !captureError(compileEntry, error) ||
+                !captureError(wrapper, error) || !captureError(slangcExitCode, error) ||
+                !captureError(slangcDiagnosticHash, error) ||
+                !captureError(slangcDiagnosticSize, error) ||
+                !captureError(slangcDiagnosticBytes, error) ||
+                !captureError(spirvValExitCode, error) ||
+                !captureError(spirvValDiagnosticHash, error) ||
+                !captureError(spirvValDiagnosticSize, error) ||
+                !captureError(spirvValDiagnosticBytes, error) || !captureError(spirvHash, error) ||
+                !captureError(spirvSize, error) || !captureError(spirvBytes, error) ||
+                !captureError(reflectionJsonHash, error) ||
+                !captureError(reflectionJsonSize, error) ||
+                !captureError(reflectionJsonBytes, error)) {
+                return std::unexpected{std::move(error)};
+            }
+
+            return ShaderCompileReflectionEntryFields{
+                .passName = std::move(*passName),
+                .stage = std::move(*stage),
+                .sourceEntry = std::move(*sourceEntry),
+                .compileEntry = std::move(*compileEntry),
+                .wrapper = std::move(*wrapper),
+                .slangcExitCode = *slangcExitCode,
+                .slangcDiagnosticHash = *slangcDiagnosticHash,
+                .slangcDiagnosticSize = *slangcDiagnosticSize,
+                .slangcDiagnosticBytes = std::move(*slangcDiagnosticBytes),
+                .spirvValExitCode = *spirvValExitCode,
+                .spirvValDiagnosticHash = *spirvValDiagnosticHash,
+                .spirvValDiagnosticSize = *spirvValDiagnosticSize,
+                .spirvValDiagnosticBytes = std::move(*spirvValDiagnosticBytes),
+                .spirvHash = *spirvHash,
+                .spirvSize = *spirvSize,
+                .spirvBytes = std::move(*spirvBytes),
+                .reflectionJsonHash = *reflectionJsonHash,
+                .reflectionJsonSize = *reflectionJsonSize,
+                .reflectionJsonBytes = std::move(*reflectionJsonBytes),
+            };
+        }
+
+        [[nodiscard]] Result<void> validateShaderCompileReflectionEntryPayloads(
+            const ShaderCompileReflectionEntryFields& fields,
+            std::string_view relativeProductPath) {
+            if (fields.spirvBytes.empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has an empty SPIR-V payload")};
+            }
+            if (fields.reflectionJsonBytes.empty()) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has an empty reflection JSON payload")};
+            }
+            if (fields.slangcDiagnosticBytes.size() != fields.slangcDiagnosticSize) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a slangc diagnostic payload size mismatch")};
+            }
+            if (fields.spirvValDiagnosticBytes.size() != fields.spirvValDiagnosticSize) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has a spirv-val diagnostic payload size mismatch")};
+            }
+            if (fields.spirvBytes.size() != fields.spirvSize) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a SPIR-V payload size mismatch")};
+            }
+            if (fields.reflectionJsonBytes.size() != fields.reflectionJsonSize) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a reflection JSON payload size mismatch")};
+            }
+            if (hashBytes(fields.spirvBytes) != fields.spirvHash) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a SPIR-V payload hash mismatch")};
+            }
+            if (hashBytes(fields.reflectionJsonBytes) != fields.reflectionJsonHash) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a reflection JSON payload hash mismatch")};
+            }
+            if (hashBytes(fields.slangcDiagnosticBytes) != fields.slangcDiagnosticHash) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has a slangc diagnostic payload hash mismatch")};
+            }
+            if (hashBytes(fields.spirvValDiagnosticBytes) != fields.spirvValDiagnosticHash) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has a spirv-val diagnostic payload hash mismatch")};
+            }
+            return {};
+        }
+
+        [[nodiscard]] Result<std::vector<AssetShaderCompileReflectionProductEntry>>
+        parseShaderCompileReflectionEntries(std::string_view header, std::uint64_t entryCount,
+                                            std::string_view relativeProductPath) {
+            if (entryCount > SIZE_MAX) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "has too many compiled shader entry records")};
+            }
+
+            std::vector<AssetShaderCompileReflectionProductEntry> entries;
+            entries.reserve(static_cast<std::size_t>(entryCount));
+            for (std::uint64_t index = 0; index < entryCount; ++index) {
+                auto fields =
+                    parseShaderCompileReflectionEntryFields(header, index, relativeProductPath);
+                if (!fields) {
+                    return std::unexpected{std::move(fields.error())};
+                }
+                if (auto validPayloads =
+                        validateShaderCompileReflectionEntryPayloads(*fields, relativeProductPath);
+                    !validPayloads) {
+                    return std::unexpected{std::move(validPayloads.error())};
+                }
+
+                std::string reflectionJsonText;
+                reflectionJsonText.reserve(fields->reflectionJsonBytes.size());
+                for (const std::uint8_t byte : fields->reflectionJsonBytes) {
+                    reflectionJsonText.push_back(static_cast<char>(byte));
+                }
+                std::string slangcDiagnosticText;
+                slangcDiagnosticText.reserve(fields->slangcDiagnosticBytes.size());
+                for (const std::uint8_t byte : fields->slangcDiagnosticBytes) {
+                    slangcDiagnosticText.push_back(static_cast<char>(byte));
+                }
+                std::string spirvValDiagnosticText;
+                spirvValDiagnosticText.reserve(fields->spirvValDiagnosticBytes.size());
+                for (const std::uint8_t byte : fields->spirvValDiagnosticBytes) {
+                    spirvValDiagnosticText.push_back(static_cast<char>(byte));
+                }
+
+                entries.push_back(AssetShaderCompileReflectionProductEntry{
+                    .passName = std::move(fields->passName),
+                    .stage = std::move(fields->stage),
+                    .sourceEntryName = std::move(fields->sourceEntry),
+                    .compileEntryName = std::move(fields->compileEntry),
+                    .generatedWrapperName = std::move(fields->wrapper),
+                    .slangcExitCode = fields->slangcExitCode,
+                    .slangcDiagnosticHash = fields->slangcDiagnosticHash,
+                    .slangcDiagnosticText = std::move(slangcDiagnosticText),
+                    .spirvValExitCode = fields->spirvValExitCode,
+                    .spirvValDiagnosticHash = fields->spirvValDiagnosticHash,
+                    .spirvValDiagnosticText = std::move(spirvValDiagnosticText),
+                    .spirvHash = fields->spirvHash,
+                    .reflectionJsonHash = fields->reflectionJsonHash,
+                    .spirvBytes = std::move(fields->spirvBytes),
+                    .reflectionJsonText = std::move(reflectionJsonText),
+                });
+            }
+            return entries;
+        }
+
     } // namespace
 
     Result<AssetProductBlobPayload>
@@ -1132,6 +1504,57 @@ namespace asharia::asset {
             .bindings = std::move(*bindings),
             .entries = std::move(*entries),
             .generatedSlangText = std::move(generatedSlangText),
+        };
+    }
+
+    Result<AssetShaderCompileReflectionProductPayload>
+    readShaderCompileReflectionProductPayload(const AssetProductBlobReadRequest& request) {
+        auto bytes = readProductFileBytes(request);
+        if (!bytes) {
+            return std::unexpected{std::move(bytes.error())};
+        }
+
+        return readShaderCompileReflectionProductPayload(
+            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
+            request.relativeProductPath);
+    }
+
+    Result<AssetShaderCompileReflectionProductPayload>
+    readShaderCompileReflectionProductPayload(std::span<const std::uint8_t> productBytes,
+                                              std::string_view relativeProductPath) {
+        if (productBytes.empty()) {
+            return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                             std::string{relativeProductPath}, "is empty")};
+        }
+
+        std::string productText;
+        productText.reserve(productBytes.size());
+        for (const std::uint8_t byte : productBytes) {
+            productText.push_back(static_cast<char>(byte));
+        }
+
+        auto header =
+            parseShaderCompileReflectionProductHeaderFields(productText, relativeProductPath);
+        if (!header) {
+            return std::unexpected{std::move(header.error())};
+        }
+
+        auto entries = parseShaderCompileReflectionEntries(productText, header->entryCount,
+                                                           relativeProductPath);
+        if (!entries) {
+            return std::unexpected{std::move(entries.error())};
+        }
+
+        return AssetShaderCompileReflectionProductPayload{
+            .sourcePath = std::move(header->sourcePath),
+            .stableTypeId = std::move(header->stableTypeId),
+            .authoringProductPath = std::move(header->authoringProductPath),
+            .authoringProductHash = header->authoringProductHash,
+            .generatedSlangHash = header->generatedSlangHash,
+            .productKeyHash = header->productKeyHash,
+            .profile = std::move(header->profile),
+            .target = std::move(header->target),
+            .entries = std::move(*entries),
         };
     }
 

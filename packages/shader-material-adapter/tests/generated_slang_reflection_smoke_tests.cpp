@@ -285,18 +285,22 @@ shader "asharia.material.generated_reflection" {
             std::move(*fragmentReflection),
         };
         const auto signature =
-            asharia::shaderResourceSignature(std::span<const asharia::ShaderReflection>{
+            asharia::mergeShaderResourceSignature(std::span<const asharia::ShaderReflection>{
                 reflections.data(),
                 reflections.size(),
             });
+        if (!signature) {
+            logFailure(signature.error().message);
+            return false;
+        }
 
         if (const auto mismatch =
-                validateGeneratedReflectionContract(generated, generatedOptions, signature)) {
+                validateGeneratedReflectionContract(generated, generatedOptions, *signature)) {
             logFailure(*mismatch);
             return false;
         }
 
-        auto adapted = asharia::shader_material::makeReflectionMaterialSignature(signature);
+        auto adapted = asharia::shader_material::makeReflectionMaterialSignature(*signature);
         if (!adapted) {
             logFailure(adapted.error().message);
             return false;
@@ -306,7 +310,7 @@ shader "asharia.material.generated_reflection" {
             return false;
         }
 
-        auto mismatchedSignature = signature;
+        auto mismatchedSignature = *signature;
         mismatchedSignature.descriptorBindings[1].binding = 9U;
         if (!validateGeneratedReflectionContract(generated, generatedOptions,
                                                  mismatchedSignature)) {

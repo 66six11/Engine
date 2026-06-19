@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <string>
+#include <vector>
 
 #include "asharia/asset_pipeline/asset_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_source_scan.hpp"
@@ -11,6 +12,7 @@ namespace asharia::asset {
         AssetSourceScanRequest scan;
         AssetProductManifestDocument productManifest;
         std::string targetProfile;
+        std::vector<AssetImportToolVersionDependency> toolVersions;
 
         [[nodiscard]] friend bool operator==(const AssetScannedImportPlanRequest&,
                                              const AssetScannedImportPlanRequest&) = default;

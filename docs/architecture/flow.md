@@ -402,6 +402,8 @@ flowchart TD
   retirement 顺序、empty callback 拒绝路径和 pending/enqueued/retired/flushed counters。
 - `VulkanFrameLoop` 现在持有 deferred deletion queue，并在 frame fence / swapchain recreate / shutdown
   已确认 GPU 完成的位置推进 completed epoch。
+- Retired swapchain image views and per-image present semaphores are held by `VulkanFrameLoop`
+  until teardown, because presentation waits are not represented by the frame fence epoch.
 
 ## 当前运行调用链
 

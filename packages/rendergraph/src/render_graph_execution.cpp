@@ -21,7 +21,8 @@ namespace asharia {
             rendergraph_internal::makeRenderGraphDeclarationView(
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
-                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+                std::span<const rendergraph_internal::Pass>{impl_->passes_},
+                impl_->mutationGeneration_);
         return rendergraph_internal::executeRenderGraph(declarations, *compiled, nullptr);
     }
 
@@ -35,7 +36,8 @@ namespace asharia {
             rendergraph_internal::makeRenderGraphDeclarationView(
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
-                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+                std::span<const rendergraph_internal::Pass>{impl_->passes_},
+                impl_->mutationGeneration_);
         return rendergraph_internal::executeRenderGraph(declarations, *compiled, &executorRegistry);
     }
 
@@ -44,7 +46,8 @@ namespace asharia {
             rendergraph_internal::makeRenderGraphDeclarationView(
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
-                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+                std::span<const rendergraph_internal::Pass>{impl_->passes_},
+                impl_->mutationGeneration_);
         return rendergraph_internal::executeRenderGraph(declarations, compiled, nullptr);
     }
 
@@ -54,7 +57,8 @@ namespace asharia {
             rendergraph_internal::makeRenderGraphDeclarationView(
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
-                std::span<const rendergraph_internal::Pass>{impl_->passes_});
+                std::span<const rendergraph_internal::Pass>{impl_->passes_},
+                impl_->mutationGeneration_);
         return rendergraph_internal::executeRenderGraph(declarations, compiled, &executorRegistry);
     }
 
@@ -82,11 +86,15 @@ namespace asharia::rendergraph_internal {
     Result<void> executeRenderGraph(RenderGraphDeclarationView declarations,
                                     const RenderGraphCompileResult& compiled,
                                     const RenderGraphExecutorRegistry* executorRegistry) {
-        if (compiled.declaredPassCount != declarations.passes.size()) {
+        if (compiled.declarationGeneration != declarations.mutationGeneration ||
+            compiled.declaredPassCount != declarations.passes.size() ||
+            compiled.declaredImageCount != declarations.images.size() ||
+            compiled.declaredBufferCount != declarations.buffers.size()) {
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
                 0,
-                "Compiled render graph declaration count does not match the graph.",
+                "Compiled render graph result no longer matches the graph; the graph changed "
+                "since compile.",
             }};
         }
 

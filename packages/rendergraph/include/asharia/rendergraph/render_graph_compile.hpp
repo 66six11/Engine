@@ -89,6 +89,7 @@ namespace asharia {
     };
 
     struct RenderGraphCompileResult {
+        std::size_t declarationGeneration{};
         std::size_t declaredPassCount{};
         std::size_t declaredImageCount{};
         std::size_t declaredBufferCount{};

@@ -35,11 +35,13 @@ namespace asharia {
 
     RenderGraph::PassBuilder RenderGraph::addPass(std::string name) {
         impl_->passes_.push_back(makePass(std::move(name), {}));
+        ++impl_->mutationGeneration_;
         return PassBuilder{*this, impl_->passes_.size() - 1};
     }
 
     RenderGraph::PassBuilder RenderGraph::addPass(std::string name, std::string type) {
         impl_->passes_.push_back(makePass(std::move(name), std::move(type)));
+        ++impl_->mutationGeneration_;
         return PassBuilder{*this, impl_->passes_.size() - 1};
     }
 

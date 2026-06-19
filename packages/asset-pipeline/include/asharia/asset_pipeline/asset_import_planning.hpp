@@ -40,6 +40,22 @@ namespace asharia::asset {
         MetadataSourceHashDrift,
     };
 
+    struct AssetImportToolVersionDependency {
+        ImporterId importerId{};
+        std::string toolName;
+        std::uint64_t versionHash{};
+
+        [[nodiscard]] friend bool operator==(const AssetImportToolVersionDependency&,
+                                             const AssetImportToolVersionDependency&) = default;
+    };
+
+    struct AssetImportPlanOptions {
+        std::vector<AssetImportToolVersionDependency> toolVersions;
+
+        [[nodiscard]] friend bool operator==(const AssetImportPlanOptions&,
+                                             const AssetImportPlanOptions&) = default;
+    };
+
     struct AssetImportRequest {
         SourceAssetRecord source;
         std::vector<AssetImportSetting> settings;
@@ -95,6 +111,7 @@ namespace asharia::asset {
     planAssetImports(std::span<const DiscoveredSourceAsset> sources,
                      std::span<const AssetSourceSnapshot> snapshots,
                      const AssetProductManifestDocument& productManifest,
-                     std::string_view targetProfile);
+                     std::string_view targetProfile,
+                     const AssetImportPlanOptions& options = {});
 
 } // namespace asharia::asset
