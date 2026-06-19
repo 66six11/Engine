@@ -45,7 +45,9 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 WorkbenchActionKind.OpenPanel,
                 descriptor.MenuPath,
                 TargetId: descriptor.Id,
-                IconKey: descriptor.IconKey));
+                IconKey: descriptor.IconKey,
+                Category: "Window",
+                SearchText: CommandSearchTextForPanel(descriptor.Id)));
         }
     }
 
@@ -117,6 +119,19 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 TitleDetail: "validation queue",
                 StatusText: "0"),
         ];
+    }
+
+    private static string? CommandSearchTextForPanel(string panelId)
+    {
+        return panelId switch
+        {
+            "scene-view" => "viewport document",
+            "hierarchy" => "scene tree outliner",
+            "inspector" => "properties selection",
+            "console" => "log output diagnostics",
+            "problems" => "validation diagnostics",
+            _ => null,
+        };
     }
 
     private static ISceneSnapshotProvider CreateDefaultSceneSnapshotProvider()
