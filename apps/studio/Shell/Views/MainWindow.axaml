@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:feedback="using:Editor.UI.Controls.Feedback"
         xmlns:vm="using:Editor.Shell.ViewModels"
         xmlns:views="using:Editor.Shell.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -75,7 +76,14 @@
                 Height="{DynamicResource EditorMainMenuHeight}"
                 Background="{DynamicResource EditorBrushBase01}"
                 BorderBrush="{DynamicResource EditorBrushDivider}"
-                BorderThickness="0,1,0,0" />
+                BorderThickness="0,1,0,0"
+                Padding="8,0">
+            <feedback:ActivityIndicator HorizontalAlignment="Left"
+                                        IsActive="{Binding HasActiveBackgroundTasks}"
+                                        Message="{Binding ActiveBackgroundTaskMessage}"
+                                        Title="{Binding ActiveBackgroundTaskTitle}"
+                                        VerticalAlignment="Center" />
+        </Border>
 
         <views:EditorDockWorkspaceView Grid.Row="1"
                                        DataContext="{Binding DockWorkspace}" />

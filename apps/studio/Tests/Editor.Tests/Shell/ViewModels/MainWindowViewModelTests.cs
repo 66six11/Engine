@@ -1,11 +1,13 @@
 using System.Linq;
 using Avalonia.Input;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.Selection;
+using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 using Xunit;
 
@@ -80,6 +82,19 @@ public sealed class MainWindowViewModelTests
         item.OpenCommand.Execute(null);
 
         Assert.True(viewModel.CommandPalette.IsOpen);
+    }
+
+    [Fact]
+    public void ActiveBackgroundTaskSummaryShowsRunningTask()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        tasks.Start("project.open", "Opening Project", canCancel: false);
+
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks);
+
+        Assert.True(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal("Opening Project", viewModel.ActiveBackgroundTaskTitle);
+        Assert.Equal(string.Empty, viewModel.ActiveBackgroundTaskMessage);
     }
 
     [Fact]
@@ -268,12 +283,14 @@ public sealed class MainWindowViewModelTests
         Assert.IsType<InspectorPanelViewModel>(tab.Content);
     }
 
-    private static MainWindowViewModel CreateMainWindowViewModel()
+    private static MainWindowViewModel CreateMainWindowViewModel(
+        IEditorBackgroundTaskService? backgroundTasks = null)
     {
         return new MainWindowViewModel(
             MainWindowViewModel.CreatePanelRegistry(),
             MainWindowViewModel.CreateWorkbenchActionRegistry(),
-            savedLayout: null);
+            savedLayout: null,
+            backgroundTasks: backgroundTasks);
     }
 
     private sealed class FloatingPanelOpenState(string openPanelId)

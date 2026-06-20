@@ -9,6 +9,7 @@ using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.Composition;
 using Editor.Shell.Selection;
+using Editor.Shell.Services;
 
 namespace Editor.Shell.ViewModels;
 
@@ -41,10 +42,19 @@ public class MainWindowViewModel : ViewModelBase
         IPanelRegistry panelRegistry,
         IWorkbenchActionRegistry actionRegistry,
         EditorDockLayoutSnapshot? savedLayout,
-        IEditorSelectionService? selectionService = null)
+        IEditorSelectionService? selectionService = null,
+        IEditorBackgroundTaskService? backgroundTasks = null)
     {
         SelectionService = selectionService ?? new EditorSelectionService();
         panelRegistry_ = panelRegistry;
+        var activeBackgroundTasks = (backgroundTasks ?? new EditorBackgroundTaskService()).GetActiveSnapshots();
+        if (activeBackgroundTasks.Count > 0)
+        {
+            var activeBackgroundTask = activeBackgroundTasks[0];
+            HasActiveBackgroundTasks = true;
+            ActiveBackgroundTaskTitle = activeBackgroundTask.Title;
+            ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
+        }
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
@@ -93,6 +103,12 @@ public class MainWindowViewModel : ViewModelBase
     public IReadOnlyList<WorkbenchMenuItemViewModel> HelpMenuItems { get; }
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
+
+    public bool HasActiveBackgroundTasks { get; }
+
+    public string ActiveBackgroundTaskTitle { get; } = string.Empty;
+
+    public string ActiveBackgroundTaskMessage { get; } = string.Empty;
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
