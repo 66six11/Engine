@@ -92,27 +92,27 @@ public sealed class CommandPaletteViewModelTests
     }
 
     [Fact]
-    public void ExecuteSelected_runs_action_and_closes_on_success()
+    public void ExecuteSelected_runs_command_by_id_and_closes_on_success()
     {
-        string? executedActionId = null;
-        var viewModel = CreatePalette(action =>
+        string? executedCommandId = null;
+        var viewModel = CreatePalette(commandId =>
         {
-            executedActionId = action.Id;
-            return true;
+            executedCommandId = commandId;
+            return WorkbenchCommandExecutionResult.Success(commandId);
         });
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "console";
 
         viewModel.ExecuteSelectedCommand.Execute(null);
 
-        Assert.Equal("workbench.panel.console", executedActionId);
+        Assert.Equal("workbench.panel.console", executedCommandId);
         Assert.False(viewModel.IsOpen);
     }
 
     [Fact]
-    public void ExecuteSelected_keeps_palette_open_when_action_fails()
+    public void ExecuteSelected_keeps_palette_open_when_command_fails()
     {
-        var viewModel = CreatePalette(_ => false);
+        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "Failed by test"));
         viewModel.OpenCommand.Execute(null);
 
         viewModel.ExecuteSelectedCommand.Execute(null);
@@ -123,23 +123,23 @@ public sealed class CommandPaletteViewModelTests
     [Fact]
     public void ExecuteSelected_ignores_disabled_action()
     {
-        string? executedActionId = null;
-        var viewModel = CreatePalette(action =>
+        string? executedCommandId = null;
+        var viewModel = CreatePalette(commandId =>
         {
-            executedActionId = action.Id;
-            return true;
+            executedCommandId = commandId;
+            return WorkbenchCommandExecutionResult.Success(commandId);
         });
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "disabled";
 
         viewModel.ExecuteSelectedCommand.Execute(null);
 
-        Assert.Null(executedActionId);
+        Assert.Null(executedCommandId);
         Assert.True(viewModel.IsOpen);
     }
 
     private static CommandPaletteViewModel CreatePalette(
-        Func<WorkbenchActionDescriptor, bool>? execute = null)
+        Func<string, WorkbenchCommandExecutionResult>? execute = null)
     {
         return new CommandPaletteViewModel(
             [
@@ -169,6 +169,6 @@ public sealed class CommandPaletteViewModelTests
                     IsEnabled: false,
                     DisabledReason: "Disabled by test"),
             ],
-            execute ?? (_ => true));
+            execute ?? (commandId => WorkbenchCommandExecutionResult.Success(commandId)));
     }
 }

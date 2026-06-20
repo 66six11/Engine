@@ -9,7 +9,7 @@ namespace Editor.Shell.ViewModels;
 public sealed class CommandPaletteViewModel : ViewModelBase
 {
     private readonly IReadOnlyList<CommandPaletteItemViewModel> allItems_;
-    private readonly Func<WorkbenchActionDescriptor, bool> executeAction_;
+    private readonly Func<string, WorkbenchCommandExecutionResult> executeCommand_;
     private bool isOpen_;
     private string query_ = string.Empty;
     private IReadOnlyList<CommandPaletteItemViewModel> filteredItems_;
@@ -18,12 +18,12 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
     public CommandPaletteViewModel(
         IReadOnlyList<WorkbenchActionDescriptor> actions,
-        Func<WorkbenchActionDescriptor, bool> executeAction)
+        Func<string, WorkbenchCommandExecutionResult> executeCommand)
     {
         ArgumentNullException.ThrowIfNull(actions);
-        ArgumentNullException.ThrowIfNull(executeAction);
+        ArgumentNullException.ThrowIfNull(executeCommand);
 
-        executeAction_ = executeAction;
+        executeCommand_ = executeCommand;
         allItems_ = actions.Select(action => new CommandPaletteItemViewModel(action)).ToArray();
         filteredItems_ = allItems_;
         selectedItem_ = filteredItems_.FirstOrDefault();
@@ -96,7 +96,8 @@ public sealed class CommandPaletteViewModel : ViewModelBase
             return;
         }
 
-        if (executeAction_(SelectedItem.Action))
+        var result = executeCommand_(SelectedItem.Id);
+        if (result.Succeeded)
         {
             Close();
         }

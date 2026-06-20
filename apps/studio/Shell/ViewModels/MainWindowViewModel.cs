@@ -47,12 +47,13 @@ public class MainWindowViewModel : ViewModelBase
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
         var actionExecutor = new WorkbenchActionExecutor(panelCommandService_);
+        var commandRouter = new WorkbenchCommandRouter(actionRegistry, actionExecutor);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
         var actions = actionRegistry.GetAll();
-        CommandPalette = new CommandPaletteViewModel(actions, actionExecutor.Execute);
-        PanelMenuItems = CreatePanelMenuItems(actions, actionExecutor);
+        CommandPalette = new CommandPaletteViewModel(actions, commandRouter.Execute);
+        PanelMenuItems = CreatePanelMenuItems(actions, commandRouter);
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
         {
@@ -184,7 +185,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
         IReadOnlyList<WorkbenchActionDescriptor> actions,
-        IWorkbenchActionExecutor actionExecutor)
+        IWorkbenchCommandRouter commandRouter)
     {
         var items = new List<PanelMenuItemViewModel>();
         foreach (var action in actions)
@@ -197,7 +198,7 @@ public class MainWindowViewModel : ViewModelBase
 
             items.Add(new PanelMenuItemViewModel(
                 action,
-                actionExecutor.Execute));
+                commandRouter.Execute));
         }
 
         return items;
