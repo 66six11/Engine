@@ -7,7 +7,7 @@ using Editor.Core.Models;
 
 namespace Editor.Shell.ViewModels;
 
-public sealed class EditorDialogHostViewModel : ViewModelBase
+public class EditorDialogHostViewModel : ViewModelBase
 {
     private EditorDialogRequest? activeRequest_;
     private IReadOnlyList<EditorDialogButtonViewModel> buttons_ = [];

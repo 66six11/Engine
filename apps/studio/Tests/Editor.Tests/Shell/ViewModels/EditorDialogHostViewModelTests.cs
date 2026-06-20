@@ -20,6 +20,16 @@ public sealed class EditorDialogHostViewModelTests
     }
 
     [Fact]
+    public void Design_preview_opens_about_dialog()
+    {
+        var host = new EditorDialogHostDesignViewModel();
+
+        Assert.True(host.IsOpen);
+        Assert.Equal("About Studio", host.Title);
+        Assert.Single(host.Buttons);
+    }
+
+    [Fact]
     public void ShowAsync_opens_request_and_projects_buttons()
     {
         var host = new EditorDialogHostViewModel();
