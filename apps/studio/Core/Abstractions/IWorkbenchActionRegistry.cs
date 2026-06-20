@@ -8,4 +8,6 @@ public interface IWorkbenchActionRegistry
     void Register(WorkbenchActionDescriptor descriptor);
 
     IReadOnlyList<WorkbenchActionDescriptor> GetAll();
+
+    WorkbenchActionDescriptor? FindById(string id);
 }

@@ -57,4 +57,11 @@ public sealed class WorkbenchActionRegistry : IWorkbenchActionRegistry
     {
         return descriptorsInRegistrationOrder_.ToArray();
     }
+
+    public WorkbenchActionDescriptor? FindById(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+
+        return descriptors_.GetValueOrDefault(id);
+    }
 }
