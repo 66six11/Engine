@@ -6,7 +6,6 @@ public sealed class CommandPaletteItemViewModel
 {
     internal CommandPaletteItemViewModel(WorkbenchActionDescriptor action)
     {
-        Action = action;
         Id = action.Id;
         Title = action.Title;
         Detail = action.MenuPath;
@@ -18,8 +17,6 @@ public sealed class CommandPaletteItemViewModel
         SearchText = action.SearchText ?? string.Empty;
         RowOpacity = action.IsEnabled ? 1.0 : 0.55;
     }
-
-    internal WorkbenchActionDescriptor Action { get; }
 
     public string Id { get; }
 

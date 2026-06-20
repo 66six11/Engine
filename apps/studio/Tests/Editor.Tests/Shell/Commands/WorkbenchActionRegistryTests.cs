@@ -44,6 +44,34 @@ public sealed class WorkbenchActionRegistryTests
     }
 
     [Fact]
+    public void FindById_returns_registered_action()
+    {
+        var registry = new WorkbenchActionRegistry();
+        var action = CreatePanelAction("workbench.panel.console", "Console", "console");
+        registry.Register(action);
+
+        var actual = registry.FindById("workbench.panel.console");
+
+        Assert.Equal(action, actual);
+    }
+
+    [Fact]
+    public void FindById_returns_null_for_missing_action()
+    {
+        var registry = new WorkbenchActionRegistry();
+
+        Assert.Null(registry.FindById("missing.command"));
+    }
+
+    [Fact]
+    public void FindById_rejects_null_id()
+    {
+        var registry = new WorkbenchActionRegistry();
+
+        Assert.Throws<ArgumentNullException>(() => registry.FindById(null!));
+    }
+
+    [Fact]
     public void Register_accepts_disabled_action_with_reason()
     {
         var registry = new WorkbenchActionRegistry();

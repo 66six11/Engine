@@ -10,10 +10,10 @@ public sealed class PanelMenuItemViewModel : ViewModelBase
 
     public PanelMenuItemViewModel(
         WorkbenchActionDescriptor action,
-        Func<WorkbenchActionDescriptor, bool> executeAction)
+        Func<string, WorkbenchCommandExecutionResult> executeCommand)
     {
         ArgumentNullException.ThrowIfNull(action);
-        ArgumentNullException.ThrowIfNull(executeAction);
+        ArgumentNullException.ThrowIfNull(executeCommand);
         if (action.Kind != WorkbenchActionKind.OpenPanel
             || string.IsNullOrWhiteSpace(action.TargetId))
         {
@@ -23,7 +23,7 @@ public sealed class PanelMenuItemViewModel : ViewModelBase
         PanelId = action.TargetId;
         Header = action.Title;
         IconKey = action.IconKey;
-        OpenCommand = new RelayCommand(() => executeAction(action));
+        OpenCommand = new RelayCommand(() => executeCommand(action.Id));
     }
 
     public string PanelId { get; }
