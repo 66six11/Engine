@@ -98,6 +98,34 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void BackgroundTaskSummary_updates_when_task_starts_after_construction()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks);
+
+        Assert.False(viewModel.HasActiveBackgroundTasks);
+
+        tasks.Start("project.open", "Opening Project", canCancel: false);
+
+        Assert.True(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal("Opening Project", viewModel.ActiveBackgroundTaskTitle);
+    }
+
+    [Fact]
+    public void BackgroundTaskSummary_clears_when_last_task_completes()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        var id = tasks.Start("project.open", "Opening Project", canCancel: false);
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks);
+
+        tasks.Complete(id, "Opened");
+
+        Assert.False(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal(string.Empty, viewModel.ActiveBackgroundTaskTitle);
+        Assert.Equal(string.Empty, viewModel.ActiveBackgroundTaskMessage);
+    }
+
+    [Fact]
     public void HelpMenuItems_follow_registered_workbench_actions()
     {
         var viewModel = CreateMainWindowViewModel();

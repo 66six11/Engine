@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Editor.Core.Models;
 
@@ -5,6 +6,8 @@ namespace Editor.Core.Abstractions;
 
 public interface IEditorBackgroundTaskService
 {
+    event EventHandler? TasksChanged;
+
     EditorBackgroundTaskId Start(string operationId, string title, bool canCancel);
 
     void Report(EditorBackgroundTaskId id, double? progress, string? message);

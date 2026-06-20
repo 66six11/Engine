@@ -18,9 +18,13 @@ public class MainWindowViewModel : ViewModelBase
     private readonly IPanelRegistry panelRegistry_;
     private readonly PanelCommandService panelCommandService_;
     private readonly WorkbenchShortcutRouter shortcutRouter_;
+    private readonly IEditorBackgroundTaskService backgroundTasks_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
+    private bool hasActiveBackgroundTasks_;
+    private string activeBackgroundTaskTitle_ = string.Empty;
+    private string activeBackgroundTaskMessage_ = string.Empty;
 
     public MainWindowViewModel()
         : this(new EditorSelectionService(), EditorDockLayoutStore.TryLoad())
@@ -47,14 +51,9 @@ public class MainWindowViewModel : ViewModelBase
     {
         SelectionService = selectionService ?? new EditorSelectionService();
         panelRegistry_ = panelRegistry;
-        var activeBackgroundTasks = (backgroundTasks ?? new EditorBackgroundTaskService()).GetActiveSnapshots();
-        if (activeBackgroundTasks.Count > 0)
-        {
-            var activeBackgroundTask = activeBackgroundTasks[0];
-            HasActiveBackgroundTasks = true;
-            ActiveBackgroundTaskTitle = activeBackgroundTask.Title;
-            ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
-        }
+        backgroundTasks_ = backgroundTasks ?? new EditorBackgroundTaskService();
+        backgroundTasks_.TasksChanged += OnBackgroundTasksChanged;
+        RefreshBackgroundTaskSummary();
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
@@ -104,11 +103,23 @@ public class MainWindowViewModel : ViewModelBase
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
 
-    public bool HasActiveBackgroundTasks { get; }
+    public bool HasActiveBackgroundTasks
+    {
+        get => hasActiveBackgroundTasks_;
+        private set => SetProperty(ref hasActiveBackgroundTasks_, value);
+    }
 
-    public string ActiveBackgroundTaskTitle { get; } = string.Empty;
+    public string ActiveBackgroundTaskTitle
+    {
+        get => activeBackgroundTaskTitle_;
+        private set => SetProperty(ref activeBackgroundTaskTitle_, value);
+    }
 
-    public string ActiveBackgroundTaskMessage { get; } = string.Empty;
+    public string ActiveBackgroundTaskMessage
+    {
+        get => activeBackgroundTaskMessage_;
+        private set => SetProperty(ref activeBackgroundTaskMessage_, value);
+    }
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
@@ -213,6 +224,28 @@ public class MainWindowViewModel : ViewModelBase
     private void OnPanelCommandStateChanged(object? sender, EventArgs e)
     {
         RefreshPanelMenuOpenStates();
+    }
+
+    private void OnBackgroundTasksChanged(object? sender, EventArgs e)
+    {
+        RefreshBackgroundTaskSummary();
+    }
+
+    private void RefreshBackgroundTaskSummary()
+    {
+        var activeBackgroundTasks = backgroundTasks_.GetActiveSnapshots();
+        if (activeBackgroundTasks.Count == 0)
+        {
+            HasActiveBackgroundTasks = false;
+            ActiveBackgroundTaskTitle = string.Empty;
+            ActiveBackgroundTaskMessage = string.Empty;
+            return;
+        }
+
+        var activeBackgroundTask = activeBackgroundTasks[0];
+        HasActiveBackgroundTasks = true;
+        ActiveBackgroundTaskTitle = activeBackgroundTask.Title;
+        ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
     }
 
     internal static IPanelRegistry CreatePanelRegistry(IEditorSelectionService? selectionService = null)
