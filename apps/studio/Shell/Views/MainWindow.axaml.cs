@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -12,6 +13,7 @@ namespace Editor.Shell.Views;
 
 public partial class MainWindow : Window
 {
+    private readonly List<MenuItem> generatedToolsMenuItems_ = [];
     private bool restoredFloatingWindows_;
     private bool isDockHostFocused_ = true;
 
@@ -44,6 +46,7 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainWindowViewModel viewModel)
         {
+            RebuildToolsMenu(viewModel);
             RebuildPanelsMenu(viewModel);
             viewModel.SetFloatingWindowCallbacks(
                 EditorDockFloatingWindowRegistry.CaptureSnapshots,
@@ -56,7 +59,82 @@ public partial class MainWindow : Window
             return;
         }
 
+        RebuildToolsMenu(null);
         RebuildPanelsMenu(null);
+    }
+
+    private void RebuildToolsMenu(MainWindowViewModel? viewModel)
+    {
+        foreach (var menuItem in generatedToolsMenuItems_)
+        {
+            ToolsMenu.Items.Remove(menuItem);
+        }
+
+        generatedToolsMenuItems_.Clear();
+        if (viewModel is null)
+        {
+            return;
+        }
+
+        var insertIndex = 0;
+        foreach (var commandItem in viewModel.ToolsMenuItems)
+        {
+            var menuItem = CreateCommandMenuItem(commandItem);
+            generatedToolsMenuItems_.Add(menuItem);
+            ToolsMenu.Items.Insert(insertIndex, menuItem);
+            insertIndex++;
+        }
+    }
+
+    private static MenuItem CreateCommandMenuItem(WorkbenchMenuItemViewModel commandItem)
+    {
+        var menuItem = new MenuItem
+        {
+            DataContext = commandItem,
+            Header = CreateCommandMenuHeader(commandItem),
+            Command = commandItem.OpenCommand,
+            IsEnabled = commandItem.IsEnabled,
+        };
+        menuItem.Classes.Add("editor-menu-item");
+
+        if (commandItem.HasDisabledReason)
+        {
+            ToolTip.SetTip(menuItem, commandItem.DisabledReason);
+        }
+
+        return menuItem;
+    }
+
+    private static Grid CreateCommandMenuHeader(WorkbenchMenuItemViewModel commandItem)
+    {
+        var header = new Grid
+        {
+            DataContext = commandItem,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+        };
+
+        var title = new TextBlock
+        {
+            Text = commandItem.Header,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        header.Children.Add(title);
+
+        if (commandItem.HasShortcut)
+        {
+            var shortcut = new TextBlock
+            {
+                Text = commandItem.ShortcutText,
+                Margin = new Thickness(32, 0, 0, 0),
+                Opacity = 0.7,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(shortcut, 1);
+            header.Children.Add(shortcut);
+        }
+
+        return header;
     }
 
     private void RebuildPanelsMenu(MainWindowViewModel? viewModel)
