@@ -20,6 +20,18 @@ public sealed class EditorBackgroundTaskServiceTests
     }
 
     [Fact]
+    public void Start_raises_tasks_changed()
+    {
+        var service = new EditorBackgroundTaskService();
+        var changeCount = 0;
+        service.TasksChanged += (_, _) => changeCount++;
+
+        service.Start("project.open", "Opening Project", canCancel: false);
+
+        Assert.Equal(1, changeCount);
+    }
+
+    [Fact]
     public void Complete_publishes_completed_snapshot()
     {
         var service = new EditorBackgroundTaskService();

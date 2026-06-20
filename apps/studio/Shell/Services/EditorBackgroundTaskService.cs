@@ -11,6 +11,8 @@ public sealed class EditorBackgroundTaskService : IEditorBackgroundTaskService
     private readonly object gate_ = new();
     private readonly Dictionary<EditorBackgroundTaskId, EditorBackgroundTaskSnapshot> tasks_ = [];
 
+    public event EventHandler? TasksChanged;
+
     public EditorBackgroundTaskId Start(string operationId, string title, bool canCancel)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
@@ -31,6 +33,7 @@ public sealed class EditorBackgroundTaskService : IEditorBackgroundTaskService
             tasks_.Add(id, snapshot);
         }
 
+        OnTasksChanged();
         return id;
     }
 
@@ -42,6 +45,8 @@ public sealed class EditorBackgroundTaskService : IEditorBackgroundTaskService
             ThrowIfTerminal(snapshot);
             tasks_[id] = snapshot with { Progress = progress, Message = message };
         }
+
+        OnTasksChanged();
     }
 
     public void Complete(EditorBackgroundTaskId id, string? message)
@@ -90,6 +95,13 @@ public sealed class EditorBackgroundTaskService : IEditorBackgroundTaskService
             ThrowIfTerminal(snapshot);
             tasks_[id] = snapshot with { State = state, Message = message };
         }
+
+        OnTasksChanged();
+    }
+
+    private void OnTasksChanged()
+    {
+        TasksChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private static void ThrowIfTerminal(EditorBackgroundTaskSnapshot snapshot)
