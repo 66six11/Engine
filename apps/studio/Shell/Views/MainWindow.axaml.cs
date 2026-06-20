@@ -139,23 +139,24 @@ public partial class MainWindow : Window
 
     private void OnMainWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (!IsCommandPaletteShortcut(e.Key, e.KeyModifiers)
-            || DataContext is not MainWindowViewModel viewModel)
+        if (DataContext is not MainWindowViewModel viewModel)
         {
             return;
         }
 
-        if (viewModel.CommandPalette.OpenCommand.CanExecute(null))
+        var result = viewModel.ExecuteShortcut(
+            e.Key,
+            e.KeyModifiers,
+            IsTextInputShortcutSource(e.Source));
+        if (result is not null)
         {
-            viewModel.CommandPalette.OpenCommand.Execute(null);
             e.Handled = true;
         }
     }
 
-    internal static bool IsCommandPaletteShortcut(Key key, KeyModifiers keyModifiers)
+    internal static bool IsTextInputShortcutSource(object? source)
     {
-        return key == Key.P
-            && keyModifiers == (KeyModifiers.Control | KeyModifiers.Shift);
+        return source is TextBox;
     }
 
     private void OnWindowActivated(object? sender, EventArgs e)

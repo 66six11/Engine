@@ -1,4 +1,5 @@
 using System.Linq;
+using Avalonia.Input;
 using Editor.Core.Models;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
@@ -108,6 +109,21 @@ public sealed class MainWindowViewModelTests
         var reopened = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
         Assert.IsType<HierarchyPanelViewModel>(reopened.Content);
         Assert.False(viewModel.CommandPalette.IsOpen);
+    }
+
+    [Fact]
+    public void ExecuteShortcut_opens_command_palette_through_registered_shortcut()
+    {
+        var viewModel = CreateMainWindowViewModel();
+
+        var result = viewModel.ExecuteShortcut(
+            Key.P,
+            KeyModifiers.Control | KeyModifiers.Shift,
+            isTextInputFocused: false);
+
+        Assert.NotNull(result);
+        Assert.True(result.Succeeded);
+        Assert.True(viewModel.CommandPalette.IsOpen);
     }
 
     [Fact]
