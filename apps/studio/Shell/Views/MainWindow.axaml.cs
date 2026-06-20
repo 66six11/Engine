@@ -14,6 +14,7 @@ namespace Editor.Shell.Views;
 public partial class MainWindow : Window
 {
     private readonly List<MenuItem> generatedToolsMenuItems_ = [];
+    private readonly List<MenuItem> generatedHelpMenuItems_ = [];
     private bool restoredFloatingWindows_;
     private bool isDockHostFocused_ = true;
 
@@ -47,6 +48,7 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel viewModel)
         {
             RebuildToolsMenu(viewModel);
+            RebuildHelpMenu(viewModel);
             RebuildPanelsMenu(viewModel);
             viewModel.SetFloatingWindowCallbacks(
                 EditorDockFloatingWindowRegistry.CaptureSnapshots,
@@ -60,6 +62,7 @@ public partial class MainWindow : Window
         }
 
         RebuildToolsMenu(null);
+        RebuildHelpMenu(null);
         RebuildPanelsMenu(null);
     }
 
@@ -82,6 +85,29 @@ public partial class MainWindow : Window
             var menuItem = CreateCommandMenuItem(commandItem);
             generatedToolsMenuItems_.Add(menuItem);
             ToolsMenu.Items.Insert(insertIndex, menuItem);
+            insertIndex++;
+        }
+    }
+
+    private void RebuildHelpMenu(MainWindowViewModel? viewModel)
+    {
+        foreach (var menuItem in generatedHelpMenuItems_)
+        {
+            HelpMenu.Items.Remove(menuItem);
+        }
+
+        generatedHelpMenuItems_.Clear();
+        if (viewModel is null)
+        {
+            return;
+        }
+
+        var insertIndex = HelpMenu.Items.Count;
+        foreach (var commandItem in viewModel.HelpMenuItems)
+        {
+            var menuItem = CreateCommandMenuItem(commandItem);
+            generatedHelpMenuItems_.Add(menuItem);
+            HelpMenu.Items.Insert(insertIndex, menuItem);
             insertIndex++;
         }
     }

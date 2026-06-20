@@ -63,9 +63,10 @@
                           Classes="editor-menu-item">
                     <MenuItem Header="Settings" Classes="editor-menu-item" IsEnabled="False" />
                 </MenuItem>
-                <MenuItem Header="Help" Classes="editor-menu-item">
+                <MenuItem x:Name="HelpMenu"
+                          Header="Help"
+                          Classes="editor-menu-item">
                     <MenuItem Header="Documentation" Classes="editor-menu-item" IsEnabled="False" />
-                    <MenuItem Header="About" Classes="editor-menu-item" IsEnabled="False" />
                 </MenuItem>
             </Menu>
         </Border>
@@ -82,6 +83,10 @@
         <views:CommandPaletteView Grid.Row="0"
                                   Grid.RowSpan="3"
                                   DataContext="{Binding CommandPalette}" />
+
+        <views:EditorDialogHostView Grid.Row="0"
+                                    Grid.RowSpan="3"
+                                    DataContext="{Binding DialogHost}" />
     </Grid>
 
 </Window>
