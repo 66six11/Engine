@@ -60,6 +60,29 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void ToolsMenuItems_follow_registered_workbench_actions()
+    {
+        var viewModel = CreateMainWindowViewModel();
+
+        var item = Assert.Single(viewModel.ToolsMenuItems);
+        Assert.Equal("workbench.commandPalette.open", item.CommandId);
+        Assert.Equal("Command Palette", item.Header);
+        Assert.Equal("Tools/Command Palette", item.MenuPath);
+        Assert.Equal("Ctrl+Shift+P", item.ShortcutText);
+    }
+
+    [Fact]
+    public void ToolsMenuItems_open_command_palette_through_command_route()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var item = Assert.Single(viewModel.ToolsMenuItems);
+
+        item.OpenCommand.Execute(null);
+
+        Assert.True(viewModel.CommandPalette.IsOpen);
+    }
+
+    [Fact]
     public void PanelMenuItems_use_action_registry_instead_of_panel_descriptor_menu_data()
     {
         var actions = new WorkbenchActionRegistry();

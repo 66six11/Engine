@@ -56,6 +56,7 @@ public class MainWindowViewModel : ViewModelBase
         var actions = actionRegistry.GetAll();
         CommandPalette = new CommandPaletteViewModel(actions, commandRouter.Execute);
         shortcutRouter_ = WorkbenchShortcutRouter.FromActions(actions, commandRouter);
+        ToolsMenuItems = CreateCommandMenuItems(actions, "Tools/", commandRouter);
         PanelMenuItems = CreatePanelMenuItems(actions, commandRouter);
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
@@ -79,6 +80,8 @@ public class MainWindowViewModel : ViewModelBase
     public IRelayCommand<string?> OpenPanelCommand { get; }
 
     public CommandPaletteViewModel CommandPalette { get; }
+
+    public IReadOnlyList<WorkbenchMenuItemViewModel> ToolsMenuItems { get; }
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
 
@@ -219,6 +222,27 @@ public class MainWindowViewModel : ViewModelBase
             }
 
             items.Add(new PanelMenuItemViewModel(
+                action,
+                commandRouter.Execute));
+        }
+
+        return items;
+    }
+
+    private static IReadOnlyList<WorkbenchMenuItemViewModel> CreateCommandMenuItems(
+        IReadOnlyList<WorkbenchActionDescriptor> actions,
+        string menuPathPrefix,
+        IWorkbenchCommandRouter commandRouter)
+    {
+        var items = new List<WorkbenchMenuItemViewModel>();
+        foreach (var action in actions)
+        {
+            if (!action.MenuPath.StartsWith(menuPathPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            items.Add(new WorkbenchMenuItemViewModel(
                 action,
                 commandRouter.Execute));
         }
