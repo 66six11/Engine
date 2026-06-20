@@ -89,6 +89,28 @@ public sealed class WorkbenchActionExecutorTests
     }
 
     [Fact]
+    public void Execute_open_about_dialog_action_invokes_callback()
+    {
+        var openCount = 0;
+        var executor = new WorkbenchActionExecutor(
+            new PanelCommandService(CreateWorkspace()),
+            openCommandPalette: null,
+            openAboutDialog: () =>
+            {
+                openCount++;
+                return true;
+            });
+        var action = new WorkbenchActionDescriptor(
+            "workbench.about.open",
+            "About",
+            WorkbenchActionKind.OpenAboutDialog,
+            "Help/About");
+
+        Assert.True(executor.Execute(action));
+        Assert.Equal(1, openCount);
+    }
+
+    [Fact]
     public void Execute_open_panel_action_without_target_returns_false()
     {
         var workspace = CreateWorkspace();

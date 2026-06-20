@@ -4,4 +4,5 @@ public enum WorkbenchActionKind
 {
     OpenPanel,
     OpenCommandPalette,
+    OpenAboutDialog,
 }

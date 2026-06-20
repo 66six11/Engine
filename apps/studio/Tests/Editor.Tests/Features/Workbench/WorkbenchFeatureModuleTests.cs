@@ -110,6 +110,13 @@ public sealed class WorkbenchFeatureModuleTests
                     DefaultShortcut: "Ctrl+Shift+P",
                     SearchText: "command palette launcher"),
                 new WorkbenchActionDescriptor(
+                    "workbench.about.open",
+                    "About",
+                    WorkbenchActionKind.OpenAboutDialog,
+                    "Help/About",
+                    Category: "Help",
+                    SearchText: "about studio version information"),
+                new WorkbenchActionDescriptor(
                     "workbench.panel.scene-view",
                     "Scene View",
                     WorkbenchActionKind.OpenPanel,

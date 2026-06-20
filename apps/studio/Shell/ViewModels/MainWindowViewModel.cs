@@ -48,7 +48,11 @@ public class MainWindowViewModel : ViewModelBase
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
-        var actionExecutor = new WorkbenchActionExecutor(panelCommandService_, OpenCommandPaletteFromCommand);
+        DialogHost = new EditorDialogHostViewModel();
+        var actionExecutor = new WorkbenchActionExecutor(
+            panelCommandService_,
+            OpenCommandPaletteFromCommand,
+            OpenAboutDialogFromCommand);
         var commandRouter = new WorkbenchCommandRouter(actionRegistry, actionExecutor);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
@@ -57,6 +61,7 @@ public class MainWindowViewModel : ViewModelBase
         CommandPalette = new CommandPaletteViewModel(actions, commandRouter.Execute);
         shortcutRouter_ = WorkbenchShortcutRouter.FromActions(actions, commandRouter);
         ToolsMenuItems = CreateCommandMenuItems(actions, "Tools/", commandRouter);
+        HelpMenuItems = CreateCommandMenuItems(actions, "Help/", commandRouter);
         PanelMenuItems = CreatePanelMenuItems(actions, commandRouter);
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
@@ -81,7 +86,11 @@ public class MainWindowViewModel : ViewModelBase
 
     public CommandPaletteViewModel CommandPalette { get; }
 
+    public EditorDialogHostViewModel DialogHost { get; }
+
     public IReadOnlyList<WorkbenchMenuItemViewModel> ToolsMenuItems { get; }
+
+    public IReadOnlyList<WorkbenchMenuItemViewModel> HelpMenuItems { get; }
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
 
@@ -174,6 +183,14 @@ public class MainWindowViewModel : ViewModelBase
         }
 
         CommandPalette.OpenCommand.Execute(null);
+        return true;
+    }
+
+    private bool OpenAboutDialogFromCommand()
+    {
+        _ = DialogHost.ShowAsync(EditorDialogRequest.Information(
+            "About Studio",
+            "Studio editor shell for VkEngine."));
         return true;
     }
 
