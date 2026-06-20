@@ -101,6 +101,15 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.Equal(
             [
                 new WorkbenchActionDescriptor(
+                    "workbench.commandPalette.open",
+                    "Command Palette",
+                    WorkbenchActionKind.OpenCommandPalette,
+                    "Tools/Command Palette",
+                    IconKey: EditorIconKey.UiSearch,
+                    Category: "Tools",
+                    DefaultShortcut: "Ctrl+Shift+P",
+                    SearchText: "command palette launcher"),
+                new WorkbenchActionDescriptor(
                     "workbench.panel.scene-view",
                     "Scene View",
                     WorkbenchActionKind.OpenPanel,

@@ -68,6 +68,27 @@ public sealed class WorkbenchActionExecutorTests
     }
 
     [Fact]
+    public void Execute_open_command_palette_action_invokes_callback()
+    {
+        var openCount = 0;
+        var executor = new WorkbenchActionExecutor(
+            new PanelCommandService(CreateWorkspace()),
+            () =>
+            {
+                openCount++;
+                return true;
+            });
+        var action = new WorkbenchActionDescriptor(
+            "workbench.commandPalette.open",
+            "Command Palette",
+            WorkbenchActionKind.OpenCommandPalette,
+            "Tools/Command Palette");
+
+        Assert.True(executor.Execute(action));
+        Assert.Equal(1, openCount);
+    }
+
+    [Fact]
     public void Execute_open_panel_action_without_target_returns_false()
     {
         var workspace = CreateWorkspace();

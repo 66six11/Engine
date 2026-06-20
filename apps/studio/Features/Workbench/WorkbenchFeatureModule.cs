@@ -6,6 +6,7 @@ using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
+using Editor.Shell.Icons;
 
 namespace Editor.Features.Workbench;
 
@@ -37,6 +38,16 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
 
     public void RegisterActions(IWorkbenchActionRegistry actions)
     {
+        actions.Register(new WorkbenchActionDescriptor(
+            "workbench.commandPalette.open",
+            "Command Palette",
+            WorkbenchActionKind.OpenCommandPalette,
+            "Tools/Command Palette",
+            IconKey: EditorIconKey.UiSearch,
+            Category: "Tools",
+            DefaultShortcut: "Ctrl+Shift+P",
+            SearchText: "command palette launcher"));
+
         foreach (var descriptor in CreatePanelDescriptors())
         {
             actions.Register(new WorkbenchActionDescriptor(
