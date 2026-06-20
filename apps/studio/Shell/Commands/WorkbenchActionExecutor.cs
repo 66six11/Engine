@@ -11,12 +11,16 @@ internal interface IWorkbenchActionExecutor
 internal sealed class WorkbenchActionExecutor : IWorkbenchActionExecutor
 {
     private readonly PanelCommandService panelCommandService_;
+    private readonly Func<bool>? openCommandPalette_;
 
-    public WorkbenchActionExecutor(PanelCommandService panelCommandService)
+    public WorkbenchActionExecutor(
+        PanelCommandService panelCommandService,
+        Func<bool>? openCommandPalette = null)
     {
         ArgumentNullException.ThrowIfNull(panelCommandService);
 
         panelCommandService_ = panelCommandService;
+        openCommandPalette_ = openCommandPalette;
     }
 
     public bool Execute(WorkbenchActionDescriptor action)
@@ -31,6 +35,7 @@ internal sealed class WorkbenchActionExecutor : IWorkbenchActionExecutor
         return action.Kind switch
         {
             WorkbenchActionKind.OpenPanel => panelCommandService_.OpenOrFocusPanel(action.TargetId),
+            WorkbenchActionKind.OpenCommandPalette => openCommandPalette_?.Invoke() ?? false,
             _ => false,
         };
     }

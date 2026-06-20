@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
 using Avalonia;
+using Avalonia.Input;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Shell.Commands;
@@ -15,6 +16,7 @@ public class MainWindowViewModel : ViewModelBase
 {
     private readonly IPanelRegistry panelRegistry_;
     private readonly PanelCommandService panelCommandService_;
+    private readonly WorkbenchShortcutRouter shortcutRouter_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
@@ -46,13 +48,14 @@ public class MainWindowViewModel : ViewModelBase
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
-        var actionExecutor = new WorkbenchActionExecutor(panelCommandService_);
+        var actionExecutor = new WorkbenchActionExecutor(panelCommandService_, OpenCommandPaletteFromCommand);
         var commandRouter = new WorkbenchCommandRouter(actionRegistry, actionExecutor);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
         var actions = actionRegistry.GetAll();
         CommandPalette = new CommandPaletteViewModel(actions, commandRouter.Execute);
+        shortcutRouter_ = WorkbenchShortcutRouter.FromActions(actions, commandRouter);
         PanelMenuItems = CreatePanelMenuItems(actions, commandRouter);
         DockWorkspace.RestoreLayoutSnapshot(savedLayout);
         if (savedLayout?.FloatingWindows is { Count: > 0 } floatingWindows)
@@ -133,6 +136,14 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
+    internal WorkbenchCommandExecutionResult? ExecuteShortcut(
+        Key key,
+        KeyModifiers keyModifiers,
+        bool isTextInputFocused)
+    {
+        return shortcutRouter_.TryExecute(key, keyModifiers, isTextInputFocused);
+    }
+
     private void SaveLayout()
     {
         var snapshot = DockWorkspace.CaptureLayoutSnapshot();
@@ -150,6 +161,17 @@ public class MainWindowViewModel : ViewModelBase
         closeFloatingWindows_?.Invoke();
         DockWorkspace.ResetLayout();
         EditorDockLayoutStore.TryDelete();
+    }
+
+    private bool OpenCommandPaletteFromCommand()
+    {
+        if (!CommandPalette.OpenCommand.CanExecute(null))
+        {
+            return false;
+        }
+
+        CommandPalette.OpenCommand.Execute(null);
+        return true;
     }
 
     private void OnPanelCommandStateChanged(object? sender, EventArgs e)

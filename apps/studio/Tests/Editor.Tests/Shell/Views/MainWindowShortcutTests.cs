@@ -1,3 +1,4 @@
+using Avalonia.Controls;
 using Avalonia.Input;
 using Editor.Shell.Views;
 using Xunit;
@@ -7,23 +8,14 @@ namespace Editor.Tests.Shell.Views;
 public sealed class MainWindowShortcutTests
 {
     [Fact]
-    public void IsCommandPaletteShortcut_accepts_ctrl_shift_p()
+    public void IsTextInputShortcutSource_accepts_text_box()
     {
-        Assert.True(MainWindow.IsCommandPaletteShortcut(
-            Key.P,
-            KeyModifiers.Control | KeyModifiers.Shift));
+        Assert.True(MainWindow.IsTextInputShortcutSource(new TextBox()));
     }
 
-    [Theory]
-    [InlineData(Key.P, KeyModifiers.Control)]
-    [InlineData(Key.P, KeyModifiers.Shift)]
-    [InlineData(Key.P, KeyModifiers.Alt)]
-    [InlineData(Key.F, KeyModifiers.Control | KeyModifiers.Shift)]
-    [InlineData(Key.P, KeyModifiers.None)]
-    public void IsCommandPaletteShortcut_rejects_other_gestures(
-        Key key,
-        KeyModifiers keyModifiers)
+    [Fact]
+    public void IsTextInputShortcutSource_rejects_non_text_controls()
     {
-        Assert.False(MainWindow.IsCommandPaletteShortcut(key, keyModifiers));
+        Assert.False(MainWindow.IsTextInputShortcutSource(new Border()));
     }
 }
