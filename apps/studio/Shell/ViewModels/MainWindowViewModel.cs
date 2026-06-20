@@ -19,6 +19,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly PanelCommandService panelCommandService_;
     private readonly WorkbenchShortcutRouter shortcutRouter_;
     private readonly IEditorBackgroundTaskService backgroundTasks_;
+    private readonly IEditorUiDispatcher uiDispatcher_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
@@ -47,11 +48,13 @@ public class MainWindowViewModel : ViewModelBase
         IWorkbenchActionRegistry actionRegistry,
         EditorDockLayoutSnapshot? savedLayout,
         IEditorSelectionService? selectionService = null,
-        IEditorBackgroundTaskService? backgroundTasks = null)
+        IEditorBackgroundTaskService? backgroundTasks = null,
+        IEditorUiDispatcher? uiDispatcher = null)
     {
         SelectionService = selectionService ?? new EditorSelectionService();
         panelRegistry_ = panelRegistry;
         backgroundTasks_ = backgroundTasks ?? new EditorBackgroundTaskService();
+        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
         backgroundTasks_.TasksChanged += OnBackgroundTasksChanged;
         RefreshBackgroundTaskSummary();
 
@@ -228,7 +231,13 @@ public class MainWindowViewModel : ViewModelBase
 
     private void OnBackgroundTasksChanged(object? sender, EventArgs e)
     {
-        RefreshBackgroundTaskSummary();
+        if (uiDispatcher_.CheckAccess())
+        {
+            RefreshBackgroundTaskSummary();
+            return;
+        }
+
+        uiDispatcher_.Post(RefreshBackgroundTaskSummary);
     }
 
     private void RefreshBackgroundTaskSummary()
