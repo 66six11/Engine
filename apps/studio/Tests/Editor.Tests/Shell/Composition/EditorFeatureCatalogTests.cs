@@ -36,6 +36,7 @@ public sealed class EditorFeatureCatalogTests
         Assert.Equal(
             [
                 "workbench.commandPalette.open",
+                "workbench.about.open",
                 "workbench.panel.scene-view",
                 "workbench.panel.hierarchy",
                 "workbench.panel.inspector",
