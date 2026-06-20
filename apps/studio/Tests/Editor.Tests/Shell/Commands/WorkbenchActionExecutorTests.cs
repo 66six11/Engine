@@ -46,6 +46,28 @@ public sealed class WorkbenchActionExecutorTests
     }
 
     [Fact]
+    public void Execute_disabled_action_returns_false_without_opening_panel()
+    {
+        var workspace = CreateWorkspace();
+        var tab = workspace.CenterWindow.Tabs.Single(tab => tab.Id == "panel");
+        var executor = new WorkbenchActionExecutor(new PanelCommandService(workspace));
+        Assert.True(workspace.CloseTab(tab));
+        var action = new WorkbenchActionDescriptor(
+            "workbench.panel.disabled",
+            "Disabled",
+            WorkbenchActionKind.OpenPanel,
+            "Window/Panels/Disabled",
+            TargetId: "panel",
+            Category: "Window",
+            IsEnabled: false,
+            DisabledReason: "Disabled by test");
+
+        Assert.False(executor.Execute(action));
+
+        Assert.False(workspace.ContainsPanel("panel"));
+    }
+
+    [Fact]
     public void Execute_open_panel_action_without_target_returns_false()
     {
         var workspace = CreateWorkspace();

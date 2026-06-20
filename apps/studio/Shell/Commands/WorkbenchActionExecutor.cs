@@ -23,6 +23,11 @@ internal sealed class WorkbenchActionExecutor : IWorkbenchActionExecutor
     {
         ArgumentNullException.ThrowIfNull(action);
 
+        if (!action.IsEnabled)
+        {
+            return false;
+        }
+
         return action.Kind switch
         {
             WorkbenchActionKind.OpenPanel => panelCommandService_.OpenOrFocusPanel(action.TargetId),

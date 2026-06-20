@@ -10,7 +10,13 @@ public sealed class CommandPaletteItemViewModel
         Id = action.Id;
         Title = action.Title;
         Detail = action.MenuPath;
+        Category = action.Category;
         IconKey = action.IconKey;
+        DefaultShortcut = action.DefaultShortcut ?? string.Empty;
+        IsEnabled = action.IsEnabled;
+        DisabledReason = action.DisabledReason ?? string.Empty;
+        SearchText = action.SearchText ?? string.Empty;
+        RowOpacity = action.IsEnabled ? 1.0 : 0.55;
     }
 
     internal WorkbenchActionDescriptor Action { get; }
@@ -21,5 +27,21 @@ public sealed class CommandPaletteItemViewModel
 
     public string Detail { get; }
 
+    public string Category { get; }
+
     public string? IconKey { get; }
+
+    public string DefaultShortcut { get; }
+
+    public bool HasDefaultShortcut => !string.IsNullOrWhiteSpace(DefaultShortcut);
+
+    public bool IsEnabled { get; }
+
+    public string DisabledReason { get; }
+
+    public bool HasDisabledReason => !string.IsNullOrWhiteSpace(DisabledReason);
+
+    public string SearchText { get; }
+
+    public double RowOpacity { get; }
 }
