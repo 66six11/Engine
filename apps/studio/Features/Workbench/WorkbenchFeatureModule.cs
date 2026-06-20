@@ -47,6 +47,13 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             Category: "Tools",
             DefaultShortcut: "Ctrl+Shift+P",
             SearchText: "command palette launcher"));
+        actions.Register(new WorkbenchActionDescriptor(
+            "workbench.about.open",
+            "About",
+            WorkbenchActionKind.OpenAboutDialog,
+            "Help/About",
+            Category: "Help",
+            SearchText: "about studio version information"));
 
         foreach (var descriptor in CreatePanelDescriptors())
         {

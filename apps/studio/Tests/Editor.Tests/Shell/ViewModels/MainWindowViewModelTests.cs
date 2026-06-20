@@ -83,6 +83,29 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void HelpMenuItems_follow_registered_workbench_actions()
+    {
+        var viewModel = CreateMainWindowViewModel();
+
+        var item = Assert.Single(viewModel.HelpMenuItems);
+        Assert.Equal("workbench.about.open", item.CommandId);
+        Assert.Equal("About", item.Header);
+        Assert.Equal("Help/About", item.MenuPath);
+    }
+
+    [Fact]
+    public void HelpMenuItems_open_about_dialog_through_command_route()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var item = Assert.Single(viewModel.HelpMenuItems);
+
+        item.OpenCommand.Execute(null);
+
+        Assert.True(viewModel.DialogHost.IsOpen);
+        Assert.Equal("About Studio", viewModel.DialogHost.Title);
+    }
+
+    [Fact]
     public void PanelMenuItems_use_action_registry_instead_of_panel_descriptor_menu_data()
     {
         var actions = new WorkbenchActionRegistry();
