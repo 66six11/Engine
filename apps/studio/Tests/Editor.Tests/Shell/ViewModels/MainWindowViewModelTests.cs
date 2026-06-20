@@ -1,11 +1,15 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Input;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.Selection;
+using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 using Xunit;
 
@@ -80,6 +84,79 @@ public sealed class MainWindowViewModelTests
         item.OpenCommand.Execute(null);
 
         Assert.True(viewModel.CommandPalette.IsOpen);
+    }
+
+    [Fact]
+    public void ActiveBackgroundTaskSummaryShowsRunningTask()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        tasks.Start("project.open", "Opening Project", canCancel: false);
+
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks);
+
+        Assert.True(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal("Opening Project", viewModel.ActiveBackgroundTaskTitle);
+        Assert.Equal(string.Empty, viewModel.ActiveBackgroundTaskMessage);
+    }
+
+    [Fact]
+    public void BackgroundTaskSummary_updates_when_task_starts_after_construction()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks);
+
+        Assert.False(viewModel.HasActiveBackgroundTasks);
+
+        tasks.Start("project.open", "Opening Project", canCancel: false);
+
+        Assert.True(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal("Opening Project", viewModel.ActiveBackgroundTaskTitle);
+    }
+
+    [Fact]
+    public void BackgroundTaskSummary_posts_update_when_task_changes_off_ui_thread()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks, uiDispatcher: dispatcher);
+
+        tasks.Start("project.open", "Opening Project", canCancel: false);
+
+        Assert.Equal(1, dispatcher.PostCount);
+        Assert.False(viewModel.HasActiveBackgroundTasks);
+
+        dispatcher.RunPostedActions();
+
+        Assert.True(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal("Opening Project", viewModel.ActiveBackgroundTaskTitle);
+    }
+
+    [Fact]
+    public void BackgroundTaskSummary_refreshes_immediately_when_task_changes_on_ui_thread()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        var dispatcher = new CapturingUiDispatcher(hasAccess: true);
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks, uiDispatcher: dispatcher);
+
+        tasks.Start("project.open", "Opening Project", canCancel: false);
+
+        Assert.Equal(0, dispatcher.PostCount);
+        Assert.True(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal("Opening Project", viewModel.ActiveBackgroundTaskTitle);
+    }
+
+    [Fact]
+    public void BackgroundTaskSummary_clears_when_last_task_completes()
+    {
+        var tasks = new EditorBackgroundTaskService();
+        var id = tasks.Start("project.open", "Opening Project", canCancel: false);
+        var viewModel = CreateMainWindowViewModel(backgroundTasks: tasks);
+
+        tasks.Complete(id, "Opened");
+
+        Assert.False(viewModel.HasActiveBackgroundTasks);
+        Assert.Equal(string.Empty, viewModel.ActiveBackgroundTaskTitle);
+        Assert.Equal(string.Empty, viewModel.ActiveBackgroundTaskMessage);
     }
 
     [Fact]
@@ -268,12 +345,40 @@ public sealed class MainWindowViewModelTests
         Assert.IsType<InspectorPanelViewModel>(tab.Content);
     }
 
-    private static MainWindowViewModel CreateMainWindowViewModel()
+    private static MainWindowViewModel CreateMainWindowViewModel(
+        IEditorBackgroundTaskService? backgroundTasks = null,
+        IEditorUiDispatcher? uiDispatcher = null)
     {
         return new MainWindowViewModel(
             MainWindowViewModel.CreatePanelRegistry(),
             MainWindowViewModel.CreateWorkbenchActionRegistry(),
-            savedLayout: null);
+            savedLayout: null,
+            backgroundTasks: backgroundTasks,
+            uiDispatcher: uiDispatcher);
+    }
+
+    private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher
+    {
+        private readonly List<Action> postedActions_ = [];
+
+        public int PostCount => postedActions_.Count;
+
+        public bool CheckAccess() => hasAccess;
+
+        public void Post(Action action)
+        {
+            postedActions_.Add(action);
+        }
+
+        public void RunPostedActions()
+        {
+            foreach (var action in postedActions_.ToArray())
+            {
+                action();
+            }
+
+            postedActions_.Clear();
+        }
     }
 
     private sealed class FloatingPanelOpenState(string openPanelId)

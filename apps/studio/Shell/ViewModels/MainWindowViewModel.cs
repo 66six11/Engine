@@ -9,6 +9,7 @@ using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.Composition;
 using Editor.Shell.Selection;
+using Editor.Shell.Services;
 
 namespace Editor.Shell.ViewModels;
 
@@ -17,9 +18,14 @@ public class MainWindowViewModel : ViewModelBase
     private readonly IPanelRegistry panelRegistry_;
     private readonly PanelCommandService panelCommandService_;
     private readonly WorkbenchShortcutRouter shortcutRouter_;
+    private readonly IEditorBackgroundTaskService backgroundTasks_;
+    private readonly IEditorUiDispatcher uiDispatcher_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
+    private bool hasActiveBackgroundTasks_;
+    private string activeBackgroundTaskTitle_ = string.Empty;
+    private string activeBackgroundTaskMessage_ = string.Empty;
 
     public MainWindowViewModel()
         : this(new EditorSelectionService(), EditorDockLayoutStore.TryLoad())
@@ -41,10 +47,16 @@ public class MainWindowViewModel : ViewModelBase
         IPanelRegistry panelRegistry,
         IWorkbenchActionRegistry actionRegistry,
         EditorDockLayoutSnapshot? savedLayout,
-        IEditorSelectionService? selectionService = null)
+        IEditorSelectionService? selectionService = null,
+        IEditorBackgroundTaskService? backgroundTasks = null,
+        IEditorUiDispatcher? uiDispatcher = null)
     {
         SelectionService = selectionService ?? new EditorSelectionService();
         panelRegistry_ = panelRegistry;
+        backgroundTasks_ = backgroundTasks ?? new EditorBackgroundTaskService();
+        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
+        backgroundTasks_.TasksChanged += OnBackgroundTasksChanged;
+        RefreshBackgroundTaskSummary();
 
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
@@ -93,6 +105,24 @@ public class MainWindowViewModel : ViewModelBase
     public IReadOnlyList<WorkbenchMenuItemViewModel> HelpMenuItems { get; }
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
+
+    public bool HasActiveBackgroundTasks
+    {
+        get => hasActiveBackgroundTasks_;
+        private set => SetProperty(ref hasActiveBackgroundTasks_, value);
+    }
+
+    public string ActiveBackgroundTaskTitle
+    {
+        get => activeBackgroundTaskTitle_;
+        private set => SetProperty(ref activeBackgroundTaskTitle_, value);
+    }
+
+    public string ActiveBackgroundTaskMessage
+    {
+        get => activeBackgroundTaskMessage_;
+        private set => SetProperty(ref activeBackgroundTaskMessage_, value);
+    }
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
@@ -197,6 +227,34 @@ public class MainWindowViewModel : ViewModelBase
     private void OnPanelCommandStateChanged(object? sender, EventArgs e)
     {
         RefreshPanelMenuOpenStates();
+    }
+
+    private void OnBackgroundTasksChanged(object? sender, EventArgs e)
+    {
+        if (uiDispatcher_.CheckAccess())
+        {
+            RefreshBackgroundTaskSummary();
+            return;
+        }
+
+        uiDispatcher_.Post(RefreshBackgroundTaskSummary);
+    }
+
+    private void RefreshBackgroundTaskSummary()
+    {
+        var activeBackgroundTasks = backgroundTasks_.GetActiveSnapshots();
+        if (activeBackgroundTasks.Count == 0)
+        {
+            HasActiveBackgroundTasks = false;
+            ActiveBackgroundTaskTitle = string.Empty;
+            ActiveBackgroundTaskMessage = string.Empty;
+            return;
+        }
+
+        var activeBackgroundTask = activeBackgroundTasks[0];
+        HasActiveBackgroundTasks = true;
+        ActiveBackgroundTaskTitle = activeBackgroundTask.Title;
+        ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
     }
 
     internal static IPanelRegistry CreatePanelRegistry(IEditorSelectionService? selectionService = null)
