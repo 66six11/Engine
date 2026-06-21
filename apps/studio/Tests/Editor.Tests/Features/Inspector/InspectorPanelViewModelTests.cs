@@ -1,9 +1,12 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Models;
 using Editor.Core.Services;
 using Editor.Features.Inspector.Models;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Selection;
+using Editor.Shell.Services;
 using Xunit;
 
 namespace Editor.Tests.Features.Inspector;
@@ -112,6 +115,68 @@ public sealed class InspectorPanelViewModelTests
     }
 
     [Fact]
+    public void Snapshot_changed_rebuilds_current_selection_document()
+    {
+        var selectionService = new EditorSelectionService();
+        selectionService.ReplaceSelection(
+            "hierarchy",
+            [new EditorSelectionItem("scene:test/cube", "mesh", "Cube")]);
+        var provider = CreateProvider();
+        var viewModel = new InspectorPanelViewModel(
+            selectionService,
+            provider,
+            new CapturingUiDispatcher(hasAccess: true));
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [
+                new SceneObjectSnapshot(
+                    "scene:test/cube",
+                    "Runtime Cube",
+                    "mesh",
+                    properties:
+                    [
+                        new SceneObjectPropertySnapshot("triangles", "Triangles", "24", SceneObjectPropertyValueKind.Count),
+                    ]),
+            ]));
+
+        Assert.NotNull(viewModel.Document);
+        var document = viewModel.Document!;
+        Assert.Equal("Runtime Cube", document.Title);
+        var propertySection = Assert.Single(document.Sections, section => section.Title == "Properties");
+        Assert.Equal(
+            [new InspectorPropertyModel("Triangles", "24", InspectorPropertyValueKind.Count)],
+            propertySection.Properties);
+    }
+
+    [Fact]
+    public void Snapshot_changed_posts_document_refresh_when_dispatcher_has_no_access()
+    {
+        var selectionService = new EditorSelectionService();
+        selectionService.ReplaceSelection(
+            "hierarchy",
+            [new EditorSelectionItem("scene:test/cube", "mesh", "Cube")]);
+        var provider = CreateProvider();
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var viewModel = new InspectorPanelViewModel(selectionService, provider, dispatcher);
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [new SceneObjectSnapshot("scene:test/cube", "Runtime Cube", "mesh")]));
+
+        Assert.Equal("Cube", viewModel.Document?.Title);
+        var action = Assert.Single(dispatcher.PostedActions);
+
+        action();
+
+        Assert.Equal("Runtime Cube", viewModel.Document?.Title);
+    }
+
+    [Fact]
     public void Replacing_same_selection_keeps_existing_document_instance()
     {
         var selectionService = new EditorSelectionService();
@@ -123,6 +188,26 @@ public sealed class InspectorPanelViewModelTests
         selectionService.ReplaceSelection("hierarchy", [item]);
 
         Assert.Same(firstDocument, viewModel.Document);
+    }
+
+    [Fact]
+    public void Dispose_unsubscribes_from_snapshot_changes()
+    {
+        var selectionService = new EditorSelectionService();
+        selectionService.ReplaceSelection(
+            "hierarchy",
+            [new EditorSelectionItem("scene:test/cube", "mesh", "Cube")]);
+        var provider = CreateProvider();
+        var viewModel = new InspectorPanelViewModel(selectionService, provider);
+        viewModel.Dispose();
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [new SceneObjectSnapshot("scene:test/cube", "Runtime Cube", "mesh")]));
+
+        Assert.Equal("Cube", viewModel.Document?.Title);
     }
 
     [Fact]
@@ -182,5 +267,17 @@ public sealed class InspectorPanelViewModelTests
         Assert.Equal(
             [new InspectorPropertyModel("Triangles", "12", InspectorPropertyValueKind.Count)],
             propertySection.Properties);
+    }
+
+    private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher
+    {
+        public List<Action> PostedActions { get; } = [];
+
+        public bool CheckAccess() => hasAccess;
+
+        public void Post(Action action)
+        {
+            PostedActions.Add(action);
+        }
     }
 }

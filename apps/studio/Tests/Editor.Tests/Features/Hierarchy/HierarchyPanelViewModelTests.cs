@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Editor.Core.Models;
 using Editor.Core.Services;
@@ -5,6 +6,7 @@ using Editor.Features.Hierarchy.Models;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Shell.Icons;
 using Editor.Shell.Selection;
+using Editor.Shell.Services;
 using Xunit;
 
 namespace Editor.Tests.Features.Hierarchy;
@@ -72,6 +74,111 @@ public sealed class HierarchyPanelViewModelTests
         Assert.Empty(viewModel.Nodes);
         Assert.Empty(viewModel.VisibleRows);
         Assert.Equal("0", viewModel.NodeCountText);
+    }
+
+    [Fact]
+    public void Snapshot_changed_rebuilds_nodes_from_replacement_snapshot()
+    {
+        var provider = new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            1,
+            [new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh")]));
+        var viewModel = new HierarchyPanelViewModel(
+            new EditorSelectionService(),
+            provider,
+            new CapturingUiDispatcher(hasAccess: true));
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh")]));
+
+        Assert.Equal(["Sphere"], GetNodeNames(viewModel.Nodes));
+        Assert.Equal(["Sphere"], GetRowNames(viewModel.VisibleRows));
+        Assert.Equal("1", viewModel.NodeCountText);
+    }
+
+    [Fact]
+    public void Snapshot_changed_posts_refresh_when_dispatcher_has_no_access()
+    {
+        var provider = new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            1,
+            [new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh")]));
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var viewModel = new HierarchyPanelViewModel(
+            new EditorSelectionService(),
+            provider,
+            dispatcher);
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh")]));
+
+        Assert.Equal(["Cube"], GetNodeNames(viewModel.Nodes));
+        var action = Assert.Single(dispatcher.PostedActions);
+
+        action();
+
+        Assert.Equal(["Sphere"], GetNodeNames(viewModel.Nodes));
+    }
+
+    [Fact]
+    public void Snapshot_changed_preserves_collapsed_root_state()
+    {
+        var provider = new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            1,
+            [
+                new SceneObjectSnapshot("scene:test", "Scene", "scene"),
+                new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh", parentId: "scene:test"),
+            ]));
+        var viewModel = new HierarchyPanelViewModel(
+            new EditorSelectionService(),
+            provider,
+            new CapturingUiDispatcher(hasAccess: true));
+        viewModel.ToggleExpandedCommand.Execute(viewModel.VisibleRows[0]);
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [
+                new SceneObjectSnapshot("scene:test", "Scene", "scene"),
+                new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh", parentId: "scene:test"),
+            ]));
+
+        Assert.Equal(["Scene"], GetRowNames(viewModel.VisibleRows));
+        Assert.False(viewModel.VisibleRows[0].IsExpanded);
+    }
+
+    [Fact]
+    public void Dispose_unsubscribes_from_snapshot_changes()
+    {
+        var provider = new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            1,
+            [new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh")]));
+        var viewModel = new HierarchyPanelViewModel(
+            new EditorSelectionService(),
+            provider,
+            new CapturingUiDispatcher(hasAccess: true));
+        viewModel.Dispose();
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh")]));
+
+        Assert.Equal(["Cube"], GetNodeNames(viewModel.Nodes));
     }
 
     [Fact]
@@ -199,5 +306,17 @@ public sealed class HierarchyPanelViewModelTests
         }
 
         return names;
+    }
+
+    private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher
+    {
+        public List<Action> PostedActions { get; } = [];
+
+        public bool CheckAccess() => hasAccess;
+
+        public void Post(Action action)
+        {
+            PostedActions.Add(action);
+        }
     }
 }

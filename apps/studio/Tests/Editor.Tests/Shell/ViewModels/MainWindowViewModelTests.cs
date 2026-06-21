@@ -235,6 +235,23 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void CommandPalette_records_recent_command_after_main_window_route_success()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var hierarchy = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+        Assert.True(viewModel.DockWorkspace.CloseTab(hierarchy));
+
+        viewModel.CommandPalette.OpenCommand.Execute(null);
+        viewModel.CommandPalette.Query = "hierarchy";
+        viewModel.CommandPalette.ExecuteSelectedCommand.Execute(null);
+        viewModel.CommandPalette.OpenCommand.Execute(null);
+
+        Assert.Equal("Recent", viewModel.CommandPalette.FilteredItems[0].Title);
+        Assert.Equal("Hierarchy", viewModel.CommandPalette.FilteredItems[1].Title);
+        Assert.True(viewModel.DockWorkspace.ContainsPanel("hierarchy"));
+    }
+
+    [Fact]
     public void ExecuteShortcut_opens_command_palette_through_registered_shortcut()
     {
         var viewModel = CreateMainWindowViewModel();
@@ -349,6 +366,8 @@ public sealed class MainWindowViewModelTests
         IEditorBackgroundTaskService? backgroundTasks = null,
         IEditorUiDispatcher? uiDispatcher = null)
     {
+        uiDispatcher ??= new CapturingUiDispatcher(hasAccess: true);
+
         return new MainWindowViewModel(
             MainWindowViewModel.CreatePanelRegistry(),
             MainWindowViewModel.CreateWorkbenchActionRegistry(),

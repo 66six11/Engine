@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Core.Services;
 using Xunit;
@@ -22,9 +23,9 @@ public sealed class SceneSnapshotProviderTests
                 new SceneObjectPropertySnapshot("triangles", "Triangles", "12", SceneObjectPropertyValueKind.Count),
             ]);
         var snapshot = new SceneSnapshot("scene:test", "Test Scene", 7, [cube]);
-        var provider = new InMemorySceneSnapshotProvider(snapshot);
+        ISceneSnapshotProvider provider = new InMemorySceneSnapshotProvider(snapshot);
 
-        Assert.Same(snapshot, provider.Current);
+        Assert.Same(snapshot, provider.GetCurrentSnapshot());
         Assert.True(provider.TryGetObject("scene:test/cube", out var actual));
         Assert.Same(cube, actual);
         Assert.False(provider.TryGetObject("scene:test/missing", out var missing));
@@ -44,6 +45,67 @@ public sealed class SceneSnapshotProviderTests
             () => new InMemorySceneSnapshotProvider(snapshot));
 
         Assert.Contains("scene:test/cube", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProviderCanPublishReplacementSnapshot()
+    {
+        var provider = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        var next = new SceneSnapshot("scene:runtime", "Runtime Snapshot", 1);
+
+        provider.ReplaceSnapshot(next);
+
+        Assert.Equal("Runtime Snapshot", provider.GetCurrentSnapshot().DisplayName);
+    }
+
+    [Fact]
+    public void InMemory_provider_raises_snapshot_changed_once_when_snapshot_is_replaced()
+    {
+        var provider = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        var next = new SceneSnapshot("scene:runtime", "Runtime Snapshot", 1);
+        var changeCount = 0;
+        object? eventSender = null;
+        provider.SnapshotChanged += (sender, _) =>
+        {
+            changeCount++;
+            eventSender = sender;
+        };
+
+        provider.ReplaceSnapshot(next);
+
+        Assert.Equal(1, changeCount);
+        Assert.Same(provider, eventSender);
+    }
+
+    [Fact]
+    public void InMemory_provider_rebuilds_lookup_when_snapshot_is_replaced()
+    {
+        var oldObject = new SceneObjectSnapshot("scene:test/old", "Old", "mesh");
+        var newObject = new SceneObjectSnapshot("scene:test/new", "New", "mesh");
+        var provider = new InMemorySceneSnapshotProvider(
+            new SceneSnapshot("scene:test", "Initial", 1, [oldObject]));
+
+        provider.ReplaceSnapshot(new SceneSnapshot("scene:test", "Runtime Snapshot", 2, [newObject]));
+
+        Assert.False(provider.TryGetObject("scene:test/old", out var missing));
+        Assert.Null(missing);
+        Assert.True(provider.TryGetObject("scene:test/new", out var actual));
+        Assert.Same(newObject, actual);
+    }
+
+    [Fact]
+    public void InMemory_provider_rejects_duplicate_object_ids_when_snapshot_is_replaced()
+    {
+        var provider = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        var first = new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh");
+        var second = new SceneObjectSnapshot("scene:test/cube", "Duplicate Cube", "mesh");
+        var snapshot = new SceneSnapshot("scene:test", "Test Scene", 1, [first, second]);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => provider.ReplaceSnapshot(snapshot));
+
+        Assert.Contains("scene:test/cube", exception.Message, StringComparison.Ordinal);
+        Assert.Same(SceneSnapshot.Empty, provider.GetCurrentSnapshot());
     }
 
     [Fact]

@@ -74,6 +74,19 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
+        <Style Selector="TextBlock.command-palette-section">
+            <Setter Property="Margin" Value="8,8,8,2" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+        </Style>
+
+        <Style Selector="TextBlock.command-palette-result">
+            <Setter Property="Margin" Value="8,6,8,0" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
         <Style Selector="TextBlock.command-palette-empty">
             <Setter Property="Margin" Value="0,18,0,12" />
             <Setter Property="HorizontalAlignment" Value="Center" />
@@ -86,7 +99,7 @@
         <Border Classes="command-palette-scrim" />
 
         <Border Classes="command-palette-surface">
-            <Grid RowDefinitions="Auto,*">
+            <Grid RowDefinitions="Auto,*,Auto">
                 <controls:SearchBox x:Name="CommandPaletteSearchBox"
                                     Classes="command-palette-search"
                                     PlaceholderText="Search commands"
@@ -99,30 +112,37 @@
                              DoubleTapped="OnResultsDoubleTapped">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:CommandPaletteItemViewModel">
-                                <Grid ColumnDefinitions="Auto,*,Auto"
-                                      ColumnSpacing="8"
-                                      Margin="8,3"
-                                      Opacity="{Binding RowOpacity}">
-                                    <icons:EditorIconView Grid.Column="0"
-                                                          Classes="command-palette-icon"
-                                                          IconKey="{Binding IconKey}"
-                                                          IconSize="14"
-                                                          StrokeWidth="2" />
-                                    <StackPanel Grid.Column="1"
-                                                Spacing="1">
-                                        <TextBlock Classes="command-palette-title"
-                                                   Text="{Binding Title}" />
-                                        <TextBlock Classes="command-palette-detail"
-                                                   Text="{Binding Detail}" />
-                                        <TextBlock Classes="command-palette-detail"
-                                                   Text="{Binding DisabledReason}"
-                                                   IsVisible="{Binding HasDisabledReason}" />
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2"
-                                               Classes="command-palette-detail"
-                                               Text="{Binding DefaultShortcut}"
-                                               IsVisible="{Binding HasDefaultShortcut}"
-                                               VerticalAlignment="Center" />
+                                <Grid>
+                                    <TextBlock Classes="command-palette-section"
+                                               Text="{Binding Title}"
+                                               IsVisible="{Binding IsHeader}" />
+
+                                    <Grid ColumnDefinitions="Auto,*,Auto"
+                                          ColumnSpacing="8"
+                                          Margin="8,3"
+                                          Opacity="{Binding RowOpacity}"
+                                          IsVisible="{Binding IsCommand}">
+                                        <icons:EditorIconView Grid.Column="0"
+                                                              Classes="command-palette-icon"
+                                                              IconKey="{Binding IconKey}"
+                                                              IconSize="14"
+                                                              StrokeWidth="2" />
+                                        <StackPanel Grid.Column="1"
+                                                    Spacing="1">
+                                            <TextBlock Classes="command-palette-title"
+                                                       Text="{Binding Title}" />
+                                            <TextBlock Classes="command-palette-detail"
+                                                       Text="{Binding Detail}" />
+                                            <TextBlock Classes="command-palette-detail"
+                                                       Text="{Binding DisabledReason}"
+                                                       IsVisible="{Binding HasDisabledReason}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2"
+                                                   Classes="command-palette-detail"
+                                                   Text="{Binding DefaultShortcut}"
+                                                   IsVisible="{Binding HasDefaultShortcut}"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -132,6 +152,11 @@
                                Text="No commands"
                                IsVisible="{Binding HasNoMatches}" />
                 </Grid>
+
+                <TextBlock Grid.Row="2"
+                           Classes="command-palette-result"
+                           Text="{Binding LastResultMessage}"
+                           IsVisible="{Binding HasLastResultMessage}" />
             </Grid>
         </Border>
     </Grid>

@@ -309,6 +309,7 @@ public partial class EditorDockWorkspaceView : UserControl
 
             var bounds = GetHostBounds(host);
             var tabWellBounds = GetTabWellBounds(host);
+            var tabContentOriginX = GetTabContentOriginX(host, tabWellBounds.X);
             if (bounds.Width <= 0 || bounds.Height <= 0)
             {
                 continue;
@@ -323,7 +324,8 @@ public partial class EditorDockWorkspaceView : UserControl
                 GetTabBounds(host, window),
                 GetDragSourceTabIndex(window),
                 AllowsWindowInsertion: true,
-                IsDragSource: window.IsDragSourceWindow));
+                IsDragSource: window.IsDragSourceWindow,
+                TabContentOriginX: tabContentOriginX));
         }
 
         return windows;
@@ -693,8 +695,22 @@ public partial class EditorDockWorkspaceView : UserControl
 
     private Rect GetTabWellBounds(EditorDockWindowView host)
     {
+        var tabStrip = FindTabStripHost(host);
+        if (tabStrip is not null && tabStrip.TryGetViewportBounds(DockRoot, out var viewportBounds))
+        {
+            return viewportBounds;
+        }
+
         var tabWell = FindTabWellHost(host, "owned-dock-tab-well");
         return tabWell is null ? GetHostBounds(host) : GetHostBounds(tabWell);
+    }
+
+    private double GetTabContentOriginX(EditorDockWindowView host, double fallbackX)
+    {
+        var tabStrip = FindTabStripHost(host);
+        return tabStrip is not null && tabStrip.TryGetContentOrigin(DockRoot, out var origin)
+            ? origin.X
+            : fallbackX;
     }
 
     private IReadOnlyList<EditorDockTabBounds> GetTabBounds(
@@ -749,6 +765,13 @@ public partial class EditorDockWorkspaceView : UserControl
                 && control.Bounds.Width > 0
                 && control.Bounds.Height > 0
                 && control.Classes.Contains(className));
+    }
+
+    private static EditorDockTabStripView? FindTabStripHost(EditorDockWindowView host)
+    {
+        return host.GetVisualDescendants()
+            .OfType<EditorDockTabStripView>()
+            .FirstOrDefault(view => view.IsVisible);
     }
 
     private bool ContainsScreenPoint(PixelPoint screenPoint)
