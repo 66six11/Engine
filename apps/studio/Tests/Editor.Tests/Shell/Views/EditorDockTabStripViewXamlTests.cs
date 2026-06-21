@@ -27,10 +27,11 @@ public sealed class EditorDockTabStripViewXamlTests
 
         Assert.DoesNotContain("Property=\"Opacity\"", style);
         Assert.Contains("EditorBrushAccent", xaml);
+        Assert.Contains("Property=\"Width\" Value=\"8\"", style);
     }
 
     [Fact]
-    public void Overflow_affordances_start_hover_auto_scroll()
+    public void Overflow_affordances_start_smooth_hover_auto_scroll()
     {
         var xaml = LoadTabStripXaml();
         var source = LoadSource("Shell", "Views", "EditorDockTabStripView.axaml.cs");
@@ -39,22 +40,25 @@ public sealed class EditorDockTabStripViewXamlTests
         Assert.Contains("PointerEntered=\"OnRightOverflowAffordancePointerEntered\"", xaml);
         Assert.Contains("PointerExited=\"OnOverflowAffordancePointerExited\"", xaml);
         Assert.Contains("private readonly DispatcherTimer overflowHoverScrollTimer_", source);
+        Assert.Contains("OverflowHoverScrollInterval = TimeSpan.FromMilliseconds(16)", source);
+        Assert.Contains("OverflowHoverScrollStep = 9.0", source);
         Assert.Contains("StartOverflowHoverScroll(OverflowHoverScrollDirection.Left)", source);
         Assert.Contains("StartOverflowHoverScroll(OverflowHoverScrollDirection.Right)", source);
+        Assert.Contains("step: OverflowHoverScrollStep", source);
         Assert.Contains("StopOverflowHoverScroll()", source);
         Assert.Contains("OnOverflowHoverScrollTimerTick", source);
         Assert.True(CountOccurrences(source, "!CanOverflowHoverScroll(direction)") >= 2);
     }
 
     [Fact]
-    public void Overflow_affordances_show_direction_icons()
+    public void Overflow_affordances_do_not_show_direction_icons()
     {
         var xaml = LoadTabStripXaml();
 
-        Assert.Contains("xmlns:icons=\"using:Editor.Shell.Icons\"", xaml);
-        Assert.Contains("IconKey=\"studio.ui.chevron-left\"", xaml);
-        Assert.Contains("IconKey=\"studio.ui.chevron-right\"", xaml);
-        Assert.Contains("owned-dock-tab-overflow-icon", xaml);
+        Assert.DoesNotContain("xmlns:icons=\"using:Editor.Shell.Icons\"", xaml);
+        Assert.DoesNotContain("IconKey=\"studio.ui.chevron-left\"", xaml);
+        Assert.DoesNotContain("IconKey=\"studio.ui.chevron-right\"", xaml);
+        Assert.DoesNotContain("owned-dock-tab-overflow-icon", xaml);
     }
 
     [Fact]

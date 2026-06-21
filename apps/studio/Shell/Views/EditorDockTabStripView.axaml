@@ -1,6 +1,5 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:icons="using:Editor.Shell.Icons"
              xmlns:vm="using:Editor.Shell.ViewModels"
              xmlns:views="using:Editor.Shell.Views"
              x:Class="Editor.Shell.Views.EditorDockTabStripView"
@@ -18,19 +17,10 @@
         </Style>
 
         <Style Selector="Border.owned-dock-tab-overflow-affordance">
-            <Setter Property="Width" Value="18" />
+            <Setter Property="Width" Value="8" />
             <Setter Property="Background" Value="{DynamicResource EditorBrushAccent}" />
             <Setter Property="IsHitTestVisible" Value="True" />
             <Setter Property="IsVisible" Value="False" />
-        </Style>
-
-        <Style Selector="icons|EditorIconView.owned-dock-tab-overflow-icon">
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushBase00}" />
-            <Setter Property="IconSize" Value="13" />
-            <Setter Property="StrokeWidth" Value="2.4" />
-            <Setter Property="IsHitTestVisible" Value="False" />
         </Style>
     </UserControl.Styles>
 
@@ -61,17 +51,11 @@
                 Classes="owned-dock-tab-overflow-affordance"
                 HorizontalAlignment="Left"
                 PointerEntered="OnLeftOverflowAffordancePointerEntered"
-                PointerExited="OnOverflowAffordancePointerExited">
-            <icons:EditorIconView Classes="owned-dock-tab-overflow-icon"
-                                  IconKey="studio.ui.chevron-left" />
-        </Border>
+                PointerExited="OnOverflowAffordancePointerExited" />
         <Border x:Name="RightOverflowAffordance"
                 Classes="owned-dock-tab-overflow-affordance"
                 HorizontalAlignment="Right"
                 PointerEntered="OnRightOverflowAffordancePointerEntered"
-                PointerExited="OnOverflowAffordancePointerExited">
-            <icons:EditorIconView Classes="owned-dock-tab-overflow-icon"
-                                  IconKey="studio.ui.chevron-right" />
-        </Border>
+                PointerExited="OnOverflowAffordancePointerExited" />
     </Grid>
 </UserControl>

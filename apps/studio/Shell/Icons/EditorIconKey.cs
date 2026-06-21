@@ -4,7 +4,6 @@ public static class EditorIconKey
 {
     public const string UiCheck = "studio.ui.check";
     public const string UiChevronDown = "studio.ui.chevron-down";
-    public const string UiChevronLeft = "studio.ui.chevron-left";
     public const string UiChevronRight = "studio.ui.chevron-right";
     public const string UiClose = "studio.ui.close";
     public const string UiSearch = "studio.ui.search";

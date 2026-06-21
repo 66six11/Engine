@@ -15,7 +15,8 @@ namespace Editor.Shell.Views;
 
 public partial class EditorDockTabStripView : UserControl
 {
-    private static readonly TimeSpan OverflowHoverScrollInterval = TimeSpan.FromMilliseconds(90);
+    private const double OverflowHoverScrollStep = 9.0;
+    private static readonly TimeSpan OverflowHoverScrollInterval = TimeSpan.FromMilliseconds(16);
     private readonly List<IDisposable> scrollSubscriptions_ = [];
     private readonly DispatcherTimer overflowHoverScrollTimer_;
     private EditorDockWindowViewModel? window_;
@@ -308,7 +309,8 @@ public partial class EditorDockTabStripView : UserControl
             pointerX,
             HorizontalOffset,
             ExtentWidth,
-            ViewportWidth);
+            ViewportWidth,
+            step: OverflowHoverScrollStep);
         return SetHorizontalOffset(nextOffset);
     }
 
