@@ -45,7 +45,18 @@ public sealed class EditorTransactionService : IEditorTransactionService
             throw new InvalidOperationException(message);
         }
 
-        command.Apply();
+        try
+        {
+            command.Apply();
+        }
+        catch (Exception exception)
+        {
+            FailActiveTransaction(transaction, exception);
+            throw new InvalidOperationException(
+                $"Editor transaction '{transaction.DisplayLabel}' failed while applying '{descriptor.DisplayLabel}': {exception.Message}",
+                exception);
+        }
+
         transaction.Commands.Add(command);
         OnStateChanged();
     }
@@ -152,6 +163,14 @@ public sealed class EditorTransactionService : IEditorTransactionService
         {
             command.Revert();
         }
+    }
+
+    private void FailActiveTransaction(PendingTransaction transaction, Exception exception)
+    {
+        diagnostics_.Add(exception.Message);
+        activeTransaction_ = null;
+        RevertCommands(transaction.Commands);
+        OnStateChanged();
     }
 
     private void OnStateChanged()
