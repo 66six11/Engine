@@ -30,6 +30,34 @@ public sealed class EditorDockTabStripViewXamlTests
     }
 
     [Fact]
+    public void Overflow_affordances_start_hover_auto_scroll()
+    {
+        var xaml = LoadTabStripXaml();
+        var source = LoadSource("Shell", "Views", "EditorDockTabStripView.axaml.cs");
+
+        Assert.Contains("PointerEntered=\"OnLeftOverflowAffordancePointerEntered\"", xaml);
+        Assert.Contains("PointerEntered=\"OnRightOverflowAffordancePointerEntered\"", xaml);
+        Assert.Contains("PointerExited=\"OnOverflowAffordancePointerExited\"", xaml);
+        Assert.Contains("private readonly DispatcherTimer overflowHoverScrollTimer_", source);
+        Assert.Contains("StartOverflowHoverScroll(OverflowHoverScrollDirection.Left)", source);
+        Assert.Contains("StartOverflowHoverScroll(OverflowHoverScrollDirection.Right)", source);
+        Assert.Contains("StopOverflowHoverScroll()", source);
+        Assert.Contains("OnOverflowHoverScrollTimerTick", source);
+        Assert.True(CountOccurrences(source, "!CanOverflowHoverScroll(direction)") >= 2);
+    }
+
+    [Fact]
+    public void Overflow_affordances_show_direction_icons()
+    {
+        var xaml = LoadTabStripXaml();
+
+        Assert.Contains("xmlns:icons=\"using:Editor.Shell.Icons\"", xaml);
+        Assert.Contains("IconKey=\"studio.ui.chevron-left\"", xaml);
+        Assert.Contains("IconKey=\"studio.ui.chevron-right\"", xaml);
+        Assert.Contains("owned-dock-tab-overflow-icon", xaml);
+    }
+
+    [Fact]
     public void Tab_strip_exposes_visible_viewport_bounds_for_hit_testing()
     {
         var source = LoadSource("Shell", "Views", "EditorDockTabStripView.axaml.cs");
@@ -108,5 +136,22 @@ public sealed class EditorDockTabStripViewXamlTests
 
         var end = xaml.IndexOf("</Style>", start, StringComparison.Ordinal);
         return end < 0 ? xaml[start..] : xaml[start..(end + "</Style>".Length)];
+    }
+
+    private static int CountOccurrences(string value, string text)
+    {
+        var count = 0;
+        var startIndex = 0;
+        while (true)
+        {
+            var index = value.IndexOf(text, startIndex, StringComparison.Ordinal);
+            if (index < 0)
+            {
+                return count;
+            }
+
+            count++;
+            startIndex = index + text.Length;
+        }
     }
 }

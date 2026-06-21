@@ -5,6 +5,8 @@ using System.ComponentModel;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Editor.Shell.Docking;
 using Editor.Shell.ViewModels;
@@ -13,8 +15,11 @@ namespace Editor.Shell.Views;
 
 public partial class EditorDockTabStripView : UserControl
 {
+    private static readonly TimeSpan OverflowHoverScrollInterval = TimeSpan.FromMilliseconds(90);
     private readonly List<IDisposable> scrollSubscriptions_ = [];
+    private readonly DispatcherTimer overflowHoverScrollTimer_;
     private EditorDockWindowViewModel? window_;
+    private OverflowHoverScrollDirection overflowHoverScrollDirection_;
     private bool isAttachedToVisualTree_;
     private bool isLayoutRefreshQueued_;
     private bool isWindowSubscribed_;
@@ -22,6 +27,11 @@ public partial class EditorDockTabStripView : UserControl
     public EditorDockTabStripView()
     {
         InitializeComponent();
+        overflowHoverScrollTimer_ = new DispatcherTimer
+        {
+            Interval = OverflowHoverScrollInterval,
+        };
+        overflowHoverScrollTimer_.Tick += OnOverflowHoverScrollTimerTick;
         DataContextChanged += OnDataContextChanged;
     }
 
@@ -109,10 +119,26 @@ public partial class EditorDockTabStripView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         isAttachedToVisualTree_ = false;
+        StopOverflowHoverScroll();
         DetachLayoutRefresh();
         DetachWindow();
         DetachScrollSubscriptions();
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnLeftOverflowAffordancePointerEntered(object? sender, PointerEventArgs e)
+    {
+        StartOverflowHoverScroll(OverflowHoverScrollDirection.Left);
+    }
+
+    private void OnRightOverflowAffordancePointerEntered(object? sender, PointerEventArgs e)
+    {
+        StartOverflowHoverScroll(OverflowHoverScrollDirection.Right);
+    }
+
+    private void OnOverflowAffordancePointerExited(object? sender, PointerEventArgs e)
+    {
+        StopOverflowHoverScroll();
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -224,6 +250,68 @@ public partial class EditorDockTabStripView : UserControl
         return true;
     }
 
+    private void StartOverflowHoverScroll(OverflowHoverScrollDirection direction)
+    {
+        if (!CanOverflowHoverScroll(direction))
+        {
+            StopOverflowHoverScroll();
+            return;
+        }
+
+        overflowHoverScrollDirection_ = direction;
+        if (!ScrollOverflowHoverOnce())
+        {
+            StopOverflowHoverScroll();
+            return;
+        }
+
+        if (!CanOverflowHoverScroll(direction))
+        {
+            StopOverflowHoverScroll();
+            return;
+        }
+
+        if (!overflowHoverScrollTimer_.IsEnabled)
+        {
+            overflowHoverScrollTimer_.Start();
+        }
+    }
+
+    private void StopOverflowHoverScroll()
+    {
+        overflowHoverScrollDirection_ = OverflowHoverScrollDirection.None;
+        if (overflowHoverScrollTimer_.IsEnabled)
+        {
+            overflowHoverScrollTimer_.Stop();
+        }
+    }
+
+    private void OnOverflowHoverScrollTimerTick(object? sender, EventArgs e)
+    {
+        if (!ScrollOverflowHoverOnce())
+        {
+            StopOverflowHoverScroll();
+        }
+    }
+
+    private bool ScrollOverflowHoverOnce()
+    {
+        if (!CanOverflowHoverScroll(overflowHoverScrollDirection_))
+        {
+            return false;
+        }
+
+        var pointerX = overflowHoverScrollDirection_ == OverflowHoverScrollDirection.Left
+            ? 0
+            : ViewportWidth;
+        var nextOffset = EditorDockTabStripScrollController.CalculateAutoScrollOffset(
+            pointerX,
+            HorizontalOffset,
+            ExtentWidth,
+            ViewportWidth);
+        return SetHorizontalOffset(nextOffset);
+    }
+
     private void QueueLayoutRefresh()
     {
         if (!isAttachedToVisualTree_ || isLayoutRefreshQueued_)
@@ -290,6 +378,19 @@ public partial class EditorDockTabStripView : UserControl
 
     private void UpdateOverflowAffordances()
     {
+        var canScrollLeft = CanOverflowHoverScroll(OverflowHoverScrollDirection.Left);
+        var canScrollRight = CanOverflowHoverScroll(OverflowHoverScrollDirection.Right);
+        LeftOverflowAffordance.IsVisible = canScrollLeft;
+        RightOverflowAffordance.IsVisible = canScrollRight;
+        if (overflowHoverScrollDirection_ != OverflowHoverScrollDirection.None
+            && !CanOverflowHoverScroll(overflowHoverScrollDirection_))
+        {
+            StopOverflowHoverScroll();
+        }
+    }
+
+    private bool CanOverflowHoverScroll(OverflowHoverScrollDirection direction)
+    {
         var maxOffset = EditorDockTabStripScrollController.ClampOffset(
             double.MaxValue,
             ExtentWidth,
@@ -298,8 +399,19 @@ public partial class EditorDockTabStripView : UserControl
             HorizontalOffset,
             ExtentWidth,
             ViewportWidth);
-        LeftOverflowAffordance.IsVisible = maxOffset > 0.5 && offset > 0.5;
-        RightOverflowAffordance.IsVisible = maxOffset - offset > 0.5;
+        return direction switch
+        {
+            OverflowHoverScrollDirection.Left => maxOffset > 0.5 && offset > 0.5,
+            OverflowHoverScrollDirection.Right => maxOffset - offset > 0.5,
+            _ => false,
+        };
+    }
+
+    private enum OverflowHoverScrollDirection
+    {
+        None,
+        Left,
+        Right,
     }
 
     private sealed class ActionObserver<T> : IObserver<T>
