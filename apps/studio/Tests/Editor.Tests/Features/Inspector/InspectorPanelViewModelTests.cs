@@ -122,7 +122,10 @@ public sealed class InspectorPanelViewModelTests
             "hierarchy",
             [new EditorSelectionItem("scene:test/cube", "mesh", "Cube")]);
         var provider = CreateProvider();
-        var viewModel = new InspectorPanelViewModel(selectionService, provider);
+        var viewModel = new InspectorPanelViewModel(
+            selectionService,
+            provider,
+            new CapturingUiDispatcher(hasAccess: true));
 
         provider.ReplaceSnapshot(new SceneSnapshot(
             "scene:test",
