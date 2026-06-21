@@ -309,6 +309,7 @@ public partial class EditorDockWorkspaceView : UserControl
 
             var bounds = GetHostBounds(host);
             var tabWellBounds = GetTabWellBounds(host);
+            var tabContentOriginX = GetTabContentOriginX(host);
             if (bounds.Width <= 0 || bounds.Height <= 0)
             {
                 continue;
@@ -323,7 +324,8 @@ public partial class EditorDockWorkspaceView : UserControl
                 GetTabBounds(host, window),
                 GetDragSourceTabIndex(window),
                 AllowsWindowInsertion: true,
-                IsDragSource: window.IsDragSourceWindow));
+                IsDragSource: window.IsDragSourceWindow,
+                TabContentOriginX: tabContentOriginX));
         }
 
         return windows;
@@ -697,6 +699,14 @@ public partial class EditorDockWorkspaceView : UserControl
         return tabWell is null ? GetHostBounds(host) : GetHostBounds(tabWell);
     }
 
+    private double GetTabContentOriginX(EditorDockWindowView host)
+    {
+        var tabStrip = FindTabStripHost(host);
+        return tabStrip is not null && tabStrip.TryGetContentOrigin(DockRoot, out var origin)
+            ? origin.X
+            : GetTabWellBounds(host).X;
+    }
+
     private IReadOnlyList<EditorDockTabBounds> GetTabBounds(
         EditorDockWindowView host,
         EditorDockWindowViewModel window)
@@ -749,6 +759,13 @@ public partial class EditorDockWorkspaceView : UserControl
                 && control.Bounds.Width > 0
                 && control.Bounds.Height > 0
                 && control.Classes.Contains(className));
+    }
+
+    private static EditorDockTabStripView? FindTabStripHost(EditorDockWindowView host)
+    {
+        return host.GetVisualDescendants()
+            .OfType<EditorDockTabStripView>()
+            .FirstOrDefault(view => view.IsVisible);
     }
 
     private bool ContainsScreenPoint(PixelPoint screenPoint)
