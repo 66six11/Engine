@@ -349,6 +349,8 @@ public sealed class MainWindowViewModelTests
         IEditorBackgroundTaskService? backgroundTasks = null,
         IEditorUiDispatcher? uiDispatcher = null)
     {
+        uiDispatcher ??= new CapturingUiDispatcher(hasAccess: true);
+
         return new MainWindowViewModel(
             MainWindowViewModel.CreatePanelRegistry(),
             MainWindowViewModel.CreateWorkbenchActionRegistry(),

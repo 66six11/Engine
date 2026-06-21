@@ -6,18 +6,23 @@ using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
+using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 
 namespace Editor.Features.Hierarchy.ViewModels;
 
-public sealed class HierarchyPanelViewModel : ViewModelBase
+public sealed class HierarchyPanelViewModel : ViewModelBase, IDisposable
 {
     private const string SelectionContextId = "hierarchy";
     private readonly IEditorSelectionService selectionService_;
-    private readonly Dictionary<string, HierarchyNodeModel> nodesById_;
-    private readonly Dictionary<string, int> depthsByNodeId_;
-    private readonly HashSet<string> nodeIdsWithChildren_;
-    private readonly HashSet<string> expandedNodeIds_;
+    private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
+    private readonly IEditorUiDispatcher uiDispatcher_;
+    private Dictionary<string, HierarchyNodeModel> nodesById_ = [];
+    private Dictionary<string, int> depthsByNodeId_ = [];
+    private HashSet<string> nodeIdsWithChildren_ = [];
+    private HashSet<string> expandedNodeIds_ = [];
+    private SceneSnapshot sceneSnapshot_ = SceneSnapshot.Empty;
+    private IReadOnlyList<HierarchyNodeModel> nodes_ = [];
     private IReadOnlyList<HierarchyNodeRowViewModel> visibleRows_ = [];
     private HierarchyNodeModel? selectedNode_;
     private HierarchyNodeRowViewModel? selectedRow_;
@@ -32,34 +37,32 @@ public sealed class HierarchyPanelViewModel : ViewModelBase
 
     internal HierarchyPanelViewModel(
         IEditorSelectionService selectionService,
-        ISceneSnapshotProvider sceneSnapshotProvider)
+        ISceneSnapshotProvider sceneSnapshotProvider,
+        IEditorUiDispatcher? uiDispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(selectionService);
         ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
 
         selectionService_ = selectionService;
-        SceneSnapshot = sceneSnapshotProvider.GetCurrentSnapshot();
-        Nodes = SceneSnapshot.Objects
-            .Select(HierarchyNodeModel.FromSceneObject)
-            .ToArray();
-        nodesById_ = Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
-        depthsByNodeId_ = Nodes.ToDictionary(node => node.Id, GetDepth, StringComparer.Ordinal);
-        nodeIdsWithChildren_ = Nodes
-            .Where(node => !string.IsNullOrWhiteSpace(node.ParentId))
-            .Select(node => node.ParentId!)
-            .ToHashSet(StringComparer.Ordinal);
-        expandedNodeIds_ = Nodes
-            .Where(node => node.ParentId is null && nodeIdsWithChildren_.Contains(node.Id))
-            .Select(node => node.Id)
-            .ToHashSet(StringComparer.Ordinal);
+        sceneSnapshotProvider_ = sceneSnapshotProvider;
+        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
 
         ToggleExpandedCommand = new RelayCommand<HierarchyNodeRowViewModel>(ToggleExpanded);
-        RefreshVisibleRows();
+        LoadSnapshot(sceneSnapshotProvider_.GetCurrentSnapshot(), preserveExpandedState: false);
+        sceneSnapshotProvider_.SnapshotChanged += OnSnapshotChanged;
     }
 
-    public SceneSnapshot SceneSnapshot { get; }
+    public SceneSnapshot SceneSnapshot
+    {
+        get => sceneSnapshot_;
+        private set => SetProperty(ref sceneSnapshot_, value);
+    }
 
-    public IReadOnlyList<HierarchyNodeModel> Nodes { get; }
+    public IReadOnlyList<HierarchyNodeModel> Nodes
+    {
+        get => nodes_;
+        private set => SetProperty(ref nodes_, value);
+    }
 
     public IReadOnlyList<HierarchyNodeRowViewModel> VisibleRows
     {
@@ -135,6 +138,11 @@ public sealed class HierarchyPanelViewModel : ViewModelBase
 
     public IRelayCommand<HierarchyNodeRowViewModel> ToggleExpandedCommand { get; }
 
+    public void Dispose()
+    {
+        sceneSnapshotProvider_.SnapshotChanged -= OnSnapshotChanged;
+    }
+
     public void SelectItem(EditorSelectionItem item)
     {
         selectionService_.ReplaceSelection(SelectionContextId, [item]);
@@ -143,6 +151,57 @@ public sealed class HierarchyPanelViewModel : ViewModelBase
     public void ClearSelection()
     {
         selectionService_.ClearSelection(SelectionContextId);
+    }
+
+    private void OnSnapshotChanged(object? sender, EventArgs e)
+    {
+        if (uiDispatcher_.CheckAccess())
+        {
+            RefreshSnapshot();
+            return;
+        }
+
+        uiDispatcher_.Post(RefreshSnapshot);
+    }
+
+    private void RefreshSnapshot()
+    {
+        LoadSnapshot(sceneSnapshotProvider_.GetCurrentSnapshot(), preserveExpandedState: true);
+    }
+
+    private void LoadSnapshot(SceneSnapshot snapshot, bool preserveExpandedState)
+    {
+        var previousExpandedNodeIds = preserveExpandedState
+            ? expandedNodeIds_
+            : [];
+
+        SceneSnapshot = snapshot;
+        Nodes = SceneSnapshot.Objects
+            .Select(HierarchyNodeModel.FromSceneObject)
+            .ToArray();
+        nodesById_ = Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
+        depthsByNodeId_ = Nodes.ToDictionary(node => node.Id, GetDepth, StringComparer.Ordinal);
+        nodeIdsWithChildren_ = Nodes
+            .Where(node => !string.IsNullOrWhiteSpace(node.ParentId))
+            .Select(node => node.ParentId!)
+            .ToHashSet(StringComparer.Ordinal);
+        expandedNodeIds_ = Nodes
+            .Where(node => nodeIdsWithChildren_.Contains(node.Id)
+                && ShouldKeepExpanded(node, preserveExpandedState, previousExpandedNodeIds))
+            .Select(node => node.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        RefreshVisibleRows();
+    }
+
+    private static bool ShouldKeepExpanded(
+        HierarchyNodeModel node,
+        bool preserveExpandedState,
+        HashSet<string> previousExpandedNodeIds)
+    {
+        return preserveExpandedState
+            ? previousExpandedNodeIds.Contains(node.Id)
+            : node.ParentId is null;
     }
 
     private void ToggleExpanded(HierarchyNodeRowViewModel? row)
