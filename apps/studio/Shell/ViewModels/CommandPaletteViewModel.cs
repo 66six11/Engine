@@ -123,7 +123,9 @@ public sealed class CommandPaletteViewModel : ViewModelBase
             return;
         }
 
-        LastResultMessage = result.Message ?? $"Command '{SelectedItem.Id}' did not complete.";
+        LastResultMessage = string.IsNullOrWhiteSpace(result.Message)
+            ? $"Command '{SelectedItem.Id}' did not complete."
+            : result.Message;
     }
 
     private void RefreshFilteredItems()

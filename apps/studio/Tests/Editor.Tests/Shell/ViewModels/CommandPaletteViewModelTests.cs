@@ -162,6 +162,67 @@ public sealed class CommandPaletteViewModelTests
     }
 
     [Fact]
+    public void Failed_execution_with_blank_message_uses_fallback_result_message()
+    {
+        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "   "));
+        viewModel.OpenCommand.Execute(null);
+        viewModel.Query = "console";
+
+        viewModel.ExecuteSelectedCommand.Execute(null);
+
+        Assert.True(viewModel.IsOpen);
+        Assert.True(viewModel.HasLastResultMessage);
+        Assert.Equal("Command 'workbench.panel.console' did not complete.", viewModel.LastResultMessage);
+    }
+
+    [Fact]
+    public void Failed_execution_publishes_result_message_property_notifications()
+    {
+        var changedProperties = new List<string>();
+        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "Failed by test"));
+        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName ?? string.Empty);
+        viewModel.OpenCommand.Execute(null);
+        viewModel.Query = "console";
+
+        viewModel.ExecuteSelectedCommand.Execute(null);
+
+        Assert.Contains(nameof(CommandPaletteViewModel.LastResultMessage), changedProperties);
+        Assert.Contains(nameof(CommandPaletteViewModel.HasLastResultMessage), changedProperties);
+    }
+
+    [Fact]
+    public void Recent_commands_are_capped_deduped_and_newest_first()
+    {
+        var viewModel = CreatePaletteWithCommandCount(6);
+        viewModel.OpenCommand.Execute(null);
+        foreach (var commandId in new[]
+        {
+            "test.command-1",
+            "test.command-2",
+            "test.command-3",
+            "test.command-4",
+            "test.command-5",
+            "test.command-6",
+            "test.command-3",
+        })
+        {
+            ExecuteMatchingCommand(viewModel, commandId);
+        }
+
+        var recentItems = viewModel.FilteredItems
+            .Skip(1)
+            .TakeWhile(item => !item.IsHeader)
+            .ToArray();
+
+        Assert.Equal("Recent", viewModel.FilteredItems.First().Title);
+        Assert.Equal(
+            ["Command 3", "Command 6", "Command 5", "Command 4", "Command 2"],
+            recentItems.Select(item => item.Title));
+        Assert.Equal(recentItems.Length, recentItems.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count());
+        Assert.DoesNotContain(recentItems, item => item.Title == "Command 1");
+    }
+
+    [Fact]
     public void Not_found_execution_keeps_palette_open_and_publishes_result_message()
     {
         var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.NotFound(commandId));
@@ -297,6 +358,27 @@ public sealed class CommandPaletteViewModelTests
     private static IReadOnlyList<CommandPaletteItemViewModel> CommandRows(CommandPaletteViewModel viewModel)
     {
         return viewModel.FilteredItems.Where(item => item.IsCommand).ToArray();
+    }
+
+    private static void ExecuteMatchingCommand(CommandPaletteViewModel viewModel, string query)
+    {
+        viewModel.Query = query;
+        viewModel.ExecuteSelectedCommand.Execute(null);
+        viewModel.OpenCommand.Execute(null);
+    }
+
+    private static CommandPaletteViewModel CreatePaletteWithCommandCount(int commandCount)
+    {
+        return new CommandPaletteViewModel(
+            Enumerable.Range(1, commandCount)
+                .Select(index => new WorkbenchActionDescriptor(
+                    $"test.command-{index}",
+                    $"Command {index}",
+                    WorkbenchActionKind.OpenCommandPalette,
+                    $"Tools/Command {index}",
+                    Category: "Tools"))
+                .ToArray(),
+            commandId => WorkbenchCommandExecutionResult.Success(commandId));
     }
 
     private static CommandPaletteViewModel CreatePalette(
