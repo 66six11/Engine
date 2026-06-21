@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Models;
 using Editor.Shell.ViewModels;
@@ -9,7 +10,7 @@ namespace Editor.Tests.Shell.ViewModels;
 public sealed class CommandPaletteViewModelTests
 {
     [Fact]
-    public void Open_resets_query_and_selects_first_action()
+    public void Open_resets_query_groups_actions_and_selects_first_command()
     {
         var viewModel = CreatePalette();
         viewModel.Query = "console";
@@ -18,8 +19,12 @@ public sealed class CommandPaletteViewModelTests
 
         Assert.True(viewModel.IsOpen);
         Assert.Equal(string.Empty, viewModel.Query);
-        Assert.Equal(["Scene View", "Console", "Disabled"], viewModel.FilteredItems.Select(item => item.Title));
+        Assert.Equal(
+            ["Window", "Scene View", "Console", "Disabled", "Tools", "Command Palette"],
+            viewModel.FilteredItems.Select(item => item.Title));
+        Assert.Equal([true, false, false, false, true, false], viewModel.FilteredItems.Select(item => item.IsHeader));
         Assert.Equal("Scene View", viewModel.SelectedItem?.Title);
+        Assert.True(viewModel.SelectedItem?.IsCommand);
     }
 
     [Fact]
@@ -60,22 +65,22 @@ public sealed class CommandPaletteViewModelTests
 
         viewModel.Query = "window/panels/console";
 
-        var item = Assert.Single(viewModel.FilteredItems);
+        var item = Assert.Single(CommandRows(viewModel));
         Assert.Equal("Console", item.Title);
 
         viewModel.Query = "workbench.panel.scene";
 
-        item = Assert.Single(viewModel.FilteredItems);
+        item = Assert.Single(CommandRows(viewModel));
         Assert.Equal("Scene View", item.Title);
 
         viewModel.Query = "diagnostics";
 
-        item = Assert.Single(viewModel.FilteredItems);
+        item = Assert.Single(CommandRows(viewModel));
         Assert.Equal("Console", item.Title);
 
         viewModel.Query = "window";
 
-        Assert.Equal(["Scene View", "Console", "Disabled"], viewModel.FilteredItems.Select(command => command.Title));
+        Assert.Equal(["Scene View", "Console", "Disabled"], CommandRows(viewModel).Select(command => command.Title));
     }
 
     [Fact]
@@ -138,6 +143,29 @@ public sealed class CommandPaletteViewModelTests
         Assert.True(viewModel.IsOpen);
     }
 
+    [Fact]
+    public void Category_header_rows_are_not_executable()
+    {
+        string? executedCommandId = null;
+        var viewModel = CreatePalette(commandId =>
+        {
+            executedCommandId = commandId;
+            return WorkbenchCommandExecutionResult.Success(commandId);
+        });
+        viewModel.OpenCommand.Execute(null);
+        viewModel.SelectedItem = viewModel.FilteredItems.First(item => item.IsHeader);
+
+        viewModel.ExecuteSelectedCommand.Execute(null);
+
+        Assert.Null(executedCommandId);
+        Assert.True(viewModel.IsOpen);
+    }
+
+    private static IReadOnlyList<CommandPaletteItemViewModel> CommandRows(CommandPaletteViewModel viewModel)
+    {
+        return viewModel.FilteredItems.Where(item => item.IsCommand).ToArray();
+    }
+
     private static CommandPaletteViewModel CreatePalette(
         Func<string, WorkbenchCommandExecutionResult>? execute = null)
     {
@@ -168,6 +196,14 @@ public sealed class CommandPaletteViewModelTests
                     Category: "Window",
                     IsEnabled: false,
                     DisabledReason: "Disabled by test"),
+                new WorkbenchActionDescriptor(
+                    "workbench.commandPalette.open",
+                    "Command Palette",
+                    WorkbenchActionKind.OpenCommandPalette,
+                    "Tools/Command Palette",
+                    Category: "Tools",
+                    DefaultShortcut: "Ctrl+Shift+P",
+                    SearchText: "quick command launcher"),
             ],
             execute ?? (commandId => WorkbenchCommandExecutionResult.Success(commandId)));
     }

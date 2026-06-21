@@ -8,7 +8,7 @@ namespace Editor.Shell.ViewModels;
 
 public sealed class CommandPaletteViewModel : ViewModelBase
 {
-    private readonly IReadOnlyList<CommandPaletteItemViewModel> allItems_;
+    private readonly IReadOnlyList<CommandPaletteItemViewModel> allCommandItems_;
     private readonly Func<string, WorkbenchCommandExecutionResult> executeCommand_;
     private bool isOpen_;
     private string query_ = string.Empty;
@@ -24,10 +24,10 @@ public sealed class CommandPaletteViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(executeCommand);
 
         executeCommand_ = executeCommand;
-        allItems_ = actions.Select(action => new CommandPaletteItemViewModel(action)).ToArray();
-        filteredItems_ = allItems_;
-        selectedItem_ = filteredItems_.FirstOrDefault();
-        hasNoMatches_ = filteredItems_.Count == 0;
+        allCommandItems_ = actions.Select(action => new CommandPaletteItemViewModel(action)).ToArray();
+        filteredItems_ = CreateGroupedRows(allCommandItems_);
+        selectedItem_ = SelectFirstCommand(filteredItems_);
+        hasNoMatches_ = allCommandItems_.Count == 0;
 
         OpenCommand = new RelayCommand(Open);
         CloseCommand = new RelayCommand(Close);
@@ -80,7 +80,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
     {
         Query = string.Empty;
         RefreshFilteredItems();
-        SelectedItem = FilteredItems.FirstOrDefault();
+        SelectedItem = SelectFirstCommand(FilteredItems);
         IsOpen = true;
     }
 
@@ -91,7 +91,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
     private void ExecuteSelected()
     {
-        if (SelectedItem is null || !SelectedItem.IsEnabled)
+        if (SelectedItem is null || !SelectedItem.IsCommand || !SelectedItem.IsEnabled)
         {
             return;
         }
@@ -106,16 +106,43 @@ public sealed class CommandPaletteViewModel : ViewModelBase
     private void RefreshFilteredItems()
     {
         var query = query_.Trim();
-        var filtered = string.IsNullOrEmpty(query)
-            ? allItems_
-            : allItems_.Where(item => MatchesQuery(item, query)).ToArray();
+        var filteredCommands = string.IsNullOrEmpty(query)
+            ? allCommandItems_
+            : allCommandItems_.Where(item => MatchesQuery(item, query)).ToArray();
 
-        FilteredItems = filtered;
-        HasNoMatches = FilteredItems.Count == 0;
-        if (SelectedItem is null || !FilteredItems.Contains(SelectedItem))
+        FilteredItems = CreateGroupedRows(filteredCommands);
+        HasNoMatches = filteredCommands.Count == 0;
+        if (SelectedItem is null
+            || !SelectedItem.IsCommand
+            || !FilteredItems.Contains(SelectedItem))
         {
-            SelectedItem = FilteredItems.FirstOrDefault();
+            SelectedItem = SelectFirstCommand(FilteredItems);
         }
+    }
+
+    private static IReadOnlyList<CommandPaletteItemViewModel> CreateGroupedRows(
+        IReadOnlyList<CommandPaletteItemViewModel> commandItems)
+    {
+        var rows = new List<CommandPaletteItemViewModel>();
+        var categories = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in commandItems)
+        {
+            if (categories.Add(item.Category))
+            {
+                rows.Add(CommandPaletteItemViewModel.CreateHeader(item.Category));
+            }
+
+            rows.Add(item);
+        }
+
+        return rows;
+    }
+
+    private static CommandPaletteItemViewModel? SelectFirstCommand(
+        IReadOnlyList<CommandPaletteItemViewModel> items)
+    {
+        return items.FirstOrDefault(item => item.IsCommand && item.IsEnabled)
+            ?? items.FirstOrDefault(item => item.IsCommand);
     }
 
     private static bool MatchesQuery(CommandPaletteItemViewModel item, string query)
