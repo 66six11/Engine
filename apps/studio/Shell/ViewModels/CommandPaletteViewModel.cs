@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using CommunityToolkit.Mvvm.Input;
@@ -8,13 +8,17 @@ namespace Editor.Shell.ViewModels;
 
 public sealed class CommandPaletteViewModel : ViewModelBase
 {
+    private const int MaxRecentCommands = 5;
+
     private readonly IReadOnlyList<CommandPaletteItemViewModel> allCommandItems_;
     private readonly Func<string, WorkbenchCommandExecutionResult> executeCommand_;
+    private readonly List<string> recentCommandIds_ = [];
     private bool isOpen_;
     private string query_ = string.Empty;
     private IReadOnlyList<CommandPaletteItemViewModel> filteredItems_;
     private CommandPaletteItemViewModel? selectedItem_;
     private bool hasNoMatches_;
+    private string lastResultMessage_ = string.Empty;
 
     public CommandPaletteViewModel(
         IReadOnlyList<WorkbenchActionDescriptor> actions,
@@ -25,7 +29,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
         executeCommand_ = executeCommand;
         allCommandItems_ = actions.Select(action => new CommandPaletteItemViewModel(action)).ToArray();
-        filteredItems_ = CreateGroupedRows(allCommandItems_, allCommandItems_);
+        filteredItems_ = CreateDisplayRows(allCommandItems_, includeRecent: true);
         selectedItem_ = SelectFirstCommand(filteredItems_);
         hasNoMatches_ = allCommandItems_.Count == 0;
 
@@ -70,6 +74,20 @@ public sealed class CommandPaletteViewModel : ViewModelBase
         private set => SetProperty(ref hasNoMatches_, value);
     }
 
+    public string LastResultMessage
+    {
+        get => lastResultMessage_;
+        private set
+        {
+            if (SetProperty(ref lastResultMessage_, value))
+            {
+                OnPropertyChanged(nameof(HasLastResultMessage));
+            }
+        }
+    }
+
+    public bool HasLastResultMessage => !string.IsNullOrWhiteSpace(LastResultMessage);
+
     public IRelayCommand OpenCommand { get; }
 
     public IRelayCommand CloseCommand { get; }
@@ -99,8 +117,13 @@ public sealed class CommandPaletteViewModel : ViewModelBase
         var result = executeCommand_(SelectedItem.Id);
         if (result.Succeeded)
         {
+            RecordRecentCommand(SelectedItem.Id);
+            LastResultMessage = string.Empty;
             Close();
+            return;
         }
+
+        LastResultMessage = result.Message ?? $"Command '{SelectedItem.Id}' did not complete.";
     }
 
     private void RefreshFilteredItems()
@@ -110,7 +133,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
             ? allCommandItems_
             : allCommandItems_.Where(item => MatchesQuery(item, query)).ToArray();
 
-        FilteredItems = CreateGroupedRows(allCommandItems_, filteredCommands);
+        FilteredItems = CreateDisplayRows(filteredCommands, string.IsNullOrEmpty(query));
         HasNoMatches = filteredCommands.Count == 0;
         if (SelectedItem is null
             || !SelectedItem.IsCommand
@@ -118,6 +141,45 @@ public sealed class CommandPaletteViewModel : ViewModelBase
         {
             SelectedItem = SelectFirstCommand(FilteredItems);
         }
+    }
+
+    private void RecordRecentCommand(string commandId)
+    {
+        recentCommandIds_.Remove(commandId);
+        recentCommandIds_.Insert(0, commandId);
+        if (recentCommandIds_.Count > MaxRecentCommands)
+        {
+            recentCommandIds_.RemoveRange(MaxRecentCommands, recentCommandIds_.Count - MaxRecentCommands);
+        }
+    }
+
+    private IReadOnlyList<CommandPaletteItemViewModel> CreateDisplayRows(
+        IReadOnlyList<CommandPaletteItemViewModel> filteredCommands,
+        bool includeRecent)
+    {
+        if (!includeRecent || recentCommandIds_.Count == 0)
+        {
+            return CreateGroupedRows(allCommandItems_, filteredCommands);
+        }
+
+        var rows = new List<CommandPaletteItemViewModel>();
+        var recentItems = recentCommandIds_
+            .Select(commandId => allCommandItems_.FirstOrDefault(item => item.Id == commandId))
+            .Where(item => item is not null)
+            .Cast<CommandPaletteItemViewModel>()
+            .ToArray();
+        if (recentItems.Length > 0)
+        {
+            rows.Add(CommandPaletteItemViewModel.CreateHeader("Recent"));
+            rows.AddRange(recentItems);
+        }
+
+        var recentIds = new HashSet<string>(recentItems.Select(item => item.Id), StringComparer.Ordinal);
+        var visibleNonRecentCommands = filteredCommands
+            .Where(item => !recentIds.Contains(item.Id))
+            .ToArray();
+        rows.AddRange(CreateGroupedRows(allCommandItems_, visibleNonRecentCommands));
+        return rows;
     }
 
     private static IReadOnlyList<CommandPaletteItemViewModel> CreateGroupedRows(

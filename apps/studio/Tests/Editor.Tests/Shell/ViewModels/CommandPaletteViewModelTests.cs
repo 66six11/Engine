@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Models;
@@ -112,6 +112,67 @@ public sealed class CommandPaletteViewModelTests
 
         Assert.Equal("workbench.panel.console", executedCommandId);
         Assert.False(viewModel.IsOpen);
+    }
+
+    [Fact]
+    public void Successful_execution_records_recent_command_and_clears_result_message()
+    {
+        var viewModel = CreatePalette();
+        viewModel.OpenCommand.Execute(null);
+        viewModel.Query = "console";
+
+        viewModel.ExecuteSelectedCommand.Execute(null);
+        viewModel.OpenCommand.Execute(null);
+
+        Assert.False(viewModel.HasLastResultMessage);
+        Assert.Equal(
+            ["Recent", "Console", "Window", "Scene View", "Disabled", "Tools", "Command Palette"],
+            viewModel.FilteredItems.Select(item => item.Title));
+        Assert.Equal("Console", viewModel.SelectedItem?.Title);
+    }
+
+    [Fact]
+    public void Recent_promotion_is_disabled_while_query_is_active()
+    {
+        var viewModel = CreatePalette();
+        viewModel.OpenCommand.Execute(null);
+        viewModel.Query = "console";
+        viewModel.ExecuteSelectedCommand.Execute(null);
+        viewModel.OpenCommand.Execute(null);
+
+        viewModel.Query = "window";
+
+        Assert.DoesNotContain(viewModel.FilteredItems, item => item.IsHeader && item.Title == "Recent");
+        Assert.Equal(["Scene View", "Console", "Disabled"], CommandRows(viewModel).Select(item => item.Title));
+    }
+
+    [Fact]
+    public void Failed_execution_keeps_palette_open_and_publishes_result_message()
+    {
+        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "Failed by test"));
+        viewModel.OpenCommand.Execute(null);
+        viewModel.Query = "console";
+
+        viewModel.ExecuteSelectedCommand.Execute(null);
+
+        Assert.True(viewModel.IsOpen);
+        Assert.True(viewModel.HasLastResultMessage);
+        Assert.Equal("Failed by test", viewModel.LastResultMessage);
+        Assert.DoesNotContain(viewModel.FilteredItems, item => item.IsHeader && item.Title == "Recent");
+    }
+
+    [Fact]
+    public void Not_found_execution_keeps_palette_open_and_publishes_result_message()
+    {
+        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.NotFound(commandId));
+        viewModel.OpenCommand.Execute(null);
+        viewModel.Query = "console";
+
+        viewModel.ExecuteSelectedCommand.Execute(null);
+
+        Assert.True(viewModel.IsOpen);
+        Assert.True(viewModel.HasLastResultMessage);
+        Assert.Contains("is not registered", viewModel.LastResultMessage, StringComparison.Ordinal);
     }
 
     [Fact]
