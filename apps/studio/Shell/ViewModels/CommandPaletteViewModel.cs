@@ -124,15 +124,24 @@ public sealed class CommandPaletteViewModel : ViewModelBase
         IReadOnlyList<CommandPaletteItemViewModel> commandItems)
     {
         var rows = new List<CommandPaletteItemViewModel>();
-        var categories = new HashSet<string>(StringComparer.Ordinal);
+        var categoryOrder = new List<string>();
+        var commandsByCategory = new Dictionary<string, List<CommandPaletteItemViewModel>>(StringComparer.Ordinal);
         foreach (var item in commandItems)
         {
-            if (categories.Add(item.Category))
+            if (!commandsByCategory.TryGetValue(item.Category, out var categoryCommands))
             {
-                rows.Add(CommandPaletteItemViewModel.CreateHeader(item.Category));
+                categoryCommands = [];
+                commandsByCategory.Add(item.Category, categoryCommands);
+                categoryOrder.Add(item.Category);
             }
 
-            rows.Add(item);
+            categoryCommands.Add(item);
+        }
+
+        foreach (var category in categoryOrder)
+        {
+            rows.Add(CommandPaletteItemViewModel.CreateHeader(category));
+            rows.AddRange(commandsByCategory[category]);
         }
 
         return rows;
