@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Core.Services;
 using Xunit;
@@ -22,9 +23,9 @@ public sealed class SceneSnapshotProviderTests
                 new SceneObjectPropertySnapshot("triangles", "Triangles", "12", SceneObjectPropertyValueKind.Count),
             ]);
         var snapshot = new SceneSnapshot("scene:test", "Test Scene", 7, [cube]);
-        var provider = new InMemorySceneSnapshotProvider(snapshot);
+        ISceneSnapshotProvider provider = new InMemorySceneSnapshotProvider(snapshot);
 
-        Assert.Same(snapshot, provider.Current);
+        Assert.Same(snapshot, provider.GetCurrentSnapshot());
         Assert.True(provider.TryGetObject("scene:test/cube", out var actual));
         Assert.Same(cube, actual);
         Assert.False(provider.TryGetObject("scene:test/missing", out var missing));
@@ -54,7 +55,7 @@ public sealed class SceneSnapshotProviderTests
 
         provider.ReplaceSnapshot(next);
 
-        Assert.Equal("Runtime Snapshot", provider.Current.DisplayName);
+        Assert.Equal("Runtime Snapshot", provider.GetCurrentSnapshot().DisplayName);
     }
 
     [Fact]
@@ -104,7 +105,7 @@ public sealed class SceneSnapshotProviderTests
             () => provider.ReplaceSnapshot(snapshot));
 
         Assert.Contains("scene:test/cube", exception.Message, StringComparison.Ordinal);
-        Assert.Same(SceneSnapshot.Empty, provider.Current);
+        Assert.Same(SceneSnapshot.Empty, provider.GetCurrentSnapshot());
     }
 
     [Fact]

@@ -20,7 +20,10 @@ public sealed class InMemorySceneSnapshotProvider : ISceneSnapshotProvider
 
     public event EventHandler? SnapshotChanged;
 
-    public SceneSnapshot Current => current_;
+    public SceneSnapshot GetCurrentSnapshot()
+    {
+        return current_;
+    }
 
     public void ReplaceSnapshot(SceneSnapshot snapshot)
     {

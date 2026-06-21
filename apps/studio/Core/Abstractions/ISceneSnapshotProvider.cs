@@ -7,7 +7,7 @@ public interface ISceneSnapshotProvider
 {
     event EventHandler? SnapshotChanged;
 
-    SceneSnapshot Current { get; }
+    SceneSnapshot GetCurrentSnapshot();
 
     bool TryGetObject(string objectId, out SceneObjectSnapshot? sceneObject);
 }

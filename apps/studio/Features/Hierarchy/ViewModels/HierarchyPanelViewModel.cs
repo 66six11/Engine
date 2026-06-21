@@ -38,7 +38,7 @@ public sealed class HierarchyPanelViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
 
         selectionService_ = selectionService;
-        SceneSnapshot = sceneSnapshotProvider.Current;
+        SceneSnapshot = sceneSnapshotProvider.GetCurrentSnapshot();
         Nodes = SceneSnapshot.Objects
             .Select(HierarchyNodeModel.FromSceneObject)
             .ToArray();
