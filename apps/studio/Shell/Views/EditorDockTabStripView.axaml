@@ -18,10 +18,16 @@
 
         <Style Selector="Border.owned-dock-tab-overflow-affordance">
             <Setter Property="Width" Value="14" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceOverlay}" />
-            <Setter Property="Opacity" Value="0.72" />
-            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="IsHitTestVisible" Value="True" />
             <Setter Property="IsVisible" Value="False" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab-overflow-accent">
+            <Setter Property="Width" Value="2" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushAccent}" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="IsHitTestVisible" Value="False" />
         </Style>
     </UserControl.Styles>
 
@@ -50,9 +56,15 @@
 
         <Border x:Name="LeftOverflowAffordance"
                 Classes="owned-dock-tab-overflow-affordance"
-                HorizontalAlignment="Left" />
+                HorizontalAlignment="Left">
+            <Border Classes="owned-dock-tab-overflow-accent"
+                    HorizontalAlignment="Left" />
+        </Border>
         <Border x:Name="RightOverflowAffordance"
                 Classes="owned-dock-tab-overflow-affordance"
-                HorizontalAlignment="Right" />
+                HorizontalAlignment="Right">
+            <Border Classes="owned-dock-tab-overflow-accent"
+                    HorizontalAlignment="Right" />
+        </Border>
     </Grid>
 </UserControl>
