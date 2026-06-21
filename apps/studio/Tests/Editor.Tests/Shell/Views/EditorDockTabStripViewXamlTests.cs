@@ -65,7 +65,25 @@ public sealed class EditorDockTabStripViewXamlTests
 
     private static string FindRepositoryRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var workspaceRoot = Environment.GetEnvironmentVariable("CODEX_WORKSPACE_ROOT");
+        if (!string.IsNullOrWhiteSpace(workspaceRoot)
+            && File.Exists(Path.Combine(workspaceRoot, "Editor.sln")))
+        {
+            return workspaceRoot;
+        }
+
+        var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Editor.sln")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
             if (File.Exists(Path.Combine(directory.FullName, "Editor.sln")))
