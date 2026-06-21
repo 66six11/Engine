@@ -90,6 +90,18 @@ public sealed class EditorDockTabStripScrollControllerTests
     }
 
     [Fact]
+    public void CalculateAutoScrollOffset_prefers_nearest_edge_when_edge_zones_overlap()
+    {
+        var offset = EditorDockTabStripScrollController.CalculateAutoScrollOffset(
+            pointerX: 20,
+            currentOffset: 100,
+            extentWidth: 600,
+            viewportWidth: 30);
+
+        Assert.Equal(148, offset);
+    }
+
+    [Fact]
     public void CalculateContentOriginX_offsets_viewport_origin_by_scroll_offset()
     {
         Assert.Equal(

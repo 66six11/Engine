@@ -77,12 +77,23 @@ internal static class EditorDockTabStripScrollController
             return normalizedOffset;
         }
 
-        if (pointerX <= normalizedZone)
+        var isInLeftZone = pointerX <= normalizedZone;
+        var isInRightZone = pointerX >= viewportWidth - normalizedZone;
+        if (isInLeftZone && isInRightZone)
+        {
+            var distanceToLeftEdge = pointerX;
+            var distanceToRightEdge = viewportWidth - pointerX;
+            return distanceToLeftEdge <= distanceToRightEdge
+                ? ClampOffset(normalizedOffset - normalizedStep, extentWidth, viewportWidth)
+                : ClampOffset(normalizedOffset + normalizedStep, extentWidth, viewportWidth);
+        }
+
+        if (isInLeftZone)
         {
             return ClampOffset(normalizedOffset - normalizedStep, extentWidth, viewportWidth);
         }
 
-        if (pointerX >= viewportWidth - normalizedZone)
+        if (isInRightZone)
         {
             return ClampOffset(normalizedOffset + normalizedStep, extentWidth, viewportWidth);
         }
