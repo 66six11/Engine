@@ -34,7 +34,8 @@ public partial class EditorDockTabStripView : UserControl
     internal bool TryGetContentOrigin(Visual relativeTo, out Point origin)
     {
         var viewportOrigin = DockTabStripScrollViewer.TranslatePoint(new Point(0, 0), relativeTo);
-        if (viewportOrigin is null)
+        var contentOrigin = DockTabStripItems.TranslatePoint(new Point(0, 0), relativeTo);
+        if (viewportOrigin is null || contentOrigin is null)
         {
             origin = default;
             return false;
@@ -44,14 +45,20 @@ public partial class EditorDockTabStripView : UserControl
             EditorDockTabStripScrollController.CalculateContentOriginX(
                 viewportOrigin.Value.X,
                 HorizontalOffset),
-            viewportOrigin.Value.Y);
+            contentOrigin.Value.Y);
         return true;
     }
 
-    internal bool AutoScrollNearHorizontalEdge(double pointerX)
+    internal bool AutoScrollNearHorizontalEdge(Point pointer, Visual relativeTo)
     {
+        var viewportPointer = relativeTo.TranslatePoint(pointer, DockTabStripScrollViewer);
+        if (viewportPointer is null)
+        {
+            return false;
+        }
+
         var nextOffset = EditorDockTabStripScrollController.CalculateAutoScrollOffset(
-            pointerX,
+            viewportPointer.Value.X,
             HorizontalOffset,
             ExtentWidth,
             ViewportWidth);
@@ -243,10 +250,17 @@ public partial class EditorDockTabStripView : UserControl
             .Subscribe(new ActionObserver<Vector>(_ => UpdateOverflowAffordances())));
         scrollSubscriptions_.Add(DockTabStripScrollViewer
             .GetObservable(ScrollViewer.ExtentProperty)
-            .Subscribe(new ActionObserver<Size>(_ => UpdateOverflowAffordances())));
+            .Subscribe(new ActionObserver<Size>(_ => OnScrollGeometryChanged())));
         scrollSubscriptions_.Add(DockTabStripScrollViewer
             .GetObservable(ScrollViewer.ViewportProperty)
-            .Subscribe(new ActionObserver<Size>(_ => UpdateOverflowAffordances())));
+            .Subscribe(new ActionObserver<Size>(_ => OnScrollGeometryChanged())));
+    }
+
+    private void OnScrollGeometryChanged()
+    {
+        BringActiveTabIntoView();
+        QueueLayoutRefresh();
+        UpdateOverflowAffordances();
     }
 
     private void DetachScrollSubscriptions()

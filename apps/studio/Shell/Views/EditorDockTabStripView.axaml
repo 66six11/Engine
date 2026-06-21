@@ -25,7 +25,8 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid ClipToBounds="True">
+    <Grid ClipToBounds="True"
+          IsVisible="{Binding HasTabs}">
         <ScrollViewer x:Name="DockTabStripScrollViewer"
                       Classes="owned-dock-tab-scroll-host"
                       HorizontalScrollBarVisibility="Hidden"
