@@ -238,6 +238,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
             || item.Detail.Contains(query, StringComparison.OrdinalIgnoreCase)
             || item.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
             || item.Category.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || item.DefaultShortcut.Contains(query, StringComparison.OrdinalIgnoreCase)
             || item.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 }

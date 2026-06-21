@@ -84,6 +84,18 @@ public sealed class CommandPaletteViewModelTests
     }
 
     [Fact]
+    public void Query_filters_by_default_shortcut()
+    {
+        var viewModel = CreatePalette();
+        viewModel.OpenCommand.Execute(null);
+
+        viewModel.Query = "ctrl+shift+p";
+
+        var item = Assert.Single(CommandRows(viewModel));
+        Assert.Equal("Command Palette", item.Title);
+    }
+
+    [Fact]
     public void Query_reports_no_matches()
     {
         var viewModel = CreatePalette();
