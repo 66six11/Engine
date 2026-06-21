@@ -29,14 +29,38 @@ public sealed class EditorDockTabStripViewXamlTests
         Assert.Contains("EditorBrushAccent", xaml);
     }
 
+    [Fact]
+    public void Tab_strip_exposes_visible_viewport_bounds_for_hit_testing()
+    {
+        var source = LoadSource("Shell", "Views", "EditorDockTabStripView.axaml.cs");
+
+        Assert.Contains("internal bool TryGetViewportBounds(Visual relativeTo, out Rect bounds)", source);
+        Assert.Contains("DockTabStripScrollViewer.TranslatePoint(new Point(0, 0), relativeTo)", source);
+        Assert.Contains("new Rect(origin.Value, DockTabStripScrollViewer.Bounds.Size)", source);
+    }
+
+    [Fact]
+    public void Workspace_uses_visible_tab_strip_viewport_for_tab_well_bounds()
+    {
+        var source = LoadSource("Shell", "Views", "EditorDockWorkspaceView.axaml.cs");
+
+        Assert.Contains("tabStrip.TryGetViewportBounds(DockRoot, out var viewportBounds)", source);
+        Assert.Contains("return viewportBounds;", source);
+        Assert.Contains("GetTabContentOriginX(host, tabWellBounds.X)", source);
+    }
+
     private static string LoadTabStripXaml()
     {
+        return LoadSource("Shell", "Views", "EditorDockTabStripView.axaml");
+    }
+
+    private static string LoadSource(params string[] pathParts)
+    {
         var root = FindRepositoryRoot();
-        return File.ReadAllText(Path.Combine(
-            root,
-            "Shell",
-            "Views",
-            "EditorDockTabStripView.axaml"));
+        var fullPathParts = new string[pathParts.Length + 1];
+        fullPathParts[0] = root;
+        Array.Copy(pathParts, 0, fullPathParts, 1, pathParts.Length);
+        return File.ReadAllText(Path.Combine(fullPathParts));
     }
 
     private static string FindRepositoryRoot()

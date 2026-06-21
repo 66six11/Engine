@@ -49,6 +49,21 @@ public partial class EditorDockTabStripView : UserControl
         return true;
     }
 
+    internal bool TryGetViewportBounds(Visual relativeTo, out Rect bounds)
+    {
+        var origin = DockTabStripScrollViewer.TranslatePoint(new Point(0, 0), relativeTo);
+        if (origin is null
+            || DockTabStripScrollViewer.Bounds.Width <= 0
+            || DockTabStripScrollViewer.Bounds.Height <= 0)
+        {
+            bounds = default;
+            return false;
+        }
+
+        bounds = new Rect(origin.Value, DockTabStripScrollViewer.Bounds.Size);
+        return true;
+    }
+
     internal bool AutoScrollNearHorizontalEdge(Point pointer, Visual relativeTo)
     {
         var viewportPointer = relativeTo.TranslatePoint(pointer, DockTabStripScrollViewer);

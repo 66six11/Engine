@@ -309,7 +309,7 @@ public partial class EditorDockWorkspaceView : UserControl
 
             var bounds = GetHostBounds(host);
             var tabWellBounds = GetTabWellBounds(host);
-            var tabContentOriginX = GetTabContentOriginX(host);
+            var tabContentOriginX = GetTabContentOriginX(host, tabWellBounds.X);
             if (bounds.Width <= 0 || bounds.Height <= 0)
             {
                 continue;
@@ -695,16 +695,22 @@ public partial class EditorDockWorkspaceView : UserControl
 
     private Rect GetTabWellBounds(EditorDockWindowView host)
     {
+        var tabStrip = FindTabStripHost(host);
+        if (tabStrip is not null && tabStrip.TryGetViewportBounds(DockRoot, out var viewportBounds))
+        {
+            return viewportBounds;
+        }
+
         var tabWell = FindTabWellHost(host, "owned-dock-tab-well");
         return tabWell is null ? GetHostBounds(host) : GetHostBounds(tabWell);
     }
 
-    private double GetTabContentOriginX(EditorDockWindowView host)
+    private double GetTabContentOriginX(EditorDockWindowView host, double fallbackX)
     {
         var tabStrip = FindTabStripHost(host);
         return tabStrip is not null && tabStrip.TryGetContentOrigin(DockRoot, out var origin)
             ? origin.X
-            : GetTabWellBounds(host).X;
+            : fallbackX;
     }
 
     private IReadOnlyList<EditorDockTabBounds> GetTabBounds(
