@@ -195,6 +195,44 @@ public sealed class CommandPaletteViewModelTests
             viewModel.FilteredItems.Select(item => item.Title));
     }
 
+    [Fact]
+    public void Filtered_non_contiguous_categories_keep_registered_category_order()
+    {
+        var viewModel = new CommandPaletteViewModel(
+            [
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.scene-view",
+                    "Scene View",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Scene View",
+                    TargetId: "scene-view",
+                    Category: "Window"),
+                new WorkbenchActionDescriptor(
+                    "workbench.commandPalette.open",
+                    "Command Palette",
+                    WorkbenchActionKind.OpenCommandPalette,
+                    "Tools/Command Palette",
+                    Category: "Tools",
+                    SearchText: "palette-filter"),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.console",
+                    "Console",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Console",
+                    TargetId: "console",
+                    Category: "Window",
+                    SearchText: "palette-filter"),
+            ],
+            commandId => WorkbenchCommandExecutionResult.Success(commandId));
+        viewModel.OpenCommand.Execute(null);
+
+        viewModel.Query = "palette-filter";
+
+        Assert.Equal(
+            ["Window", "Console", "Tools", "Command Palette"],
+            viewModel.FilteredItems.Select(item => item.Title));
+    }
+
     private static IReadOnlyList<CommandPaletteItemViewModel> CommandRows(CommandPaletteViewModel viewModel)
     {
         return viewModel.FilteredItems.Where(item => item.IsCommand).ToArray();

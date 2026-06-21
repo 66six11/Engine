@@ -25,7 +25,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
         executeCommand_ = executeCommand;
         allCommandItems_ = actions.Select(action => new CommandPaletteItemViewModel(action)).ToArray();
-        filteredItems_ = CreateGroupedRows(allCommandItems_);
+        filteredItems_ = CreateGroupedRows(allCommandItems_, allCommandItems_);
         selectedItem_ = SelectFirstCommand(filteredItems_);
         hasNoMatches_ = allCommandItems_.Count == 0;
 
@@ -110,7 +110,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
             ? allCommandItems_
             : allCommandItems_.Where(item => MatchesQuery(item, query)).ToArray();
 
-        FilteredItems = CreateGroupedRows(filteredCommands);
+        FilteredItems = CreateGroupedRows(allCommandItems_, filteredCommands);
         HasNoMatches = filteredCommands.Count == 0;
         if (SelectedItem is null
             || !SelectedItem.IsCommand
@@ -121,18 +121,27 @@ public sealed class CommandPaletteViewModel : ViewModelBase
     }
 
     private static IReadOnlyList<CommandPaletteItemViewModel> CreateGroupedRows(
-        IReadOnlyList<CommandPaletteItemViewModel> commandItems)
+        IReadOnlyList<CommandPaletteItemViewModel> registeredCommandItems,
+        IReadOnlyList<CommandPaletteItemViewModel> visibleCommandItems)
     {
         var rows = new List<CommandPaletteItemViewModel>();
         var categoryOrder = new List<string>();
+        var categories = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in registeredCommandItems)
+        {
+            if (categories.Add(item.Category))
+            {
+                categoryOrder.Add(item.Category);
+            }
+        }
+
         var commandsByCategory = new Dictionary<string, List<CommandPaletteItemViewModel>>(StringComparer.Ordinal);
-        foreach (var item in commandItems)
+        foreach (var item in visibleCommandItems)
         {
             if (!commandsByCategory.TryGetValue(item.Category, out var categoryCommands))
             {
                 categoryCommands = [];
                 commandsByCategory.Add(item.Category, categoryCommands);
-                categoryOrder.Add(item.Category);
             }
 
             categoryCommands.Add(item);
@@ -140,8 +149,13 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
         foreach (var category in categoryOrder)
         {
+            if (!commandsByCategory.TryGetValue(category, out var categoryCommands))
+            {
+                continue;
+            }
+
             rows.Add(CommandPaletteItemViewModel.CreateHeader(category));
-            rows.AddRange(commandsByCategory[category]);
+            rows.AddRange(categoryCommands);
         }
 
         return rows;
