@@ -1,7 +1,7 @@
 # Studio 编辑器 UI 平台规范
 
 状态：当前阶段执行规范
-更新日期：2026-06-21
+更新日期：2026-06-22
 
 本文定义 `apps/studio` 当前阶段的编辑器 UI 平台边界。目标是先把弹窗、后台加载反馈、快捷键、命令菜单、状态反馈和设计时预览做成稳定基础，再继续 Scene、Play Session、native bridge 或插件热更新。
 
@@ -26,14 +26,14 @@
 当前不建议急着做完整 Scene authoring，也不建议现在开始 C++ ABI 或插件热更新。下一阶段应继续推进 UI 平台层：
 
 ```text
-Dialog -> Command result feedback -> Background Tasks panel -> Shortcut/Command settings -> Diagnostics/Problems route
+Command result feedback -> Background Tasks panel -> Diagnostics/Problems route -> Shortcut/Command settings
 ```
 
 理由：
 
-1. Scene 底层、事务、schema、Edit World / Play World 和 native bridge 还没有足够稳定的写入合同。
-2. 已有 `PanelDescriptor`、`WorkbenchActionDescriptor`、`WorkbenchCommandRouter`、`WorkbenchShortcutRouter`、`EditorDialogHostViewModel` 和 `IEditorBackgroundTaskService`，这些才是当前真实可扩展面。
-3. 弹窗、后台任务、命令反馈、快捷键和 design preview 是后续 asset import、scene snapshot load、validation、play session 和 plugin diagnostics 都会复用的基础设施。
+1. Scene 底层、schema、Edit World / Play World 和 native bridge 还没有足够稳定的写入合同。
+2. 已有 `PanelDescriptor`、`WorkbenchActionDescriptor`、`WorkbenchCommandRouter`、`WorkbenchShortcutRouter`、`EditorDialogHostViewModel`、`IEditorBackgroundTaskService`、`IEditorTransactionService` 和 `IEditorLifecycleEventService`，这些才是当前真实可扩展面。
+3. 弹窗、后台任务、命令反馈、事务诊断、生命周期事件、快捷键和 design preview 是后续 asset import、scene snapshot load、validation、play session 和 plugin diagnostics 都会复用的基础设施。
 
 ## 2. 当前事实
 
@@ -49,6 +49,9 @@ Dialog -> Command result feedback -> Background Tasks panel -> Shortcut/Command 
 | 命令面板 | `CommandPaletteViewModel`, `CommandPaletteView` | Current |
 | Modal dialog | `EditorDialogRequest`, `EditorDialogHostViewModel`, `EditorDialogHostView` | Current |
 | 后台任务状态 | `IEditorBackgroundTaskService`, `EditorBackgroundTaskService` | Current |
+| 事务服务 v0 | `IEditorTransactionService`, `EditorTransactionService` | Current / UI-neutral |
+| 生命周期事件 v0 | `IEditorLifecycleEventService`, `EditorLifecycleEventService` | Current / Shell window lifecycle only |
+| Dock tab overflow v0 | `EditorDockTabStripScrollController`, `EditorDockTabStripView` | Current / view-only scroll state |
 | 状态栏反馈 | `ActivityIndicator`, `MainWindowViewModel` summary properties | Partial |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
 | 只读 Scene snapshot | `ISceneSnapshotProvider`, `InMemorySceneSnapshotProvider` | Current / read-only |
@@ -60,8 +63,10 @@ Dialog -> Command result feedback -> Background Tasks panel -> Shortcut/Command 
 | 完整快捷键管理窗口 | Planned；先保留 action descriptor 和 shortcut router，不做用户配置 UI |
 | Toast / non-modal notification | Planned；先使用 command result 和 background task diagnostics 设计，不急着实现 |
 | Background Tasks 窗口 | Planned；下一阶段推荐切片 |
-| Writable Inspector | Deferred；等 transaction、dirty state、schema metadata 和 undo/redo gate |
-| Scene authoring / hierarchy mutation | Deferred；等 native/scene bridge 和 transaction gate |
+| Advanced tab strategy | Planned；多行 tab、隐藏 tab 菜单、pin/preview tab 另起切片 |
+| Writable Inspector | Deferred；等 schema metadata、真实 provider、dirty-state UI 和写回 gate |
+| Scene authoring / hierarchy mutation | Deferred；等 native/scene bridge 和 edit/apply contract |
+| Feature/provider/plugin lifecycle | Deferred；当前 lifecycle events 只覆盖 Shell window 生命周期 |
 | Play Session | Deferred；等 Edit World / Play World copy 或 load 语义 |
 | Managed plugin hot reload | Deferred；等 contribution registry、diagnostics、ALC unload negative smoke |
 | Native C ABI | Deferred；等 CPU-only bridge consumer 和 ABI checklist |
@@ -158,8 +163,8 @@ Services 必须先说明 owner、生命周期、线程边界和错误路径。
 
 | 类型 | 当前或未来落点 | 规则 |
 | --- | --- | --- |
-| Core abstraction | `IEditorBackgroundTaskService`、`IPanelRegistry`、`IEditorSelectionService` | 只描述合同，不依赖 Avalonia 控件。 |
-| Shell service | `EditorBackgroundTaskService`、`PanelCommandService`、`AvaloniaEditorUiDispatcher` | 负责 Shell 编排和 UI host 适配。 |
+| Core abstraction | `IEditorBackgroundTaskService`、`IEditorTransactionService`、`IEditorLifecycleEventService`、`IPanelRegistry`、`IEditorSelectionService` | 只描述合同，不依赖 Avalonia 控件。 |
+| Shell service | `EditorBackgroundTaskService`、`EditorTransactionService`、`EditorLifecycleEventService`、`PanelCommandService`、`AvaloniaEditorUiDispatcher` | 负责 Shell 编排和 UI host 适配。 |
 | Future Infrastructure service | project settings、filesystem、layout persistence、native bridge adapter | 实现 Core 合同，不承载 Feature View。 |
 
 不要把宽泛 `EditorContext` 或 service locator 作为平台合同。需要新 service 时先写出真实 consumer，不为未来 plugin 预留空壳。
@@ -201,6 +206,7 @@ DI composition root
 Explicit view resolution / compiled binding audit
 Shortcut conflict model
 Command catalog grouping
+Lifecycle event diagnostics projection
 Design preview coverage
 ```
 
@@ -391,6 +397,8 @@ WorkbenchActionDescriptor
 WorkbenchCommandExecutionResult
 EditorDialogRequest / EditorDialogResult
 EditorBackgroundTaskSnapshot
+EditorTransactionServiceSnapshot
+EditorLifecycleEventSnapshot
 Status feedback record
 Diagnostic record
 Design preview convention
@@ -404,7 +412,8 @@ Generic property grid ABI
 Script-authored window
 Runtime-loaded XAML as extension ABI
 Native viewport host API
-Full command/undo transaction bridge
+Engine-backed command/undo transaction bridge
+Feature/provider/plugin lifecycle bus
 ```
 
 类似 Unity 的 panel / window / menu / command / dialog / status overlay 可以按下表收敛：
@@ -416,6 +425,7 @@ Full command/undo transaction bridge
 | Menu | `WorkbenchActionDescriptor.MenuPath` 投影 | 每个 View 自己创建业务菜单入口。 |
 | Command | command id -> router -> executor -> result | 绕过 command result 的直接方法调用，或隐藏 transaction 入口。 |
 | Dialog | data-only request/result | Feature 直接创建 modal Window 或在 dialog 中执行业务。 |
+| Lifecycle | Shell window lifecycle snapshot | 把 feature unload、provider reload、Play Session 或 native runtime lifecycle 混入 v0。 |
 | Status overlay | task snapshot / command result / diagnostic record | 一次性做完整 notification center 或 project dashboard。 |
 
 状态反馈的当前边界：
@@ -443,6 +453,7 @@ Built-in feature modules register panels/actions.
 Trusted Shell services orchestrate dialogs, commands, shortcuts and background feedback.
 Design-time mock data improves XAML preview.
 Read-only scene snapshot provider feeds Hierarchy / Inspector.
+Shell-owned lifecycle events record main/floating window activity.
 ```
 
 当前只做占位：
@@ -531,35 +542,41 @@ UI-sensitive 改动还需要手工或截图确认：
 
 ## 13. 推荐下一阶段切片
 
-按稳定性排序：
+按稳定性和当前缺口排序：
 
-1. `[Slice] Studio: DI composition root`
+1. `[Slice] Studio: command result feedback surface`
+   - 把 `WorkbenchCommandExecutionResult` 显示到状态栏/轻量反馈。
+   - 失败进入 Problems/Console 的设计先写 UI-level contract，不急着做完整面板。
+   - 不做 toast 动画系统，不做 notification center。
+
+2. `[Slice] Studio: background tasks panel`
+   - 新增后台任务面板，消费 `IEditorBackgroundTaskService` snapshots。
+   - 状态栏入口打开或聚焦面板。
+   - 不实现真实 asset import、shader compile 或 native load。
+
+3. `[Slice] Studio: diagnostic feedback route`
+   - 将 command/background/dialog 失败统一成 diagnostics records。
+   - Console/Problems 先接 UI-level diagnostics，不接 native engine。
+
+4. `[Slice] Studio: lifecycle event diagnostics projection`
+   - 将 `IEditorLifecycleEventService` 的 Shell window lifecycle snapshots 显示为只读 diagnostics/debug route。
+   - 不扩展到 feature unload、provider reload、Play Session 或 native runtime lifecycle。
+
+5. `[Slice] Studio: DI composition root`
    - 集中注册 Shell services、feature modules、registries、dispatcher 和 root view model。
    - 不改变 UI 行为，不引入外部 plugin loader。
 
-2. `[Slice] Studio: view resolution and compiled binding audit`
+6. `[Slice] Studio: view resolution and compiled binding audit`
    - 明确新增 View/DataTemplate 的 `x:DataType` 和显式 mapping 策略。
    - 只处理 Studio UI 层，不做 Native AOT 发布切片。
 
-3. `[Slice] Studio: command result feedback surface`
-   - 把 `WorkbenchCommandExecutionResult` 显示到状态栏/轻量反馈。
-   - 失败进入 Problems/Console 的设计先写 contract，不急着做完整面板。
-
-4. `[Slice] Studio: background tasks panel`
-   - 新增后台任务面板，消费 `IEditorBackgroundTaskService` snapshots。
-   - 状态栏入口打开或聚焦面板。
-
-5. `[Slice] Studio: design preview coverage`
+7. `[Slice] Studio: design preview coverage`
    - 给通用控件和 overlay surfaces 补 design preview。
    - 只做 preview data，不做视觉重设计。
 
-6. `[Slice] Studio: shortcut profile contract`
+8. `[Slice] Studio: shortcut profile contract`
    - 定义默认快捷键、冲突检测和上下文 scope model。
    - 不做完整设置 UI。
-
-7. `[Slice] Studio: diagnostic feedback route`
-   - 将 command/background/dialog 失败统一成 diagnostics records。
-   - Console/Problems 先接 UI-level diagnostics，不接 native engine。
 
 ## 14. 参考资料
 
@@ -569,4 +586,15 @@ UI-sensitive 改动还需要手工或截图确认：
 - [控件开发指南.md](控件开发指南.md)
 - [Dock系统指南.md](Dock系统指南.md)
 - [superpowers/plans/2026-06-20-studio-runtime-editor-foundation.md](superpowers/plans/2026-06-20-studio-runtime-editor-foundation.md)
+- [superpowers/plans/2026-06-21-studio-command-palette-follow-up.md](superpowers/plans/2026-06-21-studio-command-palette-follow-up.md)
+- [superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md](superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md)
+- [superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md](superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md)
 - [../../../docs/architecture/managed-extension-model.md](../../../docs/architecture/managed-extension-model.md)
+
+官方资料与优秀案例：
+
+- [Avalonia compiled bindings](https://docs.avaloniaui.net/docs/data-binding/compiled-bindings)：`x:DataType` / compiled binding 作为长期可维护性和性能边界。
+- [Avalonia XAML previewer and design-time settings](https://docs.avaloniaui.net/docs/app-development/xaml-preview-and-design-settings)：design-time data 只服务预览，不进入 runtime service。
+- [Unity EditorWindow](https://docs.unity3d.com/Manual/editor-EditorWindows.html)：编辑器窗口是工具入口，但 Asharia 当前只借鉴 window/menu/workbench 关系，不复制 Unity 扩展 ABI。
+- [Godot EditorPlugin custom dock](https://docs.godotengine.org/en/stable/tutorials/plugins/editor/making_plugins.html#a-custom-dock)：dock/plugin 生命周期需要明确初始化与清理；Asharia 当前只做内置 feature 注册和 Shell-owned dock。
+- [Unreal Editor Utility Widgets](https://dev.epicgames.com/documentation/en-us/unreal-engine/editor-utility-widgets-in-unreal-engine)：工具 UI 可以作为编辑器内 surface 暴露；Asharia 当前仍禁止外部脚本直接拥有 Avalonia window/control。
