@@ -26,6 +26,7 @@ public class MainWindowViewModel : ViewModelBase
     private bool hasActiveBackgroundTasks_;
     private string activeBackgroundTaskTitle_ = string.Empty;
     private string activeBackgroundTaskMessage_ = string.Empty;
+    private EditorCommandFeedbackSnapshot? lastCommandFeedback_;
 
     public MainWindowViewModel()
         : this(new EditorSelectionService(), EditorDockLayoutStore.TryLoad())
@@ -67,7 +68,9 @@ public class MainWindowViewModel : ViewModelBase
             panelCommandService_,
             OpenCommandPaletteFromCommand,
             OpenAboutDialogFromCommand);
-        var commandRouter = new WorkbenchCommandRouter(actionRegistry, actionExecutor);
+        var commandRouter = new WorkbenchCommandFeedbackRouter(
+            new WorkbenchCommandRouter(actionRegistry, actionExecutor),
+            PublishCommandFeedback);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
@@ -127,6 +130,39 @@ public class MainWindowViewModel : ViewModelBase
         get => activeBackgroundTaskMessage_;
         private set => SetProperty(ref activeBackgroundTaskMessage_, value);
     }
+
+    public EditorCommandFeedbackSnapshot? LastCommandFeedback
+    {
+        get => lastCommandFeedback_;
+        private set
+        {
+            if (SetProperty(ref lastCommandFeedback_, value))
+            {
+                OnPropertyChanged(nameof(HasCommandFeedback));
+                OnPropertyChanged(nameof(CommandFeedbackMessage));
+                OnPropertyChanged(nameof(IsCommandFeedbackSuccess));
+                OnPropertyChanged(nameof(IsCommandFeedbackWarning));
+                OnPropertyChanged(nameof(IsCommandFeedbackError));
+                OnPropertyChanged(nameof(IsCommandFeedbackInfo));
+            }
+        }
+    }
+
+    public bool HasCommandFeedback => LastCommandFeedback is not null;
+
+    public string CommandFeedbackMessage => LastCommandFeedback?.Message ?? string.Empty;
+
+    public bool IsCommandFeedbackSuccess =>
+        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Success;
+
+    public bool IsCommandFeedbackWarning =>
+        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Warning;
+
+    public bool IsCommandFeedbackError =>
+        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Error;
+
+    public bool IsCommandFeedbackInfo =>
+        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Info;
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
@@ -260,6 +296,11 @@ public class MainWindowViewModel : ViewModelBase
         HasActiveBackgroundTasks = true;
         ActiveBackgroundTaskTitle = activeBackgroundTask.Title;
         ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
+    }
+
+    private void PublishCommandFeedback(WorkbenchCommandExecutionResult result)
+    {
+        LastCommandFeedback = EditorCommandFeedbackSnapshot.FromResult(result);
     }
 
     internal static IPanelRegistry CreatePanelRegistry(IEditorSelectionService? selectionService = null)

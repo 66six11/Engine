@@ -87,6 +87,21 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void Tools_menu_command_updates_latest_command_feedback()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var item = Assert.Single(viewModel.ToolsMenuItems);
+
+        item.OpenCommand.Execute(null);
+
+        Assert.True(viewModel.HasCommandFeedback);
+        Assert.True(viewModel.IsCommandFeedbackSuccess);
+        Assert.Equal(EditorCommandFeedbackSeverity.Success, viewModel.LastCommandFeedback?.Severity);
+        Assert.Equal("workbench.commandPalette.open", viewModel.LastCommandFeedback?.CommandId);
+        Assert.Equal("Command 'workbench.commandPalette.open' completed.", viewModel.CommandFeedbackMessage);
+    }
+
+    [Fact]
     public void ActiveBackgroundTaskSummaryShowsRunningTask()
     {
         var tasks = new EditorBackgroundTaskService();
@@ -305,6 +320,33 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void Command_palette_failure_updates_local_and_global_feedback()
+    {
+        var actions = new WorkbenchActionRegistry();
+        actions.Register(new WorkbenchActionDescriptor(
+            "workbench.panel.missing",
+            "Missing Panel",
+            WorkbenchActionKind.OpenPanel,
+            "Window/Panels/Missing",
+            TargetId: "missing-panel",
+            Category: "Window"));
+        var viewModel = new MainWindowViewModel(
+            MainWindowViewModel.CreatePanelRegistry(),
+            actions,
+            savedLayout: null);
+
+        viewModel.CommandPalette.OpenCommand.Execute(null);
+        viewModel.CommandPalette.Query = "missing";
+        viewModel.CommandPalette.ExecuteSelectedCommand.Execute(null);
+
+        Assert.True(viewModel.CommandPalette.HasLastResultMessage);
+        Assert.True(viewModel.HasCommandFeedback);
+        Assert.True(viewModel.IsCommandFeedbackError);
+        Assert.Equal(WorkbenchCommandExecutionStatus.Failed, viewModel.LastCommandFeedback?.Status);
+        Assert.Equal(viewModel.CommandPalette.LastResultMessage, viewModel.CommandFeedbackMessage);
+    }
+
+    [Fact]
     public void ExecuteShortcut_opens_command_palette_through_registered_shortcut()
     {
         var viewModel = CreateMainWindowViewModel();
@@ -317,6 +359,40 @@ public sealed class MainWindowViewModelTests
         Assert.NotNull(result);
         Assert.True(result.Succeeded);
         Assert.True(viewModel.CommandPalette.IsOpen);
+    }
+
+    [Fact]
+    public void Shortcut_command_updates_latest_command_feedback()
+    {
+        var viewModel = CreateMainWindowViewModel();
+
+        var result = viewModel.ExecuteShortcut(
+            Key.P,
+            KeyModifiers.Control | KeyModifiers.Shift,
+            isTextInputFocused: false);
+
+        Assert.NotNull(result);
+        Assert.True(viewModel.HasCommandFeedback);
+        Assert.True(viewModel.IsCommandFeedbackSuccess);
+        Assert.Equal("workbench.commandPalette.open", viewModel.LastCommandFeedback?.CommandId);
+    }
+
+    [Fact]
+    public void Command_feedback_raises_visibility_message_and_severity_notifications()
+    {
+        var changedProperties = new List<string>();
+        var viewModel = CreateMainWindowViewModel();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName ?? string.Empty);
+
+        viewModel.ToolsMenuItems.Single().OpenCommand.Execute(null);
+
+        Assert.Contains(nameof(MainWindowViewModel.LastCommandFeedback), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.HasCommandFeedback), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.CommandFeedbackMessage), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackSuccess), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackWarning), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackError), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackInfo), changedProperties);
     }
 
     [Fact]
