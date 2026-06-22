@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Controls;
+using Editor.Core.Models;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views.Windowing;
 
@@ -7,6 +8,7 @@ namespace Editor.Shell.Views;
 
 public partial class EditorDockFloatingWindow : Window
 {
+    private const string FloatingWindowLifecycleSource = "floating-window";
     private bool isDockHostFocused_ = true;
 
     public EditorDockFloatingWindow()
@@ -22,11 +24,13 @@ public partial class EditorDockFloatingWindow : Window
         base.OnOpened(e);
         SetDockHostFocusState(IsActive);
         EditorDockFloatingWindowRegistry.Register(this);
+        PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowOpened);
     }
 
     protected override void OnClosed(EventArgs e)
     {
         EditorDockFloatingWindowRegistry.Unregister(this);
+        PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowClosed);
         base.OnClosed(e);
     }
 
@@ -42,11 +46,30 @@ public partial class EditorDockFloatingWindow : Window
     private void OnWindowActivated(object? sender, EventArgs e)
     {
         SetDockHostFocusState(true);
+        PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowActivated);
     }
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
     {
         SetDockHostFocusState(false);
+        PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowDeactivated);
+    }
+
+    private void PublishLifecycleEvent(EditorLifecycleEventKind kind, string? message = null)
+    {
+        if (DataContext is EditorDockFloatingWindowViewModel viewModel)
+        {
+            PublishLifecycleEvent(viewModel, kind, FloatingWindowLifecycleSource, message);
+        }
+    }
+
+    internal static EditorLifecycleEventSnapshot? PublishLifecycleEvent(
+        EditorDockFloatingWindowViewModel? viewModel,
+        EditorLifecycleEventKind kind,
+        string source,
+        string? message = null)
+    {
+        return viewModel?.LifecycleEvents.Publish(kind, source, message);
     }
 
     private void SetDockHostFocusState(bool isFocused)
