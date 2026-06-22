@@ -20,6 +20,29 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
+    <Window.Styles>
+        <Style Selector="TextBlock.command-feedback-status">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="Margin" Value="12,0,0,0" />
+            <Setter Property="MaxWidth" Value="520" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="TextBlock.command-feedback-status.success">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushSuccess}" />
+        </Style>
+        <Style Selector="TextBlock.command-feedback-status.warning">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+        </Style>
+        <Style Selector="TextBlock.command-feedback-status.error">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushError}" />
+        </Style>
+        <Style Selector="TextBlock.command-feedback-status.info">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushInfo}" />
+        </Style>
+    </Window.Styles>
+
     <Grid RowDefinitions="Auto,*,Auto"
           ClipToBounds="False">
         <Border Grid.Row="0"
@@ -78,11 +101,25 @@
                 BorderBrush="{DynamicResource EditorBrushDivider}"
                 BorderThickness="0,1,0,0"
                 Padding="8,0">
-            <feedback:ActivityIndicator HorizontalAlignment="Left"
-                                        IsActive="{Binding HasActiveBackgroundTasks}"
-                                        Message="{Binding ActiveBackgroundTaskMessage}"
-                                        Title="{Binding ActiveBackgroundTaskTitle}"
-                                        VerticalAlignment="Center" />
+            <DockPanel LastChildFill="False">
+                <feedback:ActivityIndicator DockPanel.Dock="Left"
+                                            HorizontalAlignment="Left"
+                                            IsActive="{Binding HasActiveBackgroundTasks}"
+                                            Message="{Binding ActiveBackgroundTaskMessage}"
+                                            Title="{Binding ActiveBackgroundTaskTitle}"
+                                            VerticalAlignment="Center" />
+
+                <TextBlock DockPanel.Dock="Right"
+                           Classes="command-feedback-status"
+                           Classes.success="{Binding IsCommandFeedbackSuccess}"
+                           Classes.warning="{Binding IsCommandFeedbackWarning}"
+                           Classes.error="{Binding IsCommandFeedbackError}"
+                           Classes.info="{Binding IsCommandFeedbackInfo}"
+                           HorizontalAlignment="Right"
+                           IsVisible="{Binding HasCommandFeedback}"
+                           Text="{Binding CommandFeedbackMessage}"
+                           VerticalAlignment="Center" />
+            </DockPanel>
         </Border>
 
         <views:EditorDockWorkspaceView Grid.Row="1"
