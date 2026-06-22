@@ -4,8 +4,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             d:DesignWidth="1280"
-             d:DesignHeight="720"
+             d:DesignWidth="720"
+             d:DesignHeight="240"
              x:Class="Editor.Shell.Views.EditorDialogHostView"
              x:DataType="vm:EditorDialogHostViewModel"
              IsVisible="{Binding IsOpen}"
@@ -46,9 +46,10 @@
         </Style>
 
         <Style Selector="Button.dialog-host-button">
-            <Setter Property="MinWidth" Value="78" />
+            <Setter Property="MinWidth" Value="72" />
             <Setter Property="MinHeight" Value="28" />
-            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
         </Style>
     </UserControl.Styles>
 

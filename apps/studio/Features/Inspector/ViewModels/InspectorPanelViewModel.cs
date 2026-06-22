@@ -6,6 +6,7 @@ using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Core.Services;
 using Editor.Features.Inspector.Models;
+using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 
 namespace Editor.Features.Inspector.ViewModels;
@@ -14,6 +15,7 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
 {
     private readonly IEditorSelectionService selectionService_;
     private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
+    private readonly IEditorUiDispatcher uiDispatcher_;
     private EditorSelectionSnapshot currentSelection_;
     private InspectorDocumentModel? document_;
 
@@ -24,16 +26,19 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
 
     internal InspectorPanelViewModel(
         IEditorSelectionService selectionService,
-        ISceneSnapshotProvider sceneSnapshotProvider)
+        ISceneSnapshotProvider sceneSnapshotProvider,
+        IEditorUiDispatcher? uiDispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(selectionService);
         ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
 
         selectionService_ = selectionService;
         sceneSnapshotProvider_ = sceneSnapshotProvider;
+        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
         currentSelection_ = selectionService.Current;
         document_ = CreateDocument(currentSelection_, sceneSnapshotProvider_);
         selectionService_.SelectionChanged += OnSelectionChanged;
+        sceneSnapshotProvider_.SnapshotChanged += OnSnapshotChanged;
     }
 
     public EditorSelectionSnapshot CurrentSelection
@@ -59,12 +64,29 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         selectionService_.SelectionChanged -= OnSelectionChanged;
+        sceneSnapshotProvider_.SnapshotChanged -= OnSnapshotChanged;
     }
 
     private void OnSelectionChanged(object? sender, EditorSelectionChangedEventArgs e)
     {
         CurrentSelection = e.Current;
         Document = CreateDocument(e.Current, sceneSnapshotProvider_);
+    }
+
+    private void OnSnapshotChanged(object? sender, EventArgs e)
+    {
+        if (uiDispatcher_.CheckAccess())
+        {
+            RefreshDocument();
+            return;
+        }
+
+        uiDispatcher_.Post(RefreshDocument);
+    }
+
+    private void RefreshDocument()
+    {
+        Document = CreateDocument(CurrentSelection, sceneSnapshotProvider_);
     }
 
     private static InspectorDocumentModel? CreateDocument(

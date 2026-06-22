@@ -16,6 +16,24 @@ public sealed class CommandPaletteItemViewModel
         DisabledReason = action.DisabledReason ?? string.Empty;
         SearchText = action.SearchText ?? string.Empty;
         RowOpacity = action.IsEnabled ? 1.0 : 0.55;
+        IsCommand = true;
+        IsHeader = false;
+    }
+
+    private CommandPaletteItemViewModel(string category)
+    {
+        Id = $"header:{category}";
+        Title = category;
+        Detail = string.Empty;
+        Category = category;
+        IconKey = null;
+        DefaultShortcut = string.Empty;
+        IsEnabled = false;
+        DisabledReason = string.Empty;
+        SearchText = string.Empty;
+        RowOpacity = 1.0;
+        IsCommand = false;
+        IsHeader = true;
     }
 
     public string Id { get; }
@@ -41,4 +59,13 @@ public sealed class CommandPaletteItemViewModel
     public string SearchText { get; }
 
     public double RowOpacity { get; }
+
+    public bool IsCommand { get; }
+
+    public bool IsHeader { get; }
+
+    internal static CommandPaletteItemViewModel CreateHeader(string category)
+    {
+        return new CommandPaletteItemViewModel(category);
+    }
 }

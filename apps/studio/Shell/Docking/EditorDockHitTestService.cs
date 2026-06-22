@@ -337,7 +337,9 @@ internal static class EditorDockHitTestService
         tabBounds.Sort((left, right) => left.TabIndex.CompareTo(right.TabIndex));
 
         var entries = new List<EditorDockTabReorderResolver.Entry>(tabBounds.Count);
-        var currentX = window.TabWellBounds.X;
+        var currentX = double.IsNaN(window.TabContentOriginX) || double.IsInfinity(window.TabContentOriginX)
+            ? window.TabWellBounds.X
+            : window.TabContentOriginX;
         foreach (var tab in tabBounds)
         {
             var width = tab.Bounds.Width > 0 ? tab.Bounds.Width : TabInsertPlaceholderMinWidth;

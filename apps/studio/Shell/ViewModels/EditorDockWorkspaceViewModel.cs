@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Shell.Docking;
+using Editor.Shell.Services;
 
 namespace Editor.Shell.ViewModels;
 
@@ -29,9 +30,12 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     public event EventHandler? DockContentChanged;
 
-    public EditorDockWorkspaceViewModel(IPanelRegistry panelRegistry)
+    public EditorDockWorkspaceViewModel(
+        IPanelRegistry panelRegistry,
+        IEditorLifecycleEventService? lifecycleEvents = null)
     {
         panelRegistry_ = panelRegistry;
+        LifecycleEvents = lifecycleEvents ?? new EditorLifecycleEventService();
         WorkspaceKind = EditorDockWorkspaceKind.MainWindow;
         LeftWindow = new EditorDockWindowViewModel("owned-dock-left", "Hierarchy", DockArea.Left, "Scene tree");
         CenterWindow = new EditorDockWindowViewModel("owned-dock-center", "Viewport", DockArea.Center, "Primary work area");
@@ -63,9 +67,12 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
     }
 
-    private EditorDockWorkspaceViewModel(EditorDockWindowViewModel floatingDockWindow)
+    private EditorDockWorkspaceViewModel(
+        EditorDockWindowViewModel floatingDockWindow,
+        IEditorLifecycleEventService lifecycleEvents)
     {
         panelRegistry_ = null;
+        LifecycleEvents = lifecycleEvents;
         WorkspaceKind = EditorDockWorkspaceKind.FloatingWindow;
         LeftWindow = floatingDockWindow;
         CenterWindow = floatingDockWindow;
@@ -83,9 +90,11 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     private EditorDockWorkspaceViewModel(
         IPanelRegistry panelRegistry,
-        EditorDockFloatingWindowSnapshot snapshot)
+        EditorDockFloatingWindowSnapshot snapshot,
+        IEditorLifecycleEventService lifecycleEvents)
     {
         panelRegistry_ = panelRegistry;
+        LifecycleEvents = lifecycleEvents;
         WorkspaceKind = EditorDockWorkspaceKind.FloatingWindow;
         var fallbackWindow = new EditorDockWindowViewModel(
             "owned-dock-floating-restore",
@@ -118,7 +127,20 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         EditorDockFloatingWindowSnapshot snapshot,
         out EditorDockWorkspaceViewModel workspace)
     {
-        workspace = new EditorDockWorkspaceViewModel(panelRegistry, snapshot);
+        return TryCreateFloatingWorkspace(
+            panelRegistry,
+            snapshot,
+            new EditorLifecycleEventService(),
+            out workspace);
+    }
+
+    public static bool TryCreateFloatingWorkspace(
+        IPanelRegistry panelRegistry,
+        EditorDockFloatingWindowSnapshot snapshot,
+        IEditorLifecycleEventService lifecycleEvents,
+        out EditorDockWorkspaceViewModel workspace)
+    {
+        workspace = new EditorDockWorkspaceViewModel(panelRegistry, snapshot, lifecycleEvents);
         if (workspace.RootNode is not null && workspace.HasDockContent())
         {
             return true;
@@ -137,6 +159,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     public EditorDockWindowViewModel RightWindow { get; }
 
     public EditorDockWorkspaceKind WorkspaceKind { get; }
+
+    public IEditorLifecycleEventService LifecycleEvents { get; }
 
     public bool IsMainWindow => WorkspaceKind == EditorDockWorkspaceKind.MainWindow;
 
@@ -1067,8 +1091,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
 
-        var floatingWorkspace = new EditorDockWorkspaceViewModel(floatingDockWindow);
-        var floatingWindow = new EditorDockFloatingWindowViewModel(floatingWorkspace);
+        var floatingWorkspace = new EditorDockWorkspaceViewModel(floatingDockWindow, LifecycleEvents);
+        var floatingWindow = new EditorDockFloatingWindowViewModel(floatingWorkspace, LifecycleEvents);
         return new EditorDockFloatingWindowRequest(floatingWindow, bounds);
     }
 

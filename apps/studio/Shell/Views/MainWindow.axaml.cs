@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Editor.Core.Models;
 using Editor.Shell.Icons;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views.Windowing;
@@ -13,6 +14,7 @@ namespace Editor.Shell.Views;
 
 public partial class MainWindow : Window
 {
+    private const string MainWindowLifecycleSource = "main-window";
     private readonly List<MenuItem> generatedToolsMenuItems_ = [];
     private readonly List<MenuItem> generatedHelpMenuItems_ = [];
     private bool restoredFloatingWindows_;
@@ -23,6 +25,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
+        Closing += OnWindowClosing;
         KeyDown += OnMainWindowKeyDown;
         DataContextChanged += OnMainWindowDataContextChanged;
         PanelsMenu.SubmenuOpened += OnPanelsMenuSubmenuOpened;
@@ -32,6 +35,7 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationOpened);
         SetDockHostFocusState(IsActive);
         RestoreFloatingWindows();
     }
@@ -39,8 +43,15 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         KeyDown -= OnMainWindowKeyDown;
+        Closing -= OnWindowClosing;
         EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged;
+        PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationClosed);
         base.OnClosed(e);
+    }
+
+    private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationClosing);
     }
 
     private void OnMainWindowDataContextChanged(object? sender, EventArgs e)
@@ -263,14 +274,33 @@ public partial class MainWindow : Window
         return source is TextBox;
     }
 
+    private void PublishLifecycleEvent(EditorLifecycleEventKind kind, string? message = null)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            PublishLifecycleEvent(viewModel, kind, MainWindowLifecycleSource, message);
+        }
+    }
+
+    internal static EditorLifecycleEventSnapshot? PublishLifecycleEvent(
+        MainWindowViewModel? viewModel,
+        EditorLifecycleEventKind kind,
+        string source,
+        string? message = null)
+    {
+        return viewModel?.LifecycleEvents.Publish(kind, source, message);
+    }
+
     private void OnWindowActivated(object? sender, EventArgs e)
     {
         SetDockHostFocusState(true);
+        PublishLifecycleEvent(EditorLifecycleEventKind.HostActivated);
     }
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
     {
         SetDockHostFocusState(false);
+        PublishLifecycleEvent(EditorLifecycleEventKind.HostDeactivated);
     }
 
     private void SetDockHostFocusState(bool isFocused)
@@ -299,6 +329,8 @@ public partial class MainWindow : Window
         {
             ShowFloatingWindow(request);
         }
+
+        PublishLifecycleEvent(EditorLifecycleEventKind.WorkspaceRestored);
     }
 
     private void ShowFloatingWindow(EditorDockFloatingWindowRequest request)

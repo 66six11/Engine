@@ -146,6 +146,59 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void Constructor_exposes_injected_lifecycle_event_service()
+    {
+        var lifecycleEvents = new EditorLifecycleEventService();
+
+        var viewModel = CreateMainWindowViewModel(lifecycleEvents: lifecycleEvents);
+
+        Assert.Same(lifecycleEvents, viewModel.LifecycleEvents);
+        Assert.Same(lifecycleEvents, viewModel.DockWorkspace.LifecycleEvents);
+    }
+
+    [Fact]
+    public void Restored_floating_window_requests_share_lifecycle_event_service()
+    {
+        var lifecycleEvents = new EditorLifecycleEventService();
+        var snapshot = new EditorDockLayoutSnapshot
+        {
+            Version = 1,
+            FloatingWindows =
+            {
+                new EditorDockFloatingWindowSnapshot
+                {
+                    X = 16,
+                    Y = 24,
+                    Width = 480,
+                    Height = 320,
+                    ActiveWindowId = "floating-inspector",
+                    Root = new EditorDockLayoutNodeSnapshot
+                    {
+                        Kind = "Window",
+                        Id = "node-floating-inspector",
+                        WindowId = "floating-inspector",
+                        WindowTitle = "Inspector",
+                        WindowArea = DockArea.Right,
+                        WindowRole = "Selection context",
+                        TabIds = ["inspector"],
+                        ActiveTabId = "inspector",
+                    },
+                },
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            MainWindowViewModel.CreatePanelRegistry(),
+            MainWindowViewModel.CreateWorkbenchActionRegistry(),
+            snapshot,
+            lifecycleEvents: lifecycleEvents);
+
+        var request = Assert.Single(viewModel.ConsumeRestoredFloatingWindowRequests());
+
+        Assert.Same(lifecycleEvents, request.Window.LifecycleEvents);
+        Assert.Same(lifecycleEvents, request.Window.DockWorkspace.LifecycleEvents);
+    }
+
+    [Fact]
     public void BackgroundTaskSummary_clears_when_last_task_completes()
     {
         var tasks = new EditorBackgroundTaskService();
@@ -232,6 +285,23 @@ public sealed class MainWindowViewModelTests
         var reopened = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
         Assert.IsType<HierarchyPanelViewModel>(reopened.Content);
         Assert.False(viewModel.CommandPalette.IsOpen);
+    }
+
+    [Fact]
+    public void CommandPalette_records_recent_command_after_main_window_route_success()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var hierarchy = viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy");
+        Assert.True(viewModel.DockWorkspace.CloseTab(hierarchy));
+
+        viewModel.CommandPalette.OpenCommand.Execute(null);
+        viewModel.CommandPalette.Query = "hierarchy";
+        viewModel.CommandPalette.ExecuteSelectedCommand.Execute(null);
+        viewModel.CommandPalette.OpenCommand.Execute(null);
+
+        Assert.Equal("Recent", viewModel.CommandPalette.FilteredItems[0].Title);
+        Assert.Equal("Hierarchy", viewModel.CommandPalette.FilteredItems[1].Title);
+        Assert.True(viewModel.DockWorkspace.ContainsPanel("hierarchy"));
     }
 
     [Fact]
@@ -347,14 +417,18 @@ public sealed class MainWindowViewModelTests
 
     private static MainWindowViewModel CreateMainWindowViewModel(
         IEditorBackgroundTaskService? backgroundTasks = null,
-        IEditorUiDispatcher? uiDispatcher = null)
+        IEditorUiDispatcher? uiDispatcher = null,
+        IEditorLifecycleEventService? lifecycleEvents = null)
     {
+        uiDispatcher ??= new CapturingUiDispatcher(hasAccess: true);
+
         return new MainWindowViewModel(
             MainWindowViewModel.CreatePanelRegistry(),
             MainWindowViewModel.CreateWorkbenchActionRegistry(),
             savedLayout: null,
             backgroundTasks: backgroundTasks,
-            uiDispatcher: uiDispatcher);
+            uiDispatcher: uiDispatcher,
+            lifecycleEvents: lifecycleEvents);
     }
 
     private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher

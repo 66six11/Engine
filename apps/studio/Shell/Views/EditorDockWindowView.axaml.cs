@@ -249,12 +249,20 @@ public partial class EditorDockWindowView : UserControl
 
     private void UpdateLocalTabReorder(EditorDockWorkspaceView workspace, PointerEventArgs e)
     {
-        if (capturedWindow_ is null || capturedTab_ is null)
+        var window = capturedWindow_;
+        var tab = capturedTab_;
+        if (window is null || tab is null)
         {
             return;
         }
 
         var pointer = e.GetPosition(this);
+        var scrolled = DockTabStrip.AutoScrollNearHorizontalEdge(pointer, this);
+        if (scrolled)
+        {
+            reorderTabEntries_ = CaptureReorderTabEntries(window, this);
+        }
+
         UpdateDraggedTabPreview(pointer);
         var draggedTabCenterX = pointer.X
             - draggedTabPointerOffsetX_
@@ -266,7 +274,7 @@ public partial class EditorDockWindowView : UserControl
 
         if (reorderTargetIndex_ != previousTargetIndex)
         {
-            workspace.PreviewTabReorder(capturedWindow_, capturedTab_, reorderTargetIndex_);
+            workspace.PreviewTabReorder(window, tab, reorderTargetIndex_);
         }
     }
 
@@ -522,7 +530,7 @@ public partial class EditorDockWindowView : UserControl
         EditorDockWindowViewModel window,
         Visual relativeTo)
     {
-        if (DockTabStrip.TranslatePoint(new Point(0, 0), relativeTo) is not { } origin)
+        if (!DockTabStrip.TryGetContentOrigin(relativeTo, out var origin))
         {
             return [];
         }

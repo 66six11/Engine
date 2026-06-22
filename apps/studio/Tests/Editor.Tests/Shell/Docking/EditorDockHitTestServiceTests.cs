@@ -49,6 +49,39 @@ public sealed class EditorDockHitTestServiceTests
     }
 
     [Fact]
+    public void HitTest_insert_tab_at_index_uses_scrolled_tab_content_origin()
+    {
+        var window = new EditorDockWindowBounds(
+            "window",
+            DockArea.Center,
+            new Rect(0, 0, 300, 200),
+            new Rect(0, 0, 120, 24),
+            4,
+            [
+                new EditorDockTabBounds("tab-0", 0, new Rect(-200, 0, 100, 24), false),
+                new EditorDockTabBounds("tab-1", 1, new Rect(-100, 0, 100, 24), false),
+                new EditorDockTabBounds("tab-2", 2, new Rect(0, 0, 100, 24), false),
+                new EditorDockTabBounds("tab-3", 3, new Rect(100, 0, 100, 24), false),
+            ],
+            DragSourceTabIndex: null,
+            AllowsWindowInsertion: true,
+            IsDragSource: false,
+            TabContentOriginX: -200);
+
+        var target = EditorDockHitTestService.HitTest(
+            new Point(50, 12),
+            new Rect(0, 0, 300, 200),
+            [window],
+            [],
+            tabInsertProbeX: 50,
+            tabInsertCurrentTargetIndex: 0,
+            tabInsertDraggedTabWidth: 100);
+
+        Assert.Equal(EditorDockDropOperation.InsertTabAtIndex, target.Operation);
+        Assert.Equal(2, target.TargetIndex);
+    }
+
+    [Fact]
     public void HitTest_uses_reorder_resolver_for_source_window_tab_insert()
     {
         var window = CreateWindow(

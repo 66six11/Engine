@@ -13,4 +13,5 @@ public readonly record struct EditorDockWindowBounds(
     IReadOnlyList<EditorDockTabBounds> TabBounds,
     int? DragSourceTabIndex,
     bool AllowsWindowInsertion,
-    bool IsDragSource);
+    bool IsDragSource,
+    double TabContentOriginX = double.NaN);
