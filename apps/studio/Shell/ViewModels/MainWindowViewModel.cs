@@ -49,7 +49,8 @@ public class MainWindowViewModel : ViewModelBase
         EditorDockLayoutSnapshot? savedLayout,
         IEditorSelectionService? selectionService = null,
         IEditorBackgroundTaskService? backgroundTasks = null,
-        IEditorUiDispatcher? uiDispatcher = null)
+        IEditorUiDispatcher? uiDispatcher = null,
+        IEditorLifecycleEventService? lifecycleEvents = null)
     {
         SelectionService = selectionService ?? new EditorSelectionService();
         panelRegistry_ = panelRegistry;
@@ -58,7 +59,8 @@ public class MainWindowViewModel : ViewModelBase
         backgroundTasks_.TasksChanged += OnBackgroundTasksChanged;
         RefreshBackgroundTaskSummary();
 
-        DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_);
+        LifecycleEvents = lifecycleEvents ?? new EditorLifecycleEventService();
+        DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_, LifecycleEvents);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
         DialogHost = new EditorDialogHostViewModel();
         var actionExecutor = new WorkbenchActionExecutor(
@@ -87,6 +89,8 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     public IEditorSelectionService SelectionService { get; }
+
+    public IEditorLifecycleEventService LifecycleEvents { get; }
 
     public EditorDockWorkspaceViewModel DockWorkspace { get; }
 
@@ -152,12 +156,13 @@ public class MainWindowViewModel : ViewModelBase
             if (!EditorDockWorkspaceViewModel.TryCreateFloatingWorkspace(
                     panelRegistry_,
                     snapshot,
+                    LifecycleEvents,
                     out var floatingWorkspace))
             {
                 continue;
             }
 
-            var window = new EditorDockFloatingWindowViewModel(floatingWorkspace);
+            var window = new EditorDockFloatingWindowViewModel(floatingWorkspace, LifecycleEvents);
             var bounds = new Rect(
                 snapshot.X,
                 snapshot.Y,
