@@ -29,8 +29,10 @@ public partial class EditorDockFloatingWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        var viewModel = DataContext as EditorDockFloatingWindowViewModel;
         EditorDockFloatingWindowRegistry.Unregister(this);
         PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowClosed);
+        DisposeFloatingWindowViewModel(viewModel);
         base.OnClosed(e);
     }
 
@@ -70,6 +72,11 @@ public partial class EditorDockFloatingWindow : Window
         string? message = null)
     {
         return viewModel?.LifecycleEvents.Publish(kind, source, message);
+    }
+
+    internal static void DisposeFloatingWindowViewModel(EditorDockFloatingWindowViewModel? viewModel)
+    {
+        viewModel?.Dispose();
     }
 
     private void SetDockHostFocusState(bool isFocused)

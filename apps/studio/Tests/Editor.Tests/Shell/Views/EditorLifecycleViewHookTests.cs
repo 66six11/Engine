@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Editor.Core.Models;
 using Editor.Shell.Composition;
+using Editor.Shell.Docking;
 using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views;
@@ -82,6 +83,27 @@ public sealed class EditorLifecycleViewHookTests
         Assert.Contains("PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowDeactivated", source);
     }
 
+    [Fact]
+    public void FloatingWindow_dispose_helper_releases_view_model_workspace()
+    {
+        var disposable = new RecordingDisposable();
+        var registry = new PanelRegistry();
+        registry.Register(new PanelDescriptor(
+            "panel",
+            "Panel",
+            PanelKind.Tool,
+            DockArea.Center,
+            "Window/Panels/Panel",
+            DockContentCachePolicy.KeepAlive,
+            () => disposable));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var viewModel = new EditorDockFloatingWindowViewModel(workspace);
+
+        EditorDockFloatingWindow.DisposeFloatingWindowViewModel(viewModel);
+
+        Assert.True(disposable.IsDisposed);
+    }
+
     private static string LoadSource(params string[] pathParts)
     {
         var root = FindRepositoryRoot();
@@ -123,5 +145,15 @@ public sealed class EditorLifecycleViewHookTests
         }
 
         throw new DirectoryNotFoundException("Could not locate Editor.sln.");
+    }
+
+    private sealed class RecordingDisposable : IDisposable
+    {
+        public bool IsDisposed { get; private set; }
+
+        public void Dispose()
+        {
+            IsDisposed = true;
+        }
     }
 }

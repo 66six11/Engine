@@ -4,17 +4,27 @@ using Editor.Shell.ViewModels;
 
 namespace Editor.Shell.Composition;
 
-internal sealed class StudioCompositionSession(
-    MainWindowViewModel mainWindowViewModel,
-    EditorExtensionComposition composition,
-    EditorExtensionHost extensionHost) : IAsyncDisposable
+internal sealed class StudioCompositionSession : IAsyncDisposable
 {
-    public MainWindowViewModel MainWindowViewModel { get; } = mainWindowViewModel;
+    private readonly EditorExtensionHost extensionHost_;
 
-    internal EditorExtensionComposition Composition { get; } = composition;
-
-    public ValueTask DisposeAsync()
+    public StudioCompositionSession(
+        MainWindowViewModel mainWindowViewModel,
+        EditorExtensionComposition composition,
+        EditorExtensionHost extensionHost)
     {
-        return extensionHost.DisposeAsync();
+        MainWindowViewModel = mainWindowViewModel;
+        Composition = composition;
+        extensionHost_ = extensionHost;
+    }
+
+    public MainWindowViewModel MainWindowViewModel { get; }
+
+    internal EditorExtensionComposition Composition { get; }
+
+    public async ValueTask DisposeAsync()
+    {
+        MainWindowViewModel.Dispose();
+        await extensionHost_.DisposeAsync();
     }
 }

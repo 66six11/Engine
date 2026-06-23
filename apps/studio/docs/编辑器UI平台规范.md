@@ -53,6 +53,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | 生命周期事件 v0 | `IEditorLifecycleEventService`, `EditorLifecycleEventService` | Current / Shell window lifecycle only |
 | 内置扩展组合 v0 | `EditorExtensionHost`, `EditorContributionBuilder`, `StudioCompositionRoot` | Current / built-in panel-action composition only |
 | Contribution ownership v0 | `PanelRegistry.RegisterOwned`, `WorkbenchActionRegistry.RegisterOwned`, `EditorExtensionHost`, `StudioCompositionSession` removal leases | Current / built-in panel-action owner tracking only |
+| Panel instance lifetime v0 | `PanelInstanceManager`, `EditorDockWorkspaceViewModel`, `EditorDockTabViewModel.ReleasePanelInstance` | Current / built-in panel content close-reset-shutdown disposal |
 | Dock tab overflow v0 | `EditorDockTabStripScrollController`, `EditorDockTabStripView` | Current / view-only scroll state |
 | 状态栏反馈 | `ActivityIndicator`, `MainWindowViewModel` summary properties | Partial |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
@@ -75,6 +76,8 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | Avalonia native Vulkan viewport | Deferred；等 CPU-only native bridge 与 viewport ownership 设计 |
 
 `EditorExtensionHost v0` 只统一内置 panel/action contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider lifecycle、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
+
+`PanelInstanceManager v0` 只接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close 和 workspace/session shutdown disposal；逻辑 Activated/Deactivated callback、provider lifecycle、插件重载和 native viewport ownership 仍未实现。
 
 ## 3. 分层规则
 

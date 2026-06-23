@@ -1,8 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Editor.Core.Models;
+using Editor.Core.Services;
+using Editor.Features.Hierarchy.Models;
+using Editor.Features.Hierarchy.ViewModels;
 using Editor.Shell.Docking;
+using Editor.Shell.Selection;
+using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 using Xunit;
 
@@ -48,6 +54,88 @@ public sealed class EditorDockWorkspaceViewModelTests
         var reopenedTab = workspace.CenterWindow.Tabs[0];
         Assert.NotSame(firstContent, reopenedTab.Content);
         Assert.Equal(2, contentFactory.CreateCount);
+    }
+
+    [Fact]
+    public void CloseTab_disposes_recreate_on_open_content()
+    {
+        var disposable = new RecordingDisposable();
+        var registry = CreateRegistry(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => disposable);
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+
+        workspace.CloseTab(workspace.CenterWindow.Tabs[0]);
+
+        Assert.True(disposable.IsDisposed);
+    }
+
+    [Fact]
+    public void CloseTab_keeps_keep_alive_content_until_workspace_disposal()
+    {
+        var disposable = new RecordingDisposable();
+        var registry = CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => disposable);
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+
+        workspace.CloseTab(workspace.CenterWindow.Tabs[0]);
+
+        Assert.False(disposable.IsDisposed);
+
+        workspace.Dispose();
+
+        Assert.True(disposable.IsDisposed);
+    }
+
+    [Fact]
+    public void ResetLayout_disposes_recreate_on_open_content_before_recreating_tabs()
+    {
+        var first = new RecordingDisposable();
+        var second = new RecordingDisposable();
+        var contentFactory = new QueueContentFactory(first, second);
+        var registry = CreateRegistry(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            contentFactory.Create);
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+
+        workspace.ResetLayout();
+
+        Assert.True(first.IsDisposed);
+        Assert.False(second.IsDisposed);
+        Assert.Same(second, workspace.CenterWindow.Tabs[0].Content);
+    }
+
+    [Fact]
+    public void Dispose_releases_hierarchy_snapshot_subscription_created_through_panel_instance_manager()
+    {
+        var provider = new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            1,
+            [new SceneObjectSnapshot("scene:test/cube", "Cube", "mesh")]));
+        var registry = CreateRegistry(
+            "hierarchy",
+            DockContentCachePolicy.KeepAlive,
+            () => new HierarchyPanelViewModel(
+                new EditorSelectionService(),
+                provider,
+                new CapturingUiDispatcher(hasAccess: true)));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
+            workspace.CenterWindow.Tabs[0].Content);
+
+        workspace.Dispose();
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Runtime Snapshot",
+            2,
+            [new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh")]));
+
+        Assert.Equal(["Cube"], GetNodeNames(hierarchy.Nodes));
     }
 
     [Fact]
@@ -196,6 +284,49 @@ public sealed class EditorDockWorkspaceViewModelTests
         public void Reset()
         {
             CreateCount = 0;
+        }
+    }
+
+    private sealed class QueueContentFactory(params object[] contents)
+    {
+        private int nextIndex_;
+
+        public object Create()
+        {
+            return contents[nextIndex_++];
+        }
+    }
+
+    private sealed class RecordingDisposable : IDisposable
+    {
+        public int DisposeCount { get; private set; }
+
+        public bool IsDisposed => DisposeCount > 0;
+
+        public void Dispose()
+        {
+            DisposeCount++;
+        }
+    }
+
+    private static string[] GetNodeNames(IReadOnlyList<HierarchyNodeModel> nodes)
+    {
+        var names = new string[nodes.Count];
+        for (var index = 0; index < nodes.Count; index++)
+        {
+            names[index] = nodes[index].DisplayName;
+        }
+
+        return names;
+    }
+
+    private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher
+    {
+        public bool CheckAccess() => hasAccess;
+
+        public void Post(Action action)
+        {
+            action();
         }
     }
 }

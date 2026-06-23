@@ -53,6 +53,111 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void Dispose_releases_dock_workspace_panel_instances()
+    {
+        var disposable = new RecordingDisposable();
+        var panels = new PanelRegistry();
+        panels.Register(new PanelDescriptor(
+            "panel",
+            "Panel",
+            PanelKind.Tool,
+            DockArea.Center,
+            "Window/Panels/Panel",
+            DockContentCachePolicy.KeepAlive,
+            () => disposable));
+        var actions = new WorkbenchActionRegistry();
+        var viewModel = new MainWindowViewModel(
+            panels,
+            actions,
+            savedLayout: null);
+
+        viewModel.Dispose();
+
+        Assert.True(disposable.IsDisposed);
+    }
+
+    [Fact]
+    public void Dispose_closes_floating_windows_before_releasing_main_workspace()
+    {
+        var disposalOrder = new List<string>();
+        var disposable = new RecordingDisposable(() => disposalOrder.Add("main"));
+        var panels = new PanelRegistry();
+        panels.Register(new PanelDescriptor(
+            "panel",
+            "Panel",
+            PanelKind.Tool,
+            DockArea.Center,
+            "Window/Panels/Panel",
+            DockContentCachePolicy.KeepAlive,
+            () => disposable));
+        var actions = new WorkbenchActionRegistry();
+        var viewModel = new MainWindowViewModel(
+            panels,
+            actions,
+            savedLayout: null);
+        viewModel.SetFloatingWindowCallbacks(
+            () => [],
+            () => disposalOrder.Add("floating"),
+            _ => false,
+            _ => false);
+
+        viewModel.Dispose();
+
+        Assert.Equal(["floating", "main"], disposalOrder);
+    }
+
+    [Fact]
+    public void Restored_floating_window_view_model_dispose_releases_panel_instances()
+    {
+        var disposable = new RecordingDisposable();
+        var panels = new PanelRegistry();
+        panels.Register(new PanelDescriptor(
+            "panel",
+            "Panel",
+            PanelKind.Tool,
+            DockArea.Center,
+            "Window/Panels/Panel",
+            DockContentCachePolicy.KeepAlive,
+            () => disposable));
+        var actions = new WorkbenchActionRegistry();
+        var snapshot = new EditorDockLayoutSnapshot
+        {
+            Version = 1,
+            FloatingWindows =
+            {
+                new EditorDockFloatingWindowSnapshot
+                {
+                    X = 16,
+                    Y = 24,
+                    Width = 480,
+                    Height = 320,
+                    ActiveWindowId = "floating-panel",
+                    Root = new EditorDockLayoutNodeSnapshot
+                    {
+                        Kind = "Window",
+                        Id = "node-floating-panel",
+                        WindowId = "floating-panel",
+                        WindowTitle = "Panel",
+                        WindowArea = DockArea.Center,
+                        WindowRole = "Panel",
+                        TabIds = ["panel"],
+                        ActiveTabId = "panel",
+                    },
+                },
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            panels,
+            actions,
+            snapshot);
+
+        var request = Assert.Single(viewModel.ConsumeRestoredFloatingWindowRequests());
+        request.Window.Dispose();
+
+        Assert.True(disposable.IsDisposed);
+    }
+
+    [Fact]
     public void PanelMenuItems_follow_registered_workbench_actions()
     {
         var viewModel = CreateMainWindowViewModel();
@@ -553,6 +658,17 @@ public sealed class MainWindowViewModelTests
         public void Close()
         {
             isOpen_ = false;
+        }
+    }
+
+    private sealed class RecordingDisposable(Action? onDispose = null) : IDisposable
+    {
+        public bool IsDisposed { get; private set; }
+
+        public void Dispose()
+        {
+            IsDisposed = true;
+            onDispose?.Invoke();
         }
     }
 }

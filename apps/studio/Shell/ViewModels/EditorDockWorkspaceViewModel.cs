@@ -9,14 +9,14 @@ using Editor.Shell.Services;
 
 namespace Editor.Shell.ViewModels;
 
-public sealed class EditorDockWorkspaceViewModel : ViewModelBase
+public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 {
     private const string DynamicWindowIdPrefix = "owned-dock-window-";
     private const string DynamicSplitIdPrefix = "split-user-";
     private const string LayoutNodeKindSplit = "Split";
     private const string LayoutNodeKindWindow = "Window";
     private readonly IPanelRegistry? panelRegistry_;
-    private readonly Dictionary<string, object> keptAliveContentByPanelId_ = new(StringComparer.Ordinal);
+    private readonly PanelInstanceManager panelInstanceManager_ = new();
     private readonly Dictionary<DockArea, EditorDockWindowViewModel> windowsByArea_;
     private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
     private EditorDockNodeViewModel? rootNode_;
@@ -570,6 +570,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         }
 
         sourceWindow.Remove(tab);
+        tab.ReleasePanelInstance();
         RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
         SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
@@ -581,6 +582,12 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
     {
         return TryFindPanelTab(panelId, out _, out var tab)
             && CloseTab(tab);
+    }
+
+    public void Dispose()
+    {
+        ResetWorkspaceWindows();
+        panelInstanceManager_.Dispose();
     }
 
     public bool ContainsPanel(string panelId)
@@ -817,6 +824,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         var existingWindows = new List<EditorDockWindowViewModel>(windowsById_.Values);
         foreach (var window in existingWindows)
         {
+            ReleaseWindowTabs(window);
             window.ResetTabs();
             window.SetActiveWindowState(false);
             window.SetDragSourceWindowState(false);
@@ -844,6 +852,15 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
         DragState.Clear();
         activeWindow_?.SetActiveWindowState(false);
         activeWindow_ = null;
+    }
+
+    private static void ReleaseWindowTabs(EditorDockWindowViewModel window)
+    {
+        var tabs = new List<EditorDockTabViewModel>(window.Tabs);
+        foreach (var tab in tabs)
+        {
+            tab.ReleasePanelInstance();
+        }
     }
 
     private void MoveTab(EditorDockTabViewModel tab, EditorDockWindowViewModel targetWindow)
@@ -2092,32 +2109,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
 
     private EditorDockTabViewModel CreateTab(PanelDescriptor descriptor)
     {
-        return new EditorDockTabViewModel(
-            descriptor.Id,
-            descriptor.Title,
-            GetTag(descriptor),
-            GetTitleDetail(descriptor),
-            GetStatusText(descriptor),
-            descriptor.Kind,
-            descriptor.DefaultArea,
-            CreatePanelContent(descriptor),
-            descriptor.IconKey);
-    }
-
-    private object CreatePanelContent(PanelDescriptor descriptor)
-    {
-        if (descriptor.CachePolicy == DockContentCachePolicy.RecreateOnOpen)
-        {
-            return descriptor.CreateContent();
-        }
-
-        if (!keptAliveContentByPanelId_.TryGetValue(descriptor.Id, out var content))
-        {
-            content = descriptor.CreateContent();
-            keptAliveContentByPanelId_[descriptor.Id] = content;
-        }
-
-        return content;
+        return panelInstanceManager_.CreateTab(descriptor);
     }
 
     private EditorDockNodeViewModel CreateDefaultLayout()
@@ -2147,19 +2139,4 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase
             new GridLength(1, GridUnitType.Star));
     }
 
-    private static string GetTag(PanelDescriptor descriptor)
-    {
-        return descriptor.Tag
-            ?? (descriptor.Kind == PanelKind.Document ? "DOC" : descriptor.DefaultArea.ToString().ToUpperInvariant());
-    }
-
-    private static string GetTitleDetail(PanelDescriptor descriptor)
-    {
-        return descriptor.TitleDetail ?? descriptor.MenuPath;
-    }
-
-    private static string GetStatusText(PanelDescriptor descriptor)
-    {
-        return descriptor.StatusText ?? descriptor.Kind.ToString().ToLowerInvariant();
-    }
 }

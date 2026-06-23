@@ -13,7 +13,7 @@ using Editor.Shell.Services;
 
 namespace Editor.Shell.ViewModels;
 
-public class MainWindowViewModel : ViewModelBase
+public class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly IPanelRegistry panelRegistry_;
     private readonly PanelCommandService panelCommandService_;
@@ -27,6 +27,7 @@ public class MainWindowViewModel : ViewModelBase
     private string activeBackgroundTaskTitle_ = string.Empty;
     private string activeBackgroundTaskMessage_ = string.Empty;
     private EditorCommandFeedbackSnapshot? lastCommandFeedback_;
+    private bool isDisposed_;
 
     public MainWindowViewModel()
         : this(EditorDockLayoutStore.TryLoad())
@@ -220,6 +221,20 @@ public class MainWindowViewModel : ViewModelBase
         {
             item.SetOpenState(panelCommandService_.IsPanelOpen(item.PanelId));
         }
+    }
+
+    public void Dispose()
+    {
+        if (isDisposed_)
+        {
+            return;
+        }
+
+        isDisposed_ = true;
+        closeFloatingWindows_?.Invoke();
+        backgroundTasks_.TasksChanged -= OnBackgroundTasksChanged;
+        panelCommandService_.PanelStateChanged -= OnPanelCommandStateChanged;
+        DockWorkspace.Dispose();
     }
 
     internal WorkbenchCommandExecutionResult? ExecuteShortcut(

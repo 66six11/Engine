@@ -1,3 +1,4 @@
+using System;
 using Editor.Core.Models;
 
 namespace Editor.Shell.ViewModels;
@@ -7,6 +8,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     private bool isActive_;
     private bool isDragSource_;
     private DockArea area_;
+    private IDisposable? panelInstanceRelease_;
 
     public EditorDockTabViewModel(
         string id,
@@ -17,7 +19,8 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         PanelKind kind,
         DockArea area,
         object content,
-        string? iconKey = null)
+        string? iconKey = null,
+        IDisposable? panelInstanceRelease = null)
     {
         Id = id;
         Title = title;
@@ -27,6 +30,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         Kind = kind;
         area_ = area;
         Content = content;
+        panelInstanceRelease_ = panelInstanceRelease;
         IconKey = iconKey;
     }
 
@@ -69,5 +73,12 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     internal void SetDragSourceState(bool isDragSource)
     {
         IsDragSource = isDragSource;
+    }
+
+    internal void ReleasePanelInstance()
+    {
+        var release = panelInstanceRelease_;
+        panelInstanceRelease_ = null;
+        release?.Dispose();
     }
 }
