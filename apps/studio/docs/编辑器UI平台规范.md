@@ -26,7 +26,7 @@
 当前不建议急着做完整 Scene authoring，也不建议现在开始 C++ ABI 或插件热更新。下一阶段应继续推进 UI 平台层：
 
 ```text
-Command result feedback -> Background Tasks panel -> Diagnostics/Problems route -> Shortcut/Command settings
+Status debug message surface -> Background Tasks panel -> Diagnostics/Problems route -> Shortcut/Command settings
 ```
 
 理由：
@@ -199,7 +199,7 @@ Services 必须先说明 owner、生命周期、线程边界和错误路径。
 
 ```text
 Dialog result presentation
-Command execution feedback
+Status debug message surface
 Background Tasks panel
 Problems/Console diagnostic ingestion
 DI composition root
@@ -275,21 +275,21 @@ WorkbenchActionDescriptor
 1. 新动作先注册 `WorkbenchActionDescriptor`，不要直接在 XAML 或 code-behind 写业务执行逻辑。
 2. 菜单和快捷键必须使用同一个 command id。
 3. `DefaultShortcut` 是默认绑定和显示文本，不是用户自定义快捷键系统。
-4. `WorkbenchCommandExecutionResult` 是命令反馈的唯一基础模型。
-5. disabled、not found、failed 不应被 UI surface 吞掉。下一阶段应进入 status/toast/problems/console 的统一反馈路径。
+4. `WorkbenchCommandExecutionResult` 是命令反馈的基础事实来源之一，但状态栏暴露的是 UI-level status/debug message。
+5. disabled、not found、failed 不应被 UI surface 吞掉。下一阶段应进入 status/debug message 与 diagnostics 的统一反馈路径，不急着做 toast 或 shell command line。
 6. 后续 Undo / Redo 必须接同一命令体系，不能另开一套隐藏入口。
 
 推荐下一切片：
 
 ```text
-[Slice] Studio: command result feedback surface
+[Slice] Studio: status debug message surface
 ```
 
 范围：
 
-- 在状态栏或轻量 notification surface 显示最近命令失败/禁用原因。
-- 将 `WorkbenchCommandExecutionResult` 转为 UI feedback record。
-- 不做 toast 动画系统，不做完整 notification center。
+- 在状态栏显示最新 UI-level status/debug message。
+- 将 `WorkbenchCommandExecutionResult` 作为第一类 producer 转为 `EditorStatusMessageSnapshot`。
+- Console/debug producer 后续通过 `TargetPanelId = "console"` 复用同一路由；当前不做 shell command line、toast 动画系统或完整 notification center。
 
 ## 6. Dialog / Popup 合同
 
@@ -399,7 +399,7 @@ EditorDialogRequest / EditorDialogResult
 EditorBackgroundTaskSnapshot
 EditorTransactionServiceSnapshot
 EditorLifecycleEventSnapshot
-Status feedback record
+Status/debug message record
 Diagnostic record
 Design preview convention
 ```
@@ -432,9 +432,10 @@ Feature/provider/plugin lifecycle bus
 
 1. 全局状态栏只显示跨 Feature 的持续状态，例如后台任务、最近命令失败、诊断计数、dirty/play 状态。
 2. Feature 内部状态留在 Feature 面板内，除非它影响全局健康状态。
-3. 状态反馈必须来自 data-only snapshot 或 command result，不从 View 反查控件状态。
+3. 状态反馈必须来自 data-only status/debug snapshot 或 command result，不从 View 反查控件状态。
 4. Dialog 只用于必须阻塞用户决策的情况。普通失败、禁用和后台进度优先进入 status/diagnostics。
-5. Problems / Console 接入前，先定义 UI-level diagnostic record，不直接读取 native engine log。
+5. Status/debug message 是 UI-level record：命令结果是第一类 producer；未来 Console/debug producer 应设置 `TargetPanelId = "console"`，让状态栏可以打开或聚焦 Console。该层不直接读取 native engine log，也不代表 shell command line。
+6. Problems / Console 接入前，先定义 UI-level diagnostic record，不直接读取 native engine log。
 
 判断标准：
 
@@ -544,9 +545,10 @@ UI-sensitive 改动还需要手工或截图确认：
 
 按稳定性和当前缺口排序：
 
-1. `[Slice] Studio: command result feedback surface`
-   - 把 `WorkbenchCommandExecutionResult` 显示到状态栏/轻量反馈。
-   - 失败进入 Problems/Console 的设计先写 UI-level contract，不急着做完整面板。
+1. `[Slice] Studio: status debug message surface`
+   - 把 `WorkbenchCommandExecutionResult` 作为第一类 producer 显示到状态栏 latest status/debug message。
+   - Console/debug producer 后续通过 `TargetPanelId = "console"` 复用同一路由。
+   - Problems / Console 的完整数据接入先写 UI-level contract，不急着做完整面板或 shell command line。
    - 不做 toast 动画系统，不做 notification center。
 
 2. `[Slice] Studio: background tasks panel`
