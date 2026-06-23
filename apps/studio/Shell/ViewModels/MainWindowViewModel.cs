@@ -26,7 +26,8 @@ public class MainWindowViewModel : ViewModelBase
     private bool hasActiveBackgroundTasks_;
     private string activeBackgroundTaskTitle_ = string.Empty;
     private string activeBackgroundTaskMessage_ = string.Empty;
-    private EditorCommandFeedbackSnapshot? lastCommandFeedback_;
+    private readonly RelayCommand openStatusMessageTargetCommand_;
+    private EditorStatusMessageSnapshot? lastStatusMessage_;
 
     public MainWindowViewModel()
         : this(new EditorSelectionService(), EditorDockLayoutStore.TryLoad())
@@ -68,12 +69,15 @@ public class MainWindowViewModel : ViewModelBase
             panelCommandService_,
             OpenCommandPaletteFromCommand,
             OpenAboutDialogFromCommand);
-        var commandRouter = new WorkbenchCommandFeedbackRouter(
+        var commandRouter = new WorkbenchCommandStatusMessageRouter(
             new WorkbenchCommandRouter(actionRegistry, actionExecutor),
-            PublishCommandFeedback);
+            PublishStatusMessage);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
+        openStatusMessageTargetCommand_ = new RelayCommand(
+            OpenStatusMessageTarget,
+            () => CanOpenStatusMessageTarget);
         var actions = actionRegistry.GetAll();
         CommandPalette = new CommandPaletteViewModel(actions, commandRouter.Execute);
         shortcutRouter_ = WorkbenchShortcutRouter.FromActions(actions, commandRouter);
@@ -103,6 +107,8 @@ public class MainWindowViewModel : ViewModelBase
 
     public IRelayCommand<string?> OpenPanelCommand { get; }
 
+    public IRelayCommand OpenStatusMessageTargetCommand => openStatusMessageTargetCommand_;
+
     public CommandPaletteViewModel CommandPalette { get; }
 
     public EditorDialogHostViewModel DialogHost { get; }
@@ -131,38 +137,47 @@ public class MainWindowViewModel : ViewModelBase
         private set => SetProperty(ref activeBackgroundTaskMessage_, value);
     }
 
-    public EditorCommandFeedbackSnapshot? LastCommandFeedback
+    public EditorStatusMessageSnapshot? LastStatusMessage
     {
-        get => lastCommandFeedback_;
+        get => lastStatusMessage_;
         private set
         {
-            if (SetProperty(ref lastCommandFeedback_, value))
+            if (SetProperty(ref lastStatusMessage_, value))
             {
-                OnPropertyChanged(nameof(HasCommandFeedback));
-                OnPropertyChanged(nameof(CommandFeedbackMessage));
-                OnPropertyChanged(nameof(IsCommandFeedbackSuccess));
-                OnPropertyChanged(nameof(IsCommandFeedbackWarning));
-                OnPropertyChanged(nameof(IsCommandFeedbackError));
-                OnPropertyChanged(nameof(IsCommandFeedbackInfo));
+                OnPropertyChanged(nameof(HasStatusMessage));
+                OnPropertyChanged(nameof(StatusMessageText));
+                OnPropertyChanged(nameof(IsStatusMessageDebug));
+                OnPropertyChanged(nameof(IsStatusMessageInfo));
+                OnPropertyChanged(nameof(IsStatusMessageSuccess));
+                OnPropertyChanged(nameof(IsStatusMessageWarning));
+                OnPropertyChanged(nameof(IsStatusMessageError));
+                OnPropertyChanged(nameof(CanOpenStatusMessageTarget));
+                openStatusMessageTargetCommand_.NotifyCanExecuteChanged();
             }
         }
     }
 
-    public bool HasCommandFeedback => LastCommandFeedback is not null;
+    public bool HasStatusMessage => LastStatusMessage is not null;
 
-    public string CommandFeedbackMessage => LastCommandFeedback?.Message ?? string.Empty;
+    public string StatusMessageText => LastStatusMessage?.Message ?? string.Empty;
 
-    public bool IsCommandFeedbackSuccess =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Success;
+    public bool IsStatusMessageDebug =>
+        LastStatusMessage?.Severity == EditorStatusMessageSeverity.Debug;
 
-    public bool IsCommandFeedbackWarning =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Warning;
+    public bool IsStatusMessageInfo =>
+        LastStatusMessage?.Severity == EditorStatusMessageSeverity.Info;
 
-    public bool IsCommandFeedbackError =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Error;
+    public bool IsStatusMessageSuccess =>
+        LastStatusMessage?.Severity == EditorStatusMessageSeverity.Success;
 
-    public bool IsCommandFeedbackInfo =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Info;
+    public bool IsStatusMessageWarning =>
+        LastStatusMessage?.Severity == EditorStatusMessageSeverity.Warning;
+
+    public bool IsStatusMessageError =>
+        LastStatusMessage?.Severity == EditorStatusMessageSeverity.Error;
+
+    public bool CanOpenStatusMessageTarget =>
+        !string.IsNullOrWhiteSpace(LastStatusMessage?.TargetPanelId);
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
@@ -298,9 +313,22 @@ public class MainWindowViewModel : ViewModelBase
         ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
     }
 
-    private void PublishCommandFeedback(WorkbenchCommandExecutionResult result)
+    internal void PublishStatusMessage(EditorStatusMessageSnapshot snapshot)
     {
-        LastCommandFeedback = EditorCommandFeedbackSnapshot.FromResult(result);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        LastStatusMessage = snapshot;
+    }
+
+    private void OpenStatusMessageTarget()
+    {
+        var targetPanelId = LastStatusMessage?.TargetPanelId;
+        if (string.IsNullOrWhiteSpace(targetPanelId))
+        {
+            return;
+        }
+
+        panelCommandService_.OpenOrFocusPanel(targetPanelId);
     }
 
     internal static IPanelRegistry CreatePanelRegistry(IEditorSelectionService? selectionService = null)
