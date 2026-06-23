@@ -24,16 +24,22 @@
   - Converts `WorkbenchCommandExecutionResult` into status messages without exposing command-only status fields.
 - Rename: `Shell/Commands/WorkbenchCommandFeedbackRouter.cs` -> `Shell/Commands/WorkbenchCommandStatusMessageRouter.cs`
   - Decorates `IWorkbenchCommandRouter`, maps command results to status messages, publishes them, and returns the original result unchanged.
+- Modify: `Shell/Commands/PanelCommandService.cs`
+  - Provides non-throwing target validation for status-message panel routing.
+- Modify: `Shell/ViewModels/EditorDockWorkspaceViewModel.cs`
+  - Provides non-throwing panel openability checks before `OpenPanel` reaches `GetRequired`.
 - Modify: `Shell/ViewModels/MainWindowViewModel.cs`
   - Owns `LastStatusMessage`, status message binding properties, and `OpenStatusMessageTargetCommand`.
 - Modify: `Shell/Views/MainWindow.axaml`
-  - Replaces command-feedback status text with generic status-message binding and optional command target click behavior.
+  - Replaces command-feedback status text with generic status-message binding, optional command target click behavior, and explicit trimmed text rendering.
 - Rename: `Tests/Editor.Tests/Core/EditorCommandFeedbackSnapshotTests.cs` -> `Tests/Editor.Tests/Core/EditorStatusMessageSnapshotTests.cs`
   - Covers command result mapping into the generic status message contract.
 - Modify: `Tests/Editor.Tests/Shell/ViewModels/MainWindowViewModelTests.cs`
-  - Updates command producer assertions to the generic status message surface and adds target-routing coverage.
+  - Updates command producer assertions to the generic status message surface and adds valid, passive, and invalid target-routing coverage.
+- Modify: `Tests/Editor.Tests/Shell/Commands/PanelCommandServiceTests.cs`
+  - Covers unknown panel ids returning false instead of throwing.
 - Modify: `Tests/Editor.Tests/Shell/Views/MainWindowXamlTests.cs`
-  - Ensures XAML no longer binds to command-feedback names.
+  - Ensures XAML no longer binds to command-feedback names and preserves status text trimming.
 - Modify: `docs/Dock系统指南.md`
   - Records status/debug message v0 and explicit Console/Problems/shell boundaries.
 - Modify: `docs/编辑器UI平台规范.md`
@@ -367,7 +373,7 @@ public void Status_message_raises_visibility_message_severity_and_target_notific
 }
 ```
 
-Add these two tests after `OpenPanelCommand_opens_feature_panel_content`:
+Add these three tests after `OpenPanelCommand_opens_feature_panel_content`:
 
 ```csharp
 [Fact]
@@ -403,6 +409,34 @@ public void Console_targeted_status_message_opens_console_panel()
     viewModel.OpenStatusMessageTargetCommand.Execute(null);
 
     Assert.True(viewModel.DockWorkspace.ContainsPanel("console"));
+}
+
+[Fact]
+public void Unknown_targeted_status_message_does_not_enable_or_throw()
+{
+    var viewModel = CreateMainWindowViewModel();
+    viewModel.PublishStatusMessage(new EditorStatusMessageSnapshot(
+        EditorStatusMessageSeverity.Error,
+        EditorStatusMessageSource.Console,
+        "Unknown target",
+        TargetPanelId: "missing-panel"));
+
+    Assert.False(viewModel.CanOpenStatusMessageTarget);
+    Assert.False(viewModel.OpenStatusMessageTargetCommand.CanExecute(null));
+    viewModel.OpenStatusMessageTargetCommand.Execute(null);
+}
+```
+
+Add this test to `Tests/Editor.Tests/Shell/Commands/PanelCommandServiceTests.cs`:
+
+```csharp
+[Fact]
+public void OpenOrFocusPanel_returns_false_for_unknown_panel()
+{
+    var workspace = CreateWorkspace();
+    var service = new PanelCommandService(workspace);
+
+    Assert.False(service.OpenOrFocusPanel("missing-panel"));
 }
 ```
 
@@ -494,7 +528,6 @@ After `OpenPanelCommand = new RelayCommand<string?>(...)`, add:
 openStatusMessageTargetCommand_ = new RelayCommand(
     OpenStatusMessageTarget,
     () => CanOpenStatusMessageTarget);
-OpenStatusMessageTargetCommand = openStatusMessageTargetCommand_;
 ```
 
 Replace the old command-feedback property block with:
@@ -540,9 +573,9 @@ public bool IsStatusMessageError =>
     LastStatusMessage?.Severity == EditorStatusMessageSeverity.Error;
 
 public bool CanOpenStatusMessageTarget =>
-    !string.IsNullOrWhiteSpace(LastStatusMessage?.TargetPanelId);
+    panelCommandService_.CanOpenOrFocusPanel(LastStatusMessage?.TargetPanelId);
 
-public IRelayCommand OpenStatusMessageTargetCommand { get; }
+public IRelayCommand OpenStatusMessageTargetCommand => openStatusMessageTargetCommand_;
 ```
 
 Replace:
@@ -565,12 +598,70 @@ internal void PublishStatusMessage(EditorStatusMessageSnapshot snapshot)
 
 private void OpenStatusMessageTarget()
 {
-    if (LastStatusMessage?.TargetPanelId is not { } targetPanelId)
+    var targetPanelId = LastStatusMessage?.TargetPanelId;
+    if (!panelCommandService_.CanOpenOrFocusPanel(targetPanelId))
     {
         return;
     }
 
-    _ = panelCommandService_.OpenOrFocusPanel(targetPanelId);
+    panelCommandService_.OpenOrFocusPanel(targetPanelId);
+}
+```
+
+Add non-throwing panel target validation in `Shell/Commands/PanelCommandService.cs`:
+
+```csharp
+public bool OpenOrFocusPanel(string? panelId)
+{
+    if (!TryGetPanelId(panelId, out var normalizedPanelId))
+    {
+        return false;
+    }
+
+    if (FocusPanel(normalizedPanelId))
+    {
+        return true;
+    }
+
+    return mainWorkspace_.CanOpenPanel(normalizedPanelId)
+        && mainWorkspace_.OpenPanel(normalizedPanelId);
+}
+
+public bool CanOpenOrFocusPanel(string? panelId)
+{
+    return TryGetPanelId(panelId, out var normalizedPanelId)
+        && (IsPanelOpen(normalizedPanelId)
+            || mainWorkspace_.CanOpenPanel(normalizedPanelId));
+}
+```
+
+Add non-throwing openability checks in `Shell/ViewModels/EditorDockWorkspaceViewModel.cs`:
+
+```csharp
+public bool CanOpenPanel(string? panelId)
+{
+    if (!IsMainWindow
+        || panelRegistry_ is null
+        || string.IsNullOrWhiteSpace(panelId))
+    {
+        return false;
+    }
+
+    if (ContainsPanel(panelId))
+    {
+        return true;
+    }
+
+    foreach (var descriptor in panelRegistry_.GetAll())
+    {
+        if (string.Equals(descriptor.Id, panelId, StringComparison.Ordinal)
+            && windowsByArea_.ContainsKey(descriptor.DefaultArea))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 ```
 
@@ -579,7 +670,7 @@ private void OpenStatusMessageTarget()
 Run:
 
 ```powershell
-dotnet test Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "FullyQualifiedName~MainWindowViewModelTests|FullyQualifiedName~EditorStatusMessageSnapshotTests"
+dotnet test Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "FullyQualifiedName~MainWindowViewModelTests|FullyQualifiedName~EditorStatusMessageSnapshotTests|FullyQualifiedName~PanelCommandServiceTests"
 ```
 
 Expected: PASS.
@@ -587,7 +678,7 @@ Expected: PASS.
 Commit:
 
 ```powershell
-git add Shell\Commands\WorkbenchCommandStatusMessageRouter.cs Shell\ViewModels\MainWindowViewModel.cs Tests\Editor.Tests\Shell\ViewModels\MainWindowViewModelTests.cs
+git add Shell\Commands\WorkbenchCommandStatusMessageRouter.cs Shell\Commands\PanelCommandService.cs Shell\ViewModels\EditorDockWorkspaceViewModel.cs Shell\ViewModels\MainWindowViewModel.cs Tests\Editor.Tests\Shell\Commands\PanelCommandServiceTests.cs Tests\Editor.Tests\Shell\ViewModels\MainWindowViewModelTests.cs
 git add -u Shell\Commands Tests\Editor.Tests\Shell\ViewModels
 git commit -m "feat: publish latest studio status messages"
 ```
@@ -609,10 +700,12 @@ public void Status_bar_binds_latest_status_message_with_severity_classes_and_tar
     var xaml = LoadMainWindowXaml();
 
     Assert.Contains("Classes=\"status-message-status\"", xaml);
-    Assert.Contains("Content=\"{Binding StatusMessageText}\"", xaml);
     Assert.Contains("Command=\"{Binding OpenStatusMessageTargetCommand}\"", xaml);
     Assert.Contains("IsHitTestVisible=\"{Binding CanOpenStatusMessageTarget}\"", xaml);
     Assert.Contains("IsVisible=\"{Binding HasStatusMessage}\"", xaml);
+    Assert.Contains("Text=\"{Binding StatusMessageText}\"", xaml);
+    Assert.Contains("TextTrimming=\"CharacterEllipsis\"", xaml);
+    Assert.Contains("TextAlignment=\"Right\"", xaml);
     Assert.Contains("Classes.debug=\"{Binding IsStatusMessageDebug}\"", xaml);
     Assert.Contains("Classes.success=\"{Binding IsStatusMessageSuccess}\"", xaml);
     Assert.Contains("Classes.warning=\"{Binding IsStatusMessageWarning}\"", xaml);
@@ -690,11 +783,15 @@ In `Shell/Views/MainWindow.axaml`, replace the status `TextBlock` inside the sta
                         Classes.error="{Binding IsStatusMessageError}"
                         Classes.info="{Binding IsStatusMessageInfo}"
                         Command="{Binding OpenStatusMessageTargetCommand}"
-                        Content="{Binding StatusMessageText}"
                         HorizontalAlignment="Right"
                         IsHitTestVisible="{Binding CanOpenStatusMessageTarget}"
                         IsVisible="{Binding HasStatusMessage}"
-                        VerticalAlignment="Center" />
+                        VerticalAlignment="Center">
+                    <TextBlock MaxWidth="520"
+                               Text="{Binding StatusMessageText}"
+                               TextAlignment="Right"
+                               TextTrimming="CharacterEllipsis" />
+                </Button>
 ```
 
 - [ ] **Step 5: Run focused XAML/ViewModel tests and commit**
@@ -702,7 +799,7 @@ In `Shell/Views/MainWindow.axaml`, replace the status `TextBlock` inside the sta
 Run:
 
 ```powershell
-dotnet test Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "FullyQualifiedName~MainWindowXamlTests|FullyQualifiedName~MainWindowViewModelTests"
+dotnet test Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "FullyQualifiedName~MainWindowXamlTests|FullyQualifiedName~MainWindowViewModelTests|FullyQualifiedName~PanelCommandServiceTests"
 ```
 
 Expected: PASS.
@@ -839,7 +936,7 @@ git commit -m "test: verify studio status message surface"
 
 ## Self-Review
 
-- Spec coverage: Tasks 1-3 cover the generic Core model, command-result first producer, ViewModel status surface, optional Console panel target command, and XAML binding rename. Task 4 covers the docs boundary for Console, Problems, and future shell command-line behavior. Task 5 covers focused and full verification.
+- Spec coverage: Tasks 1-3 cover the generic Core model, command-result first producer, ViewModel status surface, optional Console panel target command, invalid target hardening, and XAML binding rename with trimmed status text. Task 4 covers the docs boundary for Console, Problems, and future shell command-line behavior. Task 5 covers focused and full verification.
 - Scope check: The plan does not create Console history, Problems ingestion, shell command input, native log ingestion, runtime/renderer integration, plugin API, toast history, or a combined bottom diagnostics panel.
 - Type consistency: The plan consistently uses `EditorStatusMessageSnapshot`, `EditorStatusMessageSeverity`, `EditorStatusMessageSource`, `WorkbenchCommandStatusMessageRouter`, `LastStatusMessage`, `StatusMessageText`, and `OpenStatusMessageTargetCommand`.
 - Placeholder scan: The plan contains no placeholder markers; every implementation task has concrete file paths, code snippets, commands, and expected outcomes.

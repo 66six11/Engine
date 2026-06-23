@@ -52,7 +52,7 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 | 事务服务 v0 | `IEditorTransactionService`, `EditorTransactionService` | Current / UI-neutral |
 | 生命周期事件 v0 | `IEditorLifecycleEventService`, `EditorLifecycleEventService` | Current / Shell window lifecycle only |
 | Dock tab overflow v0 | `EditorDockTabStripScrollController`, `EditorDockTabStripView` | Current / view-only scroll state |
-| 状态栏反馈 | `ActivityIndicator`, `MainWindowViewModel` summary properties | Partial |
+| 状态栏反馈 | `ActivityIndicator`, `EditorStatusMessageSnapshot`, `MainWindowViewModel` summary/status properties | Current / status-debug message v0 |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
 | 只读 Scene snapshot | `ISceneSnapshotProvider`, `InMemorySceneSnapshotProvider` | Current / read-only |
 
