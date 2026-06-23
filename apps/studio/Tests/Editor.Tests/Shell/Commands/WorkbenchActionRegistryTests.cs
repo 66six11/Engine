@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Models;
 using Editor.Shell.Commands;
@@ -17,6 +18,69 @@ public sealed class WorkbenchActionRegistryTests
         registry.Register(CreatePanelAction("second", "Second", "second-panel"));
 
         Assert.Equal(["first", "second"], registry.GetAll().Select(action => action.Id));
+    }
+
+    [Fact]
+    public void RegisterOwned_records_owner_and_removal_handle_removes_action()
+    {
+        var registry = new WorkbenchActionRegistry();
+        var owner = new EditorExtensionId("test.owner");
+        var lease = registry.RegisterOwned(
+            CreatePanelAction("owned.action", "Owned", "owned-panel"),
+            owner);
+
+        Assert.Equal(owner, registry.GetOwnerId("owned.action"));
+        Assert.Equal(["owned.action"], registry.GetAll().Select(action => action.Id));
+        Assert.NotNull(registry.FindById("owned.action"));
+
+        lease.Dispose();
+
+        Assert.Empty(registry.GetAll());
+        Assert.Null(registry.FindById("owned.action"));
+        Assert.Throws<KeyNotFoundException>(() => registry.GetOwnerId("owned.action"));
+    }
+
+    [Fact]
+    public void RegisterOwned_duplicate_action_diagnostic_includes_existing_and_new_owner()
+    {
+        var registry = new WorkbenchActionRegistry();
+        registry.RegisterOwned(
+            CreatePanelAction("shared.action", "First", "first-panel"),
+            new EditorExtensionId("test.first"));
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => registry.RegisterOwned(
+                CreatePanelAction("shared.action", "Second", "second-panel"),
+                new EditorExtensionId("test.second")));
+
+        Assert.Equal(
+            "Workbench action id 'shared.action' is already registered by 'test.first'; "
+            + "new owner 'test.second' cannot register it.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void RegisterOwned_stale_removal_handle_does_not_remove_newer_registration()
+    {
+        var registry = new WorkbenchActionRegistry();
+        var firstLease = registry.RegisterOwned(
+            CreatePanelAction("reused.action", "First", "first-panel"),
+            new EditorExtensionId("test.first"));
+        firstLease.Dispose();
+
+        var secondOwner = new EditorExtensionId("test.second");
+        var secondLease = registry.RegisterOwned(
+            CreatePanelAction("reused.action", "Second", "second-panel"),
+            secondOwner);
+
+        firstLease.Dispose();
+
+        Assert.Equal(secondOwner, registry.GetOwnerId("reused.action"));
+        Assert.Equal(["reused.action"], registry.GetAll().Select(action => action.Id));
+
+        secondLease.Dispose();
+
+        Assert.Empty(registry.GetAll());
     }
 
     [Fact]

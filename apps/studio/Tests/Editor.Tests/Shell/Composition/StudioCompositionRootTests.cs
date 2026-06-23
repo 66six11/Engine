@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Threading.Tasks;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Composition;
@@ -30,9 +31,10 @@ public sealed class StudioCompositionRootTests
     }
 
     [Fact]
-    public void CreateMainWindowViewModel_uses_shared_default_composition()
+    public async Task CreateMainWindowViewModel_uses_shared_default_composition()
     {
-        var viewModel = new StudioCompositionRoot().CreateMainWindowViewModel(savedLayout: null);
+        await using var session = new StudioCompositionRoot().CreateMainWindowSession(savedLayout: null);
+        var viewModel = session.MainWindowViewModel;
 
         var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
             viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy").Content);
@@ -44,5 +46,19 @@ public sealed class StudioCompositionRootTests
 
         Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
         Assert.Equal("Demo Cube", inspector.Document?.Title);
+    }
+
+    [Fact]
+    public async Task CreateMainWindowSession_keeps_extension_host_alive_until_session_disposal()
+    {
+        var session = new StudioCompositionRoot().CreateMainWindowSession(savedLayout: null);
+
+        Assert.NotEmpty(session.Composition.PanelRegistry.GetAll());
+        Assert.NotEmpty(session.Composition.ActionRegistry.GetAll());
+
+        await session.DisposeAsync();
+
+        Assert.Empty(session.Composition.PanelRegistry.GetAll());
+        Assert.Empty(session.Composition.ActionRegistry.GetAll());
     }
 }

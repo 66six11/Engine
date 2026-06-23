@@ -7,27 +7,34 @@ namespace Editor.Shell.Composition;
 
 internal sealed class StudioCompositionRoot
 {
-    public MainWindowViewModel CreateMainWindowViewModel()
+    public StudioCompositionSession CreateMainWindowSession()
     {
-        return CreateMainWindowViewModel(EditorDockLayoutStore.TryLoad());
+        return CreateMainWindowSession(EditorDockLayoutStore.TryLoad());
     }
 
-    internal MainWindowViewModel CreateMainWindowViewModel(EditorDockLayoutSnapshot? savedLayout)
+    internal StudioCompositionSession CreateMainWindowSession(EditorDockLayoutSnapshot? savedLayout)
     {
         var selectionService = new EditorSelectionService();
-        var composition = CreateDefaultComposition(selectionService);
-        return new MainWindowViewModel(
+        var host = CreateDefaultHost(selectionService);
+        var composition = host.Compose();
+        var viewModel = new MainWindowViewModel(
             composition.PanelRegistry,
             composition.ActionRegistry,
             savedLayout,
             selectionService);
+        return new StudioCompositionSession(viewModel, composition, host);
     }
 
     public static EditorExtensionComposition CreateDefaultComposition(
         IEditorSelectionService? selectionService = null)
     {
         selectionService ??= new EditorSelectionService();
-        var host = new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules(selectionService));
-        return host.Compose();
+        return CreateDefaultHost(selectionService).Compose();
+    }
+
+    private static EditorExtensionHost CreateDefaultHost(
+        IEditorSelectionService selectionService)
+    {
+        return new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules(selectionService));
     }
 }

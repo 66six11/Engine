@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Shell.Commands;
 using Editor.Shell.Composition;
+using Editor.Shell.Docking;
 using Xunit;
 
 namespace Editor.Tests.Shell.Composition;
@@ -58,6 +60,65 @@ public sealed class EditorExtensionHostTests
         Assert.Equal(
             ["first.action", "second.action"],
             composition.ActionRegistry.GetAll().Select(action => action.Id));
+    }
+
+    [Fact]
+    public void Compose_registers_panel_and_action_owners()
+    {
+        var firstModule = new TestExtensionModule(
+            "test.first",
+            panels:
+            [
+                CreatePanel("first-panel"),
+            ],
+            actions:
+            [
+                CreateAction("first.action"),
+            ]);
+        var secondModule = new TestExtensionModule(
+            "test.second",
+            panels:
+            [
+                CreatePanel("second-panel"),
+            ],
+            actions:
+            [
+                CreateAction("second.action"),
+            ]);
+        var host = new EditorExtensionHost([firstModule, secondModule]);
+
+        var composition = host.Compose();
+
+        var panelRegistry = Assert.IsType<PanelRegistry>(composition.PanelRegistry);
+        var actionRegistry = Assert.IsType<WorkbenchActionRegistry>(composition.ActionRegistry);
+        Assert.Equal(firstModule.Id, panelRegistry.GetOwnerId("first-panel"));
+        Assert.Equal(secondModule.Id, panelRegistry.GetOwnerId("second-panel"));
+        Assert.Equal(firstModule.Id, actionRegistry.GetOwnerId("first.action"));
+        Assert.Equal(secondModule.Id, actionRegistry.GetOwnerId("second.action"));
+    }
+
+    [Fact]
+    public async Task DisposeAsync_removes_registered_panel_and_action_contributions()
+    {
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.first",
+                panels:
+                [
+                    CreatePanel("first-panel"),
+                ],
+                actions:
+                [
+                    CreateAction("first.action"),
+                ]),
+        ]);
+        var composition = host.Compose();
+
+        await host.DisposeAsync();
+
+        Assert.Empty(composition.PanelRegistry.GetAll());
+        Assert.Empty(composition.ActionRegistry.GetAll());
     }
 
     [Fact]
@@ -153,6 +214,37 @@ public sealed class EditorExtensionHostTests
 
         Assert.Same(expectedException, exception);
         Assert.Equal(["second", "first"], disposalOrder);
+    }
+
+    [Fact]
+    public async Task ActivateAsync_removes_registered_contributions_when_activation_fails()
+    {
+        var disposalOrder = new List<string>();
+        var expectedException = new InvalidOperationException("activation failed");
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.first",
+                panels:
+                [
+                    CreatePanel("first-panel"),
+                ],
+                actions:
+                [
+                    CreateAction("first.action"),
+                ],
+                lease: new RecordingLease("first", disposalOrder)),
+            new TestExtensionModule("test.second", activateException: expectedException),
+        ]);
+        var composition = host.Compose();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await host.ActivateAsync(CancellationToken.None));
+
+        Assert.Same(expectedException, exception);
+        Assert.Equal(["first"], disposalOrder);
+        Assert.Empty(composition.PanelRegistry.GetAll());
+        Assert.Empty(composition.ActionRegistry.GetAll());
     }
 
     [Fact]

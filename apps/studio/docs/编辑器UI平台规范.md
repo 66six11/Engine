@@ -52,6 +52,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | 事务服务 v0 | `IEditorTransactionService`, `EditorTransactionService` | Current / UI-neutral |
 | 生命周期事件 v0 | `IEditorLifecycleEventService`, `EditorLifecycleEventService` | Current / Shell window lifecycle only |
 | 内置扩展组合 v0 | `EditorExtensionHost`, `EditorContributionBuilder`, `StudioCompositionRoot` | Current / built-in panel-action composition only |
+| Contribution ownership v0 | `PanelRegistry.RegisterOwned`, `WorkbenchActionRegistry.RegisterOwned`, `EditorExtensionHost`, `StudioCompositionSession` removal leases | Current / built-in panel-action owner tracking only |
 | Dock tab overflow v0 | `EditorDockTabStripScrollController`, `EditorDockTabStripView` | Current / view-only scroll state |
 | 状态栏反馈 | `ActivityIndicator`, `MainWindowViewModel` summary properties | Partial |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
@@ -73,7 +74,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | Native C ABI | Deferred；等 CPU-only bridge consumer 和 ABI checklist |
 | Avalonia native Vulkan viewport | Deferred；等 CPU-only native bridge 与 viewport ownership 设计 |
 
-`EditorExtensionHost v0` 只统一内置 panel/action contribution 的声明和注册所有权，不代表 provider lifecycle、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
+`EditorExtensionHost v0` 只统一内置 panel/action contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider lifecycle、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
 
 ## 3. 分层规则
 

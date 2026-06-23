@@ -14,6 +14,7 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
 {
     private readonly IEditorExtensionModule[] modules_ = CreateModuleArray(modules);
     private readonly List<IAsyncDisposable> activationLeases_ = [];
+    private readonly List<IDisposable> contributionLeases_ = [];
 
     public EditorExtensionComposition Compose()
     {
@@ -25,19 +26,34 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
 
         var panelRegistry = new PanelRegistry();
         var actionRegistry = new WorkbenchActionRegistry();
+        var committedContributions = new List<IDisposable>();
 
-        foreach (var contribution in contributions)
+        try
         {
-            foreach (var panel in contribution.Panels)
+            foreach (var contribution in contributions)
             {
-                panelRegistry.Register(panel);
-            }
+                foreach (var panel in contribution.Panels)
+                {
+                    committedContributions.Add(panelRegistry.RegisterOwned(
+                        panel,
+                        contribution.OwnerId));
+                }
 
-            foreach (var action in contribution.Actions)
-            {
-                actionRegistry.Register(action);
+                foreach (var action in contribution.Actions)
+                {
+                    committedContributions.Add(actionRegistry.RegisterOwned(
+                        action,
+                        contribution.OwnerId));
+                }
             }
         }
+        catch
+        {
+            DisposeRegistrationLeases(committedContributions);
+            throw;
+        }
+
+        contributionLeases_.AddRange(committedContributions);
 
         return new EditorExtensionComposition(panelRegistry, actionRegistry);
     }
@@ -65,6 +81,7 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         catch (Exception activationException)
         {
             var disposeExceptions = await DisposeLeasesAsync(startedLeases);
+            disposeExceptions.AddRange(DisposeRegistrationLeases(contributionLeases_));
             if (disposeExceptions.Count > 0)
             {
                 throw new AggregateException(
@@ -80,6 +97,7 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
     public async ValueTask DisposeAsync()
     {
         var disposeExceptions = await DisposeLeasesAsync(activationLeases_);
+        disposeExceptions.AddRange(DisposeRegistrationLeases(contributionLeases_));
         if (disposeExceptions.Count > 0)
         {
             throw new AggregateException(disposeExceptions);
@@ -166,7 +184,34 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         }
     }
 
-    private static async ValueTask<IReadOnlyList<Exception>> DisposeLeasesAsync(
+    private static IReadOnlyList<Exception> DisposeRegistrationLeases(
+        List<IDisposable> leases)
+    {
+        var exceptions = new List<Exception>();
+
+        try
+        {
+            for (var index = leases.Count - 1; index >= 0; index--)
+            {
+                try
+                {
+                    leases[index].Dispose();
+                }
+                catch (Exception exception)
+                {
+                    exceptions.Add(exception);
+                }
+            }
+        }
+        finally
+        {
+            leases.Clear();
+        }
+
+        return exceptions;
+    }
+
+    private static async ValueTask<List<Exception>> DisposeLeasesAsync(
         List<IAsyncDisposable> leases)
     {
         var exceptions = new List<Exception>();
