@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using Editor.Core.Models;
+using Editor.Shell.Composition;
 using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 using Editor.Shell.Views;
@@ -15,9 +16,10 @@ public sealed class EditorLifecycleViewHookTests
     public void MainWindow_publish_helper_routes_to_view_model_lifecycle_service()
     {
         var lifecycleEvents = new EditorLifecycleEventService();
+        var composition = MainWindowViewModel.CreateDefaultComposition();
         var viewModel = new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
-            MainWindowViewModel.CreateWorkbenchActionRegistry(),
+            composition.PanelRegistry,
+            composition.ActionRegistry,
             savedLayout: null,
             lifecycleEvents: lifecycleEvents);
 
@@ -37,8 +39,9 @@ public sealed class EditorLifecycleViewHookTests
     public void FloatingWindow_publish_helper_routes_to_view_model_lifecycle_service()
     {
         var lifecycleEvents = new EditorLifecycleEventService();
+        var composition = MainWindowViewModel.CreateDefaultComposition();
         var workspace = new EditorDockWorkspaceViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
+            composition.PanelRegistry,
             lifecycleEvents);
         var viewModel = new EditorDockFloatingWindowViewModel(workspace, lifecycleEvents);
 

@@ -7,6 +7,7 @@ using Editor.Core.Models;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Commands;
+using Editor.Shell.Composition;
 using Editor.Shell.Docking;
 using Editor.Shell.Selection;
 using Editor.Shell.Services;
@@ -32,9 +33,10 @@ public sealed class MainWindowViewModelTests
     public void Default_panel_content_shares_main_window_selection_service()
     {
         var selectionService = new EditorSelectionService();
+        var composition = CreateDefaultComposition(selectionService);
         var viewModel = new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(selectionService),
-            MainWindowViewModel.CreateWorkbenchActionRegistry(selectionService),
+            composition.PanelRegistry,
+            composition.ActionRegistry,
             savedLayout: null,
             selectionService);
         var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
@@ -201,9 +203,10 @@ public sealed class MainWindowViewModelTests
                 },
             },
         };
+        var composition = CreateDefaultComposition();
         var viewModel = new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
-            MainWindowViewModel.CreateWorkbenchActionRegistry(),
+            composition.PanelRegistry,
+            composition.ActionRegistry,
             snapshot,
             lifecycleEvents: lifecycleEvents);
 
@@ -497,14 +500,21 @@ public sealed class MainWindowViewModelTests
         IEditorLifecycleEventService? lifecycleEvents = null)
     {
         uiDispatcher ??= new CapturingUiDispatcher(hasAccess: true);
+        var composition = CreateDefaultComposition();
 
         return new MainWindowViewModel(
-            MainWindowViewModel.CreatePanelRegistry(),
-            MainWindowViewModel.CreateWorkbenchActionRegistry(),
+            composition.PanelRegistry,
+            composition.ActionRegistry,
             savedLayout: null,
             backgroundTasks: backgroundTasks,
             uiDispatcher: uiDispatcher,
             lifecycleEvents: lifecycleEvents);
+    }
+
+    private static EditorExtensionComposition CreateDefaultComposition(
+        IEditorSelectionService? selectionService = null)
+    {
+        return StudioCompositionRoot.CreateDefaultComposition(selectionService);
     }
 
     private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher

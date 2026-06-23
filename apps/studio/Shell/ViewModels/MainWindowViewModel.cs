@@ -29,18 +29,21 @@ public class MainWindowViewModel : ViewModelBase
     private EditorCommandFeedbackSnapshot? lastCommandFeedback_;
 
     public MainWindowViewModel()
-        : this(new EditorSelectionService(), EditorDockLayoutStore.TryLoad())
+        : this(EditorDockLayoutStore.TryLoad())
     {
     }
 
-    private MainWindowViewModel(
-        IEditorSelectionService selectionService,
-        EditorDockLayoutSnapshot? savedLayout)
+    private MainWindowViewModel(EditorDockLayoutSnapshot? savedLayout)
+        : this(CreateDefaultViewModelArguments(savedLayout))
+    {
+    }
+
+    private MainWindowViewModel(MainWindowViewModelArguments arguments)
         : this(
-            CreatePanelRegistry(selectionService),
-            CreateWorkbenchActionRegistry(selectionService),
-            savedLayout,
-            selectionService)
+            arguments.Composition.PanelRegistry,
+            arguments.Composition.ActionRegistry,
+            arguments.SavedLayout,
+            arguments.SelectionService)
     {
     }
 
@@ -305,29 +308,34 @@ public class MainWindowViewModel : ViewModelBase
 
     internal static IPanelRegistry CreatePanelRegistry(IEditorSelectionService? selectionService = null)
     {
-        selectionService ??= new EditorSelectionService();
-        var registry = new PanelRegistry();
-
-        foreach (var module in EditorFeatureCatalog.CreateDefaultModules(selectionService))
-        {
-            module.RegisterPanels(registry);
-        }
-
-        return registry;
+        return CreateDefaultComposition(selectionService).PanelRegistry;
     }
 
     internal static IWorkbenchActionRegistry CreateWorkbenchActionRegistry(IEditorSelectionService? selectionService = null)
     {
-        selectionService ??= new EditorSelectionService();
-        var registry = new WorkbenchActionRegistry();
-
-        foreach (var module in EditorFeatureCatalog.CreateDefaultModules(selectionService))
-        {
-            module.RegisterActions(registry);
-        }
-
-        return registry;
+        return CreateDefaultComposition(selectionService).ActionRegistry;
     }
+
+    internal static EditorExtensionComposition CreateDefaultComposition(
+        IEditorSelectionService? selectionService = null)
+    {
+        return StudioCompositionRoot.CreateDefaultComposition(selectionService);
+    }
+
+    private static MainWindowViewModelArguments CreateDefaultViewModelArguments(
+        EditorDockLayoutSnapshot? savedLayout)
+    {
+        var selectionService = new EditorSelectionService();
+        return new MainWindowViewModelArguments(
+            StudioCompositionRoot.CreateDefaultComposition(selectionService),
+            savedLayout,
+            selectionService);
+    }
+
+    private sealed record MainWindowViewModelArguments(
+        EditorExtensionComposition Composition,
+        EditorDockLayoutSnapshot? SavedLayout,
+        IEditorSelectionService SelectionService);
 
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
         IReadOnlyList<WorkbenchActionDescriptor> actions,

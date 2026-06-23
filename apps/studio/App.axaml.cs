@@ -1,7 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using Editor.Shell.ViewModels;
+using Editor.Shell.Composition;
 using Editor.Shell.Views;
 
 namespace Editor;
@@ -20,7 +20,7 @@ public partial class App : Application
         {
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(),
+                DataContext = new StudioCompositionRoot().CreateMainWindowViewModel(),
             };
         }
 
