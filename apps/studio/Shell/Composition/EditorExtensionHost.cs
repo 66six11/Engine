@@ -50,6 +50,8 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         {
             foreach (var module in modules_)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var lease = await module.ActivateAsync(
                     EditorExtensionActivationContext.Instance,
                     cancellationToken);
@@ -60,9 +62,15 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
                 }
             }
         }
-        catch
+        catch (Exception activationException)
         {
-            await DisposeLeasesAsync(startedLeases);
+            var disposeExceptions = await DisposeLeasesAsync(startedLeases);
+            if (disposeExceptions.Count > 0)
+            {
+                throw new AggregateException(
+                    [activationException, .. disposeExceptions]);
+            }
+
             throw;
         }
 
@@ -71,7 +79,11 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
 
     public async ValueTask DisposeAsync()
     {
-        await DisposeLeasesAsync(activationLeases_);
+        var disposeExceptions = await DisposeLeasesAsync(activationLeases_);
+        if (disposeExceptions.Count > 0)
+        {
+            throw new AggregateException(disposeExceptions);
+        }
     }
 
     private static IEditorExtensionModule[] CreateModuleArray(
@@ -154,18 +166,30 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         }
     }
 
-    private static async ValueTask DisposeLeasesAsync(List<IAsyncDisposable> leases)
+    private static async ValueTask<IReadOnlyList<Exception>> DisposeLeasesAsync(
+        List<IAsyncDisposable> leases)
     {
+        var exceptions = new List<Exception>();
+
         try
         {
             for (var index = leases.Count - 1; index >= 0; index--)
             {
-                await leases[index].DisposeAsync();
+                try
+                {
+                    await leases[index].DisposeAsync();
+                }
+                catch (Exception exception)
+                {
+                    exceptions.Add(exception);
+                }
             }
         }
         finally
         {
             leases.Clear();
         }
+
+        return exceptions;
     }
 }

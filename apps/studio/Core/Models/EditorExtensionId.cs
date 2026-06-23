@@ -2,7 +2,7 @@ using System;
 
 namespace Editor.Core.Models;
 
-public readonly record struct EditorExtensionId
+public sealed record EditorExtensionId
 {
     public EditorExtensionId(string value)
     {

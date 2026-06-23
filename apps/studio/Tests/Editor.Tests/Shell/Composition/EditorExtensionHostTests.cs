@@ -13,6 +13,17 @@ namespace Editor.Tests.Shell.Composition;
 public sealed class EditorExtensionHostTests
 {
     [Fact]
+    public void EditorExtensionId_rejects_empty_values_and_uses_class_value_equality()
+    {
+        Assert.True(typeof(EditorExtensionId).IsClass);
+        Assert.True(typeof(EditorExtensionId).IsSealed);
+        Assert.Throws<ArgumentException>(() => new EditorExtensionId(string.Empty));
+        Assert.Throws<ArgumentException>(() => new EditorExtensionId("   "));
+        Assert.Equal(new EditorExtensionId("test.extension"), new EditorExtensionId("test.extension"));
+        Assert.NotEqual(new EditorExtensionId("test.extension"), new EditorExtensionId("test.other"));
+    }
+
+    [Fact]
     public void Compose_declares_each_module_once_and_registers_panels_and_actions_together()
     {
         var firstModule = new TestExtensionModule(
@@ -47,6 +58,22 @@ public sealed class EditorExtensionHostTests
         Assert.Equal(
             ["first.action", "second.action"],
             composition.ActionRegistry.GetAll().Select(action => action.Id));
+    }
+
+    [Fact]
+    public void Compose_rejects_duplicate_extension_id_before_declaring_modules()
+    {
+        var firstModule = new TestExtensionModule("test.duplicate");
+        var secondModule = new TestExtensionModule("test.duplicate");
+        var host = new EditorExtensionHost([firstModule, secondModule]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => host.Compose());
+
+        Assert.Equal(
+            "Editor extension id 'test.duplicate' is registered more than once.",
+            exception.Message);
+        Assert.Equal(0, firstModule.DeclareCallCount);
+        Assert.Equal(0, secondModule.DeclareCallCount);
     }
 
     [Fact]
@@ -128,6 +155,74 @@ public sealed class EditorExtensionHostTests
         Assert.Equal(["second", "first"], disposalOrder);
     }
 
+    [Fact]
+    public async Task ActivateAsync_reports_activation_and_dispose_failures_when_rollback_disposal_fails()
+    {
+        var disposalOrder = new List<string>();
+        var activationFailure = new InvalidOperationException("activation failed");
+        var disposeFailure = new InvalidOperationException("dispose failed");
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.first",
+                lease: new RecordingLease("first", disposalOrder, disposeFailure)),
+            new TestExtensionModule(
+                "test.second",
+                lease: new RecordingLease("second", disposalOrder)),
+            new TestExtensionModule("test.third", activateException: activationFailure),
+        ]);
+
+        var exception = await Assert.ThrowsAsync<AggregateException>(
+            async () => await host.ActivateAsync(CancellationToken.None));
+
+        Assert.Equal(["second", "first"], disposalOrder);
+        Assert.Equal([activationFailure, disposeFailure], exception.InnerExceptions);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_attempts_every_lease_in_reverse_order_and_reports_all_failures()
+    {
+        var disposalOrder = new List<string>();
+        var firstDisposeFailure = new InvalidOperationException("first dispose failed");
+        var secondDisposeFailure = new InvalidOperationException("second dispose failed");
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.first",
+                lease: new RecordingLease("first", disposalOrder, firstDisposeFailure)),
+            new TestExtensionModule(
+                "test.second",
+                lease: new RecordingLease("second", disposalOrder, secondDisposeFailure)),
+            new TestExtensionModule(
+                "test.third",
+                lease: new RecordingLease("third", disposalOrder)),
+        ]);
+        await host.ActivateAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<AggregateException>(
+            async () => await host.DisposeAsync());
+
+        Assert.Equal(["third", "second", "first"], disposalOrder);
+        Assert.Equal([secondDisposeFailure, firstDisposeFailure], exception.InnerExceptions);
+    }
+
+    [Fact]
+    public async Task ActivateAsync_checks_cancellation_before_each_module_activation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var firstModule = new TestExtensionModule(
+            "test.first",
+            onActivate: _ => cancellation.Cancel());
+        var secondModule = new TestExtensionModule("test.second");
+        var host = new EditorExtensionHost([firstModule, secondModule]);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await host.ActivateAsync(cancellation.Token));
+
+        Assert.Equal(1, firstModule.ActivateCallCount);
+        Assert.Equal(0, secondModule.ActivateCallCount);
+    }
+
     private static PanelDescriptor CreatePanel(string id)
     {
         return new PanelDescriptor(
@@ -155,24 +250,29 @@ public sealed class EditorExtensionHostTests
         private readonly IReadOnlyList<WorkbenchActionDescriptor> actions_;
         private readonly IAsyncDisposable? lease_;
         private readonly Exception? activateException_;
+        private readonly Action<CancellationToken>? onActivate_;
 
         public TestExtensionModule(
             string id,
             IReadOnlyList<PanelDescriptor>? panels = null,
             IReadOnlyList<WorkbenchActionDescriptor>? actions = null,
             IAsyncDisposable? lease = null,
-            Exception? activateException = null)
+            Exception? activateException = null,
+            Action<CancellationToken>? onActivate = null)
         {
             Id = new EditorExtensionId(id);
             panels_ = panels ?? [];
             actions_ = actions ?? [];
             lease_ = lease;
             activateException_ = activateException;
+            onActivate_ = onActivate;
         }
 
         public EditorExtensionId Id { get; }
 
         public int DeclareCallCount { get; private set; }
+
+        public int ActivateCallCount { get; private set; }
 
         public void Declare(IEditorContributionBuilder builder)
         {
@@ -193,6 +293,9 @@ public sealed class EditorExtensionHostTests
             IEditorExtensionActivationContext context,
             CancellationToken cancellationToken)
         {
+            ActivateCallCount++;
+            onActivate_?.Invoke(cancellationToken);
+
             if (activateException_ is not null)
             {
                 throw activateException_;
@@ -206,16 +309,26 @@ public sealed class EditorExtensionHostTests
     {
         private readonly string id_;
         private readonly IList<string> disposalOrder_;
+        private readonly Exception? disposeException_;
 
-        public RecordingLease(string id, IList<string> disposalOrder)
+        public RecordingLease(
+            string id,
+            IList<string> disposalOrder,
+            Exception? disposeException = null)
         {
             id_ = id;
             disposalOrder_ = disposalOrder;
+            disposeException_ = disposeException;
         }
 
         public ValueTask DisposeAsync()
         {
             disposalOrder_.Add(id_);
+            if (disposeException_ is not null)
+            {
+                throw disposeException_;
+            }
+
             return ValueTask.CompletedTask;
         }
     }
