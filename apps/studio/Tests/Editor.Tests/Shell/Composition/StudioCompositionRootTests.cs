@@ -55,10 +55,12 @@ public sealed class StudioCompositionRootTests
 
         Assert.NotEmpty(session.Composition.PanelRegistry.GetAll());
         Assert.NotEmpty(session.Composition.ActionRegistry.GetAll());
+        Assert.NotEmpty(session.Composition.ProviderHost.GetSceneProviders());
 
         await session.DisposeAsync();
 
         Assert.Empty(session.Composition.PanelRegistry.GetAll());
         Assert.Empty(session.Composition.ActionRegistry.GetAll());
+        Assert.Empty(session.Composition.ProviderHost.GetSceneProviders());
     }
 }

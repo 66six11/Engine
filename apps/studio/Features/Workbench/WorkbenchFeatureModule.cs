@@ -35,6 +35,11 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        builder.AddSceneProvider(new SceneProviderDescriptor(
+            "workbench.scene.fixture",
+            EditorProviderRoles.ActiveScene,
+            () => sceneSnapshotProvider_));
+
         var panelDescriptors = CreatePanelDescriptors();
         foreach (var descriptor in panelDescriptors)
         {

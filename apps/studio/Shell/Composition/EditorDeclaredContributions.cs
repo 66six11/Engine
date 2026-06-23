@@ -6,4 +6,5 @@ namespace Editor.Shell.Composition;
 internal sealed record EditorDeclaredContributions(
     EditorExtensionId OwnerId,
     IReadOnlyList<PanelDescriptor> Panels,
-    IReadOnlyList<WorkbenchActionDescriptor> Actions);
+    IReadOnlyList<WorkbenchActionDescriptor> Actions,
+    IReadOnlyList<SceneProviderDescriptor> SceneProviders);

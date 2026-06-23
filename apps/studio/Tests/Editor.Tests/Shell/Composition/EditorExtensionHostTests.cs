@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Shell.Commands;
 using Editor.Shell.Composition;
 using Editor.Shell.Docking;
@@ -98,6 +99,27 @@ public sealed class EditorExtensionHostTests
     }
 
     [Fact]
+    public void Compose_registers_scene_provider_contributions_with_owner()
+    {
+        var provider = CreateProvider();
+        var module = new TestExtensionModule(
+            "test.owner",
+            sceneProviders:
+            [
+                new SceneProviderDescriptor(
+                    "test.scene",
+                    EditorProviderRoles.ActiveScene,
+                    () => provider),
+            ]);
+        var host = new EditorExtensionHost([module]);
+
+        var composition = host.Compose();
+
+        Assert.Same(provider, composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
+        Assert.Equal(module.Id, composition.ProviderHost.GetOwnerId("test.scene"));
+    }
+
+    [Fact]
     public async Task DisposeAsync_removes_registered_panel_and_action_contributions()
     {
         var host = new EditorExtensionHost(
@@ -119,6 +141,25 @@ public sealed class EditorExtensionHostTests
 
         Assert.Empty(composition.PanelRegistry.GetAll());
         Assert.Empty(composition.ActionRegistry.GetAll());
+    }
+
+    [Fact]
+    public async Task DisposeAsync_removes_registered_scene_provider_contributions()
+    {
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.owner",
+                sceneProviders:
+                [
+                    new SceneProviderDescriptor("test.scene", EditorProviderRoles.ActiveScene, CreateProvider),
+                ]),
+        ]);
+        var composition = host.Compose();
+
+        await host.DisposeAsync();
+
+        Assert.Empty(composition.ProviderHost.GetSceneProviders());
     }
 
     [Fact]
@@ -192,6 +233,58 @@ public sealed class EditorExtensionHostTests
         Assert.Contains("test.second", exception.Message);
         Assert.Equal(
             "Workbench action id 'shared.action' is contributed by both 'test.first' and 'test.second'.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void Compose_rejects_duplicate_scene_provider_role_before_returning_composition()
+    {
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.first",
+                sceneProviders:
+                [
+                    new SceneProviderDescriptor("first.scene", EditorProviderRoles.ActiveScene, CreateProvider),
+                ]),
+            new TestExtensionModule(
+                "test.second",
+                sceneProviders:
+                [
+                    new SceneProviderDescriptor("second.scene", EditorProviderRoles.ActiveScene, CreateProvider),
+                ]),
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => host.Compose());
+
+        Assert.Equal(
+            "Scene provider role 'scene.active' is contributed by both 'test.first' and 'test.second'.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void Compose_rejects_duplicate_scene_provider_id_before_returning_composition()
+    {
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.first",
+                sceneProviders:
+                [
+                    new SceneProviderDescriptor("shared.scene", EditorProviderRoles.ActiveScene, CreateProvider),
+                ]),
+            new TestExtensionModule(
+                "test.second",
+                sceneProviders:
+                [
+                    new SceneProviderDescriptor("shared.scene", "scene.preview", CreateProvider),
+                ]),
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => host.Compose());
+
+        Assert.Equal(
+            "Scene provider id 'shared.scene' is contributed by both 'test.first' and 'test.second'.",
             exception.Message);
     }
 
@@ -336,10 +429,22 @@ public sealed class EditorExtensionHostTests
             $"Tools/{id}");
     }
 
+    private static ISceneSnapshotProvider CreateProvider()
+    {
+        return new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            1,
+            [
+                new SceneObjectSnapshot("scene:test", "Test Scene", "scene"),
+            ]));
+    }
+
     private sealed class TestExtensionModule : IEditorExtensionModule
     {
         private readonly IReadOnlyList<PanelDescriptor> panels_;
         private readonly IReadOnlyList<WorkbenchActionDescriptor> actions_;
+        private readonly IReadOnlyList<SceneProviderDescriptor> sceneProviders_;
         private readonly IAsyncDisposable? lease_;
         private readonly Exception? activateException_;
         private readonly Action<CancellationToken>? onActivate_;
@@ -348,6 +453,7 @@ public sealed class EditorExtensionHostTests
             string id,
             IReadOnlyList<PanelDescriptor>? panels = null,
             IReadOnlyList<WorkbenchActionDescriptor>? actions = null,
+            IReadOnlyList<SceneProviderDescriptor>? sceneProviders = null,
             IAsyncDisposable? lease = null,
             Exception? activateException = null,
             Action<CancellationToken>? onActivate = null)
@@ -355,6 +461,7 @@ public sealed class EditorExtensionHostTests
             Id = new EditorExtensionId(id);
             panels_ = panels ?? [];
             actions_ = actions ?? [];
+            sceneProviders_ = sceneProviders ?? [];
             lease_ = lease;
             activateException_ = activateException;
             onActivate_ = onActivate;
@@ -378,6 +485,11 @@ public sealed class EditorExtensionHostTests
             foreach (var action in actions_)
             {
                 builder.AddAction(action);
+            }
+
+            foreach (var sceneProvider in sceneProviders_)
+            {
+                builder.AddSceneProvider(sceneProvider);
             }
         }
 

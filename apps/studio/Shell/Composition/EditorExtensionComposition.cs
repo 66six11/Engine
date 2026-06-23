@@ -4,4 +4,5 @@ namespace Editor.Shell.Composition;
 
 internal sealed record EditorExtensionComposition(
     IPanelRegistry PanelRegistry,
-    IWorkbenchActionRegistry ActionRegistry);
+    IWorkbenchActionRegistry ActionRegistry,
+    EditorProviderHost ProviderHost);

@@ -58,6 +58,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | 状态栏反馈 | `ActivityIndicator`, `MainWindowViewModel` summary properties | Partial |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
 | 只读 Scene snapshot | `ISceneSnapshotProvider`, `InMemorySceneSnapshotProvider` | Current / read-only |
+| Provider contribution v0 | `SceneProviderDescriptor`, `EditorProviderHost`, `EditorProviderRoles.ActiveScene` | Current / fixture-backed active scene provider registration |
 
 当前仍不稳定或未实现：
 
@@ -75,9 +76,11 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | Native C ABI | Deferred；等 CPU-only bridge consumer 和 ABI checklist |
 | Avalonia native Vulkan viewport | Deferred；等 CPU-only native bridge 与 viewport ownership 设计 |
 
-`EditorExtensionHost v0` 只统一内置 panel/action contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider lifecycle、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
+`EditorExtensionHost v0` 统一内置 panel/action/provider contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider reload、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
 
-`PanelInstanceManager v0` 只接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close 和 workspace/session shutdown disposal；逻辑 Activated/Deactivated callback、provider lifecycle、插件重载和 native viewport ownership 仍未实现。
+`PanelInstanceManager v0` 只接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close 和 workspace/session shutdown disposal；逻辑 Activated/Deactivated callback、provider reload/runtime lifecycle、插件重载和 native viewport ownership 仍未实现。
+
+`EditorProviderHost v0` 只接管 fixture-backed active scene provider contribution 的 role 唯一性、lazy materialization、Ready/Faulted status 和注册释放；`ISceneSnapshotProvider` 仍然只有 `GetCurrentSnapshot()` / `SnapshotChanged` / `TryGetObject()`，不加入 `Connect()`、`Disconnect()`、native handle 或写回语义。
 
 ## 3. 分层规则
 

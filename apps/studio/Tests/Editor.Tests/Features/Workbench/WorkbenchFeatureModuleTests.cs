@@ -1,5 +1,6 @@
 using System.Linq;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
@@ -163,6 +164,21 @@ public sealed class WorkbenchFeatureModuleTests
     }
 
     [Fact]
+    public void Compose_registers_workbench_active_scene_provider()
+    {
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
+
+        var providers = composition.ProviderHost.GetSceneProviders();
+
+        var descriptor = Assert.Single(providers);
+        Assert.Equal("workbench.scene.fixture", descriptor.Id);
+        Assert.Equal(EditorProviderRoles.ActiveScene, descriptor.Role);
+        Assert.IsType<InMemorySceneSnapshotProvider>(
+            composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
+    }
+
+    [Fact]
     public void Compose_injects_shared_selection_and_scene_snapshot_provider_into_selection_panels()
     {
         var selectionService = new EditorSelectionService();
@@ -180,6 +196,31 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.Contains(
             inspector.Document?.Sections.SelectMany(section => section.Properties) ?? [],
             property => property.Name == "Id" && property.Value == "scene:main/cube");
+    }
+
+    [Fact]
+    public void Hierarchy_and_inspector_observe_active_scene_provider_changes()
+    {
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
+        var provider = Assert.IsType<InMemorySceneSnapshotProvider>(
+            composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
+        var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
+            composition.PanelRegistry.GetRequired("hierarchy").CreateContent());
+        var inspector = Assert.IsType<InspectorPanelViewModel>(
+            composition.PanelRegistry.GetRequired("inspector").CreateContent());
+
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            2,
+            [
+                new SceneObjectSnapshot("scene:test", "Test Scene", "scene"),
+                new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh", parentId: "scene:test"),
+            ]));
+        hierarchy.SelectedNode = hierarchy.Nodes.Single(node => node.Id == "scene:test/sphere");
+
+        Assert.Equal("Sphere", inspector.Document?.Title);
     }
 
     private static PanelDescriptorSnapshot CreateSnapshot(PanelDescriptor descriptor)

@@ -23,9 +23,12 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         var contributions = DeclareContributions();
         ValidateUniquePanelIds(contributions);
         ValidateUniqueActionIds(contributions);
+        ValidateUniqueSceneProviderIds(contributions);
+        ValidateUniqueSceneProviderRoles(contributions);
 
         var panelRegistry = new PanelRegistry();
         var actionRegistry = new WorkbenchActionRegistry();
+        var providerHost = new EditorProviderHost();
         var committedContributions = new List<IDisposable>();
 
         try
@@ -45,6 +48,13 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
                         action,
                         contribution.OwnerId));
                 }
+
+                foreach (var sceneProvider in contribution.SceneProviders)
+                {
+                    committedContributions.Add(providerHost.RegisterOwned(
+                        sceneProvider,
+                        contribution.OwnerId));
+                }
             }
         }
         catch
@@ -55,7 +65,7 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
 
         contributionLeases_.AddRange(committedContributions);
 
-        return new EditorExtensionComposition(panelRegistry, actionRegistry);
+        return new EditorExtensionComposition(panelRegistry, actionRegistry, providerHost);
     }
 
     public async ValueTask ActivateAsync(CancellationToken cancellationToken = default)
@@ -179,6 +189,44 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
                     throw new InvalidOperationException(
                         $"Workbench action id '{action.Id}' is contributed by both "
                         + $"'{actionOwners[action.Id]}' and '{contribution.OwnerId}'.");
+                }
+            }
+        }
+    }
+
+    private static void ValidateUniqueSceneProviderIds(
+        IReadOnlyList<EditorDeclaredContributions> contributions)
+    {
+        var providerOwners = new Dictionary<string, EditorExtensionId>(StringComparer.Ordinal);
+
+        foreach (var contribution in contributions)
+        {
+            foreach (var sceneProvider in contribution.SceneProviders)
+            {
+                if (!providerOwners.TryAdd(sceneProvider.Id, contribution.OwnerId))
+                {
+                    throw new InvalidOperationException(
+                        $"Scene provider id '{sceneProvider.Id}' is contributed by both "
+                        + $"'{providerOwners[sceneProvider.Id]}' and '{contribution.OwnerId}'.");
+                }
+            }
+        }
+    }
+
+    private static void ValidateUniqueSceneProviderRoles(
+        IReadOnlyList<EditorDeclaredContributions> contributions)
+    {
+        var providerOwners = new Dictionary<string, EditorExtensionId>(StringComparer.Ordinal);
+
+        foreach (var contribution in contributions)
+        {
+            foreach (var sceneProvider in contribution.SceneProviders)
+            {
+                if (!providerOwners.TryAdd(sceneProvider.Role, contribution.OwnerId))
+                {
+                    throw new InvalidOperationException(
+                        $"Scene provider role '{sceneProvider.Role}' is contributed by both "
+                        + $"'{providerOwners[sceneProvider.Role]}' and '{contribution.OwnerId}'.");
                 }
             }
         }

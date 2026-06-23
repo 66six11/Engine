@@ -9,6 +9,7 @@ internal sealed class EditorContributionBuilder : IEditorContributionBuilder
 {
     private readonly List<PanelDescriptor> panels_ = [];
     private readonly List<WorkbenchActionDescriptor> actions_ = [];
+    private readonly List<SceneProviderDescriptor> sceneProviders_ = [];
 
     public void AddPanel(PanelDescriptor descriptor)
     {
@@ -22,11 +23,18 @@ internal sealed class EditorContributionBuilder : IEditorContributionBuilder
         actions_.Add(descriptor);
     }
 
+    public void AddSceneProvider(SceneProviderDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        sceneProviders_.Add(descriptor);
+    }
+
     public EditorDeclaredContributions Build(EditorExtensionId ownerId)
     {
         return new EditorDeclaredContributions(
             ownerId,
             panels_.ToArray(),
-            actions_.ToArray());
+            actions_.ToArray(),
+            sceneProviders_.ToArray());
     }
 }
