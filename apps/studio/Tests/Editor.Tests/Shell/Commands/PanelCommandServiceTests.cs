@@ -51,6 +51,15 @@ public sealed class PanelCommandServiceTests
     }
 
     [Fact]
+    public void OpenOrFocusPanel_returns_false_for_unknown_panel()
+    {
+        var workspace = CreateWorkspace();
+        var service = new PanelCommandService(workspace);
+
+        Assert.False(service.OpenOrFocusPanel("missing-panel"));
+    }
+
+    [Fact]
     public void ClosePanel_closes_main_workspace_panel()
     {
         var workspace = CreateWorkspace();

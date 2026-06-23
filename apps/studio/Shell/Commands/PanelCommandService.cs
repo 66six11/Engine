@@ -36,8 +36,20 @@ internal sealed class PanelCommandService
             return false;
         }
 
-        return FocusPanel(normalizedPanelId)
-            || mainWorkspace_.OpenPanel(normalizedPanelId);
+        if (FocusPanel(normalizedPanelId))
+        {
+            return true;
+        }
+
+        return mainWorkspace_.CanOpenPanel(normalizedPanelId)
+            && mainWorkspace_.OpenPanel(normalizedPanelId);
+    }
+
+    public bool CanOpenOrFocusPanel(string? panelId)
+    {
+        return TryGetPanelId(panelId, out var normalizedPanelId)
+            && (IsPanelOpen(normalizedPanelId)
+                || mainWorkspace_.CanOpenPanel(normalizedPanelId));
     }
 
     public bool FocusPanel(string? panelId)
