@@ -177,7 +177,7 @@ public class MainWindowViewModel : ViewModelBase
         LastStatusMessage?.Severity == EditorStatusMessageSeverity.Error;
 
     public bool CanOpenStatusMessageTarget =>
-        !string.IsNullOrWhiteSpace(LastStatusMessage?.TargetPanelId);
+        panelCommandService_.CanOpenOrFocusPanel(LastStatusMessage?.TargetPanelId);
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
@@ -323,7 +323,7 @@ public class MainWindowViewModel : ViewModelBase
     private void OpenStatusMessageTarget()
     {
         var targetPanelId = LastStatusMessage?.TargetPanelId;
-        if (string.IsNullOrWhiteSpace(targetPanelId))
+        if (!panelCommandService_.CanOpenOrFocusPanel(targetPanelId))
         {
             return;
         }

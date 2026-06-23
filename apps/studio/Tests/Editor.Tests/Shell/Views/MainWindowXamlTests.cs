@@ -12,10 +12,12 @@ public sealed class MainWindowXamlTests
         var xaml = LoadMainWindowXaml();
 
         Assert.Contains("Classes=\"status-message-status\"", xaml);
-        Assert.Contains("Content=\"{Binding StatusMessageText}\"", xaml);
         Assert.Contains("Command=\"{Binding OpenStatusMessageTargetCommand}\"", xaml);
         Assert.Contains("IsHitTestVisible=\"{Binding CanOpenStatusMessageTarget}\"", xaml);
         Assert.Contains("IsVisible=\"{Binding HasStatusMessage}\"", xaml);
+        Assert.Contains("Text=\"{Binding StatusMessageText}\"", xaml);
+        Assert.Contains("TextTrimming=\"CharacterEllipsis\"", xaml);
+        Assert.Contains("TextAlignment=\"Right\"", xaml);
         Assert.Contains("Classes.debug=\"{Binding IsStatusMessageDebug}\"", xaml);
         Assert.Contains("Classes.success=\"{Binding IsStatusMessageSuccess}\"", xaml);
         Assert.Contains("Classes.warning=\"{Binding IsStatusMessageWarning}\"", xaml);

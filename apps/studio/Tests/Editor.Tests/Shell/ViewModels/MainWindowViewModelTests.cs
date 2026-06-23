@@ -442,6 +442,21 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void Unknown_targeted_status_message_does_not_enable_or_throw()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        viewModel.PublishStatusMessage(new EditorStatusMessageSnapshot(
+            EditorStatusMessageSeverity.Error,
+            EditorStatusMessageSource.Console,
+            "Unknown target",
+            TargetPanelId: "missing-panel"));
+
+        Assert.False(viewModel.CanOpenStatusMessageTarget);
+        Assert.False(viewModel.OpenStatusMessageTargetCommand.CanExecute(null));
+        viewModel.OpenStatusMessageTargetCommand.Execute(null);
+    }
+
+    [Fact]
     public void PanelMenuItems_reflect_open_panels_in_main_workspace()
     {
         var viewModel = CreateMainWindowViewModel();

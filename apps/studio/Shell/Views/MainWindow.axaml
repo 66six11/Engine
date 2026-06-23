@@ -128,11 +128,15 @@
                         Classes.error="{Binding IsStatusMessageError}"
                         Classes.info="{Binding IsStatusMessageInfo}"
                         Command="{Binding OpenStatusMessageTargetCommand}"
-                        Content="{Binding StatusMessageText}"
                         HorizontalAlignment="Right"
                         IsHitTestVisible="{Binding CanOpenStatusMessageTarget}"
                         IsVisible="{Binding HasStatusMessage}"
-                        VerticalAlignment="Center" />
+                        VerticalAlignment="Center">
+                    <TextBlock MaxWidth="520"
+                               Text="{Binding StatusMessageText}"
+                               TextAlignment="Right"
+                               TextTrimming="CharacterEllipsis" />
+                </Button>
             </DockPanel>
         </Border>
 
