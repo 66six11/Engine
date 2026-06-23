@@ -59,6 +59,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
 | 只读 Scene snapshot | `ISceneSnapshotProvider`, `InMemorySceneSnapshotProvider` | Current / read-only |
 | Provider contribution v0 | `SceneProviderDescriptor`, `EditorProviderHost`, `EditorProviderRoles.ActiveScene` | Current / fixture-backed active scene provider registration |
+| Diagnostic projection v0 | `IEditorDiagnosticService`, `EditorDiagnosticService`, `ConsolePanelViewModel`, `ProblemsPanelViewModel` | Current / UI-neutral latest-status, console and problems projection only |
 
 当前仍不稳定或未实现：
 
@@ -81,6 +82,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 `PanelInstanceManager v0` 只接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close 和 workspace/session shutdown disposal；逻辑 Activated/Deactivated callback、provider reload/runtime lifecycle、插件重载和 native viewport ownership 仍未实现。
 
 `EditorProviderHost v0` 只接管 fixture-backed active scene provider contribution 的 role 唯一性、lazy materialization、Ready/Faulted status 和注册释放；`ISceneSnapshotProvider` 仍然只有 `GetCurrentSnapshot()` / `SnapshotChanged` / `TryGetObject()`，不加入 `Connect()`、`Disconnect()`、native handle 或写回语义。
+`EditorDiagnosticService v0` owns bounded UI-neutral diagnostic records and exposes latest, recent and problem-filtered snapshots. `MainWindowViewModel` publishes command feedback into this stream and uses the latest diagnostic as status text; Console consumes all recent diagnostics and Problems consumes only `EditorDiagnosticChannel.Problem`. This is not native engine log ingestion, shell command input, persisted log storage, provider reload diagnostics, plugin diagnostics or a final Console/Problems data grid.
 
 ## 3. 分层规则
 
@@ -369,6 +371,7 @@ WorkbenchActionDescriptor
 2. command failure 默认不弹 modal；只有用户必须决策时才转成 dialog。
 3. long-running command 必须创建 background task，再由 task 状态驱动 status bar 和任务面板。
 4. diagnostics 记录应可被 Console / Problems 复用，不绑定某个临时 overlay。
+5. Current diagnostic projection v0 uses one shared `IEditorDiagnosticService` per composition. Status shows the latest diagnostic message, Console shows recent diagnostics, and Problems filters to problem-channel diagnostics; native log streams, shell command execution, plugin/provider reload diagnostics and persistence remain deferred.
 
 ## 9. Design Preview 合同
 

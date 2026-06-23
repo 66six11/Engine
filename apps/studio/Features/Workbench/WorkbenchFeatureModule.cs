@@ -15,17 +15,38 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
 {
     private readonly IEditorSelectionService selectionService_;
     private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
+    private readonly IEditorDiagnosticService diagnostics_;
 
     public WorkbenchFeatureModule(IEditorSelectionService selectionService)
-        : this(selectionService, CreateDefaultSceneSnapshotProvider())
+        : this(selectionService, new EditorDiagnosticService(), CreateDefaultSceneSnapshotProvider())
+    {
+    }
+
+    public WorkbenchFeatureModule(
+        IEditorSelectionService selectionService,
+        IEditorDiagnosticService diagnostics)
+        : this(selectionService, diagnostics, CreateDefaultSceneSnapshotProvider())
     {
     }
 
     internal WorkbenchFeatureModule(
         IEditorSelectionService selectionService,
         ISceneSnapshotProvider sceneSnapshotProvider)
+        : this(selectionService, new EditorDiagnosticService(), sceneSnapshotProvider)
     {
+    }
+
+    internal WorkbenchFeatureModule(
+        IEditorSelectionService selectionService,
+        IEditorDiagnosticService diagnostics,
+        ISceneSnapshotProvider sceneSnapshotProvider)
+    {
+        ArgumentNullException.ThrowIfNull(selectionService);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
+
         selectionService_ = selectionService;
+        diagnostics_ = diagnostics;
         sceneSnapshotProvider_ = sceneSnapshotProvider;
     }
 
@@ -126,7 +147,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Bottom,
                 "Window/Panels/Console",
                 DockContentCachePolicy.KeepAlive,
-                () => new ConsolePanelViewModel(),
+                () => new ConsolePanelViewModel(diagnostics_),
                 IconKey: "studio.console",
                 Tag: "BOTTOM",
                 TitleDetail: "runtime log stream",
@@ -139,7 +160,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Bottom,
                 "Window/Panels/Problems",
                 DockContentCachePolicy.KeepAlive,
-                () => new ProblemsPanelViewModel(),
+                () => new ProblemsPanelViewModel(diagnostics_),
                 IconKey: "studio.problems",
                 Tag: "BOTTOM",
                 TitleDetail: "validation queue",

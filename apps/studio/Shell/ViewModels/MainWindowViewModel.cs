@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 using Editor.Shell.Composition;
@@ -27,6 +28,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private string activeBackgroundTaskTitle_ = string.Empty;
     private string activeBackgroundTaskMessage_ = string.Empty;
     private EditorCommandFeedbackSnapshot? lastCommandFeedback_;
+    private EditorDiagnosticRecord? latestStatusDiagnostic_;
+    private EditorCommandFeedbackSeverity? statusFeedbackSeverity_;
+    private readonly IEditorDiagnosticService diagnostics_;
     private bool isDisposed_;
 
     public MainWindowViewModel()
@@ -44,7 +48,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             arguments.Composition.PanelRegistry,
             arguments.Composition.ActionRegistry,
             arguments.SavedLayout,
-            arguments.SelectionService)
+            arguments.SelectionService,
+            diagnostics: arguments.Diagnostics)
     {
     }
 
@@ -55,12 +60,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         IEditorSelectionService? selectionService = null,
         IEditorBackgroundTaskService? backgroundTasks = null,
         IEditorUiDispatcher? uiDispatcher = null,
-        IEditorLifecycleEventService? lifecycleEvents = null)
+        IEditorLifecycleEventService? lifecycleEvents = null,
+        IEditorDiagnosticService? diagnostics = null)
     {
         SelectionService = selectionService ?? new EditorSelectionService();
         panelRegistry_ = panelRegistry;
         backgroundTasks_ = backgroundTasks ?? new EditorBackgroundTaskService();
         uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
+        diagnostics_ = diagnostics ?? new EditorDiagnosticService();
+        diagnostics_.DiagnosticsChanged += OnDiagnosticsChanged;
+        RefreshLatestDiagnostic();
         backgroundTasks_.TasksChanged += OnBackgroundTasksChanged;
         RefreshBackgroundTaskSummary();
 
@@ -152,21 +161,24 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public bool HasCommandFeedback => LastCommandFeedback is not null;
+    public bool HasCommandFeedback => latestStatusDiagnostic_ is not null || LastCommandFeedback is not null;
 
-    public string CommandFeedbackMessage => LastCommandFeedback?.Message ?? string.Empty;
+    public string CommandFeedbackMessage => latestStatusDiagnostic_?.Message ?? LastCommandFeedback?.Message ?? string.Empty;
 
     public bool IsCommandFeedbackSuccess =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Success;
+        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Success;
 
     public bool IsCommandFeedbackWarning =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Warning;
+        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Warning;
 
     public bool IsCommandFeedbackError =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Error;
+        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Error;
 
     public bool IsCommandFeedbackInfo =>
-        LastCommandFeedback?.Severity == EditorCommandFeedbackSeverity.Info;
+        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Info;
+
+    private EditorCommandFeedbackSeverity? CurrentCommandFeedbackSeverity =>
+        statusFeedbackSeverity_ ?? LastCommandFeedback?.Severity;
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
@@ -233,6 +245,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         isDisposed_ = true;
         closeFloatingWindows_?.Invoke();
         backgroundTasks_.TasksChanged -= OnBackgroundTasksChanged;
+        diagnostics_.DiagnosticsChanged -= OnDiagnosticsChanged;
         panelCommandService_.PanelStateChanged -= OnPanelCommandStateChanged;
         DockWorkspace.Dispose();
     }
@@ -299,6 +312,17 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         uiDispatcher_.Post(RefreshBackgroundTaskSummary);
     }
 
+    private void OnDiagnosticsChanged(object? sender, EventArgs e)
+    {
+        if (uiDispatcher_.CheckAccess())
+        {
+            RefreshLatestDiagnostic();
+            return;
+        }
+
+        uiDispatcher_.Post(RefreshLatestDiagnostic);
+    }
+
     private void RefreshBackgroundTaskSummary()
     {
         var activeBackgroundTasks = backgroundTasks_.GetActiveSnapshots();
@@ -318,7 +342,65 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void PublishCommandFeedback(WorkbenchCommandExecutionResult result)
     {
-        LastCommandFeedback = EditorCommandFeedbackSnapshot.FromResult(result);
+        var feedback = EditorCommandFeedbackSnapshot.FromResult(result);
+        LastCommandFeedback = feedback;
+        diagnostics_.Publish(
+            MapCommandFeedbackSeverity(feedback.Severity),
+            EditorDiagnosticChannel.Debug,
+            feedback.CommandId,
+            "workbench",
+            feedback.Message);
+    }
+
+    private void RefreshLatestDiagnostic()
+    {
+        var latestDiagnostic = diagnostics_.GetLatestDiagnostic();
+        if (latestStatusDiagnostic_ == latestDiagnostic)
+        {
+            return;
+        }
+
+        latestStatusDiagnostic_ = latestDiagnostic;
+        statusFeedbackSeverity_ = ResolveStatusFeedbackSeverity(latestDiagnostic);
+        OnPropertyChanged(nameof(HasCommandFeedback));
+        OnPropertyChanged(nameof(CommandFeedbackMessage));
+        OnPropertyChanged(nameof(IsCommandFeedbackSuccess));
+        OnPropertyChanged(nameof(IsCommandFeedbackWarning));
+        OnPropertyChanged(nameof(IsCommandFeedbackError));
+        OnPropertyChanged(nameof(IsCommandFeedbackInfo));
+    }
+
+    private EditorCommandFeedbackSeverity? ResolveStatusFeedbackSeverity(
+        EditorDiagnosticRecord? diagnostic)
+    {
+        if (diagnostic is null)
+        {
+            return LastCommandFeedback?.Severity;
+        }
+
+        if (LastCommandFeedback is { } feedback
+            && string.Equals(feedback.CommandId, diagnostic.Source, StringComparison.Ordinal)
+            && string.Equals(feedback.Message, diagnostic.Message, StringComparison.Ordinal))
+        {
+            return feedback.Severity;
+        }
+
+        return diagnostic.Severity switch
+        {
+            EditorDiagnosticSeverity.Warning => EditorCommandFeedbackSeverity.Warning,
+            EditorDiagnosticSeverity.Error => EditorCommandFeedbackSeverity.Error,
+            _ => EditorCommandFeedbackSeverity.Info,
+        };
+    }
+
+    private static EditorDiagnosticSeverity MapCommandFeedbackSeverity(EditorCommandFeedbackSeverity severity)
+    {
+        return severity switch
+        {
+            EditorCommandFeedbackSeverity.Warning => EditorDiagnosticSeverity.Warning,
+            EditorCommandFeedbackSeverity.Error => EditorDiagnosticSeverity.Error,
+            _ => EditorDiagnosticSeverity.Info,
+        };
     }
 
     internal static IPanelRegistry CreatePanelRegistry(IEditorSelectionService? selectionService = null)
@@ -332,25 +414,29 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     internal static EditorExtensionComposition CreateDefaultComposition(
-        IEditorSelectionService? selectionService = null)
+        IEditorSelectionService? selectionService = null,
+        IEditorDiagnosticService? diagnostics = null)
     {
-        return StudioCompositionRoot.CreateDefaultComposition(selectionService);
+        return StudioCompositionRoot.CreateDefaultComposition(selectionService, diagnostics);
     }
 
     private static MainWindowViewModelArguments CreateDefaultViewModelArguments(
         EditorDockLayoutSnapshot? savedLayout)
     {
         var selectionService = new EditorSelectionService();
+        var diagnostics = new EditorDiagnosticService();
         return new MainWindowViewModelArguments(
-            StudioCompositionRoot.CreateDefaultComposition(selectionService),
+            StudioCompositionRoot.CreateDefaultComposition(selectionService, diagnostics),
             savedLayout,
-            selectionService);
+            selectionService,
+            diagnostics);
     }
 
     private sealed record MainWindowViewModelArguments(
         EditorExtensionComposition Composition,
         EditorDockLayoutSnapshot? SavedLayout,
-        IEditorSelectionService SelectionService);
+        IEditorSelectionService SelectionService,
+        IEditorDiagnosticService Diagnostics);
 
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
         IReadOnlyList<WorkbenchActionDescriptor> actions,

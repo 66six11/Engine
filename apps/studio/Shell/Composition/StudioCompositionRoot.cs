@@ -1,4 +1,5 @@
 using Editor.Core.Abstractions;
+using Editor.Core.Services;
 using Editor.Shell.Docking;
 using Editor.Shell.Selection;
 using Editor.Shell.ViewModels;
@@ -15,26 +16,31 @@ internal sealed class StudioCompositionRoot
     internal StudioCompositionSession CreateMainWindowSession(EditorDockLayoutSnapshot? savedLayout)
     {
         var selectionService = new EditorSelectionService();
-        var host = CreateDefaultHost(selectionService);
+        var diagnostics = new EditorDiagnosticService();
+        var host = CreateDefaultHost(selectionService, diagnostics);
         var composition = host.Compose();
         var viewModel = new MainWindowViewModel(
             composition.PanelRegistry,
             composition.ActionRegistry,
             savedLayout,
-            selectionService);
+            selectionService,
+            diagnostics: diagnostics);
         return new StudioCompositionSession(viewModel, composition, host);
     }
 
     public static EditorExtensionComposition CreateDefaultComposition(
-        IEditorSelectionService? selectionService = null)
+        IEditorSelectionService? selectionService = null,
+        IEditorDiagnosticService? diagnostics = null)
     {
         selectionService ??= new EditorSelectionService();
-        return CreateDefaultHost(selectionService).Compose();
+        diagnostics ??= new EditorDiagnosticService();
+        return CreateDefaultHost(selectionService, diagnostics).Compose();
     }
 
     private static EditorExtensionHost CreateDefaultHost(
-        IEditorSelectionService selectionService)
+        IEditorSelectionService selectionService,
+        IEditorDiagnosticService diagnostics)
     {
-        return new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules(selectionService));
+        return new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules(selectionService, diagnostics));
     }
 }

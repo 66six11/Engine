@@ -1,5 +1,7 @@
 using System.Linq;
 using System.Threading.Tasks;
+using Editor.Core.Models;
+using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Composition;
@@ -46,6 +48,20 @@ public sealed class StudioCompositionRootTests
 
         Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
         Assert.Equal("Demo Cube", inspector.Document?.Title);
+    }
+
+    [Fact]
+    public async Task CreateMainWindowSession_shares_diagnostics_between_status_and_panels()
+    {
+        await using var session = new StudioCompositionRoot().CreateMainWindowSession(savedLayout: null);
+        session.MainWindowViewModel.ToolsMenuItems.Single().OpenCommand.Execute(null);
+
+        var console = Assert.IsType<ConsolePanelViewModel>(
+            session.Composition.PanelRegistry.GetRequired("console").CreateContent());
+
+        var record = Assert.Single(console.Records);
+        Assert.Equal(EditorDiagnosticChannel.Debug, record.Channel);
+        Assert.Equal(record.Message, session.MainWindowViewModel.CommandFeedbackMessage);
     }
 
     [Fact]

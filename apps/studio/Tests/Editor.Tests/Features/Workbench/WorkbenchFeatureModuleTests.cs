@@ -199,17 +199,33 @@ public sealed class WorkbenchFeatureModuleTests
     }
 
     [Fact]
-    public void Hierarchy_and_inspector_observe_active_scene_provider_changes()
+    public void Compose_injects_shared_diagnostics_into_console_and_problems_panels()
+    {
+        var diagnostics = new EditorDiagnosticService();
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService(), diagnostics)]).Compose();
+        var record = diagnostics.Publish(
+            EditorDiagnosticSeverity.Error,
+            EditorDiagnosticChannel.Problem,
+            "validation",
+            "scene",
+            "Missing reference.");
+        var console = Assert.IsType<ConsolePanelViewModel>(
+            composition.PanelRegistry.GetRequired("console").CreateContent());
+        var problems = Assert.IsType<ProblemsPanelViewModel>(
+            composition.PanelRegistry.GetRequired("problems").CreateContent());
+
+        Assert.Equal([record], console.Records);
+        Assert.Equal([record], problems.Records);
+    }
+
+    [Fact]
+    public void Hierarchy_and_inspector_share_active_scene_provider_snapshot()
     {
         var composition = new EditorExtensionHost(
             [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
         var provider = Assert.IsType<InMemorySceneSnapshotProvider>(
             composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
-        var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
-            composition.PanelRegistry.GetRequired("hierarchy").CreateContent());
-        var inspector = Assert.IsType<InspectorPanelViewModel>(
-            composition.PanelRegistry.GetRequired("inspector").CreateContent());
-
         provider.ReplaceSnapshot(new SceneSnapshot(
             "scene:test",
             "Test Scene",
@@ -218,6 +234,11 @@ public sealed class WorkbenchFeatureModuleTests
                 new SceneObjectSnapshot("scene:test", "Test Scene", "scene"),
                 new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh", parentId: "scene:test"),
             ]));
+        var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
+            composition.PanelRegistry.GetRequired("hierarchy").CreateContent());
+        var inspector = Assert.IsType<InspectorPanelViewModel>(
+            composition.PanelRegistry.GetRequired("inspector").CreateContent());
+
         hierarchy.SelectedNode = hierarchy.Nodes.Single(node => node.Id == "scene:test/sphere");
 
         Assert.Equal("Sphere", inspector.Document?.Title);

@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Commands;
@@ -206,6 +207,41 @@ public sealed class MainWindowViewModelTests
         Assert.Equal(EditorCommandFeedbackSeverity.Success, viewModel.LastCommandFeedback?.Severity);
         Assert.Equal("workbench.commandPalette.open", viewModel.LastCommandFeedback?.CommandId);
         Assert.Equal("Command 'workbench.commandPalette.open' completed.", viewModel.CommandFeedbackMessage);
+    }
+
+    [Fact]
+    public void Command_feedback_publishes_debug_diagnostic_and_updates_latest_status()
+    {
+        var diagnostics = new EditorDiagnosticService();
+        var viewModel = CreateMainWindowViewModel(diagnostics: diagnostics);
+        var item = Assert.Single(viewModel.ToolsMenuItems);
+
+        item.OpenCommand.Execute(null);
+
+        var record = Assert.Single(diagnostics.GetRecentDiagnostics());
+        Assert.Equal(EditorDiagnosticChannel.Debug, record.Channel);
+        Assert.Equal("workbench.commandPalette.open", record.Source);
+        Assert.Equal("workbench", record.Category);
+        Assert.Equal(record.Message, viewModel.CommandFeedbackMessage);
+    }
+
+    [Fact]
+    public void External_diagnostic_updates_latest_status_feedback()
+    {
+        var diagnostics = new EditorDiagnosticService();
+        var viewModel = CreateMainWindowViewModel(diagnostics: diagnostics);
+
+        var record = diagnostics.Publish(
+            EditorDiagnosticSeverity.Error,
+            EditorDiagnosticChannel.Problem,
+            "validation",
+            "scene",
+            "Missing reference.");
+
+        Assert.True(viewModel.HasCommandFeedback);
+        Assert.True(viewModel.IsCommandFeedbackError);
+        Assert.Null(viewModel.LastCommandFeedback);
+        Assert.Equal(record.Message, viewModel.CommandFeedbackMessage);
     }
 
     [Fact]
@@ -585,7 +621,7 @@ public sealed class MainWindowViewModelTests
                 Id = "restored-node",
                 WindowId = "restored-inspector",
                 WindowTitle = "Inspector",
-                WindowArea = Core.Models.DockArea.Right,
+                WindowArea = DockArea.Right,
                 WindowRole = "Selection context",
                 TabIds = ["inspector"],
                 ActiveTabId = "inspector",
@@ -602,10 +638,12 @@ public sealed class MainWindowViewModelTests
     private static MainWindowViewModel CreateMainWindowViewModel(
         IEditorBackgroundTaskService? backgroundTasks = null,
         IEditorUiDispatcher? uiDispatcher = null,
-        IEditorLifecycleEventService? lifecycleEvents = null)
+        IEditorLifecycleEventService? lifecycleEvents = null,
+        IEditorDiagnosticService? diagnostics = null)
     {
         uiDispatcher ??= new CapturingUiDispatcher(hasAccess: true);
-        var composition = CreateDefaultComposition();
+        diagnostics ??= new EditorDiagnosticService();
+        var composition = CreateDefaultComposition(diagnostics: diagnostics);
 
         return new MainWindowViewModel(
             composition.PanelRegistry,
@@ -613,13 +651,15 @@ public sealed class MainWindowViewModelTests
             savedLayout: null,
             backgroundTasks: backgroundTasks,
             uiDispatcher: uiDispatcher,
-            lifecycleEvents: lifecycleEvents);
+            lifecycleEvents: lifecycleEvents,
+            diagnostics: diagnostics);
     }
 
     private static EditorExtensionComposition CreateDefaultComposition(
-        IEditorSelectionService? selectionService = null)
+        IEditorSelectionService? selectionService = null,
+        IEditorDiagnosticService? diagnostics = null)
     {
-        return StudioCompositionRoot.CreateDefaultComposition(selectionService);
+        return StudioCompositionRoot.CreateDefaultComposition(selectionService, diagnostics);
     }
 
     private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher
