@@ -6,8 +6,7 @@ using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
-using Editor.Shell.Docking;
-using Editor.Shell.Commands;
+using Editor.Shell.Composition;
 using Editor.Shell.Icons;
 using Editor.Shell.Selection;
 using Xunit;
@@ -17,13 +16,12 @@ namespace Editor.Tests.Features.Workbench;
 public sealed class WorkbenchFeatureModuleTests
 {
     [Fact]
-    public void RegisterPanels_registers_stable_workbench_panel_descriptors()
+    public void Compose_registers_stable_workbench_panel_descriptors()
     {
-        var registry = new PanelRegistry();
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
 
-        new WorkbenchFeatureModule(new EditorSelectionService()).RegisterPanels(registry);
-
-        var descriptors = registry.GetAll().ToArray();
+        var descriptors = composition.PanelRegistry.GetAll().ToArray();
         Assert.Equal(
             [
                 new PanelDescriptorSnapshot(
@@ -92,11 +90,10 @@ public sealed class WorkbenchFeatureModuleTests
     }
 
     [Fact]
-    public void RegisterActions_registers_stable_workbench_panel_actions()
+    public void Compose_registers_stable_workbench_panel_actions()
     {
-        var registry = new WorkbenchActionRegistry();
-
-        new WorkbenchFeatureModule(new EditorSelectionService()).RegisterActions(registry);
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
 
         Assert.Equal(
             [
@@ -162,19 +159,18 @@ public sealed class WorkbenchFeatureModuleTests
                     Category: "Window",
                     SearchText: "validation diagnostics"),
             ],
-            registry.GetAll().ToArray());
+            composition.ActionRegistry.GetAll().ToArray());
     }
 
     [Fact]
-    public void RegisterPanels_injects_shared_selection_and_scene_snapshot_provider_into_selection_panels()
+    public void Compose_injects_shared_selection_and_scene_snapshot_provider_into_selection_panels()
     {
-        var registry = new PanelRegistry();
         var selectionService = new EditorSelectionService();
-        new WorkbenchFeatureModule(selectionService).RegisterPanels(registry);
+        var composition = new EditorExtensionHost([new WorkbenchFeatureModule(selectionService)]).Compose();
         var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
-            registry.GetRequired("hierarchy").CreateContent());
+            composition.PanelRegistry.GetRequired("hierarchy").CreateContent());
         var inspector = Assert.IsType<InspectorPanelViewModel>(
-            registry.GetRequired("inspector").CreateContent());
+            composition.PanelRegistry.GetRequired("inspector").CreateContent());
 
         var cube = hierarchy.Nodes.Single(node => node.Id == "scene:main/cube");
         hierarchy.SelectedNode = cube;

@@ -1,3 +1,4 @@
+using System;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Core.Services;
@@ -28,17 +29,19 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         sceneSnapshotProvider_ = sceneSnapshotProvider;
     }
 
-    public void RegisterPanels(IPanelRegistry panels)
-    {
-        foreach (var descriptor in CreatePanelDescriptors())
-        {
-            panels.Register(descriptor);
-        }
-    }
+    public EditorExtensionId Id { get; } = new("studio.workbench");
 
-    public void RegisterActions(IWorkbenchActionRegistry actions)
+    public void Declare(IEditorContributionBuilder builder)
     {
-        actions.Register(new WorkbenchActionDescriptor(
+        ArgumentNullException.ThrowIfNull(builder);
+
+        var panelDescriptors = CreatePanelDescriptors();
+        foreach (var descriptor in panelDescriptors)
+        {
+            builder.AddPanel(descriptor);
+        }
+
+        builder.AddAction(new WorkbenchActionDescriptor(
             "workbench.commandPalette.open",
             "Command Palette",
             WorkbenchActionKind.OpenCommandPalette,
@@ -47,7 +50,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             Category: "Tools",
             DefaultShortcut: "Ctrl+Shift+P",
             SearchText: "command palette launcher"));
-        actions.Register(new WorkbenchActionDescriptor(
+        builder.AddAction(new WorkbenchActionDescriptor(
             "workbench.about.open",
             "About",
             WorkbenchActionKind.OpenAboutDialog,
@@ -55,9 +58,9 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             Category: "Help",
             SearchText: "about studio version information"));
 
-        foreach (var descriptor in CreatePanelDescriptors())
+        foreach (var descriptor in panelDescriptors)
         {
-            actions.Register(new WorkbenchActionDescriptor(
+            builder.AddAction(new WorkbenchActionDescriptor(
                 $"workbench.panel.{descriptor.Id}",
                 descriptor.Title,
                 WorkbenchActionKind.OpenPanel,
