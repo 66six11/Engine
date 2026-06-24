@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Shell.Docking;
 using Xunit;
@@ -79,6 +81,40 @@ public sealed class PanelInstanceManagerTests
     }
 
     [Fact]
+    public void CreateTab_notifies_lifecycle_sink_that_panel_is_attached()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var descriptor = CreateDescriptor(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content);
+        var manager = new PanelInstanceManager();
+
+        manager.CreateTab(descriptor);
+
+        Assert.Equal(["content:Attached:panel:Left:Main"], events);
+    }
+
+    [Fact]
+    public void ReleaseTab_detaches_lifecycle_sink_before_disposing_content()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var descriptor = CreateDescriptor(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content);
+        var manager = new PanelInstanceManager();
+        var tab = manager.CreateTab(descriptor);
+        events.Clear();
+
+        tab.ReleasePanelInstance();
+
+        Assert.Equal(["content:Detached:panel:Left:Main", "content:Disposed"], events);
+    }
+
+    [Fact]
     public void CreateTab_preserves_workspace_descriptor_metadata_defaults()
     {
         var manager = new PanelInstanceManager();
@@ -121,6 +157,41 @@ public sealed class PanelInstanceManagerTests
         {
             CreateCount++;
             return new object();
+        }
+    }
+
+    private sealed class RecordingPanelLifecycleSink(
+        string name,
+        List<string> events) : IEditorPanelLifecycleSink, IDisposable
+    {
+        public void OnPanelAttached(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Attached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelActivated(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Activated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelDeactivated(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Deactivated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelDetached(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Detached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void Dispose()
+        {
+            events.Add($"{name}:Disposed");
+        }
+
+        private static string GetHostKind(EditorPanelLifecycleContext context)
+        {
+            return context.IsFloatingWorkspace ? "Floating" : "Main";
         }
     }
 

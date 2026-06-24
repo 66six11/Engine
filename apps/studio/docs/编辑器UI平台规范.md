@@ -54,6 +54,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 | 内置扩展组合 v0 | `EditorExtensionHost`, `EditorContributionBuilder`, `StudioCompositionRoot` | Current / built-in panel-action composition only |
 | Contribution ownership v0 | `PanelRegistry.RegisterOwned`, `WorkbenchActionRegistry.RegisterOwned`, `EditorExtensionHost`, `StudioCompositionSession` removal leases | Current / built-in panel-action owner tracking only |
 | Panel instance lifetime v0 | `PanelInstanceManager`, `EditorDockWorkspaceViewModel`, `EditorDockTabViewModel.ReleasePanelInstance` | Current / built-in panel content close-reset-shutdown disposal |
+| Panel lifecycle callbacks v0 | `IEditorPanelLifecycleSink`, `EditorPanelLifecycleContext`, `PanelInstanceManager`, `EditorDockWorkspaceViewModel` | Current / logical attach-activate-deactivate-detach only |
 | Dock tab overflow v0 | `EditorDockTabStripScrollController`, `EditorDockTabStripView` | Current / view-only scroll state |
 | 状态栏反馈 | `ActivityIndicator`, `MainWindowViewModel` summary properties | Partial |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
@@ -79,7 +80,7 @@ Command result feedback -> Background Tasks panel -> Diagnostics/Problems route 
 
 `EditorExtensionHost v0` 统一内置 panel/action/provider contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider reload、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
 
-`PanelInstanceManager v0` 只接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close 和 workspace/session shutdown disposal；逻辑 Activated/Deactivated callback、provider reload/runtime lifecycle、插件重载和 native viewport ownership 仍未实现。
+`PanelInstanceManager v0` 接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close、workspace/session shutdown disposal 和逻辑 attached/activated/deactivated/detached callbacks。`IEditorPanelLifecycleSink` 只暴露 UI-neutral `EditorPanelLifecycleContext`，不暴露 Avalonia controls、native handles 或 renderer state；frame update scheduler、provider reload/runtime lifecycle、插件重载和 native viewport ownership 仍未实现。
 
 `EditorProviderHost v0` 只接管 fixture-backed active scene provider contribution 的 role 唯一性、lazy materialization、Ready/Faulted status 和注册释放；`ISceneSnapshotProvider` 仍然只有 `GetCurrentSnapshot()` / `SnapshotChanged` / `TryGetObject()`，不加入 `Connect()`、`Disconnect()`、native handle 或写回语义。
 `EditorDiagnosticService v0` owns bounded UI-neutral diagnostic records and exposes latest, recent and problem-filtered snapshots. `MainWindowViewModel` publishes command feedback into this stream and uses the latest diagnostic as status text; Console consumes all recent diagnostics and Problems consumes only `EditorDiagnosticChannel.Problem`. This is not native engine log ingestion, shell command input, persisted log storage, provider reload diagnostics, plugin diagnostics or a final Console/Problems data grid.
@@ -602,6 +603,7 @@ UI-sensitive 改动还需要手工或截图确认：
 - [superpowers/plans/2026-06-21-studio-command-palette-follow-up.md](superpowers/plans/2026-06-21-studio-command-palette-follow-up.md)
 - [superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md](superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md)
 - [superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md](superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md)
+- [superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md](superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md)
 - [../../../docs/architecture/managed-extension-model.md](../../../docs/architecture/managed-extension-model.md)
 
 官方资料与优秀案例：

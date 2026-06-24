@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
@@ -203,6 +204,169 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
+    public void ActivateTab_deactivates_previous_panel_before_activating_next_panel()
+    {
+        var events = new List<string>();
+        var first = new RecordingPanelLifecycleSink("first", events);
+        var second = new RecordingPanelLifecycleSink("second", events);
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "first",
+            DockContentCachePolicy.KeepAlive,
+            () => first));
+        registry.Register(CreateDescriptor(
+            "second",
+            DockContentCachePolicy.KeepAlive,
+            () => second));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var secondTab = workspace.CenterWindow.Tabs.Single(tab => tab.Id == "second");
+        events.Clear();
+
+        workspace.ActivateTab(secondTab);
+
+        Assert.Equal(
+            [
+                "first:Deactivated:first:Center:Main",
+                "second:Activated:second:Center:Main",
+            ],
+            events);
+    }
+
+    [Fact]
+    public void CloseTab_deactivates_and_detaches_active_panel_before_disposal()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var registry = CreateRegistry(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content);
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var tab = workspace.CenterWindow.Tabs.Single();
+        events.Clear();
+
+        workspace.CloseTab(tab);
+
+        Assert.Equal(
+            [
+                "content:Deactivated:panel:Center:Main",
+                "content:Detached:panel:Center:Main",
+                "content:Disposed",
+            ],
+            events);
+    }
+
+    [Fact]
+    public void Floating_active_tab_deactivates_main_panel_then_activates_floating_panel()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var registry = CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content);
+        var sourceWorkspace = new EditorDockWorkspaceViewModel(registry);
+        var targetWorkspace = new EditorDockWorkspaceViewModel(new PanelRegistry());
+        var tab = sourceWorkspace.CenterWindow.Tabs.Single();
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.Float,
+            EditorDockDropGuideKind.Float,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: new Rect(24, 32, 320, 220),
+            Label: "Float window");
+        events.Clear();
+
+        sourceWorkspace.BeginDrag(tab);
+        var request = sourceWorkspace.CompleteDragInto(targetWorkspace, target);
+
+        Assert.NotNull(request);
+        Assert.Equal(
+            [
+                "content:Deactivated:panel:Center:Main",
+                "content:Activated:panel:Center:Floating",
+            ],
+            events);
+        Assert.DoesNotContain(events, candidate => candidate.Contains(":Detached:", StringComparison.Ordinal));
+        Assert.DoesNotContain(events, candidate => candidate.EndsWith(":Disposed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Cross_workspace_tab_into_deactivates_source_before_activating_target()
+    {
+        var events = new List<string>();
+        var sourceContent = new RecordingPanelLifecycleSink("source", events);
+        var targetContent = new RecordingPanelLifecycleSink("target", events);
+        var sourceWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "source-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => sourceContent));
+        var targetWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "target-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => targetContent));
+        var sourceTab = sourceWorkspace.CenterWindow.Tabs.Single();
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.TabInto,
+            EditorDockDropGuideKind.Merge,
+            TargetArea: DockArea.Center,
+            TargetId: targetWorkspace.CenterWindow.Id,
+            PreviewBounds: new Rect(0, 0, 320, 220),
+            Label: "Target tab strip");
+        events.Clear();
+
+        sourceWorkspace.BeginDrag(sourceTab);
+        var request = sourceWorkspace.CompleteDragInto(targetWorkspace, target);
+
+        Assert.Null(request);
+        Assert.Equal(
+            [
+                "source:Deactivated:source-panel:Center:Main",
+                "target:Deactivated:target-panel:Center:Main",
+                "source:Activated:source-panel:Center:Main",
+            ],
+            events);
+        Assert.DoesNotContain(events, candidate => candidate.Contains(":Detached:", StringComparison.Ordinal));
+        Assert.DoesNotContain(events, candidate => candidate.EndsWith(":Disposed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RestoreLayoutSnapshot_attaches_panel_with_restored_window_area()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var registry = CreateRegistry(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content,
+            DockArea.Left);
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        events.Clear();
+
+        var restored = workspace.RestoreLayoutSnapshot(new EditorDockLayoutSnapshot
+        {
+            Version = 1,
+            ActiveWindowId = "restored-window",
+            Root = new EditorDockLayoutNodeSnapshot
+            {
+                Kind = "Window",
+                Id = "restored-node",
+                WindowId = "restored-window",
+                WindowTitle = "Restored",
+                WindowArea = DockArea.Right,
+                WindowRole = "Test",
+                TabIds = ["panel"],
+                ActiveTabId = "panel",
+            },
+        });
+
+        Assert.True(restored);
+        Assert.Contains("content:Attached:panel:Right:Main", events);
+        Assert.Contains("content:Activated:panel:Right:Main", events);
+        Assert.DoesNotContain("content:Attached:panel:Left:Main", events);
+    }
+
+    [Fact]
     public void RestoreLayoutSnapshot_creates_only_tabs_present_in_snapshot()
     {
         var includedContentFactory = new CountingContentFactory();
@@ -248,10 +412,11 @@ public sealed class EditorDockWorkspaceViewModelTests
     private static PanelRegistry CreateRegistry(
         string id,
         DockContentCachePolicy cachePolicy,
-        Func<object> createContent)
+        Func<object> createContent,
+        DockArea area = DockArea.Center)
     {
         var registry = new PanelRegistry();
-        registry.Register(CreateDescriptor(id, cachePolicy, createContent));
+        registry.Register(CreateDescriptor(id, cachePolicy, createContent, area));
         return registry;
     }
 
@@ -294,6 +459,41 @@ public sealed class EditorDockWorkspaceViewModelTests
         public object Create()
         {
             return contents[nextIndex_++];
+        }
+    }
+
+    private sealed class RecordingPanelLifecycleSink(
+        string name,
+        List<string> events) : IEditorPanelLifecycleSink, IDisposable
+    {
+        public void OnPanelAttached(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Attached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelActivated(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Activated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelDeactivated(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Deactivated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelDetached(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Detached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void Dispose()
+        {
+            events.Add($"{name}:Disposed");
+        }
+
+        private static string GetHostKind(EditorPanelLifecycleContext context)
+        {
+            return context.IsFloatingWorkspace ? "Floating" : "Main";
         }
     }
 

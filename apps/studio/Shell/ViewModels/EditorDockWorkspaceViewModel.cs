@@ -21,6 +21,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
     private EditorDockNodeViewModel? rootNode_;
     private EditorDockWindowViewModel? activeWindow_;
+    private EditorDockTabViewModel? activeLifecycleTab_;
     private EditorDockWindowViewModel? dragSourceWindow_;
     private EditorDockTabViewModel? dragSourceTab_;
     private EditorDockWindowViewModel? tabInsertPreviewWindow_;
@@ -61,7 +62,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         foreach (var descriptor in panelRegistry.GetAll())
         {
             var window = windowsByArea_[descriptor.DefaultArea];
-            window.Add(CreateTab(descriptor));
+            window.Add(CreateTab(descriptor, window.Area));
         }
 
         SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
@@ -83,6 +84,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         {
             [floatingDockWindow.Id] = floatingDockWindow,
         };
+        SetPanelLifecycleHostKind(floatingDockWindow, isFloatingWorkspace: true);
         nextDynamicWindowIndex_ = GetNextDynamicWindowIndex(windowsById_.Values);
         rootNode_ = new EditorDockWindowNodeViewModel($"node-{floatingDockWindow.Id}", floatingDockWindow);
         SetActiveWindow(floatingDockWindow);
@@ -253,7 +255,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         foreach (var descriptor in panelRegistry_.GetAll())
         {
             var window = windowsByArea_[descriptor.DefaultArea];
-            window.Add(CreateTab(descriptor));
+            window.Add(CreateTab(descriptor, window.Area));
         }
 
         SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
@@ -293,7 +295,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return false;
         }
 
-        var tab = CreateTab(descriptor);
+        var tab = CreateTab(descriptor, targetWindow.Area);
         targetWindow.Add(tab);
         targetWindow.Activate(tab);
         SetActiveWindow(targetWindow);
@@ -523,11 +525,12 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
                 return null;
             }
 
+            var sourceArea = sourceWindow.Area;
             sourceWindow.Remove(tab);
-            targetWorkspace.InsertDetachedTab(tab, target, sourceWindow.Area);
+            SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
+            targetWorkspace.InsertDetachedTab(tab, target, sourceArea);
             RemoveWindowIfEmpty(sourceWindow);
             NormalizeLayoutGraph();
-            SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
             return null;
         }
         finally
@@ -737,7 +740,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             if (descriptorsById.TryGetValue(tabId, out var descriptor)
                 && usedTabIds.Add(tabId))
             {
-                tabs.Add(CreateTab(descriptor));
+                tabs.Add(CreateTab(descriptor, snapshot.WindowArea));
             }
         }
 
@@ -821,6 +824,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     private void ResetWorkspaceWindows()
     {
+        SetActivePanelLifecycle(null);
         var existingWindows = new List<EditorDockWindowViewModel>(windowsById_.Values);
         foreach (var window in existingWindows)
         {
@@ -850,6 +854,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         ClearTabInsertPreview();
         ClearDragSourceState();
         DragState.Clear();
+        SetActivePanelLifecycle(null);
         activeWindow_?.SetActiveWindowState(false);
         activeWindow_ = null;
     }
@@ -1053,15 +1058,44 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     {
         if (ReferenceEquals(activeWindow_, window))
         {
+            UpdateActivePanelLifecycle();
             return;
         }
 
         activeWindow_?.SetActiveWindowState(false);
         activeWindow_ = window;
         activeWindow_?.SetActiveWindowState(true);
+        UpdateActivePanelLifecycle();
         OnPropertyChanged(nameof(ActiveWindow));
         OnPropertyChanged(nameof(ActiveWindowTitle));
         OnPropertyChanged(nameof(HostTitle));
+    }
+
+    private void UpdateActivePanelLifecycle()
+    {
+        SetActivePanelLifecycle(activeWindow_?.ActiveTab);
+    }
+
+    private void SetActivePanelLifecycle(EditorDockTabViewModel? tab)
+    {
+        if (ReferenceEquals(activeLifecycleTab_, tab))
+        {
+            return;
+        }
+
+        activeLifecycleTab_?.DeactivatePanelInstance();
+        activeLifecycleTab_ = tab;
+        activeLifecycleTab_?.ActivatePanelInstance();
+    }
+
+    private static void SetPanelLifecycleHostKind(
+        EditorDockWindowViewModel window,
+        bool isFloatingWorkspace)
+    {
+        foreach (var tab in window.Tabs)
+        {
+            tab.SetPanelLifecycleHostKind(isFloatingWorkspace);
+        }
     }
 
     private void SetDragSourceState(EditorDockWindowViewModel window, EditorDockTabViewModel tab)
@@ -1102,8 +1136,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         }
 
         sourceWindow.Remove(tab);
+        SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
 
         var floatingDockWindow = CreateDynamicWindow(tab, sourceWindow.Area);
+        tab.SetPanelLifecycleHostKind(isFloatingWorkspace: true);
         floatingDockWindow.Add(tab);
         RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
@@ -1273,6 +1309,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         EditorDockDropTarget target,
         DockArea fallbackArea)
     {
+        tab.SetPanelLifecycleHostKind(IsFloatingWindow);
         if (target.Operation == EditorDockDropOperation.TabInto
             && target.TargetId is { } targetWindowId
             && windowsById_.TryGetValue(targetWindowId, out var targetWindow))
@@ -2107,9 +2144,11 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         EditorDockNodeViewModel Node,
         double Weight);
 
-    private EditorDockTabViewModel CreateTab(PanelDescriptor descriptor)
+    private EditorDockTabViewModel CreateTab(
+        PanelDescriptor descriptor,
+        DockArea? initialArea = null)
     {
-        return panelInstanceManager_.CreateTab(descriptor);
+        return panelInstanceManager_.CreateTab(descriptor, IsFloatingWindow, initialArea);
     }
 
     private EditorDockNodeViewModel CreateDefaultLayout()

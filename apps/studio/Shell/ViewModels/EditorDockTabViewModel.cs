@@ -1,4 +1,5 @@
 using System;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 
 namespace Editor.Shell.ViewModels;
@@ -9,6 +10,9 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     private bool isDragSource_;
     private DockArea area_;
     private IDisposable? panelInstanceRelease_;
+    private bool isPanelAttached_;
+    private bool isPanelActive_;
+    private bool isFloatingWorkspace_;
 
     public EditorDockTabViewModel(
         string id,
@@ -79,6 +83,79 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     {
         var release = panelInstanceRelease_;
         panelInstanceRelease_ = null;
+        DetachPanelInstance();
         release?.Dispose();
+    }
+
+    internal void AttachPanelInstance(bool isFloatingWorkspace)
+    {
+        isFloatingWorkspace_ = isFloatingWorkspace;
+        if (isPanelAttached_)
+        {
+            return;
+        }
+
+        isPanelAttached_ = true;
+        if (Content is IEditorPanelLifecycleSink lifecycleSink)
+        {
+            lifecycleSink.OnPanelAttached(CreateLifecycleContext());
+        }
+    }
+
+    internal void SetPanelLifecycleHostKind(bool isFloatingWorkspace)
+    {
+        isFloatingWorkspace_ = isFloatingWorkspace;
+    }
+
+    internal void ActivatePanelInstance()
+    {
+        if (!isPanelAttached_ || isPanelActive_)
+        {
+            return;
+        }
+
+        isPanelActive_ = true;
+        if (Content is IEditorPanelLifecycleSink lifecycleSink)
+        {
+            lifecycleSink.OnPanelActivated(CreateLifecycleContext());
+        }
+    }
+
+    internal void DeactivatePanelInstance()
+    {
+        if (!isPanelActive_)
+        {
+            return;
+        }
+
+        isPanelActive_ = false;
+        if (Content is IEditorPanelLifecycleSink lifecycleSink)
+        {
+            lifecycleSink.OnPanelDeactivated(CreateLifecycleContext());
+        }
+    }
+
+    private void DetachPanelInstance()
+    {
+        if (!isPanelAttached_)
+        {
+            return;
+        }
+
+        DeactivatePanelInstance();
+        isPanelAttached_ = false;
+        if (Content is IEditorPanelLifecycleSink lifecycleSink)
+        {
+            lifecycleSink.OnPanelDetached(CreateLifecycleContext());
+        }
+    }
+
+    private EditorPanelLifecycleContext CreateLifecycleContext()
+    {
+        return new EditorPanelLifecycleContext(
+            Id,
+            Title,
+            Area,
+            isFloatingWorkspace_);
     }
 }

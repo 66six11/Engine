@@ -10,22 +10,27 @@ internal sealed class PanelInstanceManager : IDisposable
     private readonly Dictionary<string, object> keptAliveContentByPanelId_ =
         new(StringComparer.Ordinal);
 
-    public EditorDockTabViewModel CreateTab(PanelDescriptor descriptor)
+    public EditorDockTabViewModel CreateTab(
+        PanelDescriptor descriptor,
+        bool isFloatingWorkspace = false,
+        DockArea? initialArea = null)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
 
         var content = GetOrCreateContent(descriptor);
-        return new EditorDockTabViewModel(
+        var tab = new EditorDockTabViewModel(
             descriptor.Id,
             descriptor.Title,
             GetTag(descriptor),
             GetTitleDetail(descriptor),
             GetStatusText(descriptor),
             descriptor.Kind,
-            descriptor.DefaultArea,
+            initialArea ?? descriptor.DefaultArea,
             content,
             descriptor.IconKey,
             new PanelInstanceRelease(this, descriptor, content));
+        tab.AttachPanelInstance(isFloatingWorkspace);
+        return tab;
     }
 
     public void Dispose()
