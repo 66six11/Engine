@@ -184,6 +184,58 @@ public sealed class EditorContributionDescriptorValidatorTests
     }
 
     [Fact]
+    public void Incoming_diagnostic_source_route_prefix_collisions_are_reported_against_registered_panel_and_action_ids()
+    {
+        var context = new EditorContributionValidationContext(
+            RegisteredPanelIds: ["project.debug.panel"],
+            RegisteredActionIds: ["project.debug.open"],
+            RegisteredDiagnosticSourceIds: []);
+
+        var result = new EditorContributionDescriptorValidator().Validate(
+            CreateDescriptorSet(
+                panels: [],
+                actions: [],
+                diagnosticSources: [CreateDiagnosticSource("project.debug")]),
+            context);
+
+        Assert.Equal(
+            ["project.debug", "project.debug"],
+            result.Errors.Select(error => error.ContributionId).ToArray());
+        Assert.Equal(
+            [
+                "Diagnostic source id 'project.debug' conflicts with panel id 'project.debug.panel' route prefix.",
+                "Diagnostic source id 'project.debug' conflicts with action id 'project.debug.open' route prefix.",
+            ],
+            result.Errors.Select(error => error.Message).ToArray());
+    }
+
+    [Fact]
+    public void Incoming_panel_and_action_route_prefix_collisions_are_reported_against_registered_diagnostic_sources()
+    {
+        var context = new EditorContributionValidationContext(
+            RegisteredPanelIds: [],
+            RegisteredActionIds: [],
+            RegisteredDiagnosticSourceIds: ["project.debug"]);
+
+        var result = new EditorContributionDescriptorValidator().Validate(
+            CreateDescriptorSet(
+                panels: [CreatePanel("project.debug.panel")],
+                actions: [CreateAction("project.debug.open", "project.debug.open")],
+                diagnosticSources: []),
+            context);
+
+        Assert.Equal(
+            ["project.debug", "project.debug"],
+            result.Errors.Select(error => error.ContributionId).ToArray());
+        Assert.Equal(
+            [
+                "Diagnostic source id 'project.debug' conflicts with panel id 'project.debug.panel' route prefix.",
+                "Diagnostic source id 'project.debug' conflicts with action id 'project.debug.open' route prefix.",
+            ],
+            result.Errors.Select(error => error.Message).ToArray());
+    }
+
+    [Fact]
     public void Validation_context_rejects_null_registry_snapshots_clearly()
     {
         var context = new EditorContributionValidationContext(

@@ -46,9 +46,9 @@ public sealed class EditorContributionDescriptorValidator
         }
 
         var contributionOwners = new Dictionary<string, string>(StringComparer.Ordinal);
-        var panelIds = new List<string>();
-        var actionIds = new List<string>();
-        var diagnosticSourceIds = new List<string>();
+        var panelIds = new List<string>(registeredPanelIds);
+        var actionIds = new List<string>(registeredActionIds);
+        var diagnosticSourceIds = new List<string>(registeredDiagnosticSourceIds);
 
         if (descriptorSet.Panels is null)
         {
