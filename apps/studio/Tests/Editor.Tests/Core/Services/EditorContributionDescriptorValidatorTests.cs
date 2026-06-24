@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Models;
@@ -73,6 +74,85 @@ public sealed class EditorContributionDescriptorValidatorTests
         Assert.Equal("project.inspector", error.ContributionId);
         Assert.Equal("Id", error.Field);
         Assert.Equal("Panel id 'project.inspector' is already registered.", error.Message);
+    }
+
+    [Fact]
+    public void Null_descriptor_collections_are_reported_as_structured_errors()
+    {
+        var result = Validate(new EditorContributionDescriptorSet(
+            new EditorContributionSourceId("project.editor"),
+            EditorContributionSourceKind.ProjectEditor,
+            Panels: null!,
+            Actions: null!,
+            DiagnosticSources: null!));
+
+        Assert.Equal(
+            ["Panels", "Actions", "DiagnosticSources"],
+            result.Errors.Select(error => error.Field).ToArray());
+        Assert.Equal(
+            [
+                "Panel descriptor collection must not be null.",
+                "Action descriptor collection must not be null.",
+                "Diagnostic source descriptor collection must not be null.",
+            ],
+            result.Errors.Select(error => error.Message).ToArray());
+    }
+
+    [Fact]
+    public void Null_descriptor_items_are_reported_as_structured_errors()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels: [null!],
+            actions: [null!],
+            diagnosticSources: [null!]));
+
+        Assert.Equal(
+            ["Panels", "Actions", "DiagnosticSources"],
+            result.Errors.Select(error => error.Field).ToArray());
+        Assert.Equal(
+            [
+                "Panel descriptor must not be null.",
+                "Action descriptor must not be null.",
+                "Diagnostic source descriptor must not be null.",
+            ],
+            result.Errors.Select(error => error.Message).ToArray());
+    }
+
+    [Fact]
+    public void Existing_action_and_diagnostic_source_collisions_are_reported_from_validation_context()
+    {
+        var context = new EditorContributionValidationContext(
+            RegisteredPanelIds: [],
+            RegisteredActionIds: ["project.open-inspector"],
+            RegisteredDiagnosticSourceIds: ["project.debug"]);
+
+        var result = new EditorContributionDescriptorValidator().Validate(
+            CreateDescriptorSet(),
+            context);
+
+        Assert.Equal(
+            ["project.open-inspector", "project.debug"],
+            result.Errors.Select(error => error.ContributionId).ToArray());
+        Assert.Equal(
+            [
+                "Action id 'project.open-inspector' is already registered.",
+                "Diagnostic source id 'project.debug' is already registered.",
+            ],
+            result.Errors.Select(error => error.Message).ToArray());
+    }
+
+    [Fact]
+    public void Validation_context_rejects_null_registry_snapshots_clearly()
+    {
+        var context = new EditorContributionValidationContext(
+            RegisteredPanelIds: null!,
+            RegisteredActionIds: [],
+            RegisteredDiagnosticSourceIds: []);
+
+        var exception = Assert.Throws<ArgumentNullException>(() =>
+            new EditorContributionDescriptorValidator().Validate(CreateDescriptorSet(), context));
+
+        Assert.Equal("RegisteredPanelIds", exception.ParamName);
     }
 
     private static EditorContributionValidationResult Validate(

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Editor.Core.Models;
 
 namespace Editor.Core.Services;
@@ -16,6 +15,15 @@ public sealed class EditorContributionDescriptorValidator
 
         var errors = new List<EditorContributionValidationError>();
         var sourceId = descriptorSet.SourceId?.Value ?? string.Empty;
+        var registeredPanelIds = CreateRegisteredIdSet(
+            context.RegisteredPanelIds,
+            nameof(EditorContributionValidationContext.RegisteredPanelIds));
+        var registeredActionIds = CreateRegisteredIdSet(
+            context.RegisteredActionIds,
+            nameof(EditorContributionValidationContext.RegisteredActionIds));
+        var registeredDiagnosticSourceIds = CreateRegisteredIdSet(
+            context.RegisteredDiagnosticSourceIds,
+            nameof(EditorContributionValidationContext.RegisteredDiagnosticSourceIds));
 
         if (string.IsNullOrWhiteSpace(sourceId))
         {
@@ -34,68 +42,113 @@ public sealed class EditorContributionDescriptorValidator
 
         var contributionOwners = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var panel in descriptorSet.Panels ?? [])
+        if (descriptorSet.Panels is null)
         {
-            if (panel is null)
-            {
-                AddError(errors, sourceId, string.Empty, "Panels", "Panel descriptor must not be null.");
-                continue;
-            }
-
-            ValidateContributionId(
+            AddError(
                 errors,
                 sourceId,
-                panel.Id,
-                "Panel",
-                contributionOwners,
-                context.RegisteredPanelIds,
-                "Panel");
+                string.Empty,
+                "Panels",
+                "Panel descriptor collection must not be null.");
         }
-
-        foreach (var action in descriptorSet.Actions ?? [])
+        else
         {
-            if (action is null)
+            foreach (var panel in descriptorSet.Panels)
             {
-                AddError(errors, sourceId, string.Empty, "Actions", "Action descriptor must not be null.");
-                continue;
-            }
+                if (panel is null)
+                {
+                    AddError(errors, sourceId, string.Empty, "Panels", "Panel descriptor must not be null.");
+                    continue;
+                }
 
-            ValidateContributionId(
-                errors,
-                sourceId,
-                action.Id,
-                "Action",
-                contributionOwners,
-                context.RegisteredActionIds,
-                "Action");
-        }
-
-        foreach (var diagnosticSource in descriptorSet.DiagnosticSources ?? [])
-        {
-            if (diagnosticSource is null)
-            {
-                AddError(
+                ValidateContributionId(
                     errors,
                     sourceId,
-                    string.Empty,
-                    "DiagnosticSources",
-                    "Diagnostic source descriptor must not be null.");
-                continue;
+                    panel.Id,
+                    "Panel",
+                    contributionOwners,
+                    registeredPanelIds,
+                    "Panel");
             }
+        }
 
-            ValidateContributionId(
+        if (descriptorSet.Actions is null)
+        {
+            AddError(
                 errors,
                 sourceId,
-                diagnosticSource.Id,
-                "DiagnosticSource",
-                contributionOwners,
-                context.RegisteredDiagnosticSourceIds,
-                "Diagnostic source");
+                string.Empty,
+                "Actions",
+                "Action descriptor collection must not be null.");
+        }
+        else
+        {
+            foreach (var action in descriptorSet.Actions)
+            {
+                if (action is null)
+                {
+                    AddError(errors, sourceId, string.Empty, "Actions", "Action descriptor must not be null.");
+                    continue;
+                }
+
+                ValidateContributionId(
+                    errors,
+                    sourceId,
+                    action.Id,
+                    "Action",
+                    contributionOwners,
+                    registeredActionIds,
+                    "Action");
+            }
+        }
+
+        if (descriptorSet.DiagnosticSources is null)
+        {
+            AddError(
+                errors,
+                sourceId,
+                string.Empty,
+                "DiagnosticSources",
+                "Diagnostic source descriptor collection must not be null.");
+        }
+        else
+        {
+            foreach (var diagnosticSource in descriptorSet.DiagnosticSources)
+            {
+                if (diagnosticSource is null)
+                {
+                    AddError(
+                        errors,
+                        sourceId,
+                        string.Empty,
+                        "DiagnosticSources",
+                        "Diagnostic source descriptor must not be null.");
+                    continue;
+                }
+
+                ValidateContributionId(
+                    errors,
+                    sourceId,
+                    diagnosticSource.Id,
+                    "DiagnosticSource",
+                    contributionOwners,
+                    registeredDiagnosticSourceIds,
+                    "Diagnostic source");
+            }
         }
 
         return errors.Count == 0
             ? EditorContributionValidationResult.Success
             : new EditorContributionValidationResult(errors.ToArray());
+    }
+
+    private static HashSet<string> CreateRegisteredIdSet(
+        IReadOnlyCollection<string> ids,
+        string paramName)
+    {
+        ArgumentNullException.ThrowIfNull(ids, paramName);
+
+        return new HashSet<string>(ids, StringComparer.Ordinal);
     }
 
     private static void ValidateContributionId(
@@ -104,7 +157,7 @@ public sealed class EditorContributionDescriptorValidator
         string id,
         string contributionType,
         Dictionary<string, string> contributionOwners,
-        IReadOnlyCollection<string> registeredIds,
+        HashSet<string> registeredIds,
         string registeredName)
     {
         if (string.IsNullOrWhiteSpace(id))
