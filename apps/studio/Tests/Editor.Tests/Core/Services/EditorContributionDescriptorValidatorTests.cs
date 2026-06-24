@@ -142,6 +142,48 @@ public sealed class EditorContributionDescriptorValidatorTests
     }
 
     [Fact]
+    public void Existing_registered_id_collisions_are_reported_across_contribution_kinds()
+    {
+        var context = new EditorContributionValidationContext(
+            RegisteredPanelIds: ["project.open-inspector"],
+            RegisteredActionIds: ["project.inspector"],
+            RegisteredDiagnosticSourceIds: []);
+
+        var result = new EditorContributionDescriptorValidator().Validate(
+            CreateDescriptorSet(),
+            context);
+
+        Assert.Equal(
+            ["project.inspector", "project.open-inspector"],
+            result.Errors.Select(error => error.ContributionId).ToArray());
+        Assert.Equal(
+            [
+                "Panel id 'project.inspector' is already registered.",
+                "Action id 'project.open-inspector' is already registered.",
+            ],
+            result.Errors.Select(error => error.Message).ToArray());
+    }
+
+    [Fact]
+    public void Diagnostic_source_route_prefix_collisions_are_reported_against_panel_and_action_ids()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels: [CreatePanel("project.debug.panel")],
+            actions: [CreateAction("project.debug.open", "project.debug.open")],
+            diagnosticSources: [CreateDiagnosticSource("project.debug")]));
+
+        Assert.Equal(
+            ["project.debug", "project.debug"],
+            result.Errors.Select(error => error.ContributionId).ToArray());
+        Assert.Equal(
+            [
+                "Diagnostic source id 'project.debug' conflicts with panel id 'project.debug.panel' route prefix.",
+                "Diagnostic source id 'project.debug' conflicts with action id 'project.debug.open' route prefix.",
+            ],
+            result.Errors.Select(error => error.Message).ToArray());
+    }
+
+    [Fact]
     public void Validation_context_rejects_null_registry_snapshots_clearly()
     {
         var context = new EditorContributionValidationContext(

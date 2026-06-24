@@ -24,6 +24,11 @@ public sealed class EditorContributionDescriptorValidator
         var registeredDiagnosticSourceIds = CreateRegisteredIdSet(
             context.RegisteredDiagnosticSourceIds,
             nameof(EditorContributionValidationContext.RegisteredDiagnosticSourceIds));
+        var registeredContributionIds = new HashSet<string>(
+            registeredPanelIds,
+            StringComparer.Ordinal);
+        registeredContributionIds.UnionWith(registeredActionIds);
+        registeredContributionIds.UnionWith(registeredDiagnosticSourceIds);
 
         if (string.IsNullOrWhiteSpace(sourceId))
         {
@@ -41,6 +46,9 @@ public sealed class EditorContributionDescriptorValidator
         }
 
         var contributionOwners = new Dictionary<string, string>(StringComparer.Ordinal);
+        var panelIds = new List<string>();
+        var actionIds = new List<string>();
+        var diagnosticSourceIds = new List<string>();
 
         if (descriptorSet.Panels is null)
         {
@@ -67,8 +75,9 @@ public sealed class EditorContributionDescriptorValidator
                     panel.Id,
                     "Panel",
                     contributionOwners,
-                    registeredPanelIds,
+                    registeredContributionIds,
                     "Panel");
+                AddStableId(panelIds, panel.Id);
                 ValidatePanel(errors, sourceId, panel);
             }
         }
@@ -98,8 +107,9 @@ public sealed class EditorContributionDescriptorValidator
                     action.Id,
                     "Action",
                     contributionOwners,
-                    registeredActionIds,
+                    registeredContributionIds,
                     "Action");
+                AddStableId(actionIds, action.Id);
                 ValidateAction(errors, sourceId, action);
             }
         }
@@ -134,11 +144,19 @@ public sealed class EditorContributionDescriptorValidator
                     diagnosticSource.Id,
                     "DiagnosticSource",
                     contributionOwners,
-                    registeredDiagnosticSourceIds,
+                    registeredContributionIds,
                     "Diagnostic source");
+                AddStableId(diagnosticSourceIds, diagnosticSource.Id);
                 ValidateDiagnosticSource(errors, sourceId, diagnosticSource);
             }
         }
+
+        ValidateDiagnosticSourceRoutePrefixes(
+            errors,
+            sourceId,
+            diagnosticSourceIds,
+            panelIds,
+            actionIds);
 
         return errors.Count == 0
             ? EditorContributionValidationResult.Success
@@ -152,6 +170,14 @@ public sealed class EditorContributionDescriptorValidator
         ArgumentNullException.ThrowIfNull(ids, paramName);
 
         return new HashSet<string>(ids, StringComparer.Ordinal);
+    }
+
+    private static void AddStableId(List<string> ids, string id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            ids.Add(id);
+        }
     }
 
     private static void ValidateContributionId(
@@ -282,6 +308,50 @@ public sealed class EditorContributionDescriptorValidator
                     "Panel target frames per second must be finite and greater than zero.");
             }
         }
+    }
+
+    private static void ValidateDiagnosticSourceRoutePrefixes(
+        List<EditorContributionValidationError> errors,
+        string sourceId,
+        IReadOnlyList<string> diagnosticSourceIds,
+        IReadOnlyList<string> panelIds,
+        IReadOnlyList<string> actionIds)
+    {
+        foreach (var diagnosticSourceId in diagnosticSourceIds)
+        {
+            foreach (var panelId in panelIds)
+            {
+                if (IsRoutePrefix(diagnosticSourceId, panelId))
+                {
+                    AddError(
+                        errors,
+                        sourceId,
+                        diagnosticSourceId,
+                        "Id",
+                        $"Diagnostic source id '{diagnosticSourceId}' conflicts with panel id '{panelId}' route prefix.");
+                }
+            }
+
+            foreach (var actionId in actionIds)
+            {
+                if (IsRoutePrefix(diagnosticSourceId, actionId))
+                {
+                    AddError(
+                        errors,
+                        sourceId,
+                        diagnosticSourceId,
+                        "Id",
+                        $"Diagnostic source id '{diagnosticSourceId}' conflicts with action id '{actionId}' route prefix.");
+                }
+            }
+        }
+    }
+
+    private static bool IsRoutePrefix(string routePrefix, string route)
+    {
+        return route.Length > routePrefix.Length
+            && route.StartsWith(routePrefix, StringComparison.Ordinal)
+            && route[routePrefix.Length] == '.';
     }
 
     private static void ValidateAction(
