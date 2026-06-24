@@ -100,6 +100,7 @@ public sealed class EditorContributionDescriptorValidator
                     contributionOwners,
                     registeredActionIds,
                     "Action");
+                ValidateAction(errors, sourceId, action);
             }
         }
 
@@ -135,6 +136,7 @@ public sealed class EditorContributionDescriptorValidator
                     contributionOwners,
                     registeredDiagnosticSourceIds,
                     "Diagnostic source");
+                ValidateDiagnosticSource(errors, sourceId, diagnosticSource);
             }
         }
 
@@ -280,6 +282,44 @@ public sealed class EditorContributionDescriptorValidator
                     "Panel target frames per second must be finite and greater than zero.");
             }
         }
+    }
+
+    private static void ValidateAction(
+        List<EditorContributionValidationError> errors,
+        string sourceId,
+        EditorActionContributionDescriptor action)
+    {
+        ValidateDefinedEnum(errors, sourceId, action.Id, "Scope", action.Scope);
+        ValidateMenuPath(errors, sourceId, action.Id, action.MenuPath);
+
+        if (string.IsNullOrWhiteSpace(action.CommandId))
+        {
+            AddError(
+                errors,
+                sourceId,
+                action.Id,
+                "CommandId",
+                "Action command id must not be empty.");
+        }
+    }
+
+    private static void ValidateDiagnosticSource(
+        List<EditorContributionValidationError> errors,
+        string sourceId,
+        EditorDiagnosticSourceDescriptor diagnosticSource)
+    {
+        ValidateDefinedEnum(
+            errors,
+            sourceId,
+            diagnosticSource.Id,
+            "DefaultChannel",
+            diagnosticSource.DefaultChannel);
+        ValidateDefinedEnum(
+            errors,
+            sourceId,
+            diagnosticSource.Id,
+            "SourceKind",
+            diagnosticSource.SourceKind);
     }
 
     private static void ValidateMenuPath(

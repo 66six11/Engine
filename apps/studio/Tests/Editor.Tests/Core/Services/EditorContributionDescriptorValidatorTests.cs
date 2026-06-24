@@ -264,6 +264,48 @@ public sealed class EditorContributionDescriptorValidatorTests
             result.Errors.Select(error => error.Field).ToArray());
     }
 
+    [Fact]
+    public void Action_validation_reports_invalid_scope_menu_path_and_missing_command()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels: [],
+            actions:
+            [
+                CreateAction(
+                    "project.invalid-action",
+                    " ",
+                    scope: (WorkbenchActionScope)42,
+                    menuPath: "Tools//Invalid"),
+            ],
+            diagnosticSources: []));
+
+        Assert.Equal(
+            ["Scope", "MenuPath", "CommandId"],
+            result.Errors.Select(error => error.Field).ToArray());
+        Assert.All(result.Errors, error => Assert.Equal("project.invalid-action", error.ContributionId));
+    }
+
+    [Fact]
+    public void Diagnostic_source_validation_reports_invalid_channel_and_source_kind()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels: [],
+            actions: [],
+            diagnosticSources:
+            [
+                new EditorDiagnosticSourceDescriptor(
+                    "project.invalid-diagnostics",
+                    "Project Debug",
+                    (EditorDiagnosticChannel)42,
+                    (EditorContributionSourceKind)43),
+            ]));
+
+        Assert.Equal(
+            ["DefaultChannel", "SourceKind"],
+            result.Errors.Select(error => error.Field).ToArray());
+        Assert.All(result.Errors, error => Assert.Equal("project.invalid-diagnostics", error.ContributionId));
+    }
+
     private static EditorContributionValidationResult Validate(
         EditorContributionDescriptorSet descriptorSet)
     {
@@ -311,15 +353,17 @@ public sealed class EditorContributionDescriptorValidatorTests
 
     private static EditorActionContributionDescriptor CreateAction(
         string id,
-        string commandId)
+        string commandId,
+        WorkbenchActionScope scope = WorkbenchActionScope.Global,
+        string menuPath = "Window/Panels/Inspector")
     {
         return new EditorActionContributionDescriptor(
             id,
             "Open Inspector",
             "Window",
-            WorkbenchActionScope.Global,
+            scope,
             "Ctrl+Shift+I",
-            "Window/Panels/Inspector",
+            menuPath,
             commandId);
     }
 
