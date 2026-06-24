@@ -216,6 +216,54 @@ public sealed class EditorContributionDescriptorValidatorTests
             result.Errors.Select(error => error.Field).ToArray());
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(-1)]
+    public void Panel_validation_reports_clear_target_fps_message(double targetFramesPerSecond)
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels:
+            [
+                CreatePanel(
+                    "project.invalid-frame-rate",
+                    targetFramesPerSecond: targetFramesPerSecond),
+            ],
+            actions: [],
+            diagnosticSources: []));
+
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("FrameUpdate.TargetFramesPerSecond", error.Field);
+        Assert.Equal(
+            "Panel target frames per second must be finite and greater than zero.",
+            error.Message);
+    }
+
+    [Fact]
+    public void Panel_validation_reports_null_nested_descriptors()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels:
+            [
+                new EditorPanelContributionDescriptor(
+                    "project.null-nested",
+                    "Inspector",
+                    PanelKind.Tool,
+                    DockArea.Right,
+                    "Window/Panels/Inspector",
+                    DockContentCachePolicy.KeepAlive,
+                    ContentModel: null!,
+                    Lifecycle: null!,
+                    FrameUpdate: null!),
+            ],
+            actions: [],
+            diagnosticSources: []));
+
+        Assert.Equal(
+            ["ContentModel", "Lifecycle", "FrameUpdate"],
+            result.Errors.Select(error => error.Field).ToArray());
+    }
+
     private static EditorContributionValidationResult Validate(
         EditorContributionDescriptorSet descriptorSet)
     {

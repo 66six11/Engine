@@ -277,7 +277,7 @@ public sealed class EditorContributionDescriptorValidator
                     sourceId,
                     panel.Id,
                     "FrameUpdate.TargetFramesPerSecond",
-                    "Panel target frames per second must be greater than zero.");
+                    "Panel target frames per second must be finite and greater than zero.");
             }
         }
     }
