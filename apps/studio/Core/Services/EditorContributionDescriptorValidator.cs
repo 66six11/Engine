@@ -69,6 +69,7 @@ public sealed class EditorContributionDescriptorValidator
                     contributionOwners,
                     registeredPanelIds,
                     "Panel");
+                ValidatePanel(errors, sourceId, panel);
             }
         }
 
@@ -189,6 +190,147 @@ public sealed class EditorContributionDescriptorValidator
                 id,
                 "Id",
                 $"{registeredName} id '{id}' is already registered.");
+        }
+    }
+
+    private static void ValidatePanel(
+        List<EditorContributionValidationError> errors,
+        string sourceId,
+        EditorPanelContributionDescriptor panel)
+    {
+        ValidateDefinedEnum(errors, sourceId, panel.Id, "Kind", panel.Kind);
+        ValidateDefinedEnum(errors, sourceId, panel.Id, "DefaultDockArea", panel.DefaultDockArea);
+        ValidateMenuPath(errors, sourceId, panel.Id, panel.MenuPath);
+        ValidateDefinedEnum(errors, sourceId, panel.Id, "CachePolicy", panel.CachePolicy);
+
+        if (panel.ContentModel is null)
+        {
+            AddError(
+                errors,
+                sourceId,
+                panel.Id,
+                "ContentModel",
+                "Panel content model must not be null.");
+        }
+        else
+        {
+            ValidateDefinedEnum(
+                errors,
+                sourceId,
+                panel.Id,
+                "ContentModel.Kind",
+                panel.ContentModel.Kind);
+
+            if (string.IsNullOrWhiteSpace(panel.ContentModel.ModelId))
+            {
+                AddError(
+                    errors,
+                    sourceId,
+                    panel.Id,
+                    "ContentModel.ModelId",
+                    "Panel content model id must not be empty.");
+            }
+        }
+
+        if (panel.Lifecycle is null)
+        {
+            AddError(
+                errors,
+                sourceId,
+                panel.Id,
+                "Lifecycle",
+                "Panel lifecycle descriptor must not be null.");
+        }
+        else
+        {
+            ValidateDefinedEnum(
+                errors,
+                sourceId,
+                panel.Id,
+                "Lifecycle.Mode",
+                panel.Lifecycle.Mode);
+        }
+
+        if (panel.FrameUpdate is null)
+        {
+            AddError(
+                errors,
+                sourceId,
+                panel.Id,
+                "FrameUpdate",
+                "Panel frame update descriptor must not be null.");
+        }
+        else
+        {
+            ValidateDefinedEnum(
+                errors,
+                sourceId,
+                panel.Id,
+                "FrameUpdate.Mode",
+                panel.FrameUpdate.Mode);
+
+            if (panel.FrameUpdate.TargetFramesPerSecond is { } targetFramesPerSecond
+                && (targetFramesPerSecond <= 0 || !double.IsFinite(targetFramesPerSecond)))
+            {
+                AddError(
+                    errors,
+                    sourceId,
+                    panel.Id,
+                    "FrameUpdate.TargetFramesPerSecond",
+                    "Panel target frames per second must be greater than zero.");
+            }
+        }
+    }
+
+    private static void ValidateMenuPath(
+        List<EditorContributionValidationError> errors,
+        string sourceId,
+        string contributionId,
+        string menuPath)
+    {
+        if (string.IsNullOrWhiteSpace(menuPath))
+        {
+            AddError(
+                errors,
+                sourceId,
+                contributionId,
+                "MenuPath",
+                "Menu path must not be empty.");
+            return;
+        }
+
+        var segments = menuPath.Split('/');
+        if (menuPath.Contains("\\", StringComparison.Ordinal)
+            || menuPath.StartsWith("/", StringComparison.Ordinal)
+            || menuPath.EndsWith("/", StringComparison.Ordinal)
+            || segments.Length < 2
+            || Array.Exists(segments, string.IsNullOrWhiteSpace))
+        {
+            AddError(
+                errors,
+                sourceId,
+                contributionId,
+                "MenuPath",
+                $"Menu path '{menuPath}' must be a slash-separated route with at least two non-empty segments.");
+        }
+    }
+
+    private static void ValidateDefinedEnum<TEnum>(
+        List<EditorContributionValidationError> errors,
+        string sourceId,
+        string contributionId,
+        string field,
+        TEnum value)
+        where TEnum : struct, Enum
+    {
+        if (!Enum.IsDefined(value))
+        {
+            AddError(
+                errors,
+                sourceId,
+                contributionId,
+                field,
+                $"{field} value '{value}' is not defined.");
         }
     }
 

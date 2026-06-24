@@ -155,6 +155,67 @@ public sealed class EditorContributionDescriptorValidatorTests
         Assert.Equal("RegisteredPanelIds", exception.ParamName);
     }
 
+    [Fact]
+    public void Panel_validation_reports_invalid_enums()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels:
+            [
+                CreatePanel(
+                    "project.invalid-panel",
+                    kind: (PanelKind)42,
+                    defaultDockArea: (DockArea)43,
+                    cachePolicy: (DockContentCachePolicy)44,
+                    lifecycleMode: (EditorPanelLifecycleMode)45,
+                    frameUpdateMode: (EditorPanelFrameUpdateMode)46),
+            ],
+            actions: [],
+            diagnosticSources: []));
+
+        Assert.Equal(
+            ["Kind", "DefaultDockArea", "CachePolicy", "Lifecycle.Mode", "FrameUpdate.Mode"],
+            result.Errors.Select(error => error.Field).ToArray());
+    }
+
+    [Fact]
+    public void Panel_validation_reports_invalid_content_model()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels:
+            [
+                CreatePanel(
+                    "project.invalid-content",
+                    contentModelKind: (EditorPanelContentModelKind)42,
+                    contentModelId: " "),
+            ],
+            actions: [],
+            diagnosticSources: []));
+
+        Assert.Equal(
+            ["ContentModel.Kind", "ContentModel.ModelId"],
+            result.Errors.Select(error => error.Field).ToArray());
+        Assert.All(result.Errors, error => Assert.Equal("project.invalid-content", error.ContributionId));
+    }
+
+    [Fact]
+    public void Panel_validation_reports_menu_path_and_target_fps_errors()
+    {
+        var result = Validate(CreateDescriptorSet(
+            panels:
+            [
+                CreatePanel(
+                    "project.invalid-menu",
+                    menuPath: "/Window//Panels/",
+                    targetFramesPerSecond: 0),
+            ],
+            actions: [],
+            diagnosticSources: []));
+
+        Assert.Equal(
+            ["MenuPath", "FrameUpdate.TargetFramesPerSecond"],
+            result.Errors.Select(error => error.Field).ToArray());
+    }
+
     private static EditorContributionValidationResult Validate(
         EditorContributionDescriptorSet descriptorSet)
     {
@@ -176,20 +237,28 @@ public sealed class EditorContributionDescriptorValidatorTests
             diagnosticSources ?? [CreateDiagnosticSource("project.debug")]);
     }
 
-    private static EditorPanelContributionDescriptor CreatePanel(string id)
+    private static EditorPanelContributionDescriptor CreatePanel(
+        string id,
+        PanelKind kind = PanelKind.Tool,
+        DockArea defaultDockArea = DockArea.Right,
+        DockContentCachePolicy cachePolicy = DockContentCachePolicy.KeepAlive,
+        string menuPath = "Window/Panels/Inspector",
+        EditorPanelContentModelKind contentModelKind = EditorPanelContentModelKind.ViewModelTypeReference,
+        string contentModelId = "Editor.Tests.InspectorPanelViewModel",
+        EditorPanelLifecycleMode lifecycleMode = EditorPanelLifecycleMode.ContentObject,
+        EditorPanelFrameUpdateMode frameUpdateMode = EditorPanelFrameUpdateMode.Active,
+        double? targetFramesPerSecond = 30)
     {
         return new EditorPanelContributionDescriptor(
             id,
             "Inspector",
-            PanelKind.Tool,
-            DockArea.Right,
-            "Window/Panels/Inspector",
-            DockContentCachePolicy.KeepAlive,
-            new EditorPanelContentModelReference(
-                EditorPanelContentModelKind.ViewModelTypeReference,
-                "Editor.Tests.InspectorPanelViewModel"),
-            EditorPanelLifecycleDescriptor.ContentObject,
-            new EditorPanelFrameUpdateDescriptor(EditorPanelFrameUpdateMode.Active, 30));
+            kind,
+            defaultDockArea,
+            menuPath,
+            cachePolicy,
+            new EditorPanelContentModelReference(contentModelKind, contentModelId),
+            new EditorPanelLifecycleDescriptor(lifecycleMode),
+            new EditorPanelFrameUpdateDescriptor(frameUpdateMode, targetFramesPerSecond));
     }
 
     private static EditorActionContributionDescriptor CreateAction(
