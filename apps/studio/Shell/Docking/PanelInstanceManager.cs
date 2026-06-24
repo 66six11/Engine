@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Editor.Core.Models;
+using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
 
 namespace Editor.Shell.Docking;
@@ -9,6 +10,12 @@ internal sealed class PanelInstanceManager : IDisposable
 {
     private readonly Dictionary<string, object> keptAliveContentByPanelId_ =
         new(StringComparer.Ordinal);
+    private readonly EditorPanelFrameScheduler? frameScheduler_;
+
+    public PanelInstanceManager(EditorPanelFrameScheduler? frameScheduler = null)
+    {
+        frameScheduler_ = frameScheduler;
+    }
 
     public EditorDockTabViewModel CreateTab(
         PanelDescriptor descriptor,
@@ -28,7 +35,8 @@ internal sealed class PanelInstanceManager : IDisposable
             initialArea ?? descriptor.DefaultArea,
             content,
             descriptor.IconKey,
-            new PanelInstanceRelease(this, descriptor, content));
+            new PanelInstanceRelease(this, descriptor, content),
+            frameScheduler_);
         tab.AttachPanelInstance(isFloatingWorkspace);
         return tab;
     }

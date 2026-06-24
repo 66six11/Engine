@@ -367,6 +367,82 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
+    public void Panel_frame_scheduler_tracks_dock_lifecycle()
+    {
+        var content = new RecordingFrameUpdateSink(EditorPanelFrameUpdateRequest.Active());
+        var registry = CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content);
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var tab = workspace.CenterWindow.Tabs.Single();
+
+        workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
+        workspace.CloseTab(tab);
+        workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(16));
+
+        var frame = Assert.Single(content.Frames);
+        Assert.Equal("panel", frame.Panel.PanelId);
+    }
+
+    [Fact]
+    public void Cross_workspace_drag_rehosts_panel_frame_scheduler()
+    {
+        var sourceContent = new RecordingFrameUpdateSink(EditorPanelFrameUpdateRequest.Active());
+        var sourceWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "source-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => sourceContent));
+        var targetWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "target-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        var sourceTab = sourceWorkspace.CenterWindow.Tabs.Single();
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.TabInto,
+            EditorDockDropGuideKind.Merge,
+            TargetArea: DockArea.Center,
+            TargetId: targetWorkspace.CenterWindow.Id,
+            PreviewBounds: new Rect(0, 0, 320, 220),
+            Label: "Target tab strip");
+
+        sourceWorkspace.BeginDrag(sourceTab);
+        sourceWorkspace.CompleteDragInto(targetWorkspace, target);
+        sourceWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
+        targetWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
+
+        var frame = Assert.Single(sourceContent.Frames);
+        Assert.Equal("source-panel", frame.Panel.PanelId);
+    }
+
+    [Fact]
+    public void Floating_workspace_reuses_source_panel_frame_scheduler()
+    {
+        var content = new RecordingFrameUpdateSink(EditorPanelFrameUpdateRequest.Active());
+        var sourceWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var targetWorkspace = new EditorDockWorkspaceViewModel(new PanelRegistry());
+        var sourceTab = sourceWorkspace.CenterWindow.Tabs.Single();
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.Float,
+            EditorDockDropGuideKind.Float,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: new Rect(24, 32, 320, 220),
+            Label: "Float window");
+
+        sourceWorkspace.BeginDrag(sourceTab);
+        var request = sourceWorkspace.CompleteDragInto(targetWorkspace, target);
+
+        Assert.NotNull(request);
+        Assert.Same(sourceWorkspace.PanelFrameScheduler, request.Window.DockWorkspace.PanelFrameScheduler);
+        sourceWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
+        Assert.Single(content.Frames);
+    }
+
+    [Fact]
     public void RestoreLayoutSnapshot_creates_only_tabs_present_in_snapshot()
     {
         var includedContentFactory = new CountingContentFactory();
@@ -494,6 +570,19 @@ public sealed class EditorDockWorkspaceViewModelTests
         private static string GetHostKind(EditorPanelLifecycleContext context)
         {
             return context.IsFloatingWorkspace ? "Floating" : "Main";
+        }
+    }
+
+    private sealed class RecordingFrameUpdateSink(
+        EditorPanelFrameUpdateRequest frameUpdateRequest) : IEditorPanelFrameUpdateSink
+    {
+        public List<EditorPanelFrameContext> Frames { get; } = [];
+
+        public EditorPanelFrameUpdateRequest FrameUpdateRequest { get; } = frameUpdateRequest;
+
+        public void OnEditorPanelFrame(EditorPanelFrameContext context)
+        {
+            Frames.Add(context);
         }
     }
 

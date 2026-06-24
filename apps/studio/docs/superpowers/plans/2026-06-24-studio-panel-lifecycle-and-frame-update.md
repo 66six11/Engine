@@ -98,7 +98,7 @@ dotnet test Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "FullyQua
 - Create: `Shell/Services/EditorPanelFrameScheduler.cs`
 - Create: `Tests/Editor.Tests/Shell/Services/EditorPanelFrameSchedulerTests.cs`
 
-- [ ] **Step 1: Write scheduler tests**
+- [x] **Step 1: Write scheduler tests**
 
 Prove:
 
@@ -108,11 +108,11 @@ Prove:
 - target FPS throttles callback frequency;
 - `RequestRepaint` style callbacks are request-based and do not force a renderer.
 
-- [ ] **Step 2: Implement UI-neutral scheduler**
+- [x] **Step 2: Implement UI-neutral scheduler**
 
 The scheduler accepts explicit `Tick(now)` calls in tests and later can be driven by an Avalonia `DispatcherTimer`. It must not call native rendering APIs.
 
-- [ ] **Step 3: Wire scheduler to panel lifecycle**
+- [x] **Step 3: Wire scheduler to panel lifecycle**
 
 Register frame sinks when panel content attaches, update active state on activation/deactivation, unregister on detach.
 

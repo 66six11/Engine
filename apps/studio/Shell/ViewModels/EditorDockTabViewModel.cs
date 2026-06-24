@@ -1,6 +1,7 @@
 using System;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Shell.Services;
 
 namespace Editor.Shell.ViewModels;
 
@@ -10,6 +11,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     private bool isDragSource_;
     private DockArea area_;
     private IDisposable? panelInstanceRelease_;
+    private EditorPanelFrameScheduler? panelFrameScheduler_;
     private bool isPanelAttached_;
     private bool isPanelActive_;
     private bool isFloatingWorkspace_;
@@ -24,7 +26,8 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         DockArea area,
         object content,
         string? iconKey = null,
-        IDisposable? panelInstanceRelease = null)
+        IDisposable? panelInstanceRelease = null,
+        EditorPanelFrameScheduler? panelFrameScheduler = null)
     {
         Id = id;
         Title = title;
@@ -35,6 +38,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         area_ = area;
         Content = content;
         panelInstanceRelease_ = panelInstanceRelease;
+        panelFrameScheduler_ = panelFrameScheduler;
         IconKey = iconKey;
     }
 
@@ -59,7 +63,13 @@ public sealed class EditorDockTabViewModel : ViewModelBase
     public DockArea Area
     {
         get => area_;
-        set => SetProperty(ref area_, value);
+        set
+        {
+            if (SetProperty(ref area_, value))
+            {
+                UpdatePanelFrameSchedulerContext();
+            }
+        }
     }
 
     public bool IsActive
@@ -96,15 +106,47 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         }
 
         isPanelAttached_ = true;
+        var context = CreateLifecycleContext();
         if (Content is IEditorPanelLifecycleSink lifecycleSink)
         {
-            lifecycleSink.OnPanelAttached(CreateLifecycleContext());
+            lifecycleSink.OnPanelAttached(context);
+        }
+
+        if (Content is IEditorPanelFrameUpdateSink frameUpdateSink)
+        {
+            panelFrameScheduler_?.AttachPanel(context, frameUpdateSink);
         }
     }
 
     internal void SetPanelLifecycleHostKind(bool isFloatingWorkspace)
     {
         isFloatingWorkspace_ = isFloatingWorkspace;
+        UpdatePanelFrameSchedulerContext();
+    }
+
+    internal void SetPanelFrameScheduler(EditorPanelFrameScheduler? panelFrameScheduler)
+    {
+        if (ReferenceEquals(panelFrameScheduler_, panelFrameScheduler))
+        {
+            return;
+        }
+
+        var wasActive = isPanelActive_;
+        var context = CreateLifecycleContext();
+        if (isPanelAttached_ && Content is IEditorPanelFrameUpdateSink frameUpdateSink)
+        {
+            panelFrameScheduler_?.DetachPanel(context);
+            panelFrameScheduler_ = panelFrameScheduler;
+            panelFrameScheduler_?.AttachPanel(context, frameUpdateSink);
+            if (wasActive)
+            {
+                panelFrameScheduler_?.ActivatePanel(context);
+            }
+
+            return;
+        }
+
+        panelFrameScheduler_ = panelFrameScheduler;
     }
 
     internal void ActivatePanelInstance()
@@ -115,10 +157,13 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         }
 
         isPanelActive_ = true;
+        var context = CreateLifecycleContext();
         if (Content is IEditorPanelLifecycleSink lifecycleSink)
         {
-            lifecycleSink.OnPanelActivated(CreateLifecycleContext());
+            lifecycleSink.OnPanelActivated(context);
         }
+
+        panelFrameScheduler_?.ActivatePanel(context);
     }
 
     internal void DeactivatePanelInstance()
@@ -129,10 +174,13 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         }
 
         isPanelActive_ = false;
+        var context = CreateLifecycleContext();
         if (Content is IEditorPanelLifecycleSink lifecycleSink)
         {
-            lifecycleSink.OnPanelDeactivated(CreateLifecycleContext());
+            lifecycleSink.OnPanelDeactivated(context);
         }
+
+        panelFrameScheduler_?.DeactivatePanel(context);
     }
 
     private void DetachPanelInstance()
@@ -144,9 +192,20 @@ public sealed class EditorDockTabViewModel : ViewModelBase
 
         DeactivatePanelInstance();
         isPanelAttached_ = false;
+        var context = CreateLifecycleContext();
         if (Content is IEditorPanelLifecycleSink lifecycleSink)
         {
-            lifecycleSink.OnPanelDetached(CreateLifecycleContext());
+            lifecycleSink.OnPanelDetached(context);
+        }
+
+        panelFrameScheduler_?.DetachPanel(context);
+    }
+
+    private void UpdatePanelFrameSchedulerContext()
+    {
+        if (isPanelAttached_)
+        {
+            panelFrameScheduler_?.UpdatePanel(CreateLifecycleContext());
         }
     }
 

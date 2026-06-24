@@ -16,7 +16,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private const string LayoutNodeKindSplit = "Split";
     private const string LayoutNodeKindWindow = "Window";
     private readonly IPanelRegistry? panelRegistry_;
-    private readonly PanelInstanceManager panelInstanceManager_ = new();
+    private readonly PanelInstanceManager panelInstanceManager_;
     private readonly Dictionary<DockArea, EditorDockWindowViewModel> windowsByArea_;
     private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
     private EditorDockNodeViewModel? rootNode_;
@@ -31,12 +31,17 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     public event EventHandler? DockContentChanged;
 
+    internal EditorPanelFrameScheduler PanelFrameScheduler { get; }
+
     public EditorDockWorkspaceViewModel(
         IPanelRegistry panelRegistry,
-        IEditorLifecycleEventService? lifecycleEvents = null)
+        IEditorLifecycleEventService? lifecycleEvents = null,
+        EditorPanelFrameScheduler? panelFrameScheduler = null)
     {
         panelRegistry_ = panelRegistry;
         LifecycleEvents = lifecycleEvents ?? new EditorLifecycleEventService();
+        PanelFrameScheduler = panelFrameScheduler ?? new EditorPanelFrameScheduler();
+        panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
         WorkspaceKind = EditorDockWorkspaceKind.MainWindow;
         LeftWindow = new EditorDockWindowViewModel("owned-dock-left", "Hierarchy", DockArea.Left, "Scene tree");
         CenterWindow = new EditorDockWindowViewModel("owned-dock-center", "Viewport", DockArea.Center, "Primary work area");
@@ -70,10 +75,13 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     private EditorDockWorkspaceViewModel(
         EditorDockWindowViewModel floatingDockWindow,
-        IEditorLifecycleEventService lifecycleEvents)
+        IEditorLifecycleEventService lifecycleEvents,
+        EditorPanelFrameScheduler panelFrameScheduler)
     {
         panelRegistry_ = null;
         LifecycleEvents = lifecycleEvents;
+        PanelFrameScheduler = panelFrameScheduler;
+        panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
         WorkspaceKind = EditorDockWorkspaceKind.FloatingWindow;
         LeftWindow = floatingDockWindow;
         CenterWindow = floatingDockWindow;
@@ -93,10 +101,13 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private EditorDockWorkspaceViewModel(
         IPanelRegistry panelRegistry,
         EditorDockFloatingWindowSnapshot snapshot,
-        IEditorLifecycleEventService lifecycleEvents)
+        IEditorLifecycleEventService lifecycleEvents,
+        EditorPanelFrameScheduler? panelFrameScheduler = null)
     {
         panelRegistry_ = panelRegistry;
         LifecycleEvents = lifecycleEvents;
+        PanelFrameScheduler = panelFrameScheduler ?? new EditorPanelFrameScheduler();
+        panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
         WorkspaceKind = EditorDockWorkspaceKind.FloatingWindow;
         var fallbackWindow = new EditorDockWindowViewModel(
             "owned-dock-floating-restore",
@@ -1144,7 +1155,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         RemoveWindowIfEmpty(sourceWindow);
         NormalizeLayoutGraph();
 
-        var floatingWorkspace = new EditorDockWorkspaceViewModel(floatingDockWindow, LifecycleEvents);
+        var floatingWorkspace = new EditorDockWorkspaceViewModel(
+            floatingDockWindow,
+            LifecycleEvents,
+            PanelFrameScheduler);
         var floatingWindow = new EditorDockFloatingWindowViewModel(floatingWorkspace, LifecycleEvents);
         return new EditorDockFloatingWindowRequest(floatingWindow, bounds);
     }
@@ -1309,6 +1323,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         EditorDockDropTarget target,
         DockArea fallbackArea)
     {
+        tab.SetPanelFrameScheduler(PanelFrameScheduler);
         tab.SetPanelLifecycleHostKind(IsFloatingWindow);
         if (target.Operation == EditorDockDropOperation.TabInto
             && target.TargetId is { } targetWindowId
