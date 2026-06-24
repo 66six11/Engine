@@ -30,4 +30,33 @@ public sealed class EditorContributionDescriptorTests
         Assert.Equal(2, (int)EditorContributionSourceKind.PackagedPlugin);
         Assert.Equal(3, (int)EditorContributionSourceKind.NativeAdapter);
     }
+
+    [Fact]
+    public void Panel_content_model_reference_preserves_kind_and_model_id()
+    {
+        var reference = new EditorPanelContentModelReference(
+            EditorPanelContentModelKind.ViewModelTypeReference,
+            "Editor.Tests.MockPanelViewModel");
+
+        Assert.Equal(EditorPanelContentModelKind.ViewModelTypeReference, reference.Kind);
+        Assert.Equal("Editor.Tests.MockPanelViewModel", reference.ModelId);
+    }
+
+    [Fact]
+    public void Panel_lifecycle_descriptor_declares_shell_owned_lifecycle_mode()
+    {
+        Assert.Equal(EditorPanelLifecycleMode.None, EditorPanelLifecycleDescriptor.None.Mode);
+        Assert.Equal(EditorPanelLifecycleMode.ContentObject, EditorPanelLifecycleDescriptor.ContentObject.Mode);
+    }
+
+    [Fact]
+    public void Panel_frame_update_descriptor_preserves_data_without_scheduler_coupling()
+    {
+        var frameUpdate = new EditorPanelFrameUpdateDescriptor(
+            EditorPanelFrameUpdateMode.Visible,
+            targetFramesPerSecond: 30);
+
+        Assert.Equal(EditorPanelFrameUpdateMode.Visible, frameUpdate.Mode);
+        Assert.Equal(30, frameUpdate.TargetFramesPerSecond);
+    }
 }
