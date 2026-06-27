@@ -8,8 +8,11 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Features.Hierarchy.Controls;
 using Editor.Shell.CodeFirstUI;
 using Editor.Shell.CodeFirstUI.Adapters;
+using Editor.Shell.Icons;
+using Editor.UI.Controls.Base;
 using Xunit;
 
 namespace Editor.Tests.Shell.CodeFirstUI.Adapters;
@@ -88,6 +91,7 @@ public sealed class GuiAvaloniaControlFactoryTests
             "catalog",
             [
                 new GuiNavigationItem("overview", "Overview"),
+                new GuiNavigationItem("overview/foundations/typography", "Typography"),
                 new GuiNavigationItem("render/debug/frame-debugger", "Frame Debugger"),
             ],
             "render/debug/frame-debugger",
@@ -107,8 +111,64 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Equal(GridResizeDirection.Columns, splitter.ResizeDirection);
         Assert.Equal(1, Grid.GetColumn(splitter));
 
-        Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "render"));
-        Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "debug"));
+        var overviewRow = FindDescendant<Grid>(
+            grid,
+            row => row.Classes.Contains("code-first-navigation-tree-row")
+                && string.Equals(row.Tag as string, "overview", StringComparison.Ordinal));
+        var renderRow = FindDescendant<Grid>(
+            grid,
+            row => row.Classes.Contains("code-first-navigation-tree-row")
+                && string.Equals(row.Tag as string, "render", StringComparison.Ordinal));
+        var debugRow = FindDescendant<Grid>(
+            grid,
+            row => row.Classes.Contains("code-first-navigation-tree-row")
+                && string.Equals(row.Tag as string, "render/debug", StringComparison.Ordinal));
+        var frameRow = FindDescendant<Grid>(
+            grid,
+            row => row.Classes.Contains("code-first-navigation-tree-row")
+                && string.Equals(row.Tag as string, "render/debug/frame-debugger", StringComparison.Ordinal));
+
+        Assert.NotNull(overviewRow);
+        Assert.NotNull(renderRow);
+        Assert.NotNull(debugRow);
+        Assert.NotNull(frameRow);
+
+        Assert.NotNull(FindDescendant<IconButton>(
+            overviewRow!,
+            button => button.Classes.Contains("code-first-navigation-expander")));
+        Assert.NotNull(FindDescendant<Button>(
+            overviewRow,
+            button => string.Equals(button.Content as string, "Overview", StringComparison.Ordinal)
+                && button.Classes.Contains("code-first-navigation-route")));
+
+        var renderExpander = FindDescendant<IconButton>(
+            renderRow!,
+            button => button.Classes.Contains("code-first-navigation-expander"));
+        Assert.NotNull(renderExpander);
+        Assert.Equal(EditorIconKey.UiChevronDown, renderExpander!.IconKey);
+        Assert.False(renderExpander.Focusable);
+
+        Assert.NotNull(FindDescendant<HierarchyIndentGuide>(
+            debugRow!,
+            guide => guide.Depth == 1 && guide.Width == 12d));
+        Assert.NotNull(FindDescendant<HierarchyIndentGuide>(
+            frameRow!,
+            guide => guide.Depth == 2 && guide.Width == 24d));
+
+        var renderChildren = FindDescendant<StackPanel>(
+            grid,
+            panel => panel.Classes.Contains("code-first-navigation-tree-children")
+                && string.Equals(panel.Tag as string, "render", StringComparison.Ordinal));
+        Assert.NotNull(renderChildren);
+
+        renderExpander.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)
+        {
+            Source = renderExpander,
+        });
+
+        Assert.Equal(EditorIconKey.UiChevronRight, renderExpander.IconKey);
+        Assert.False(renderChildren!.IsVisible);
+
         Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "Frame Debugger"));
 
         var routeButton = FindDescendant<Button>(

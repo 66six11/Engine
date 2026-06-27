@@ -9,12 +9,17 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Features.Hierarchy.Controls;
+using Editor.Shell.Icons;
+using Editor.UI.Controls.Base;
 
 namespace Editor.Shell.CodeFirstUI.Adapters;
 
 internal sealed class GuiAvaloniaControlFactory
 {
     private const double SplitterBreadth = 4d;
+    private const double NavigationIndentUnit = 12d;
+    private const double NavigationExpanderWidth = 18d;
     private static readonly TimeSpan DefaultDebounceDelay = TimeSpan.FromMilliseconds(250);
     private readonly IGuiAvaloniaHost host_;
     private readonly IGuiTextCommitScheduler textCommitScheduler_;
@@ -232,9 +237,16 @@ internal sealed class GuiAvaloniaControlFactory
         stack.Classes.Add("code-first-navigation-directory-content");
 
         var root = BuildNavigationRouteTree(node.Payload.NavigationItems);
-        foreach (var child in root.Children)
+        for (var index = 0; index < root.Children.Count; index++)
         {
-            AddNavigationRouteControls(stack, node.Id, child, node.Payload.SelectedRoute, depth: 0);
+            AddNavigationRouteControls(
+                stack,
+                node.Id,
+                root.Children[index],
+                node.Payload.SelectedRoute,
+                depth: 0,
+                isLastSibling: index == root.Children.Count - 1,
+                ancestorContinuationMask: 0UL);
         }
 
         var scrollViewer = new ScrollViewer
@@ -274,35 +286,138 @@ internal sealed class GuiAvaloniaControlFactory
         GuiNodeId nodeId,
         NavigationRouteNode node,
         string? selectedRoute,
-        int depth)
+        int depth,
+        bool isLastSibling,
+        ulong ancestorContinuationMask)
     {
-        if (node.IsPage)
+        var childrenPanel = node.Children.Count > 0
+            ? new StackPanel
+            {
+                Spacing = 2d,
+                Tag = node.FullRoute,
+            }
+            : null;
+        childrenPanel?.Classes.Add("code-first-navigation-tree-children");
+
+        parent.Children.Add(CreateNavigationTreeRow(
+            nodeId,
+            node,
+            selectedRoute,
+            depth,
+            isLastSibling,
+            ancestorContinuationMask,
+            childrenPanel));
+
+        if (childrenPanel is null)
         {
-            parent.Children.Add(CreateNavigationRouteButton(nodeId, node, selectedRoute, depth));
-        }
-        else
-        {
-            parent.Children.Add(CreateNavigationGroupLabel(node, depth));
+            return;
         }
 
-        foreach (var child in node.Children)
+        var childAncestorContinuationMask = GetChildAncestorContinuationMask(
+            ancestorContinuationMask,
+            depth,
+            isLastSibling);
+        for (var index = 0; index < node.Children.Count; index++)
         {
-            AddNavigationRouteControls(parent, nodeId, child, selectedRoute, depth + 1);
+            AddNavigationRouteControls(
+                childrenPanel,
+                nodeId,
+                node.Children[index],
+                selectedRoute,
+                depth + 1,
+                index == node.Children.Count - 1,
+                childAncestorContinuationMask);
         }
+
+        parent.Children.Add(childrenPanel);
+    }
+
+    private Control CreateNavigationTreeRow(
+        GuiNodeId nodeId,
+        NavigationRouteNode node,
+        string? selectedRoute,
+        int depth,
+        bool isLastSibling,
+        ulong ancestorContinuationMask,
+        StackPanel? childrenPanel)
+    {
+        IconButton? expander = null;
+        var isExpanded = true;
+
+        void SetExpanded(bool expanded)
+        {
+            isExpanded = expanded;
+            if (childrenPanel is not null)
+            {
+                childrenPanel.IsVisible = expanded;
+            }
+
+            if (expander is not null)
+            {
+                expander.IconKey = expanded
+                    ? EditorIconKey.UiChevronDown
+                    : EditorIconKey.UiChevronRight;
+            }
+        }
+
+        void ToggleExpanded()
+        {
+            SetExpanded(!isExpanded);
+        }
+
+        var indentWidth = depth * NavigationIndentUnit;
+        var row = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(new GridLength(indentWidth)),
+                new ColumnDefinition(new GridLength(NavigationExpanderWidth)),
+                new ColumnDefinition(GridLength.Star),
+            },
+            Tag = node.Route ?? node.FullRoute,
+        };
+        row.Classes.Add("code-first-navigation-tree-row");
+
+        var indentGuide = new HierarchyIndentGuide
+        {
+            AncestorContinuationMask = ancestorContinuationMask,
+            Depth = depth,
+            IndentUnit = NavigationIndentUnit,
+            IsHitTestVisible = false,
+            IsLastSibling = isLastSibling,
+            Width = indentWidth,
+        };
+        indentGuide.Classes.Add("code-first-navigation-indent-guide");
+        Grid.SetColumn(indentGuide, 0);
+        row.Children.Add(indentGuide);
+
+        if (childrenPanel is not null)
+        {
+            expander = CreateNavigationExpander(node.FullRoute, ToggleExpanded);
+            Grid.SetColumn(expander, 1);
+            row.Children.Add(expander);
+        }
+
+        var label = node.IsPage
+            ? CreateNavigationRouteButton(nodeId, node, selectedRoute)
+            : CreateNavigationGroupButton(node, childrenPanel is not null ? ToggleExpanded : null);
+        Grid.SetColumn(label, 2);
+        row.Children.Add(label);
+
+        SetExpanded(isExpanded);
+        return row;
     }
 
     private Control CreateNavigationRouteButton(
         GuiNodeId nodeId,
         NavigationRouteNode node,
-        string? selectedRoute,
-        int depth)
+        string? selectedRoute)
     {
         var route = node.Route ?? node.FullRoute;
         var button = new Button
         {
             Content = node.Label ?? node.Segment,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Padding = new Avalonia.Thickness(8d + depth * 12d, 2d, 8d, 2d),
             Tag = route,
         };
         ToolTip.SetTip(button, route);
@@ -316,18 +431,61 @@ internal sealed class GuiAvaloniaControlFactory
         return button;
     }
 
-    private static Control CreateNavigationGroupLabel(
+    private static Control CreateNavigationGroupButton(
         NavigationRouteNode node,
-        int depth)
+        Action? toggleExpanded)
     {
-        var label = new TextBlock
+        var button = new Button
         {
-            Text = node.Segment,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
-            Padding = new Avalonia.Thickness(8d + depth * 12d, 4d, 8d, 2d),
+            Content = node.Segment,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Tag = node.FullRoute,
         };
-        label.Classes.Add("code-first-navigation-group");
-        return label;
+        button.Classes.Add("code-first-navigation-group");
+        if (toggleExpanded is not null)
+        {
+            button.Click += (_, args) =>
+            {
+                toggleExpanded();
+                args.Handled = true;
+            };
+        }
+
+        return button;
+    }
+
+    private static IconButton CreateNavigationExpander(
+        string route,
+        Action toggleExpanded)
+    {
+        var expander = new IconButton
+        {
+            Focusable = false,
+            IconKey = EditorIconKey.UiChevronDown,
+            IconSize = 14d,
+            StrokeWidth = 2d,
+            Tag = route,
+        };
+        expander.Classes.Add("code-first-navigation-expander");
+        expander.Click += (_, args) =>
+        {
+            toggleExpanded();
+            args.Handled = true;
+        };
+        return expander;
+    }
+
+    private static ulong GetChildAncestorContinuationMask(
+        ulong ancestorContinuationMask,
+        int depth,
+        bool isLastSibling)
+    {
+        if (depth <= 0 || depth > 64 || isLastSibling)
+        {
+            return ancestorContinuationMask;
+        }
+
+        return ancestorContinuationMask | (1UL << (depth - 1));
     }
 
     private GridSplitter CreateSplitter(
