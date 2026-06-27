@@ -165,6 +165,37 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Equal("albedo", commit.Text);
     }
 
+    [Fact]
+    public void Text_field_debounced_commit_mode_defers_and_coalesces_commits()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.TextField(
+            "filter",
+            "Filter",
+            "gbuffer",
+            GuiTextInputCommitMode.Debounced,
+            TimeSpan.FromMilliseconds(150));
+        var host = new RecordingCodeFirstPanelHost();
+        var scheduler = new RecordingTextCommitScheduler();
+        var factory = new GuiAvaloniaControlFactory(host, scheduler);
+        var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
+        Assert.NotNull(textBox);
+
+        textBox!.Text = "albedo";
+        textBox.Text = "albedo roughness";
+
+        Assert.Equal(
+            ["albedo", "albedo roughness"],
+            host.TextChanges.Select(change => change.Text).ToArray());
+        Assert.Empty(host.TextCommits);
+        Assert.Equal(TimeSpan.FromMilliseconds(150), scheduler.LastDelay);
+
+        scheduler.RunPending();
+
+        var commit = Assert.Single(host.TextCommits);
+        Assert.Equal("albedo roughness", commit.Text);
+    }
+
     private static T? FindDescendant<T>(Control control, Predicate<T>? predicate = null)
         where T : Control
     {
@@ -265,4 +296,52 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record ToggleChange(
         GuiNodeId NodeId,
         bool IsChecked);
+
+    private sealed class RecordingTextCommitScheduler : IGuiTextCommitScheduler
+    {
+        private ScheduledAction? pendingAction_;
+
+        public TimeSpan? LastDelay { get; private set; }
+
+        public IDisposable Schedule(TimeSpan delay, Action action)
+        {
+            LastDelay = delay;
+            var scheduledAction = new ScheduledAction(action);
+            pendingAction_ = scheduledAction;
+            return new DisposableAction(() => scheduledAction.IsCanceled = true);
+        }
+
+        public void RunPending()
+        {
+            var action = pendingAction_;
+            pendingAction_ = null;
+            if (action is { IsCanceled: false })
+            {
+                action.Action();
+            }
+        }
+
+        private sealed class ScheduledAction(Action action)
+        {
+            public Action Action { get; } = action;
+
+            public bool IsCanceled { get; set; }
+        }
+    }
+
+    private sealed class DisposableAction(Action dispose) : IDisposable
+    {
+        private bool isDisposed_;
+
+        public void Dispose()
+        {
+            if (isDisposed_)
+            {
+                return;
+            }
+
+            dispose();
+            isDisposed_ = true;
+        }
+    }
 }

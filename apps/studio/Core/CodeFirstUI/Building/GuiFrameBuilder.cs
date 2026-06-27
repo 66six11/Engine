@@ -40,8 +40,17 @@ public sealed class GuiFrameBuilder
         string key,
         string label,
         string text,
-        GuiTextInputCommitMode commitMode = GuiTextInputCommitMode.OnLostFocus)
+        GuiTextInputCommitMode commitMode = GuiTextInputCommitMode.OnLostFocus,
+        TimeSpan? commitDelay = null)
     {
+        if (commitDelay is { } delay && delay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(commitDelay),
+                commitDelay,
+                "Commit delay must not be negative.");
+        }
+
         return AddLeaf(
             key,
             GuiNodeKind.TextField,
@@ -50,6 +59,7 @@ public sealed class GuiFrameBuilder
             {
                 TextValue = text,
                 TextCommitMode = commitMode,
+                TextCommitDelay = commitDelay,
             });
     }
 

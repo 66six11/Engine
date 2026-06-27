@@ -1,3 +1,4 @@
+using System;
 using Editor.Core.CodeFirstUI;
 
 namespace Editor.Features.UiStyle;
@@ -90,7 +91,12 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
     private static void DrawInputsPage(EditorGui gui)
     {
         gui.Text("title", "Inputs");
-        gui.TextInput("filter", "Filter", "material");
+        gui.TextInput(
+            "filter",
+            "Filter",
+            "material",
+            GuiTextInputCommitMode.Debounced,
+            TimeSpan.FromMilliseconds(250));
         gui.Toggle("show-disabled", "Show Disabled");
         gui.Text("contract", "Input state belongs to GuiStateStore; document mutations should still go through commands.");
     }

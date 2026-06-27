@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Editor.Core.CodeFirstUI;
@@ -17,6 +18,8 @@ public sealed record GuiNodePayload
     public string? TextValue { get; init; }
 
     public GuiTextInputCommitMode? TextCommitMode { get; init; }
+
+    public TimeSpan? TextCommitDelay { get; init; }
 
     public bool? IsChecked { get; init; }
 }

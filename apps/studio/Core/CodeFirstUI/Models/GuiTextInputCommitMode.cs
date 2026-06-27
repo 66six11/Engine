@@ -4,5 +4,6 @@ public enum GuiTextInputCommitMode
 {
     OnChange,
     OnLostFocus,
-    OnEnter
+    OnEnter,
+    Debounced
 }

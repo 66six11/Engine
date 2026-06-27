@@ -13,11 +13,16 @@ namespace Editor.Shell.CodeFirstUI.Adapters;
 internal sealed class GuiAvaloniaControlFactory
 {
     private const double SplitterBreadth = 4d;
+    private static readonly TimeSpan DefaultDebounceDelay = TimeSpan.FromMilliseconds(250);
     private readonly IGuiAvaloniaHost host_;
+    private readonly IGuiTextCommitScheduler textCommitScheduler_;
 
-    public GuiAvaloniaControlFactory(IGuiAvaloniaHost host)
+    public GuiAvaloniaControlFactory(
+        IGuiAvaloniaHost host,
+        IGuiTextCommitScheduler? textCommitScheduler = null)
     {
         host_ = host ?? throw new ArgumentNullException(nameof(host));
+        textCommitScheduler_ = textCommitScheduler ?? DispatcherGuiTextCommitScheduler.Instance;
     }
 
     public Control Build(GuiTreeSnapshot tree)
@@ -278,7 +283,8 @@ internal sealed class GuiAvaloniaControlFactory
         AttachTextTracking(
             node.Id,
             textBox,
-            node.Payload.TextCommitMode ?? GuiTextInputCommitMode.OnLostFocus);
+            node.Payload.TextCommitMode ?? GuiTextInputCommitMode.OnLostFocus,
+            node.Payload.TextCommitDelay);
 
         var grid = new Grid
         {
@@ -295,9 +301,11 @@ internal sealed class GuiAvaloniaControlFactory
     private void AttachTextTracking(
         GuiNodeId nodeId,
         TextBox textBox,
-        GuiTextInputCommitMode commitMode)
+        GuiTextInputCommitMode commitMode,
+        TimeSpan? commitDelay)
     {
         var hasObservedInitialValue = false;
+        IDisposable? pendingCommit = null;
         textBox.Tag = textBox
             .GetObservable(TextBox.TextProperty)
             .Subscribe(new ActionObserver<string?>(text =>
@@ -311,6 +319,14 @@ internal sealed class GuiAvaloniaControlFactory
                 if (commitMode == GuiTextInputCommitMode.OnChange)
                 {
                     host_.CommitText(nodeId, text ?? string.Empty);
+                }
+                else if (commitMode == GuiTextInputCommitMode.Debounced)
+                {
+                    host_.SetText(nodeId, text ?? string.Empty);
+                    pendingCommit?.Dispose();
+                    pendingCommit = textCommitScheduler_.Schedule(
+                        commitDelay ?? DefaultDebounceDelay,
+                        () => host_.CommitText(nodeId, textBox.Text ?? string.Empty));
                 }
                 else
                 {

@@ -1,3 +1,4 @@
+using System;
 using Editor.Core.CodeFirstUI;
 using Xunit;
 
@@ -97,5 +98,23 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal(GuiNodeKind.Toggle, toggle.Kind);
         Assert.Equal("Show Disabled", toggle.Label);
         Assert.True(toggle.Payload.IsChecked);
+    }
+
+    [Fact]
+    public void Build_preserves_debounced_text_field_commit_delay()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        builder.TextField(
+            "filter",
+            "Filter",
+            "gbuffer",
+            GuiTextInputCommitMode.Debounced,
+            TimeSpan.FromMilliseconds(180));
+
+        var textField = Assert.Single(builder.Build().Root.Children);
+
+        Assert.Equal(GuiTextInputCommitMode.Debounced, textField.Payload.TextCommitMode);
+        Assert.Equal(TimeSpan.FromMilliseconds(180), textField.Payload.TextCommitDelay);
     }
 }

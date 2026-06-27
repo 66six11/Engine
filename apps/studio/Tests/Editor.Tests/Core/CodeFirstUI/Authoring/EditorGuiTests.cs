@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
@@ -158,6 +159,28 @@ public sealed class EditorGuiTests
         var toggle = tree.Root.Children[1];
         Assert.Equal(GuiNodeKind.Toggle, toggle.Kind);
         Assert.False(toggle.Payload.IsChecked);
+    }
+
+    [Fact]
+    public void Text_input_emits_debounce_commit_delay()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        gui.TextInput(
+            "filter",
+            "Filter",
+            "default",
+            GuiTextInputCommitMode.Debounced,
+            TimeSpan.FromMilliseconds(200));
+
+        var textField = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiTextInputCommitMode.Debounced, textField.Payload.TextCommitMode);
+        Assert.Equal(TimeSpan.FromMilliseconds(200), textField.Payload.TextCommitDelay);
     }
 
     private sealed class RecordingCommandExecutor : IEditorGuiCommandExecutor

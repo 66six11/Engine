@@ -54,6 +54,8 @@ public sealed class UiStylePanelTests
         Assert.Equal("Inputs", preview.Children[0].Label);
         Assert.Contains(preview.Children, child => child.Kind == GuiNodeKind.TextField);
         Assert.Contains(preview.Children, child => child.Kind == GuiNodeKind.Toggle);
+        var filter = Assert.Single(preview.Children, child => child.Kind == GuiNodeKind.TextField);
+        Assert.Equal(GuiTextInputCommitMode.Debounced, filter.Payload.TextCommitMode);
     }
 
     private static CodeFirstPanelHostViewModel CreateAttachedHost()

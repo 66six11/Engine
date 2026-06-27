@@ -50,14 +50,15 @@ public sealed class EditorGui
         string key,
         string label,
         string text = "",
-        GuiTextInputCommitMode commitMode = GuiTextInputCommitMode.OnLostFocus)
+        GuiTextInputCommitMode commitMode = GuiTextInputCommitMode.OnLostFocus,
+        TimeSpan? commitDelay = null)
     {
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.TextField);
         var resolvedText = StateStore.TryGetText(nodeId, out var storedText)
             ? storedText ?? string.Empty
             : text;
         StateStore.SetText(nodeId, resolvedText);
-        builder_.TextField(key, label, resolvedText, commitMode);
+        builder_.TextField(key, label, resolvedText, commitMode, commitDelay);
         return resolvedText;
     }
 
