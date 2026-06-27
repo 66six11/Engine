@@ -90,6 +90,7 @@ public partial class EditorDockWindowView : UserControl
             window.Activate(tab);
         }
 
+        FocusDockPanelBodyForTabActivation();
         capturedTab_ = tab;
         capturedWindow_ = window;
         dragMode_ = TabDragMode.Pending;
@@ -97,6 +98,11 @@ public partial class EditorDockWindowView : UserControl
         e.Pointer.Capture(this);
 
         e.Handled = true;
+    }
+
+    private void FocusDockPanelBodyForTabActivation()
+    {
+        DockPanelBody.Focus(NavigationMethod.Pointer);
     }
 
     private static EditorDockTabItemView? FindTabItemView(Control source)

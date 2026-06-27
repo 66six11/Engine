@@ -81,6 +81,17 @@ public sealed class EditorDockTabStripViewXamlTests
         Assert.Contains("GetTabContentOriginX(host, tabWellBounds.X)", source);
     }
 
+    [Fact]
+    public void Tab_activation_moves_keyboard_focus_to_dock_panel_body()
+    {
+        var xaml = LoadSource("Shell", "Views", "EditorDockWindowView.axaml");
+        var source = LoadSource("Shell", "Views", "EditorDockWindowView.axaml.cs");
+
+        Assert.Contains("Focusable=\"True\"", GetDockPanelBodyElement(xaml));
+        Assert.Contains("FocusDockPanelBodyForTabActivation();", source);
+        Assert.Contains("DockPanelBody.Focus(NavigationMethod.Pointer)", source);
+    }
+
     private static string LoadTabStripXaml()
     {
         return LoadSource("Shell", "Views", "EditorDockTabStripView.axaml");
@@ -140,6 +151,25 @@ public sealed class EditorDockTabStripViewXamlTests
 
         var end = xaml.IndexOf("</Style>", start, StringComparison.Ordinal);
         return end < 0 ? xaml[start..] : xaml[start..(end + "</Style>".Length)];
+    }
+
+    private static string GetDockPanelBodyElement(string xaml)
+    {
+        const string selector = "x:Name=\"DockPanelBody\"";
+        var nameIndex = xaml.IndexOf(selector, StringComparison.Ordinal);
+        if (nameIndex < 0)
+        {
+            return string.Empty;
+        }
+
+        var start = xaml.LastIndexOf("<Border", nameIndex, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return string.Empty;
+        }
+
+        var end = xaml.IndexOf(">", nameIndex, StringComparison.Ordinal);
+        return end < 0 ? xaml[start..] : xaml[start..(end + 1)];
     }
 
     private static int CountOccurrences(string value, string text)

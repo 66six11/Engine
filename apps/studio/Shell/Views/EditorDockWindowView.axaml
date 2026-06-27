@@ -15,7 +15,8 @@
 
             <views:EditorDockWindowSurfaceView.BodyContent>
                 <Border x:Name="DockPanelBody"
-                        Background="Transparent">
+                        Background="Transparent"
+                        Focusable="True">
                     <ContentControl Content="{Binding ActiveTab.Content}" />
                 </Border>
             </views:EditorDockWindowSurfaceView.BodyContent>
