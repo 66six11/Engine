@@ -183,6 +183,33 @@ public sealed class EditorGuiTests
         Assert.Equal(TimeSpan.FromMilliseconds(200), textField.Payload.TextCommitDelay);
     }
 
+    [Fact]
+    public void Scroll_and_validation_message_emit_container_and_feedback_nodes()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        using (gui.Scroll("details"))
+        {
+            gui.ValidationMessage(
+                "missing-shader",
+                "Shader metadata is missing.",
+                EditorDiagnosticSeverity.Warning);
+        }
+
+        var scroll = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Scroll, scroll.Kind);
+
+        var message = Assert.Single(scroll.Children);
+        Assert.Equal(GuiNodeKind.ValidationMessage, message.Kind);
+        Assert.Equal("Shader metadata is missing.", message.Label);
+        Assert.Equal(EditorDiagnosticSeverity.Warning, message.Payload.DiagnosticSeverity);
+    }
+
     private sealed class RecordingCommandExecutor : IEditorGuiCommandExecutor
     {
         private readonly List<string> commandIds_ = [];

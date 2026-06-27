@@ -76,6 +76,14 @@ public sealed class EditorGui
         return resolvedValue;
     }
 
+    public void ValidationMessage(
+        string key,
+        string message,
+        EditorDiagnosticSeverity severity = EditorDiagnosticSeverity.Error)
+    {
+        builder_.ValidationMessage(key, message, severity);
+    }
+
     public string? List(
         string key,
         IReadOnlyList<GuiListItem> items,
@@ -134,6 +142,11 @@ public sealed class EditorGui
             ? storedRatio
             : ratio;
         return builder_.Split(key, direction, resolvedRatio);
+    }
+
+    public IDisposable Scroll(string key)
+    {
+        return builder_.Scroll(key);
     }
 
     public IDisposable Vertical(string key)

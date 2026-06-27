@@ -1,5 +1,6 @@
 using System;
 using Editor.Core.CodeFirstUI;
+using Editor.Core.Models;
 using Xunit;
 
 namespace Editor.Tests.Core.CodeFirstUI;
@@ -116,5 +117,29 @@ public sealed class GuiFrameBuilderTests
 
         Assert.Equal(GuiTextInputCommitMode.Debounced, textField.Payload.TextCommitMode);
         Assert.Equal(TimeSpan.FromMilliseconds(180), textField.Payload.TextCommitDelay);
+    }
+
+    [Fact]
+    public void Build_preserves_scroll_and_validation_message_nodes()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        using (builder.Scroll("details"))
+        {
+            builder.ValidationMessage(
+                "warning",
+                "Shader metadata is missing.",
+                EditorDiagnosticSeverity.Warning);
+        }
+
+        var scroll = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Scroll, scroll.Kind);
+        Assert.Equal("details", scroll.Id.KeyPath);
+
+        var message = Assert.Single(scroll.Children);
+        Assert.Equal(GuiNodeKind.ValidationMessage, message.Kind);
+        Assert.Equal("details/warning", message.Id.KeyPath);
+        Assert.Equal("Shader metadata is missing.", message.Label);
+        Assert.Equal(EditorDiagnosticSeverity.Warning, message.Payload.DiagnosticSeverity);
     }
 }

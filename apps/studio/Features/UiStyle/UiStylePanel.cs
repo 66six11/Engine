@@ -1,5 +1,6 @@
 using System;
 using Editor.Core.CodeFirstUI;
+using Editor.Core.Models;
 
 namespace Editor.Features.UiStyle;
 
@@ -111,8 +112,20 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
     private static void DrawStatesPage(EditorGui gui)
     {
         gui.Text("title", "States");
-        gui.Text("normal", "Normal: editable and command-ready.");
-        gui.Text("disabled", "Disabled: visible but unavailable.");
-        gui.Text("error", "Error: validation should report through diagnostics instead of silent UI failure.");
+        using (gui.Scroll("feedback"))
+        {
+            gui.ValidationMessage(
+                "info",
+                "Info: editable and command-ready.",
+                EditorDiagnosticSeverity.Info);
+            gui.ValidationMessage(
+                "warning",
+                "Warning: visible but missing optional metadata.",
+                EditorDiagnosticSeverity.Warning);
+            gui.ValidationMessage(
+                "error",
+                "Error: validation should report through diagnostics instead of silent UI failure.",
+                EditorDiagnosticSeverity.Error);
+        }
     }
 }

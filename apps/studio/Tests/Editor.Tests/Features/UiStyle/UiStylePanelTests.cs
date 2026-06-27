@@ -58,6 +58,27 @@ public sealed class UiStylePanelTests
         Assert.Equal(GuiTextInputCommitMode.Debounced, filter.Payload.TextCommitMode);
     }
 
+    [Fact]
+    public void States_page_contains_scrollable_validation_feedback_samples()
+    {
+        var host = CreateAttachedHost();
+
+        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "states");
+
+        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        var preview = split.Children[1];
+        Assert.Equal("States", preview.Children[0].Label);
+        var scroll = Assert.Single(preview.Children, child => child.Kind == GuiNodeKind.Scroll);
+        Assert.Contains(
+            scroll.Children,
+            child => child.Kind == GuiNodeKind.ValidationMessage
+                && child.Payload.DiagnosticSeverity == EditorDiagnosticSeverity.Warning);
+        Assert.Contains(
+            scroll.Children,
+            child => child.Kind == GuiNodeKind.ValidationMessage
+                && child.Payload.DiagnosticSeverity == EditorDiagnosticSeverity.Error);
+    }
+
     private static CodeFirstPanelHostViewModel CreateAttachedHost()
     {
         var host = new CodeFirstPanelHostViewModel(new UiStylePanel());

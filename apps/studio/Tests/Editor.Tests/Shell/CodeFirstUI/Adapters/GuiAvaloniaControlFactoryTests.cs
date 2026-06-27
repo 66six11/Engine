@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
+using Editor.Core.Models;
 using Editor.Shell.CodeFirstUI;
 using Editor.Shell.CodeFirstUI.Adapters;
 using Xunit;
@@ -77,6 +79,40 @@ public sealed class GuiAvaloniaControlFactoryTests
         var listBox = Assert.IsType<ListBox>(
             body.Children.Single(child => Grid.GetRow(child) == 1));
         Assert.Equal(VerticalAlignment.Stretch, listBox.VerticalAlignment);
+    }
+
+    [Fact]
+    public void Build_maps_scroll_and_validation_message_to_feedback_controls()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        using (builder.Panel("preview", "Preview"))
+        {
+            using (builder.Scroll("details"))
+            {
+                builder.ValidationMessage(
+                    "missing-shader",
+                    "Shader metadata is missing.",
+                    EditorDiagnosticSeverity.Warning);
+            }
+        }
+
+        var factory = new GuiAvaloniaControlFactory(new NoopCodeFirstPanelHost());
+
+        var control = factory.Build(builder.Build());
+
+        var scrollViewer = FindDescendant<ScrollViewer>(control);
+        Assert.NotNull(scrollViewer);
+        Assert.Equal(ScrollBarVisibility.Disabled, scrollViewer!.HorizontalScrollBarVisibility);
+        Assert.Equal(ScrollBarVisibility.Auto, scrollViewer.VerticalScrollBarVisibility);
+        Assert.Equal(VerticalAlignment.Stretch, scrollViewer.VerticalAlignment);
+
+        var message = FindDescendant<TextBlock>(
+            control,
+            text => text.Text == "Shader metadata is missing.");
+        Assert.NotNull(message);
+        Assert.Equal(Avalonia.Media.TextWrapping.Wrap, message!.TextWrapping);
+        Assert.Contains("code-first-validation-message", message.Classes);
+        Assert.Contains("warning", message.Classes);
     }
 
     [Fact]

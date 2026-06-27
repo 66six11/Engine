@@ -24,6 +24,25 @@
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
         </Style>
+        <Style Selector="ScrollViewer.code-first-scroll">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.debug">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.info">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushInfo}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.warning">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.error">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushError}" />
+        </Style>
         <Style Selector="Button.code-first-button">
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="Padding" Value="10,2" />

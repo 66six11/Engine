@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Editor.Core.Models;
 
 namespace Editor.Core.CodeFirstUI;
 
@@ -22,4 +23,6 @@ public sealed record GuiNodePayload
     public TimeSpan? TextCommitDelay { get; init; }
 
     public bool? IsChecked { get; init; }
+
+    public EditorDiagnosticSeverity? DiagnosticSeverity { get; init; }
 }

@@ -51,4 +51,24 @@ public sealed class GuiTreeValidatorTests
                 .Select(child => child.Id.KeyPath)
                 .ToArray());
     }
+
+    [Fact]
+    public void Validate_rejects_virtualized_list_inside_scroll()
+    {
+        var builder = new GuiFrameBuilder("render.frameDebugger");
+        using (builder.Scroll("details"))
+        {
+            builder.List(
+                "passes",
+                [new GuiListItem("gbuffer", "GBuffer")],
+                "gbuffer");
+        }
+
+        var result = new GuiTreeValidator().Validate(builder.Build());
+
+        var error = Assert.Single(result.Errors);
+        Assert.False(result.IsValid);
+        Assert.Equal(GuiTreeValidationErrorCode.VirtualizedContentInsideScroll, error.Code);
+        Assert.Equal("render.frameDebugger/details/passes", error.NodePath);
+    }
 }

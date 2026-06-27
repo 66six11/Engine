@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Editor.Core.Models;
 
 namespace Editor.Core.CodeFirstUI;
 
@@ -78,6 +79,21 @@ public sealed class GuiFrameBuilder
             });
     }
 
+    public GuiNodeId ValidationMessage(
+        string key,
+        string message,
+        EditorDiagnosticSeverity severity = EditorDiagnosticSeverity.Error)
+    {
+        return AddLeaf(
+            key,
+            GuiNodeKind.ValidationMessage,
+            message,
+            new GuiNodePayload
+            {
+                DiagnosticSeverity = severity,
+            });
+    }
+
     public GuiNodeId List(
         string key,
         IReadOnlyList<GuiListItem> items,
@@ -133,6 +149,11 @@ public sealed class GuiFrameBuilder
                 SplitDirection = direction,
                 SplitRatio = ratio,
             });
+    }
+
+    public IDisposable Scroll(string key)
+    {
+        return PushContainer(key, GuiNodeKind.Scroll, label: null);
     }
 
     public IDisposable Vertical(string key)

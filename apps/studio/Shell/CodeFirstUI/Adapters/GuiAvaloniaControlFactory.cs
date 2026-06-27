@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
+using Editor.Core.Models;
 
 namespace Editor.Shell.CodeFirstUI.Adapters;
 
@@ -49,11 +51,13 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Toolbar => BuildStack(node.Children, Orientation.Horizontal, "code-first-toolbar"),
             GuiNodeKind.Panel => BuildPanel(node),
             GuiNodeKind.Split => BuildSplit(node),
+            GuiNodeKind.Scroll => BuildScroll(node),
             GuiNodeKind.Label => BuildLabel(node),
             GuiNodeKind.Button => BuildButton(node),
             GuiNodeKind.TextField => BuildTextField(node),
             GuiNodeKind.Toggle => BuildToggle(node),
             GuiNodeKind.List => BuildList(node),
+            GuiNodeKind.ValidationMessage => BuildValidationMessage(node),
             _ => BuildUnsupportedNode(node),
         };
     }
@@ -274,6 +278,20 @@ internal sealed class GuiAvaloniaControlFactory
         return ratio > 0d && ratio < 1d;
     }
 
+    private Control BuildScroll(GuiNode node)
+    {
+        var scrollViewer = new ScrollViewer
+        {
+            Content = BuildStack(node.Children, Orientation.Vertical, "code-first-scroll-content"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        scrollViewer.Classes.Add("code-first-scroll");
+        return scrollViewer;
+    }
+
     private static Control BuildLabel(GuiNode node)
     {
         var textBlock = new TextBlock
@@ -283,6 +301,31 @@ internal sealed class GuiAvaloniaControlFactory
         };
         textBlock.Classes.Add("code-first-label");
         return textBlock;
+    }
+
+    private static Control BuildValidationMessage(GuiNode node)
+    {
+        var severity = node.Payload.DiagnosticSeverity ?? EditorDiagnosticSeverity.Error;
+        var textBlock = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+        };
+        textBlock.Classes.Add("code-first-validation-message");
+        textBlock.Classes.Add(GetDiagnosticSeverityClass(severity));
+        return textBlock;
+    }
+
+    private static string GetDiagnosticSeverityClass(EditorDiagnosticSeverity severity)
+    {
+        return severity switch
+        {
+            EditorDiagnosticSeverity.Debug => "debug",
+            EditorDiagnosticSeverity.Info => "info",
+            EditorDiagnosticSeverity.Warning => "warning",
+            EditorDiagnosticSeverity.Error => "error",
+            _ => "error",
+        };
     }
 
     private Control BuildButton(GuiNode node)
