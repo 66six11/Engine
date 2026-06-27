@@ -49,14 +49,15 @@ public sealed class EditorGui
     public string TextInput(
         string key,
         string label,
-        string text = "")
+        string text = "",
+        GuiTextInputCommitMode commitMode = GuiTextInputCommitMode.OnLostFocus)
     {
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.TextField);
         var resolvedText = StateStore.TryGetText(nodeId, out var storedText)
             ? storedText ?? string.Empty
             : text;
         StateStore.SetText(nodeId, resolvedText);
-        builder_.TextField(key, label, resolvedText);
+        builder_.TextField(key, label, resolvedText, commitMode);
         return resolvedText;
     }
 

@@ -139,7 +139,11 @@ public sealed class EditorGuiTests
             state,
             new RecordingCommandExecutor());
 
-        var filter = gui.TextInput("filter", "Filter", "albedo");
+        var filter = gui.TextInput(
+            "filter",
+            "Filter",
+            "albedo",
+            GuiTextInputCommitMode.OnEnter);
         var showDisabled = gui.Toggle("show-disabled", "Show Disabled", isChecked: true);
 
         Assert.Equal("gbuffer", filter);
@@ -149,6 +153,7 @@ public sealed class EditorGuiTests
         var textField = tree.Root.Children[0];
         Assert.Equal(GuiNodeKind.TextField, textField.Kind);
         Assert.Equal("gbuffer", textField.Payload.TextValue);
+        Assert.Equal(GuiTextInputCommitMode.OnEnter, textField.Payload.TextCommitMode);
 
         var toggle = tree.Root.Children[1];
         Assert.Equal(GuiNodeKind.Toggle, toggle.Kind);

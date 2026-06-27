@@ -12,5 +12,7 @@ internal interface IGuiAvaloniaHost
 
     void SetText(GuiNodeId nodeId, string text);
 
+    void CommitText(GuiNodeId nodeId, string text);
+
     void SetToggle(GuiNodeId nodeId, bool isChecked);
 }

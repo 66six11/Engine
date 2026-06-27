@@ -141,6 +141,24 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Commit_text_updates_state_and_rebuilds_tree()
+    {
+        var panel = new InputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.CommitText(new GuiNodeId("ui.style", "filter", GuiNodeKind.TextField), "gbuffer");
+
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetText(
+            new GuiNodeId("ui.style", "filter", GuiNodeKind.TextField),
+            out var storedText));
+        Assert.Equal("gbuffer", storedText);
+        Assert.Equal("gbuffer", panel.FilterText);
+    }
+
+    [Fact]
     public void Set_toggle_updates_state_and_rebuilds_tree()
     {
         var panel = new InputDrivenCodeFirstPanel();

@@ -39,7 +39,8 @@ public sealed class GuiFrameBuilder
     public GuiNodeId TextField(
         string key,
         string label,
-        string text)
+        string text,
+        GuiTextInputCommitMode commitMode = GuiTextInputCommitMode.OnLostFocus)
     {
         return AddLeaf(
             key,
@@ -48,6 +49,7 @@ public sealed class GuiFrameBuilder
             new GuiNodePayload
             {
                 TextValue = text,
+                TextCommitMode = commitMode,
             });
     }
 

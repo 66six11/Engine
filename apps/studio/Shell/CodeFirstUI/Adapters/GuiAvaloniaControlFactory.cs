@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 
@@ -274,7 +275,10 @@ internal sealed class GuiAvaloniaControlFactory
             MinWidth = 120d,
         };
         textBox.Classes.Add("code-first-text-field");
-        AttachTextTracking(node.Id, textBox);
+        AttachTextTracking(
+            node.Id,
+            textBox,
+            node.Payload.TextCommitMode ?? GuiTextInputCommitMode.OnLostFocus);
 
         var grid = new Grid
         {
@@ -288,7 +292,10 @@ internal sealed class GuiAvaloniaControlFactory
         return grid;
     }
 
-    private void AttachTextTracking(GuiNodeId nodeId, TextBox textBox)
+    private void AttachTextTracking(
+        GuiNodeId nodeId,
+        TextBox textBox,
+        GuiTextInputCommitMode commitMode)
     {
         var hasObservedInitialValue = false;
         textBox.Tag = textBox
@@ -301,8 +308,31 @@ internal sealed class GuiAvaloniaControlFactory
                     return;
                 }
 
-                host_.SetText(nodeId, text ?? string.Empty);
+                if (commitMode == GuiTextInputCommitMode.OnChange)
+                {
+                    host_.CommitText(nodeId, text ?? string.Empty);
+                }
+                else
+                {
+                    host_.SetText(nodeId, text ?? string.Empty);
+                }
             }));
+
+        if (commitMode == GuiTextInputCommitMode.OnLostFocus)
+        {
+            textBox.LostFocus += (_, _) => host_.CommitText(nodeId, textBox.Text ?? string.Empty);
+        }
+        else if (commitMode == GuiTextInputCommitMode.OnEnter)
+        {
+            textBox.KeyDown += (_, args) =>
+            {
+                if (args.Key == Key.Enter)
+                {
+                    host_.CommitText(nodeId, textBox.Text ?? string.Empty);
+                    args.Handled = true;
+                }
+            };
+        }
     }
 
     private Control BuildToggle(GuiNode node)

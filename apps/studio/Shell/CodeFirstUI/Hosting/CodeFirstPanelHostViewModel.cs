@@ -92,6 +92,15 @@ internal sealed class CodeFirstPanelHostViewModel :
         stateStore_.SetText(nodeId, text ?? string.Empty);
     }
 
+    internal void CommitText(GuiNodeId nodeId, string text)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        stateStore_.SetText(nodeId, text ?? string.Empty);
+        Rebuild();
+    }
+
     internal void SetToggle(GuiNodeId nodeId, bool isChecked)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -232,6 +241,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SetText(GuiNodeId nodeId, string text)
     {
         SetText(nodeId, text);
+    }
+
+    void IGuiAvaloniaHost.CommitText(GuiNodeId nodeId, string text)
+    {
+        CommitText(nodeId, text);
     }
 
     void IGuiAvaloniaHost.SetToggle(GuiNodeId nodeId, bool isChecked)

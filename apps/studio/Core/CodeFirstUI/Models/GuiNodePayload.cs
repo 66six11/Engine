@@ -16,5 +16,7 @@ public sealed record GuiNodePayload
 
     public string? TextValue { get; init; }
 
+    public GuiTextInputCommitMode? TextCommitMode { get; init; }
+
     public bool? IsChecked { get; init; }
 }

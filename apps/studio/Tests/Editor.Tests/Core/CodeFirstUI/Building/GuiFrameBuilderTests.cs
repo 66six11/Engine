@@ -82,7 +82,7 @@ public sealed class GuiFrameBuilderTests
     {
         var builder = new GuiFrameBuilder("ui.style");
 
-        builder.TextField("filter", "Filter", "gbuffer");
+        builder.TextField("filter", "Filter", "gbuffer", GuiTextInputCommitMode.OnEnter);
         builder.Toggle("show-disabled", "Show Disabled", isChecked: true);
 
         var tree = builder.Build();
@@ -91,6 +91,7 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal(GuiNodeKind.TextField, textField.Kind);
         Assert.Equal("Filter", textField.Label);
         Assert.Equal("gbuffer", textField.Payload.TextValue);
+        Assert.Equal(GuiTextInputCommitMode.OnEnter, textField.Payload.TextCommitMode);
 
         var toggle = tree.Root.Children[1];
         Assert.Equal(GuiNodeKind.Toggle, toggle.Kind);

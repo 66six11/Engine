@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Editor.Core.CodeFirstUI;
 using Editor.Shell.CodeFirstUI;
 using Editor.Shell.CodeFirstUI.Adapters;
@@ -69,7 +70,7 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
-    public void Build_maps_text_field_and_toggle_and_reports_input_changes()
+    public void Build_maps_text_field_and_toggle_and_reports_draft_input_changes()
     {
         var builder = new GuiFrameBuilder("ui-style");
         builder.TextField("filter", "Filter", "gbuffer");
@@ -95,10 +96,73 @@ public sealed class GuiAvaloniaControlFactoryTests
         var textChange = Assert.Single(host.TextChanges);
         Assert.Equal(new GuiNodeId("ui-style", "filter", GuiNodeKind.TextField), textChange.NodeId);
         Assert.Equal("albedo", textChange.Text);
+        Assert.Empty(host.TextCommits);
 
         var toggleChange = Assert.Single(host.ToggleChanges);
         Assert.Equal(new GuiNodeId("ui-style", "show-disabled", GuiNodeKind.Toggle), toggleChange.NodeId);
         Assert.False(toggleChange.IsChecked);
+    }
+
+    [Fact]
+    public void Text_field_on_change_commit_mode_commits_each_text_change()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.TextField("filter", "Filter", "gbuffer", GuiTextInputCommitMode.OnChange);
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+        var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
+        Assert.NotNull(textBox);
+
+        textBox!.Text = "albedo";
+
+        var commit = Assert.Single(host.TextCommits);
+        Assert.Equal(new GuiNodeId("ui-style", "filter", GuiNodeKind.TextField), commit.NodeId);
+        Assert.Equal("albedo", commit.Text);
+        Assert.Empty(host.TextChanges);
+    }
+
+    [Fact]
+    public void Text_field_lost_focus_commit_mode_commits_on_focus_loss()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.TextField("filter", "Filter", "gbuffer", GuiTextInputCommitMode.OnLostFocus);
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+        var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
+        Assert.NotNull(textBox);
+
+        textBox!.Text = "albedo";
+        textBox.RaiseEvent(new FocusChangedEventArgs(InputElement.LostFocusEvent)
+        {
+            Source = textBox,
+        });
+
+        Assert.Single(host.TextChanges);
+        var commit = Assert.Single(host.TextCommits);
+        Assert.Equal("albedo", commit.Text);
+    }
+
+    [Fact]
+    public void Text_field_enter_commit_mode_commits_on_enter_key()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.TextField("filter", "Filter", "gbuffer", GuiTextInputCommitMode.OnEnter);
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+        var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
+        Assert.NotNull(textBox);
+
+        textBox!.Text = "albedo";
+        textBox.RaiseEvent(new KeyEventArgs
+        {
+            RoutedEvent = InputElement.KeyDownEvent,
+            Key = Key.Enter,
+            Source = textBox,
+        });
+
+        Assert.Single(host.TextChanges);
+        var commit = Assert.Single(host.TextCommits);
+        Assert.Equal("albedo", commit.Text);
     }
 
     private static T? FindDescendant<T>(Control control, Predicate<T>? predicate = null)
@@ -137,6 +201,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
         }
 
+        public void CommitText(GuiNodeId nodeId, string text)
+        {
+        }
+
         public void SetToggle(GuiNodeId nodeId, bool isChecked)
         {
         }
@@ -146,11 +214,14 @@ public sealed class GuiAvaloniaControlFactoryTests
     {
         private readonly List<SplitResize> splitResizes_ = [];
         private readonly List<TextChange> textChanges_ = [];
+        private readonly List<TextChange> textCommits_ = [];
         private readonly List<ToggleChange> toggleChanges_ = [];
 
         public IReadOnlyList<SplitResize> SplitResizes => splitResizes_;
 
         public IReadOnlyList<TextChange> TextChanges => textChanges_;
+
+        public IReadOnlyList<TextChange> TextCommits => textCommits_;
 
         public IReadOnlyList<ToggleChange> ToggleChanges => toggleChanges_;
 
@@ -170,6 +241,11 @@ public sealed class GuiAvaloniaControlFactoryTests
         public void SetText(GuiNodeId nodeId, string text)
         {
             textChanges_.Add(new TextChange(nodeId, text));
+        }
+
+        public void CommitText(GuiNodeId nodeId, string text)
+        {
+            textCommits_.Add(new TextChange(nodeId, text));
         }
 
         public void SetToggle(GuiNodeId nodeId, bool isChecked)
