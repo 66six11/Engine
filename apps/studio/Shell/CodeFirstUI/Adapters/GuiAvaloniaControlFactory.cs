@@ -93,7 +93,7 @@ internal sealed class GuiAvaloniaControlFactory
         Grid.SetRow(title, 0);
         grid.Children.Add(title);
 
-        var body = BuildStack(node.Children, Orientation.Vertical, "code-first-panel-body");
+        var body = BuildPanelBody(node.Children);
         Grid.SetRow(body, 1);
         grid.Children.Add(body);
 
@@ -104,6 +104,39 @@ internal sealed class GuiAvaloniaControlFactory
         };
         border.Classes.Add("code-first-panel");
         return border;
+    }
+
+    private Control BuildPanelBody(IReadOnlyList<GuiNode> children)
+    {
+        var grid = new Grid();
+        grid.Classes.Add("code-first-panel-body");
+
+        for (var index = 0; index < children.Count; index++)
+        {
+            var child = children[index];
+            grid.RowDefinitions.Add(new RowDefinition(GetPanelBodyRowHeight(child)));
+
+            var control = BuildNode(child);
+            Grid.SetRow(control, index);
+            grid.Children.Add(control);
+        }
+
+        return grid;
+    }
+
+    private static GridLength GetPanelBodyRowHeight(GuiNode child)
+    {
+        return IsPanelBodyFillChild(child.Kind)
+            ? new GridLength(1d, GridUnitType.Star)
+            : GridLength.Auto;
+    }
+
+    private static bool IsPanelBodyFillChild(GuiNodeKind kind)
+    {
+        return kind is GuiNodeKind.List
+            or GuiNodeKind.Panel
+            or GuiNodeKind.Split
+            or GuiNodeKind.Scroll;
     }
 
     private Control BuildSplit(GuiNode node)
@@ -370,6 +403,7 @@ internal sealed class GuiAvaloniaControlFactory
             .ToArray();
         var listBox = new ListBox
         {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             ItemTemplate = new FuncDataTemplate<GuiAvaloniaListItem>((item, _) =>
             {
                 var label = new TextBlock
@@ -384,6 +418,7 @@ internal sealed class GuiAvaloniaControlFactory
             SelectionMode = SelectionMode.Single,
             SelectedItem = listItems.FirstOrDefault(
                 item => string.Equals(item.Id, node.Payload.SelectedItemId, StringComparison.Ordinal)),
+            VerticalAlignment = VerticalAlignment.Stretch,
         };
         listBox.Classes.Add("code-first-list");
 

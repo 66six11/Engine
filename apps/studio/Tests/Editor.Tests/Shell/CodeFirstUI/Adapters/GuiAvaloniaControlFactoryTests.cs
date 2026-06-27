@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 using Editor.Shell.CodeFirstUI;
 using Editor.Shell.CodeFirstUI.Adapters;
@@ -46,6 +47,36 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Contains("vertical", splitter.Classes);
         Assert.NotNull(FindDescendant<ListBox>(grid));
         Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "Overview"));
+    }
+
+    [Fact]
+    public void Build_panel_constrains_list_rows_for_virtualized_content()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        using (builder.Panel("catalog", "Catalog"))
+        {
+            builder.Label("hint", "Sections");
+            builder.List(
+                "sections",
+                Enumerable.Range(0, 100)
+                    .Select(index => new GuiListItem($"section-{index}", $"Section {index}"))
+                    .ToArray(),
+                "section-0");
+        }
+
+        var factory = new GuiAvaloniaControlFactory(new NoopCodeFirstPanelHost());
+
+        var border = Assert.IsType<Border>(factory.Build(builder.Build()));
+        var panelGrid = Assert.IsType<Grid>(border.Child);
+        var body = Assert.IsType<Grid>(
+            panelGrid.Children.Single(child => Grid.GetRow(child) == 1));
+
+        Assert.Equal(2, body.RowDefinitions.Count);
+        Assert.Equal(GridUnitType.Auto, body.RowDefinitions[0].Height.GridUnitType);
+        Assert.Equal(GridUnitType.Star, body.RowDefinitions[1].Height.GridUnitType);
+        var listBox = Assert.IsType<ListBox>(
+            body.Children.Single(child => Grid.GetRow(child) == 1));
+        Assert.Equal(VerticalAlignment.Stretch, listBox.VerticalAlignment);
     }
 
     [Fact]
