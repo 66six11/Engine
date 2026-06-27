@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Editor.Core.Models;
 
 namespace Editor.Core.CodeFirstUI;
@@ -33,10 +35,33 @@ public sealed class EditorGui
         builder_.Label(key, label);
     }
 
+    public void Text(string key, string text)
+    {
+        Label(key, text);
+    }
+
     public bool Button(string key, string label)
     {
         var nodeId = builder_.Button(key, label);
         return events_.ConsumeButtonClicked(nodeId);
+    }
+
+    public string? List(
+        string key,
+        IReadOnlyList<GuiListItem> items,
+        string? selectedItemId = null)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.List);
+        var selected = ResolveListSelection(nodeId, items, selectedItemId);
+        if (selected is not null)
+        {
+            StateStore.SetSelectedItem(nodeId, selected);
+        }
+
+        builder_.List(key, items, selected);
+        return selected;
     }
 
     public WorkbenchCommandExecutionResult? CommandButton(
@@ -59,8 +84,58 @@ public sealed class EditorGui
         return builder_.Toolbar(key);
     }
 
+    public IDisposable Horizontal(string key)
+    {
+        return builder_.Horizontal(key);
+    }
+
+    public IDisposable Panel(string key, string label)
+    {
+        return builder_.Panel(key, label);
+    }
+
+    public IDisposable Split(
+        string key,
+        GuiSplitDirection direction,
+        double ratio)
+    {
+        return builder_.Split(key, direction, ratio);
+    }
+
     public IDisposable Vertical(string key)
     {
         return builder_.Vertical(key);
+    }
+
+    private string? ResolveListSelection(
+        GuiNodeId nodeId,
+        IReadOnlyList<GuiListItem> items,
+        string? selectedItemId)
+    {
+        if (items.Count == 0)
+        {
+            return null;
+        }
+
+        if (StateStore.TryGetSelectedItem(nodeId, out var storedSelection)
+            && ContainsItem(items, storedSelection))
+        {
+            return storedSelection;
+        }
+
+        if (ContainsItem(items, selectedItemId))
+        {
+            return selectedItemId;
+        }
+
+        return items[0].Id;
+    }
+
+    private static bool ContainsItem(
+        IReadOnlyList<GuiListItem> items,
+        string? itemId)
+    {
+        return !string.IsNullOrWhiteSpace(itemId)
+            && items.Any(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
     }
 }

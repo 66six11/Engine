@@ -38,4 +38,42 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal("render.frameDebugger/toolbar/capture", capture.Id.FullKeyPath);
         Assert.Equal("Capture Frame", capture.Label);
     }
+
+    [Fact]
+    public void Build_preserves_split_panel_and_list_payloads()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var sections = new[]
+        {
+            new GuiListItem("overview", "Overview"),
+            new GuiListItem("buttons", "Buttons"),
+        };
+
+        using (builder.Split("layout", GuiSplitDirection.Horizontal, 0.30d))
+        {
+            using (builder.Panel("catalog", "Catalog"))
+            {
+                builder.List("sections", sections, "buttons");
+            }
+
+            using (builder.Panel("preview", "Preview"))
+            {
+                builder.Label("title", "Buttons");
+            }
+        }
+
+        var split = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Split, split.Kind);
+        Assert.Equal(GuiSplitDirection.Horizontal, split.Payload.SplitDirection);
+        Assert.Equal(0.30d, split.Payload.SplitRatio);
+
+        var catalog = split.Children[0];
+        Assert.Equal(GuiNodeKind.Panel, catalog.Kind);
+        Assert.Equal("Catalog", catalog.Label);
+
+        var list = Assert.Single(catalog.Children);
+        Assert.Equal(GuiNodeKind.List, list.Kind);
+        Assert.Equal("buttons", list.Payload.SelectedItemId);
+        Assert.Equal(sections, list.Payload.ListItems);
+    }
 }

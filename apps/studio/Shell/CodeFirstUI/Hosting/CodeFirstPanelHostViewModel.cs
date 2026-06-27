@@ -2,12 +2,14 @@ using System;
 using Editor.Core.Abstractions;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Shell.CodeFirstUI.Adapters;
 using Editor.Shell.ViewModels;
 
 namespace Editor.Shell.CodeFirstUI;
 
 internal sealed class CodeFirstPanelHostViewModel :
     ViewModelBase,
+    IGuiAvaloniaHost,
     IEditorPanelLifecycleSink,
     IEditorPanelFrameUpdateSink,
     IDisposable
@@ -51,6 +53,28 @@ internal sealed class CodeFirstPanelHostViewModel :
     public GuiEventQueue Events => events_;
 
     public GuiStateStore StateStore => stateStore_;
+
+    internal void ClickButton(GuiNodeId nodeId)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        events_.EnqueueButtonClicked(nodeId);
+        Rebuild();
+    }
+
+    internal void SelectListItem(GuiNodeId nodeId, string itemId)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            throw new ArgumentException("Item id must not be empty.", nameof(itemId));
+        }
+
+        ThrowIfDisposed();
+        stateStore_.SetSelectedItem(nodeId, itemId);
+        Rebuild();
+    }
 
     public void OnPanelAttached(EditorPanelLifecycleContext context)
     {
@@ -163,6 +187,16 @@ internal sealed class CodeFirstPanelHostViewModel :
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(isDisposed_, this);
+    }
+
+    void IGuiAvaloniaHost.ClickButton(GuiNodeId nodeId)
+    {
+        ClickButton(nodeId);
+    }
+
+    void IGuiAvaloniaHost.SelectListItem(GuiNodeId nodeId, string itemId)
+    {
+        SelectListItem(nodeId, itemId);
     }
 
     private sealed class MissingCommandExecutor : IEditorGuiCommandExecutor

@@ -7,6 +7,8 @@ using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
+using Editor.Features.UiStyle;
+using Editor.Shell.CodeFirstUI;
 using Editor.Shell.Icons;
 
 namespace Editor.Features.Workbench;
@@ -165,6 +167,19 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 Tag: "BOTTOM",
                 TitleDetail: "validation queue",
                 StatusText: "0"),
+
+            new PanelDescriptor(
+                "ui-style",
+                "UI Style",
+                PanelKind.Tool,
+                DockArea.Center,
+                "Window/Panels/UI Style",
+                DockContentCachePolicy.KeepAlive,
+                () => new CodeFirstPanelHostViewModel(new UiStylePanel()),
+                IconKey: EditorIconKey.PanelUiStyle,
+                Tag: "STYLE",
+                TitleDetail: "code-first component guide",
+                StatusText: "samples"),
         ];
     }
 
@@ -177,6 +192,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             "inspector" => "properties selection",
             "console" => "log output diagnostics",
             "problems" => "validation diagnostics",
+            "ui-style" => "code-first ui style guide samples",
             _ => null,
         };
     }

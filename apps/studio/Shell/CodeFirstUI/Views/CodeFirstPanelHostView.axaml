@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.CodeFirstUI"
+             x:Class="Editor.Shell.CodeFirstUI.Views.CodeFirstPanelHostView"
+             x:DataType="vm:CodeFirstPanelHostViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.code-first-panel">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBlock.code-first-panel-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeTitle}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="TextBlock.code-first-unsupported">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        </Style>
+        <Style Selector="Button.code-first-button">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="Padding" Value="10,2" />
+        </Style>
+        <Style Selector="ListBox.code-first-list">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="MinHeight" Value="160" />
+        </Style>
+        <Style Selector="ListBoxItem.code-first-list-item">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="Padding" Value="8,2" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}"
+            Padding="8">
+        <ContentControl x:Name="GuiHost" />
+    </Border>
+</UserControl>

@@ -7,6 +7,7 @@ using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
+using Editor.Shell.CodeFirstUI;
 using Editor.Shell.Composition;
 using Editor.Shell.Icons;
 using Editor.Shell.Selection;
@@ -80,6 +81,17 @@ public sealed class WorkbenchFeatureModuleTests
                     "BOTTOM",
                     "validation queue",
                     "0"),
+                new PanelDescriptorSnapshot(
+                    "ui-style",
+                    "UI Style",
+                    PanelKind.Tool,
+                    DockArea.Center,
+                    "Window/Panels/UI Style",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelUiStyle,
+                    "STYLE",
+                    "code-first component guide",
+                    "samples"),
             ],
             descriptors.Select(CreateSnapshot).ToArray());
 
@@ -88,6 +100,7 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.IsType<InspectorPanelViewModel>(descriptors[2].CreateContent());
         Assert.IsType<ConsolePanelViewModel>(descriptors[3].CreateContent());
         Assert.IsType<ProblemsPanelViewModel>(descriptors[4].CreateContent());
+        Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[5].CreateContent());
     }
 
     [Fact]
@@ -159,6 +172,15 @@ public sealed class WorkbenchFeatureModuleTests
                     IconKey: EditorIconKey.PanelProblems,
                     Category: "Window",
                     SearchText: "validation diagnostics"),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.ui-style",
+                    "UI Style",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/UI Style",
+                    TargetId: "ui-style",
+                    IconKey: EditorIconKey.PanelUiStyle,
+                    Category: "Window",
+                    SearchText: "code-first ui style guide samples"),
             ],
             composition.ActionRegistry.GetAll().ToArray());
     }

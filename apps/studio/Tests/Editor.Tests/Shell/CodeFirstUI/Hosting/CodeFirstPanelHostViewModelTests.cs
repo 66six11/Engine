@@ -73,10 +73,32 @@ public sealed class CodeFirstPanelHostViewModelTests
         Assert.Equal(30, host.FrameUpdateRequest.TargetFramesPerSecond);
     }
 
-    private static EditorPanelLifecycleContext CreateLifecycleContext()
+    [Fact]
+    public void Select_list_item_updates_state_and_rebuilds_tree()
+    {
+        var panel = new ListDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+
+        host.SelectListItem(
+            new GuiNodeId("ui.style", "layout/catalog/sections", GuiNodeKind.List),
+            "buttons");
+
+        Assert.Equal("buttons", panel.SelectedSectionId);
+        Assert.True(host.StateStore.TryGetSelectedItem(
+            new GuiNodeId("ui.style", "layout/catalog/sections", GuiNodeKind.List),
+            out var storedSelection));
+        Assert.Equal("buttons", storedSelection);
+
+        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        var preview = split.Children[1];
+        Assert.Equal("Buttons", Assert.Single(preview.Children).Label);
+    }
+
+    private static EditorPanelLifecycleContext CreateLifecycleContext(string panelId = "render.frameDebugger")
     {
         return new EditorPanelLifecycleContext(
-            "render.frameDebugger",
+            panelId,
             "Frame Debugger",
             DockArea.Right,
             IsFloatingWorkspace: false);
@@ -138,6 +160,33 @@ public sealed class CodeFirstPanelHostViewModelTests
         protected override void OnDestroy()
         {
             Events.Add("destroy");
+        }
+    }
+
+    private sealed class ListDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        private static readonly GuiListItem[] Sections =
+        [
+            new("overview", "Overview"),
+            new("buttons", "Buttons"),
+        ];
+
+        public string? SelectedSectionId { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            using (gui.Split("layout", GuiSplitDirection.Horizontal, 0.30d))
+            {
+                using (gui.Panel("catalog", "Catalog"))
+                {
+                    SelectedSectionId = gui.List("sections", Sections, "overview");
+                }
+
+                using (gui.Panel("preview", "Preview"))
+                {
+                    gui.Label("title", SelectedSectionId == "buttons" ? "Buttons" : "Overview");
+                }
+            }
         }
     }
 }

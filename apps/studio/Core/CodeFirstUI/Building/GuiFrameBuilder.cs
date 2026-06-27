@@ -21,7 +21,8 @@ public sealed class GuiFrameBuilder
         root_ = new MutableGuiNode(
             new GuiNodeId(panelId_, string.Empty, GuiNodeKind.Root),
             GuiNodeKind.Root,
-            Label: null);
+            Label: null,
+            GuiNodePayload.None);
         nodeStack_.Push(root_);
     }
 
@@ -35,14 +36,71 @@ public sealed class GuiFrameBuilder
         return AddLeaf(key, GuiNodeKind.Button, label);
     }
 
+    public GuiNodeId List(
+        string key,
+        IReadOnlyList<GuiListItem> items,
+        string? selectedItemId = null)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        return AddLeaf(
+            key,
+            GuiNodeKind.List,
+            label: null,
+            new GuiNodePayload
+            {
+                ListItems = items.ToArray(),
+                SelectedItemId = selectedItemId,
+            });
+    }
+
     public IDisposable Toolbar(string key)
     {
         return PushContainer(key, GuiNodeKind.Toolbar, label: null);
     }
 
+    public IDisposable Horizontal(string key)
+    {
+        return PushContainer(key, GuiNodeKind.Horizontal, label: null);
+    }
+
+    public IDisposable Panel(string key, string label)
+    {
+        return PushContainer(key, GuiNodeKind.Panel, label);
+    }
+
+    public IDisposable Split(
+        string key,
+        GuiSplitDirection direction,
+        double ratio)
+    {
+        if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0d || ratio >= 1d)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ratio),
+                ratio,
+                "Split ratio must be greater than 0 and less than 1.");
+        }
+
+        return PushContainer(
+            key,
+            GuiNodeKind.Split,
+            label: null,
+            new GuiNodePayload
+            {
+                SplitDirection = direction,
+                SplitRatio = ratio,
+            });
+    }
+
     public IDisposable Vertical(string key)
     {
         return PushContainer(key, GuiNodeKind.Vertical, label: null);
+    }
+
+    public GuiNodeId GetNodeId(string key, GuiNodeKind kind)
+    {
+        return CreateNodeId(key, kind);
     }
 
     public GuiTreeSnapshot Build()
@@ -52,14 +110,32 @@ public sealed class GuiFrameBuilder
 
     private GuiNodeId AddLeaf(string key, GuiNodeKind kind, string? label)
     {
-        var node = new MutableGuiNode(CreateNodeId(key, kind), kind, label);
+        return AddLeaf(key, kind, label, GuiNodePayload.None);
+    }
+
+    private GuiNodeId AddLeaf(
+        string key,
+        GuiNodeKind kind,
+        string? label,
+        GuiNodePayload payload)
+    {
+        var node = new MutableGuiNode(CreateNodeId(key, kind), kind, label, payload);
         nodeStack_.Peek().Children.Add(node);
         return node.Id;
     }
 
     private IDisposable PushContainer(string key, GuiNodeKind kind, string? label)
     {
-        var node = new MutableGuiNode(CreateNodeId(key, kind), kind, label);
+        return PushContainer(key, kind, label, GuiNodePayload.None);
+    }
+
+    private IDisposable PushContainer(
+        string key,
+        GuiNodeKind kind,
+        string? label,
+        GuiNodePayload payload)
+    {
+        var node = new MutableGuiNode(CreateNodeId(key, kind), kind, label, payload);
         nodeStack_.Peek().Children.Add(node);
         nodeStack_.Push(node);
         return new GuiScope(this, node);
@@ -96,13 +172,15 @@ public sealed class GuiFrameBuilder
             node.Id,
             node.Kind,
             node.Label,
+            node.Payload,
             node.Children.Select(ToImmutable).ToArray());
     }
 
     private sealed record MutableGuiNode(
         GuiNodeId Id,
         GuiNodeKind Kind,
-        string? Label)
+        string? Label,
+        GuiNodePayload Payload)
     {
         public List<MutableGuiNode> Children { get; } = [];
     }

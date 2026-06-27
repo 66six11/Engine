@@ -62,6 +62,48 @@ public sealed class EditorGuiTests
         Assert.Equal(["render.captureFrame"], executor.CommandIds);
     }
 
+    [Fact]
+    public void List_returns_stored_selection_and_emits_selected_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var events = new GuiEventQueue();
+        var state = new GuiStateStore();
+        var sections = new[]
+        {
+            new GuiListItem("overview", "Overview"),
+            new GuiListItem("buttons", "Buttons"),
+        };
+        state.SetSelectedItem(new GuiNodeId("ui.style", "sections", GuiNodeKind.List), "buttons");
+
+        var gui = new EditorGui(builder, events, state, new RecordingCommandExecutor());
+
+        var selected = gui.List("sections", sections, selectedItemId: "overview");
+
+        Assert.Equal("buttons", selected);
+
+        var list = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.List, list.Kind);
+        Assert.Equal("buttons", list.Payload.SelectedItemId);
+        Assert.Equal(sections, list.Payload.ListItems);
+    }
+
+    [Fact]
+    public void List_falls_back_to_first_item_when_selection_is_empty()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        var selected = gui.List(
+            "sections",
+            [new GuiListItem("overview", "Overview"), new GuiListItem("buttons", "Buttons")]);
+
+        Assert.Equal("overview", selected);
+    }
+
     private sealed class RecordingCommandExecutor : IEditorGuiCommandExecutor
     {
         private readonly List<string> commandIds_ = [];

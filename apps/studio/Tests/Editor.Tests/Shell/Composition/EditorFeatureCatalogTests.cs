@@ -12,7 +12,7 @@ public sealed class EditorFeatureCatalogTests
         var composition = new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules()).Compose();
 
         Assert.Equal(
-            ["scene-view", "hierarchy", "inspector", "console", "problems"],
+            ["scene-view", "hierarchy", "inspector", "console", "problems", "ui-style"],
             composition.PanelRegistry.GetAll().Select(descriptor => descriptor.Id));
     }
 
@@ -30,6 +30,7 @@ public sealed class EditorFeatureCatalogTests
                 "workbench.panel.inspector",
                 "workbench.panel.console",
                 "workbench.panel.problems",
+                "workbench.panel.ui-style",
             ],
             composition.ActionRegistry.GetAll().Select(action => action.Id));
     }

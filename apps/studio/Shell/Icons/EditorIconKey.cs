@@ -13,6 +13,7 @@ public static class EditorIconKey
     public const string PanelInspector = "studio.inspector";
     public const string PanelConsole = "studio.console";
     public const string PanelProblems = "studio.problems";
+    public const string PanelUiStyle = "studio.ui-style";
 
     public const string ObjectDefault = "studio.object.default";
 }
