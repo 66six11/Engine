@@ -36,6 +36,36 @@ public sealed class GuiFrameBuilder
         return AddLeaf(key, GuiNodeKind.Button, label);
     }
 
+    public GuiNodeId TextField(
+        string key,
+        string label,
+        string text)
+    {
+        return AddLeaf(
+            key,
+            GuiNodeKind.TextField,
+            label,
+            new GuiNodePayload
+            {
+                TextValue = text,
+            });
+    }
+
+    public GuiNodeId Toggle(
+        string key,
+        string label,
+        bool isChecked)
+    {
+        return AddLeaf(
+            key,
+            GuiNodeKind.Toggle,
+            label,
+            new GuiNodePayload
+            {
+                IsChecked = isChecked,
+            });
+    }
+
     public GuiNodeId List(
         string key,
         IReadOnlyList<GuiListItem> items,

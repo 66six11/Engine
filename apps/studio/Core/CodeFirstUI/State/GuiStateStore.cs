@@ -8,6 +8,7 @@ public sealed class GuiStateStore
     private readonly Dictionary<GuiNodeId, string> selectedItemsByNode_ = [];
     private readonly Dictionary<GuiNodeId, double> splitRatiosByNode_ = [];
     private readonly Dictionary<GuiNodeId, string> textByNode_ = [];
+    private readonly Dictionary<GuiNodeId, bool> togglesByNode_ = [];
 
     public void SetText(GuiNodeId nodeId, string text)
     {
@@ -58,6 +59,20 @@ public sealed class GuiStateStore
         return splitRatiosByNode_.TryGetValue(nodeId, out ratio);
     }
 
+    public void SetToggle(GuiNodeId nodeId, bool isChecked)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+
+        togglesByNode_[nodeId] = isChecked;
+    }
+
+    public bool TryGetToggle(GuiNodeId nodeId, out bool isChecked)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+
+        return togglesByNode_.TryGetValue(nodeId, out isChecked);
+    }
+
     public void ClearNodeState(GuiNodeId nodeId)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -65,5 +80,6 @@ public sealed class GuiStateStore
         textByNode_.Remove(nodeId);
         selectedItemsByNode_.Remove(nodeId);
         splitRatiosByNode_.Remove(nodeId);
+        togglesByNode_.Remove(nodeId);
     }
 }

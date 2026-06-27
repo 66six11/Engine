@@ -45,6 +45,8 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Split => BuildSplit(node),
             GuiNodeKind.Label => BuildLabel(node),
             GuiNodeKind.Button => BuildButton(node),
+            GuiNodeKind.TextField => BuildTextField(node),
+            GuiNodeKind.Toggle => BuildToggle(node),
             GuiNodeKind.List => BuildList(node),
             _ => BuildUnsupportedNode(node),
         };
@@ -254,6 +256,65 @@ internal sealed class GuiAvaloniaControlFactory
         button.Classes.Add("code-first-button");
         button.Click += (_, _) => host_.ClickButton(node.Id);
         return button;
+    }
+
+    private Control BuildTextField(GuiNode node)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var textBox = new TextBox
+        {
+            Text = node.Payload.TextValue ?? string.Empty,
+            MinWidth = 120d,
+        };
+        textBox.Classes.Add("code-first-text-field");
+        AttachTextTracking(node.Id, textBox);
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(textBox, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(textBox);
+        return grid;
+    }
+
+    private void AttachTextTracking(GuiNodeId nodeId, TextBox textBox)
+    {
+        var hasObservedInitialValue = false;
+        textBox.Tag = textBox
+            .GetObservable(TextBox.TextProperty)
+            .Subscribe(new ActionObserver<string?>(text =>
+            {
+                if (!hasObservedInitialValue)
+                {
+                    hasObservedInitialValue = true;
+                    return;
+                }
+
+                host_.SetText(nodeId, text ?? string.Empty);
+            }));
+    }
+
+    private Control BuildToggle(GuiNode node)
+    {
+        var checkBox = new CheckBox
+        {
+            Content = node.Label ?? string.Empty,
+            IsChecked = node.Payload.IsChecked == true,
+        };
+        checkBox.Classes.Add("code-first-toggle");
+        checkBox.IsCheckedChanged += (_, _) => host_.SetToggle(node.Id, checkBox.IsChecked == true);
+        return checkBox;
     }
 
     private Control BuildList(GuiNode node)

@@ -42,6 +42,20 @@ public sealed class UiStylePanelTests
         Assert.Equal("buttons", split.Children[0].Children[0].Payload.SelectedItemId);
     }
 
+    [Fact]
+    public void Inputs_page_contains_code_first_text_field_and_toggle_samples()
+    {
+        var host = CreateAttachedHost();
+
+        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "inputs");
+
+        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        var preview = split.Children[1];
+        Assert.Equal("Inputs", preview.Children[0].Label);
+        Assert.Contains(preview.Children, child => child.Kind == GuiNodeKind.TextField);
+        Assert.Contains(preview.Children, child => child.Kind == GuiNodeKind.Toggle);
+    }
+
     private static CodeFirstPanelHostViewModel CreateAttachedHost()
     {
         var host = new CodeFirstPanelHostViewModel(new UiStylePanel());

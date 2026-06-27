@@ -76,4 +76,25 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal("buttons", list.Payload.SelectedItemId);
         Assert.Equal(sections, list.Payload.ListItems);
     }
+
+    [Fact]
+    public void Build_preserves_text_field_and_toggle_payloads()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        builder.TextField("filter", "Filter", "gbuffer");
+        builder.Toggle("show-disabled", "Show Disabled", isChecked: true);
+
+        var tree = builder.Build();
+
+        var textField = tree.Root.Children[0];
+        Assert.Equal(GuiNodeKind.TextField, textField.Kind);
+        Assert.Equal("Filter", textField.Label);
+        Assert.Equal("gbuffer", textField.Payload.TextValue);
+
+        var toggle = tree.Root.Children[1];
+        Assert.Equal(GuiNodeKind.Toggle, toggle.Kind);
+        Assert.Equal("Show Disabled", toggle.Label);
+        Assert.True(toggle.Payload.IsChecked);
+    }
 }

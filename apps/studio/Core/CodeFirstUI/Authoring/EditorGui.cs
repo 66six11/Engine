@@ -46,6 +46,34 @@ public sealed class EditorGui
         return events_.ConsumeButtonClicked(nodeId);
     }
 
+    public string TextInput(
+        string key,
+        string label,
+        string text = "")
+    {
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.TextField);
+        var resolvedText = StateStore.TryGetText(nodeId, out var storedText)
+            ? storedText ?? string.Empty
+            : text;
+        StateStore.SetText(nodeId, resolvedText);
+        builder_.TextField(key, label, resolvedText);
+        return resolvedText;
+    }
+
+    public bool Toggle(
+        string key,
+        string label,
+        bool isChecked = false)
+    {
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.Toggle);
+        var resolvedValue = StateStore.TryGetToggle(nodeId, out var storedValue)
+            ? storedValue
+            : isChecked;
+        StateStore.SetToggle(nodeId, resolvedValue);
+        builder_.Toggle(key, label, resolvedValue);
+        return resolvedValue;
+    }
+
     public string? List(
         string key,
         IReadOnlyList<GuiListItem> items,

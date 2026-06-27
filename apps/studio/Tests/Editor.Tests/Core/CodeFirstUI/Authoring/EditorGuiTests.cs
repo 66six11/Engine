@@ -126,6 +126,35 @@ public sealed class EditorGuiTests
         Assert.Equal(0.42d, split.Payload.SplitRatio);
     }
 
+    [Fact]
+    public void Inputs_return_stored_values_and_emit_payloads()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetText(new GuiNodeId("ui.style", "filter", GuiNodeKind.TextField), "gbuffer");
+        state.SetToggle(new GuiNodeId("ui.style", "show-disabled", GuiNodeKind.Toggle), isChecked: false);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var filter = gui.TextInput("filter", "Filter", "albedo");
+        var showDisabled = gui.Toggle("show-disabled", "Show Disabled", isChecked: true);
+
+        Assert.Equal("gbuffer", filter);
+        Assert.False(showDisabled);
+
+        var tree = builder.Build();
+        var textField = tree.Root.Children[0];
+        Assert.Equal(GuiNodeKind.TextField, textField.Kind);
+        Assert.Equal("gbuffer", textField.Payload.TextValue);
+
+        var toggle = tree.Root.Children[1];
+        Assert.Equal(GuiNodeKind.Toggle, toggle.Kind);
+        Assert.False(toggle.Payload.IsChecked);
+    }
+
     private sealed class RecordingCommandExecutor : IEditorGuiCommandExecutor
     {
         private readonly List<string> commandIds_ = [];

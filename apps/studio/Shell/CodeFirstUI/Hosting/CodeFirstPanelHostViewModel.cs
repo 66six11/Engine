@@ -84,6 +84,23 @@ internal sealed class CodeFirstPanelHostViewModel :
         stateStore_.SetSplitRatio(nodeId, ratio);
     }
 
+    internal void SetText(GuiNodeId nodeId, string text)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        stateStore_.SetText(nodeId, text ?? string.Empty);
+    }
+
+    internal void SetToggle(GuiNodeId nodeId, bool isChecked)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        stateStore_.SetToggle(nodeId, isChecked);
+        Rebuild();
+    }
+
     public void OnPanelAttached(EditorPanelLifecycleContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -210,6 +227,16 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.ResizeSplit(GuiNodeId nodeId, double ratio)
     {
         ResizeSplit(nodeId, ratio);
+    }
+
+    void IGuiAvaloniaHost.SetText(GuiNodeId nodeId, string text)
+    {
+        SetText(nodeId, text);
+    }
+
+    void IGuiAvaloniaHost.SetToggle(GuiNodeId nodeId, bool isChecked)
+    {
+        SetToggle(nodeId, isChecked);
     }
 
     private sealed class MissingCommandExecutor : IEditorGuiCommandExecutor

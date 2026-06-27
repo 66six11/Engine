@@ -68,6 +68,39 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Equal(new GuiNodeId("ui-style", "layout", GuiNodeKind.Split), resize.NodeId);
     }
 
+    [Fact]
+    public void Build_maps_text_field_and_toggle_and_reports_input_changes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.TextField("filter", "Filter", "gbuffer");
+        builder.Toggle("show-disabled", "Show Disabled", isChecked: true);
+
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var control = factory.Build(builder.Build());
+
+        var textBox = FindDescendant<TextBox>(
+            control,
+            textBox => textBox.Text == "gbuffer");
+        var checkBox = FindDescendant<CheckBox>(
+            control,
+            checkBox => checkBox.IsChecked == true);
+        Assert.NotNull(textBox);
+        Assert.NotNull(checkBox);
+
+        textBox!.Text = "albedo";
+        checkBox!.IsChecked = false;
+
+        var textChange = Assert.Single(host.TextChanges);
+        Assert.Equal(new GuiNodeId("ui-style", "filter", GuiNodeKind.TextField), textChange.NodeId);
+        Assert.Equal("albedo", textChange.Text);
+
+        var toggleChange = Assert.Single(host.ToggleChanges);
+        Assert.Equal(new GuiNodeId("ui-style", "show-disabled", GuiNodeKind.Toggle), toggleChange.NodeId);
+        Assert.False(toggleChange.IsChecked);
+    }
+
     private static T? FindDescendant<T>(Control control, Predicate<T>? predicate = null)
         where T : Control
     {
@@ -99,13 +132,27 @@ public sealed class GuiAvaloniaControlFactoryTests
         public void ResizeSplit(GuiNodeId nodeId, double ratio)
         {
         }
+
+        public void SetText(GuiNodeId nodeId, string text)
+        {
+        }
+
+        public void SetToggle(GuiNodeId nodeId, bool isChecked)
+        {
+        }
     }
 
     private sealed class RecordingCodeFirstPanelHost : IGuiAvaloniaHost
     {
         private readonly List<SplitResize> splitResizes_ = [];
+        private readonly List<TextChange> textChanges_ = [];
+        private readonly List<ToggleChange> toggleChanges_ = [];
 
         public IReadOnlyList<SplitResize> SplitResizes => splitResizes_;
+
+        public IReadOnlyList<TextChange> TextChanges => textChanges_;
+
+        public IReadOnlyList<ToggleChange> ToggleChanges => toggleChanges_;
 
         public void ClickButton(GuiNodeId nodeId)
         {
@@ -119,9 +166,27 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
             splitResizes_.Add(new SplitResize(nodeId, ratio));
         }
+
+        public void SetText(GuiNodeId nodeId, string text)
+        {
+            textChanges_.Add(new TextChange(nodeId, text));
+        }
+
+        public void SetToggle(GuiNodeId nodeId, bool isChecked)
+        {
+            toggleChanges_.Add(new ToggleChange(nodeId, isChecked));
+        }
     }
 
     private sealed record SplitResize(
         GuiNodeId NodeId,
         double Ratio);
+
+    private sealed record TextChange(
+        GuiNodeId NodeId,
+        string Text);
+
+    private sealed record ToggleChange(
+        GuiNodeId NodeId,
+        bool IsChecked);
 }

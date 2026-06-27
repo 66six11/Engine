@@ -17,9 +17,14 @@ public sealed class GuiStateStoreTests
             "render.frameDebugger",
             "passes",
             GuiNodeKind.List);
+        var toggle = new GuiNodeId(
+            "render.frameDebugger",
+            "show-disabled",
+            GuiNodeKind.Toggle);
 
         store.SetText(filter, "gbuffer");
         store.SetSelectedItem(passes, "pass-12");
+        store.SetToggle(toggle, isChecked: true);
         store.SetSplitRatio(new GuiNodeId(
             "render.frameDebugger",
             "layout",
@@ -29,6 +34,8 @@ public sealed class GuiStateStoreTests
         Assert.Equal("gbuffer", text);
         Assert.True(store.TryGetSelectedItem(passes, out var selectedItemId));
         Assert.Equal("pass-12", selectedItemId);
+        Assert.True(store.TryGetToggle(toggle, out var isChecked));
+        Assert.True(isChecked);
         Assert.True(store.TryGetSplitRatio(new GuiNodeId(
             "render.frameDebugger",
             "layout",
@@ -45,14 +52,18 @@ public sealed class GuiStateStoreTests
             "filter",
             GuiNodeKind.TextField);
         var incompatibleFilter = filter with { Kind = GuiNodeKind.List };
+        var toggle = filter with { Kind = GuiNodeKind.Toggle };
 
         store.SetText(filter, "gbuffer");
+        store.SetToggle(toggle, isChecked: true);
         store.SetSplitRatio(filter with { Kind = GuiNodeKind.Split }, 0.5d);
         store.ClearNodeState(filter);
+        store.ClearNodeState(toggle);
         store.ClearNodeState(filter with { Kind = GuiNodeKind.Split });
 
         Assert.False(store.TryGetText(filter, out _));
         Assert.False(store.TryGetText(incompatibleFilter, out _));
+        Assert.False(store.TryGetToggle(toggle, out _));
         Assert.False(store.TryGetSplitRatio(filter with { Kind = GuiNodeKind.Split }, out _));
     }
 }

@@ -28,6 +28,20 @@
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="Padding" Value="10,2" />
         </Style>
+        <Style Selector="Grid.code-first-property-row">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-input-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style Selector="TextBox.code-first-text-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
+        <Style Selector="CheckBox.code-first-toggle">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
         <Style Selector="ListBox.code-first-list">
             <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />

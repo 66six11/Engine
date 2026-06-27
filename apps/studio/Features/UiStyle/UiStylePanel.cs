@@ -90,7 +90,8 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
     private static void DrawInputsPage(EditorGui gui)
     {
         gui.Text("title", "Inputs");
-        gui.Text("text", "Text input, numeric fields, toggles, and asset pickers will extend this section.");
+        gui.TextInput("filter", "Filter", "material");
+        gui.Toggle("show-disabled", "Show Disabled");
         gui.Text("contract", "Input state belongs to GuiStateStore; document mutations should still go through commands.");
     }
 

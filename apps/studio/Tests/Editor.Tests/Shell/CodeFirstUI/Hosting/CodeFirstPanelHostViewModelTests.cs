@@ -117,6 +117,47 @@ public sealed class CodeFirstPanelHostViewModelTests
         Assert.Equal(0.45d, split.Payload.SplitRatio);
     }
 
+    [Fact]
+    public void Set_text_updates_state_without_immediate_rebuild_and_next_rebuild_uses_text()
+    {
+        var panel = new InputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetText(new GuiNodeId("ui.style", "filter", GuiNodeKind.TextField), "gbuffer");
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetText(
+            new GuiNodeId("ui.style", "filter", GuiNodeKind.TextField),
+            out var storedText));
+        Assert.Equal("gbuffer", storedText);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var textField = host.CurrentTree?.Root.Children[0];
+        Assert.Equal("gbuffer", textField?.Payload.TextValue);
+        Assert.Equal("gbuffer", panel.FilterText);
+    }
+
+    [Fact]
+    public void Set_toggle_updates_state_and_rebuilds_tree()
+    {
+        var panel = new InputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetToggle(new GuiNodeId("ui.style", "show-disabled", GuiNodeKind.Toggle), isChecked: true);
+
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetToggle(
+            new GuiNodeId("ui.style", "show-disabled", GuiNodeKind.Toggle),
+            out var isChecked));
+        Assert.True(isChecked);
+        Assert.True(panel.ShowDisabled);
+    }
+
     private static EditorPanelLifecycleContext CreateLifecycleContext(string panelId = "render.frameDebugger")
     {
         return new EditorPanelLifecycleContext(
@@ -224,6 +265,22 @@ public sealed class CodeFirstPanelHostViewModelTests
                 gui.Text("left", "Left");
                 gui.Text("right", "Right");
             }
+        }
+    }
+
+    private sealed class InputDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        public string? FilterText { get; private set; }
+
+        public bool ShowDisabled { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            FilterText = gui.TextInput("filter", "Filter", "default");
+            ShowDisabled = gui.Toggle("show-disabled", "Show Disabled");
         }
     }
 }

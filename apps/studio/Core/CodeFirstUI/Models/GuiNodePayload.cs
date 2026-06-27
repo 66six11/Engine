@@ -13,4 +13,8 @@ public sealed record GuiNodePayload
     public IReadOnlyList<GuiListItem> ListItems { get; init; } = [];
 
     public string? SelectedItemId { get; init; }
+
+    public string? TextValue { get; init; }
+
+    public bool? IsChecked { get; init; }
 }
