@@ -25,14 +25,14 @@ public sealed class GuiFrameBuilder
         nodeStack_.Push(root_);
     }
 
-    public void Label(string key, string label)
+    public GuiNodeId Label(string key, string label)
     {
-        AddLeaf(key, GuiNodeKind.Label, label);
+        return AddLeaf(key, GuiNodeKind.Label, label);
     }
 
-    public void Button(string key, string label)
+    public GuiNodeId Button(string key, string label)
     {
-        AddLeaf(key, GuiNodeKind.Button, label);
+        return AddLeaf(key, GuiNodeKind.Button, label);
     }
 
     public IDisposable Toolbar(string key)
@@ -50,10 +50,11 @@ public sealed class GuiFrameBuilder
         return new GuiTreeSnapshot(panelId_, ToImmutable(root_));
     }
 
-    private void AddLeaf(string key, GuiNodeKind kind, string? label)
+    private GuiNodeId AddLeaf(string key, GuiNodeKind kind, string? label)
     {
         var node = new MutableGuiNode(CreateNodeId(key, kind), kind, label);
         nodeStack_.Peek().Children.Add(node);
+        return node.Id;
     }
 
     private IDisposable PushContainer(string key, GuiNodeKind kind, string? label)
