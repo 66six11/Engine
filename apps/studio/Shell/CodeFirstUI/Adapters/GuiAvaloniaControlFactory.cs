@@ -9,7 +9,6 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
-using Editor.Features.Hierarchy.Controls;
 using Editor.Shell.Icons;
 using Editor.UI.Controls.Base;
 
@@ -244,9 +243,7 @@ internal sealed class GuiAvaloniaControlFactory
                 node.Id,
                 root.Children[index],
                 node.Payload.SelectedRoute,
-                depth: 0,
-                isLastSibling: index == root.Children.Count - 1,
-                ancestorContinuationMask: 0UL);
+                depth: 0);
         }
 
         var scrollViewer = new ScrollViewer
@@ -286,9 +283,7 @@ internal sealed class GuiAvaloniaControlFactory
         GuiNodeId nodeId,
         NavigationRouteNode node,
         string? selectedRoute,
-        int depth,
-        bool isLastSibling,
-        ulong ancestorContinuationMask)
+        int depth)
     {
         var childrenPanel = node.Children.Count > 0
             ? new StackPanel
@@ -304,8 +299,6 @@ internal sealed class GuiAvaloniaControlFactory
             node,
             selectedRoute,
             depth,
-            isLastSibling,
-            ancestorContinuationMask,
             childrenPanel));
 
         if (childrenPanel is null)
@@ -313,10 +306,6 @@ internal sealed class GuiAvaloniaControlFactory
             return;
         }
 
-        var childAncestorContinuationMask = GetChildAncestorContinuationMask(
-            ancestorContinuationMask,
-            depth,
-            isLastSibling);
         for (var index = 0; index < node.Children.Count; index++)
         {
             AddNavigationRouteControls(
@@ -324,9 +313,7 @@ internal sealed class GuiAvaloniaControlFactory
                 nodeId,
                 node.Children[index],
                 selectedRoute,
-                depth + 1,
-                index == node.Children.Count - 1,
-                childAncestorContinuationMask);
+                depth + 1);
         }
 
         parent.Children.Add(childrenPanel);
@@ -337,8 +324,6 @@ internal sealed class GuiAvaloniaControlFactory
         NavigationRouteNode node,
         string? selectedRoute,
         int depth,
-        bool isLastSibling,
-        ulong ancestorContinuationMask,
         StackPanel? childrenPanel)
     {
         IconButton? expander = null;
@@ -377,19 +362,20 @@ internal sealed class GuiAvaloniaControlFactory
             Tag = node.Route ?? node.FullRoute,
         };
         row.Classes.Add("code-first-navigation-tree-row");
-
-        var indentGuide = new HierarchyIndentGuide
+        if (node.IsPage
+            && string.Equals(node.Route, selectedRoute, StringComparison.Ordinal))
         {
-            AncestorContinuationMask = ancestorContinuationMask,
-            Depth = depth,
-            IndentUnit = NavigationIndentUnit,
-            IsHitTestVisible = false,
-            IsLastSibling = isLastSibling,
-            Width = indentWidth,
-        };
-        indentGuide.Classes.Add("code-first-navigation-indent-guide");
-        Grid.SetColumn(indentGuide, 0);
-        row.Children.Add(indentGuide);
+            row.Classes.Add("selected");
+        }
+
+        if (childrenPanel is not null)
+        {
+            row.DoubleTapped += (_, args) =>
+            {
+                ToggleExpanded();
+                args.Handled = true;
+            };
+        }
 
         if (childrenPanel is not null)
         {
@@ -400,7 +386,7 @@ internal sealed class GuiAvaloniaControlFactory
 
         var label = node.IsPage
             ? CreateNavigationRouteButton(nodeId, node, selectedRoute)
-            : CreateNavigationGroupButton(node, childrenPanel is not null ? ToggleExpanded : null);
+            : CreateNavigationGroupLabel(node);
         Grid.SetColumn(label, 2);
         row.Children.Add(label);
 
@@ -422,36 +408,22 @@ internal sealed class GuiAvaloniaControlFactory
         };
         ToolTip.SetTip(button, route);
         button.Classes.Add("code-first-navigation-route");
-        if (string.Equals(route, selectedRoute, StringComparison.Ordinal))
-        {
-            button.Classes.Add("selected");
-        }
-
         button.Click += (_, _) => host_.SelectNavigationRoute(nodeId, route);
         return button;
     }
 
-    private static Control CreateNavigationGroupButton(
-        NavigationRouteNode node,
-        Action? toggleExpanded)
+    private static Control CreateNavigationGroupLabel(
+        NavigationRouteNode node)
     {
-        var button = new Button
+        var label = new TextBlock
         {
-            Content = node.Segment,
+            Text = node.Segment,
+            TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Tag = node.FullRoute,
         };
-        button.Classes.Add("code-first-navigation-group");
-        if (toggleExpanded is not null)
-        {
-            button.Click += (_, args) =>
-            {
-                toggleExpanded();
-                args.Handled = true;
-            };
-        }
-
-        return button;
+        label.Classes.Add("code-first-navigation-group");
+        return label;
     }
 
     private static IconButton CreateNavigationExpander(
@@ -473,19 +445,6 @@ internal sealed class GuiAvaloniaControlFactory
             args.Handled = true;
         };
         return expander;
-    }
-
-    private static ulong GetChildAncestorContinuationMask(
-        ulong ancestorContinuationMask,
-        int depth,
-        bool isLastSibling)
-    {
-        if (depth <= 0 || depth > 64 || isLastSibling)
-        {
-            return ancestorContinuationMask;
-        }
-
-        return ancestorContinuationMask | (1UL << (depth - 1));
     }
 
     private GridSplitter CreateSplitter(

@@ -138,7 +138,8 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:HierarchyNodeRowViewModel">
                             <Grid Classes="hierarchy-row"
-                                  ColumnDefinitions="Auto,18,16,*,80">
+                                  ColumnDefinitions="Auto,18,16,*,80"
+                                  DoubleTapped="OnHierarchyRowDoubleTapped">
                                 <hierarchy:HierarchyIndentGuide Grid.Column="0"
                                                                 AncestorContinuationMask="{Binding AncestorContinuationMask}"
                                                                 Depth="{Binding Depth}"

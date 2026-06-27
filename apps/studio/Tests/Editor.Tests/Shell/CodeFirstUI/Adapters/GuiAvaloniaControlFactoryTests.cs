@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -8,7 +9,6 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
-using Editor.Features.Hierarchy.Controls;
 using Editor.Shell.CodeFirstUI;
 using Editor.Shell.CodeFirstUI.Adapters;
 using Editor.Shell.Icons;
@@ -132,6 +132,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.NotNull(renderRow);
         Assert.NotNull(debugRow);
         Assert.NotNull(frameRow);
+        Assert.Contains("selected", frameRow!.Classes);
 
         Assert.NotNull(FindDescendant<IconButton>(
             overviewRow!,
@@ -148,12 +149,9 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Equal(EditorIconKey.UiChevronDown, renderExpander!.IconKey);
         Assert.False(renderExpander.Focusable);
 
-        Assert.NotNull(FindDescendant<HierarchyIndentGuide>(
-            debugRow!,
-            guide => guide.Depth == 1 && guide.Width == 12d));
-        Assert.NotNull(FindDescendant<HierarchyIndentGuide>(
-            frameRow!,
-            guide => guide.Depth == 2 && guide.Width == 24d));
+        Assert.Null(FindDescendant<Control>(
+            grid,
+            control => control.Classes.Contains("code-first-navigation-indent-guide")));
 
         var renderChildren = FindDescendant<StackPanel>(
             grid,
@@ -169,6 +167,11 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Equal(EditorIconKey.UiChevronRight, renderExpander.IconKey);
         Assert.False(renderChildren!.IsVisible);
 
+        renderRow!.RaiseEvent(CreateDoubleTappedArgs(renderRow));
+
+        Assert.Equal(EditorIconKey.UiChevronDown, renderExpander.IconKey);
+        Assert.True(renderChildren.IsVisible);
+
         Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "Frame Debugger"));
 
         var routeButton = FindDescendant<Button>(
@@ -176,7 +179,7 @@ public sealed class GuiAvaloniaControlFactoryTests
             button => string.Equals(button.Content as string, "Frame Debugger", StringComparison.Ordinal));
         Assert.NotNull(routeButton);
         Assert.Contains("code-first-navigation-route", routeButton!.Classes);
-        Assert.Contains("selected", routeButton.Classes);
+        Assert.DoesNotContain("selected", routeButton.Classes);
         Assert.Equal("render/debug/frame-debugger", ToolTip.GetTip(routeButton));
 
         routeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)
@@ -444,6 +447,20 @@ public sealed class GuiAvaloniaControlFactoryTests
             Decorator decorator when decorator.Child is Control child => FindDescendant(child, predicate),
             _ => null,
         };
+    }
+
+    private static TappedEventArgs CreateDoubleTappedArgs(Control source)
+    {
+        var pointerArgs = new PointerPressedEventArgs(
+            source,
+            null!,
+            source,
+            new Point(),
+            timestamp: 0UL,
+            new PointerPointProperties(),
+            KeyModifiers.None,
+            clickCount: 2);
+        return new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs);
     }
 
     private sealed class NoopCodeFirstPanelHost : IGuiAvaloniaHost
