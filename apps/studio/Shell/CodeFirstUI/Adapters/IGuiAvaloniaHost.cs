@@ -8,6 +8,8 @@ internal interface IGuiAvaloniaHost
 
     void SelectListItem(GuiNodeId nodeId, string itemId);
 
+    void SelectNavigationRoute(GuiNodeId nodeId, string route);
+
     void ResizeSplit(GuiNodeId nodeId, double ratio);
 
     void SetText(GuiNodeId nodeId, string text);

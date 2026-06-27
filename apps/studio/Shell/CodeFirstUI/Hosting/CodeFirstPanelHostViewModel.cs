@@ -76,6 +76,19 @@ internal sealed class CodeFirstPanelHostViewModel :
         Rebuild();
     }
 
+    internal void SelectNavigationRoute(GuiNodeId nodeId, string route)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            throw new ArgumentException("Navigation route must not be empty.", nameof(route));
+        }
+
+        ThrowIfDisposed();
+        stateStore_.SetSelectedRoute(nodeId, route);
+        Rebuild();
+    }
+
     internal void ResizeSplit(GuiNodeId nodeId, double ratio)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -240,6 +253,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SelectListItem(GuiNodeId nodeId, string itemId)
     {
         SelectListItem(nodeId, itemId);
+    }
+
+    void IGuiAvaloniaHost.SelectNavigationRoute(GuiNodeId nodeId, string route)
+    {
+        SelectNavigationRoute(nodeId, route);
     }
 
     void IGuiAvaloniaHost.ResizeSplit(GuiNodeId nodeId, double ratio)

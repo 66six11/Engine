@@ -139,6 +139,33 @@ public sealed class GuiFrameBuilder
         return PushContainer(key, GuiNodeKind.Panel, label);
     }
 
+    public IDisposable NavigationView(
+        string key,
+        IReadOnlyList<GuiNavigationItem> items,
+        string? selectedRoute,
+        double ratio = 0.30d)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0d || ratio >= 1d)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ratio),
+                ratio,
+                "Navigation view ratio must be greater than 0 and less than 1.");
+        }
+
+        return PushContainer(
+            key,
+            GuiNodeKind.NavigationView,
+            label: null,
+            new GuiNodePayload
+            {
+                NavigationItems = items.ToArray(),
+                SelectedRoute = selectedRoute,
+                SplitRatio = ratio,
+            });
+    }
+
     public IDisposable Foldout(
         string key,
         string label,

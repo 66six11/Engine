@@ -52,6 +52,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Panel => BuildPanel(node),
             GuiNodeKind.Foldout => BuildFoldout(node),
             GuiNodeKind.Split => BuildSplit(node),
+            GuiNodeKind.NavigationView => BuildNavigationView(node),
             GuiNodeKind.Scroll => BuildScroll(node),
             GuiNodeKind.Label => BuildLabel(node),
             GuiNodeKind.Button => BuildButton(node),
@@ -141,6 +142,7 @@ internal sealed class GuiAvaloniaControlFactory
         return kind is GuiNodeKind.List
             or GuiNodeKind.Panel
             or GuiNodeKind.Split
+            or GuiNodeKind.NavigationView
             or GuiNodeKind.Scroll;
     }
 
@@ -192,6 +194,139 @@ internal sealed class GuiAvaloniaControlFactory
         }
 
         return grid;
+    }
+
+    private Control BuildNavigationView(GuiNode node)
+    {
+        var ratio = node.Payload.SplitRatio ?? 0.30d;
+        ratio = Math.Clamp(ratio, 0.05d, 0.95d);
+
+        var directory = BuildNavigationDirectory(node);
+        var content = BuildStack(node.Children, Orientation.Vertical, "code-first-navigation-content");
+        var firstColumn = new ColumnDefinition(new GridLength(ratio, GridUnitType.Star));
+        var secondColumn = new ColumnDefinition(new GridLength(1d - ratio, GridUnitType.Star));
+        var splitter = CreateSplitter(node, GridResizeDirection.Columns, "vertical");
+
+        var grid = new Grid();
+        grid.Classes.Add("code-first-navigation-view");
+        grid.ColumnDefinitions.Add(firstColumn);
+        grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(SplitterBreadth)));
+        grid.ColumnDefinitions.Add(secondColumn);
+        AttachColumnSplitRatioTracking(node.Id, firstColumn, secondColumn, grid);
+
+        Grid.SetColumn(directory, 0);
+        Grid.SetColumn(splitter, 1);
+        Grid.SetColumn(content, 2);
+        grid.Children.Add(directory);
+        grid.Children.Add(splitter);
+        grid.Children.Add(content);
+        return grid;
+    }
+
+    private Control BuildNavigationDirectory(GuiNode node)
+    {
+        var stack = new StackPanel
+        {
+            Spacing = 2d,
+        };
+        stack.Classes.Add("code-first-navigation-directory-content");
+
+        var root = BuildNavigationRouteTree(node.Payload.NavigationItems);
+        foreach (var child in root.Children)
+        {
+            AddNavigationRouteControls(stack, node.Id, child, node.Payload.SelectedRoute, depth: 0);
+        }
+
+        var scrollViewer = new ScrollViewer
+        {
+            Content = stack,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        scrollViewer.Classes.Add("code-first-navigation-directory");
+        return scrollViewer;
+    }
+
+    private static NavigationRouteNode BuildNavigationRouteTree(
+        IReadOnlyList<GuiNavigationItem> items)
+    {
+        var root = new NavigationRouteNode(string.Empty, string.Empty);
+        foreach (var item in items)
+        {
+            var current = root;
+            var route = string.Empty;
+            foreach (var segment in item.Route.Split('/'))
+            {
+                route = string.IsNullOrWhiteSpace(route)
+                    ? segment
+                    : $"{route}/{segment}";
+                current = current.GetOrAddChild(segment, route);
+            }
+
+            current.SetPage(item.Route, item.Label);
+        }
+
+        return root;
+    }
+
+    private void AddNavigationRouteControls(
+        Panel parent,
+        GuiNodeId nodeId,
+        NavigationRouteNode node,
+        string? selectedRoute,
+        int depth)
+    {
+        if (node.IsPage)
+        {
+            parent.Children.Add(CreateNavigationRouteButton(nodeId, node, selectedRoute, depth));
+        }
+        else
+        {
+            parent.Children.Add(CreateNavigationGroupLabel(node, depth));
+        }
+
+        foreach (var child in node.Children)
+        {
+            AddNavigationRouteControls(parent, nodeId, child, selectedRoute, depth + 1);
+        }
+    }
+
+    private Control CreateNavigationRouteButton(
+        GuiNodeId nodeId,
+        NavigationRouteNode node,
+        string? selectedRoute,
+        int depth)
+    {
+        var route = node.Route ?? node.FullRoute;
+        var button = new Button
+        {
+            Content = node.Label ?? node.Segment,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Padding = new Avalonia.Thickness(8d + depth * 12d, 2d, 8d, 2d),
+            Tag = route,
+        };
+        button.Classes.Add("code-first-navigation-route");
+        if (string.Equals(route, selectedRoute, StringComparison.Ordinal))
+        {
+            button.Classes.Add("selected");
+        }
+
+        button.Click += (_, _) => host_.SelectNavigationRoute(nodeId, route);
+        return button;
+    }
+
+    private static Control CreateNavigationGroupLabel(
+        NavigationRouteNode node,
+        int depth)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Segment,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            Padding = new Avalonia.Thickness(8d + depth * 12d, 4d, 8d, 2d),
+        };
+        label.Classes.Add("code-first-navigation-group");
+        return label;
     }
 
     private GridSplitter CreateSplitter(
@@ -556,6 +691,49 @@ internal sealed class GuiAvaloniaControlFactory
     private sealed record GuiAvaloniaListItem(
         string Id,
         string Label);
+
+    private sealed class NavigationRouteNode
+    {
+        private readonly List<NavigationRouteNode> children_ = [];
+
+        public NavigationRouteNode(string segment, string fullRoute)
+        {
+            Segment = segment;
+            FullRoute = fullRoute;
+        }
+
+        public string Segment { get; }
+
+        public string FullRoute { get; }
+
+        public string? Route { get; private set; }
+
+        public string? Label { get; private set; }
+
+        public IReadOnlyList<NavigationRouteNode> Children => children_;
+
+        public bool IsPage => Route is not null;
+
+        public NavigationRouteNode GetOrAddChild(string segment, string fullRoute)
+        {
+            var existing = children_.FirstOrDefault(
+                child => string.Equals(child.Segment, segment, StringComparison.Ordinal));
+            if (existing is not null)
+            {
+                return existing;
+            }
+
+            var child = new NavigationRouteNode(segment, fullRoute);
+            children_.Add(child);
+            return child;
+        }
+
+        public void SetPage(string route, string label)
+        {
+            Route = route;
+            Label = label;
+        }
+    }
 
     private sealed record SplitRatioSubscriptions(
         IDisposable FirstSubscription,

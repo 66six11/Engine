@@ -8,60 +8,25 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
 {
     private const string DefaultSectionId = "overview";
 
-    private static readonly GuiListItem[] Sections =
+    private static readonly GuiNavigationPage[] Pages =
     [
-        new("overview", "Overview"),
-        new("typography", "Typography"),
-        new("buttons", "Buttons"),
-        new("inputs", "Inputs"),
-        new("lists", "Lists"),
-        new("foldouts", "Foldouts"),
-        new("states", "States"),
+        new("overview", "Overview", DrawOverviewPage),
+        new("foundations/typography", "Typography", DrawTypographyPage),
+        new("controls/buttons", "Buttons", DrawButtonsPage),
+        new("controls/inputs", "Inputs", DrawInputsPage),
+        new("controls/lists", "Lists", DrawListsPage),
+        new("controls/foldouts", "Foldouts", DrawFoldoutsPage),
+        new("feedback/states", "States", DrawStatesPage),
     ];
 
     protected override void OnGui(EditorGui gui)
     {
-        using (gui.Split("layout", GuiSplitDirection.Horizontal, 0.30d))
+        using (var navigation = gui.NavigationView("catalog", Pages, DefaultSectionId))
         {
-            var selectedSectionId = DefaultSectionId;
-
-            using (gui.Panel("catalog", "Catalog"))
+            if (!navigation.DrawSelected(gui))
             {
-                selectedSectionId = gui.List("sections", Sections, DefaultSectionId) ?? DefaultSectionId;
-            }
-
-            using (gui.Panel("preview", "Preview"))
-            {
-                DrawPreviewPage(gui, selectedSectionId);
-            }
-        }
-    }
-
-    private static void DrawPreviewPage(EditorGui gui, string selectedSectionId)
-    {
-        switch (selectedSectionId)
-        {
-            case "typography":
-                DrawTypographyPage(gui);
-                break;
-            case "buttons":
-                DrawButtonsPage(gui);
-                break;
-            case "inputs":
-                DrawInputsPage(gui);
-                break;
-            case "lists":
-                DrawListsPage(gui);
-                break;
-            case "foldouts":
-                DrawFoldoutsPage(gui);
-                break;
-            case "states":
-                DrawStatesPage(gui);
-                break;
-            default:
                 DrawOverviewPage(gui);
-                break;
+            }
         }
     }
 

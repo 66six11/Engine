@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
@@ -77,6 +78,54 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Contains("code-first-label", hint!.Classes);
         Assert.Contains("muted", hint.Classes);
         Assert.Contains("caption", hint.Classes);
+    }
+
+    [Fact]
+    public void Build_maps_navigation_view_routes_to_directory_buttons_and_content()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        using (builder.NavigationView(
+            "catalog",
+            [
+                new GuiNavigationItem("overview", "Overview"),
+                new GuiNavigationItem("render/debug/frame-debugger", "Frame Debugger"),
+            ],
+            "render/debug/frame-debugger",
+            0.25d))
+        {
+            builder.Label("title", "Frame Debugger");
+        }
+
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var grid = Assert.IsType<Grid>(factory.Build(builder.Build()));
+
+        Assert.Equal(3, grid.ColumnDefinitions.Count);
+        Assert.Equal(0.25d, grid.ColumnDefinitions[0].Width.Value);
+        var splitter = Assert.Single(grid.Children.OfType<GridSplitter>());
+        Assert.Equal(GridResizeDirection.Columns, splitter.ResizeDirection);
+        Assert.Equal(1, Grid.GetColumn(splitter));
+
+        Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "render"));
+        Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "debug"));
+        Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "Frame Debugger"));
+
+        var routeButton = FindDescendant<Button>(
+            grid,
+            button => string.Equals(button.Content as string, "Frame Debugger", StringComparison.Ordinal));
+        Assert.NotNull(routeButton);
+        Assert.Contains("code-first-navigation-route", routeButton!.Classes);
+        Assert.Contains("selected", routeButton.Classes);
+
+        routeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)
+        {
+            Source = routeButton,
+        });
+
+        var selection = Assert.Single(host.NavigationRouteSelections);
+        Assert.Equal(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), selection.NodeId);
+        Assert.Equal("render/debug/frame-debugger", selection.Route);
     }
 
     [Fact]
@@ -346,6 +395,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
         }
 
+        public void SelectNavigationRoute(GuiNodeId nodeId, string route)
+        {
+        }
+
         public void ResizeSplit(GuiNodeId nodeId, double ratio)
         {
         }
@@ -374,6 +427,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<TextChange> textCommits_ = [];
         private readonly List<ToggleChange> toggleChanges_ = [];
         private readonly List<FoldoutChange> foldoutChanges_ = [];
+        private readonly List<NavigationRouteSelection> navigationRouteSelections_ = [];
 
         public IReadOnlyList<SplitResize> SplitResizes => splitResizes_;
 
@@ -385,12 +439,19 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         public IReadOnlyList<FoldoutChange> FoldoutChanges => foldoutChanges_;
 
+        public IReadOnlyList<NavigationRouteSelection> NavigationRouteSelections => navigationRouteSelections_;
+
         public void ClickButton(GuiNodeId nodeId)
         {
         }
 
         public void SelectListItem(GuiNodeId nodeId, string itemId)
         {
+        }
+
+        public void SelectNavigationRoute(GuiNodeId nodeId, string route)
+        {
+            navigationRouteSelections_.Add(new NavigationRouteSelection(nodeId, route));
         }
 
         public void ResizeSplit(GuiNodeId nodeId, double ratio)
@@ -434,6 +495,10 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record FoldoutChange(
         GuiNodeId NodeId,
         bool IsExpanded);
+
+    private sealed record NavigationRouteSelection(
+        GuiNodeId NodeId,
+        string Route);
 
     private sealed class RecordingTextCommitScheduler : IGuiTextCommitScheduler
     {

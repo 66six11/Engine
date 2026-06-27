@@ -12,6 +12,10 @@ public sealed record GuiNodePayload
 
     public double? SplitRatio { get; init; }
 
+    public IReadOnlyList<GuiNavigationItem> NavigationItems { get; init; } = [];
+
+    public string? SelectedRoute { get; init; }
+
     public IReadOnlyList<GuiListItem> ListItems { get; init; } = [];
 
     public string? SelectedItemId { get; init; }

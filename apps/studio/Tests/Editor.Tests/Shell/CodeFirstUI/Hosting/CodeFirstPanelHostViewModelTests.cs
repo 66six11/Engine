@@ -96,6 +96,29 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Select_navigation_route_updates_state_and_rebuilds_tree()
+    {
+        var panel = new NavigationDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+
+        host.SelectNavigationRoute(
+            new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView),
+            "render/debug/frame-debugger");
+
+        Assert.Equal("render/debug/frame-debugger", panel.SelectedRoute);
+        Assert.True(host.StateStore.TryGetSelectedRoute(
+            new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView),
+            out var storedRoute));
+        Assert.Equal("render/debug/frame-debugger", storedRoute);
+
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal(GuiNodeKind.NavigationView, navigation.Kind);
+        Assert.Equal("render/debug/frame-debugger", navigation.Payload.SelectedRoute);
+        Assert.Equal("Frame Debugger", Assert.Single(navigation.Children).Label);
+    }
+
+    [Fact]
     public void Resize_split_updates_state_without_immediate_rebuild_and_next_rebuild_uses_ratio()
     {
         var panel = new SplitDrivenCodeFirstPanel();
@@ -304,6 +327,26 @@ public sealed class CodeFirstPanelHostViewModelTests
             {
                 gui.Text("left", "Left");
                 gui.Text("right", "Right");
+            }
+        }
+    }
+
+    private sealed class NavigationDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        private static readonly GuiNavigationPage[] Pages =
+        [
+            new("overview", "Overview", gui => gui.Text("title", "Overview")),
+            new("render/debug/frame-debugger", "Frame Debugger", gui => gui.Text("title", "Frame Debugger")),
+        ];
+
+        public string? SelectedRoute { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            using (var navigation = gui.NavigationView("catalog", Pages, "overview"))
+            {
+                SelectedRoute = navigation.SelectedRoute;
+                navigation.DrawSelected(gui);
             }
         }
     }

@@ -110,6 +110,24 @@
             <Setter Property="Height" Value="4" />
             <Setter Property="Cursor" Value="SizeNorthSouth" />
         </Style>
+        <Style Selector="ScrollViewer.code-first-navigation-directory">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="Padding" Value="4" />
+        </Style>
+        <Style Selector="TextBlock.code-first-navigation-group">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.code-first-navigation-route">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="Padding" Value="8,2" />
+        </Style>
+        <Style Selector="Button.code-first-navigation-route.selected">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
     </UserControl.Styles>
 
     <Border Background="{DynamicResource EditorBrushBase00}"

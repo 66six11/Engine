@@ -110,6 +110,32 @@ public sealed class EditorGui
         return selected;
     }
 
+    public GuiNavigationScope NavigationView(
+        string key,
+        IReadOnlyList<GuiNavigationPage> pages,
+        string defaultRoute,
+        double ratio = 0.30d)
+    {
+        ArgumentNullException.ThrowIfNull(pages);
+
+        var items = pages.Select(page => page.Item).ToArray();
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.NavigationView);
+        var selectedRoute = ResolveNavigationRoute(nodeId, items, defaultRoute);
+        if (selectedRoute is not null)
+        {
+            StateStore.SetSelectedRoute(nodeId, selectedRoute);
+        }
+
+        var resolvedRatio = StateStore.TryGetSplitRatio(nodeId, out var storedRatio)
+            ? storedRatio
+            : ratio;
+
+        return new GuiNavigationScope(
+            builder_.NavigationView(key, items, selectedRoute, resolvedRatio),
+            selectedRoute,
+            pages);
+    }
+
     public WorkbenchCommandExecutionResult? CommandButton(
         string key,
         string label,
@@ -199,6 +225,38 @@ public sealed class EditorGui
         }
 
         return items[0].Id;
+    }
+
+    private string? ResolveNavigationRoute(
+        GuiNodeId nodeId,
+        IReadOnlyList<GuiNavigationItem> items,
+        string? defaultRoute)
+    {
+        if (items.Count == 0)
+        {
+            return null;
+        }
+
+        if (StateStore.TryGetSelectedRoute(nodeId, out var storedRoute)
+            && ContainsNavigationRoute(items, storedRoute))
+        {
+            return storedRoute;
+        }
+
+        if (ContainsNavigationRoute(items, defaultRoute))
+        {
+            return defaultRoute;
+        }
+
+        return items[0].Route;
+    }
+
+    private static bool ContainsNavigationRoute(
+        IReadOnlyList<GuiNavigationItem> items,
+        string? route)
+    {
+        return !string.IsNullOrWhiteSpace(route)
+            && items.Any(item => string.Equals(item.Route, route, StringComparison.Ordinal));
     }
 
     private static bool ContainsItem(

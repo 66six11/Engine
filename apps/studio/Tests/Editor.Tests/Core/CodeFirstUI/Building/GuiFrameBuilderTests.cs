@@ -56,6 +56,33 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_navigation_view_payload_and_children()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var pages = new[]
+        {
+            new GuiNavigationItem("overview", "Overview"),
+            new GuiNavigationItem("render/debug/frame-debugger", "Frame Debugger"),
+        };
+
+        using (builder.NavigationView("catalog", pages, "render/debug/frame-debugger", 0.25d))
+        {
+            builder.Label("title", "Frame Debugger");
+        }
+
+        var navigation = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.NavigationView, navigation.Kind);
+        Assert.Equal("catalog", navigation.Id.KeyPath);
+        Assert.Equal(pages, navigation.Payload.NavigationItems);
+        Assert.Equal("render/debug/frame-debugger", navigation.Payload.SelectedRoute);
+        Assert.Equal(0.25d, navigation.Payload.SplitRatio);
+
+        var child = Assert.Single(navigation.Children);
+        Assert.Equal("catalog/title", child.Id.KeyPath);
+        Assert.Equal("Frame Debugger", child.Label);
+    }
+
+    [Fact]
     public void Build_preserves_split_panel_and_list_payloads()
     {
         var builder = new GuiFrameBuilder("ui.style");

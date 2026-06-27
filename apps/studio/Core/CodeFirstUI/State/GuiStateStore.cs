@@ -39,6 +39,16 @@ public sealed class GuiStateStore
         return selectedItemsByNode_.TryGetValue(nodeId, out itemId);
     }
 
+    public void SetSelectedRoute(GuiNodeId nodeId, string route)
+    {
+        SetSelectedItem(nodeId, route);
+    }
+
+    public bool TryGetSelectedRoute(GuiNodeId nodeId, out string? route)
+    {
+        return TryGetSelectedItem(nodeId, out route);
+    }
+
     public void SetSplitRatio(GuiNodeId nodeId, double ratio)
     {
         ArgumentNullException.ThrowIfNull(nodeId);

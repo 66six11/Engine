@@ -877,6 +877,25 @@ cancel by Escape / command failure
 
 这套事务语义属于编辑器底层服务，不属于单个 Code-first panel。
 
+### 13.5 NavigationView route pages
+
+Use `NavigationView` for editor pages that need a left directory and right-side content. Routes may contain `/` segments and Shell is responsible for showing them as a hierarchy.
+
+```csharp
+private static readonly GuiNavigationPage[] Pages =
+[
+    new("overview", "Overview", DrawOverview),
+    new("render/debug/frame-debugger", "Frame Debugger", DrawFrameDebugger),
+];
+
+using (var navigation = gui.NavigationView("catalog", Pages, "overview"))
+{
+    navigation.DrawSelected(gui);
+}
+```
+
+The formal authoring surface is the route page registry. Source generators may generate this registry later from attributes, but runtime reflection is not required for the MVP.
+
 ## 14. 生命周期接入
 
 Host content 应实现现有接口：

@@ -13,21 +13,12 @@ public sealed class UiStylePanelTests
     {
         var host = CreateAttachedHost();
 
-        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
-        Assert.Equal(GuiNodeKind.Split, split.Kind);
-        Assert.Equal(GuiSplitDirection.Horizontal, split.Payload.SplitDirection);
-
-        var catalog = split.Children[0];
-        Assert.Equal("Catalog", catalog.Label);
-        var sections = Assert.Single(catalog.Children);
-        Assert.Equal(GuiNodeKind.List, sections.Kind);
-        Assert.Equal("overview", sections.Payload.SelectedItemId);
-        Assert.Contains(sections.Payload.ListItems, item => item.Id == "buttons" && item.Label == "Buttons");
-        Assert.Contains(sections.Payload.ListItems, item => item.Id == "foldouts" && item.Label == "Foldouts");
-
-        var preview = split.Children[1];
-        Assert.Equal("Preview", preview.Label);
-        Assert.Equal("Overview", preview.Children[0].Label);
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal(GuiNodeKind.NavigationView, navigation.Kind);
+        Assert.Equal("overview", navigation.Payload.SelectedRoute);
+        Assert.Contains(navigation.Payload.NavigationItems, item => item.Route == "controls/buttons" && item.Label == "Buttons");
+        Assert.Contains(navigation.Payload.NavigationItems, item => item.Route == "controls/foldouts" && item.Label == "Foldouts");
+        Assert.Equal("Overview", navigation.Children[0].Label);
     }
 
     [Fact]
@@ -35,12 +26,11 @@ public sealed class UiStylePanelTests
     {
         var host = CreateAttachedHost();
 
-        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "buttons");
+        host.SelectNavigationRoute(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), "controls/buttons");
 
-        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
-        var preview = split.Children[1];
-        Assert.Equal("Buttons", preview.Children[0].Label);
-        Assert.Equal("buttons", split.Children[0].Children[0].Payload.SelectedItemId);
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal("Buttons", navigation.Children[0].Label);
+        Assert.Equal("controls/buttons", navigation.Payload.SelectedRoute);
     }
 
     [Fact]
@@ -48,20 +38,19 @@ public sealed class UiStylePanelTests
     {
         var host = CreateAttachedHost();
 
-        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "typography");
+        host.SelectNavigationRoute(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), "foundations/typography");
 
-        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
-        var preview = split.Children[1];
-        var title = preview.Children[0];
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        var title = navigation.Children[0];
         Assert.Equal("Typography", title.Label);
         Assert.Equal(GuiTextTone.Primary, title.Payload.TextTone);
         Assert.Equal(GuiTextSize.Title, title.Payload.TextSize);
 
-        var primary = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/primary");
+        var primary = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/primary");
         Assert.Equal(GuiTextTone.Primary, primary.Payload.TextTone);
         Assert.Equal(GuiTextSize.Body, primary.Payload.TextSize);
 
-        var muted = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/muted");
+        var muted = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/muted");
         Assert.Equal(GuiTextTone.Muted, muted.Payload.TextTone);
         Assert.Equal(GuiTextSize.Caption, muted.Payload.TextSize);
     }
@@ -71,14 +60,13 @@ public sealed class UiStylePanelTests
     {
         var host = CreateAttachedHost();
 
-        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "inputs");
+        host.SelectNavigationRoute(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), "controls/inputs");
 
-        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
-        var preview = split.Children[1];
-        Assert.Equal("Inputs", preview.Children[0].Label);
-        Assert.Contains(preview.Children, child => child.Kind == GuiNodeKind.TextField);
-        Assert.Contains(preview.Children, child => child.Kind == GuiNodeKind.Toggle);
-        var filter = Assert.Single(preview.Children, child => child.Kind == GuiNodeKind.TextField);
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal("Inputs", navigation.Children[0].Label);
+        Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
+        Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Toggle);
+        var filter = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
         Assert.Equal(GuiTextInputCommitMode.Debounced, filter.Payload.TextCommitMode);
     }
 
@@ -87,12 +75,11 @@ public sealed class UiStylePanelTests
     {
         var host = CreateAttachedHost();
 
-        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "states");
+        host.SelectNavigationRoute(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), "feedback/states");
 
-        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
-        var preview = split.Children[1];
-        Assert.Equal("States", preview.Children[0].Label);
-        var scroll = Assert.Single(preview.Children, child => child.Kind == GuiNodeKind.Scroll);
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal("States", navigation.Children[0].Label);
+        var scroll = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.Scroll);
         Assert.Contains(
             scroll.Children,
             child => child.Kind == GuiNodeKind.ValidationMessage
@@ -108,17 +95,16 @@ public sealed class UiStylePanelTests
     {
         var host = CreateAttachedHost();
 
-        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "foldouts");
+        host.SelectNavigationRoute(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), "controls/foldouts");
 
-        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
-        var preview = split.Children[1];
-        Assert.Equal("Foldouts", preview.Children[0].Label);
-        var expanded = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/rendering");
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal("Foldouts", navigation.Children[0].Label);
+        var expanded = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/rendering");
         Assert.Equal(GuiNodeKind.Foldout, expanded.Kind);
         Assert.True(expanded.Payload.IsExpanded);
         Assert.NotEmpty(expanded.Children);
 
-        var collapsed = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/advanced");
+        var collapsed = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/advanced");
         Assert.Equal(GuiNodeKind.Foldout, collapsed.Kind);
         Assert.False(collapsed.Payload.IsExpanded);
         Assert.Empty(collapsed.Children);

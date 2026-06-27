@@ -100,6 +100,68 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Navigation_view_uses_stored_route_and_draws_selected_page()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetSelectedRoute(
+            new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView),
+            "render/debug/frame-debugger");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+        var pages = new[]
+        {
+            new GuiNavigationPage("overview", "Overview", editorGui => editorGui.Text("title", "Overview")),
+            new GuiNavigationPage(
+                "render/debug/frame-debugger",
+                "Frame Debugger",
+                editorGui => editorGui.Text("title", "Frame Debugger")),
+        };
+
+        using (var navigation = gui.NavigationView("catalog", pages, "overview", 0.35d))
+        {
+            Assert.Equal("render/debug/frame-debugger", navigation.SelectedRoute);
+            Assert.True(navigation.DrawSelected(gui));
+        }
+
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.NavigationView, node.Kind);
+        Assert.Equal("render/debug/frame-debugger", node.Payload.SelectedRoute);
+        Assert.Equal(0.35d, node.Payload.SplitRatio);
+        Assert.Equal("Frame Debugger", Assert.Single(node.Children).Label);
+    }
+
+    [Fact]
+    public void Navigation_view_falls_back_to_default_route()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        using (var navigation = gui.NavigationView(
+            "catalog",
+            [
+                new GuiNavigationPage("overview", "Overview", editorGui => editorGui.Text("title", "Overview")),
+                new GuiNavigationPage("controls/buttons", "Buttons", editorGui => editorGui.Text("title", "Buttons")),
+            ],
+            "controls/buttons"))
+        {
+            Assert.Equal("controls/buttons", navigation.SelectedRoute);
+            Assert.True(navigation.DrawSelected(gui));
+        }
+
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal("controls/buttons", node.Payload.SelectedRoute);
+        Assert.Equal("Buttons", Assert.Single(node.Children).Label);
+    }
+
+    [Fact]
     public void List_returns_stored_selection_and_emits_selected_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

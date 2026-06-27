@@ -8,6 +8,7 @@ public enum GuiNodeKind
     Toolbar,
     Panel,
     Split,
+    NavigationView,
     Scroll,
     Foldout,
     Label,
