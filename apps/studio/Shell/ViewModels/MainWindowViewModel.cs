@@ -77,17 +77,20 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_, LifecycleEvents);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
         DialogHost = new EditorDialogHostViewModel();
-        var actionExecutor = new WorkbenchActionExecutor(
+        var actions = actionRegistry.GetAll();
+        var commandHandlers = WorkbenchCommandHandlerRegistry.CreateBuiltIn(
+            actions,
             panelCommandService_,
             OpenCommandPaletteFromCommand,
             OpenAboutDialogFromCommand);
+        var actionExecutor = new WorkbenchActionExecutor(
+            commandHandlers);
         var commandRouter = new WorkbenchCommandFeedbackRouter(
             new WorkbenchCommandRouter(actionRegistry, actionExecutor),
             PublishCommandFeedback);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
-        var actions = actionRegistry.GetAll();
         CommandPalette = new CommandPaletteViewModel(actions, commandRouter.Execute);
         shortcutRouter_ = WorkbenchShortcutRouter.FromActions(actions, commandRouter);
         ToolsMenuItems = CreateCommandMenuItems(actions, "Tools/", commandRouter);

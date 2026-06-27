@@ -289,6 +289,34 @@ public sealed class EditorExtensionHostTests
     }
 
     [Fact]
+    public void Compose_rejects_invalid_built_in_descriptor_before_registry_commit()
+    {
+        var invalidPanel = CreatePanel("invalid-panel") with
+        {
+            MenuPath = "Window//Panels/Invalid",
+        };
+        var host = new EditorExtensionHost(
+        [
+            new TestExtensionModule(
+                "test.invalid",
+                panels:
+                [
+                    invalidPanel,
+                ]),
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => host.Compose());
+
+        Assert.Contains("Editor contribution descriptor validation failed.", exception.Message);
+        Assert.Contains("test.invalid", exception.Message);
+        Assert.Contains("invalid-panel", exception.Message);
+        Assert.Contains("MenuPath", exception.Message);
+        Assert.Contains(
+            "Menu path 'Window//Panels/Invalid' must be a slash-separated route with at least two non-empty segments.",
+            exception.Message);
+    }
+
+    [Fact]
     public async Task ActivateAsync_disposes_started_leases_in_reverse_order_when_later_module_fails()
     {
         var disposalOrder = new List<string>();

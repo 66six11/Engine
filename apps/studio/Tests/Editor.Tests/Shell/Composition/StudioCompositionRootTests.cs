@@ -1,5 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
@@ -78,5 +82,71 @@ public sealed class StudioCompositionRootTests
         Assert.Empty(session.Composition.PanelRegistry.GetAll());
         Assert.Empty(session.Composition.ActionRegistry.GetAll());
         Assert.Empty(session.Composition.ProviderHost.GetSceneProviders());
+    }
+
+    [Fact]
+    public async Task CreateMainWindowSession_activates_extension_host_before_returning_session()
+    {
+        var activationOrder = new List<string>();
+        var disposalOrder = new List<string>();
+        var module = new TestExtensionModule(
+            "test.lifecycle",
+            new RecordingLease("test.lifecycle", disposalOrder),
+            _ => activationOrder.Add("test.lifecycle"));
+
+        var session = new StudioCompositionRoot().CreateMainWindowSession(
+            savedLayout: null,
+            modules:
+            [
+                module,
+            ]);
+
+        Assert.Equal(["test.lifecycle"], activationOrder);
+        Assert.Empty(disposalOrder);
+
+        await session.DisposeAsync();
+
+        Assert.Equal(["test.lifecycle"], disposalOrder);
+    }
+
+    private sealed class TestExtensionModule : IEditorExtensionModule
+    {
+        private readonly IAsyncDisposable? lease_;
+        private readonly Action<CancellationToken>? onActivate_;
+
+        public TestExtensionModule(
+            string id,
+            IAsyncDisposable? lease = null,
+            Action<CancellationToken>? onActivate = null)
+        {
+            Id = new EditorExtensionId(id);
+            lease_ = lease;
+            onActivate_ = onActivate;
+        }
+
+        public EditorExtensionId Id { get; }
+
+        public void Declare(IEditorContributionBuilder builder)
+        {
+        }
+
+        public ValueTask<IAsyncDisposable?> ActivateAsync(
+            IEditorExtensionActivationContext context,
+            CancellationToken cancellationToken)
+        {
+            onActivate_?.Invoke(cancellationToken);
+            return ValueTask.FromResult(lease_);
+        }
+    }
+
+    private sealed class RecordingLease(
+        string id,
+        IList<string> disposalOrder) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            disposalOrder.Add(id);
+            return ValueTask.CompletedTask;
+        }
     }
 }

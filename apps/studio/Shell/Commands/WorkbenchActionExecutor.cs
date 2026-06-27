@@ -10,20 +10,13 @@ internal interface IWorkbenchActionExecutor
 
 internal sealed class WorkbenchActionExecutor : IWorkbenchActionExecutor
 {
-    private readonly PanelCommandService panelCommandService_;
-    private readonly Func<bool>? openCommandPalette_;
-    private readonly Func<bool>? openAboutDialog_;
+    private readonly WorkbenchCommandHandlerRegistry commandHandlers_;
 
-    public WorkbenchActionExecutor(
-        PanelCommandService panelCommandService,
-        Func<bool>? openCommandPalette = null,
-        Func<bool>? openAboutDialog = null)
+    public WorkbenchActionExecutor(WorkbenchCommandHandlerRegistry commandHandlers)
     {
-        ArgumentNullException.ThrowIfNull(panelCommandService);
+        ArgumentNullException.ThrowIfNull(commandHandlers);
 
-        panelCommandService_ = panelCommandService;
-        openCommandPalette_ = openCommandPalette;
-        openAboutDialog_ = openAboutDialog;
+        commandHandlers_ = commandHandlers;
     }
 
     public bool Execute(WorkbenchActionDescriptor action)
@@ -35,12 +28,7 @@ internal sealed class WorkbenchActionExecutor : IWorkbenchActionExecutor
             return false;
         }
 
-        return action.Kind switch
-        {
-            WorkbenchActionKind.OpenPanel => panelCommandService_.OpenOrFocusPanel(action.TargetId),
-            WorkbenchActionKind.OpenCommandPalette => openCommandPalette_?.Invoke() ?? false,
-            WorkbenchActionKind.OpenAboutDialog => openAboutDialog_?.Invoke() ?? false,
-            _ => false,
-        };
+        return commandHandlers_.TryExecute(action, out var completed)
+            && completed;
     }
 }

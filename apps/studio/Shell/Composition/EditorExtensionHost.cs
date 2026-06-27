@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Services;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking;
 
@@ -25,6 +26,7 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         ValidateUniqueActionIds(contributions);
         ValidateUniqueSceneProviderIds(contributions);
         ValidateUniqueSceneProviderRoles(contributions);
+        ValidateContributionDescriptorSets(contributions);
 
         var panelRegistry = new PanelRegistry();
         var actionRegistry = new WorkbenchActionRegistry();
@@ -230,6 +232,51 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
                 }
             }
         }
+    }
+
+    private static void ValidateContributionDescriptorSets(
+        IReadOnlyList<EditorDeclaredContributions> contributions)
+    {
+        var adapter = new BuiltInContributionDescriptorAdapter();
+        var validator = new EditorContributionDescriptorValidator();
+        var registeredPanelIds = new List<string>();
+        var registeredActionIds = new List<string>();
+
+        foreach (var contribution in contributions)
+        {
+            var descriptorSet = adapter.Adapt(contribution);
+            var validation = validator.Validate(
+                descriptorSet,
+                new EditorContributionValidationContext(
+                    registeredPanelIds,
+                    registeredActionIds,
+                    RegisteredDiagnosticSourceIds: []));
+
+            if (!validation.IsValid)
+            {
+                throw CreateContributionValidationException(validation);
+            }
+
+            foreach (var panel in descriptorSet.Panels)
+            {
+                registeredPanelIds.Add(panel.Id);
+            }
+
+            foreach (var action in descriptorSet.Actions)
+            {
+                registeredActionIds.Add(action.Id);
+            }
+        }
+    }
+
+    private static InvalidOperationException CreateContributionValidationException(
+        EditorContributionValidationResult validation)
+    {
+        var messages = validation.Errors.Select(error =>
+            $"[{error.SourceId}] {error.ContributionId}.{error.Field}: {error.Message}");
+        return new InvalidOperationException(
+            "Editor contribution descriptor validation failed. "
+            + string.Join(" ", messages));
     }
 
     private static IReadOnlyList<Exception> DisposeRegistrationLeases(
