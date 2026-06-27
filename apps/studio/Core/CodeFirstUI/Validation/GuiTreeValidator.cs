@@ -42,10 +42,30 @@ public sealed class GuiTreeValidator
                 $"Duplicate GUI key '{duplicateNode.Id.KeyPath}'."));
         }
 
+        if (node.Kind == GuiNodeKind.NavigationView)
+        {
+            ValidateNavigationRoutes(node, errors);
+        }
+
         var childIsInsideScroll = isInsideScroll || node.Kind == GuiNodeKind.Scroll;
         foreach (var child in node.Children)
         {
             ValidateNode(child, errors, childIsInsideScroll);
+        }
+    }
+
+    private static void ValidateNavigationRoutes(
+        GuiNode node,
+        ICollection<GuiTreeValidationError> errors)
+    {
+        foreach (var duplicate in node.Payload.NavigationItems
+                     .GroupBy(item => item.Route, StringComparer.Ordinal)
+                     .Where(group => group.Count() > 1))
+        {
+            errors.Add(new GuiTreeValidationError(
+                GuiTreeValidationErrorCode.DuplicateNavigationRoute,
+                node.Id.FullKeyPath,
+                $"Duplicate navigation route '{duplicate.Key}' in GUI node '{node.Id.KeyPath}'."));
         }
     }
 

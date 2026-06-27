@@ -117,6 +117,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.NotNull(routeButton);
         Assert.Contains("code-first-navigation-route", routeButton!.Classes);
         Assert.Contains("selected", routeButton.Classes);
+        Assert.Equal("render/debug/frame-debugger", ToolTip.GetTip(routeButton));
 
         routeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)
         {

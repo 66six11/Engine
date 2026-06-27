@@ -16,6 +16,7 @@ public sealed class UiStylePanelTests
         var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
         Assert.Equal(GuiNodeKind.NavigationView, navigation.Kind);
         Assert.Equal("overview", navigation.Payload.SelectedRoute);
+        Assert.Contains(navigation.Payload.NavigationItems, item => item.Route == "foundations/navigation" && item.Label == "Navigation");
         Assert.Contains(navigation.Payload.NavigationItems, item => item.Route == "controls/buttons" && item.Label == "Buttons");
         Assert.Contains(navigation.Payload.NavigationItems, item => item.Route == "controls/foldouts" && item.Label == "Foldouts");
         Assert.Equal("Overview", navigation.Children[0].Label);
@@ -53,6 +54,19 @@ public sealed class UiStylePanelTests
         var muted = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/muted");
         Assert.Equal(GuiTextTone.Muted, muted.Payload.TextTone);
         Assert.Equal(GuiTextSize.Caption, muted.Payload.TextSize);
+    }
+
+    [Fact]
+    public void Navigation_page_documents_route_directory_contract()
+    {
+        var host = CreateAttachedHost();
+
+        host.SelectNavigationRoute(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), "foundations/navigation");
+
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal("Navigation", navigation.Children[0].Label);
+        Assert.Contains(navigation.Children, child => child.Label == "Route paths use slash-separated segments for the left directory.");
+        Assert.Contains(navigation.Children, child => child.Label == "Selected route and split ratio stay in GuiStateStore as panel-local UI state.");
     }
 
     [Fact]

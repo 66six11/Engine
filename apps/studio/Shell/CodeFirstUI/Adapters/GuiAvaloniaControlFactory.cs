@@ -305,6 +305,7 @@ internal sealed class GuiAvaloniaControlFactory
             Padding = new Avalonia.Thickness(8d + depth * 12d, 2d, 8d, 2d),
             Tag = route,
         };
+        ToolTip.SetTip(button, route);
         button.Classes.Add("code-first-navigation-route");
         if (string.Equals(route, selectedRoute, StringComparison.Ordinal))
         {

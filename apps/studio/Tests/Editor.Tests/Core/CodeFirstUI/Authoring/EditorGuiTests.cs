@@ -162,6 +162,91 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Navigation_view_falls_back_when_stored_route_is_removed()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var nodeId = new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView);
+        state.SetSelectedRoute(nodeId, "removed/page");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        using (var navigation = gui.NavigationView(
+            "catalog",
+            [
+                new GuiNavigationPage("overview", "Overview", editorGui => editorGui.Text("title", "Overview")),
+                new GuiNavigationPage("controls/buttons", "Buttons", editorGui => editorGui.Text("title", "Buttons")),
+            ],
+            "overview"))
+        {
+            Assert.Equal("overview", navigation.SelectedRoute);
+            Assert.True(navigation.DrawSelected(gui));
+        }
+
+        Assert.True(state.TryGetSelectedRoute(nodeId, out var storedRoute));
+        Assert.Equal("overview", storedRoute);
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal("overview", node.Payload.SelectedRoute);
+        Assert.Equal("Overview", Assert.Single(node.Children).Label);
+    }
+
+    [Fact]
+    public void Navigation_view_uses_stored_split_ratio()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetSplitRatio(
+            new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView),
+            0.42d);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        using (gui.NavigationView(
+            "catalog",
+            [new GuiNavigationPage("overview", "Overview", editorGui => editorGui.Text("title", "Overview"))],
+            "overview",
+            0.30d))
+        {
+        }
+
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(0.42d, node.Payload.SplitRatio);
+    }
+
+    [Fact]
+    public void Navigation_view_allows_duplicate_routes_to_reach_tree_validation()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        using (var navigation = gui.NavigationView(
+            "catalog",
+            [
+                new GuiNavigationPage("controls/buttons", "Buttons", editorGui => editorGui.Text("title", "Buttons")),
+                new GuiNavigationPage("controls/buttons", "Duplicate Buttons", editorGui => editorGui.Text("title", "Duplicate Buttons")),
+            ],
+            "controls/buttons"))
+        {
+            Assert.Equal("controls/buttons", navigation.SelectedRoute);
+            Assert.True(navigation.DrawSelected(gui));
+        }
+
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal("controls/buttons", node.Payload.SelectedRoute);
+        Assert.Equal(2, node.Payload.NavigationItems.Count);
+    }
+
+    [Fact]
     public void List_returns_stored_selection_and_emits_selected_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

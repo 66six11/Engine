@@ -12,6 +12,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
     [
         new("overview", "Overview", DrawOverviewPage),
         new("foundations/typography", "Typography", DrawTypographyPage),
+        new("foundations/navigation", "Navigation", DrawNavigationPage),
         new("controls/buttons", "Buttons", DrawButtonsPage),
         new("controls/inputs", "Inputs", DrawInputsPage),
         new("controls/lists", "Lists", DrawListsPage),
@@ -43,6 +44,14 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         gui.Text("primary", "Primary text: compact labels, property names, and active values.", GuiTextTone.Primary);
         gui.Text("secondary", "Secondary text: descriptions, metadata, and low-emphasis hints.", GuiTextTone.Secondary);
         gui.Text("muted", "Muted caption: disabled, unavailable, or secondary diagnostic context.", GuiTextTone.Muted, GuiTextSize.Caption);
+    }
+
+    private static void DrawNavigationPage(EditorGui gui)
+    {
+        gui.Text("title", "Navigation", GuiTextTone.Primary, GuiTextSize.Title);
+        gui.Text("routes", "Route paths use slash-separated segments for the left directory.");
+        gui.Text("state", "Selected route and split ratio stay in GuiStateStore as panel-local UI state.");
+        gui.Text("generator", "Source generators can emit page registries later; runtime reflection is not required.");
     }
 
     private static void DrawButtonsPage(EditorGui gui)

@@ -71,4 +71,27 @@ public sealed class GuiTreeValidatorTests
         Assert.Equal(GuiTreeValidationErrorCode.VirtualizedContentInsideScroll, error.Code);
         Assert.Equal("render.frameDebugger/details/passes", error.NodePath);
     }
+
+    [Fact]
+    public void Validate_reports_duplicate_navigation_routes()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        using (builder.NavigationView(
+            "catalog",
+            [
+                new GuiNavigationItem("controls/buttons", "Buttons"),
+                new GuiNavigationItem("controls/buttons", "Duplicate Buttons"),
+            ],
+            "controls/buttons"))
+        {
+            builder.Label("title", "Buttons");
+        }
+
+        var result = new GuiTreeValidator().Validate(builder.Build());
+
+        var error = Assert.Single(result.Errors);
+        Assert.False(result.IsValid);
+        Assert.Equal(GuiTreeValidationErrorCode.DuplicateNavigationRoute, error.Code);
+        Assert.Equal("ui.style/catalog", error.NodePath);
+    }
 }

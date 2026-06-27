@@ -20,7 +20,7 @@ public sealed class GuiNavigationScope : IDisposable
 
         innerScope_ = innerScope;
         SelectedRoute = selectedRoute;
-        pagesByRoute_ = pages.ToDictionary(page => page.Route, StringComparer.Ordinal);
+        pagesByRoute_ = CreatePagesByRoute(pages);
     }
 
     public string? SelectedRoute { get; }
@@ -48,5 +48,17 @@ public sealed class GuiNavigationScope : IDisposable
 
         innerScope_.Dispose();
         isDisposed_ = true;
+    }
+
+    private static IReadOnlyDictionary<string, GuiNavigationPage> CreatePagesByRoute(
+        IReadOnlyList<GuiNavigationPage> pages)
+    {
+        var pagesByRoute = new Dictionary<string, GuiNavigationPage>(StringComparer.Ordinal);
+        foreach (var page in pages)
+        {
+            pagesByRoute.TryAdd(page.Route, page);
+        }
+
+        return pagesByRoute;
     }
 }

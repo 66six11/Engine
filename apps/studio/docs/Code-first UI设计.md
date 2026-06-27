@@ -896,6 +896,13 @@ using (var navigation = gui.NavigationView("catalog", Pages, "overview"))
 
 The formal authoring surface is the route page registry. Source generators may generate this registry later from attributes, but runtime reflection is not required for the MVP.
 
+Route contract:
+- `route` is a stable id, not display text.
+- Empty routes, empty route segments, and empty labels are invalid.
+- Routes must be unique within one `NavigationView`; duplicate routes are reported by `GuiTreeValidator`.
+- `selectedRoute` and split ratio belong to `GuiStateStore` as panel-local UI state.
+- If a stored route no longer exists, `NavigationView` falls back to `defaultRoute`, then the first page.
+
 ## 14. 生命周期接入
 
 Host content 应实现现有接口：
