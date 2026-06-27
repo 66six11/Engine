@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
@@ -10,6 +11,7 @@ namespace Editor.Shell.CodeFirstUI.Adapters;
 
 internal sealed class GuiAvaloniaControlFactory
 {
+    private const double SplitterBreadth = 4d;
     private readonly IGuiAvaloniaHost host_;
 
     public GuiAvaloniaControlFactory(IGuiAvaloniaHost host)
@@ -112,22 +114,123 @@ internal sealed class GuiAvaloniaControlFactory
 
         if (node.Payload.SplitDirection == GuiSplitDirection.Vertical)
         {
-            grid.RowDefinitions.Add(new RowDefinition(new GridLength(ratio, GridUnitType.Star)));
-            grid.RowDefinitions.Add(new RowDefinition(new GridLength(1d - ratio, GridUnitType.Star)));
+            var firstRow = new RowDefinition(new GridLength(ratio, GridUnitType.Star));
+            var secondRow = new RowDefinition(new GridLength(1d - ratio, GridUnitType.Star));
+            grid.RowDefinitions.Add(firstRow);
+            grid.RowDefinitions.Add(new RowDefinition(new GridLength(SplitterBreadth)));
+            grid.RowDefinitions.Add(secondRow);
+            var splitter = CreateSplitter(node, GridResizeDirection.Rows, "horizontal");
+            AttachRowSplitRatioTracking(node.Id, firstRow, secondRow, grid);
             Grid.SetRow(first, 0);
-            Grid.SetRow(second, 1);
+            Grid.SetRow(splitter, 1);
+            Grid.SetRow(second, 2);
+            grid.Children.Add(first);
+            grid.Children.Add(splitter);
+            grid.Children.Add(second);
         }
         else
         {
-            grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(ratio, GridUnitType.Star)));
-            grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1d - ratio, GridUnitType.Star)));
+            var firstColumn = new ColumnDefinition(new GridLength(ratio, GridUnitType.Star));
+            var secondColumn = new ColumnDefinition(new GridLength(1d - ratio, GridUnitType.Star));
+            grid.ColumnDefinitions.Add(firstColumn);
+            grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(SplitterBreadth)));
+            grid.ColumnDefinitions.Add(secondColumn);
+            var splitter = CreateSplitter(node, GridResizeDirection.Columns, "vertical");
+            AttachColumnSplitRatioTracking(node.Id, firstColumn, secondColumn, grid);
             Grid.SetColumn(first, 0);
-            Grid.SetColumn(second, 1);
+            Grid.SetColumn(splitter, 1);
+            Grid.SetColumn(second, 2);
+            grid.Children.Add(first);
+            grid.Children.Add(splitter);
+            grid.Children.Add(second);
         }
 
-        grid.Children.Add(first);
-        grid.Children.Add(second);
         return grid;
+    }
+
+    private GridSplitter CreateSplitter(
+        GuiNode node,
+        GridResizeDirection resizeDirection,
+        string orientationClass)
+    {
+        var splitter = new GridSplitter
+        {
+            ResizeDirection = resizeDirection,
+            Tag = node.Id,
+        };
+        splitter.Classes.Add("code-first-splitter");
+        splitter.Classes.Add(orientationClass);
+        return splitter;
+    }
+
+    private void AttachColumnSplitRatioTracking(
+        GuiNodeId nodeId,
+        ColumnDefinition firstColumn,
+        ColumnDefinition secondColumn,
+        Grid grid)
+    {
+        grid.Tag = new SplitRatioSubscriptions(
+            firstColumn.GetObservable(ColumnDefinition.WidthProperty)
+                .Subscribe(new ActionObserver<GridLength>(_ => ReportColumnSplitRatio(nodeId, firstColumn, secondColumn))),
+            secondColumn.GetObservable(ColumnDefinition.WidthProperty)
+                .Subscribe(new ActionObserver<GridLength>(_ => ReportColumnSplitRatio(nodeId, firstColumn, secondColumn))));
+    }
+
+    private void AttachRowSplitRatioTracking(
+        GuiNodeId nodeId,
+        RowDefinition firstRow,
+        RowDefinition secondRow,
+        Grid grid)
+    {
+        grid.Tag = new SplitRatioSubscriptions(
+            firstRow.GetObservable(RowDefinition.HeightProperty)
+                .Subscribe(new ActionObserver<GridLength>(_ => ReportRowSplitRatio(nodeId, firstRow, secondRow))),
+            secondRow.GetObservable(RowDefinition.HeightProperty)
+                .Subscribe(new ActionObserver<GridLength>(_ => ReportRowSplitRatio(nodeId, firstRow, secondRow))));
+    }
+
+    private void ReportColumnSplitRatio(
+        GuiNodeId nodeId,
+        ColumnDefinition firstColumn,
+        ColumnDefinition secondColumn)
+    {
+        if (TryCalculateSplitRatio(firstColumn.Width, secondColumn.Width, out var ratio))
+        {
+            host_.ResizeSplit(nodeId, ratio);
+        }
+    }
+
+    private void ReportRowSplitRatio(
+        GuiNodeId nodeId,
+        RowDefinition firstRow,
+        RowDefinition secondRow)
+    {
+        if (TryCalculateSplitRatio(firstRow.Height, secondRow.Height, out var ratio))
+        {
+            host_.ResizeSplit(nodeId, ratio);
+        }
+    }
+
+    private static bool TryCalculateSplitRatio(
+        GridLength first,
+        GridLength second,
+        out double ratio)
+    {
+        var firstValue = first.Value;
+        var secondValue = second.Value;
+        var total = firstValue + secondValue;
+        if (double.IsNaN(total)
+            || double.IsInfinity(total)
+            || firstValue <= 0d
+            || secondValue <= 0d
+            || total <= 0d)
+        {
+            ratio = default;
+            return false;
+        }
+
+        ratio = firstValue / total;
+        return ratio > 0d && ratio < 1d;
     }
 
     private static Control BuildLabel(GuiNode node)
@@ -212,4 +315,31 @@ internal sealed class GuiAvaloniaControlFactory
     private sealed record GuiAvaloniaListItem(
         string Id,
         string Label);
+
+    private sealed record SplitRatioSubscriptions(
+        IDisposable FirstSubscription,
+        IDisposable SecondSubscription);
+
+    private sealed class ActionObserver<T> : IObserver<T>
+    {
+        private readonly Action<T> onNext_;
+
+        public ActionObserver(Action<T> onNext)
+        {
+            onNext_ = onNext;
+        }
+
+        public void OnCompleted()
+        {
+        }
+
+        public void OnError(Exception error)
+        {
+        }
+
+        public void OnNext(T value)
+        {
+            onNext_(value);
+        }
+    }
 }

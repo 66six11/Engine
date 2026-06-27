@@ -104,6 +104,28 @@ public sealed class EditorGuiTests
         Assert.Equal("overview", selected);
     }
 
+    [Fact]
+    public void Split_uses_stored_ratio_when_rebuilding_tree()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetSplitRatio(new GuiNodeId("ui.style", "layout", GuiNodeKind.Split), 0.42d);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        using (gui.Split("layout", GuiSplitDirection.Horizontal, 0.30d))
+        {
+            gui.Text("left", "Left");
+            gui.Text("right", "Right");
+        }
+
+        var split = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(0.42d, split.Payload.SplitRatio);
+    }
+
     private sealed class RecordingCommandExecutor : IEditorGuiCommandExecutor
     {
         private readonly List<string> commandIds_ = [];

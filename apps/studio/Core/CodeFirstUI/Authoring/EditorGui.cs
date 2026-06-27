@@ -99,7 +99,11 @@ public sealed class EditorGui
         GuiSplitDirection direction,
         double ratio)
     {
-        return builder_.Split(key, direction, ratio);
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.Split);
+        var resolvedRatio = StateStore.TryGetSplitRatio(nodeId, out var storedRatio)
+            ? storedRatio
+            : ratio;
+        return builder_.Split(key, direction, resolvedRatio);
     }
 
     public IDisposable Vertical(string key)

@@ -76,6 +76,14 @@ internal sealed class CodeFirstPanelHostViewModel :
         Rebuild();
     }
 
+    internal void ResizeSplit(GuiNodeId nodeId, double ratio)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        stateStore_.SetSplitRatio(nodeId, ratio);
+    }
+
     public void OnPanelAttached(EditorPanelLifecycleContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -197,6 +205,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SelectListItem(GuiNodeId nodeId, string itemId)
     {
         SelectListItem(nodeId, itemId);
+    }
+
+    void IGuiAvaloniaHost.ResizeSplit(GuiNodeId nodeId, double ratio)
+    {
+        ResizeSplit(nodeId, ratio);
     }
 
     private sealed class MissingCommandExecutor : IEditorGuiCommandExecutor

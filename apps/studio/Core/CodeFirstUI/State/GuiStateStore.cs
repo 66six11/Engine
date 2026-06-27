@@ -6,6 +6,7 @@ namespace Editor.Core.CodeFirstUI;
 public sealed class GuiStateStore
 {
     private readonly Dictionary<GuiNodeId, string> selectedItemsByNode_ = [];
+    private readonly Dictionary<GuiNodeId, double> splitRatiosByNode_ = [];
     private readonly Dictionary<GuiNodeId, string> textByNode_ = [];
 
     public void SetText(GuiNodeId nodeId, string text)
@@ -36,11 +37,33 @@ public sealed class GuiStateStore
         return selectedItemsByNode_.TryGetValue(nodeId, out itemId);
     }
 
+    public void SetSplitRatio(GuiNodeId nodeId, double ratio)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0d || ratio >= 1d)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ratio),
+                ratio,
+                "Split ratio must be greater than 0 and less than 1.");
+        }
+
+        splitRatiosByNode_[nodeId] = ratio;
+    }
+
+    public bool TryGetSplitRatio(GuiNodeId nodeId, out double ratio)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+
+        return splitRatiosByNode_.TryGetValue(nodeId, out ratio);
+    }
+
     public void ClearNodeState(GuiNodeId nodeId)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
 
         textByNode_.Remove(nodeId);
         selectedItemsByNode_.Remove(nodeId);
+        splitRatiosByNode_.Remove(nodeId);
     }
 }

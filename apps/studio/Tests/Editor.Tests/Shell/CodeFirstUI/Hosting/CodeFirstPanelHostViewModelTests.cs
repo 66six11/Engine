@@ -95,6 +95,28 @@ public sealed class CodeFirstPanelHostViewModelTests
         Assert.Equal("Buttons", Assert.Single(preview.Children).Label);
     }
 
+    [Fact]
+    public void Resize_split_updates_state_without_immediate_rebuild_and_next_rebuild_uses_ratio()
+    {
+        var panel = new SplitDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.ResizeSplit(new GuiNodeId("ui.style", "layout", GuiNodeKind.Split), 0.45d);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetSplitRatio(
+            new GuiNodeId("ui.style", "layout", GuiNodeKind.Split),
+            out var storedRatio));
+        Assert.Equal(0.45d, storedRatio);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal(0.45d, split.Payload.SplitRatio);
+    }
+
     private static EditorPanelLifecycleContext CreateLifecycleContext(string panelId = "render.frameDebugger")
     {
         return new EditorPanelLifecycleContext(
@@ -186,6 +208,21 @@ public sealed class CodeFirstPanelHostViewModelTests
                 {
                     gui.Label("title", SelectedSectionId == "buttons" ? "Buttons" : "Overview");
                 }
+            }
+        }
+    }
+
+    private sealed class SplitDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            using (gui.Split("layout", GuiSplitDirection.Horizontal, 0.30d))
+            {
+                gui.Text("left", "Left");
+                gui.Text("right", "Right");
             }
         }
     }
