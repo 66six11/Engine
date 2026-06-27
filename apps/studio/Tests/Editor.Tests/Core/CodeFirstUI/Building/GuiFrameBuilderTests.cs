@@ -142,4 +142,25 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal("Shader metadata is missing.", message.Label);
         Assert.Equal(EditorDiagnosticSeverity.Warning, message.Payload.DiagnosticSeverity);
     }
+
+    [Fact]
+    public void Build_preserves_foldout_payload_and_children()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        using (builder.Foldout("advanced", "Advanced", isExpanded: false))
+        {
+            builder.Label("hint", "Deferred details");
+        }
+
+        var foldout = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Foldout, foldout.Kind);
+        Assert.Equal("advanced", foldout.Id.KeyPath);
+        Assert.Equal("Advanced", foldout.Label);
+        Assert.False(foldout.Payload.IsExpanded);
+
+        var child = Assert.Single(foldout.Children);
+        Assert.Equal("advanced/hint", child.Id.KeyPath);
+        Assert.Equal("Deferred details", child.Label);
+    }
 }

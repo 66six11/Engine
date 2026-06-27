@@ -132,6 +132,21 @@ public sealed class EditorGui
         return builder_.Panel(key, label);
     }
 
+    public GuiFoldoutScope Foldout(
+        string key,
+        string label,
+        bool defaultExpanded = true)
+    {
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.Foldout);
+        var isExpanded = StateStore.TryGetFoldoutExpanded(nodeId, out var storedExpanded)
+            ? storedExpanded
+            : defaultExpanded;
+        StateStore.SetFoldoutExpanded(nodeId, isExpanded);
+        return new GuiFoldoutScope(
+            builder_.Foldout(key, label, isExpanded),
+            isExpanded);
+    }
+
     public IDisposable Split(
         string key,
         GuiSplitDirection direction,

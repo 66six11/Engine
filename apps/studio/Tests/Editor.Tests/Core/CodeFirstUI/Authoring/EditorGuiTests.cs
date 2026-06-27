@@ -210,6 +210,36 @@ public sealed class EditorGuiTests
         Assert.Equal(EditorDiagnosticSeverity.Warning, message.Payload.DiagnosticSeverity);
     }
 
+    [Fact]
+    public void Foldout_uses_stored_expanded_state_and_allows_collapsed_content_to_be_skipped()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetFoldoutExpanded(new GuiNodeId("ui.style", "advanced", GuiNodeKind.Foldout), isExpanded: false);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+        var expensiveContentWasBuilt = false;
+
+        using (var foldout = gui.Foldout("advanced", "Advanced", defaultExpanded: true))
+        {
+            Assert.False(foldout.IsExpanded);
+            if (foldout.IsExpanded)
+            {
+                expensiveContentWasBuilt = true;
+                gui.Text("expensive", "Deferred details");
+            }
+        }
+
+        Assert.False(expensiveContentWasBuilt);
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Foldout, node.Kind);
+        Assert.False(node.Payload.IsExpanded);
+        Assert.Empty(node.Children);
+    }
+
     private sealed class RecordingCommandExecutor : IEditorGuiCommandExecutor
     {
         private readonly List<string> commandIds_ = [];

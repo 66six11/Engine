@@ -50,6 +50,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Horizontal => BuildStack(node.Children, Orientation.Horizontal, "code-first-horizontal"),
             GuiNodeKind.Toolbar => BuildStack(node.Children, Orientation.Horizontal, "code-first-toolbar"),
             GuiNodeKind.Panel => BuildPanel(node),
+            GuiNodeKind.Foldout => BuildFoldout(node),
             GuiNodeKind.Split => BuildSplit(node),
             GuiNodeKind.Scroll => BuildScroll(node),
             GuiNodeKind.Label => BuildLabel(node),
@@ -276,6 +277,37 @@ internal sealed class GuiAvaloniaControlFactory
 
         ratio = firstValue / total;
         return ratio > 0d && ratio < 1d;
+    }
+
+    private Control BuildFoldout(GuiNode node)
+    {
+        var expander = new Expander
+        {
+            Content = BuildStack(node.Children, Orientation.Vertical, "code-first-foldout-content"),
+            Header = node.Label ?? string.Empty,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsExpanded = node.Payload.IsExpanded == true,
+        };
+        expander.Classes.Add("code-first-foldout");
+        AttachFoldoutTracking(node.Id, expander);
+        return expander;
+    }
+
+    private void AttachFoldoutTracking(GuiNodeId nodeId, Expander expander)
+    {
+        var hasObservedInitialValue = false;
+        expander.Tag = expander
+            .GetObservable(Expander.IsExpandedProperty)
+            .Subscribe(new ActionObserver<bool>(isExpanded =>
+            {
+                if (!hasObservedInitialValue)
+                {
+                    hasObservedInitialValue = true;
+                    return;
+                }
+
+                host_.SetFoldoutExpanded(nodeId, isExpanded);
+            }));
     }
 
     private Control BuildScroll(GuiNode node)

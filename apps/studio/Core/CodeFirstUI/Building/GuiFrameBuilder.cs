@@ -127,6 +127,21 @@ public sealed class GuiFrameBuilder
         return PushContainer(key, GuiNodeKind.Panel, label);
     }
 
+    public IDisposable Foldout(
+        string key,
+        string label,
+        bool isExpanded)
+    {
+        return PushContainer(
+            key,
+            GuiNodeKind.Foldout,
+            label,
+            new GuiNodePayload
+            {
+                IsExpanded = isExpanded,
+            });
+    }
+
     public IDisposable Split(
         string key,
         GuiSplitDirection direction,

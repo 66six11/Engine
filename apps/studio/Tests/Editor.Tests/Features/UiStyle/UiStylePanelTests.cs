@@ -23,6 +23,7 @@ public sealed class UiStylePanelTests
         Assert.Equal(GuiNodeKind.List, sections.Kind);
         Assert.Equal("overview", sections.Payload.SelectedItemId);
         Assert.Contains(sections.Payload.ListItems, item => item.Id == "buttons" && item.Label == "Buttons");
+        Assert.Contains(sections.Payload.ListItems, item => item.Id == "foldouts" && item.Label == "Foldouts");
 
         var preview = split.Children[1];
         Assert.Equal("Preview", preview.Label);
@@ -77,6 +78,27 @@ public sealed class UiStylePanelTests
             scroll.Children,
             child => child.Kind == GuiNodeKind.ValidationMessage
                 && child.Payload.DiagnosticSeverity == EditorDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void Foldouts_page_contains_expanded_and_collapsed_samples()
+    {
+        var host = CreateAttachedHost();
+
+        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "foldouts");
+
+        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        var preview = split.Children[1];
+        Assert.Equal("Foldouts", preview.Children[0].Label);
+        var expanded = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/rendering");
+        Assert.Equal(GuiNodeKind.Foldout, expanded.Kind);
+        Assert.True(expanded.Payload.IsExpanded);
+        Assert.NotEmpty(expanded.Children);
+
+        var collapsed = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/advanced");
+        Assert.Equal(GuiNodeKind.Foldout, collapsed.Kind);
+        Assert.False(collapsed.Payload.IsExpanded);
+        Assert.Empty(collapsed.Children);
     }
 
     private static CodeFirstPanelHostViewModel CreateAttachedHost()

@@ -15,4 +15,6 @@ internal interface IGuiAvaloniaHost
     void CommitText(GuiNodeId nodeId, string text);
 
     void SetToggle(GuiNodeId nodeId, bool isChecked);
+
+    void SetFoldoutExpanded(GuiNodeId nodeId, bool isExpanded);
 }

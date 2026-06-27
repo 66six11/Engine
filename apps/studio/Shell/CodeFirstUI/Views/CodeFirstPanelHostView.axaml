@@ -27,6 +27,12 @@
         <Style Selector="ScrollViewer.code-first-scroll">
             <Setter Property="Padding" Value="0" />
         </Style>
+        <Style Selector="Expander.code-first-foldout">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="StackPanel.code-first-foldout-content">
+            <Setter Property="Margin" Value="12,4,0,0" />
+        </Style>
         <Style Selector="TextBlock.code-first-validation-message">
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
             <Setter Property="LineHeight" Value="18" />

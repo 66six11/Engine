@@ -24,5 +24,7 @@ public sealed record GuiNodePayload
 
     public bool? IsChecked { get; init; }
 
+    public bool? IsExpanded { get; init; }
+
     public EditorDiagnosticSeverity? DiagnosticSeverity { get; init; }
 }

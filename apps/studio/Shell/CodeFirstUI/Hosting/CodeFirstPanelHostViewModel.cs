@@ -110,6 +110,15 @@ internal sealed class CodeFirstPanelHostViewModel :
         Rebuild();
     }
 
+    internal void SetFoldoutExpanded(GuiNodeId nodeId, bool isExpanded)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        stateStore_.SetFoldoutExpanded(nodeId, isExpanded);
+        Rebuild();
+    }
+
     public void OnPanelAttached(EditorPanelLifecycleContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -251,6 +260,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SetToggle(GuiNodeId nodeId, bool isChecked)
     {
         SetToggle(nodeId, isChecked);
+    }
+
+    void IGuiAvaloniaHost.SetFoldoutExpanded(GuiNodeId nodeId, bool isExpanded)
+    {
+        SetFoldoutExpanded(nodeId, isExpanded);
     }
 
     private sealed class MissingCommandExecutor : IEditorGuiCommandExecutor

@@ -176,6 +176,28 @@ public sealed class CodeFirstPanelHostViewModelTests
         Assert.True(panel.ShowDisabled);
     }
 
+    [Fact]
+    public void Set_foldout_expanded_updates_state_and_rebuilds_tree()
+    {
+        var panel = new FoldoutDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetFoldoutExpanded(
+            new GuiNodeId("ui.style", "advanced", GuiNodeKind.Foldout),
+            isExpanded: true);
+
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetFoldoutExpanded(
+            new GuiNodeId("ui.style", "advanced", GuiNodeKind.Foldout),
+            out var isExpanded));
+        Assert.True(isExpanded);
+        var foldout = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.True(foldout.Payload.IsExpanded);
+        Assert.Single(foldout.Children);
+    }
+
     private static EditorPanelLifecycleContext CreateLifecycleContext(string panelId = "render.frameDebugger")
     {
         return new EditorPanelLifecycleContext(
@@ -299,6 +321,23 @@ public sealed class CodeFirstPanelHostViewModelTests
             GuiBuildCount++;
             FilterText = gui.TextInput("filter", "Filter", "default");
             ShowDisabled = gui.Toggle("show-disabled", "Show Disabled");
+        }
+    }
+
+    private sealed class FoldoutDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            using (var foldout = gui.Foldout("advanced", "Advanced", defaultExpanded: false))
+            {
+                if (foldout.IsExpanded)
+                {
+                    gui.Text("details", "Deferred details");
+                }
+            }
         }
     }
 }

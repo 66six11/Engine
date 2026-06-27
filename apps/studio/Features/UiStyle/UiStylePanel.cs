@@ -15,6 +15,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         new("buttons", "Buttons"),
         new("inputs", "Inputs"),
         new("lists", "Lists"),
+        new("foldouts", "Foldouts"),
         new("states", "States"),
     ];
 
@@ -51,6 +52,9 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
                 break;
             case "lists":
                 DrawListsPage(gui);
+                break;
+            case "foldouts":
+                DrawFoldoutsPage(gui);
                 break;
             case "states":
                 DrawStatesPage(gui);
@@ -107,6 +111,30 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         gui.Text("title", "Lists");
         gui.Text("single", "Single-selection lists are stateful and rebuild the preview after selection changes.");
         gui.Text("future", "Tree, table, and virtualized collection nodes should share the same node/state boundary.");
+    }
+
+    private static void DrawFoldoutsPage(EditorGui gui)
+    {
+        gui.Text("title", "Foldouts");
+        using (var foldout = gui.Foldout("rendering", "Rendering Diagnostics"))
+        {
+            if (foldout.IsExpanded)
+            {
+                gui.Text("capture", "Capture state, pass metadata, and shader diagnostics belong under focused foldouts.");
+                gui.ValidationMessage(
+                    "warning",
+                    "Warning: collapsed foldouts should skip expensive child UI declaration.",
+                    EditorDiagnosticSeverity.Warning);
+            }
+        }
+
+        using (var foldout = gui.Foldout("advanced", "Advanced", defaultExpanded: false))
+        {
+            if (foldout.IsExpanded)
+            {
+                gui.Text("deferred", "This deferred sample is only declared when the foldout is expanded.");
+            }
+        }
     }
 
     private static void DrawStatesPage(EditorGui gui)

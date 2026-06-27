@@ -116,6 +116,33 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_foldout_to_expander_and_reports_expanded_changes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        using (builder.Foldout("advanced", "Advanced", isExpanded: false))
+        {
+            builder.Label("details", "Deferred details");
+        }
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var control = factory.Build(builder.Build());
+
+        var expander = FindDescendant<Expander>(control);
+        Assert.NotNull(expander);
+        Assert.Equal("Advanced", expander!.Header);
+        Assert.False(expander.IsExpanded);
+        Assert.Contains("code-first-foldout", expander.Classes);
+        Assert.Empty(host.FoldoutChanges);
+
+        expander.IsExpanded = true;
+
+        var change = Assert.Single(host.FoldoutChanges);
+        Assert.Equal(new GuiNodeId("ui-style", "advanced", GuiNodeKind.Foldout), change.NodeId);
+        Assert.True(change.IsExpanded);
+    }
+
+    [Fact]
     public void Splitter_width_changes_are_reported_to_host_as_split_ratio()
     {
         var builder = new GuiFrameBuilder("ui-style");
@@ -306,6 +333,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         public void SetToggle(GuiNodeId nodeId, bool isChecked)
         {
         }
+
+        public void SetFoldoutExpanded(GuiNodeId nodeId, bool isExpanded)
+        {
+        }
     }
 
     private sealed class RecordingCodeFirstPanelHost : IGuiAvaloniaHost
@@ -314,6 +345,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<TextChange> textChanges_ = [];
         private readonly List<TextChange> textCommits_ = [];
         private readonly List<ToggleChange> toggleChanges_ = [];
+        private readonly List<FoldoutChange> foldoutChanges_ = [];
 
         public IReadOnlyList<SplitResize> SplitResizes => splitResizes_;
 
@@ -322,6 +354,8 @@ public sealed class GuiAvaloniaControlFactoryTests
         public IReadOnlyList<TextChange> TextCommits => textCommits_;
 
         public IReadOnlyList<ToggleChange> ToggleChanges => toggleChanges_;
+
+        public IReadOnlyList<FoldoutChange> FoldoutChanges => foldoutChanges_;
 
         public void ClickButton(GuiNodeId nodeId)
         {
@@ -350,6 +384,11 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
             toggleChanges_.Add(new ToggleChange(nodeId, isChecked));
         }
+
+        public void SetFoldoutExpanded(GuiNodeId nodeId, bool isExpanded)
+        {
+            foldoutChanges_.Add(new FoldoutChange(nodeId, isExpanded));
+        }
     }
 
     private sealed record SplitResize(
@@ -363,6 +402,10 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record ToggleChange(
         GuiNodeId NodeId,
         bool IsChecked);
+
+    private sealed record FoldoutChange(
+        GuiNodeId NodeId,
+        bool IsExpanded);
 
     private sealed class RecordingTextCommitScheduler : IGuiTextCommitScheduler
     {
