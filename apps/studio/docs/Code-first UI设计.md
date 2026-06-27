@@ -1113,24 +1113,30 @@ public override GuiApiVersion RequiredGuiApiVersion => new(1, 0);
 建议目录：
 
 ```text
-Core/Abstractions/CodeFirstEditorPanel.cs
-Core/Abstractions/IEditorGui.cs
-Core/Models/GuiNode.cs
-Core/Models/GuiNodeKind.cs
-Core/Models/GuiTreeSnapshot.cs
-Core/Models/GuiListItem.cs
+Core/CodeFirstUI/Abstractions/CodeFirstEditorPanel.cs
+Core/CodeFirstUI/Abstractions/IEditorGui.cs
+Core/CodeFirstUI/Models/GuiNode.cs
+Core/CodeFirstUI/Models/GuiNodeKind.cs
+Core/CodeFirstUI/Models/GuiTreeSnapshot.cs
+Core/CodeFirstUI/Models/GuiListItem.cs
+Core/CodeFirstUI/Building/GuiFrameBuilder.cs
+Core/CodeFirstUI/Events/GuiEventQueue.cs
+Core/CodeFirstUI/State/GuiStateStore.cs
+Core/CodeFirstUI/Validation/GuiTreeValidator.cs
+Core/CodeFirstUI/Validation/GuiTreeValidation*.cs
 
-Shell/CodeFirstUI/CodeFirstPanelHostViewModel.cs
-Shell/CodeFirstUI/EditorGui.cs
-Shell/CodeFirstUI/GuiFrameBuilder.cs
-Shell/CodeFirstUI/GuiStateStore.cs
-Shell/CodeFirstUI/GuiEventQueue.cs
-Shell/CodeFirstUI/GuiTreeValidator.cs
-Shell/CodeFirstUI/GuiAvaloniaReconciler.cs
+Shell/CodeFirstUI/Hosting/CodeFirstPanelHostViewModel.cs
+Shell/CodeFirstUI/Authoring/EditorGui.cs
+Shell/CodeFirstUI/Reconciliation/GuiAvaloniaReconciler.cs
 Shell/CodeFirstUI/Adapters/*.cs
 
 Shell/Views/CodeFirstPanelHostView.axaml
 Shell/Views/CodeFirstPanelHostView.axaml.cs
+
+Tests/Editor.Tests/Core/CodeFirstUI/Building/*.cs
+Tests/Editor.Tests/Core/CodeFirstUI/Events/*.cs
+Tests/Editor.Tests/Core/CodeFirstUI/State/*.cs
+Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 ```
 
 如果后续发现 `Core` 放 UI contract 太重，可以拆到独立 `Editor.Core.EditorUi` 命名空间，但仍不能引用 Avalonia。
