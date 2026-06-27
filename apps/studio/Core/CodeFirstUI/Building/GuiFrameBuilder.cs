@@ -27,9 +27,21 @@ public sealed class GuiFrameBuilder
         nodeStack_.Push(root_);
     }
 
-    public GuiNodeId Label(string key, string label)
+    public GuiNodeId Label(
+        string key,
+        string label,
+        GuiTextTone tone = GuiTextTone.Secondary,
+        GuiTextSize size = GuiTextSize.Body)
     {
-        return AddLeaf(key, GuiNodeKind.Label, label);
+        return AddLeaf(
+            key,
+            GuiNodeKind.Label,
+            label,
+            new GuiNodePayload
+            {
+                TextTone = tone,
+                TextSize = size,
+            });
     }
 
     public GuiNodeId Button(string key, string label)

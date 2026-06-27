@@ -22,6 +22,10 @@ public sealed record GuiNodePayload
 
     public TimeSpan? TextCommitDelay { get; init; }
 
+    public GuiTextTone? TextTone { get; init; }
+
+    public GuiTextSize? TextSize { get; init; }
+
     public bool? IsChecked { get; init; }
 
     public bool? IsExpanded { get; init; }

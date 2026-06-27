@@ -20,6 +20,28 @@
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
             <Setter Property="LineHeight" Value="18" />
         </Style>
+        <Style Selector="TextBlock.code-first-label.primary">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.secondary">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.muted">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.body">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.caption">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="LineHeight" Value="16" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.title">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeHeading}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
         <Style Selector="TextBlock.code-first-unsupported">
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />

@@ -42,6 +42,20 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_label_tone_and_size_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        builder.Label("title", "Typography", GuiTextTone.Primary, GuiTextSize.Title);
+
+        var label = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Label, label.Kind);
+        Assert.Equal("Typography", label.Label);
+        Assert.Equal(GuiTextTone.Primary, label.Payload.TextTone);
+        Assert.Equal(GuiTextSize.Title, label.Payload.TextSize);
+    }
+
+    [Fact]
     public void Build_preserves_split_panel_and_list_payloads()
     {
         var builder = new GuiFrameBuilder("ui.style");

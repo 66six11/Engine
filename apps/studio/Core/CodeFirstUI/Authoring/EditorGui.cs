@@ -30,14 +30,22 @@ public sealed class EditorGui
 
     public GuiStateStore StateStore { get; }
 
-    public void Label(string key, string label)
+    public void Label(
+        string key,
+        string label,
+        GuiTextTone tone = GuiTextTone.Secondary,
+        GuiTextSize size = GuiTextSize.Body)
     {
-        builder_.Label(key, label);
+        builder_.Label(key, label, tone, size);
     }
 
-    public void Text(string key, string text)
+    public void Text(
+        string key,
+        string text,
+        GuiTextTone tone = GuiTextTone.Secondary,
+        GuiTextSize size = GuiTextSize.Body)
     {
-        Label(key, text);
+        Label(key, text, tone, size);
     }
 
     public bool Button(string key, string label)

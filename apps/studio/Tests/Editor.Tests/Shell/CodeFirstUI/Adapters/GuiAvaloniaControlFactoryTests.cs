@@ -52,6 +52,34 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_label_tone_and_size_to_text_classes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.Label("title", "Typography", GuiTextTone.Primary, GuiTextSize.Title);
+        builder.Label("hint", "Muted caption", GuiTextTone.Muted, GuiTextSize.Caption);
+
+        var factory = new GuiAvaloniaControlFactory(new NoopCodeFirstPanelHost());
+
+        var control = factory.Build(builder.Build());
+
+        var title = FindDescendant<TextBlock>(
+            control,
+            textBlock => textBlock.Text == "Typography");
+        Assert.NotNull(title);
+        Assert.Contains("code-first-label", title!.Classes);
+        Assert.Contains("primary", title.Classes);
+        Assert.Contains("title", title.Classes);
+
+        var hint = FindDescendant<TextBlock>(
+            control,
+            textBlock => textBlock.Text == "Muted caption");
+        Assert.NotNull(hint);
+        Assert.Contains("code-first-label", hint!.Classes);
+        Assert.Contains("muted", hint.Classes);
+        Assert.Contains("caption", hint.Classes);
+    }
+
+    [Fact]
     public void Build_panel_constrains_list_rows_for_virtualized_content()
     {
         var builder = new GuiFrameBuilder("ui-style");

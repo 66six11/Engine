@@ -64,6 +64,42 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Text_emits_label_tone_and_size_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        gui.Text("hint", "Muted caption", GuiTextTone.Muted, GuiTextSize.Caption);
+
+        var label = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Label, label.Kind);
+        Assert.Equal("Muted caption", label.Label);
+        Assert.Equal(GuiTextTone.Muted, label.Payload.TextTone);
+        Assert.Equal(GuiTextSize.Caption, label.Payload.TextSize);
+    }
+
+    [Fact]
+    public void Text_defaults_to_secondary_body_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        gui.Text("summary", "Default label");
+
+        var label = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiTextTone.Secondary, label.Payload.TextTone);
+        Assert.Equal(GuiTextSize.Body, label.Payload.TextSize);
+    }
+
+    [Fact]
     public void List_returns_stored_selection_and_emits_selected_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

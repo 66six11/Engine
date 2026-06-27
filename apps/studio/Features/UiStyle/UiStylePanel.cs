@@ -67,22 +67,22 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
 
     private static void DrawOverviewPage(EditorGui gui)
     {
-        gui.Text("title", "Overview");
+        gui.Text("title", "Overview", GuiTextTone.Primary, GuiTextSize.Title);
         gui.Text("summary", "Code-first UI style samples for editor panels and tool windows.");
         gui.Text("layout", "The catalog uses a left navigation list and the preview uses the selected page.");
     }
 
     private static void DrawTypographyPage(EditorGui gui)
     {
-        gui.Text("title", "Typography");
-        gui.Text("primary", "Primary text: compact labels, property names, and active values.");
-        gui.Text("secondary", "Secondary text: descriptions, metadata, and low-emphasis hints.");
-        gui.Text("muted", "Muted text: disabled or unavailable editor state.");
+        gui.Text("title", "Typography", GuiTextTone.Primary, GuiTextSize.Title);
+        gui.Text("primary", "Primary text: compact labels, property names, and active values.", GuiTextTone.Primary);
+        gui.Text("secondary", "Secondary text: descriptions, metadata, and low-emphasis hints.", GuiTextTone.Secondary);
+        gui.Text("muted", "Muted caption: disabled, unavailable, or secondary diagnostic context.", GuiTextTone.Muted, GuiTextSize.Caption);
     }
 
     private static void DrawButtonsPage(EditorGui gui)
     {
-        gui.Text("title", "Buttons");
+        gui.Text("title", "Buttons", GuiTextTone.Primary, GuiTextSize.Title);
         using (gui.Toolbar("actions"))
         {
             gui.Button("primary", "Primary");
@@ -95,7 +95,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
 
     private static void DrawInputsPage(EditorGui gui)
     {
-        gui.Text("title", "Inputs");
+        gui.Text("title", "Inputs", GuiTextTone.Primary, GuiTextSize.Title);
         gui.TextInput(
             "filter",
             "Filter",
@@ -108,14 +108,14 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
 
     private static void DrawListsPage(EditorGui gui)
     {
-        gui.Text("title", "Lists");
+        gui.Text("title", "Lists", GuiTextTone.Primary, GuiTextSize.Title);
         gui.Text("single", "Single-selection lists are stateful and rebuild the preview after selection changes.");
         gui.Text("future", "Tree, table, and virtualized collection nodes should share the same node/state boundary.");
     }
 
     private static void DrawFoldoutsPage(EditorGui gui)
     {
-        gui.Text("title", "Foldouts");
+        gui.Text("title", "Foldouts", GuiTextTone.Primary, GuiTextSize.Title);
         using (var foldout = gui.Foldout("rendering", "Rendering Diagnostics"))
         {
             if (foldout.IsExpanded)
@@ -139,7 +139,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
 
     private static void DrawStatesPage(EditorGui gui)
     {
-        gui.Text("title", "States");
+        gui.Text("title", "States", GuiTextTone.Primary, GuiTextSize.Title);
         using (gui.Scroll("feedback"))
         {
             gui.ValidationMessage(

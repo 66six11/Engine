@@ -332,7 +332,31 @@ internal sealed class GuiAvaloniaControlFactory
             TextWrapping = Avalonia.Media.TextWrapping.Wrap,
         };
         textBlock.Classes.Add("code-first-label");
+        textBlock.Classes.Add(GetTextToneClass(node.Payload.TextTone ?? GuiTextTone.Secondary));
+        textBlock.Classes.Add(GetTextSizeClass(node.Payload.TextSize ?? GuiTextSize.Body));
         return textBlock;
+    }
+
+    private static string GetTextToneClass(GuiTextTone tone)
+    {
+        return tone switch
+        {
+            GuiTextTone.Primary => "primary",
+            GuiTextTone.Secondary => "secondary",
+            GuiTextTone.Muted => "muted",
+            _ => "secondary",
+        };
+    }
+
+    private static string GetTextSizeClass(GuiTextSize size)
+    {
+        return size switch
+        {
+            GuiTextSize.Body => "body",
+            GuiTextSize.Caption => "caption",
+            GuiTextSize.Title => "title",
+            _ => "body",
+        };
     }
 
     private static Control BuildValidationMessage(GuiNode node)

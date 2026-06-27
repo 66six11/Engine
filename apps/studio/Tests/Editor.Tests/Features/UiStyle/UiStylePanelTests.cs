@@ -44,6 +44,29 @@ public sealed class UiStylePanelTests
     }
 
     [Fact]
+    public void Typography_page_contains_tone_and_size_samples()
+    {
+        var host = CreateAttachedHost();
+
+        host.SelectListItem(new GuiNodeId("ui-style", "layout/catalog/sections", GuiNodeKind.List), "typography");
+
+        var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        var preview = split.Children[1];
+        var title = preview.Children[0];
+        Assert.Equal("Typography", title.Label);
+        Assert.Equal(GuiTextTone.Primary, title.Payload.TextTone);
+        Assert.Equal(GuiTextSize.Title, title.Payload.TextSize);
+
+        var primary = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/primary");
+        Assert.Equal(GuiTextTone.Primary, primary.Payload.TextTone);
+        Assert.Equal(GuiTextSize.Body, primary.Payload.TextSize);
+
+        var muted = Assert.Single(preview.Children, child => child.Id.KeyPath == "layout/preview/muted");
+        Assert.Equal(GuiTextTone.Muted, muted.Payload.TextTone);
+        Assert.Equal(GuiTextSize.Caption, muted.Payload.TextSize);
+    }
+
+    [Fact]
     public void Inputs_page_contains_code_first_text_field_and_toggle_samples()
     {
         var host = CreateAttachedHost();
