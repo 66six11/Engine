@@ -90,9 +90,13 @@ public sealed class UiStylePanelTests
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.NumberInput);
         var filter = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
         Assert.Equal(GuiTextInputCommitMode.Debounced, filter.Payload.TextCommitMode);
-        var comboBox = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.ComboBox);
+        var comboBox = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/render-mode");
         Assert.Equal("deferred", comboBox.Payload.SelectedItemId);
         Assert.Contains(comboBox.Payload.ListItems, item => item.Id == "forward" && item.Label == "Forward");
+        var enumPopup = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/render-path");
+        Assert.Equal(GuiNodeKind.ComboBox, enumPopup.Kind);
+        Assert.Equal("Deferred", enumPopup.Payload.SelectedItemId);
+        Assert.Contains(enumPopup.Payload.ListItems, item => item.Id == "RayTracing" && item.Label == "Ray Tracing");
         var radioGroup = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.RadioGroup);
         Assert.Equal("lit", radioGroup.Payload.SelectedItemId);
         Assert.Contains(radioGroup.Payload.ListItems, item => item.Id == "wireframe" && item.Label == "Wireframe");

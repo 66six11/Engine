@@ -428,6 +428,52 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Enum_popup_returns_stored_enum_and_emits_combo_box_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetSelectedItem(new GuiNodeId("ui.style", "render-path", GuiNodeKind.ComboBox), "RayTracing");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var selected = gui.EnumPopup("render-path", "Render Path", RenderPathMode.Deferred);
+
+        Assert.Equal(RenderPathMode.RayTracing, selected);
+
+        var comboBox = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.ComboBox, comboBox.Kind);
+        Assert.Equal("Render Path", comboBox.Label);
+        Assert.Equal("RayTracing", comboBox.Payload.SelectedItemId);
+        Assert.Contains(comboBox.Payload.ListItems, item => item.Id == "Forward" && item.Label == "Forward");
+        Assert.Contains(comboBox.Payload.ListItems, item => item.Id == "RayTracing" && item.Label == "Ray Tracing");
+    }
+
+    [Fact]
+    public void Enum_popup_falls_back_to_selected_value_when_stored_selection_is_removed()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var nodeId = new GuiNodeId("ui.style", "render-path", GuiNodeKind.ComboBox);
+        state.SetSelectedItem(nodeId, "Removed");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var selected = gui.EnumPopup("render-path", "Render Path", RenderPathMode.Deferred);
+
+        Assert.Equal(RenderPathMode.Deferred, selected);
+        Assert.True(state.TryGetSelectedItem(nodeId, out var storedSelection));
+        Assert.Equal("Deferred", storedSelection);
+        var comboBox = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal("Deferred", comboBox.Payload.SelectedItemId);
+    }
+
+    [Fact]
     public void Color_field_returns_stored_value_and_emits_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");
@@ -744,5 +790,12 @@ public sealed class EditorGuiTests
             commandIds_.Add(commandId);
             return WorkbenchCommandExecutionResult.Success(commandId);
         }
+    }
+
+    private enum RenderPathMode
+    {
+        Forward,
+        Deferred,
+        RayTracing,
     }
 }

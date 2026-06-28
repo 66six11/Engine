@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Editor.Core.Models;
 
 namespace Editor.Core.CodeFirstUI;
@@ -125,6 +126,28 @@ public sealed class EditorGui
 
         builder_.RadioGroup(key, label, items, selected);
         return selected;
+    }
+
+    public TEnum EnumPopup<TEnum>(
+        string key,
+        string label,
+        TEnum selected)
+        where TEnum : struct, Enum
+    {
+        var items = EnumPopupCache<TEnum>.Items;
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.ComboBox);
+        var selectedItemId = EnumPopupCache<TEnum>.GetItemId(selected);
+        var resolvedItemId = ResolveItemSelection(nodeId, items, selectedItemId);
+        if (resolvedItemId is not null)
+        {
+            StateStore.SetSelectedItem(nodeId, resolvedItemId);
+        }
+
+        builder_.ComboBox(key, label, items, resolvedItemId);
+        return resolvedItemId is not null
+            && EnumPopupCache<TEnum>.TryGetValue(resolvedItemId, out var resolvedValue)
+                ? resolvedValue
+                : selected;
     }
 
     public GuiColorValue ColorField(
@@ -527,6 +550,41 @@ public sealed class EditorGui
             && items.Any(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
     }
 
+    private static string FormatEnumLabel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(value.Length + 4);
+        var previousWasLowerOrDigit = false;
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (character is '_' or '-')
+            {
+                if (builder.Length > 0 && builder[^1] != ' ')
+                {
+                    builder.Append(' ');
+                }
+
+                previousWasLowerOrDigit = false;
+                continue;
+            }
+
+            if (index > 0 && char.IsUpper(character) && previousWasLowerOrDigit)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(character);
+            previousWasLowerOrDigit = char.IsLower(character) || char.IsDigit(character);
+        }
+
+        return builder.ToString();
+    }
+
     private static void ValidateNumericRange(double minimum, double maximum)
     {
         if (double.IsNaN(minimum) || double.IsInfinity(minimum))
@@ -651,5 +709,45 @@ public sealed class EditorGui
             ClampFiniteToBounds(value.Y, minimum, maximum, parameterName),
             ClampFiniteToBounds(value.Z, minimum, maximum, parameterName),
             ClampFiniteToBounds(value.W, minimum, maximum, parameterName));
+    }
+
+    private static class EnumPopupCache<TEnum>
+        where TEnum : struct, Enum
+    {
+        public static IReadOnlyList<GuiListItem> Items { get; } = CreateItems();
+
+        private static IReadOnlyDictionary<string, TEnum> ValuesById { get; } = CreateValuesById();
+
+        public static string GetItemId(TEnum value)
+        {
+            return value.ToString();
+        }
+
+        public static bool TryGetValue(string itemId, out TEnum value)
+        {
+            return ValuesById.TryGetValue(itemId, out value);
+        }
+
+        private static IReadOnlyList<GuiListItem> CreateItems()
+        {
+            return Enum.GetValues<TEnum>()
+                .Select(value =>
+                {
+                    var id = GetItemId(value);
+                    return new GuiListItem(id, FormatEnumLabel(id));
+                })
+                .ToArray();
+        }
+
+        private static IReadOnlyDictionary<string, TEnum> CreateValuesById()
+        {
+            var values = new Dictionary<string, TEnum>(StringComparer.Ordinal);
+            foreach (var value in Enum.GetValues<TEnum>())
+            {
+                values.TryAdd(GetItemId(value), value);
+            }
+
+            return values;
+        }
     }
 }

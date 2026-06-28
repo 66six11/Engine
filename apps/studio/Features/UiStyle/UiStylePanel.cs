@@ -34,6 +34,13 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         new("wireframe", "Wireframe"),
     ];
 
+    private enum UiStyleRenderPath
+    {
+        Forward,
+        Deferred,
+        RayTracing,
+    }
+
     protected override void OnGui(EditorGui gui)
     {
         using (var navigation = gui.NavigationView("catalog", Pages, DefaultSectionId))
@@ -91,6 +98,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
             GuiTextInputCommitMode.Debounced,
             TimeSpan.FromMilliseconds(250));
         gui.ComboBox("render-mode", "Render Mode", RenderModeOptions, "deferred");
+        gui.EnumPopup("render-path", "Render Path", UiStyleRenderPath.Deferred);
         gui.RadioGroup("shading-mode", "Shading", ShadingModeOptions, "lit");
         gui.Slider("exposure", "Exposure", 0.75d, 0d, 2d, 0.05d, 0.25d);
         gui.ColorField("albedo", "Albedo", new GuiColorValue(128, 160, 255), showAlpha: true);
