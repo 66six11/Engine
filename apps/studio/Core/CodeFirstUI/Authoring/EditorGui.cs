@@ -54,6 +54,11 @@ public sealed class EditorGui
         return events_.ConsumeButtonClicked(nodeId);
     }
 
+    public void Separator(string key)
+    {
+        builder_.Separator(key);
+    }
+
     public string TextInput(
         string key,
         string label,

@@ -12,6 +12,7 @@ public enum GuiNodeKind
     Scroll,
     Foldout,
     Label,
+    Separator,
     Button,
     Toggle,
     TextField,

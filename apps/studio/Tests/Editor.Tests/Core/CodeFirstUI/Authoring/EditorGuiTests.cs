@@ -100,6 +100,28 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Separator_emits_separator_node()
+    {
+        var builder = new GuiFrameBuilder("render.frameDebugger");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        using (gui.Toolbar("toolbar"))
+        {
+            gui.Button("capture", "Capture Frame");
+            gui.Separator("capture-group");
+            gui.Button("clear", "Clear");
+        }
+
+        var toolbar = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Separator, toolbar.Children[1].Kind);
+        Assert.Equal("toolbar/capture-group", toolbar.Children[1].Id.KeyPath);
+    }
+
+    [Fact]
     public void Navigation_view_uses_stored_route_and_draws_selected_page()
     {
         var builder = new GuiFrameBuilder("ui.style");

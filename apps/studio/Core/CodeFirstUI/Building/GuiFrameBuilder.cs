@@ -49,6 +49,11 @@ public sealed class GuiFrameBuilder
         return AddLeaf(key, GuiNodeKind.Button, label);
     }
 
+    public GuiNodeId Separator(string key)
+    {
+        return AddLeaf(key, GuiNodeKind.Separator, label: null);
+    }
+
     public GuiNodeId TextField(
         string key,
         string label,

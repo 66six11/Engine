@@ -84,6 +84,29 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_separator_to_lightweight_toolbar_separator()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        using (builder.Toolbar("toolbar"))
+        {
+            builder.Button("capture", "Capture Frame");
+            builder.Separator("capture-group");
+            builder.Button("clear", "Clear");
+        }
+
+        var factory = new GuiAvaloniaControlFactory(new NoopCodeFirstPanelHost());
+
+        var toolbar = Assert.IsType<StackPanel>(factory.Build(builder.Build()));
+
+        Assert.Contains("code-first-toolbar", toolbar.Classes);
+        Assert.Equal(Orientation.Horizontal, toolbar.Orientation);
+        Assert.Equal(3, toolbar.Children.Count);
+        var separator = Assert.IsType<Separator>(toolbar.Children[1]);
+        Assert.Contains("code-first-separator", separator.Classes);
+        Assert.False(separator.Focusable);
+    }
+
+    [Fact]
     public void Build_maps_navigation_view_routes_to_directory_buttons_and_content()
     {
         var builder = new GuiFrameBuilder("ui-style");

@@ -58,6 +58,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.NavigationView => BuildNavigationView(node),
             GuiNodeKind.Scroll => BuildScroll(node),
             GuiNodeKind.Label => BuildLabel(node),
+            GuiNodeKind.Separator => BuildSeparator(),
             GuiNodeKind.Button => BuildButton(node),
             GuiNodeKind.TextField => BuildTextField(node),
             GuiNodeKind.Toggle => BuildToggle(node),
@@ -634,6 +635,16 @@ internal sealed class GuiAvaloniaControlFactory
             EditorDiagnosticSeverity.Error => "error",
             _ => "error",
         };
+    }
+
+    private static Control BuildSeparator()
+    {
+        var separator = new Separator
+        {
+            Focusable = false,
+        };
+        separator.Classes.Add("code-first-separator");
+        return separator;
     }
 
     private Control BuildButton(GuiNode node)

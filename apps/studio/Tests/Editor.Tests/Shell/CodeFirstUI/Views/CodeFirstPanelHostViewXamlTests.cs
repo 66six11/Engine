@@ -46,6 +46,18 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("Property=\"Padding\" Value=\"8,2\"", itemStyle);
     }
 
+    [Fact]
+    public void Code_first_separator_uses_lightweight_fixed_size_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var separatorStyle = GetStyle(xaml, "Style Selector=\"Separator.code-first-separator\"");
+
+        Assert.Contains("Property=\"Width\" Value=\"1\"", separatorStyle);
+        Assert.Contains("Property=\"Height\" Value=\"{DynamicResource EditorWidgetUnit}\"", separatorStyle);
+        Assert.Contains("Property=\"Margin\" Value=\"2,0\"", separatorStyle);
+    }
+
     private static string GetStyle(string xaml, string selector)
     {
         var start = xaml.IndexOf(selector, StringComparison.Ordinal);

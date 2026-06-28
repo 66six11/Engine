@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
 using Xunit;
@@ -53,6 +54,27 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal("Typography", label.Label);
         Assert.Equal(GuiTextTone.Primary, label.Payload.TextTone);
         Assert.Equal(GuiTextSize.Title, label.Payload.TextSize);
+    }
+
+    [Fact]
+    public void Build_preserves_separator_nodes_for_toolbar_grouping()
+    {
+        var builder = new GuiFrameBuilder("render.frameDebugger");
+
+        using (builder.Toolbar("toolbar"))
+        {
+            builder.Button("capture", "Capture Frame");
+            builder.Separator("capture-group");
+            builder.Button("clear", "Clear");
+        }
+
+        var toolbar = Assert.Single(builder.Build().Root.Children);
+
+        Assert.Equal(
+            [GuiNodeKind.Button, GuiNodeKind.Separator, GuiNodeKind.Button],
+            toolbar.Children.Select(child => child.Kind).ToArray());
+        Assert.Equal("toolbar/capture-group", toolbar.Children[1].Id.KeyPath);
+        Assert.Null(toolbar.Children[1].Label);
     }
 
     [Fact]
