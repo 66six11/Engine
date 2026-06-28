@@ -171,6 +171,25 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_combo_box_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var modes = new[]
+        {
+            new GuiListItem("forward", "Forward"),
+            new GuiListItem("deferred", "Deferred"),
+        };
+
+        builder.ComboBox("render-mode", "Render Mode", modes, "deferred");
+
+        var comboBox = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.ComboBox, comboBox.Kind);
+        Assert.Equal("Render Mode", comboBox.Label);
+        Assert.Equal(modes, comboBox.Payload.ListItems);
+        Assert.Equal("deferred", comboBox.Payload.SelectedItemId);
+    }
+
+    [Fact]
     public void Build_preserves_debounced_text_field_commit_delay()
     {
         var builder = new GuiFrameBuilder("ui.style");

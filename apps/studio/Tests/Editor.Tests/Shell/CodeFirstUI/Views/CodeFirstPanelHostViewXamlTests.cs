@@ -58,6 +58,17 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("Property=\"Margin\" Value=\"2,0\"", separatorStyle);
     }
 
+    [Fact]
+    public void Code_first_combo_box_uses_property_row_control_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var comboBoxStyle = GetStyle(xaml, "Style Selector=\"ComboBox.code-first-combo-box\"");
+
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", comboBoxStyle);
+        Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", comboBoxStyle);
+    }
+
     private static string GetStyle(string xaml, string selector)
     {
         var start = xaml.IndexOf(selector, StringComparison.Ordinal);

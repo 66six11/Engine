@@ -372,6 +372,34 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Combo_box_returns_stored_selection_and_emits_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var modes = new[]
+        {
+            new GuiListItem("forward", "Forward"),
+            new GuiListItem("deferred", "Deferred"),
+        };
+        state.SetSelectedItem(new GuiNodeId("ui.style", "render-mode", GuiNodeKind.ComboBox), "deferred");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var selected = gui.ComboBox("render-mode", "Render Mode", modes, selectedItemId: "forward");
+
+        Assert.Equal("deferred", selected);
+
+        var comboBox = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.ComboBox, comboBox.Kind);
+        Assert.Equal("Render Mode", comboBox.Label);
+        Assert.Equal("deferred", comboBox.Payload.SelectedItemId);
+        Assert.Equal(modes, comboBox.Payload.ListItems);
+    }
+
+    [Fact]
     public void Text_input_emits_debounce_commit_delay()
     {
         var builder = new GuiFrameBuilder("ui.style");

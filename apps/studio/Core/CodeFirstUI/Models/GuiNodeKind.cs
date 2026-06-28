@@ -15,6 +15,7 @@ public enum GuiNodeKind
     Separator,
     Button,
     Toggle,
+    ComboBox,
     TextField,
     List,
     Property,

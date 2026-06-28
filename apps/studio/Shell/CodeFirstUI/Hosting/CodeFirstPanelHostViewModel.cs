@@ -65,6 +65,16 @@ internal sealed class CodeFirstPanelHostViewModel :
 
     internal void SelectListItem(GuiNodeId nodeId, string itemId)
     {
+        SelectItem(nodeId, itemId);
+    }
+
+    internal void SelectComboBoxItem(GuiNodeId nodeId, string itemId)
+    {
+        SelectItem(nodeId, itemId);
+    }
+
+    private void SelectItem(GuiNodeId nodeId, string itemId)
+    {
         ArgumentNullException.ThrowIfNull(nodeId);
         if (string.IsNullOrWhiteSpace(itemId))
         {
@@ -311,6 +321,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SelectListItem(GuiNodeId nodeId, string itemId)
     {
         SelectListItem(nodeId, itemId);
+    }
+
+    void IGuiAvaloniaHost.SelectComboBoxItem(GuiNodeId nodeId, string itemId)
+    {
+        SelectComboBoxItem(nodeId, itemId);
     }
 
     void IGuiAvaloniaHost.SelectNavigationRoute(GuiNodeId nodeId, string route)

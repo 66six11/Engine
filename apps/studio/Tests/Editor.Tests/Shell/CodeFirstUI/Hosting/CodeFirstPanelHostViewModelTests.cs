@@ -114,6 +114,46 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Select_combo_box_item_updates_state_and_rebuilds_tree()
+    {
+        var panel = new ComboBoxDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SelectComboBoxItem(
+            new GuiNodeId("ui.style", "render-mode", GuiNodeKind.ComboBox),
+            "deferred");
+
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
+        Assert.Equal("deferred", panel.SelectedRenderModeId);
+        Assert.True(host.StateStore.TryGetSelectedItem(
+            new GuiNodeId("ui.style", "render-mode", GuiNodeKind.ComboBox),
+            out var storedSelection));
+        Assert.Equal("deferred", storedSelection);
+
+        var comboBox = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal(GuiNodeKind.ComboBox, comboBox.Kind);
+        Assert.Equal("deferred", comboBox.Payload.SelectedItemId);
+    }
+
+    [Fact]
+    public void Selecting_current_combo_box_item_does_not_rebuild_tree()
+    {
+        var panel = new ComboBoxDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SelectComboBoxItem(
+            new GuiNodeId("ui.style", "render-mode", GuiNodeKind.ComboBox),
+            "forward");
+
+        Assert.Equal("forward", panel.SelectedRenderModeId);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+    }
+
+    [Fact]
     public void Select_navigation_route_updates_state_and_rebuilds_tree()
     {
         var panel = new NavigationDrivenCodeFirstPanel();
@@ -446,6 +486,25 @@ public sealed class CodeFirstPanelHostViewModelTests
                 gui.Text("left", "Left");
                 gui.Text("right", "Right");
             }
+        }
+    }
+
+    private sealed class ComboBoxDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        private static readonly GuiListItem[] RenderModes =
+        [
+            new("forward", "Forward"),
+            new("deferred", "Deferred"),
+        ];
+
+        public int GuiBuildCount { get; private set; }
+
+        public string? SelectedRenderModeId { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            SelectedRenderModeId = gui.ComboBox("render-mode", "Render Mode", RenderModes, "forward");
         }
     }
 

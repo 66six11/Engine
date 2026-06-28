@@ -62,6 +62,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Button => BuildButton(node),
             GuiNodeKind.TextField => BuildTextField(node),
             GuiNodeKind.Toggle => BuildToggle(node),
+            GuiNodeKind.ComboBox => BuildComboBox(node),
             GuiNodeKind.List => BuildList(node),
             GuiNodeKind.ValidationMessage => BuildValidationMessage(node),
             _ => BuildUnsupportedNode(node),
@@ -756,6 +757,56 @@ internal sealed class GuiAvaloniaControlFactory
         checkBox.Classes.Add("code-first-toggle");
         checkBox.IsCheckedChanged += (_, _) => host_.SetToggle(node.Id, checkBox.IsChecked == true);
         return checkBox;
+    }
+
+    private Control BuildComboBox(GuiNode node)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var items = node.Payload.ListItems;
+        var comboBox = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemTemplate = new FuncDataTemplate<GuiListItem>((item, _) =>
+            {
+                var itemLabel = new TextBlock
+                {
+                    Text = item?.Label ?? string.Empty,
+                    TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+                };
+                itemLabel.Classes.Add("code-first-combo-box-item-label");
+                return itemLabel;
+            }),
+            ItemsSource = items,
+            MinWidth = 120d,
+            SelectedItem = items.FirstOrDefault(
+                item => string.Equals(item.Id, node.Payload.SelectedItemId, StringComparison.Ordinal)),
+        };
+        comboBox.Classes.Add("code-first-combo-box");
+        comboBox.SelectionChanged += (_, _) =>
+        {
+            if (comboBox.SelectedItem is GuiListItem item)
+            {
+                host_.SelectComboBoxItem(node.Id, item.Id);
+            }
+        };
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(comboBox, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(comboBox);
+        return grid;
     }
 
     private Control BuildList(GuiNode node)

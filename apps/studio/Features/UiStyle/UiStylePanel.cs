@@ -20,6 +20,13 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         new("feedback/states", "States", DrawStatesPage),
     ];
 
+    private static readonly GuiListItem[] RenderModeOptions =
+    [
+        new("forward", "Forward"),
+        new("deferred", "Deferred"),
+        new("raytracing", "Ray Tracing"),
+    ];
+
     protected override void OnGui(EditorGui gui)
     {
         using (var navigation = gui.NavigationView("catalog", Pages, DefaultSectionId))
@@ -76,6 +83,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
             "material",
             GuiTextInputCommitMode.Debounced,
             TimeSpan.FromMilliseconds(250));
+        gui.ComboBox("render-mode", "Render Mode", RenderModeOptions, "deferred");
         gui.Toggle("show-disabled", "Show Disabled");
         gui.Text("contract", "Input state belongs to GuiStateStore; document mutations should still go through commands.");
     }

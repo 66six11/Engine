@@ -96,6 +96,25 @@ public sealed class GuiFrameBuilder
             });
     }
 
+    public GuiNodeId ComboBox(
+        string key,
+        string label,
+        IReadOnlyList<GuiListItem> items,
+        string? selectedItemId = null)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        return AddLeaf(
+            key,
+            GuiNodeKind.ComboBox,
+            label,
+            new GuiNodePayload
+            {
+                ListItems = items.ToArray(),
+                SelectedItemId = selectedItemId,
+            });
+    }
+
     public GuiNodeId ValidationMessage(
         string key,
         string message,

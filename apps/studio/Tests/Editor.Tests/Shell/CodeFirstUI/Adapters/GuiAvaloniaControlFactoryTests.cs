@@ -419,6 +419,35 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_combo_box_to_property_row_and_reports_selection_changes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        var modes = new[]
+        {
+            new GuiListItem("forward", "Forward"),
+            new GuiListItem("deferred", "Deferred"),
+        };
+        builder.ComboBox("render-mode", "Render Mode", modes, "forward");
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var control = factory.Build(builder.Build());
+
+        var comboBox = FindDescendant<ComboBox>(control);
+        Assert.NotNull(comboBox);
+        Assert.Contains("code-first-combo-box", comboBox!.Classes);
+        Assert.Equal(modes, comboBox.ItemsSource);
+        Assert.Equal(modes[0], comboBox.SelectedItem);
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Render Mode"));
+
+        comboBox.SelectedItem = modes[1];
+
+        var selection = Assert.Single(host.ComboBoxSelections);
+        Assert.Equal(new GuiNodeId("ui-style", "render-mode", GuiNodeKind.ComboBox), selection.NodeId);
+        Assert.Equal("deferred", selection.ItemId);
+    }
+
+    [Fact]
     public void Text_field_on_change_commit_mode_commits_each_text_change()
     {
         var builder = new GuiFrameBuilder("ui-style");
@@ -553,6 +582,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
         }
 
+        public void SelectComboBoxItem(GuiNodeId nodeId, string itemId)
+        {
+        }
+
         public void SelectNavigationRoute(GuiNodeId nodeId, string route)
         {
         }
@@ -588,6 +621,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<TextChange> textChanges_ = [];
         private readonly List<TextChange> textCommits_ = [];
         private readonly List<ToggleChange> toggleChanges_ = [];
+        private readonly List<ComboBoxSelection> comboBoxSelections_ = [];
         private readonly List<FoldoutChange> foldoutChanges_ = [];
         private readonly List<NavigationRouteSelection> navigationRouteSelections_ = [];
         private readonly List<NavigationRouteExpansionChange> navigationRouteExpansionChanges_ = [];
@@ -599,6 +633,8 @@ public sealed class GuiAvaloniaControlFactoryTests
         public IReadOnlyList<TextChange> TextCommits => textCommits_;
 
         public IReadOnlyList<ToggleChange> ToggleChanges => toggleChanges_;
+
+        public IReadOnlyList<ComboBoxSelection> ComboBoxSelections => comboBoxSelections_;
 
         public IReadOnlyList<FoldoutChange> FoldoutChanges => foldoutChanges_;
 
@@ -612,6 +648,11 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         public void SelectListItem(GuiNodeId nodeId, string itemId)
         {
+        }
+
+        public void SelectComboBoxItem(GuiNodeId nodeId, string itemId)
+        {
+            comboBoxSelections_.Add(new ComboBoxSelection(nodeId, itemId));
         }
 
         public void SelectNavigationRoute(GuiNodeId nodeId, string route)
@@ -661,6 +702,10 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record ToggleChange(
         GuiNodeId NodeId,
         bool IsChecked);
+
+    private sealed record ComboBoxSelection(
+        GuiNodeId NodeId,
+        string ItemId);
 
     private sealed record FoldoutChange(
         GuiNodeId NodeId,

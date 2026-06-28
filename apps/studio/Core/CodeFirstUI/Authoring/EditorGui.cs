@@ -89,6 +89,25 @@ public sealed class EditorGui
         return resolvedValue;
     }
 
+    public string? ComboBox(
+        string key,
+        string label,
+        IReadOnlyList<GuiListItem> items,
+        string? selectedItemId = null)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.ComboBox);
+        var selected = ResolveItemSelection(nodeId, items, selectedItemId);
+        if (selected is not null)
+        {
+            StateStore.SetSelectedItem(nodeId, selected);
+        }
+
+        builder_.ComboBox(key, label, items, selected);
+        return selected;
+    }
+
     public void ValidationMessage(
         string key,
         string message,
@@ -105,7 +124,7 @@ public sealed class EditorGui
         ArgumentNullException.ThrowIfNull(items);
 
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.List);
-        var selected = ResolveListSelection(nodeId, items, selectedItemId);
+        var selected = ResolveItemSelection(nodeId, items, selectedItemId);
         if (selected is not null)
         {
             StateStore.SetSelectedItem(nodeId, selected);
@@ -209,7 +228,7 @@ public sealed class EditorGui
         return builder_.Vertical(key);
     }
 
-    private string? ResolveListSelection(
+    private string? ResolveItemSelection(
         GuiNodeId nodeId,
         IReadOnlyList<GuiListItem> items,
         string? selectedItemId)
