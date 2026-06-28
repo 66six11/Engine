@@ -80,6 +80,17 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", sliderStyle);
     }
 
+    [Fact]
+    public void Code_first_number_input_uses_property_row_control_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var numberInputStyle = GetStyle(xaml, "Style Selector=\"NumericUpDown.code-first-number-input\"");
+
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", numberInputStyle);
+        Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", numberInputStyle);
+    }
+
     private static string GetStyle(string xaml, string selector)
     {
         var start = xaml.IndexOf(selector, StringComparison.Ordinal);

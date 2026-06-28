@@ -101,6 +101,10 @@
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
         </Style>
+        <Style Selector="NumericUpDown.code-first-number-input">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
         <Style Selector="CheckBox.code-first-toggle">
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
         </Style>

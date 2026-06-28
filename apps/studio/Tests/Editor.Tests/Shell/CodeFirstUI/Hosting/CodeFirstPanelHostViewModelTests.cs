@@ -313,6 +313,43 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Set_number_input_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
+    {
+        var panel = new NumberInputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetNumberInputValue(new GuiNodeId("ui.style", "roughness", GuiNodeKind.NumberInput), 0.65d);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetNumericValue(
+            new GuiNodeId("ui.style", "roughness", GuiNodeKind.NumberInput),
+            out var storedValue));
+        Assert.Equal(0.65d, storedValue);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var numberInput = host.CurrentTree?.Root.Children[0];
+        Assert.Equal(0.65d, numberInput?.Payload.NumericValue);
+        Assert.Equal(0.65d, panel.Roughness);
+    }
+
+    [Fact]
+    public void Setting_current_number_input_value_does_not_rebuild_tree()
+    {
+        var panel = new NumberInputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetNumberInputValue(new GuiNodeId("ui.style", "roughness", GuiNodeKind.NumberInput), 0.5d);
+
+        Assert.Equal(0.5d, panel.Roughness);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+    }
+
+    [Fact]
     public void Commit_text_updates_state_and_rebuilds_tree()
     {
         var panel = new InputDrivenCodeFirstPanel();
@@ -595,6 +632,19 @@ public sealed class CodeFirstPanelHostViewModelTests
         {
             GuiBuildCount++;
             Exposure = gui.Slider("exposure", "Exposure", 0.5d, 0d, 2d);
+        }
+    }
+
+    private sealed class NumberInputDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        public double Roughness { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            Roughness = gui.NumberInput("roughness", "Roughness", 0.5d, 0d, 1d, 0.05d, "0.00");
         }
     }
 

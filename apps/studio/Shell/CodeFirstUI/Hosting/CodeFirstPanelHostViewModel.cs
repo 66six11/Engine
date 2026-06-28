@@ -143,6 +143,16 @@ internal sealed class CodeFirstPanelHostViewModel :
 
     internal void SetSliderValue(GuiNodeId nodeId, double value)
     {
+        SetNumericValue(nodeId, value);
+    }
+
+    internal void SetNumberInputValue(GuiNodeId nodeId, double value)
+    {
+        SetNumericValue(nodeId, value);
+    }
+
+    private void SetNumericValue(GuiNodeId nodeId, double value)
+    {
         ArgumentNullException.ThrowIfNull(nodeId);
         ThrowIfDisposed();
 
@@ -363,6 +373,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SetSliderValue(GuiNodeId nodeId, double value)
     {
         SetSliderValue(nodeId, value);
+    }
+
+    void IGuiAvaloniaHost.SetNumberInputValue(GuiNodeId nodeId, double value)
+    {
+        SetNumberInputValue(nodeId, value);
     }
 
     void IGuiAvaloniaHost.SetText(GuiNodeId nodeId, string text)

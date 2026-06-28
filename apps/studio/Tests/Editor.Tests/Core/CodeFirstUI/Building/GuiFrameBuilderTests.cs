@@ -214,6 +214,30 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_number_input_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        builder.NumberInput(
+            "roughness",
+            "Roughness",
+            value: 0.50d,
+            minimum: 0d,
+            maximum: 1d,
+            increment: 0.05d,
+            formatString: "0.00");
+
+        var numberInput = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.NumberInput, numberInput.Kind);
+        Assert.Equal("Roughness", numberInput.Label);
+        Assert.Equal(0.50d, numberInput.Payload.NumericValue);
+        Assert.Equal(0d, numberInput.Payload.NumericMinimum);
+        Assert.Equal(1d, numberInput.Payload.NumericMaximum);
+        Assert.Equal(0.05d, numberInput.Payload.NumericSmallChange);
+        Assert.Equal("0.00", numberInput.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Build_preserves_debounced_text_field_commit_delay()
     {
         var builder = new GuiFrameBuilder("ui.style");

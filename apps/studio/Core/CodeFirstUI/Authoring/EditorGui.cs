@@ -136,6 +136,34 @@ public sealed class EditorGui
         return resolvedValue;
     }
 
+    public double NumberInput(
+        string key,
+        string label,
+        double value,
+        double? minimum = null,
+        double? maximum = null,
+        double increment = 1d,
+        string formatString = "0.###")
+    {
+        ValidateNumericBounds(minimum, maximum);
+
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.NumberInput);
+        var resolvedValue = StateStore.TryGetNumericValue(nodeId, out var storedValue)
+            ? storedValue
+            : value;
+        resolvedValue = ClampFiniteToBounds(resolvedValue, minimum, maximum, nameof(value));
+        StateStore.SetNumericValue(nodeId, resolvedValue);
+        builder_.NumberInput(
+            key,
+            label,
+            resolvedValue,
+            minimum,
+            maximum,
+            increment,
+            formatString);
+        return resolvedValue;
+    }
+
     public void ValidationMessage(
         string key,
         string message,
@@ -394,5 +422,59 @@ public sealed class EditorGui
         }
 
         return Math.Clamp(value, minimum, maximum);
+    }
+
+    private static void ValidateNumericBounds(double? minimum, double? maximum)
+    {
+        if (minimum is { } min && (double.IsNaN(min) || double.IsInfinity(min)))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(minimum),
+                minimum,
+                "Minimum must be finite.");
+        }
+
+        if (maximum is { } max && (double.IsNaN(max) || double.IsInfinity(max)))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximum),
+                maximum,
+                "Maximum must be finite.");
+        }
+
+        if (minimum is { } finiteMin && maximum is { } finiteMax && finiteMax <= finiteMin)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximum),
+                maximum,
+                "Maximum must be greater than minimum.");
+        }
+    }
+
+    private static double ClampFiniteToBounds(
+        double value,
+        double? minimum,
+        double? maximum,
+        string parameterName)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                value,
+                "Value must be finite.");
+        }
+
+        if (minimum is { } min && value < min)
+        {
+            return min;
+        }
+
+        if (maximum is { } max && value > max)
+        {
+            return max;
+        }
+
+        return value;
     }
 }

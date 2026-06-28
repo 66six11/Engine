@@ -64,6 +64,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Toggle => BuildToggle(node),
             GuiNodeKind.ComboBox => BuildComboBox(node),
             GuiNodeKind.Slider => BuildSlider(node),
+            GuiNodeKind.NumberInput => BuildNumberInput(node),
             GuiNodeKind.List => BuildList(node),
             GuiNodeKind.ValidationMessage => BuildValidationMessage(node),
             _ => BuildUnsupportedNode(node),
@@ -863,6 +864,74 @@ internal sealed class GuiAvaloniaControlFactory
 
                 host_.SetSliderValue(nodeId, value);
             }));
+    }
+
+    private Control BuildNumberInput(GuiNode node)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var numberInput = new NumericUpDown
+        {
+            FormatString = node.Payload.NumericFormatString ?? "0.###",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Increment = ToDecimal(node.Payload.NumericSmallChange ?? 1d),
+            MinWidth = 120d,
+            Value = ToDecimal(node.Payload.NumericValue ?? 0d),
+        };
+        if (node.Payload.NumericMinimum is { } minimum)
+        {
+            numberInput.Minimum = ToDecimal(minimum);
+        }
+
+        if (node.Payload.NumericMaximum is { } maximum)
+        {
+            numberInput.Maximum = ToDecimal(maximum);
+        }
+
+        numberInput.Classes.Add("code-first-number-input");
+        AttachNumberInputTracking(node.Id, numberInput);
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(numberInput, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(numberInput);
+        return grid;
+    }
+
+    private void AttachNumberInputTracking(GuiNodeId nodeId, NumericUpDown numberInput)
+    {
+        var hasObservedInitialValue = false;
+        numberInput.Tag = numberInput
+            .GetObservable(NumericUpDown.ValueProperty)
+            .Subscribe(new ActionObserver<decimal?>(value =>
+            {
+                if (!hasObservedInitialValue)
+                {
+                    hasObservedInitialValue = true;
+                    return;
+                }
+
+                if (value is { } numericValue)
+                {
+                    host_.SetNumberInputValue(nodeId, decimal.ToDouble(numericValue));
+                }
+            }));
+    }
+
+    private static decimal ToDecimal(double value)
+    {
+        return Convert.ToDecimal(value);
     }
 
     private Control BuildList(GuiNode node)

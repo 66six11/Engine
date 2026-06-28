@@ -18,6 +18,8 @@ internal interface IGuiAvaloniaHost
 
     void SetSliderValue(GuiNodeId nodeId, double value);
 
+    void SetNumberInputValue(GuiNodeId nodeId, double value);
+
     void SetText(GuiNodeId nodeId, string text);
 
     void CommitText(GuiNodeId nodeId, string text);

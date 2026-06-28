@@ -46,5 +46,7 @@ public sealed record GuiNodePayload
 
     public double? NumericLargeChange { get; init; }
 
+    public string? NumericFormatString { get; init; }
+
     public EditorDiagnosticSeverity? DiagnosticSeverity { get; init; }
 }
