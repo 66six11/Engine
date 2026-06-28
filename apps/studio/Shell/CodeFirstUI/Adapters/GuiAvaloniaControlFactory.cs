@@ -385,7 +385,7 @@ internal sealed class GuiAvaloniaControlFactory
         }
 
         var label = node.IsPage
-            ? CreateNavigationRouteButton(nodeId, node, selectedRoute)
+            ? CreateNavigationRouteButton(nodeId, node, childrenPanel is not null ? ToggleExpanded : null)
             : CreateNavigationGroupLabel(node);
         Grid.SetColumn(label, 2);
         row.Children.Add(label);
@@ -397,7 +397,7 @@ internal sealed class GuiAvaloniaControlFactory
     private Control CreateNavigationRouteButton(
         GuiNodeId nodeId,
         NavigationRouteNode node,
-        string? selectedRoute)
+        Action? toggleExpanded)
     {
         var route = node.Route ?? node.FullRoute;
         var button = new Button
@@ -409,6 +409,15 @@ internal sealed class GuiAvaloniaControlFactory
         ToolTip.SetTip(button, route);
         button.Classes.Add("code-first-navigation-route");
         button.Classes.Add(EditorTreeClassNames.LabelButton);
+        if (toggleExpanded is not null)
+        {
+            button.DoubleTapped += (_, args) =>
+            {
+                toggleExpanded();
+                args.Handled = true;
+            };
+        }
+
         button.Click += (_, _) => host_.SelectNavigationRoute(nodeId, route);
         return button;
     }

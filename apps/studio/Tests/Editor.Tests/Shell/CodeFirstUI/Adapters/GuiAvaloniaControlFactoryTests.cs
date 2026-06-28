@@ -134,13 +134,15 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.NotNull(frameRow);
         Assert.Contains("selected", frameRow!.Classes);
 
-        Assert.NotNull(FindDescendant<IconButton>(
+        var overviewExpander = FindDescendant<IconButton>(
             overviewRow!,
-            button => button.Classes.Contains("code-first-navigation-expander")));
-        Assert.NotNull(FindDescendant<Button>(
+            button => button.Classes.Contains("code-first-navigation-expander"));
+        Assert.NotNull(overviewExpander);
+        var overviewRouteButton = FindDescendant<Button>(
             overviewRow,
             button => string.Equals(button.Content as string, "Overview", StringComparison.Ordinal)
-                && button.Classes.Contains("code-first-navigation-route")));
+                && button.Classes.Contains("code-first-navigation-route"));
+        Assert.NotNull(overviewRouteButton);
 
         var renderExpander = FindDescendant<IconButton>(
             renderRow!,
@@ -152,6 +154,22 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Null(FindDescendant<Control>(
             grid,
             control => control.Classes.Contains("code-first-navigation-indent-guide")));
+
+        var overviewChildren = FindDescendant<StackPanel>(
+            grid,
+            panel => panel.Classes.Contains("code-first-navigation-tree-children")
+                && string.Equals(panel.Tag as string, "overview", StringComparison.Ordinal));
+        Assert.NotNull(overviewChildren);
+
+        overviewRouteButton!.RaiseEvent(CreateDoubleTappedArgs(overviewRouteButton));
+
+        Assert.Equal(EditorIconKey.UiChevronRight, overviewExpander!.IconKey);
+        Assert.False(overviewChildren!.IsVisible);
+
+        overviewRouteButton.RaiseEvent(CreateDoubleTappedArgs(overviewRouteButton));
+
+        Assert.Equal(EditorIconKey.UiChevronDown, overviewExpander.IconKey);
+        Assert.True(overviewChildren.IsVisible);
 
         var renderChildren = FindDescendant<StackPanel>(
             grid,

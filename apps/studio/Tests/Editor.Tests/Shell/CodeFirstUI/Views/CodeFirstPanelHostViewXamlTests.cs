@@ -31,6 +31,7 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("EditorTreeClassNames.Expander", source);
         Assert.Contains("EditorTreeClassNames.PrimaryText", source);
         Assert.Contains("EditorTreeClassNames.LabelButton", source);
+        Assert.Contains("button.DoubleTapped += (_, args) =>", source);
     }
 
     private static string GetStyle(string xaml, string selector)
