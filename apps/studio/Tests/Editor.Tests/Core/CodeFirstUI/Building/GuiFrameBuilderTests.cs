@@ -238,6 +238,48 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_progress_bar_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        builder.ProgressBar(
+            "shader-import",
+            "Shader Import",
+            value: 42d,
+            minimum: 0d,
+            maximum: 100d,
+            isIndeterminate: false,
+            showProgressText: true,
+            progressTextFormat: "{1:0}%");
+
+        var progressBar = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.ProgressBar, progressBar.Kind);
+        Assert.Equal("Shader Import", progressBar.Label);
+        Assert.Equal(42d, progressBar.Payload.NumericValue);
+        Assert.Equal(0d, progressBar.Payload.NumericMinimum);
+        Assert.Equal(100d, progressBar.Payload.NumericMaximum);
+        Assert.False(progressBar.Payload.IsIndeterminate);
+        Assert.True(progressBar.Payload.ShowProgressText);
+        Assert.Equal("{1:0}%", progressBar.Payload.ProgressTextFormat);
+    }
+
+    [Fact]
+    public void Build_allows_progress_bar_text_with_default_format()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        builder.ProgressBar(
+            "shader-import",
+            "Shader Import",
+            value: 42d,
+            showProgressText: true);
+
+        var progressBar = Assert.Single(builder.Build().Root.Children);
+        Assert.True(progressBar.Payload.ShowProgressText);
+        Assert.Null(progressBar.Payload.ProgressTextFormat);
+    }
+
+    [Fact]
     public void Build_preserves_debounced_text_field_commit_delay()
     {
         var builder = new GuiFrameBuilder("ui.style");

@@ -182,6 +182,40 @@ public sealed class GuiFrameBuilder
             });
     }
 
+    public GuiNodeId ProgressBar(
+        string key,
+        string label,
+        double value,
+        double minimum = 0d,
+        double maximum = 100d,
+        bool isIndeterminate = false,
+        bool showProgressText = false,
+        string? progressTextFormat = null)
+    {
+        ValidateNumericRange(minimum, maximum);
+        var clampedValue = ClampFinite(value, minimum, maximum, nameof(value));
+        if (progressTextFormat is not null && string.IsNullOrWhiteSpace(progressTextFormat))
+        {
+            throw new ArgumentException(
+                "Progress text format must not be empty.",
+                nameof(progressTextFormat));
+        }
+
+        return AddLeaf(
+            key,
+            GuiNodeKind.ProgressBar,
+            label,
+            new GuiNodePayload
+            {
+                NumericValue = clampedValue,
+                NumericMinimum = minimum,
+                NumericMaximum = maximum,
+                IsIndeterminate = isIndeterminate,
+                ShowProgressText = showProgressText,
+                ProgressTextFormat = progressTextFormat,
+            });
+    }
+
     public GuiNodeId ValidationMessage(
         string key,
         string message,

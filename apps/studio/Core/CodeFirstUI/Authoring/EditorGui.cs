@@ -164,6 +164,27 @@ public sealed class EditorGui
         return resolvedValue;
     }
 
+    public void ProgressBar(
+        string key,
+        string label,
+        double value,
+        double minimum = 0d,
+        double maximum = 100d,
+        bool isIndeterminate = false,
+        bool showProgressText = false,
+        string? progressTextFormat = null)
+    {
+        builder_.ProgressBar(
+            key,
+            label,
+            value,
+            minimum,
+            maximum,
+            isIndeterminate,
+            showProgressText,
+            progressTextFormat);
+    }
+
     public void ValidationMessage(
         string key,
         string message,

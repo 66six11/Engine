@@ -126,6 +126,14 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         gui.Text("title", "States", GuiTextTone.Primary, GuiTextSize.Title);
         using (gui.Scroll("feedback"))
         {
+            gui.ProgressBar(
+                "shader-import",
+                "Shader Import",
+                42d,
+                0d,
+                100d,
+                showProgressText: true,
+                progressTextFormat: "{1:0}%");
             gui.ValidationMessage(
                 "info",
                 "Info: editable and command-ready.",

@@ -516,6 +516,35 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_progress_bar_to_property_row_feedback_control()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.ProgressBar(
+            "shader-import",
+            "Shader Import",
+            value: 42d,
+            minimum: 0d,
+            maximum: 100d,
+            isIndeterminate: false,
+            showProgressText: true,
+            progressTextFormat: "{1:0}%");
+        var factory = new GuiAvaloniaControlFactory(new NoopCodeFirstPanelHost());
+
+        var control = factory.Build(builder.Build());
+
+        var progressBar = FindDescendant<ProgressBar>(control);
+        Assert.NotNull(progressBar);
+        Assert.Contains("code-first-progress-bar", progressBar!.Classes);
+        Assert.Equal(0d, progressBar.Minimum);
+        Assert.Equal(100d, progressBar.Maximum);
+        Assert.Equal(42d, progressBar.Value);
+        Assert.False(progressBar.IsIndeterminate);
+        Assert.True(progressBar.ShowProgressText);
+        Assert.Equal("{1:0}%", progressBar.ProgressTextFormat);
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Shader Import"));
+    }
+
+    [Fact]
     public void Text_field_on_change_commit_mode_commits_each_text_change()
     {
         var builder = new GuiFrameBuilder("ui-style");

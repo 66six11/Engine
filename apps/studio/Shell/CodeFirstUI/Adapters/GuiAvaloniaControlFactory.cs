@@ -65,6 +65,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.ComboBox => BuildComboBox(node),
             GuiNodeKind.Slider => BuildSlider(node),
             GuiNodeKind.NumberInput => BuildNumberInput(node),
+            GuiNodeKind.ProgressBar => BuildProgressBar(node),
             GuiNodeKind.List => BuildList(node),
             GuiNodeKind.ValidationMessage => BuildValidationMessage(node),
             _ => BuildUnsupportedNode(node),
@@ -932,6 +933,48 @@ internal sealed class GuiAvaloniaControlFactory
     private static decimal ToDecimal(double value)
     {
         return Convert.ToDecimal(value);
+    }
+
+    private static Control BuildProgressBar(GuiNode node)
+    {
+        var minimum = node.Payload.NumericMinimum ?? 0d;
+        var maximum = node.Payload.NumericMaximum ?? 100d;
+        var value = Math.Clamp(node.Payload.NumericValue ?? minimum, minimum, maximum);
+
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var progressBar = new ProgressBar
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsIndeterminate = node.Payload.IsIndeterminate == true,
+            Maximum = maximum,
+            Minimum = minimum,
+            ShowProgressText = node.Payload.ShowProgressText == true,
+            Value = value,
+        };
+        if (!string.IsNullOrWhiteSpace(node.Payload.ProgressTextFormat))
+        {
+            progressBar.ProgressTextFormat = node.Payload.ProgressTextFormat;
+        }
+
+        progressBar.Classes.Add("code-first-progress-bar");
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(progressBar, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(progressBar);
+        return grid;
     }
 
     private Control BuildList(GuiNode node)

@@ -466,6 +466,37 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Progress_bar_emits_read_only_feedback_node()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
+
+        gui.ProgressBar(
+            "shader-import",
+            "Shader Import",
+            value: 42d,
+            minimum: 0d,
+            maximum: 100d,
+            isIndeterminate: false,
+            showProgressText: true,
+            progressTextFormat: "{1:0}%");
+
+        var progressBar = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.ProgressBar, progressBar.Kind);
+        Assert.Equal("Shader Import", progressBar.Label);
+        Assert.Equal(42d, progressBar.Payload.NumericValue);
+        Assert.Equal(0d, progressBar.Payload.NumericMinimum);
+        Assert.Equal(100d, progressBar.Payload.NumericMaximum);
+        Assert.False(progressBar.Payload.IsIndeterminate);
+        Assert.True(progressBar.Payload.ShowProgressText);
+        Assert.Equal("{1:0}%", progressBar.Payload.ProgressTextFormat);
+    }
+
+    [Fact]
     public void Text_input_emits_debounce_commit_delay()
     {
         var builder = new GuiFrameBuilder("ui.style");

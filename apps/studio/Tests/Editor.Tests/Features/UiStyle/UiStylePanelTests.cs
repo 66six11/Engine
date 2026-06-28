@@ -114,6 +114,11 @@ public sealed class UiStylePanelTests
             scroll.Children,
             child => child.Kind == GuiNodeKind.ValidationMessage
                 && child.Payload.DiagnosticSeverity == EditorDiagnosticSeverity.Error);
+        var progressBar = Assert.Single(scroll.Children, child => child.Kind == GuiNodeKind.ProgressBar);
+        Assert.Equal("Shader Import", progressBar.Label);
+        Assert.Equal(42d, progressBar.Payload.NumericValue);
+        Assert.Equal(100d, progressBar.Payload.NumericMaximum);
+        Assert.True(progressBar.Payload.ShowProgressText);
     }
 
     [Fact]

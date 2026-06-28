@@ -48,5 +48,11 @@ public sealed record GuiNodePayload
 
     public string? NumericFormatString { get; init; }
 
+    public bool? IsIndeterminate { get; init; }
+
+    public bool? ShowProgressText { get; init; }
+
+    public string? ProgressTextFormat { get; init; }
+
     public EditorDiagnosticSeverity? DiagnosticSeverity { get; init; }
 }

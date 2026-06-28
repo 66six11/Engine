@@ -18,6 +18,7 @@ public enum GuiNodeKind
     ComboBox,
     Slider,
     NumberInput,
+    ProgressBar,
     TextField,
     List,
     Property,

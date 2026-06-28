@@ -91,6 +91,17 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", numberInputStyle);
     }
 
+    [Fact]
+    public void Code_first_progress_bar_uses_feedback_control_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var progressBarStyle = GetStyle(xaml, "Style Selector=\"ProgressBar.code-first-progress-bar\"");
+
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", progressBarStyle);
+        Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", progressBarStyle);
+    }
+
     private static string GetStyle(string xaml, string selector)
     {
         var start = xaml.IndexOf(selector, StringComparison.Ordinal);
