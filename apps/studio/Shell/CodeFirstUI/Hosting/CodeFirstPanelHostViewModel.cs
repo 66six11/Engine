@@ -184,6 +184,20 @@ internal sealed class CodeFirstPanelHostViewModel :
         stateStore_.SetVector3Value(nodeId, value);
     }
 
+    internal void SetVector2Value(GuiNodeId nodeId, GuiVector2Value value)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        if (stateStore_.TryGetVector2Value(nodeId, out var currentValue)
+            && currentValue.Equals(value))
+        {
+            return;
+        }
+
+        stateStore_.SetVector2Value(nodeId, value);
+    }
+
     private void SetNumericValue(GuiNodeId nodeId, double value)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -426,6 +440,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SetVector3Value(GuiNodeId nodeId, GuiVector3Value value)
     {
         SetVector3Value(nodeId, value);
+    }
+
+    void IGuiAvaloniaHost.SetVector2Value(GuiNodeId nodeId, GuiVector2Value value)
+    {
+        SetVector2Value(nodeId, value);
     }
 
     void IGuiAvaloniaHost.SetText(GuiNodeId nodeId, string text)

@@ -249,6 +249,31 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_vector2_field_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var value = new GuiVector2Value(1d, 2d);
+
+        builder.Vector2Field(
+            "uv-scale",
+            "UV Scale",
+            value,
+            minimum: 0d,
+            maximum: 8d,
+            increment: 0.125d,
+            formatString: "0.000");
+
+        var vector2Field = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Vector2Field, vector2Field.Kind);
+        Assert.Equal("UV Scale", vector2Field.Label);
+        Assert.Equal(value, vector2Field.Payload.Vector2Value);
+        Assert.Equal(0d, vector2Field.Payload.NumericMinimum);
+        Assert.Equal(8d, vector2Field.Payload.NumericMaximum);
+        Assert.Equal(0.125d, vector2Field.Payload.NumericSmallChange);
+        Assert.Equal("0.000", vector2Field.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Build_preserves_slider_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

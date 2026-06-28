@@ -490,6 +490,40 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Vector2_field_returns_stored_value_and_emits_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var storedValue = new GuiVector2Value(1d, 2d);
+        state.SetVector2Value(new GuiNodeId("ui.style", "uv-scale", GuiNodeKind.Vector2Field), storedValue);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var value = gui.Vector2Field(
+            "uv-scale",
+            "UV Scale",
+            new GuiVector2Value(0d, 0d),
+            minimum: 0d,
+            maximum: 8d,
+            increment: 0.125d,
+            formatString: "0.000");
+
+        Assert.Equal(storedValue, value);
+
+        var vector2Field = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Vector2Field, vector2Field.Kind);
+        Assert.Equal("UV Scale", vector2Field.Label);
+        Assert.Equal(storedValue, vector2Field.Payload.Vector2Value);
+        Assert.Equal(0d, vector2Field.Payload.NumericMinimum);
+        Assert.Equal(8d, vector2Field.Payload.NumericMaximum);
+        Assert.Equal(0.125d, vector2Field.Payload.NumericSmallChange);
+        Assert.Equal("0.000", vector2Field.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Slider_returns_stored_value_and_emits_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

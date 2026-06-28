@@ -84,6 +84,7 @@ public sealed class UiStylePanelTests
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.RadioGroup);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Slider);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.ColorField);
+        Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Vector2Field);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Vector3Field);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.NumberInput);
         var filter = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
@@ -100,6 +101,10 @@ public sealed class UiStylePanelTests
         var colorField = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.ColorField);
         Assert.Equal(new GuiColorValue(128, 160, 255, 255), colorField.Payload.ColorValue);
         Assert.True(colorField.Payload.ShowAlpha);
+        var vector2Field = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.Vector2Field);
+        Assert.Equal(new GuiVector2Value(1d, 1d), vector2Field.Payload.Vector2Value);
+        Assert.Equal(0d, vector2Field.Payload.NumericMinimum);
+        Assert.Equal(8d, vector2Field.Payload.NumericMaximum);
         var vector3Field = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.Vector3Field);
         Assert.Equal(new GuiVector3Value(0d, 1d, 2d), vector3Field.Payload.Vector3Value);
         Assert.Equal(-100d, vector3Field.Payload.NumericMinimum);

@@ -66,6 +66,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.ComboBox => BuildComboBox(node),
             GuiNodeKind.RadioGroup => BuildRadioGroup(node),
             GuiNodeKind.ColorField => BuildColorField(node),
+            GuiNodeKind.Vector2Field => BuildVector2Field(node),
             GuiNodeKind.Vector3Field => BuildVector3Field(node),
             GuiNodeKind.Slider => BuildSlider(node),
             GuiNodeKind.NumberInput => BuildNumberInput(node),
@@ -909,6 +910,37 @@ internal sealed class GuiAvaloniaControlFactory
 
     private Control BuildVector3Field(GuiNode node)
     {
+        var value = node.Payload.Vector3Value ?? new GuiVector3Value(0d, 0d, 0d);
+        return BuildVectorField(
+            node,
+            "code-first-vector3-field",
+            ["X", "Y", "Z"],
+            [value.X, value.Y, value.Z],
+            values => host_.SetVector3Value(
+                node.Id,
+                new GuiVector3Value(values[0], values[1], values[2])));
+    }
+
+    private Control BuildVector2Field(GuiNode node)
+    {
+        var value = node.Payload.Vector2Value ?? new GuiVector2Value(0d, 0d);
+        return BuildVectorField(
+            node,
+            "code-first-vector2-field",
+            ["X", "Y"],
+            [value.X, value.Y],
+            values => host_.SetVector2Value(
+                node.Id,
+                new GuiVector2Value(values[0], values[1])));
+    }
+
+    private Control BuildVectorField(
+        GuiNode node,
+        string className,
+        IReadOnlyList<string> componentLabels,
+        IReadOnlyList<double> componentValues,
+        Action<IReadOnlyList<double>> reportChange)
+    {
         var label = new TextBlock
         {
             Text = node.Label ?? string.Empty,
@@ -917,20 +949,25 @@ internal sealed class GuiAvaloniaControlFactory
         };
         label.Classes.Add("code-first-input-label");
 
-        var value = node.Payload.Vector3Value ?? new GuiVector3Value(0d, 0d, 0d);
-        var xInput = CreateVector3Component(node, value.X);
-        var yInput = CreateVector3Component(node, value.Y);
-        var zInput = CreateVector3Component(node, value.Z);
+        var components = componentValues
+            .Select(value => CreateVectorComponent(node, value))
+            .ToArray();
         var vectorGrid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*,Auto,*"),
+            ColumnDefinitions = new ColumnDefinitions(CreateVectorColumnDefinitions(componentLabels.Count)),
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        vectorGrid.Classes.Add("code-first-vector3-field");
-        AddVector3Component(vectorGrid, "X", xInput, labelColumn: 0);
-        AddVector3Component(vectorGrid, "Y", yInput, labelColumn: 2);
-        AddVector3Component(vectorGrid, "Z", zInput, labelColumn: 4);
-        AttachVector3FieldTracking(node.Id, xInput, yInput, zInput);
+        vectorGrid.Classes.Add(className);
+        for (var index = 0; index < components.Length; index++)
+        {
+            AddVectorComponent(
+                vectorGrid,
+                componentLabels[index],
+                components[index],
+                labelColumn: index * 2);
+        }
+
+        AttachVectorFieldTracking(components, reportChange);
 
         var grid = new Grid
         {
@@ -944,7 +981,7 @@ internal sealed class GuiAvaloniaControlFactory
         return grid;
     }
 
-    private static NumericUpDown CreateVector3Component(GuiNode node, double value)
+    private static NumericUpDown CreateVectorComponent(GuiNode node, double value)
     {
         var component = new NumericUpDown
         {
@@ -968,7 +1005,14 @@ internal sealed class GuiAvaloniaControlFactory
         return component;
     }
 
-    private static void AddVector3Component(
+    private static string CreateVectorColumnDefinitions(int componentCount)
+    {
+        return string.Join(
+            ",",
+            Enumerable.Repeat("Auto,*", componentCount));
+    }
+
+    private static void AddVectorComponent(
         Grid grid,
         string label,
         NumericUpDown component,
@@ -987,23 +1031,20 @@ internal sealed class GuiAvaloniaControlFactory
         grid.Children.Add(component);
     }
 
-    private void AttachVector3FieldTracking(
-        GuiNodeId nodeId,
-        NumericUpDown xInput,
-        NumericUpDown yInput,
-        NumericUpDown zInput)
+    private static void AttachVectorFieldTracking(
+        IReadOnlyList<NumericUpDown> components,
+        Action<IReadOnlyList<double>> reportChange)
     {
-        AttachVector3ComponentTracking(nodeId, xInput, yInput, zInput, xInput);
-        AttachVector3ComponentTracking(nodeId, xInput, yInput, zInput, yInput);
-        AttachVector3ComponentTracking(nodeId, xInput, yInput, zInput, zInput);
+        foreach (var component in components)
+        {
+            AttachVectorComponentTracking(components, component, reportChange);
+        }
     }
 
-    private void AttachVector3ComponentTracking(
-        GuiNodeId nodeId,
-        NumericUpDown xInput,
-        NumericUpDown yInput,
-        NumericUpDown zInput,
-        NumericUpDown observedInput)
+    private static void AttachVectorComponentTracking(
+        IReadOnlyList<NumericUpDown> components,
+        NumericUpDown observedInput,
+        Action<IReadOnlyList<double>> reportChange)
     {
         var hasObservedInitialValue = false;
         observedInput.Tag = observedInput
@@ -1016,12 +1057,7 @@ internal sealed class GuiAvaloniaControlFactory
                     return;
                 }
 
-                host_.SetVector3Value(
-                    nodeId,
-                    new GuiVector3Value(
-                        ToDouble(xInput.Value),
-                        ToDouble(yInput.Value),
-                        ToDouble(zInput.Value)));
+                reportChange(components.Select(component => ToDouble(component.Value)).ToArray());
             }));
     }
 

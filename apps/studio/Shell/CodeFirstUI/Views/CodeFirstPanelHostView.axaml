@@ -112,6 +112,10 @@
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
         </Style>
+        <Style Selector="Grid.code-first-vector2-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
         <Style Selector="TextBlock.code-first-vector-component-label">
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />

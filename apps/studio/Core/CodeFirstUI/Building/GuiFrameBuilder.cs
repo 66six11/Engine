@@ -184,6 +184,39 @@ public sealed class GuiFrameBuilder
             });
     }
 
+    public GuiNodeId Vector2Field(
+        string key,
+        string label,
+        GuiVector2Value value,
+        double? minimum = null,
+        double? maximum = null,
+        double increment = 0.1d,
+        string formatString = "0.###")
+    {
+        ValidateNumericBounds(minimum, maximum);
+        var resolvedIncrement = ResolveNumericChange(
+            increment,
+            fallback: 0.1d,
+            nameof(increment));
+        if (string.IsNullOrWhiteSpace(formatString))
+        {
+            throw new ArgumentException("Format string must not be empty.", nameof(formatString));
+        }
+
+        return AddLeaf(
+            key,
+            GuiNodeKind.Vector2Field,
+            label,
+            new GuiNodePayload
+            {
+                Vector2Value = ClampVector2ToBounds(value, minimum, maximum, nameof(value)),
+                NumericMinimum = minimum,
+                NumericMaximum = maximum,
+                NumericSmallChange = resolvedIncrement,
+                NumericFormatString = formatString,
+            });
+    }
+
     public GuiNodeId Slider(
         string key,
         string label,
@@ -586,6 +619,17 @@ public sealed class GuiFrameBuilder
             ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
             ClampFiniteToBounds(value.Y, minimum, maximum, parameterName),
             ClampFiniteToBounds(value.Z, minimum, maximum, parameterName));
+    }
+
+    private static GuiVector2Value ClampVector2ToBounds(
+        GuiVector2Value value,
+        double? minimum,
+        double? maximum,
+        string parameterName)
+    {
+        return new GuiVector2Value(
+            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
+            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName));
     }
 
     private void PopScope(MutableGuiNode expectedNode)

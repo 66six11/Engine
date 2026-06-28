@@ -26,6 +26,8 @@ internal interface IGuiAvaloniaHost
 
     void SetVector3Value(GuiNodeId nodeId, GuiVector3Value value);
 
+    void SetVector2Value(GuiNodeId nodeId, GuiVector2Value value);
+
     void SetText(GuiNodeId nodeId, string text);
 
     void CommitText(GuiNodeId nodeId, string text);

@@ -401,6 +401,30 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Set_vector2_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
+    {
+        var panel = new Vector2FieldDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+        var uvScale = new GuiVector2Value(2d, 4d);
+
+        host.SetVector2Value(new GuiNodeId("ui.style", "uv-scale", GuiNodeKind.Vector2Field), uvScale);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetVector2Value(
+            new GuiNodeId("ui.style", "uv-scale", GuiNodeKind.Vector2Field),
+            out var storedValue));
+        Assert.Equal(uvScale, storedValue);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var vector2Field = host.CurrentTree?.Root.Children[0];
+        Assert.Equal(uvScale, vector2Field?.Payload.Vector2Value);
+        Assert.Equal(uvScale, panel.UvScale);
+    }
+
+    [Fact]
     public void Set_number_input_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
     {
         var panel = new NumberInputDrivenCodeFirstPanel();
@@ -765,6 +789,19 @@ public sealed class CodeFirstPanelHostViewModelTests
         {
             GuiBuildCount++;
             Position = gui.Vector3Field("position", "Position", new GuiVector3Value(0d, 0d, 0d));
+        }
+    }
+
+    private sealed class Vector2FieldDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        public GuiVector2Value UvScale { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            UvScale = gui.Vector2Field("uv-scale", "UV Scale", new GuiVector2Value(1d, 1d));
         }
     }
 
