@@ -108,6 +108,34 @@ public sealed class EditorGui
         return selected;
     }
 
+    public double Slider(
+        string key,
+        string label,
+        double value,
+        double minimum = 0d,
+        double maximum = 1d,
+        double? smallChange = null,
+        double? largeChange = null)
+    {
+        ValidateNumericRange(minimum, maximum);
+
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.Slider);
+        var resolvedValue = StateStore.TryGetNumericValue(nodeId, out var storedValue)
+            ? storedValue
+            : value;
+        resolvedValue = ClampFinite(resolvedValue, minimum, maximum, nameof(value));
+        StateStore.SetNumericValue(nodeId, resolvedValue);
+        builder_.Slider(
+            key,
+            label,
+            resolvedValue,
+            minimum,
+            maximum,
+            smallChange,
+            largeChange);
+        return resolvedValue;
+    }
+
     public void ValidationMessage(
         string key,
         string message,
@@ -330,5 +358,41 @@ public sealed class EditorGui
     {
         return !string.IsNullOrWhiteSpace(itemId)
             && items.Any(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
+    }
+
+    private static void ValidateNumericRange(double minimum, double maximum)
+    {
+        if (double.IsNaN(minimum) || double.IsInfinity(minimum))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(minimum),
+                minimum,
+                "Minimum must be finite.");
+        }
+
+        if (double.IsNaN(maximum) || double.IsInfinity(maximum) || maximum <= minimum)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximum),
+                maximum,
+                "Maximum must be finite and greater than minimum.");
+        }
+    }
+
+    private static double ClampFinite(
+        double value,
+        double minimum,
+        double maximum,
+        string parameterName)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                value,
+                "Value must be finite.");
+        }
+
+        return Math.Clamp(value, minimum, maximum);
     }
 }

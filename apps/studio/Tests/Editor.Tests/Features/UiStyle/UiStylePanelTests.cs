@@ -70,7 +70,7 @@ public sealed class UiStylePanelTests
     }
 
     [Fact]
-    public void Inputs_page_contains_code_first_text_field_toggle_and_combo_box_samples()
+    public void Inputs_page_contains_code_first_text_field_toggle_combo_box_and_slider_samples()
     {
         var host = CreateAttachedHost();
 
@@ -81,11 +81,15 @@ public sealed class UiStylePanelTests
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Toggle);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.ComboBox);
+        Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Slider);
         var filter = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
         Assert.Equal(GuiTextInputCommitMode.Debounced, filter.Payload.TextCommitMode);
         var comboBox = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.ComboBox);
         Assert.Equal("deferred", comboBox.Payload.SelectedItemId);
         Assert.Contains(comboBox.Payload.ListItems, item => item.Id == "forward" && item.Label == "Forward");
+        var slider = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.Slider);
+        Assert.Equal(0.75d, slider.Payload.NumericValue);
+        Assert.Equal(2d, slider.Payload.NumericMaximum);
     }
 
     [Fact]

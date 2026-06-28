@@ -16,6 +16,7 @@ public enum GuiNodeKind
     Button,
     Toggle,
     ComboBox,
+    Slider,
     TextField,
     List,
     Property,

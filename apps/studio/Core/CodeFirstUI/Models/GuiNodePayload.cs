@@ -36,5 +36,15 @@ public sealed record GuiNodePayload
 
     public bool? IsExpanded { get; init; }
 
+    public double? NumericValue { get; init; }
+
+    public double? NumericMinimum { get; init; }
+
+    public double? NumericMaximum { get; init; }
+
+    public double? NumericSmallChange { get; init; }
+
+    public double? NumericLargeChange { get; init; }
+
     public EditorDiagnosticSeverity? DiagnosticSeverity { get; init; }
 }

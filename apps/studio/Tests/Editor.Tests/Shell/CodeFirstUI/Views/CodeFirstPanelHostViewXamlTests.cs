@@ -69,6 +69,17 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", comboBoxStyle);
     }
 
+    [Fact]
+    public void Code_first_slider_uses_property_row_control_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var sliderStyle = GetStyle(xaml, "Style Selector=\"Slider.code-first-slider\"");
+
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", sliderStyle);
+        Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", sliderStyle);
+    }
+
     private static string GetStyle(string xaml, string selector)
     {
         var start = xaml.IndexOf(selector, StringComparison.Ordinal);

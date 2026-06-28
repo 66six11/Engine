@@ -7,6 +7,7 @@ public sealed class GuiStateStore
 {
     private readonly Dictionary<GuiNodeId, string> selectedItemsByNode_ = [];
     private readonly Dictionary<GuiNodeId, double> splitRatiosByNode_ = [];
+    private readonly Dictionary<GuiNodeId, double> numericValuesByNode_ = [];
     private readonly Dictionary<GuiNodeId, string> textByNode_ = [];
     private readonly Dictionary<GuiNodeId, bool> togglesByNode_ = [];
     private readonly Dictionary<GuiNodeId, bool> foldoutsByNode_ = [];
@@ -113,6 +114,27 @@ public sealed class GuiStateStore
         return splitRatiosByNode_.TryGetValue(nodeId, out ratio);
     }
 
+    public void SetNumericValue(GuiNodeId nodeId, double value)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(value),
+                value,
+                "Numeric value must be finite.");
+        }
+
+        numericValuesByNode_[nodeId] = value;
+    }
+
+    public bool TryGetNumericValue(GuiNodeId nodeId, out double value)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+
+        return numericValuesByNode_.TryGetValue(nodeId, out value);
+    }
+
     public void SetToggle(GuiNodeId nodeId, bool isChecked)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -148,6 +170,7 @@ public sealed class GuiStateStore
         textByNode_.Remove(nodeId);
         selectedItemsByNode_.Remove(nodeId);
         splitRatiosByNode_.Remove(nodeId);
+        numericValuesByNode_.Remove(nodeId);
         togglesByNode_.Remove(nodeId);
         foldoutsByNode_.Remove(nodeId);
         navigationRouteExpansionByNode_.Remove(nodeId);

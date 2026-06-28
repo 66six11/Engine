@@ -448,6 +448,40 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_slider_to_property_row_and_reports_value_changes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.Slider(
+            "exposure",
+            "Exposure",
+            value: 0.75d,
+            minimum: 0d,
+            maximum: 2d,
+            smallChange: 0.05d,
+            largeChange: 0.25d);
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var control = factory.Build(builder.Build());
+
+        var slider = FindDescendant<Slider>(control);
+        Assert.NotNull(slider);
+        Assert.Contains("code-first-slider", slider!.Classes);
+        Assert.Equal(0d, slider.Minimum);
+        Assert.Equal(2d, slider.Maximum);
+        Assert.Equal(0.75d, slider.Value);
+        Assert.Equal(0.05d, slider.SmallChange);
+        Assert.Equal(0.25d, slider.LargeChange);
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Exposure"));
+
+        slider.Value = 1.25d;
+
+        var change = Assert.Single(host.SliderChanges);
+        Assert.Equal(new GuiNodeId("ui-style", "exposure", GuiNodeKind.Slider), change.NodeId);
+        Assert.Equal(1.25d, change.Value);
+    }
+
+    [Fact]
     public void Text_field_on_change_commit_mode_commits_each_text_change()
     {
         var builder = new GuiFrameBuilder("ui-style");
@@ -598,6 +632,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
         }
 
+        public void SetSliderValue(GuiNodeId nodeId, double value)
+        {
+        }
+
         public void SetText(GuiNodeId nodeId, string text)
         {
         }
@@ -622,6 +660,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<TextChange> textCommits_ = [];
         private readonly List<ToggleChange> toggleChanges_ = [];
         private readonly List<ComboBoxSelection> comboBoxSelections_ = [];
+        private readonly List<SliderChange> sliderChanges_ = [];
         private readonly List<FoldoutChange> foldoutChanges_ = [];
         private readonly List<NavigationRouteSelection> navigationRouteSelections_ = [];
         private readonly List<NavigationRouteExpansionChange> navigationRouteExpansionChanges_ = [];
@@ -635,6 +674,8 @@ public sealed class GuiAvaloniaControlFactoryTests
         public IReadOnlyList<ToggleChange> ToggleChanges => toggleChanges_;
 
         public IReadOnlyList<ComboBoxSelection> ComboBoxSelections => comboBoxSelections_;
+
+        public IReadOnlyList<SliderChange> SliderChanges => sliderChanges_;
 
         public IReadOnlyList<FoldoutChange> FoldoutChanges => foldoutChanges_;
 
@@ -668,6 +709,11 @@ public sealed class GuiAvaloniaControlFactoryTests
         public void ResizeSplit(GuiNodeId nodeId, double ratio)
         {
             splitResizes_.Add(new SplitResize(nodeId, ratio));
+        }
+
+        public void SetSliderValue(GuiNodeId nodeId, double value)
+        {
+            sliderChanges_.Add(new SliderChange(nodeId, value));
         }
 
         public void SetText(GuiNodeId nodeId, string text)
@@ -706,6 +752,10 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record ComboBoxSelection(
         GuiNodeId NodeId,
         string ItemId);
+
+    private sealed record SliderChange(
+        GuiNodeId NodeId,
+        double Value);
 
     private sealed record FoldoutChange(
         GuiNodeId NodeId,

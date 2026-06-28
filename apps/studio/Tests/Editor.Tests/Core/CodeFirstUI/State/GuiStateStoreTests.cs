@@ -29,11 +29,16 @@ public sealed class GuiStateStoreTests
             "render.frameDebugger",
             "catalog",
             GuiNodeKind.NavigationView);
+        var slider = new GuiNodeId(
+            "render.frameDebugger",
+            "exposure",
+            GuiNodeKind.Slider);
 
         store.SetText(filter, "gbuffer");
         store.SetSelectedItem(passes, "pass-12");
         store.SetToggle(toggle, isChecked: true);
         store.SetFoldoutExpanded(foldout, isExpanded: false);
+        store.SetNumericValue(slider, 1.25d);
         store.SetNavigationRouteExpanded(navigation, "overview", isExpanded: false);
         store.SetSplitRatio(new GuiNodeId(
             "render.frameDebugger",
@@ -48,6 +53,8 @@ public sealed class GuiStateStoreTests
         Assert.True(isChecked);
         Assert.True(store.TryGetFoldoutExpanded(foldout, out var isExpanded));
         Assert.False(isExpanded);
+        Assert.True(store.TryGetNumericValue(slider, out var numericValue));
+        Assert.Equal(1.25d, numericValue);
         Assert.True(store.TryGetNavigationRouteExpanded(navigation, "overview", out var routeExpanded));
         Assert.False(routeExpanded);
         Assert.True(store.TryGetSplitRatio(new GuiNodeId(
@@ -71,11 +78,13 @@ public sealed class GuiStateStoreTests
         store.SetText(filter, "gbuffer");
         store.SetToggle(toggle, isChecked: true);
         store.SetFoldoutExpanded(filter with { Kind = GuiNodeKind.Foldout }, isExpanded: false);
+        store.SetNumericValue(filter with { Kind = GuiNodeKind.Slider }, 1.25d);
         store.SetNavigationRouteExpanded(filter with { Kind = GuiNodeKind.NavigationView }, "overview", isExpanded: false);
         store.SetSplitRatio(filter with { Kind = GuiNodeKind.Split }, 0.5d);
         store.ClearNodeState(filter);
         store.ClearNodeState(toggle);
         store.ClearNodeState(filter with { Kind = GuiNodeKind.Foldout });
+        store.ClearNodeState(filter with { Kind = GuiNodeKind.Slider });
         store.ClearNodeState(filter with { Kind = GuiNodeKind.NavigationView });
         store.ClearNodeState(filter with { Kind = GuiNodeKind.Split });
 
@@ -83,6 +92,7 @@ public sealed class GuiStateStoreTests
         Assert.False(store.TryGetText(incompatibleFilter, out _));
         Assert.False(store.TryGetToggle(toggle, out _));
         Assert.False(store.TryGetFoldoutExpanded(filter with { Kind = GuiNodeKind.Foldout }, out _));
+        Assert.False(store.TryGetNumericValue(filter with { Kind = GuiNodeKind.Slider }, out _));
         Assert.False(store.TryGetNavigationRouteExpanded(filter with { Kind = GuiNodeKind.NavigationView }, "overview", out _));
         Assert.False(store.TryGetSplitRatio(filter with { Kind = GuiNodeKind.Split }, out _));
     }

@@ -115,6 +115,39 @@ public sealed class GuiFrameBuilder
             });
     }
 
+    public GuiNodeId Slider(
+        string key,
+        string label,
+        double value,
+        double minimum = 0d,
+        double maximum = 1d,
+        double? smallChange = null,
+        double? largeChange = null)
+    {
+        ValidateNumericRange(minimum, maximum);
+        var clampedValue = ClampFinite(value, minimum, maximum, nameof(value));
+        var range = maximum - minimum;
+
+        return AddLeaf(
+            key,
+            GuiNodeKind.Slider,
+            label,
+            new GuiNodePayload
+            {
+                NumericValue = clampedValue,
+                NumericMinimum = minimum,
+                NumericMaximum = maximum,
+                NumericSmallChange = ResolveNumericChange(
+                    smallChange,
+                    range / 100d,
+                    nameof(smallChange)),
+                NumericLargeChange = ResolveNumericChange(
+                    largeChange,
+                    range / 10d,
+                    nameof(largeChange)),
+            });
+    }
+
     public GuiNodeId ValidationMessage(
         string key,
         string message,
@@ -297,6 +330,59 @@ public sealed class GuiFrameBuilder
             : $"{parentKeyPath}/{key}";
 
         return new GuiNodeId(panelId_, keyPath, kind);
+    }
+
+    private static void ValidateNumericRange(double minimum, double maximum)
+    {
+        if (double.IsNaN(minimum) || double.IsInfinity(minimum))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(minimum),
+                minimum,
+                "Minimum must be finite.");
+        }
+
+        if (double.IsNaN(maximum) || double.IsInfinity(maximum) || maximum <= minimum)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximum),
+                maximum,
+                "Maximum must be finite and greater than minimum.");
+        }
+    }
+
+    private static double ClampFinite(
+        double value,
+        double minimum,
+        double maximum,
+        string parameterName)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                value,
+                "Value must be finite.");
+        }
+
+        return Math.Clamp(value, minimum, maximum);
+    }
+
+    private static double ResolveNumericChange(
+        double? change,
+        double fallback,
+        string parameterName)
+    {
+        var resolved = change ?? fallback;
+        if (double.IsNaN(resolved) || double.IsInfinity(resolved) || resolved <= 0d)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                resolved,
+                "Numeric change must be finite and greater than zero.");
+        }
+
+        return resolved;
     }
 
     private void PopScope(MutableGuiNode expectedNode)

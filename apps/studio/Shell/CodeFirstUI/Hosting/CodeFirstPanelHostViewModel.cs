@@ -141,6 +141,20 @@ internal sealed class CodeFirstPanelHostViewModel :
         stateStore_.SetSplitRatio(nodeId, ratio);
     }
 
+    internal void SetSliderValue(GuiNodeId nodeId, double value)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        ThrowIfDisposed();
+
+        if (stateStore_.TryGetNumericValue(nodeId, out var currentValue)
+            && currentValue.Equals(value))
+        {
+            return;
+        }
+
+        stateStore_.SetNumericValue(nodeId, value);
+    }
+
     internal void SetText(GuiNodeId nodeId, string text)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -344,6 +358,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.ResizeSplit(GuiNodeId nodeId, double ratio)
     {
         ResizeSplit(nodeId, ratio);
+    }
+
+    void IGuiAvaloniaHost.SetSliderValue(GuiNodeId nodeId, double value)
+    {
+        SetSliderValue(nodeId, value);
     }
 
     void IGuiAvaloniaHost.SetText(GuiNodeId nodeId, string text)

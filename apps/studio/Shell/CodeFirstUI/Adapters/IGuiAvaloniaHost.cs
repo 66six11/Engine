@@ -16,6 +16,8 @@ internal interface IGuiAvaloniaHost
 
     void ResizeSplit(GuiNodeId nodeId, double ratio);
 
+    void SetSliderValue(GuiNodeId nodeId, double value);
+
     void SetText(GuiNodeId nodeId, string text);
 
     void CommitText(GuiNodeId nodeId, string text);

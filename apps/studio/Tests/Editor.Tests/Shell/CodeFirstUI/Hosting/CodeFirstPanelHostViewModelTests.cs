@@ -276,6 +276,43 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Set_slider_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
+    {
+        var panel = new SliderDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetSliderValue(new GuiNodeId("ui.style", "exposure", GuiNodeKind.Slider), 1.25d);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetNumericValue(
+            new GuiNodeId("ui.style", "exposure", GuiNodeKind.Slider),
+            out var storedValue));
+        Assert.Equal(1.25d, storedValue);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var slider = host.CurrentTree?.Root.Children[0];
+        Assert.Equal(1.25d, slider?.Payload.NumericValue);
+        Assert.Equal(1.25d, panel.Exposure);
+    }
+
+    [Fact]
+    public void Setting_current_slider_value_does_not_rebuild_tree()
+    {
+        var panel = new SliderDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetSliderValue(new GuiNodeId("ui.style", "exposure", GuiNodeKind.Slider), 0.5d);
+
+        Assert.Equal(0.5d, panel.Exposure);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+    }
+
+    [Fact]
     public void Commit_text_updates_state_and_rebuilds_tree()
     {
         var panel = new InputDrivenCodeFirstPanel();
@@ -545,6 +582,19 @@ public sealed class CodeFirstPanelHostViewModelTests
             GuiBuildCount++;
             FilterText = gui.TextInput("filter", "Filter", "default");
             ShowDisabled = gui.Toggle("show-disabled", "Show Disabled");
+        }
+    }
+
+    private sealed class SliderDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        public double Exposure { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            Exposure = gui.Slider("exposure", "Exposure", 0.5d, 0d, 2d);
         }
     }
 

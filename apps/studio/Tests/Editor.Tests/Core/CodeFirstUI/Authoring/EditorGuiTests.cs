@@ -400,6 +400,39 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Slider_returns_stored_value_and_emits_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetNumericValue(new GuiNodeId("ui.style", "exposure", GuiNodeKind.Slider), 1.25d);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var value = gui.Slider(
+            "exposure",
+            "Exposure",
+            value: 0.50d,
+            minimum: 0d,
+            maximum: 2d,
+            smallChange: 0.05d,
+            largeChange: 0.25d);
+
+        Assert.Equal(1.25d, value);
+
+        var slider = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Slider, slider.Kind);
+        Assert.Equal("Exposure", slider.Label);
+        Assert.Equal(1.25d, slider.Payload.NumericValue);
+        Assert.Equal(0d, slider.Payload.NumericMinimum);
+        Assert.Equal(2d, slider.Payload.NumericMaximum);
+        Assert.Equal(0.05d, slider.Payload.NumericSmallChange);
+        Assert.Equal(0.25d, slider.Payload.NumericLargeChange);
+    }
+
+    [Fact]
     public void Text_input_emits_debounce_commit_delay()
     {
         var builder = new GuiFrameBuilder("ui.style");

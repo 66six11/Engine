@@ -63,6 +63,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.TextField => BuildTextField(node),
             GuiNodeKind.Toggle => BuildToggle(node),
             GuiNodeKind.ComboBox => BuildComboBox(node),
+            GuiNodeKind.Slider => BuildSlider(node),
             GuiNodeKind.List => BuildList(node),
             GuiNodeKind.ValidationMessage => BuildValidationMessage(node),
             _ => BuildUnsupportedNode(node),
@@ -807,6 +808,61 @@ internal sealed class GuiAvaloniaControlFactory
         grid.Children.Add(label);
         grid.Children.Add(comboBox);
         return grid;
+    }
+
+    private Control BuildSlider(GuiNode node)
+    {
+        var minimum = node.Payload.NumericMinimum ?? 0d;
+        var maximum = node.Payload.NumericMaximum ?? 1d;
+        var value = Math.Clamp(node.Payload.NumericValue ?? minimum, minimum, maximum);
+
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var slider = new Slider
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            LargeChange = node.Payload.NumericLargeChange ?? (maximum - minimum) / 10d,
+            Maximum = maximum,
+            Minimum = minimum,
+            SmallChange = node.Payload.NumericSmallChange ?? (maximum - minimum) / 100d,
+            Value = value,
+        };
+        slider.Classes.Add("code-first-slider");
+        AttachSliderTracking(node.Id, slider);
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(slider, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(slider);
+        return grid;
+    }
+
+    private void AttachSliderTracking(GuiNodeId nodeId, Slider slider)
+    {
+        var hasObservedInitialValue = false;
+        slider.Tag = slider
+            .GetObservable(Slider.ValueProperty)
+            .Subscribe(new ActionObserver<double>(value =>
+            {
+                if (!hasObservedInitialValue)
+                {
+                    hasObservedInitialValue = true;
+                    return;
+                }
+
+                host_.SetSliderValue(nodeId, value);
+            }));
     }
 
     private Control BuildList(GuiNode node)

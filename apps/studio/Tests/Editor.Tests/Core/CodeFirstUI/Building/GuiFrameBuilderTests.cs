@@ -190,6 +190,30 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_slider_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+
+        builder.Slider(
+            "exposure",
+            "Exposure",
+            value: 0.75d,
+            minimum: 0d,
+            maximum: 2d,
+            smallChange: 0.05d,
+            largeChange: 0.25d);
+
+        var slider = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Slider, slider.Kind);
+        Assert.Equal("Exposure", slider.Label);
+        Assert.Equal(0.75d, slider.Payload.NumericValue);
+        Assert.Equal(0d, slider.Payload.NumericMinimum);
+        Assert.Equal(2d, slider.Payload.NumericMaximum);
+        Assert.Equal(0.05d, slider.Payload.NumericSmallChange);
+        Assert.Equal(0.25d, slider.Payload.NumericLargeChange);
+    }
+
+    [Fact]
     public void Build_preserves_debounced_text_field_commit_delay()
     {
         var builder = new GuiFrameBuilder("ui.style");

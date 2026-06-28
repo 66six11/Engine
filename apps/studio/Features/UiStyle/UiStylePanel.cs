@@ -84,6 +84,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
             GuiTextInputCommitMode.Debounced,
             TimeSpan.FromMilliseconds(250));
         gui.ComboBox("render-mode", "Render Mode", RenderModeOptions, "deferred");
+        gui.Slider("exposure", "Exposure", 0.75d, 0d, 2d, 0.05d, 0.25d);
         gui.Toggle("show-disabled", "Show Disabled");
         gui.Text("contract", "Input state belongs to GuiStateStore; document mutations should still go through commands.");
     }
