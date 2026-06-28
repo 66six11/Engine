@@ -209,6 +209,21 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_color_field_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var color = new GuiColorValue(255, 128, 64, 192);
+
+        builder.ColorField("albedo", "Albedo", color, showAlpha: true);
+
+        var colorField = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.ColorField, colorField.Kind);
+        Assert.Equal("Albedo", colorField.Label);
+        Assert.Equal(color, colorField.Payload.ColorValue);
+        Assert.True(colorField.Payload.ShowAlpha);
+    }
+
+    [Fact]
     public void Build_preserves_slider_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

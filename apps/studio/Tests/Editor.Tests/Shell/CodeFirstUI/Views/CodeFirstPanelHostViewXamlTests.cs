@@ -7,6 +7,16 @@ namespace Editor.Tests.Shell.CodeFirstUI.Views;
 public sealed class CodeFirstPanelHostViewXamlTests
 {
     [Fact]
+    public void App_includes_color_picker_fluent_theme()
+    {
+        var xaml = LoadSource("App.axaml");
+
+        Assert.Contains(
+            "avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml",
+            xaml);
+    }
+
+    [Fact]
     public void Navigation_directory_uses_compact_transparent_tree_rows_without_side_guides()
     {
         var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
@@ -102,6 +112,17 @@ public sealed class CodeFirstPanelHostViewXamlTests
 
         Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", numberInputStyle);
         Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", numberInputStyle);
+    }
+
+    [Fact]
+    public void Code_first_color_field_uses_property_row_control_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var colorFieldStyle = GetStyle(xaml, "Style Selector=\"ColorPicker.code-first-color-field\"");
+
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", colorFieldStyle);
+        Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", colorFieldStyle);
     }
 
     [Fact]

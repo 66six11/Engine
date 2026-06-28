@@ -70,7 +70,7 @@ public sealed class UiStylePanelTests
     }
 
     [Fact]
-    public void Inputs_page_contains_code_first_text_field_toggle_combo_box_radio_slider_and_number_input_samples()
+    public void Inputs_page_contains_code_first_text_field_toggle_combo_box_radio_slider_color_and_number_input_samples()
     {
         var host = CreateAttachedHost();
 
@@ -83,6 +83,7 @@ public sealed class UiStylePanelTests
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.ComboBox);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.RadioGroup);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Slider);
+        Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.ColorField);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.NumberInput);
         var filter = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
         Assert.Equal(GuiTextInputCommitMode.Debounced, filter.Payload.TextCommitMode);
@@ -95,6 +96,9 @@ public sealed class UiStylePanelTests
         var slider = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.Slider);
         Assert.Equal(0.75d, slider.Payload.NumericValue);
         Assert.Equal(2d, slider.Payload.NumericMaximum);
+        var colorField = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.ColorField);
+        Assert.Equal(new GuiColorValue(128, 160, 255, 255), colorField.Payload.ColorValue);
+        Assert.True(colorField.Payload.ShowAlpha);
         var numberInput = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.NumberInput);
         Assert.Equal(0.50d, numberInput.Payload.NumericValue);
         Assert.Equal("0.00", numberInput.Payload.NumericFormatString);

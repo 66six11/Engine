@@ -8,6 +8,7 @@ public sealed class GuiStateStore
     private readonly Dictionary<GuiNodeId, string> selectedItemsByNode_ = [];
     private readonly Dictionary<GuiNodeId, double> splitRatiosByNode_ = [];
     private readonly Dictionary<GuiNodeId, double> numericValuesByNode_ = [];
+    private readonly Dictionary<GuiNodeId, GuiColorValue> colorValuesByNode_ = [];
     private readonly Dictionary<GuiNodeId, string> textByNode_ = [];
     private readonly Dictionary<GuiNodeId, bool> togglesByNode_ = [];
     private readonly Dictionary<GuiNodeId, bool> foldoutsByNode_ = [];
@@ -135,6 +136,20 @@ public sealed class GuiStateStore
         return numericValuesByNode_.TryGetValue(nodeId, out value);
     }
 
+    public void SetColorValue(GuiNodeId nodeId, GuiColorValue value)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+
+        colorValuesByNode_[nodeId] = value;
+    }
+
+    public bool TryGetColorValue(GuiNodeId nodeId, out GuiColorValue value)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+
+        return colorValuesByNode_.TryGetValue(nodeId, out value);
+    }
+
     public void SetToggle(GuiNodeId nodeId, bool isChecked)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -171,6 +186,7 @@ public sealed class GuiStateStore
         selectedItemsByNode_.Remove(nodeId);
         splitRatiosByNode_.Remove(nodeId);
         numericValuesByNode_.Remove(nodeId);
+        colorValuesByNode_.Remove(nodeId);
         togglesByNode_.Remove(nodeId);
         foldoutsByNode_.Remove(nodeId);
         navigationRouteExpansionByNode_.Remove(nodeId);

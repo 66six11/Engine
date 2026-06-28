@@ -353,6 +353,30 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Set_color_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
+    {
+        var panel = new ColorFieldDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+        var color = new GuiColorValue(16, 32, 48, 128);
+
+        host.SetColorValue(new GuiNodeId("ui.style", "albedo", GuiNodeKind.ColorField), color);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetColorValue(
+            new GuiNodeId("ui.style", "albedo", GuiNodeKind.ColorField),
+            out var storedValue));
+        Assert.Equal(color, storedValue);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var colorField = host.CurrentTree?.Root.Children[0];
+        Assert.Equal(color, colorField?.Payload.ColorValue);
+        Assert.Equal(color, panel.Albedo);
+    }
+
+    [Fact]
     public void Set_number_input_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
     {
         var panel = new NumberInputDrivenCodeFirstPanel();
@@ -691,6 +715,19 @@ public sealed class CodeFirstPanelHostViewModelTests
         {
             GuiBuildCount++;
             Exposure = gui.Slider("exposure", "Exposure", 0.5d, 0d, 2d);
+        }
+    }
+
+    private sealed class ColorFieldDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        public GuiColorValue Albedo { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            Albedo = gui.ColorField("albedo", "Albedo", new GuiColorValue(255, 128, 64), showAlpha: true);
         }
     }
 

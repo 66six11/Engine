@@ -127,6 +127,21 @@ public sealed class EditorGui
         return selected;
     }
 
+    public GuiColorValue ColorField(
+        string key,
+        string label,
+        GuiColorValue value,
+        bool showAlpha = true)
+    {
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.ColorField);
+        var resolvedValue = StateStore.TryGetColorValue(nodeId, out var storedValue)
+            ? storedValue
+            : value;
+        StateStore.SetColorValue(nodeId, resolvedValue);
+        builder_.ColorField(key, label, resolvedValue, showAlpha);
+        return resolvedValue;
+    }
+
     public double Slider(
         string key,
         string label,

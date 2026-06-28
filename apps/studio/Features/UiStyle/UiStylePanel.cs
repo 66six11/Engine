@@ -93,6 +93,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         gui.ComboBox("render-mode", "Render Mode", RenderModeOptions, "deferred");
         gui.RadioGroup("shading-mode", "Shading", ShadingModeOptions, "lit");
         gui.Slider("exposure", "Exposure", 0.75d, 0d, 2d, 0.05d, 0.25d);
+        gui.ColorField("albedo", "Albedo", new GuiColorValue(128, 160, 255), showAlpha: true);
         gui.NumberInput("roughness", "Roughness", 0.50d, 0d, 1d, 0.05d, "0.00");
         gui.Toggle("show-disabled", "Show Disabled");
         gui.Text("contract", "Input state belongs to GuiStateStore; document mutations should still go through commands.");

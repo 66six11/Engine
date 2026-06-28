@@ -7,6 +7,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
 using Editor.Shell.Icons;
@@ -64,6 +65,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Toggle => BuildToggle(node),
             GuiNodeKind.ComboBox => BuildComboBox(node),
             GuiNodeKind.RadioGroup => BuildRadioGroup(node),
+            GuiNodeKind.ColorField => BuildColorField(node),
             GuiNodeKind.Slider => BuildSlider(node),
             GuiNodeKind.NumberInput => BuildNumberInput(node),
             GuiNodeKind.ProgressBar => BuildProgressBar(node),
@@ -862,6 +864,48 @@ internal sealed class GuiAvaloniaControlFactory
         return grid;
     }
 
+    private Control BuildColorField(GuiNode node)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var showAlpha = node.Payload.ShowAlpha != false;
+        var colorPicker = new ColorPicker
+        {
+            Color = ToAvaloniaColor(node.Payload.ColorValue ?? new GuiColorValue(0, 0, 0)),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsAlphaEnabled = showAlpha,
+            IsAlphaVisible = showAlpha,
+            MinWidth = 120d,
+        };
+        colorPicker.Classes.Add("code-first-color-field");
+        AttachColorFieldTracking(node.Id, colorPicker);
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(colorPicker, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(colorPicker);
+        return grid;
+    }
+
+    private void AttachColorFieldTracking(GuiNodeId nodeId, ColorPicker colorPicker)
+    {
+        colorPicker.ColorChanged += (_, args) =>
+        {
+            host_.SetColorValue(nodeId, FromAvaloniaColor(args.NewColor));
+        };
+    }
+
     private Control BuildSlider(GuiNode node)
     {
         var minimum = node.Payload.NumericMinimum ?? 0d;
@@ -983,6 +1027,16 @@ internal sealed class GuiAvaloniaControlFactory
     private static decimal ToDecimal(double value)
     {
         return Convert.ToDecimal(value);
+    }
+
+    private static Color ToAvaloniaColor(GuiColorValue value)
+    {
+        return Color.FromArgb(value.Alpha, value.Red, value.Green, value.Blue);
+    }
+
+    private static GuiColorValue FromAvaloniaColor(Color value)
+    {
+        return new GuiColorValue(value.R, value.G, value.B, value.A);
     }
 
     private static Control BuildProgressBar(GuiNode node)

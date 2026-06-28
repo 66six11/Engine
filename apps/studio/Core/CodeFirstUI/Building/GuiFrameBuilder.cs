@@ -134,6 +134,23 @@ public sealed class GuiFrameBuilder
             });
     }
 
+    public GuiNodeId ColorField(
+        string key,
+        string label,
+        GuiColorValue value,
+        bool showAlpha = true)
+    {
+        return AddLeaf(
+            key,
+            GuiNodeKind.ColorField,
+            label,
+            new GuiNodePayload
+            {
+                ColorValue = value,
+                ShowAlpha = showAlpha,
+            });
+    }
+
     public GuiNodeId Slider(
         string key,
         string label,

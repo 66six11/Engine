@@ -478,6 +478,35 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_color_field_to_color_picker_and_reports_value_changes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.ColorField(
+            "albedo",
+            "Albedo",
+            new GuiColorValue(255, 128, 64, 192),
+            showAlpha: true);
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var control = factory.Build(builder.Build());
+
+        var colorPicker = FindDescendant<ColorPicker>(control);
+        Assert.NotNull(colorPicker);
+        Assert.Contains("code-first-color-field", colorPicker!.Classes);
+        Assert.Equal(Avalonia.Media.Color.FromArgb(192, 255, 128, 64), colorPicker.Color);
+        Assert.True(colorPicker.IsAlphaEnabled);
+        Assert.True(colorPicker.IsAlphaVisible);
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Albedo"));
+
+        colorPicker.Color = Avalonia.Media.Color.FromArgb(128, 16, 32, 48);
+
+        var change = Assert.Single(host.ColorChanges);
+        Assert.Equal(new GuiNodeId("ui-style", "albedo", GuiNodeKind.ColorField), change.NodeId);
+        Assert.Equal(new GuiColorValue(16, 32, 48, 128), change.Value);
+    }
+
+    [Fact]
     public void Build_maps_slider_to_property_row_and_reports_value_changes()
     {
         var builder = new GuiFrameBuilder("ui-style");
@@ -761,6 +790,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
         }
 
+        public void SetColorValue(GuiNodeId nodeId, GuiColorValue value)
+        {
+        }
+
         public void SetText(GuiNodeId nodeId, string text)
         {
         }
@@ -788,6 +821,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<RadioGroupSelection> radioGroupSelections_ = [];
         private readonly List<SliderChange> sliderChanges_ = [];
         private readonly List<NumberInputChange> numberInputChanges_ = [];
+        private readonly List<ColorChange> colorChanges_ = [];
         private readonly List<FoldoutChange> foldoutChanges_ = [];
         private readonly List<NavigationRouteSelection> navigationRouteSelections_ = [];
         private readonly List<NavigationRouteExpansionChange> navigationRouteExpansionChanges_ = [];
@@ -807,6 +841,8 @@ public sealed class GuiAvaloniaControlFactoryTests
         public IReadOnlyList<SliderChange> SliderChanges => sliderChanges_;
 
         public IReadOnlyList<NumberInputChange> NumberInputChanges => numberInputChanges_;
+
+        public IReadOnlyList<ColorChange> ColorChanges => colorChanges_;
 
         public IReadOnlyList<FoldoutChange> FoldoutChanges => foldoutChanges_;
 
@@ -857,6 +893,11 @@ public sealed class GuiAvaloniaControlFactoryTests
             numberInputChanges_.Add(new NumberInputChange(nodeId, value));
         }
 
+        public void SetColorValue(GuiNodeId nodeId, GuiColorValue value)
+        {
+            colorChanges_.Add(new ColorChange(nodeId, value));
+        }
+
         public void SetText(GuiNodeId nodeId, string text)
         {
             textChanges_.Add(new TextChange(nodeId, text));
@@ -905,6 +946,10 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record NumberInputChange(
         GuiNodeId NodeId,
         double Value);
+
+    private sealed record ColorChange(
+        GuiNodeId NodeId,
+        GuiColorValue Value);
 
     private sealed record FoldoutChange(
         GuiNodeId NodeId,

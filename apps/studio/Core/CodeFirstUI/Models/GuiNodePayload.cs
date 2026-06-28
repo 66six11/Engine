@@ -48,6 +48,10 @@ public sealed record GuiNodePayload
 
     public string? NumericFormatString { get; init; }
 
+    public GuiColorValue? ColorValue { get; init; }
+
+    public bool? ShowAlpha { get; init; }
+
     public bool? IsIndeterminate { get; init; }
 
     public bool? ShowProgressText { get; init; }

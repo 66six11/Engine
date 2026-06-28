@@ -104,6 +104,10 @@
         <Style Selector="RadioButton.code-first-radio-button">
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
         </Style>
+        <Style Selector="ColorPicker.code-first-color-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
         <Style Selector="Slider.code-first-slider">
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />

@@ -428,6 +428,34 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Color_field_returns_stored_value_and_emits_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var storedColor = new GuiColorValue(16, 32, 48, 128);
+        state.SetColorValue(new GuiNodeId("ui.style", "albedo", GuiNodeKind.ColorField), storedColor);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var value = gui.ColorField(
+            "albedo",
+            "Albedo",
+            new GuiColorValue(255, 128, 64),
+            showAlpha: true);
+
+        Assert.Equal(storedColor, value);
+
+        var colorField = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.ColorField, colorField.Kind);
+        Assert.Equal("Albedo", colorField.Label);
+        Assert.Equal(storedColor, colorField.Payload.ColorValue);
+        Assert.True(colorField.Payload.ShowAlpha);
+    }
+
+    [Fact]
     public void Slider_returns_stored_value_and_emits_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");
