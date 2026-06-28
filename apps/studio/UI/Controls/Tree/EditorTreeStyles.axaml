@@ -1,0 +1,104 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Editor.UI.Controls.Base"
+        xmlns:icons="using:Editor.Shell.Icons"
+        xmlns:tree="using:Editor.UI.Controls.Tree">
+    <Style Selector="ListBox.editor-tree-list">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style Selector="ListBox.editor-tree-list ListBoxItem">
+        <Setter Property="Height" Value="20" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FocusAdorner" Value="{x:Null}" />
+    </Style>
+
+    <Style Selector="ListBox.editor-tree-list ListBoxItem:pointerover">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushHierarchyRowHover}" />
+    </Style>
+
+    <Style Selector="ListBox.editor-tree-list ListBoxItem:selected">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSelectionInactive}" />
+    </Style>
+
+    <Style Selector="Grid.editor-tree-row">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="ColumnSpacing" Value="0" />
+    </Style>
+
+    <Style Selector="Grid.editor-tree-row:pointerover">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushHierarchyRowHover}" />
+    </Style>
+
+    <Style Selector="Grid.editor-tree-row.selected">
+        <Setter Property="Background" Value="{DynamicResource EditorBrushSelectionInactive}" />
+    </Style>
+
+    <Style Selector="tree|EditorTreeIndentGuide.editor-tree-indent-guide">
+        <Setter Property="LineBrush" Value="{DynamicResource EditorBrushBorderDefault}" />
+        <Setter Property="Opacity" Value="0.72" />
+    </Style>
+
+    <Style Selector="controls|IconButton.editor-tree-expander">
+        <Setter Property="Width" Value="18" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="icons|EditorIconView.editor-tree-node-icon">
+        <Setter Property="Width" Value="14" />
+        <Setter Property="Height" Value="14" />
+        <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="TextBlock.editor-tree-primary-text">
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="TextBlock.editor-tree-secondary-text">
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+        <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="TextBlock.editor-tree-empty">
+        <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+        <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+
+    <Style Selector="Button.editor-tree-label-button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="FocusAdorner" Value="{x:Null}" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        <Setter Property="Padding" Value="4,0,8,0" />
+    </Style>
+
+    <Style Selector="Button.editor-tree-label-button:pointerover">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <Style Selector="Button.editor-tree-label-button:pressed">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+</Styles>

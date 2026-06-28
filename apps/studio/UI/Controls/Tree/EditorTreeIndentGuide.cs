@@ -3,24 +3,24 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
-namespace Editor.Features.Hierarchy.Controls;
+namespace Editor.UI.Controls.Tree;
 
-public sealed class HierarchyIndentGuide : Control
+public sealed class EditorTreeIndentGuide : Control
 {
     public static readonly StyledProperty<int> DepthProperty =
-        AvaloniaProperty.Register<HierarchyIndentGuide, int>(nameof(Depth));
+        AvaloniaProperty.Register<EditorTreeIndentGuide, int>(nameof(Depth));
 
     public static readonly StyledProperty<double> IndentUnitProperty =
-        AvaloniaProperty.Register<HierarchyIndentGuide, double>(nameof(IndentUnit), 12d);
+        AvaloniaProperty.Register<EditorTreeIndentGuide, double>(nameof(IndentUnit), EditorTreeMetrics.IndentUnit);
 
     public static readonly StyledProperty<IBrush?> LineBrushProperty =
-        AvaloniaProperty.Register<HierarchyIndentGuide, IBrush?>(nameof(LineBrush));
+        AvaloniaProperty.Register<EditorTreeIndentGuide, IBrush?>(nameof(LineBrush));
 
     public static readonly StyledProperty<bool> IsLastSiblingProperty =
-        AvaloniaProperty.Register<HierarchyIndentGuide, bool>(nameof(IsLastSibling));
+        AvaloniaProperty.Register<EditorTreeIndentGuide, bool>(nameof(IsLastSibling));
 
     public static readonly StyledProperty<ulong> AncestorContinuationMaskProperty =
-        AvaloniaProperty.Register<HierarchyIndentGuide, ulong>(nameof(AncestorContinuationMask));
+        AvaloniaProperty.Register<EditorTreeIndentGuide, ulong>(nameof(AncestorContinuationMask));
 
     public int Depth
     {

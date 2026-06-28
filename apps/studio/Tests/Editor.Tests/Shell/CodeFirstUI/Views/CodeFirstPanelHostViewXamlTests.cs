@@ -10,6 +10,7 @@ public sealed class CodeFirstPanelHostViewXamlTests
     public void Navigation_directory_uses_compact_transparent_tree_rows_without_side_guides()
     {
         var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+        var source = LoadSource("Shell", "CodeFirstUI", "Adapters", "GuiAvaloniaControlFactory.cs");
 
         Assert.DoesNotContain("xmlns:hierarchy", xaml);
         Assert.DoesNotContain("HierarchyIndentGuide", xaml);
@@ -20,14 +21,16 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.DoesNotContain("EditorBrushSurface01", directoryStyle);
         Assert.Contains("Property=\"Padding\" Value=\"2\"", directoryStyle);
 
-        var rowStyle = GetStyle(xaml, "Style Selector=\"Grid.code-first-navigation-tree-row\"");
-        Assert.Contains("Property=\"Height\" Value=\"20\"", rowStyle);
-        Assert.Contains("Property=\"Background\" Value=\"Transparent\"", rowStyle);
-
-        Assert.Contains("Style Selector=\"Grid.code-first-navigation-tree-row:pointerover\"", xaml);
-        Assert.Contains("Style Selector=\"Grid.code-first-navigation-tree-row.selected\"", xaml);
-        Assert.Contains("EditorBrushHierarchyRowHover", xaml);
-        Assert.Contains("EditorBrushSelectionInactive", xaml);
+        Assert.DoesNotContain("Style Selector=\"Grid.code-first-navigation-tree-row:pointerover\"", xaml);
+        Assert.DoesNotContain("Style Selector=\"Grid.code-first-navigation-tree-row.selected\"", xaml);
+        Assert.DoesNotContain("Property=\"Height\" Value=\"20\"", GetStyle(xaml, "Style Selector=\"Grid.code-first-navigation-tree-row\""));
+        Assert.Contains("EditorTreeMetrics.IndentUnit", source);
+        Assert.Contains("EditorTreeMetrics.ExpanderWidth", source);
+        Assert.Contains("EditorTreeMetrics.IconSize", source);
+        Assert.Contains("EditorTreeClassNames.Row", source);
+        Assert.Contains("EditorTreeClassNames.Expander", source);
+        Assert.Contains("EditorTreeClassNames.PrimaryText", source);
+        Assert.Contains("EditorTreeClassNames.LabelButton", source);
     }
 
     private static string GetStyle(string xaml, string selector)

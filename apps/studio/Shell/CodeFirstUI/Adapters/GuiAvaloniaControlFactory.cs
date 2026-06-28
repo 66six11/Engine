@@ -11,14 +11,13 @@ using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
 using Editor.Shell.Icons;
 using Editor.UI.Controls.Base;
+using Editor.UI.Controls.Tree;
 
 namespace Editor.Shell.CodeFirstUI.Adapters;
 
 internal sealed class GuiAvaloniaControlFactory
 {
     private const double SplitterBreadth = 4d;
-    private const double NavigationIndentUnit = 12d;
-    private const double NavigationExpanderWidth = 18d;
     private static readonly TimeSpan DefaultDebounceDelay = TimeSpan.FromMilliseconds(250);
     private readonly IGuiAvaloniaHost host_;
     private readonly IGuiTextCommitScheduler textCommitScheduler_;
@@ -350,17 +349,18 @@ internal sealed class GuiAvaloniaControlFactory
             SetExpanded(!isExpanded);
         }
 
-        var indentWidth = depth * NavigationIndentUnit;
+        var indentWidth = depth * EditorTreeMetrics.IndentUnit;
         var row = new Grid
         {
             ColumnDefinitions =
             {
                 new ColumnDefinition(new GridLength(indentWidth)),
-                new ColumnDefinition(new GridLength(NavigationExpanderWidth)),
+                new ColumnDefinition(new GridLength(EditorTreeMetrics.ExpanderWidth)),
                 new ColumnDefinition(GridLength.Star),
             },
             Tag = node.Route ?? node.FullRoute,
         };
+        row.Classes.Add(EditorTreeClassNames.Row);
         row.Classes.Add("code-first-navigation-tree-row");
         if (node.IsPage
             && string.Equals(node.Route, selectedRoute, StringComparison.Ordinal))
@@ -408,6 +408,7 @@ internal sealed class GuiAvaloniaControlFactory
         };
         ToolTip.SetTip(button, route);
         button.Classes.Add("code-first-navigation-route");
+        button.Classes.Add(EditorTreeClassNames.LabelButton);
         button.Click += (_, _) => host_.SelectNavigationRoute(nodeId, route);
         return button;
     }
@@ -422,6 +423,7 @@ internal sealed class GuiAvaloniaControlFactory
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Tag = node.FullRoute,
         };
+        label.Classes.Add(EditorTreeClassNames.PrimaryText);
         label.Classes.Add("code-first-navigation-group");
         return label;
     }
@@ -434,10 +436,11 @@ internal sealed class GuiAvaloniaControlFactory
         {
             Focusable = false,
             IconKey = EditorIconKey.UiChevronDown,
-            IconSize = 14d,
-            StrokeWidth = 2d,
+            IconSize = EditorTreeMetrics.IconSize,
+            StrokeWidth = EditorTreeMetrics.ExpanderStrokeWidth,
             Tag = route,
         };
+        expander.Classes.Add(EditorTreeClassNames.Expander);
         expander.Classes.Add("code-first-navigation-expander");
         expander.Click += (_, args) =>
         {

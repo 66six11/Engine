@@ -2,12 +2,12 @@ using System;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Features.Hierarchy.Models;
 using Editor.Shell.Icons;
+using Editor.UI.Controls.Tree;
 
 namespace Editor.Features.Hierarchy.ViewModels;
 
 public sealed class HierarchyNodeRowViewModel
 {
-    private const double IndentUnit = 12d;
     private const string ExpandedIconKey = "studio.ui.chevron-down";
     private const string CollapsedIconKey = "studio.ui.chevron-right";
 
@@ -60,7 +60,7 @@ public sealed class HierarchyNodeRowViewModel
 
     public IRelayCommand<HierarchyNodeRowViewModel> ToggleExpandedCommand { get; }
 
-    public double IndentWidth => Depth * IndentUnit;
+    public double IndentWidth => Depth * EditorTreeMetrics.IndentUnit;
 
     public string? ExpanderIconKey => HasChildren
         ? (IsExpanded ? ExpandedIconKey : CollapsedIconKey)

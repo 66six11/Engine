@@ -19,6 +19,23 @@ public sealed class HierarchyPanelViewXamlTests
         Assert.Contains("e.Handled = true;", source);
     }
 
+    [Fact]
+    public void Hierarchy_view_uses_shared_editor_tree_visual_layer()
+    {
+        var xaml = LoadSource("Features", "Hierarchy", "Views", "HierarchyPanelView.axaml");
+
+        Assert.Contains("xmlns:tree=\"using:Editor.UI.Controls.Tree\"", xaml);
+        Assert.DoesNotContain("using:Editor.Features.Hierarchy.Controls", xaml);
+        Assert.Contains("<tree:EditorTreeIndentGuide", xaml);
+        Assert.Contains("Classes=\"hierarchy-list editor-tree-list\"", xaml);
+        Assert.Contains("Classes=\"hierarchy-row editor-tree-row\"", xaml);
+        Assert.Contains("Classes=\"hierarchy-expander editor-tree-expander\"", xaml);
+        Assert.Contains("Classes=\"hierarchy-node-icon editor-tree-node-icon\"", xaml);
+        Assert.Contains("Classes=\"hierarchy-node-title editor-tree-primary-text\"", xaml);
+        Assert.Contains("Classes=\"hierarchy-node-kind editor-tree-secondary-text\"", xaml);
+        Assert.Contains("Classes=\"hierarchy-empty editor-tree-empty\"", xaml);
+    }
+
     private static string LoadSource(params string[] pathParts)
     {
         var root = FindRepositoryRoot();
