@@ -190,6 +190,25 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_radio_group_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var modes = new[]
+        {
+            new GuiListItem("lit", "Lit"),
+            new GuiListItem("wireframe", "Wireframe"),
+        };
+
+        builder.RadioGroup("shading-mode", "Shading", modes, "wireframe");
+
+        var radioGroup = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.RadioGroup, radioGroup.Kind);
+        Assert.Equal("Shading", radioGroup.Label);
+        Assert.Equal(modes, radioGroup.Payload.ListItems);
+        Assert.Equal("wireframe", radioGroup.Payload.SelectedItemId);
+    }
+
+    [Fact]
     public void Build_preserves_slider_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

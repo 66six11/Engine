@@ -108,6 +108,25 @@ public sealed class EditorGui
         return selected;
     }
 
+    public string? RadioGroup(
+        string key,
+        string label,
+        IReadOnlyList<GuiListItem> items,
+        string? selectedItemId = null)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.RadioGroup);
+        var selected = ResolveItemSelection(nodeId, items, selectedItemId);
+        if (selected is not null)
+        {
+            StateStore.SetSelectedItem(nodeId, selected);
+        }
+
+        builder_.RadioGroup(key, label, items, selected);
+        return selected;
+    }
+
     public double Slider(
         string key,
         string label,

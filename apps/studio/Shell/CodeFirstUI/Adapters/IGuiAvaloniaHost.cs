@@ -10,6 +10,8 @@ internal interface IGuiAvaloniaHost
 
     void SelectComboBoxItem(GuiNodeId nodeId, string itemId);
 
+    void SelectRadioGroupItem(GuiNodeId nodeId, string itemId);
+
     void SelectNavigationRoute(GuiNodeId nodeId, string route);
 
     void SetNavigationRouteExpanded(GuiNodeId nodeId, string route, bool isExpanded);

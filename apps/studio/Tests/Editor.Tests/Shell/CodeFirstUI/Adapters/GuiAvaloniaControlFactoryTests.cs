@@ -448,6 +448,36 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_radio_group_to_property_row_and_reports_selection_changes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        var modes = new[]
+        {
+            new GuiListItem("lit", "Lit"),
+            new GuiListItem("wireframe", "Wireframe"),
+        };
+        builder.RadioGroup("shading-mode", "Shading", modes, "lit");
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var control = factory.Build(builder.Build());
+
+        var buttons = FindDescendants<RadioButton>(control).ToArray();
+        Assert.Equal(2, buttons.Length);
+        Assert.All(buttons, button => Assert.Contains("code-first-radio-button", button.Classes));
+        Assert.All(buttons, button => Assert.Equal("ui-style/shading-mode", button.GroupName));
+        Assert.True(buttons.Single(button => string.Equals(button.Content as string, "Lit", StringComparison.Ordinal)).IsChecked);
+        Assert.False(buttons.Single(button => string.Equals(button.Content as string, "Wireframe", StringComparison.Ordinal)).IsChecked);
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Shading"));
+
+        buttons.Single(button => string.Equals(button.Content as string, "Wireframe", StringComparison.Ordinal)).IsChecked = true;
+
+        var selection = Assert.Single(host.RadioGroupSelections);
+        Assert.Equal(new GuiNodeId("ui-style", "shading-mode", GuiNodeKind.RadioGroup), selection.NodeId);
+        Assert.Equal("wireframe", selection.ItemId);
+    }
+
+    [Fact]
     public void Build_maps_slider_to_property_row_and_reports_value_changes()
     {
         var builder = new GuiFrameBuilder("ui-style");
@@ -655,6 +685,30 @@ public sealed class GuiAvaloniaControlFactoryTests
         };
     }
 
+    private static IEnumerable<T> FindDescendants<T>(Control control)
+        where T : Control
+    {
+        if (control is T typed)
+        {
+            yield return typed;
+        }
+
+        var children = control switch
+        {
+            Panel panel => panel.Children,
+            ContentControl content when content.Content is Control child => [child],
+            Decorator decorator when decorator.Child is Control child => [child],
+            _ => [],
+        };
+        foreach (var child in children)
+        {
+            foreach (var descendant in FindDescendants<T>(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
     private static TappedEventArgs CreateDoubleTappedArgs(Control source)
     {
         var pointerArgs = new PointerPressedEventArgs(
@@ -680,6 +734,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         }
 
         public void SelectComboBoxItem(GuiNodeId nodeId, string itemId)
+        {
+        }
+
+        public void SelectRadioGroupItem(GuiNodeId nodeId, string itemId)
         {
         }
 
@@ -727,6 +785,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<TextChange> textCommits_ = [];
         private readonly List<ToggleChange> toggleChanges_ = [];
         private readonly List<ComboBoxSelection> comboBoxSelections_ = [];
+        private readonly List<RadioGroupSelection> radioGroupSelections_ = [];
         private readonly List<SliderChange> sliderChanges_ = [];
         private readonly List<NumberInputChange> numberInputChanges_ = [];
         private readonly List<FoldoutChange> foldoutChanges_ = [];
@@ -742,6 +801,8 @@ public sealed class GuiAvaloniaControlFactoryTests
         public IReadOnlyList<ToggleChange> ToggleChanges => toggleChanges_;
 
         public IReadOnlyList<ComboBoxSelection> ComboBoxSelections => comboBoxSelections_;
+
+        public IReadOnlyList<RadioGroupSelection> RadioGroupSelections => radioGroupSelections_;
 
         public IReadOnlyList<SliderChange> SliderChanges => sliderChanges_;
 
@@ -764,6 +825,11 @@ public sealed class GuiAvaloniaControlFactoryTests
         public void SelectComboBoxItem(GuiNodeId nodeId, string itemId)
         {
             comboBoxSelections_.Add(new ComboBoxSelection(nodeId, itemId));
+        }
+
+        public void SelectRadioGroupItem(GuiNodeId nodeId, string itemId)
+        {
+            radioGroupSelections_.Add(new RadioGroupSelection(nodeId, itemId));
         }
 
         public void SelectNavigationRoute(GuiNodeId nodeId, string route)
@@ -825,6 +891,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         bool IsChecked);
 
     private sealed record ComboBoxSelection(
+        GuiNodeId NodeId,
+        string ItemId);
+
+    private sealed record RadioGroupSelection(
         GuiNodeId NodeId,
         string ItemId);
 

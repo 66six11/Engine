@@ -400,6 +400,34 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Radio_group_returns_stored_selection_and_emits_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var modes = new[]
+        {
+            new GuiListItem("lit", "Lit"),
+            new GuiListItem("wireframe", "Wireframe"),
+        };
+        state.SetSelectedItem(new GuiNodeId("ui.style", "shading-mode", GuiNodeKind.RadioGroup), "wireframe");
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var selected = gui.RadioGroup("shading-mode", "Shading", modes, selectedItemId: "lit");
+
+        Assert.Equal("wireframe", selected);
+
+        var radioGroup = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.RadioGroup, radioGroup.Kind);
+        Assert.Equal("Shading", radioGroup.Label);
+        Assert.Equal("wireframe", radioGroup.Payload.SelectedItemId);
+        Assert.Equal(modes, radioGroup.Payload.ListItems);
+    }
+
+    [Fact]
     public void Slider_returns_stored_value_and_emits_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

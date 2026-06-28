@@ -63,6 +63,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.TextField => BuildTextField(node),
             GuiNodeKind.Toggle => BuildToggle(node),
             GuiNodeKind.ComboBox => BuildComboBox(node),
+            GuiNodeKind.RadioGroup => BuildRadioGroup(node),
             GuiNodeKind.Slider => BuildSlider(node),
             GuiNodeKind.NumberInput => BuildNumberInput(node),
             GuiNodeKind.ProgressBar => BuildProgressBar(node),
@@ -809,6 +810,55 @@ internal sealed class GuiAvaloniaControlFactory
         Grid.SetColumn(comboBox, 1);
         grid.Children.Add(label);
         grid.Children.Add(comboBox);
+        return grid;
+    }
+
+    private Control BuildRadioGroup(GuiNode node)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var groupName = node.Id.FullKeyPath;
+        var stack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8d,
+        };
+        stack.Classes.Add("code-first-radio-group");
+        foreach (var item in node.Payload.ListItems)
+        {
+            var radioButton = new RadioButton
+            {
+                Content = item.Label,
+                GroupName = groupName,
+                IsChecked = string.Equals(item.Id, node.Payload.SelectedItemId, StringComparison.Ordinal),
+                Tag = item.Id,
+            };
+            radioButton.Classes.Add("code-first-radio-button");
+            radioButton.IsCheckedChanged += (_, _) =>
+            {
+                if (radioButton.IsChecked == true && radioButton.Tag is string itemId)
+                {
+                    host_.SelectRadioGroupItem(node.Id, itemId);
+                }
+            };
+            stack.Children.Add(radioButton);
+        }
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(stack, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(stack);
         return grid;
     }
 

@@ -73,6 +73,11 @@ internal sealed class CodeFirstPanelHostViewModel :
         SelectItem(nodeId, itemId);
     }
 
+    internal void SelectRadioGroupItem(GuiNodeId nodeId, string itemId)
+    {
+        SelectItem(nodeId, itemId);
+    }
+
     private void SelectItem(GuiNodeId nodeId, string itemId)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
@@ -350,6 +355,11 @@ internal sealed class CodeFirstPanelHostViewModel :
     void IGuiAvaloniaHost.SelectComboBoxItem(GuiNodeId nodeId, string itemId)
     {
         SelectComboBoxItem(nodeId, itemId);
+    }
+
+    void IGuiAvaloniaHost.SelectRadioGroupItem(GuiNodeId nodeId, string itemId)
+    {
+        SelectRadioGroupItem(nodeId, itemId);
     }
 
     void IGuiAvaloniaHost.SelectNavigationRoute(GuiNodeId nodeId, string route)

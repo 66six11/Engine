@@ -154,6 +154,46 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Select_radio_group_item_updates_state_and_rebuilds_tree()
+    {
+        var panel = new RadioGroupDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SelectRadioGroupItem(
+            new GuiNodeId("ui.style", "shading-mode", GuiNodeKind.RadioGroup),
+            "wireframe");
+
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
+        Assert.Equal("wireframe", panel.SelectedShadingModeId);
+        Assert.True(host.StateStore.TryGetSelectedItem(
+            new GuiNodeId("ui.style", "shading-mode", GuiNodeKind.RadioGroup),
+            out var storedSelection));
+        Assert.Equal("wireframe", storedSelection);
+
+        var radioGroup = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal(GuiNodeKind.RadioGroup, radioGroup.Kind);
+        Assert.Equal("wireframe", radioGroup.Payload.SelectedItemId);
+    }
+
+    [Fact]
+    public void Selecting_current_radio_group_item_does_not_rebuild_tree()
+    {
+        var panel = new RadioGroupDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SelectRadioGroupItem(
+            new GuiNodeId("ui.style", "shading-mode", GuiNodeKind.RadioGroup),
+            "lit");
+
+        Assert.Equal("lit", panel.SelectedShadingModeId);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+    }
+
+    [Fact]
     public void Select_navigation_route_updates_state_and_rebuilds_tree()
     {
         var panel = new NavigationDrivenCodeFirstPanel();
@@ -579,6 +619,25 @@ public sealed class CodeFirstPanelHostViewModelTests
         {
             GuiBuildCount++;
             SelectedRenderModeId = gui.ComboBox("render-mode", "Render Mode", RenderModes, "forward");
+        }
+    }
+
+    private sealed class RadioGroupDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        private static readonly GuiListItem[] ShadingModes =
+        [
+            new("lit", "Lit"),
+            new("wireframe", "Wireframe"),
+        ];
+
+        public int GuiBuildCount { get; private set; }
+
+        public string? SelectedShadingModeId { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            SelectedShadingModeId = gui.RadioGroup("shading-mode", "Shading", ShadingModes, "lit");
         }
     }
 

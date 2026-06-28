@@ -27,6 +27,13 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         new("raytracing", "Ray Tracing"),
     ];
 
+    private static readonly GuiListItem[] ShadingModeOptions =
+    [
+        new("lit", "Lit"),
+        new("unlit", "Unlit"),
+        new("wireframe", "Wireframe"),
+    ];
+
     protected override void OnGui(EditorGui gui)
     {
         using (var navigation = gui.NavigationView("catalog", Pages, DefaultSectionId))
@@ -84,6 +91,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
             GuiTextInputCommitMode.Debounced,
             TimeSpan.FromMilliseconds(250));
         gui.ComboBox("render-mode", "Render Mode", RenderModeOptions, "deferred");
+        gui.RadioGroup("shading-mode", "Shading", ShadingModeOptions, "lit");
         gui.Slider("exposure", "Exposure", 0.75d, 0d, 2d, 0.05d, 0.25d);
         gui.NumberInput("roughness", "Roughness", 0.50d, 0d, 1d, 0.05d, "0.00");
         gui.Toggle("show-disabled", "Show Disabled");

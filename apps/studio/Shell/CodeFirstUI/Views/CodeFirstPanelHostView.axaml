@@ -97,6 +97,13 @@
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
         </Style>
+        <Style Selector="StackPanel.code-first-radio-group">
+            <Setter Property="Orientation" Value="Horizontal" />
+            <Setter Property="Spacing" Value="8" />
+        </Style>
+        <Style Selector="RadioButton.code-first-radio-button">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
         <Style Selector="Slider.code-first-slider">
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />

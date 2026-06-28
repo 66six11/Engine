@@ -70,6 +70,19 @@ public sealed class CodeFirstPanelHostViewXamlTests
     }
 
     [Fact]
+    public void Code_first_radio_group_uses_compact_option_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var radioGroupStyle = GetStyle(xaml, "Style Selector=\"StackPanel.code-first-radio-group\"");
+        var radioButtonStyle = GetStyle(xaml, "Style Selector=\"RadioButton.code-first-radio-button\"");
+
+        Assert.Contains("Property=\"Orientation\" Value=\"Horizontal\"", radioGroupStyle);
+        Assert.Contains("Property=\"Spacing\" Value=\"8\"", radioGroupStyle);
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", radioButtonStyle);
+    }
+
+    [Fact]
     public void Code_first_slider_uses_property_row_control_style()
     {
         var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");

@@ -115,6 +115,25 @@ public sealed class GuiFrameBuilder
             });
     }
 
+    public GuiNodeId RadioGroup(
+        string key,
+        string label,
+        IReadOnlyList<GuiListItem> items,
+        string? selectedItemId = null)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        return AddLeaf(
+            key,
+            GuiNodeKind.RadioGroup,
+            label,
+            new GuiNodePayload
+            {
+                ListItems = items.ToArray(),
+                SelectedItemId = selectedItemId,
+            });
+    }
+
     public GuiNodeId Slider(
         string key,
         string label,
