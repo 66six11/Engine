@@ -155,16 +155,9 @@ public sealed class GuiAvaloniaControlFactoryTests
             grid,
             control => control.Classes.Contains("code-first-navigation-indent-guide")));
 
-        var overviewChildren = FindDescendant<StackPanel>(
-            grid,
-            panel => panel.Classes.Contains("code-first-navigation-tree-children")
-                && string.Equals(panel.Tag as string, "overview", StringComparison.Ordinal));
-        Assert.NotNull(overviewChildren);
-
         overviewRouteButton!.RaiseEvent(CreateDoubleTappedArgs(overviewRouteButton));
 
         Assert.Equal(EditorIconKey.UiChevronRight, overviewExpander!.IconKey);
-        Assert.False(overviewChildren!.IsVisible);
         Assert.Contains(host.NavigationRouteExpansionChanges, change =>
             change.NodeId == new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView)
             && string.Equals(change.Route, "overview", StringComparison.Ordinal)
@@ -173,13 +166,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         overviewRouteButton.RaiseEvent(CreateDoubleTappedArgs(overviewRouteButton));
 
         Assert.Equal(EditorIconKey.UiChevronDown, overviewExpander.IconKey);
-        Assert.True(overviewChildren.IsVisible);
-
-        var renderChildren = FindDescendant<StackPanel>(
-            grid,
-            panel => panel.Classes.Contains("code-first-navigation-tree-children")
-                && string.Equals(panel.Tag as string, "render", StringComparison.Ordinal));
-        Assert.NotNull(renderChildren);
+        Assert.Contains(host.NavigationRouteExpansionChanges, change =>
+            change.NodeId == new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView)
+            && string.Equals(change.Route, "overview", StringComparison.Ordinal)
+            && change.IsExpanded);
 
         renderExpander.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)
         {
@@ -187,12 +177,18 @@ public sealed class GuiAvaloniaControlFactoryTests
         });
 
         Assert.Equal(EditorIconKey.UiChevronRight, renderExpander.IconKey);
-        Assert.False(renderChildren!.IsVisible);
+        Assert.Contains(host.NavigationRouteExpansionChanges, change =>
+            change.NodeId == new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView)
+            && string.Equals(change.Route, "render", StringComparison.Ordinal)
+            && !change.IsExpanded);
 
         renderRow!.RaiseEvent(CreateDoubleTappedArgs(renderRow));
 
         Assert.Equal(EditorIconKey.UiChevronDown, renderExpander.IconKey);
-        Assert.True(renderChildren.IsVisible);
+        Assert.Contains(host.NavigationRouteExpansionChanges, change =>
+            change.NodeId == new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView)
+            && string.Equals(change.Route, "render", StringComparison.Ordinal)
+            && change.IsExpanded);
 
         Assert.NotNull(FindDescendant<TextBlock>(grid, text => text.Text == "Frame Debugger"));
 
@@ -212,6 +208,38 @@ public sealed class GuiAvaloniaControlFactoryTests
         var selection = Assert.Single(host.NavigationRouteSelections);
         Assert.Equal(new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView), selection.NodeId);
         Assert.Equal("render/debug/frame-debugger", selection.Route);
+    }
+
+    [Fact]
+    public void Build_navigation_view_omits_descendant_rows_for_collapsed_routes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        using (builder.NavigationView(
+            "catalog",
+            [
+                new GuiNavigationItem("overview", "Overview"),
+                new GuiNavigationItem("overview/foundations/typography", "Typography"),
+                new GuiNavigationItem("render/debug/frame-debugger", "Frame Debugger"),
+            ],
+            "overview",
+            0.25d,
+            ["overview"]))
+        {
+            builder.Label("title", "Overview");
+        }
+
+        var factory = new GuiAvaloniaControlFactory(new NoopCodeFirstPanelHost());
+
+        var grid = Assert.IsType<Grid>(factory.Build(builder.Build()));
+
+        Assert.NotNull(FindDescendant<Grid>(
+            grid,
+            row => row.Classes.Contains("code-first-navigation-tree-row")
+                && string.Equals(row.Tag as string, "overview", StringComparison.Ordinal)));
+        Assert.Null(FindDescendant<Grid>(
+            grid,
+            row => row.Classes.Contains("code-first-navigation-tree-row")
+                && string.Equals(row.Tag as string, "overview/foundations/typography", StringComparison.Ordinal)));
     }
 
     [Fact]

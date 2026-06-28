@@ -236,15 +236,18 @@ internal sealed class GuiAvaloniaControlFactory
 
         var root = BuildNavigationRouteTree(node.Payload.NavigationItems);
         var collapsedRoutes = node.Payload.CollapsedNavigationRoutes.ToHashSet(StringComparer.Ordinal);
-        for (var index = 0; index < root.Children.Count; index++)
+        var treeNodes = BuildNavigationTreeNodes(root);
+        var expansionState = new EditorTreeExpansionState(treeNodes
+            .Where(treeNode => treeNode.Payload.Children.Count > 0
+                && !collapsedRoutes.Contains(treeNode.Id))
+            .Select(treeNode => treeNode.Id));
+        var treeRows = EditorTreeFlattener.Flatten(treeNodes, expansionState);
+        for (var index = 0; index < treeRows.Count; index++)
         {
-            AddNavigationRouteControls(
-                stack,
+            stack.Children.Add(CreateNavigationTreeRow(
                 node.Id,
-                root.Children[index],
-                node.Payload.SelectedRoute,
-                collapsedRoutes,
-                depth: 0);
+                treeRows[index],
+                node.Payload.SelectedRoute));
         }
 
         var scrollViewer = new ScrollViewer
@@ -279,70 +282,42 @@ internal sealed class GuiAvaloniaControlFactory
         return root;
     }
 
-    private void AddNavigationRouteControls(
-        Panel parent,
-        GuiNodeId nodeId,
-        NavigationRouteNode node,
-        string? selectedRoute,
-        HashSet<string> collapsedRoutes,
-        int depth)
+    private static IReadOnlyList<EditorTreeNode<NavigationRouteNode>> BuildNavigationTreeNodes(
+        NavigationRouteNode root)
     {
-        var childrenPanel = node.Children.Count > 0
-            ? new StackPanel
-            {
-                Spacing = 2d,
-                Tag = node.FullRoute,
-            }
-            : null;
-        childrenPanel?.Classes.Add("code-first-navigation-tree-children");
-
-        parent.Children.Add(CreateNavigationTreeRow(
-            nodeId,
-            node,
-            selectedRoute,
-            collapsedRoutes,
-            depth,
-            childrenPanel));
-
-        if (childrenPanel is null)
+        var nodes = new List<EditorTreeNode<NavigationRouteNode>>();
+        for (var index = 0; index < root.Children.Count; index++)
         {
-            return;
+            AddNavigationTreeNode(nodes, root.Children[index], parentId: null);
         }
 
+        return nodes;
+    }
+
+    private static void AddNavigationTreeNode(
+        ICollection<EditorTreeNode<NavigationRouteNode>> nodes,
+        NavigationRouteNode node,
+        string? parentId)
+    {
+        nodes.Add(new EditorTreeNode<NavigationRouteNode>(node.FullRoute, parentId, node));
         for (var index = 0; index < node.Children.Count; index++)
         {
-            AddNavigationRouteControls(
-                childrenPanel,
-                nodeId,
-                node.Children[index],
-                selectedRoute,
-                collapsedRoutes,
-                depth + 1);
+            AddNavigationTreeNode(nodes, node.Children[index], node.FullRoute);
         }
-
-        parent.Children.Add(childrenPanel);
     }
 
     private Control CreateNavigationTreeRow(
         GuiNodeId nodeId,
-        NavigationRouteNode node,
-        string? selectedRoute,
-        HashSet<string> collapsedRoutes,
-        int depth,
-        StackPanel? childrenPanel)
+        EditorTreeRow<NavigationRouteNode> treeRow,
+        string? selectedRoute)
     {
+        var node = treeRow.Payload;
         IconButton? expander = null;
-        var isExpanded = childrenPanel is null
-            || !collapsedRoutes.Contains(node.FullRoute);
+        var isExpanded = treeRow.IsExpanded;
 
         void SetExpanded(bool expanded, bool notifyHost)
         {
             isExpanded = expanded;
-            if (childrenPanel is not null)
-            {
-                childrenPanel.IsVisible = expanded;
-            }
-
             if (expander is not null)
             {
                 expander.IconKey = expanded
@@ -350,7 +325,7 @@ internal sealed class GuiAvaloniaControlFactory
                     : EditorIconKey.UiChevronRight;
             }
 
-            if (notifyHost && childrenPanel is not null)
+            if (notifyHost && treeRow.HasChildren)
             {
                 host_.SetNavigationRouteExpanded(nodeId, node.FullRoute, expanded);
             }
@@ -361,7 +336,7 @@ internal sealed class GuiAvaloniaControlFactory
             SetExpanded(!isExpanded, notifyHost: true);
         }
 
-        var indentWidth = depth * EditorTreeMetrics.IndentUnit;
+        var indentWidth = treeRow.Depth * EditorTreeMetrics.IndentUnit;
         var row = new Grid
         {
             ColumnDefinitions =
@@ -380,7 +355,7 @@ internal sealed class GuiAvaloniaControlFactory
             row.Classes.Add("selected");
         }
 
-        if (childrenPanel is not null)
+        if (treeRow.HasChildren)
         {
             row.DoubleTapped += (_, args) =>
             {
@@ -389,7 +364,7 @@ internal sealed class GuiAvaloniaControlFactory
             };
         }
 
-        if (childrenPanel is not null)
+        if (treeRow.HasChildren)
         {
             expander = CreateNavigationExpander(node.FullRoute, ToggleExpanded);
             Grid.SetColumn(expander, 1);
@@ -397,7 +372,7 @@ internal sealed class GuiAvaloniaControlFactory
         }
 
         var label = node.IsPage
-            ? CreateNavigationRouteButton(nodeId, node, childrenPanel is not null ? ToggleExpanded : null)
+            ? CreateNavigationRouteButton(nodeId, node, treeRow.HasChildren ? ToggleExpanded : null)
             : CreateNavigationGroupLabel(node);
         Grid.SetColumn(label, 2);
         row.Children.Add(label);
