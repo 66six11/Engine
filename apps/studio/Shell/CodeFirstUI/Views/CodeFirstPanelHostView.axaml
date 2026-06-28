@@ -95,8 +95,8 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="MinHeight" Value="160" />
         </Style>
-        <Style Selector="ListBoxItem.code-first-list-item">
-            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        <Style Selector="ListBox.code-first-list ListBoxItem">
+            <Setter Property="Height" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="Padding" Value="8,2" />
         </Style>
         <Style Selector="GridSplitter.code-first-splitter">

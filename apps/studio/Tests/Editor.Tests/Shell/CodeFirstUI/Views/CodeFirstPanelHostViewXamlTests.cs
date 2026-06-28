@@ -34,6 +34,18 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("button.DoubleTapped += (_, args) =>", source);
     }
 
+    [Fact]
+    public void Code_first_list_items_use_fixed_height_container_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var itemStyle = GetStyle(xaml, "Style Selector=\"ListBox.code-first-list ListBoxItem\"");
+
+        Assert.Contains("Property=\"Height\" Value=\"{DynamicResource EditorWidgetUnit}\"", itemStyle);
+        Assert.DoesNotContain("Property=\"MinHeight\"", itemStyle);
+        Assert.Contains("Property=\"Padding\" Value=\"8,2\"", itemStyle);
+    }
+
     private static string GetStyle(string xaml, string selector)
     {
         var start = xaml.IndexOf(selector, StringComparison.Ordinal);
