@@ -72,6 +72,12 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         ThrowIfDisposed();
+        if (stateStore_.TryGetSelectedItem(nodeId, out var currentItemId)
+            && string.Equals(currentItemId, itemId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         stateStore_.SetSelectedItem(nodeId, itemId);
         Rebuild();
     }
@@ -107,6 +113,12 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         ThrowIfDisposed();
+        if (stateStore_.TryGetNavigationRouteExpanded(nodeId, route, out var currentExpanded)
+            && currentExpanded == isExpanded)
+        {
+            return;
+        }
+
         stateStore_.SetNavigationRouteExpanded(nodeId, route, isExpanded);
         Rebuild();
     }
@@ -124,6 +136,12 @@ internal sealed class CodeFirstPanelHostViewModel :
         ArgumentNullException.ThrowIfNull(nodeId);
         ThrowIfDisposed();
 
+        if (stateStore_.TryGetText(nodeId, out var currentText)
+            && string.Equals(currentText, text ?? string.Empty, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         stateStore_.SetText(nodeId, text ?? string.Empty);
     }
 
@@ -131,6 +149,12 @@ internal sealed class CodeFirstPanelHostViewModel :
     {
         ArgumentNullException.ThrowIfNull(nodeId);
         ThrowIfDisposed();
+
+        if (stateStore_.TryGetText(nodeId, out var currentText)
+            && string.Equals(currentText, text ?? string.Empty, StringComparison.Ordinal))
+        {
+            return;
+        }
 
         stateStore_.SetText(nodeId, text ?? string.Empty);
         Rebuild();
@@ -141,6 +165,12 @@ internal sealed class CodeFirstPanelHostViewModel :
         ArgumentNullException.ThrowIfNull(nodeId);
         ThrowIfDisposed();
 
+        if (stateStore_.TryGetToggle(nodeId, out var currentValue)
+            && currentValue == isChecked)
+        {
+            return;
+        }
+
         stateStore_.SetToggle(nodeId, isChecked);
         Rebuild();
     }
@@ -149,6 +179,12 @@ internal sealed class CodeFirstPanelHostViewModel :
     {
         ArgumentNullException.ThrowIfNull(nodeId);
         ThrowIfDisposed();
+
+        if (stateStore_.TryGetFoldoutExpanded(nodeId, out var currentValue)
+            && currentValue == isExpanded)
+        {
+            return;
+        }
 
         stateStore_.SetFoldoutExpanded(nodeId, isExpanded);
         Rebuild();

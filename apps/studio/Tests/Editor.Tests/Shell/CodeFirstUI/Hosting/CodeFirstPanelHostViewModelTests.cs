@@ -79,11 +79,13 @@ public sealed class CodeFirstPanelHostViewModelTests
         var panel = new ListDrivenCodeFirstPanel();
         var host = new CodeFirstPanelHostViewModel(panel);
         host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
 
         host.SelectListItem(
             new GuiNodeId("ui.style", "layout/catalog/sections", GuiNodeKind.List),
             "buttons");
 
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
         Assert.Equal("buttons", panel.SelectedSectionId);
         Assert.True(host.StateStore.TryGetSelectedItem(
             new GuiNodeId("ui.style", "layout/catalog/sections", GuiNodeKind.List),
@@ -93,6 +95,22 @@ public sealed class CodeFirstPanelHostViewModelTests
         var split = Assert.Single(host.CurrentTree?.Root.Children ?? []);
         var preview = split.Children[1];
         Assert.Equal("Buttons", Assert.Single(preview.Children).Label);
+    }
+
+    [Fact]
+    public void Selecting_current_list_item_does_not_rebuild_tree()
+    {
+        var panel = new ListDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SelectListItem(
+            new GuiNodeId("ui.style", "layout/catalog/sections", GuiNodeKind.List),
+            "overview");
+
+        Assert.Equal("overview", panel.SelectedSectionId);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
     }
 
     [Fact]
@@ -139,6 +157,22 @@ public sealed class CodeFirstPanelHostViewModelTests
         var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
         Assert.Equal(["overview"], navigation.Payload.CollapsedNavigationRoutes);
         Assert.Equal("Overview", Assert.Single(navigation.Children).Label);
+    }
+
+    [Fact]
+    public void Setting_current_navigation_route_expansion_does_not_rebuild_tree()
+    {
+        var panel = new NavigationDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        var navigationId = new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+
+        host.SetNavigationRouteExpanded(navigationId, "overview", isExpanded: false);
+        var buildCount = panel.GuiBuildCount;
+
+        host.SetNavigationRouteExpanded(navigationId, "overview", isExpanded: false);
+
+        Assert.Equal(buildCount, panel.GuiBuildCount);
     }
 
     [Fact]
@@ -220,6 +254,20 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Commit_current_text_does_not_rebuild_tree()
+    {
+        var panel = new InputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.CommitText(new GuiNodeId("ui.style", "filter", GuiNodeKind.TextField), "default");
+
+        Assert.Equal("default", panel.FilterText);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+    }
+
+    [Fact]
     public void Set_toggle_updates_state_and_rebuilds_tree()
     {
         var panel = new InputDrivenCodeFirstPanel();
@@ -235,6 +283,20 @@ public sealed class CodeFirstPanelHostViewModelTests
             out var isChecked));
         Assert.True(isChecked);
         Assert.True(panel.ShowDisabled);
+    }
+
+    [Fact]
+    public void Setting_current_toggle_value_does_not_rebuild_tree()
+    {
+        var panel = new InputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetToggle(new GuiNodeId("ui.style", "show-disabled", GuiNodeKind.Toggle), isChecked: false);
+
+        Assert.False(panel.ShowDisabled);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
     }
 
     [Fact]
@@ -257,6 +319,21 @@ public sealed class CodeFirstPanelHostViewModelTests
         var foldout = Assert.Single(host.CurrentTree?.Root.Children ?? []);
         Assert.True(foldout.Payload.IsExpanded);
         Assert.Single(foldout.Children);
+    }
+
+    [Fact]
+    public void Setting_current_foldout_state_does_not_rebuild_tree()
+    {
+        var panel = new FoldoutDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.SetFoldoutExpanded(
+            new GuiNodeId("ui.style", "advanced", GuiNodeKind.Foldout),
+            isExpanded: false);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
     }
 
     private static EditorPanelLifecycleContext CreateLifecycleContext(string panelId = "render.frameDebugger")
@@ -335,10 +412,13 @@ public sealed class CodeFirstPanelHostViewModelTests
             new("buttons", "Buttons"),
         ];
 
+        public int GuiBuildCount { get; private set; }
+
         public string? SelectedSectionId { get; private set; }
 
         protected override void OnGui(EditorGui gui)
         {
+            GuiBuildCount++;
             using (gui.Split("layout", GuiSplitDirection.Horizontal, 0.30d))
             {
                 using (gui.Panel("catalog", "Catalog"))
