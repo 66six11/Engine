@@ -524,6 +524,40 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Vector4_field_returns_stored_value_and_emits_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var storedValue = new GuiVector4Value(1d, 2d, 3d, 4d);
+        state.SetVector4Value(new GuiNodeId("ui.style", "tiling-offset", GuiNodeKind.Vector4Field), storedValue);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var value = gui.Vector4Field(
+            "tiling-offset",
+            "Tiling Offset",
+            new GuiVector4Value(0d, 0d, 0d, 0d),
+            minimum: -8d,
+            maximum: 8d,
+            increment: 0.125d,
+            formatString: "0.000");
+
+        Assert.Equal(storedValue, value);
+
+        var vector4Field = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Vector4Field, vector4Field.Kind);
+        Assert.Equal("Tiling Offset", vector4Field.Label);
+        Assert.Equal(storedValue, vector4Field.Payload.Vector4Value);
+        Assert.Equal(-8d, vector4Field.Payload.NumericMinimum);
+        Assert.Equal(8d, vector4Field.Payload.NumericMaximum);
+        Assert.Equal(0.125d, vector4Field.Payload.NumericSmallChange);
+        Assert.Equal("0.000", vector4Field.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Slider_returns_stored_value_and_emits_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

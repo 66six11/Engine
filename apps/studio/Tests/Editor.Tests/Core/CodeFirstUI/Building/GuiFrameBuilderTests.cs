@@ -274,6 +274,31 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_vector4_field_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var value = new GuiVector4Value(1d, 2d, 3d, 4d);
+
+        builder.Vector4Field(
+            "tiling-offset",
+            "Tiling Offset",
+            value,
+            minimum: -8d,
+            maximum: 8d,
+            increment: 0.125d,
+            formatString: "0.000");
+
+        var vector4Field = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Vector4Field, vector4Field.Kind);
+        Assert.Equal("Tiling Offset", vector4Field.Label);
+        Assert.Equal(value, vector4Field.Payload.Vector4Value);
+        Assert.Equal(-8d, vector4Field.Payload.NumericMinimum);
+        Assert.Equal(8d, vector4Field.Payload.NumericMaximum);
+        Assert.Equal(0.125d, vector4Field.Payload.NumericSmallChange);
+        Assert.Equal("0.000", vector4Field.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Build_preserves_slider_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

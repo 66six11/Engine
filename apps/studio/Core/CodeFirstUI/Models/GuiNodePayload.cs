@@ -56,6 +56,8 @@ public sealed record GuiNodePayload
 
     public GuiVector3Value? Vector3Value { get; init; }
 
+    public GuiVector4Value? Vector4Value { get; init; }
+
     public bool? IsIndeterminate { get; init; }
 
     public bool? ShowProgressText { get; init; }

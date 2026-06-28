@@ -154,6 +154,20 @@ public sealed class CodeFirstPanelHostViewXamlTests
     }
 
     [Fact]
+    public void Code_first_vector4_field_uses_compact_component_styles()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var vectorFieldStyle = GetStyle(xaml, "Style Selector=\"Grid.code-first-vector4-field\"");
+        var componentStyle = GetStyle(xaml, "Style Selector=\"NumericUpDown.code-first-vector-component\"");
+
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", vectorFieldStyle);
+        Assert.Contains("Property=\"HorizontalAlignment\" Value=\"Stretch\"", vectorFieldStyle);
+        Assert.Contains("Property=\"MinHeight\" Value=\"{DynamicResource EditorWidgetUnit}\"", componentStyle);
+        Assert.Contains("Property=\"MinWidth\" Value=\"64\"", componentStyle);
+    }
+
+    [Fact]
     public void Code_first_progress_bar_uses_feedback_control_style()
     {
         var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");

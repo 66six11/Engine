@@ -425,6 +425,30 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Set_vector4_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
+    {
+        var panel = new Vector4FieldDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+        var tilingOffset = new GuiVector4Value(1d, 2d, 3d, 4d);
+
+        host.SetVector4Value(new GuiNodeId("ui.style", "tiling-offset", GuiNodeKind.Vector4Field), tilingOffset);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetVector4Value(
+            new GuiNodeId("ui.style", "tiling-offset", GuiNodeKind.Vector4Field),
+            out var storedValue));
+        Assert.Equal(tilingOffset, storedValue);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var vector4Field = host.CurrentTree?.Root.Children[0];
+        Assert.Equal(tilingOffset, vector4Field?.Payload.Vector4Value);
+        Assert.Equal(tilingOffset, panel.TilingOffset);
+    }
+
+    [Fact]
     public void Set_number_input_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
     {
         var panel = new NumberInputDrivenCodeFirstPanel();
@@ -802,6 +826,22 @@ public sealed class CodeFirstPanelHostViewModelTests
         {
             GuiBuildCount++;
             UvScale = gui.Vector2Field("uv-scale", "UV Scale", new GuiVector2Value(1d, 1d));
+        }
+    }
+
+    private sealed class Vector4FieldDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        public GuiVector4Value TilingOffset { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            TilingOffset = gui.Vector4Field(
+                "tiling-offset",
+                "Tiling Offset",
+                new GuiVector4Value(0d, 0d, 0d, 0d));
         }
     }
 

@@ -48,6 +48,11 @@ public sealed class GuiStateStoreTests
             "uv-scale",
             GuiNodeKind.Vector2Field);
         var uvScale = new GuiVector2Value(2d, 4d);
+        var vector4Field = new GuiNodeId(
+            "render.frameDebugger",
+            "tiling-offset",
+            GuiNodeKind.Vector4Field);
+        var tilingOffset = new GuiVector4Value(1d, 2d, 3d, 4d);
 
         store.SetText(filter, "gbuffer");
         store.SetSelectedItem(passes, "pass-12");
@@ -57,6 +62,7 @@ public sealed class GuiStateStoreTests
         store.SetColorValue(colorField, color);
         store.SetVector3Value(vector3Field, position);
         store.SetVector2Value(vector2Field, uvScale);
+        store.SetVector4Value(vector4Field, tilingOffset);
         store.SetNavigationRouteExpanded(navigation, "overview", isExpanded: false);
         store.SetSplitRatio(new GuiNodeId(
             "render.frameDebugger",
@@ -79,6 +85,8 @@ public sealed class GuiStateStoreTests
         Assert.Equal(position, vector3Value);
         Assert.True(store.TryGetVector2Value(vector2Field, out var vector2Value));
         Assert.Equal(uvScale, vector2Value);
+        Assert.True(store.TryGetVector4Value(vector4Field, out var vector4Value));
+        Assert.Equal(tilingOffset, vector4Value);
         Assert.True(store.TryGetNavigationRouteExpanded(navigation, "overview", out var routeExpanded));
         Assert.False(routeExpanded);
         Assert.True(store.TryGetSplitRatio(new GuiNodeId(
@@ -106,6 +114,7 @@ public sealed class GuiStateStoreTests
         store.SetColorValue(filter with { Kind = GuiNodeKind.ColorField }, new GuiColorValue(255, 128, 64, 192));
         store.SetVector3Value(filter with { Kind = GuiNodeKind.Vector3Field }, new GuiVector3Value(1d, 2d, 3d));
         store.SetVector2Value(filter with { Kind = GuiNodeKind.Vector2Field }, new GuiVector2Value(2d, 4d));
+        store.SetVector4Value(filter with { Kind = GuiNodeKind.Vector4Field }, new GuiVector4Value(1d, 2d, 3d, 4d));
         store.SetNavigationRouteExpanded(filter with { Kind = GuiNodeKind.NavigationView }, "overview", isExpanded: false);
         store.SetSplitRatio(filter with { Kind = GuiNodeKind.Split }, 0.5d);
         store.ClearNodeState(filter);
@@ -115,6 +124,7 @@ public sealed class GuiStateStoreTests
         store.ClearNodeState(filter with { Kind = GuiNodeKind.ColorField });
         store.ClearNodeState(filter with { Kind = GuiNodeKind.Vector3Field });
         store.ClearNodeState(filter with { Kind = GuiNodeKind.Vector2Field });
+        store.ClearNodeState(filter with { Kind = GuiNodeKind.Vector4Field });
         store.ClearNodeState(filter with { Kind = GuiNodeKind.NavigationView });
         store.ClearNodeState(filter with { Kind = GuiNodeKind.Split });
 
@@ -126,6 +136,7 @@ public sealed class GuiStateStoreTests
         Assert.False(store.TryGetColorValue(filter with { Kind = GuiNodeKind.ColorField }, out _));
         Assert.False(store.TryGetVector3Value(filter with { Kind = GuiNodeKind.Vector3Field }, out _));
         Assert.False(store.TryGetVector2Value(filter with { Kind = GuiNodeKind.Vector2Field }, out _));
+        Assert.False(store.TryGetVector4Value(filter with { Kind = GuiNodeKind.Vector4Field }, out _));
         Assert.False(store.TryGetNavigationRouteExpanded(filter with { Kind = GuiNodeKind.NavigationView }, "overview", out _));
         Assert.False(store.TryGetSplitRatio(filter with { Kind = GuiNodeKind.Split }, out _));
     }

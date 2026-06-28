@@ -20,6 +20,7 @@ public enum GuiNodeKind
     ColorField,
     Vector2Field,
     Vector3Field,
+    Vector4Field,
     Slider,
     NumberInput,
     ProgressBar,

@@ -68,6 +68,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.ColorField => BuildColorField(node),
             GuiNodeKind.Vector2Field => BuildVector2Field(node),
             GuiNodeKind.Vector3Field => BuildVector3Field(node),
+            GuiNodeKind.Vector4Field => BuildVector4Field(node),
             GuiNodeKind.Slider => BuildSlider(node),
             GuiNodeKind.NumberInput => BuildNumberInput(node),
             GuiNodeKind.ProgressBar => BuildProgressBar(node),
@@ -932,6 +933,19 @@ internal sealed class GuiAvaloniaControlFactory
             values => host_.SetVector2Value(
                 node.Id,
                 new GuiVector2Value(values[0], values[1])));
+    }
+
+    private Control BuildVector4Field(GuiNode node)
+    {
+        var value = node.Payload.Vector4Value ?? new GuiVector4Value(0d, 0d, 0d, 0d);
+        return BuildVectorField(
+            node,
+            "code-first-vector4-field",
+            ["X", "Y", "Z", "W"],
+            [value.X, value.Y, value.Z, value.W],
+            values => host_.SetVector4Value(
+                node.Id,
+                new GuiVector4Value(values[0], values[1], values[2], values[3])));
     }
 
     private Control BuildVectorField(

@@ -198,6 +198,34 @@ public sealed class EditorGui
         return resolvedValue;
     }
 
+    public GuiVector4Value Vector4Field(
+        string key,
+        string label,
+        GuiVector4Value value,
+        double? minimum = null,
+        double? maximum = null,
+        double increment = 0.1d,
+        string formatString = "0.###")
+    {
+        ValidateNumericBounds(minimum, maximum);
+
+        var nodeId = builder_.GetNodeId(key, GuiNodeKind.Vector4Field);
+        var resolvedValue = StateStore.TryGetVector4Value(nodeId, out var storedValue)
+            ? storedValue
+            : value;
+        resolvedValue = ClampVector4ToBounds(resolvedValue, minimum, maximum, nameof(value));
+        StateStore.SetVector4Value(nodeId, resolvedValue);
+        builder_.Vector4Field(
+            key,
+            label,
+            resolvedValue,
+            minimum,
+            maximum,
+            increment,
+            formatString);
+        return resolvedValue;
+    }
+
     public double Slider(
         string key,
         string label,
@@ -610,5 +638,18 @@ public sealed class EditorGui
         return new GuiVector2Value(
             ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
             ClampFiniteToBounds(value.Y, minimum, maximum, parameterName));
+    }
+
+    private static GuiVector4Value ClampVector4ToBounds(
+        GuiVector4Value value,
+        double? minimum,
+        double? maximum,
+        string parameterName)
+    {
+        return new GuiVector4Value(
+            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
+            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName),
+            ClampFiniteToBounds(value.Z, minimum, maximum, parameterName),
+            ClampFiniteToBounds(value.W, minimum, maximum, parameterName));
     }
 }
