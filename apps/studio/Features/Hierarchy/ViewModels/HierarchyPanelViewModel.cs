@@ -8,6 +8,7 @@ using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
 using Editor.Shell.Services;
 using Editor.Shell.ViewModels;
+using Editor.UI.Controls.Tree;
 
 namespace Editor.Features.Hierarchy.ViewModels;
 
@@ -17,12 +18,10 @@ public sealed class HierarchyPanelViewModel : ViewModelBase, IDisposable
     private readonly IEditorSelectionService selectionService_;
     private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
     private readonly IEditorUiDispatcher uiDispatcher_;
-    private Dictionary<string, HierarchyNodeModel> nodesById_ = [];
-    private Dictionary<string, int> depthsByNodeId_ = [];
-    private HashSet<string> nodeIdsWithChildren_ = [];
-    private HashSet<string> expandedNodeIds_ = [];
+    private EditorTreeExpansionState expansionState_ = new();
     private SceneSnapshot sceneSnapshot_ = SceneSnapshot.Empty;
     private IReadOnlyList<HierarchyNodeModel> nodes_ = [];
+    private IReadOnlyList<EditorTreeNode<HierarchyNodeModel>> treeNodes_ = [];
     private IReadOnlyList<HierarchyNodeRowViewModel> visibleRows_ = [];
     private HierarchyNodeModel? selectedNode_;
     private HierarchyNodeRowViewModel? selectedRow_;
@@ -172,48 +171,35 @@ public sealed class HierarchyPanelViewModel : ViewModelBase, IDisposable
     private void LoadSnapshot(SceneSnapshot snapshot, bool preserveExpandedState)
     {
         var previousExpandedNodeIds = preserveExpandedState
-            ? expandedNodeIds_
+            ? expansionState_.ToHashSet()
             : [];
 
         SceneSnapshot = snapshot;
         Nodes = SceneSnapshot.Objects
             .Select(HierarchyNodeModel.FromSceneObject)
             .ToArray();
-        nodesById_ = Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
-        depthsByNodeId_ = Nodes.ToDictionary(node => node.Id, GetDepth, StringComparer.Ordinal);
-        nodeIdsWithChildren_ = Nodes
+        treeNodes_ = Nodes
+            .Select(node => new EditorTreeNode<HierarchyNodeModel>(node.Id, node.ParentId, node))
+            .ToArray();
+        var nodeIdsWithChildren = treeNodes_
             .Where(node => !string.IsNullOrWhiteSpace(node.ParentId))
             .Select(node => node.ParentId!)
             .ToHashSet(StringComparer.Ordinal);
-        expandedNodeIds_ = Nodes
-            .Where(node => nodeIdsWithChildren_.Contains(node.Id)
-                && ShouldKeepExpanded(node, preserveExpandedState, previousExpandedNodeIds))
-            .Select(node => node.Id)
-            .ToHashSet(StringComparer.Ordinal);
+        expansionState_ = new EditorTreeExpansionState(treeNodes_
+            .Where(node => nodeIdsWithChildren.Contains(node.Id)
+                && (preserveExpandedState
+                    ? previousExpandedNodeIds.Contains(node.Id)
+                    : node.ParentId is null))
+            .Select(node => node.Id));
 
         RefreshVisibleRows();
     }
 
-    private static bool ShouldKeepExpanded(
-        HierarchyNodeModel node,
-        bool preserveExpandedState,
-        HashSet<string> previousExpandedNodeIds)
-    {
-        return preserveExpandedState
-            ? previousExpandedNodeIds.Contains(node.Id)
-            : node.ParentId is null;
-    }
-
     private void ToggleExpanded(HierarchyNodeRowViewModel? row)
     {
-        if (row is null || !row.HasChildren)
+        if (row is null || !expansionState_.Toggle(row.Id, row.HasChildren))
         {
             return;
-        }
-
-        if (!expandedNodeIds_.Remove(row.Id))
-        {
-            expandedNodeIds_.Add(row.Id);
         }
 
         RefreshVisibleRows();
@@ -223,23 +209,16 @@ public sealed class HierarchyPanelViewModel : ViewModelBase, IDisposable
     {
         var query = filterText_.Trim();
         var hasFilter = query.Length > 0;
-        var searchMatches = hasFilter
-            ? Nodes
-                .Where(node => MatchesQuery(node, query))
-                .Select(node => node.Id)
-                .ToHashSet(StringComparer.Ordinal)
-            : new HashSet<string>(StringComparer.Ordinal);
-        var searchAncestors = hasFilter
-            ? GetAncestorIds(searchMatches)
-            : new HashSet<string>(StringComparer.Ordinal);
+        Func<EditorTreeNode<HierarchyNodeModel>, bool>? searchPredicate = hasFilter
+            ? node => MatchesQuery(node.Payload, query)
+            : null;
+        var treeRows = EditorTreeFlattener.Flatten(
+            treeNodes_,
+            expansionState_,
+            searchPredicate);
 
-        var visibleNodes = Nodes
-            .Where(node => IsVisible(node, hasFilter, searchMatches, searchAncestors))
-            .ToArray();
-        var lastVisibleChildIdsByParent = GetLastVisibleChildIdsByParent(visibleNodes);
-
-        VisibleRows = visibleNodes
-            .Select(node => CreateRow(node, hasFilter, searchMatches, searchAncestors, lastVisibleChildIdsByParent))
+        VisibleRows = treeRows
+            .Select(CreateRow)
             .ToArray();
 
         HasNoMatches = hasFilter && VisibleRows.Count == 0;
@@ -250,166 +229,17 @@ public sealed class HierarchyPanelViewModel : ViewModelBase, IDisposable
     }
 
     private HierarchyNodeRowViewModel CreateRow(
-        HierarchyNodeModel node,
-        bool hasFilter,
-        HashSet<string> searchMatches,
-        HashSet<string> searchAncestors,
-        Dictionary<string, string> lastVisibleChildIdsByParent)
+        EditorTreeRow<HierarchyNodeModel> row)
     {
-        var hasChildren = nodeIdsWithChildren_.Contains(node.Id);
-        var isExpanded = hasChildren
-            && (expandedNodeIds_.Contains(node.Id)
-                || (hasFilter && searchAncestors.Contains(node.Id)));
-        var isLastSibling = IsLastVisibleSibling(node, lastVisibleChildIdsByParent);
-
         return new HierarchyNodeRowViewModel(
-            node,
-            depthsByNodeId_.TryGetValue(node.Id, out var depth) ? depth : 0,
-            hasChildren,
-            isExpanded,
-            isLastSibling,
-            GetAncestorContinuationMask(node, lastVisibleChildIdsByParent),
-            hasFilter && searchMatches.Contains(node.Id),
+            row.Payload,
+            row.Depth,
+            row.HasChildren,
+            row.IsExpanded,
+            row.IsLastSibling,
+            row.AncestorContinuationMask,
+            row.IsSearchMatch,
             ToggleExpandedCommand);
-    }
-
-    private static Dictionary<string, string> GetLastVisibleChildIdsByParent(
-        IReadOnlyList<HierarchyNodeModel> visibleNodes)
-    {
-        var lastVisibleChildIdsByParent = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var node in visibleNodes)
-        {
-            if (!string.IsNullOrWhiteSpace(node.ParentId))
-            {
-                lastVisibleChildIdsByParent[node.ParentId] = node.Id;
-            }
-        }
-
-        return lastVisibleChildIdsByParent;
-    }
-
-    private ulong GetAncestorContinuationMask(
-        HierarchyNodeModel node,
-        Dictionary<string, string> lastVisibleChildIdsByParent)
-    {
-        var mask = 0UL;
-        var parentId = node.ParentId;
-        var guard = 0;
-        while (!string.IsNullOrWhiteSpace(parentId)
-            && nodesById_.TryGetValue(parentId, out var parent))
-        {
-            if (++guard > Nodes.Count)
-            {
-                break;
-            }
-
-            if (depthsByNodeId_.TryGetValue(parent.Id, out var ancestorDepth)
-                && ancestorDepth > 0
-                && ancestorDepth <= 64
-                && !IsLastVisibleSibling(parent, lastVisibleChildIdsByParent))
-            {
-                mask |= 1UL << (ancestorDepth - 1);
-            }
-
-            parentId = parent.ParentId;
-        }
-
-        return mask;
-    }
-
-    private static bool IsLastVisibleSibling(
-        HierarchyNodeModel node,
-        Dictionary<string, string> lastVisibleChildIdsByParent)
-    {
-        return string.IsNullOrWhiteSpace(node.ParentId)
-            || (lastVisibleChildIdsByParent.TryGetValue(node.ParentId, out var lastVisibleChildId)
-                && string.Equals(lastVisibleChildId, node.Id, StringComparison.Ordinal));
-    }
-
-    private bool IsVisible(
-        HierarchyNodeModel node,
-        bool hasFilter,
-        HashSet<string> searchMatches,
-        HashSet<string> searchAncestors)
-    {
-        if (hasFilter)
-        {
-            return searchMatches.Contains(node.Id) || searchAncestors.Contains(node.Id);
-        }
-
-        return AreAncestorsExpanded(node);
-    }
-
-    private bool AreAncestorsExpanded(HierarchyNodeModel node)
-    {
-        var parentId = node.ParentId;
-        var guard = 0;
-        while (!string.IsNullOrWhiteSpace(parentId))
-        {
-            if (++guard > Nodes.Count)
-            {
-                return false;
-            }
-
-            if (!expandedNodeIds_.Contains(parentId))
-            {
-                return false;
-            }
-
-            parentId = nodesById_.TryGetValue(parentId, out var parent)
-                ? parent.ParentId
-                : null;
-        }
-
-        return true;
-    }
-
-    private int GetDepth(HierarchyNodeModel node)
-    {
-        var depth = 0;
-        var parentId = node.ParentId;
-        var guard = 0;
-        while (!string.IsNullOrWhiteSpace(parentId)
-            && nodesById_.TryGetValue(parentId, out var parent))
-        {
-            if (++guard > Nodes.Count)
-            {
-                return depth;
-            }
-
-            depth++;
-            parentId = parent.ParentId;
-        }
-
-        return depth;
-    }
-
-    private HashSet<string> GetAncestorIds(HashSet<string> nodeIds)
-    {
-        var ancestorIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var nodeId in nodeIds)
-        {
-            var parentId = nodesById_.TryGetValue(nodeId, out var node)
-                ? node.ParentId
-                : null;
-            while (!string.IsNullOrWhiteSpace(parentId)
-                && nodesById_.TryGetValue(parentId, out var parent))
-            {
-                if (ancestorIds.Count > Nodes.Count)
-                {
-                    break;
-                }
-
-                if (!ancestorIds.Add(parentId))
-                {
-                    break;
-                }
-
-                parentId = parent.ParentId;
-            }
-        }
-
-        return ancestorIds;
     }
 
     private void SyncSelectedRow()
