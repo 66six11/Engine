@@ -270,6 +270,13 @@ public sealed class GuiAvaloniaControlFactoryTests
         var listBox = Assert.IsType<ListBox>(
             body.Children.Single(child => Grid.GetRow(child) == 1));
         Assert.Equal(VerticalAlignment.Stretch, listBox.VerticalAlignment);
+        Assert.NotNull(listBox.ItemsPanel);
+        Assert.IsType<VirtualizingStackPanel>(listBox.ItemsPanel!.Build());
+        var firstItem = Assert.IsType<GuiListItem>(Assert.Single(
+            listBox.ItemsSource!.Cast<object>(),
+            item => item is GuiListItem listItem
+                && listItem.Id == "section-0"));
+        Assert.Equal("Section 0", firstItem.Label);
     }
 
     [Fact]

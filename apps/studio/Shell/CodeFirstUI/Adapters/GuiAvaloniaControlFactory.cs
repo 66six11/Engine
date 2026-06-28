@@ -749,13 +749,12 @@ internal sealed class GuiAvaloniaControlFactory
 
     private Control BuildList(GuiNode node)
     {
-        var listItems = node.Payload.ListItems
-            .Select(item => new GuiAvaloniaListItem(item.Id, item.Label))
-            .ToArray();
+        var listItems = node.Payload.ListItems;
         var listBox = new ListBox
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemTemplate = new FuncDataTemplate<GuiAvaloniaListItem>((item, _) =>
+            ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()),
+            ItemTemplate = new FuncDataTemplate<GuiListItem>((item, _) =>
             {
                 var label = new TextBlock
                 {
@@ -775,7 +774,7 @@ internal sealed class GuiAvaloniaControlFactory
 
         listBox.SelectionChanged += (_, _) =>
         {
-            if (listBox.SelectedItem is GuiAvaloniaListItem item)
+            if (listBox.SelectedItem is GuiListItem item)
             {
                 host_.SelectListItem(node.Id, item.Id);
             }
@@ -804,10 +803,6 @@ internal sealed class GuiAvaloniaControlFactory
         textBlock.Classes.Add("code-first-empty");
         return textBlock;
     }
-
-    private sealed record GuiAvaloniaListItem(
-        string Id,
-        string Label);
 
     private sealed class NavigationRouteNode
     {
