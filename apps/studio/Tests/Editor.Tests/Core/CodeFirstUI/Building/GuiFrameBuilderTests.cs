@@ -224,6 +224,31 @@ public sealed class GuiFrameBuilderTests
     }
 
     [Fact]
+    public void Build_preserves_vector3_field_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var value = new GuiVector3Value(1d, 2d, 3d);
+
+        builder.Vector3Field(
+            "position",
+            "Position",
+            value,
+            minimum: -10d,
+            maximum: 10d,
+            increment: 0.25d,
+            formatString: "0.00");
+
+        var vector3Field = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Vector3Field, vector3Field.Kind);
+        Assert.Equal("Position", vector3Field.Label);
+        Assert.Equal(value, vector3Field.Payload.Vector3Value);
+        Assert.Equal(-10d, vector3Field.Payload.NumericMinimum);
+        Assert.Equal(10d, vector3Field.Payload.NumericMaximum);
+        Assert.Equal(0.25d, vector3Field.Payload.NumericSmallChange);
+        Assert.Equal("0.00", vector3Field.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Build_preserves_slider_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");

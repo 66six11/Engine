@@ -24,6 +24,8 @@ internal interface IGuiAvaloniaHost
 
     void SetColorValue(GuiNodeId nodeId, GuiColorValue value);
 
+    void SetVector3Value(GuiNodeId nodeId, GuiVector3Value value);
+
     void SetText(GuiNodeId nodeId, string text);
 
     void CommitText(GuiNodeId nodeId, string text);

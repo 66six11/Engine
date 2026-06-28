@@ -66,6 +66,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.ComboBox => BuildComboBox(node),
             GuiNodeKind.RadioGroup => BuildRadioGroup(node),
             GuiNodeKind.ColorField => BuildColorField(node),
+            GuiNodeKind.Vector3Field => BuildVector3Field(node),
             GuiNodeKind.Slider => BuildSlider(node),
             GuiNodeKind.NumberInput => BuildNumberInput(node),
             GuiNodeKind.ProgressBar => BuildProgressBar(node),
@@ -906,6 +907,124 @@ internal sealed class GuiAvaloniaControlFactory
         };
     }
 
+    private Control BuildVector3Field(GuiNode node)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var value = node.Payload.Vector3Value ?? new GuiVector3Value(0d, 0d, 0d);
+        var xInput = CreateVector3Component(node, value.X);
+        var yInput = CreateVector3Component(node, value.Y);
+        var zInput = CreateVector3Component(node, value.Z);
+        var vectorGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*,Auto,*"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        vectorGrid.Classes.Add("code-first-vector3-field");
+        AddVector3Component(vectorGrid, "X", xInput, labelColumn: 0);
+        AddVector3Component(vectorGrid, "Y", yInput, labelColumn: 2);
+        AddVector3Component(vectorGrid, "Z", zInput, labelColumn: 4);
+        AttachVector3FieldTracking(node.Id, xInput, yInput, zInput);
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(vectorGrid, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(vectorGrid);
+        return grid;
+    }
+
+    private static NumericUpDown CreateVector3Component(GuiNode node, double value)
+    {
+        var component = new NumericUpDown
+        {
+            FormatString = node.Payload.NumericFormatString ?? "0.###",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Increment = ToDecimal(node.Payload.NumericSmallChange ?? 0.1d),
+            MinWidth = 64d,
+            Value = ToDecimal(value),
+        };
+        if (node.Payload.NumericMinimum is { } minimum)
+        {
+            component.Minimum = ToDecimal(minimum);
+        }
+
+        if (node.Payload.NumericMaximum is { } maximum)
+        {
+            component.Maximum = ToDecimal(maximum);
+        }
+
+        component.Classes.Add("code-first-vector-component");
+        return component;
+    }
+
+    private static void AddVector3Component(
+        Grid grid,
+        string label,
+        NumericUpDown component,
+        int labelColumn)
+    {
+        var componentLabel = new TextBlock
+        {
+            Text = label,
+            TextWrapping = TextWrapping.NoWrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        componentLabel.Classes.Add("code-first-vector-component-label");
+        Grid.SetColumn(componentLabel, labelColumn);
+        Grid.SetColumn(component, labelColumn + 1);
+        grid.Children.Add(componentLabel);
+        grid.Children.Add(component);
+    }
+
+    private void AttachVector3FieldTracking(
+        GuiNodeId nodeId,
+        NumericUpDown xInput,
+        NumericUpDown yInput,
+        NumericUpDown zInput)
+    {
+        AttachVector3ComponentTracking(nodeId, xInput, yInput, zInput, xInput);
+        AttachVector3ComponentTracking(nodeId, xInput, yInput, zInput, yInput);
+        AttachVector3ComponentTracking(nodeId, xInput, yInput, zInput, zInput);
+    }
+
+    private void AttachVector3ComponentTracking(
+        GuiNodeId nodeId,
+        NumericUpDown xInput,
+        NumericUpDown yInput,
+        NumericUpDown zInput,
+        NumericUpDown observedInput)
+    {
+        var hasObservedInitialValue = false;
+        observedInput.Tag = observedInput
+            .GetObservable(NumericUpDown.ValueProperty)
+            .Subscribe(new ActionObserver<decimal?>(_ =>
+            {
+                if (!hasObservedInitialValue)
+                {
+                    hasObservedInitialValue = true;
+                    return;
+                }
+
+                host_.SetVector3Value(
+                    nodeId,
+                    new GuiVector3Value(
+                        ToDouble(xInput.Value),
+                        ToDouble(yInput.Value),
+                        ToDouble(zInput.Value)));
+            }));
+    }
+
     private Control BuildSlider(GuiNode node)
     {
         var minimum = node.Payload.NumericMinimum ?? 0d;
@@ -1027,6 +1146,13 @@ internal sealed class GuiAvaloniaControlFactory
     private static decimal ToDecimal(double value)
     {
         return Convert.ToDecimal(value);
+    }
+
+    private static double ToDouble(decimal? value)
+    {
+        return value is { } numericValue
+            ? decimal.ToDouble(numericValue)
+            : 0d;
     }
 
     private static Color ToAvaloniaColor(GuiColorValue value)

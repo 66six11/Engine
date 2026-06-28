@@ -377,6 +377,30 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Set_vector3_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
+    {
+        var panel = new Vector3FieldDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var initialBuildCount = panel.GuiBuildCount;
+        var position = new GuiVector3Value(1d, 2d, 3d);
+
+        host.SetVector3Value(new GuiNodeId("ui.style", "position", GuiNodeKind.Vector3Field), position);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.True(host.StateStore.TryGetVector3Value(
+            new GuiNodeId("ui.style", "position", GuiNodeKind.Vector3Field),
+            out var storedValue));
+        Assert.Equal(position, storedValue);
+
+        host.OnPanelActivated(CreateLifecycleContext("ui.style"));
+
+        var vector3Field = host.CurrentTree?.Root.Children[0];
+        Assert.Equal(position, vector3Field?.Payload.Vector3Value);
+        Assert.Equal(position, panel.Position);
+    }
+
+    [Fact]
     public void Set_number_input_value_updates_state_without_immediate_rebuild_and_next_rebuild_uses_value()
     {
         var panel = new NumberInputDrivenCodeFirstPanel();
@@ -728,6 +752,19 @@ public sealed class CodeFirstPanelHostViewModelTests
         {
             GuiBuildCount++;
             Albedo = gui.ColorField("albedo", "Albedo", new GuiColorValue(255, 128, 64), showAlpha: true);
+        }
+    }
+
+    private sealed class Vector3FieldDrivenCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public int GuiBuildCount { get; private set; }
+
+        public GuiVector3Value Position { get; private set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            GuiBuildCount++;
+            Position = gui.Vector3Field("position", "Position", new GuiVector3Value(0d, 0d, 0d));
         }
     }
 

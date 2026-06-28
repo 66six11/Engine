@@ -507,6 +507,47 @@ public sealed class GuiAvaloniaControlFactoryTests
     }
 
     [Fact]
+    public void Build_maps_vector3_field_to_numeric_components_and_reports_value_changes()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.Vector3Field(
+            "position",
+            "Position",
+            new GuiVector3Value(1d, 2d, 3d),
+            minimum: -10d,
+            maximum: 10d,
+            increment: 0.25d,
+            formatString: "0.00");
+        var host = new RecordingCodeFirstPanelHost();
+        var factory = new GuiAvaloniaControlFactory(host);
+
+        var control = factory.Build(builder.Build());
+
+        var vectorGrid = FindDescendant<Grid>(
+            control,
+            grid => grid.Classes.Contains("code-first-vector3-field"));
+        Assert.NotNull(vectorGrid);
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Position"));
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "X"));
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Y"));
+        Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Z"));
+        var components = FindDescendants<NumericUpDown>(control).ToArray();
+        Assert.Equal(3, components.Length);
+        Assert.All(components, component => Assert.Contains("code-first-vector-component", component.Classes));
+        Assert.Equal([1m, 2m, 3m], components.Select(component => component.Value).ToArray());
+        Assert.All(components, component => Assert.Equal(-10m, component.Minimum));
+        Assert.All(components, component => Assert.Equal(10m, component.Maximum));
+        Assert.All(components, component => Assert.Equal(0.25m, component.Increment));
+        Assert.All(components, component => Assert.Equal("0.00", component.FormatString));
+
+        components[2].Value = 4m;
+
+        var change = Assert.Single(host.Vector3Changes);
+        Assert.Equal(new GuiNodeId("ui-style", "position", GuiNodeKind.Vector3Field), change.NodeId);
+        Assert.Equal(new GuiVector3Value(1d, 2d, 4d), change.Value);
+    }
+
+    [Fact]
     public void Build_maps_slider_to_property_row_and_reports_value_changes()
     {
         var builder = new GuiFrameBuilder("ui-style");
@@ -794,6 +835,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
         }
 
+        public void SetVector3Value(GuiNodeId nodeId, GuiVector3Value value)
+        {
+        }
+
         public void SetText(GuiNodeId nodeId, string text)
         {
         }
@@ -822,6 +867,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<SliderChange> sliderChanges_ = [];
         private readonly List<NumberInputChange> numberInputChanges_ = [];
         private readonly List<ColorChange> colorChanges_ = [];
+        private readonly List<Vector3Change> vector3Changes_ = [];
         private readonly List<FoldoutChange> foldoutChanges_ = [];
         private readonly List<NavigationRouteSelection> navigationRouteSelections_ = [];
         private readonly List<NavigationRouteExpansionChange> navigationRouteExpansionChanges_ = [];
@@ -843,6 +889,8 @@ public sealed class GuiAvaloniaControlFactoryTests
         public IReadOnlyList<NumberInputChange> NumberInputChanges => numberInputChanges_;
 
         public IReadOnlyList<ColorChange> ColorChanges => colorChanges_;
+
+        public IReadOnlyList<Vector3Change> Vector3Changes => vector3Changes_;
 
         public IReadOnlyList<FoldoutChange> FoldoutChanges => foldoutChanges_;
 
@@ -898,6 +946,11 @@ public sealed class GuiAvaloniaControlFactoryTests
             colorChanges_.Add(new ColorChange(nodeId, value));
         }
 
+        public void SetVector3Value(GuiNodeId nodeId, GuiVector3Value value)
+        {
+            vector3Changes_.Add(new Vector3Change(nodeId, value));
+        }
+
         public void SetText(GuiNodeId nodeId, string text)
         {
             textChanges_.Add(new TextChange(nodeId, text));
@@ -950,6 +1003,10 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record ColorChange(
         GuiNodeId NodeId,
         GuiColorValue Value);
+
+    private sealed record Vector3Change(
+        GuiNodeId NodeId,
+        GuiVector3Value Value);
 
     private sealed record FoldoutChange(
         GuiNodeId NodeId,

@@ -18,6 +18,7 @@ public enum GuiNodeKind
     ComboBox,
     RadioGroup,
     ColorField,
+    Vector3Field,
     Slider,
     NumberInput,
     ProgressBar,

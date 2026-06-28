@@ -108,6 +108,21 @@
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
         </Style>
+        <Style Selector="Grid.code-first-vector3-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="TextBlock.code-first-vector-component-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+        </Style>
+        <Style Selector="NumericUpDown.code-first-vector-component">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
         <Style Selector="Slider.code-first-slider">
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />

@@ -456,6 +456,40 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Vector3_field_returns_stored_value_and_emits_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        var storedValue = new GuiVector3Value(1d, 2d, 3d);
+        state.SetVector3Value(new GuiNodeId("ui.style", "position", GuiNodeKind.Vector3Field), storedValue);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var value = gui.Vector3Field(
+            "position",
+            "Position",
+            new GuiVector3Value(0d, 0d, 0d),
+            minimum: -10d,
+            maximum: 10d,
+            increment: 0.25d,
+            formatString: "0.00");
+
+        Assert.Equal(storedValue, value);
+
+        var vector3Field = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Vector3Field, vector3Field.Kind);
+        Assert.Equal("Position", vector3Field.Label);
+        Assert.Equal(storedValue, vector3Field.Payload.Vector3Value);
+        Assert.Equal(-10d, vector3Field.Payload.NumericMinimum);
+        Assert.Equal(10d, vector3Field.Payload.NumericMaximum);
+        Assert.Equal(0.25d, vector3Field.Payload.NumericSmallChange);
+        Assert.Equal("0.00", vector3Field.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Slider_returns_stored_value_and_emits_payload()
     {
         var builder = new GuiFrameBuilder("ui.style");
