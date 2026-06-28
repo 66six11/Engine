@@ -165,6 +165,10 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         Assert.Equal(EditorIconKey.UiChevronRight, overviewExpander!.IconKey);
         Assert.False(overviewChildren!.IsVisible);
+        Assert.Contains(host.NavigationRouteExpansionChanges, change =>
+            change.NodeId == new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView)
+            && string.Equals(change.Route, "overview", StringComparison.Ordinal)
+            && !change.IsExpanded);
 
         overviewRouteButton.RaiseEvent(CreateDoubleTappedArgs(overviewRouteButton));
 
@@ -495,6 +499,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
         }
 
+        public void SetNavigationRouteExpanded(GuiNodeId nodeId, string route, bool isExpanded)
+        {
+        }
+
         public void ResizeSplit(GuiNodeId nodeId, double ratio)
         {
         }
@@ -524,6 +532,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         private readonly List<ToggleChange> toggleChanges_ = [];
         private readonly List<FoldoutChange> foldoutChanges_ = [];
         private readonly List<NavigationRouteSelection> navigationRouteSelections_ = [];
+        private readonly List<NavigationRouteExpansionChange> navigationRouteExpansionChanges_ = [];
 
         public IReadOnlyList<SplitResize> SplitResizes => splitResizes_;
 
@@ -537,6 +546,8 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         public IReadOnlyList<NavigationRouteSelection> NavigationRouteSelections => navigationRouteSelections_;
 
+        public IReadOnlyList<NavigationRouteExpansionChange> NavigationRouteExpansionChanges => navigationRouteExpansionChanges_;
+
         public void ClickButton(GuiNodeId nodeId)
         {
         }
@@ -548,6 +559,11 @@ public sealed class GuiAvaloniaControlFactoryTests
         public void SelectNavigationRoute(GuiNodeId nodeId, string route)
         {
             navigationRouteSelections_.Add(new NavigationRouteSelection(nodeId, route));
+        }
+
+        public void SetNavigationRouteExpanded(GuiNodeId nodeId, string route, bool isExpanded)
+        {
+            navigationRouteExpansionChanges_.Add(new NavigationRouteExpansionChange(nodeId, route, isExpanded));
         }
 
         public void ResizeSplit(GuiNodeId nodeId, double ratio)
@@ -595,6 +611,11 @@ public sealed class GuiAvaloniaControlFactoryTests
     private sealed record NavigationRouteSelection(
         GuiNodeId NodeId,
         string Route);
+
+    private sealed record NavigationRouteExpansionChange(
+        GuiNodeId NodeId,
+        string Route,
+        bool IsExpanded);
 
     private sealed class RecordingTextCommitScheduler : IGuiTextCommitScheduler
     {

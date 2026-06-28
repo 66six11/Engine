@@ -16,6 +16,8 @@ public sealed record GuiNodePayload
 
     public string? SelectedRoute { get; init; }
 
+    public IReadOnlyList<string> CollapsedNavigationRoutes { get; init; } = [];
+
     public IReadOnlyList<GuiListItem> ListItems { get; init; } = [];
 
     public string? SelectedItemId { get; init; }

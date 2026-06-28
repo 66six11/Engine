@@ -65,7 +65,12 @@ public sealed class GuiFrameBuilderTests
             new GuiNavigationItem("render/debug/frame-debugger", "Frame Debugger"),
         };
 
-        using (builder.NavigationView("catalog", pages, "render/debug/frame-debugger", 0.25d))
+        using (builder.NavigationView(
+            "catalog",
+            pages,
+            "render/debug/frame-debugger",
+            0.25d,
+            ["overview"]))
         {
             builder.Label("title", "Frame Debugger");
         }
@@ -76,6 +81,7 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal(pages, navigation.Payload.NavigationItems);
         Assert.Equal("render/debug/frame-debugger", navigation.Payload.SelectedRoute);
         Assert.Equal(0.25d, navigation.Payload.SplitRatio);
+        Assert.Equal(["overview"], navigation.Payload.CollapsedNavigationRoutes);
 
         var child = Assert.Single(navigation.Children);
         Assert.Equal("catalog/title", child.Id.KeyPath);

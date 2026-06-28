@@ -10,6 +10,7 @@ public sealed class GuiStateStore
     private readonly Dictionary<GuiNodeId, string> textByNode_ = [];
     private readonly Dictionary<GuiNodeId, bool> togglesByNode_ = [];
     private readonly Dictionary<GuiNodeId, bool> foldoutsByNode_ = [];
+    private readonly Dictionary<GuiNodeId, Dictionary<string, bool>> navigationRouteExpansionByNode_ = [];
 
     public void SetText(GuiNodeId nodeId, string text)
     {
@@ -47,6 +48,48 @@ public sealed class GuiStateStore
     public bool TryGetSelectedRoute(GuiNodeId nodeId, out string? route)
     {
         return TryGetSelectedItem(nodeId, out route);
+    }
+
+    public void SetNavigationRouteExpanded(
+        GuiNodeId nodeId,
+        string route,
+        bool isExpanded)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            throw new ArgumentException("Navigation route must not be empty.", nameof(route));
+        }
+
+        if (!navigationRouteExpansionByNode_.TryGetValue(nodeId, out var routes))
+        {
+            routes = new Dictionary<string, bool>(StringComparer.Ordinal);
+            navigationRouteExpansionByNode_[nodeId] = routes;
+        }
+
+        routes[route] = isExpanded;
+    }
+
+    public bool TryGetNavigationRouteExpanded(
+        GuiNodeId nodeId,
+        string route,
+        out bool isExpanded)
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            isExpanded = false;
+            return false;
+        }
+
+        if (navigationRouteExpansionByNode_.TryGetValue(nodeId, out var routes)
+            && routes.TryGetValue(route, out isExpanded))
+        {
+            return true;
+        }
+
+        isExpanded = false;
+        return false;
     }
 
     public void SetSplitRatio(GuiNodeId nodeId, double ratio)
@@ -107,5 +150,6 @@ public sealed class GuiStateStore
         splitRatiosByNode_.Remove(nodeId);
         togglesByNode_.Remove(nodeId);
         foldoutsByNode_.Remove(nodeId);
+        navigationRouteExpansionByNode_.Remove(nodeId);
     }
 }

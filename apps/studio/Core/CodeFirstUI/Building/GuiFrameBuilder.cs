@@ -143,7 +143,8 @@ public sealed class GuiFrameBuilder
         string key,
         IReadOnlyList<GuiNavigationItem> items,
         string? selectedRoute,
-        double ratio = 0.30d)
+        double ratio = 0.30d,
+        IReadOnlyList<string>? collapsedNavigationRoutes = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0d || ratio >= 1d)
@@ -163,6 +164,7 @@ public sealed class GuiFrameBuilder
                 NavigationItems = items.ToArray(),
                 SelectedRoute = selectedRoute,
                 SplitRatio = ratio,
+                CollapsedNavigationRoutes = collapsedNavigationRoutes?.ToArray() ?? [],
             });
     }
 

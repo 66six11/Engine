@@ -119,6 +119,44 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Navigation_route_expansion_state_survives_route_selection_rebuild()
+    {
+        var panel = new NavigationDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        var navigationId = new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+
+        host.SetNavigationRouteExpanded(navigationId, "overview", isExpanded: false);
+        host.SelectNavigationRoute(navigationId, "overview");
+
+        Assert.Equal("overview", panel.SelectedRoute);
+        Assert.True(host.StateStore.TryGetNavigationRouteExpanded(
+            navigationId,
+            "overview",
+            out var isExpanded));
+        Assert.False(isExpanded);
+
+        var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
+        Assert.Equal(["overview"], navigation.Payload.CollapsedNavigationRoutes);
+        Assert.Equal("Overview", Assert.Single(navigation.Children).Label);
+    }
+
+    [Fact]
+    public void Selecting_current_navigation_route_does_not_rebuild_tree()
+    {
+        var panel = new NavigationDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        var navigationId = new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        var buildCount = panel.GuiBuildCount;
+
+        host.SelectNavigationRoute(navigationId, "overview");
+
+        Assert.Equal("overview", panel.SelectedRoute);
+        Assert.Equal(buildCount, panel.GuiBuildCount);
+    }
+
+    [Fact]
     public void Resize_split_updates_state_without_immediate_rebuild_and_next_rebuild_uses_ratio()
     {
         var panel = new SplitDrivenCodeFirstPanel();
@@ -336,13 +374,17 @@ public sealed class CodeFirstPanelHostViewModelTests
         private static readonly GuiNavigationPage[] Pages =
         [
             new("overview", "Overview", gui => gui.Text("title", "Overview")),
+            new("overview/foundations/typography", "Typography", gui => gui.Text("title", "Typography")),
             new("render/debug/frame-debugger", "Frame Debugger", gui => gui.Text("title", "Frame Debugger")),
         ];
+
+        public int GuiBuildCount { get; private set; }
 
         public string? SelectedRoute { get; private set; }
 
         protected override void OnGui(EditorGui gui)
         {
+            GuiBuildCount++;
             using (var navigation = gui.NavigationView("catalog", Pages, "overview"))
             {
                 SelectedRoute = navigation.SelectedRoute;

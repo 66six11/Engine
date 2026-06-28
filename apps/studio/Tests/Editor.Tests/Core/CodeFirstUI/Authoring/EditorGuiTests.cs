@@ -107,6 +107,10 @@ public sealed class EditorGuiTests
         state.SetSelectedRoute(
             new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView),
             "render/debug/frame-debugger");
+        state.SetNavigationRouteExpanded(
+            new GuiNodeId("ui.style", "catalog", GuiNodeKind.NavigationView),
+            "overview",
+            isExpanded: false);
         var gui = new EditorGui(
             builder,
             new GuiEventQueue(),
@@ -131,6 +135,7 @@ public sealed class EditorGuiTests
         Assert.Equal(GuiNodeKind.NavigationView, node.Kind);
         Assert.Equal("render/debug/frame-debugger", node.Payload.SelectedRoute);
         Assert.Equal(0.35d, node.Payload.SplitRatio);
+        Assert.Equal(["overview"], node.Payload.CollapsedNavigationRoutes);
         Assert.Equal("Frame Debugger", Assert.Single(node.Children).Label);
     }
 

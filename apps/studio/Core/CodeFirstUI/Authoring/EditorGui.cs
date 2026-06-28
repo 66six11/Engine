@@ -129,9 +129,10 @@ public sealed class EditorGui
         var resolvedRatio = StateStore.TryGetSplitRatio(nodeId, out var storedRatio)
             ? storedRatio
             : ratio;
+        var collapsedRoutes = ResolveCollapsedNavigationRoutes(nodeId, items);
 
         return new GuiNavigationScope(
-            builder_.NavigationView(key, items, selectedRoute, resolvedRatio),
+            builder_.NavigationView(key, items, selectedRoute, resolvedRatio, collapsedRoutes),
             selectedRoute,
             pages);
     }
@@ -249,6 +250,46 @@ public sealed class EditorGui
         }
 
         return items[0].Route;
+    }
+
+    private IReadOnlyList<string> ResolveCollapsedNavigationRoutes(
+        GuiNodeId nodeId,
+        IReadOnlyList<GuiNavigationItem> items)
+    {
+        var collapsedRoutes = new List<string>();
+        foreach (var route in EnumerateNavigationRoutePrefixes(items))
+        {
+            if (StateStore.TryGetNavigationRouteExpanded(nodeId, route, out var isExpanded)
+                && !isExpanded)
+            {
+                collapsedRoutes.Add(route);
+            }
+        }
+
+        return collapsedRoutes;
+    }
+
+    private static IReadOnlyList<string> EnumerateNavigationRoutePrefixes(
+        IReadOnlyList<GuiNavigationItem> items)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var routes = new List<string>();
+        foreach (var item in items)
+        {
+            var route = string.Empty;
+            foreach (var segment in item.Route.Split('/'))
+            {
+                route = string.IsNullOrWhiteSpace(route)
+                    ? segment
+                    : $"{route}/{segment}";
+                if (seen.Add(route))
+                {
+                    routes.Add(route);
+                }
+            }
+        }
+
+        return routes;
     }
 
     private static bool ContainsNavigationRoute(

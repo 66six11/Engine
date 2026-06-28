@@ -10,6 +10,8 @@ internal interface IGuiAvaloniaHost
 
     void SelectNavigationRoute(GuiNodeId nodeId, string route);
 
+    void SetNavigationRouteExpanded(GuiNodeId nodeId, string route, bool isExpanded);
+
     void ResizeSplit(GuiNodeId nodeId, double ratio);
 
     void SetText(GuiNodeId nodeId, string text);

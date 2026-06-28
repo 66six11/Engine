@@ -235,6 +235,7 @@ internal sealed class GuiAvaloniaControlFactory
         stack.Classes.Add("code-first-navigation-directory-content");
 
         var root = BuildNavigationRouteTree(node.Payload.NavigationItems);
+        var collapsedRoutes = node.Payload.CollapsedNavigationRoutes.ToHashSet(StringComparer.Ordinal);
         for (var index = 0; index < root.Children.Count; index++)
         {
             AddNavigationRouteControls(
@@ -242,6 +243,7 @@ internal sealed class GuiAvaloniaControlFactory
                 node.Id,
                 root.Children[index],
                 node.Payload.SelectedRoute,
+                collapsedRoutes,
                 depth: 0);
         }
 
@@ -282,6 +284,7 @@ internal sealed class GuiAvaloniaControlFactory
         GuiNodeId nodeId,
         NavigationRouteNode node,
         string? selectedRoute,
+        HashSet<string> collapsedRoutes,
         int depth)
     {
         var childrenPanel = node.Children.Count > 0
@@ -297,6 +300,7 @@ internal sealed class GuiAvaloniaControlFactory
             nodeId,
             node,
             selectedRoute,
+            collapsedRoutes,
             depth,
             childrenPanel));
 
@@ -312,6 +316,7 @@ internal sealed class GuiAvaloniaControlFactory
                 nodeId,
                 node.Children[index],
                 selectedRoute,
+                collapsedRoutes,
                 depth + 1);
         }
 
@@ -322,13 +327,15 @@ internal sealed class GuiAvaloniaControlFactory
         GuiNodeId nodeId,
         NavigationRouteNode node,
         string? selectedRoute,
+        HashSet<string> collapsedRoutes,
         int depth,
         StackPanel? childrenPanel)
     {
         IconButton? expander = null;
-        var isExpanded = true;
+        var isExpanded = childrenPanel is null
+            || !collapsedRoutes.Contains(node.FullRoute);
 
-        void SetExpanded(bool expanded)
+        void SetExpanded(bool expanded, bool notifyHost)
         {
             isExpanded = expanded;
             if (childrenPanel is not null)
@@ -342,11 +349,16 @@ internal sealed class GuiAvaloniaControlFactory
                     ? EditorIconKey.UiChevronDown
                     : EditorIconKey.UiChevronRight;
             }
+
+            if (notifyHost && childrenPanel is not null)
+            {
+                host_.SetNavigationRouteExpanded(nodeId, node.FullRoute, expanded);
+            }
         }
 
         void ToggleExpanded()
         {
-            SetExpanded(!isExpanded);
+            SetExpanded(!isExpanded, notifyHost: true);
         }
 
         var indentWidth = depth * EditorTreeMetrics.IndentUnit;
@@ -390,7 +402,7 @@ internal sealed class GuiAvaloniaControlFactory
         Grid.SetColumn(label, 2);
         row.Children.Add(label);
 
-        SetExpanded(isExpanded);
+        SetExpanded(isExpanded, notifyHost: false);
         return row;
     }
 
