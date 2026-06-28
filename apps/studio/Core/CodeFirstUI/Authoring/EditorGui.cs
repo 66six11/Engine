@@ -305,6 +305,26 @@ public sealed class EditorGui
         return resolvedValue;
     }
 
+    public float FloatField(
+        string key,
+        string label,
+        float value,
+        double? minimum = null,
+        double? maximum = null,
+        double increment = 0.1d,
+        string formatString = "0.###")
+    {
+        var resolvedValue = NumberInput(
+            key,
+            label,
+            value,
+            minimum,
+            maximum,
+            increment,
+            formatString);
+        return (float)resolvedValue;
+    }
+
     public void ProgressBar(
         string key,
         string label,

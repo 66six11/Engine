@@ -118,9 +118,13 @@ public sealed class UiStylePanelTests
         Assert.Equal(new GuiVector4Value(1d, 1d, 0d, 0d), vector4Field.Payload.Vector4Value);
         Assert.Equal(-8d, vector4Field.Payload.NumericMinimum);
         Assert.Equal(8d, vector4Field.Payload.NumericMaximum);
-        var numberInput = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.NumberInput);
+        var numberInput = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/roughness");
         Assert.Equal(0.50d, numberInput.Payload.NumericValue);
         Assert.Equal("0.00", numberInput.Payload.NumericFormatString);
+        var floatField = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/metallic");
+        Assert.Equal(GuiNodeKind.NumberInput, floatField.Kind);
+        Assert.Equal(0.25d, floatField.Payload.NumericValue);
+        Assert.Equal("0.00", floatField.Payload.NumericFormatString);
     }
 
     [Fact]

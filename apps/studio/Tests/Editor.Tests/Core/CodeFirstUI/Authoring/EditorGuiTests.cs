@@ -670,6 +670,39 @@ public sealed class EditorGuiTests
     }
 
     [Fact]
+    public void Float_field_returns_stored_value_and_emits_number_input_payload()
+    {
+        var builder = new GuiFrameBuilder("ui.style");
+        var state = new GuiStateStore();
+        state.SetNumericValue(new GuiNodeId("ui.style", "metallic", GuiNodeKind.NumberInput), 0.25d);
+        var gui = new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            state,
+            new RecordingCommandExecutor());
+
+        var value = gui.FloatField(
+            "metallic",
+            "Metallic",
+            value: 0.50f,
+            minimum: 0d,
+            maximum: 1d,
+            increment: 0.05d,
+            formatString: "0.00");
+
+        Assert.Equal(0.25f, value);
+
+        var numberInput = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.NumberInput, numberInput.Kind);
+        Assert.Equal("Metallic", numberInput.Label);
+        Assert.Equal(0.25d, numberInput.Payload.NumericValue);
+        Assert.Equal(0d, numberInput.Payload.NumericMinimum);
+        Assert.Equal(1d, numberInput.Payload.NumericMaximum);
+        Assert.Equal(0.05d, numberInput.Payload.NumericSmallChange);
+        Assert.Equal("0.00", numberInput.Payload.NumericFormatString);
+    }
+
+    [Fact]
     public void Progress_bar_emits_read_only_feedback_node()
     {
         var builder = new GuiFrameBuilder("ui.style");

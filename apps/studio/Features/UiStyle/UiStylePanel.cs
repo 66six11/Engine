@@ -106,6 +106,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         gui.Vector3Field("position", "Position", new GuiVector3Value(0d, 1d, 2d), -100d, 100d, 0.1d, "0.###");
         gui.Vector4Field("tiling-offset", "Tiling Offset", new GuiVector4Value(1d, 1d, 0d, 0d), -8d, 8d, 0.125d, "0.000");
         gui.NumberInput("roughness", "Roughness", 0.50d, 0d, 1d, 0.05d, "0.00");
+        gui.FloatField("metallic", "Metallic", 0.25f, 0d, 1d, 0.05d, "0.00");
         gui.Toggle("show-disabled", "Show Disabled");
         gui.Text("contract", "Input state belongs to GuiStateStore; document mutations should still go through commands.");
     }
