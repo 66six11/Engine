@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 using Xunit;
 
 namespace Editor.Tests.Core.CodeFirstUI;
@@ -54,6 +55,20 @@ public sealed class GuiFrameBuilderTests
         Assert.Equal("Typography", label.Label);
         Assert.Equal(GuiTextTone.Primary, label.Payload.TextTone);
         Assert.Equal(GuiTextSize.Title, label.Payload.TextSize);
+    }
+
+    [Fact]
+    public void Build_preserves_property_payload()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+
+        builder.Property("triangles", "Triangles", "12,480");
+
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(new GuiNodeId("ui-style", "triangles", GuiNodeKind.Property), node.Id);
+        Assert.Equal(GuiNodeKind.Property, node.Kind);
+        Assert.Equal("Triangles", node.Label);
+        Assert.Equal("12,480", node.Payload.PropertyValue);
     }
 
     [Fact]

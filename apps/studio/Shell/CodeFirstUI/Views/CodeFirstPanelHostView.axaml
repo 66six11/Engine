@@ -46,6 +46,21 @@
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
         </Style>
+        <Style Selector="Border.code-first-placeholder">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBlock.code-first-placeholder-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushError}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.code-first-placeholder-message">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
         <Style Selector="ScrollViewer.code-first-scroll">
             <Setter Property="Padding" Value="0" />
         </Style>
@@ -89,6 +104,11 @@
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
             <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style Selector="TextBlock.code-first-property-value">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
         <Style Selector="TextBox.code-first-text-field">
             <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />

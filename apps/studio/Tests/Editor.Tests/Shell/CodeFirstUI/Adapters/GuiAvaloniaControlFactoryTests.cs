@@ -9,9 +9,10 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 using Editor.Shell.CodeFirstUI;
 using Editor.Shell.CodeFirstUI.Adapters;
-using Editor.Shell.Icons;
+using Editor.UI.Icons;
 using Editor.UI.Controls.Base;
 using Xunit;
 
@@ -416,6 +417,23 @@ public sealed class GuiAvaloniaControlFactoryTests
         var toggleChange = Assert.Single(host.ToggleChanges);
         Assert.Equal(new GuiNodeId("ui-style", "show-disabled", GuiNodeKind.Toggle), toggleChange.NodeId);
         Assert.False(toggleChange.IsChecked);
+    }
+
+    [Fact]
+    public void Build_maps_property_to_read_only_property_row()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.Property("draw-calls", "Draw Calls", "184");
+        var factory = new GuiAvaloniaControlFactory(new NoopCodeFirstPanelHost());
+
+        var control = factory.Build(builder.Build());
+
+        var row = Assert.IsType<Grid>(control);
+        Assert.Contains("code-first-property-row", row.Classes);
+        Assert.NotNull(FindDescendant<TextBlock>(row, text => text.Text == "Draw Calls"));
+        var value = FindDescendant<TextBlock>(row, text => text.Text == "184");
+        Assert.NotNull(value);
+        Assert.Contains("code-first-property-value", value!.Classes);
     }
 
     [Fact]

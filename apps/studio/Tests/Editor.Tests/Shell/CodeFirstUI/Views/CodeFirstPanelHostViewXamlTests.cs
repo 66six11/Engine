@@ -57,6 +57,17 @@ public sealed class CodeFirstPanelHostViewXamlTests
     }
 
     [Fact]
+    public void Code_first_host_defines_failure_placeholder_styles()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        Assert.Contains("Style Selector=\"Border.code-first-placeholder\"", xaml);
+        Assert.Contains("Style Selector=\"TextBlock.code-first-placeholder-title\"", xaml);
+        Assert.Contains("Style Selector=\"TextBlock.code-first-placeholder-message\"", xaml);
+        Assert.Contains("EditorBrushError", GetStyle(xaml, "Style Selector=\"TextBlock.code-first-placeholder-title\""));
+    }
+
+    [Fact]
     public void Code_first_separator_uses_lightweight_fixed_size_style()
     {
         var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
@@ -66,6 +77,18 @@ public sealed class CodeFirstPanelHostViewXamlTests
         Assert.Contains("Property=\"Width\" Value=\"1\"", separatorStyle);
         Assert.Contains("Property=\"Height\" Value=\"{DynamicResource EditorWidgetUnit}\"", separatorStyle);
         Assert.Contains("Property=\"Margin\" Value=\"2,0\"", separatorStyle);
+    }
+
+    [Fact]
+    public void Code_first_property_value_uses_read_only_text_style()
+    {
+        var xaml = LoadSource("Shell", "CodeFirstUI", "Views", "CodeFirstPanelHostView.axaml");
+
+        var propertyValueStyle = GetStyle(xaml, "Style Selector=\"TextBlock.code-first-property-value\"");
+
+        Assert.Contains("Property=\"Foreground\" Value=\"{DynamicResource EditorBrushTextPrimary}\"", propertyValueStyle);
+        Assert.Contains("Property=\"FontSize\" Value=\"{DynamicResource EditorFontSizeDefault}\"", propertyValueStyle);
+        Assert.Contains("Property=\"TextTrimming\" Value=\"CharacterEllipsis\"", propertyValueStyle);
     }
 
     [Fact]

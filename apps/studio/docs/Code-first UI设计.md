@@ -1269,6 +1269,12 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 - key/kind 改变时清理旧事件和旧局部状态。
 - validation failure 保留上一帧可用 UI。
 
+### v1 implementation status
+
+The current v1 path is an internal Studio-only vertical slice. It covers the UI-neutral node contract, state store, event queue, validation, Shell-owned Avalonia control creation, lifecycle host, and the `Features/UiStyle` sample panel.
+
+Backend/native/runtime integration is intentionally outside v1. Runtime data must first enter Studio as Core snapshots, diagnostics, provider status, or command results before a Code-first panel consumes it.
+
 ## 23. 验收标准
 
 第一阶段完成的最低标准：

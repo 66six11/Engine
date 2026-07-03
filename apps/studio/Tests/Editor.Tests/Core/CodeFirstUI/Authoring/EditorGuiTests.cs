@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
+using Editor.Core.Models.Workbench;
 using Xunit;
 
 namespace Editor.Tests.Core.CodeFirstUI;
@@ -97,6 +99,20 @@ public sealed class EditorGuiTests
         var label = Assert.Single(builder.Build().Root.Children);
         Assert.Equal(GuiTextTone.Secondary, label.Payload.TextTone);
         Assert.Equal(GuiTextSize.Body, label.Payload.TextSize);
+    }
+
+    [Fact]
+    public void Property_emits_read_only_property_node()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        var gui = CreateGui(builder);
+
+        gui.Property("draw-calls", "Draw Calls", 184);
+
+        var node = Assert.Single(builder.Build().Root.Children);
+        Assert.Equal(GuiNodeKind.Property, node.Kind);
+        Assert.Equal("Draw Calls", node.Label);
+        Assert.Equal("184", node.Payload.PropertyValue);
     }
 
     [Fact]
@@ -810,6 +826,15 @@ public sealed class EditorGuiTests
         Assert.Equal(GuiNodeKind.Foldout, node.Kind);
         Assert.False(node.Payload.IsExpanded);
         Assert.Empty(node.Children);
+    }
+
+    private static EditorGui CreateGui(GuiFrameBuilder builder)
+    {
+        return new EditorGui(
+            builder,
+            new GuiEventQueue(),
+            new GuiStateStore(),
+            new RecordingCommandExecutor());
     }
 
     private sealed class RecordingCommandExecutor : IEditorGuiCommandExecutor

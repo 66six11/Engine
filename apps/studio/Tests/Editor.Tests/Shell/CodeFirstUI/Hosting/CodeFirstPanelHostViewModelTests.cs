@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using Editor.Core.Abstractions;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Core.Models.Panels;
 using Editor.Shell.CodeFirstUI;
 using Xunit;
 
@@ -45,6 +47,45 @@ public sealed class CodeFirstPanelHostViewModelTests
     }
 
     [Fact]
+    public void Request_rebuild_coalesces_multiple_reasons_until_dispatcher_runs()
+    {
+        var dispatcher = new RecordingEditorUiDispatcher();
+        var panel = new RecordingCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel, uiDispatcher: dispatcher);
+        host.OnPanelAttached(CreateLifecycleContext());
+        dispatcher.RunPending();
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.RequestRebuild(GuiRebuildReason.InputEvent);
+        host.RequestRebuild(GuiRebuildReason.FrameTick);
+
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.Equal(1, dispatcher.PendingCount);
+
+        dispatcher.RunPending();
+
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
+        Assert.True(host.LastRebuildReasons.HasFlag(GuiRebuildReason.InputEvent));
+        Assert.True(host.LastRebuildReasons.HasFlag(GuiRebuildReason.FrameTick));
+    }
+
+    [Fact]
+    public void Input_events_request_input_rebuild_reason()
+    {
+        var dispatcher = new RecordingEditorUiDispatcher();
+        var panel = new InputDrivenCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel, uiDispatcher: dispatcher);
+        host.OnPanelAttached(CreateLifecycleContext("ui.style"));
+        dispatcher.RunPending();
+
+        host.CommitText(new GuiNodeId("ui.style", "filter", GuiNodeKind.TextField), "gbuffer");
+        dispatcher.RunPending();
+
+        Assert.Equal("gbuffer", panel.FilterText);
+        Assert.Equal(GuiRebuildReason.InputEvent, host.LastRebuildReasons);
+    }
+
+    [Fact]
     public void Detach_disables_and_dispose_destroys_panel_once()
     {
         var panel = new RecordingCodeFirstPanel();
@@ -71,6 +112,43 @@ public sealed class CodeFirstPanelHostViewModelTests
 
         Assert.Equal(EditorPanelFrameUpdateMode.Active, host.FrameUpdateRequest.Mode);
         Assert.Equal(30, host.FrameUpdateRequest.TargetFramesPerSecond);
+    }
+
+    [Fact]
+    public void On_gui_exception_preserves_last_valid_tree_and_exposes_error()
+    {
+        var panel = new FaultingCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("tools.faulting"));
+        var previousTree = Assert.IsType<GuiTreeSnapshot>(host.CurrentTree);
+
+        panel.ThrowOnGui = true;
+        host.OnPanelActivated(CreateLifecycleContext("tools.faulting"));
+
+        Assert.Same(previousTree, host.CurrentTree);
+        Assert.True(host.HasBuildError);
+        Assert.False(host.HasValidationErrors);
+        Assert.Contains("Injected code-first failure.", host.LastBuildErrorMessage);
+        Assert.True(host.LastValidationResult.IsValid);
+    }
+
+    [Fact]
+    public void Validation_failure_preserves_last_valid_tree_and_exposes_errors()
+    {
+        var panel = new ValidationFailureCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        host.OnPanelAttached(CreateLifecycleContext("tools.validation"));
+        var previousTree = Assert.IsType<GuiTreeSnapshot>(host.CurrentTree);
+
+        panel.EmitDuplicateKeys = true;
+        host.OnPanelActivated(CreateLifecycleContext("tools.validation"));
+
+        Assert.Same(previousTree, host.CurrentTree);
+        Assert.False(host.HasBuildError);
+        Assert.True(host.HasValidationErrors);
+        var error = Assert.Single(host.LastValidationResult.Errors);
+        Assert.Equal(GuiTreeValidationErrorCode.DuplicateKey, error.Code);
+        Assert.Contains("Duplicate GUI key", error.Message);
     }
 
     [Fact]
@@ -604,6 +682,28 @@ public sealed class CodeFirstPanelHostViewModelTests
             sequence);
     }
 
+    private sealed class RecordingEditorUiDispatcher : IEditorUiDispatcher
+    {
+        private readonly Queue<Action> pendingActions_ = [];
+
+        public int PendingCount => pendingActions_.Count;
+
+        public bool CheckAccess() => true;
+
+        public void Post(Action action)
+        {
+            pendingActions_.Enqueue(action);
+        }
+
+        public void RunPending()
+        {
+            while (pendingActions_.TryDequeue(out var action))
+            {
+                action();
+            }
+        }
+    }
+
     private sealed class RecordingCodeFirstPanel : CodeFirstEditorPanel
     {
         public List<string> Events { get; } = [];
@@ -651,6 +751,41 @@ public sealed class CodeFirstPanelHostViewModelTests
         protected override void OnDestroy()
         {
             Events.Add("destroy");
+        }
+    }
+
+    private sealed class FaultingCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public bool ThrowOnGui { get; set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            if (ThrowOnGui)
+            {
+                throw new InvalidOperationException("Injected code-first failure.");
+            }
+
+            gui.Label("title", "Valid");
+        }
+    }
+
+    private sealed class ValidationFailureCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public bool EmitDuplicateKeys { get; set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            if (!EmitDuplicateKeys)
+            {
+                gui.Label("title", "Valid");
+                return;
+            }
+
+            using (gui.Panel("container", "Container"))
+            {
+                gui.Label("duplicate", "First");
+                gui.Label("duplicate", "Second");
+            }
         }
     }
 

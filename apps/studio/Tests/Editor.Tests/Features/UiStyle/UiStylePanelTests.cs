@@ -1,5 +1,7 @@
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Diagnostics;
 using Editor.Features.UiStyle;
 using Editor.Shell.CodeFirstUI;
 using Xunit;
@@ -78,6 +80,10 @@ public sealed class UiStylePanelTests
 
         var navigation = Assert.Single(host.CurrentTree?.Root.Children ?? []);
         Assert.Equal("Inputs", navigation.Children[0].Label);
+        var property = Assert.Single(navigation.Children, child => child.Id.KeyPath == "catalog/draw-calls");
+        Assert.Equal(GuiNodeKind.Property, property.Kind);
+        Assert.Equal("Draw Calls", property.Label);
+        Assert.Equal("184", property.Payload.PropertyValue);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.TextField);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.Toggle);
         Assert.Contains(navigation.Children, child => child.Kind == GuiNodeKind.ComboBox);

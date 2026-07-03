@@ -10,7 +10,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
-using Editor.Shell.Icons;
+using Editor.Core.Models.Diagnostics;
+using Editor.UI.Icons;
 using Editor.UI.Controls.Base;
 using Editor.UI.Controls.Tree;
 
@@ -61,6 +62,7 @@ internal sealed class GuiAvaloniaControlFactory
             GuiNodeKind.Label => BuildLabel(node),
             GuiNodeKind.Separator => BuildSeparator(),
             GuiNodeKind.Button => BuildButton(node),
+            GuiNodeKind.Property => BuildProperty(node),
             GuiNodeKind.TextField => BuildTextField(node),
             GuiNodeKind.Toggle => BuildToggle(node),
             GuiNodeKind.ComboBox => BuildComboBox(node),
@@ -667,6 +669,36 @@ internal sealed class GuiAvaloniaControlFactory
         button.Classes.Add("code-first-button");
         button.Click += (_, _) => host_.ClickButton(node.Id);
         return button;
+    }
+
+    private static Control BuildProperty(GuiNode node)
+    {
+        var label = new TextBlock
+        {
+            Text = node.Label ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        label.Classes.Add("code-first-input-label");
+
+        var value = new TextBlock
+        {
+            Text = node.Payload.PropertyValue ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        value.Classes.Add("code-first-property-value");
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+        };
+        grid.Classes.Add("code-first-property-row");
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(value, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(value);
+        return grid;
     }
 
     private Control BuildTextField(GuiNode node)

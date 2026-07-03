@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 
 namespace Editor.Core.CodeFirstUI;
 
@@ -78,6 +79,23 @@ public sealed class GuiFrameBuilder
                 TextValue = text,
                 TextCommitMode = commitMode,
                 TextCommitDelay = commitDelay,
+            });
+    }
+
+    public GuiNodeId Property(
+        string key,
+        string label,
+        string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        return AddLeaf(
+            key,
+            GuiNodeKind.Property,
+            label,
+            new GuiNodePayload
+            {
+                PropertyValue = value,
             });
     }
 

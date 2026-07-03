@@ -2,8 +2,10 @@ using System;
 using Editor.Core.Abstractions;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Workbench;
 using Editor.Shell.CodeFirstUI.Adapters;
-using Editor.Shell.ViewModels;
+using Editor.UI.ViewModels;
 
 namespace Editor.Shell.CodeFirstUI;
 
@@ -18,22 +20,28 @@ internal sealed class CodeFirstPanelHostViewModel :
     private readonly GuiEventQueue events_ = new();
     private readonly CodeFirstEditorPanel panel_;
     private readonly GuiStateStore stateStore_ = new();
+    private readonly IEditorUiDispatcher uiDispatcher_;
     private readonly GuiTreeValidator validator_ = new();
     private GuiTreeSnapshot? currentTree_;
+    private bool isRebuildScheduled_;
     private bool isCreated_;
     private bool isDisposed_;
     private bool isEnabled_;
+    private string? lastBuildErrorMessage_;
     private GuiTreeValidationResult lastValidationResult = GuiTreeValidationResult.Success;
     private EditorPanelLifecycleContext? lifecycleContext_;
+    private GuiRebuildReason pendingRebuildReasons_;
 
     public CodeFirstPanelHostViewModel(
         CodeFirstEditorPanel panel,
-        IEditorGuiCommandExecutor? commandExecutor = null)
+        IEditorGuiCommandExecutor? commandExecutor = null,
+        IEditorUiDispatcher? uiDispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(panel);
 
         panel_ = panel;
         commandExecutor_ = commandExecutor ?? MissingCommandExecutor.Instance;
+        uiDispatcher_ = uiDispatcher ?? ImmediateCodeFirstUiDispatcher.Instance;
     }
 
     public GuiTreeSnapshot? CurrentTree
@@ -45,8 +53,30 @@ internal sealed class CodeFirstPanelHostViewModel :
     public GuiTreeValidationResult LastValidationResult
     {
         get => lastValidationResult;
-        private set => SetProperty(ref lastValidationResult, value);
+        private set
+        {
+            if (SetProperty(ref lastValidationResult, value))
+            {
+                OnPropertyChanged(nameof(HasValidationErrors));
+            }
+        }
     }
+
+    public string? LastBuildErrorMessage
+    {
+        get => lastBuildErrorMessage_;
+        private set
+        {
+            if (SetProperty(ref lastBuildErrorMessage_, value))
+            {
+                OnPropertyChanged(nameof(HasBuildError));
+            }
+        }
+    }
+
+    public bool HasBuildError => !string.IsNullOrWhiteSpace(lastBuildErrorMessage_);
+
+    public bool HasValidationErrors => !lastValidationResult.IsValid;
 
     public EditorPanelFrameUpdateRequest FrameUpdateRequest => panel_.FrameUpdateRequest;
 
@@ -54,13 +84,15 @@ internal sealed class CodeFirstPanelHostViewModel :
 
     public GuiStateStore StateStore => stateStore_;
 
+    public GuiRebuildReason LastRebuildReasons { get; private set; }
+
     internal void ClickButton(GuiNodeId nodeId)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
         ThrowIfDisposed();
 
         events_.EnqueueButtonClicked(nodeId);
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InputEvent);
     }
 
     internal void SelectListItem(GuiNodeId nodeId, string itemId)
@@ -94,7 +126,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         stateStore_.SetSelectedItem(nodeId, itemId);
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InputEvent);
     }
 
     internal void SelectNavigationRoute(GuiNodeId nodeId, string route)
@@ -113,7 +145,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         stateStore_.SetSelectedRoute(nodeId, route);
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InputEvent);
     }
 
     internal void SetNavigationRouteExpanded(
@@ -135,7 +167,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         stateStore_.SetNavigationRouteExpanded(nodeId, route, isExpanded);
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InputEvent);
     }
 
     internal void ResizeSplit(GuiNodeId nodeId, double ratio)
@@ -252,7 +284,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         stateStore_.SetText(nodeId, text ?? string.Empty);
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InputEvent);
     }
 
     internal void SetToggle(GuiNodeId nodeId, bool isChecked)
@@ -267,7 +299,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         stateStore_.SetToggle(nodeId, isChecked);
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InputEvent);
     }
 
     internal void SetFoldoutExpanded(GuiNodeId nodeId, bool isExpanded)
@@ -282,7 +314,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         stateStore_.SetFoldoutExpanded(nodeId, isExpanded);
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InputEvent);
     }
 
     public void OnPanelAttached(EditorPanelLifecycleContext context)
@@ -298,7 +330,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         EnablePanel();
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.InitialOpen);
     }
 
     public void OnPanelActivated(EditorPanelLifecycleContext context)
@@ -307,7 +339,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         ThrowIfDisposed();
 
         lifecycleContext_ = context;
-        Rebuild();
+        RequestRebuild(GuiRebuildReason.LifecycleChanged);
     }
 
     public void OnPanelDeactivated(EditorPanelLifecycleContext context)
@@ -336,7 +368,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         panel_.DispatchFrame(context);
         if (context.IsRepaintRequested)
         {
-            Rebuild();
+            RequestRebuild(GuiRebuildReason.FrameTick);
         }
     }
 
@@ -352,6 +384,38 @@ internal sealed class CodeFirstPanelHostViewModel :
         isDisposed_ = true;
     }
 
+    internal void RequestRebuild(GuiRebuildReason reason)
+    {
+        ThrowIfDisposed();
+        if (reason == GuiRebuildReason.None)
+        {
+            return;
+        }
+
+        pendingRebuildReasons_ |= reason;
+        if (isRebuildScheduled_)
+        {
+            return;
+        }
+
+        isRebuildScheduled_ = true;
+        uiDispatcher_.Post(FlushRebuild);
+    }
+
+    private void FlushRebuild()
+    {
+        if (isDisposed_)
+        {
+            return;
+        }
+
+        var reasons = pendingRebuildReasons_;
+        pendingRebuildReasons_ = GuiRebuildReason.None;
+        isRebuildScheduled_ = false;
+        LastRebuildReasons = reasons;
+        Rebuild();
+    }
+
     private void Rebuild()
     {
         if (lifecycleContext_ is null)
@@ -359,16 +423,46 @@ internal sealed class CodeFirstPanelHostViewModel :
             return;
         }
 
-        var builder = new GuiFrameBuilder(lifecycleContext_.PanelId);
-        var gui = new EditorGui(builder, events_, stateStore_, commandExecutor_);
-        panel_.DispatchGui(gui);
-        var tree = builder.Build();
-        var validation = validator_.Validate(tree);
-        LastValidationResult = validation;
-        if (validation.IsValid)
+        try
         {
-            CurrentTree = tree;
+            var builder = new GuiFrameBuilder(lifecycleContext_.PanelId);
+            var gui = new EditorGui(builder, events_, stateStore_, commandExecutor_);
+            panel_.DispatchGui(gui);
+            var tree = builder.Build();
+            var validation = validator_.Validate(tree);
+
+            LastBuildErrorMessage = null;
+            LastValidationResult = validation;
+            if (validation.IsValid)
+            {
+                CurrentTree = tree;
+            }
         }
+        catch (Exception exception)
+        {
+            LastBuildErrorMessage = FormatBuildErrorMessage(exception);
+            LastValidationResult = GuiTreeValidationResult.Success;
+        }
+    }
+
+    private sealed class ImmediateCodeFirstUiDispatcher : IEditorUiDispatcher
+    {
+        public static ImmediateCodeFirstUiDispatcher Instance { get; } = new();
+
+        public bool CheckAccess() => true;
+
+        public void Post(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            action();
+        }
+    }
+
+    private static string FormatBuildErrorMessage(Exception exception)
+    {
+        return string.IsNullOrWhiteSpace(exception.Message)
+            ? exception.GetType().Name
+            : $"{exception.GetType().Name}: {exception.Message}";
     }
 
     private void EnablePanel()

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
+using Editor.Core.Models.Workbench;
 
 namespace Editor.Core.CodeFirstUI;
 
@@ -47,6 +49,22 @@ public sealed class EditorGui
         GuiTextSize size = GuiTextSize.Body)
     {
         Label(key, text, tone, size);
+    }
+
+    public void Property(
+        string key,
+        string label,
+        string value)
+    {
+        builder_.Property(key, label, value);
+    }
+
+    public void Property<T>(
+        string key,
+        string label,
+        T value)
+    {
+        builder_.Property(key, label, value?.ToString() ?? string.Empty);
     }
 
     public bool Button(string key, string label)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 
 namespace Editor.Core.CodeFirstUI;
 
@@ -23,6 +24,8 @@ public sealed record GuiNodePayload
     public string? SelectedItemId { get; init; }
 
     public string? TextValue { get; init; }
+
+    public string? PropertyValue { get; init; }
 
     public GuiTextInputCommitMode? TextCommitMode { get; init; }
 

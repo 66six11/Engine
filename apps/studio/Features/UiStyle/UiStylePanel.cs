@@ -1,6 +1,7 @@
 using System;
 using Editor.Core.CodeFirstUI;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 
 namespace Editor.Features.UiStyle;
 
@@ -91,6 +92,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
     private static void DrawInputsPage(EditorGui gui)
     {
         gui.Text("title", "Inputs", GuiTextTone.Primary, GuiTextSize.Title);
+        gui.Property("draw-calls", "Draw Calls", 184);
         gui.TextInput(
             "filter",
             "Filter",
