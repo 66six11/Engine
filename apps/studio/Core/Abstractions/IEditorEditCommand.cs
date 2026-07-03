@@ -1,4 +1,4 @@
-using Editor.Core.Models;
+using Editor.Core.Models.Editing;
 
 namespace Editor.Core.Abstractions;
 

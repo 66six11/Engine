@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             x:Class="Editor.Shell.Views.Panels.PanelPlaceholderView"
+             x:DataType="vm:PanelPlaceholderViewModel">
+    <Grid Background="{DynamicResource EditorBrushBase00}">
+        <Border Background="{DynamicResource EditorBrushSurface01}"
+                BorderBrush="{DynamicResource EditorBrushDivider}"
+                BorderThickness="1"
+                Padding="24"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch">
+            <TextBlock Text="{Binding Title}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource EditorBrushTextPrimary}"
+                       FontSize="22"
+                       FontWeight="SemiBold" />
+        </Border>
+    </Grid>
+</UserControl>

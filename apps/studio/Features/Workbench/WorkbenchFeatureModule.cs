@@ -1,12 +1,19 @@
+﻿using System;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Extensions;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Workbench;
 using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
-using Editor.Shell.Icons;
+using Editor.Features.UiStyle;
+using Editor.Shell.CodeFirstUI;
+using Editor.UI.Icons;
+using Editor.Shell.Services;
 
 namespace Editor.Features.Workbench;
 
@@ -14,31 +21,62 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
 {
     private readonly IEditorSelectionService selectionService_;
     private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
+    private readonly IEditorDiagnosticService diagnostics_;
+    private readonly IEditorUiDispatcher uiDispatcher_;
 
     public WorkbenchFeatureModule(IEditorSelectionService selectionService)
-        : this(selectionService, CreateDefaultSceneSnapshotProvider())
+        : this(selectionService, new EditorDiagnosticService(), CreateDefaultSceneSnapshotProvider())
+    {
+    }
+
+    public WorkbenchFeatureModule(
+        IEditorSelectionService selectionService,
+        IEditorDiagnosticService diagnostics)
+        : this(selectionService, diagnostics, CreateDefaultSceneSnapshotProvider())
     {
     }
 
     internal WorkbenchFeatureModule(
         IEditorSelectionService selectionService,
         ISceneSnapshotProvider sceneSnapshotProvider)
+        : this(selectionService, new EditorDiagnosticService(), sceneSnapshotProvider)
     {
+    }
+
+    internal WorkbenchFeatureModule(
+        IEditorSelectionService selectionService,
+        IEditorDiagnosticService diagnostics,
+        ISceneSnapshotProvider sceneSnapshotProvider,
+        IEditorUiDispatcher? uiDispatcher = null)
+    {
+        ArgumentNullException.ThrowIfNull(selectionService);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
+
         selectionService_ = selectionService;
+        diagnostics_ = diagnostics;
         sceneSnapshotProvider_ = sceneSnapshotProvider;
+        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
     }
 
-    public void RegisterPanels(IPanelRegistry panels)
+    public EditorExtensionId Id { get; } = new("studio.workbench");
+
+    public void Declare(IEditorContributionBuilder builder)
     {
-        foreach (var descriptor in CreatePanelDescriptors())
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.AddSceneProvider(new SceneProviderDescriptor(
+            "workbench.scene.fixture",
+            EditorProviderRoles.ActiveScene,
+            () => sceneSnapshotProvider_));
+
+        var panelDescriptors = CreatePanelDescriptors();
+        foreach (var descriptor in panelDescriptors)
         {
-            panels.Register(descriptor);
+            builder.AddPanel(descriptor);
         }
-    }
 
-    public void RegisterActions(IWorkbenchActionRegistry actions)
-    {
-        actions.Register(new WorkbenchActionDescriptor(
+        builder.AddAction(new WorkbenchActionDescriptor(
             "workbench.commandPalette.open",
             "Command Palette",
             WorkbenchActionKind.OpenCommandPalette,
@@ -47,7 +85,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             Category: "Tools",
             DefaultShortcut: "Ctrl+Shift+P",
             SearchText: "command palette launcher"));
-        actions.Register(new WorkbenchActionDescriptor(
+        builder.AddAction(new WorkbenchActionDescriptor(
             "workbench.about.open",
             "About",
             WorkbenchActionKind.OpenAboutDialog,
@@ -55,9 +93,9 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             Category: "Help",
             SearchText: "about studio version information"));
 
-        foreach (var descriptor in CreatePanelDescriptors())
+        foreach (var descriptor in panelDescriptors)
         {
-            actions.Register(new WorkbenchActionDescriptor(
+            builder.AddAction(new WorkbenchActionDescriptor(
                 $"workbench.panel.{descriptor.Id}",
                 descriptor.Title,
                 WorkbenchActionKind.OpenPanel,
@@ -83,8 +121,8 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 () => new SceneViewPanelViewModel(selectionService_),
                 IconKey: "studio.scene-view",
                 Tag: "DOC",
-                TitleDetail: "custom viewport shell",
-                StatusText: "live"),
+                TitleDetail: "viewport deferred",
+                StatusText: "deferred"),
             new PanelDescriptor(
                 "hierarchy",
                 "Hierarchy",
@@ -92,7 +130,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Left,
                 "Window/Panels/Hierarchy",
                 DockContentCachePolicy.KeepAlive,
-                () => new HierarchyPanelViewModel(selectionService_, sceneSnapshotProvider_),
+                () => new HierarchyPanelViewModel(selectionService_, sceneSnapshotProvider_, uiDispatcher_),
                 IconKey: "studio.hierarchy",
                 Tag: "LEFT",
                 TitleDetail: "selection source",
@@ -105,7 +143,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Right,
                 "Window/Panels/Inspector",
                 DockContentCachePolicy.KeepAlive,
-                () => new InspectorPanelViewModel(selectionService_, sceneSnapshotProvider_),
+                () => new InspectorPanelViewModel(selectionService_, sceneSnapshotProvider_, uiDispatcher_),
                 IconKey: "studio.inspector",
                 Tag: "RIGHT",
                 TitleDetail: "context target",
@@ -118,7 +156,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Bottom,
                 "Window/Panels/Console",
                 DockContentCachePolicy.KeepAlive,
-                () => new ConsolePanelViewModel(),
+                () => new ConsolePanelViewModel(diagnostics_, uiDispatcher_),
                 IconKey: "studio.console",
                 Tag: "BOTTOM",
                 TitleDetail: "runtime log stream",
@@ -131,11 +169,24 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Bottom,
                 "Window/Panels/Problems",
                 DockContentCachePolicy.KeepAlive,
-                () => new ProblemsPanelViewModel(),
+                () => new ProblemsPanelViewModel(diagnostics_, uiDispatcher_),
                 IconKey: "studio.problems",
                 Tag: "BOTTOM",
                 TitleDetail: "validation queue",
                 StatusText: "0"),
+
+            new PanelDescriptor(
+                "ui-style",
+                "UI Style",
+                PanelKind.Tool,
+                DockArea.Center,
+                "Window/Panels/UI Style",
+                DockContentCachePolicy.KeepAlive,
+                () => new CodeFirstPanelHostViewModel(new UiStylePanel()),
+                IconKey: EditorIconKey.PanelUiStyle,
+                Tag: "STYLE",
+                TitleDetail: "code-first component guide",
+                StatusText: "samples"),
         ];
     }
 
@@ -148,6 +199,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
             "inspector" => "properties selection",
             "console" => "log output diagnostics",
             "problems" => "validation diagnostics",
+            "ui-style" => "code-first ui style guide samples",
             _ => null,
         };
     }

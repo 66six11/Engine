@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-using Editor.Core.Models;
+using Editor.Core.Models.Lifecycle;
 using Editor.Shell.Services;
 using Xunit;
 

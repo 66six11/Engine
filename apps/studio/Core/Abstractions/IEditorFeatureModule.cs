@@ -1,10 +1,5 @@
 namespace Editor.Core.Abstractions;
 
-public interface IEditorFeatureModule
+public interface IEditorFeatureModule : IEditorExtensionModule
 {
-    void RegisterPanels(IPanelRegistry panels);
-
-    void RegisterActions(IWorkbenchActionRegistry actions)
-    {
-    }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Editor.Core.Models;
+using Editor.Core.Models.Workbench;
 
 namespace Editor.Core.Abstractions;
 

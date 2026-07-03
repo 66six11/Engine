@@ -1,5 +1,5 @@
 using System;
-using Editor.Core.Models;
+using Editor.Core.Models.BackgroundTasks;
 using Editor.Shell.Services;
 using Xunit;
 

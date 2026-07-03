@@ -10,8 +10,15 @@ using Editor.Features.Problems.ViewModels;
 using Editor.Features.Problems.Views;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.SceneView.Views;
-using Editor.Shell.ViewModels;
-using Editor.Shell.Views;
+using Editor.Shell.CodeFirstUI;
+using Editor.Shell.CodeFirstUI.Views;
+using Editor.Shell.ViewModels.CommandPalette;
+using Editor.Shell.ViewModels.Docking;
+using Editor.Shell.ViewModels.Panels;
+using Editor.Shell.Views.CommandPalette;
+using Editor.Shell.Views.Docking;
+using Editor.Shell.Views.Panels;
+using Editor.UI.ViewModels;
 
 namespace Editor;
 
@@ -29,6 +36,7 @@ public class ViewLocator : IDataTemplate
             InspectorPanelViewModel => new InspectorPanelView(),
             ConsolePanelViewModel => new ConsolePanelView(),
             ProblemsPanelViewModel => new ProblemsPanelView(),
+            CodeFirstPanelHostViewModel => new CodeFirstPanelHostView(),
             PanelPlaceholderViewModel => new PanelPlaceholderView(),
             _ => new TextBlock { Text = "Not Found: " + param.GetType().Name },
         };

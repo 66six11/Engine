@@ -1,12 +1,14 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Selection;
 using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
 using Editor.Features.Hierarchy.ViewModels;
-using Editor.Shell.Icons;
+using Editor.UI.Icons;
 using Editor.Shell.Selection;
-using Editor.Shell.Services;
 using Xunit;
 
 namespace Editor.Tests.Features.Hierarchy;

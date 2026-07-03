@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Docking"
+             xmlns:views="using:Editor.Shell.Views.Docking"
+             x:Class="Editor.Shell.Views.Docking.EditorDockFloatingPreviewView"
+             x:DataType="vm:EditorDockDragStateViewModel"
+             ClipToBounds="True">
+    <UserControl.Styles>
+        <Style Selector="ItemsControl.owned-dock-tabs.owned-dock-tab-well.float-preview">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-floating-preview-content">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+    </UserControl.Styles>
+
+    <views:EditorDockWindowSurfaceView IsActiveWindow="True"
+                                       IsPreview="True">
+        <views:EditorDockWindowSurfaceView.TabStripContent>
+            <ItemsControl Classes="owned-dock-tabs owned-dock-tab-well float-preview"
+                          ItemsSource="{Binding PreviewTabItems}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:EditorDockTabStripItemViewModel">
+                        <views:EditorDockTabItemView />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </views:EditorDockWindowSurfaceView.TabStripContent>
+
+        <views:EditorDockWindowSurfaceView.BodyContent>
+            <Border Classes="owned-dock-floating-preview-content" />
+        </views:EditorDockWindowSurfaceView.BodyContent>
+    </views:EditorDockWindowSurfaceView>
+</UserControl>

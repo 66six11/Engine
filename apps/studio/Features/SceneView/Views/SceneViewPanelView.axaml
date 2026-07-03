@@ -1,3 +1,52 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Editor.Features.SceneView.Views.SceneViewPanelView" />
+             xmlns:vm="using:Editor.Features.SceneView.ViewModels"
+             x:Class="Editor.Features.SceneView.Views.SceneViewPanelView"
+             x:DataType="vm:SceneViewPanelViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.scene-view-status">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+
+        <Style Selector="TextBlock.scene-view-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeTitle}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="TextBlock.scene-view-message">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style Selector="TextBlock.scene-view-status-text">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid Background="{DynamicResource EditorBrushBase00}">
+        <Border Classes="scene-view-status"
+                VerticalAlignment="Top">
+            <Grid ColumnDefinitions="*,Auto"
+                  ColumnSpacing="12">
+                <StackPanel Spacing="3">
+                    <TextBlock Classes="scene-view-title"
+                               Text="{Binding ViewportStateTitle}" />
+                    <TextBlock Classes="scene-view-message"
+                               Text="{Binding ViewportStateMessage}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1"
+                           Classes="scene-view-status-text"
+                           Text="{Binding ViewportStatusText}" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

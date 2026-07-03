@@ -1,8 +1,8 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:Editor.UI.Controls.Base"
-             xmlns:hierarchy="using:Editor.Features.Hierarchy.Controls"
-             xmlns:icons="using:Editor.Shell.Icons"
+             xmlns:icons="using:Editor.UI.Icons"
+             xmlns:tree="using:Editor.UI.Controls.Tree"
              xmlns:vm="using:Editor.Features.Hierarchy.ViewModels"
              x:Class="Editor.Features.Hierarchy.Views.HierarchyPanelView"
              x:DataType="vm:HierarchyPanelViewModel"
@@ -33,69 +33,6 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
-        <Style Selector="ListBox.hierarchy-list">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="0" />
-        </Style>
-
-        <Style Selector="ListBox.hierarchy-list ListBoxItem">
-            <Setter Property="Height" Value="20" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="FocusAdorner" Value="{x:Null}" />
-        </Style>
-
-        <Style Selector="ListBox.hierarchy-list ListBoxItem:pointerover">
-            <Setter Property="Background" Value="{DynamicResource EditorBrushHierarchyRowHover}" />
-        </Style>
-
-        <Style Selector="ListBox.hierarchy-list ListBoxItem:selected">
-            <Setter Property="Background" Value="{DynamicResource EditorBrushSelectionInactive}" />
-        </Style>
-
-        <Style Selector="Grid.hierarchy-row">
-            <Setter Property="Height" Value="22" />
-            <Setter Property="ColumnSpacing" Value="0" />
-        </Style>
-
-        <Style Selector="controls|IconButton.hierarchy-expander">
-            <Setter Property="Width" Value="18" />
-            <Setter Property="Height" Value="20" />
-            <Setter Property="MinWidth" Value="0" />
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style Selector="icons|EditorIconView.hierarchy-node-icon">
-            <Setter Property="Width" Value="14" />
-            <Setter Property="Height" Value="14" />
-            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
-            <Setter Property="IsHitTestVisible" Value="False" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style Selector="TextBlock.hierarchy-node-title">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
-            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
-            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style Selector="TextBlock.hierarchy-node-kind">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
-            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
-            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style Selector="TextBlock.hierarchy-empty">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
-            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="IsHitTestVisible" Value="False" />
-        </Style>
     </UserControl.Styles>
 
     <Border Background="{DynamicResource EditorBrushBase00}">
@@ -126,7 +63,7 @@
             </Grid>
 
             <Grid Grid.Row="2">
-                <ListBox Classes="hierarchy-list"
+                <ListBox Classes="hierarchy-list editor-tree-list"
                          ItemsSource="{Binding VisibleRows}"
                          SelectedItem="{Binding SelectedRow, Mode=TwoWay}">
                     <ListBox.ItemsPanel>
@@ -137,18 +74,18 @@
 
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:HierarchyNodeRowViewModel">
-                            <Grid Classes="hierarchy-row"
-                                  ColumnDefinitions="Auto,18,16,*,80">
-                                <hierarchy:HierarchyIndentGuide Grid.Column="0"
-                                                                AncestorContinuationMask="{Binding AncestorContinuationMask}"
-                                                                Depth="{Binding Depth}"
-                                                                IsHitTestVisible="False"
-                                                                IsLastSibling="{Binding IsLastSibling}"
-                                                                LineBrush="{DynamicResource EditorBrushBorderDefault}"
-                                                                Opacity="0.72"
-                                                                Width="{Binding IndentWidth}" />
+                            <Grid Classes="hierarchy-row editor-tree-row"
+                                  ColumnDefinitions="Auto,18,16,*,80"
+                                  DoubleTapped="OnHierarchyRowDoubleTapped">
+                                <tree:EditorTreeIndentGuide Grid.Column="0"
+                                                            AncestorContinuationMask="{Binding AncestorContinuationMask}"
+                                                            Classes="editor-tree-indent-guide"
+                                                            Depth="{Binding Depth}"
+                                                            IsHitTestVisible="False"
+                                                            IsLastSibling="{Binding IsLastSibling}"
+                                                            Width="{Binding IndentWidth}" />
                                 <controls:IconButton Grid.Column="1"
-                                                     Classes="hierarchy-expander"
+                                                     Classes="hierarchy-expander editor-tree-expander"
                                                      Command="{Binding ToggleExpandedCommand}"
                                                      CommandParameter="{Binding}"
                                                      Focusable="False"
@@ -158,23 +95,23 @@
                                                      Opacity="{Binding ExpanderOpacity}"
                                                      StrokeWidth="2" />
                                 <icons:EditorIconView Grid.Column="2"
-                                                      Classes="hierarchy-node-icon"
+                                                      Classes="hierarchy-node-icon editor-tree-node-icon"
                                                       IconKey="{Binding IconKey}"
                                                       IconSize="14"
                                                       StrokeWidth="2" />
                                 <TextBlock Grid.Column="3"
-                                           Classes="hierarchy-node-title"
+                                           Classes="hierarchy-node-title editor-tree-primary-text"
                                            Text="{Binding DisplayName}" />
                                 <TextBlock Grid.Column="4"
                                            Margin="8,0,8,0"
-                                           Classes="hierarchy-node-kind"
+                                           Classes="hierarchy-node-kind editor-tree-secondary-text"
                                            Text="{Binding Kind}" />
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <TextBlock Classes="hierarchy-empty"
+                <TextBlock Classes="hierarchy-empty editor-tree-empty"
                            IsVisible="{Binding HasNoMatches}"
                            Text="No matching objects" />
             </Grid>

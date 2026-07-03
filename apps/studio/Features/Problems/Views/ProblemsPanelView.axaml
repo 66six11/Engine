@@ -1,3 +1,134 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Editor.Features.Problems.Views.ProblemsPanelView" />
+             xmlns:models="using:Editor.Core.Models.Diagnostics"
+             xmlns:vm="using:Editor.Features.Problems.ViewModels"
+             x:Class="Editor.Features.Problems.Views.ProblemsPanelView"
+             x:DataType="vm:ProblemsPanelViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.diagnostics-toolbar">
+            <Setter Property="Padding" Value="6,5,6,4" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-counter">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Grid.diagnostics-column-header">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-column-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextDisabled}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="ListBox.diagnostics-list">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
+        <Style Selector="ListBox.diagnostics-list ListBoxItem">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-cell">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-cell.primary">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-empty">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}">
+        <Grid RowDefinitions="Auto,Auto,*">
+            <Border Grid.Row="0"
+                    Classes="diagnostics-toolbar">
+                <Grid ColumnDefinitions="*,Auto"
+                      ColumnSpacing="8">
+                    <TextBlock Classes="diagnostics-counter"
+                               Text="Problems" />
+                    <TextBlock Grid.Column="1"
+                               Classes="diagnostics-counter"
+                               Text="{Binding RecordCountText}" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1"
+                  Classes="diagnostics-column-header"
+                  ColumnDefinitions="72,96,*,72">
+                <TextBlock Grid.Column="0"
+                           Margin="8,0,0,0"
+                           Classes="diagnostics-column-label"
+                           Text="Severity" />
+                <TextBlock Grid.Column="1"
+                           Classes="diagnostics-column-label"
+                           Text="Category" />
+                <TextBlock Grid.Column="2"
+                           Classes="diagnostics-column-label"
+                           Text="Message" />
+                <TextBlock Grid.Column="3"
+                           Margin="0,0,8,0"
+                           Classes="diagnostics-column-label"
+                           Text="Source" />
+            </Grid>
+
+            <Grid Grid.Row="2">
+                <ListBox Classes="diagnostics-list"
+                         IsVisible="{Binding HasRecords}"
+                         ItemsSource="{Binding Records}">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:EditorDiagnosticRecord">
+                            <Grid ColumnDefinitions="72,96,*,72"
+                                  MinHeight="24">
+                                <TextBlock Grid.Column="0"
+                                           Margin="8,0,0,0"
+                                           Classes="diagnostics-cell primary"
+                                           Text="{Binding Severity}" />
+                                <TextBlock Grid.Column="1"
+                                           Classes="diagnostics-cell"
+                                           Text="{Binding Category}" />
+                                <TextBlock Grid.Column="2"
+                                           Classes="diagnostics-cell primary"
+                                           Text="{Binding Message}" />
+                                <TextBlock Grid.Column="3"
+                                           Margin="0,0,8,0"
+                                           Classes="diagnostics-cell"
+                                           Text="{Binding Source}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <TextBlock Classes="diagnostics-empty"
+                           IsVisible="{Binding HasNoRecords}"
+                           Text="{Binding EmptyStateText}" />
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

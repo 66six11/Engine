@@ -1,14 +1,19 @@
-using System.Linq;
+﻿using System.Linq;
 using Editor.Core.Models;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Diagnostics;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Workbench;
+using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
-using Editor.Shell.Docking;
-using Editor.Shell.Commands;
-using Editor.Shell.Icons;
+using Editor.Shell.CodeFirstUI;
+using Editor.Shell.Composition;
+using Editor.UI.Icons;
 using Editor.Shell.Selection;
 using Xunit;
 
@@ -17,13 +22,12 @@ namespace Editor.Tests.Features.Workbench;
 public sealed class WorkbenchFeatureModuleTests
 {
     [Fact]
-    public void RegisterPanels_registers_stable_workbench_panel_descriptors()
+    public void Compose_registers_stable_workbench_panel_descriptors()
     {
-        var registry = new PanelRegistry();
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
 
-        new WorkbenchFeatureModule(new EditorSelectionService()).RegisterPanels(registry);
-
-        var descriptors = registry.GetAll().ToArray();
+        var descriptors = composition.PanelRegistry.GetAll().ToArray();
         Assert.Equal(
             [
                 new PanelDescriptorSnapshot(
@@ -35,8 +39,8 @@ public sealed class WorkbenchFeatureModuleTests
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelSceneView,
                     "DOC",
-                    "custom viewport shell",
-                    "live"),
+                    "viewport deferred",
+                    "deferred"),
                 new PanelDescriptorSnapshot(
                     "hierarchy",
                     "Hierarchy",
@@ -81,6 +85,17 @@ public sealed class WorkbenchFeatureModuleTests
                     "BOTTOM",
                     "validation queue",
                     "0"),
+                new PanelDescriptorSnapshot(
+                    "ui-style",
+                    "UI Style",
+                    PanelKind.Tool,
+                    DockArea.Center,
+                    "Window/Panels/UI Style",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelUiStyle,
+                    "STYLE",
+                    "code-first component guide",
+                    "samples"),
             ],
             descriptors.Select(CreateSnapshot).ToArray());
 
@@ -89,14 +104,14 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.IsType<InspectorPanelViewModel>(descriptors[2].CreateContent());
         Assert.IsType<ConsolePanelViewModel>(descriptors[3].CreateContent());
         Assert.IsType<ProblemsPanelViewModel>(descriptors[4].CreateContent());
+        Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[5].CreateContent());
     }
 
     [Fact]
-    public void RegisterActions_registers_stable_workbench_panel_actions()
+    public void Compose_registers_stable_workbench_panel_actions()
     {
-        var registry = new WorkbenchActionRegistry();
-
-        new WorkbenchFeatureModule(new EditorSelectionService()).RegisterActions(registry);
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
 
         Assert.Equal(
             [
@@ -161,20 +176,43 @@ public sealed class WorkbenchFeatureModuleTests
                     IconKey: EditorIconKey.PanelProblems,
                     Category: "Window",
                     SearchText: "validation diagnostics"),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.ui-style",
+                    "UI Style",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/UI Style",
+                    TargetId: "ui-style",
+                    IconKey: EditorIconKey.PanelUiStyle,
+                    Category: "Window",
+                    SearchText: "code-first ui style guide samples"),
             ],
-            registry.GetAll().ToArray());
+            composition.ActionRegistry.GetAll().ToArray());
     }
 
     [Fact]
-    public void RegisterPanels_injects_shared_selection_and_scene_snapshot_provider_into_selection_panels()
+    public void Compose_registers_workbench_active_scene_provider()
     {
-        var registry = new PanelRegistry();
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
+
+        var providers = composition.ProviderHost.GetSceneProviders();
+
+        var descriptor = Assert.Single(providers);
+        Assert.Equal("workbench.scene.fixture", descriptor.Id);
+        Assert.Equal(EditorProviderRoles.ActiveScene, descriptor.Role);
+        Assert.IsType<InMemorySceneSnapshotProvider>(
+            composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
+    }
+
+    [Fact]
+    public void Compose_injects_shared_selection_and_scene_snapshot_provider_into_selection_panels()
+    {
         var selectionService = new EditorSelectionService();
-        new WorkbenchFeatureModule(selectionService).RegisterPanels(registry);
+        var composition = new EditorExtensionHost([new WorkbenchFeatureModule(selectionService)]).Compose();
         var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
-            registry.GetRequired("hierarchy").CreateContent());
+            composition.PanelRegistry.GetRequired("hierarchy").CreateContent());
         var inspector = Assert.IsType<InspectorPanelViewModel>(
-            registry.GetRequired("inspector").CreateContent());
+            composition.PanelRegistry.GetRequired("inspector").CreateContent());
 
         var cube = hierarchy.Nodes.Single(node => node.Id == "scene:main/cube");
         hierarchy.SelectedNode = cube;
@@ -184,6 +222,52 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.Contains(
             inspector.Document?.Sections.SelectMany(section => section.Properties) ?? [],
             property => property.Name == "Id" && property.Value == "scene:main/cube");
+    }
+
+    [Fact]
+    public void Compose_injects_shared_diagnostics_into_console_and_problems_panels()
+    {
+        var diagnostics = new EditorDiagnosticService();
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService(), diagnostics)]).Compose();
+        var record = diagnostics.Publish(
+            EditorDiagnosticSeverity.Error,
+            EditorDiagnosticChannel.Problem,
+            "validation",
+            "scene",
+            "Missing reference.");
+        var console = Assert.IsType<ConsolePanelViewModel>(
+            composition.PanelRegistry.GetRequired("console").CreateContent());
+        var problems = Assert.IsType<ProblemsPanelViewModel>(
+            composition.PanelRegistry.GetRequired("problems").CreateContent());
+
+        Assert.Equal([record], console.Records);
+        Assert.Equal([record], problems.Records);
+    }
+
+    [Fact]
+    public void Hierarchy_and_inspector_share_active_scene_provider_snapshot()
+    {
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService())]).Compose();
+        var provider = Assert.IsType<InMemorySceneSnapshotProvider>(
+            composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
+        provider.ReplaceSnapshot(new SceneSnapshot(
+            "scene:test",
+            "Test Scene",
+            2,
+            [
+                new SceneObjectSnapshot("scene:test", "Test Scene", "scene"),
+                new SceneObjectSnapshot("scene:test/sphere", "Sphere", "mesh", parentId: "scene:test"),
+            ]));
+        var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
+            composition.PanelRegistry.GetRequired("hierarchy").CreateContent());
+        var inspector = Assert.IsType<InspectorPanelViewModel>(
+            composition.PanelRegistry.GetRequired("inspector").CreateContent());
+
+        hierarchy.SelectedNode = hierarchy.Nodes.Single(node => node.Id == "scene:test/sphere");
+
+        Assert.Equal("Sphere", inspector.Document?.Title);
     }
 
     private static PanelDescriptorSnapshot CreateSnapshot(PanelDescriptor descriptor)

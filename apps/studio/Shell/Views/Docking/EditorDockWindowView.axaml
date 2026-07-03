@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Docking"
+             xmlns:views="using:Editor.Shell.Views.Docking"
+             x:Class="Editor.Shell.Views.Docking.EditorDockWindowView"
+             x:DataType="vm:EditorDockWindowViewModel">
+    <Grid ClipToBounds="False">
+        <views:EditorDockWindowSurfaceView IsActiveWindow="{Binding IsActiveWindow}"
+                                           IsDragSourceWindow="{Binding IsDragSourceWindow}">
+            <views:EditorDockWindowSurfaceView.TabStripContent>
+                <views:EditorDockTabStripView x:Name="DockTabStrip"
+                                              Grid.Row="0"
+                                              PointerPressed="OnTabPointerPressed" />
+            </views:EditorDockWindowSurfaceView.TabStripContent>
+
+            <views:EditorDockWindowSurfaceView.BodyContent>
+                <Border x:Name="DockPanelBody"
+                        Background="Transparent"
+                        Focusable="True">
+                    <ContentControl Content="{Binding ActiveTab.Content}" />
+                </Border>
+            </views:EditorDockWindowSurfaceView.BodyContent>
+        </views:EditorDockWindowSurfaceView>
+
+        <Canvas ClipToBounds="False"
+                IsHitTestVisible="False"
+                ZIndex="20">
+            <ContentControl x:Name="DraggedTabPreview"
+                            IsVisible="False"
+                            IsHitTestVisible="False">
+                <ContentControl.ContentTemplate>
+                    <DataTemplate x:DataType="vm:EditorDockTabStripItemViewModel">
+                        <views:EditorDockTabItemView />
+                    </DataTemplate>
+                </ContentControl.ContentTemplate>
+            </ContentControl>
+        </Canvas>
+    </Grid>
+</UserControl>
