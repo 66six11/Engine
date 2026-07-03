@@ -1,5 +1,6 @@
 using System;
 using Editor.Core.Models;
+using Editor.Core.Models.Scene;
 
 namespace Editor.Core.Abstractions;
 

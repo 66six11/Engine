@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Models;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;
-using Editor.Shell.Docking;
-using Editor.Shell.ViewModels;
+using Editor.Shell.Docking.Panels;
+using Editor.Shell.ViewModels.Docking;
 using Xunit;
 
 namespace Editor.Tests.Shell.Commands;

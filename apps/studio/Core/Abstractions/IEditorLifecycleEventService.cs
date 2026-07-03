@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Editor.Core.Models;
+using Editor.Core.Models.Lifecycle;
 
 namespace Editor.Core.Abstractions;
 

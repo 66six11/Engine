@@ -30,7 +30,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <AdditionalFiles Include="Shell\Views\MainWindow.axaml" />
+      <AdditionalFiles Include="Shell\Views\Windowing\MainWindow.axaml" />
     </ItemGroup>
 
     <ItemGroup>

@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
 using Editor.Core.Services;
-using Editor.Shell.Docking;
+using Editor.Shell.Docking.Layout;
 using Editor.Shell.Selection;
-using Editor.Shell.ViewModels;
+using Editor.Shell.ViewModels.Windowing;
 
 namespace Editor.Shell.Composition;
 

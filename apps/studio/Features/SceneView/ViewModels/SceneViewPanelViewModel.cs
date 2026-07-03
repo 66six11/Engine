@@ -1,6 +1,6 @@
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
-using Editor.Shell.ViewModels;
+using Editor.Core.Models.Selection;
+using Editor.UI.ViewModels;
 
 namespace Editor.Features.SceneView.ViewModels;
 
@@ -13,6 +13,13 @@ public sealed class SceneViewPanelViewModel : ViewModelBase
     {
         selectionService_ = selectionService;
     }
+
+    public string ViewportStateTitle => "Viewport backend deferred";
+
+    public string ViewportStateMessage =>
+        "Scene snapshot and selection shell are available; native Vulkan viewport is a separate integration slice.";
+
+    public string ViewportStatusText => "deferred";
 
     public void SelectItem(EditorSelectionItem item)
     {

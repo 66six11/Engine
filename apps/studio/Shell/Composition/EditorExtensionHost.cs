@@ -4,10 +4,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Contributions;
+using Editor.Core.Models.Extensions;
 using Editor.Core.Services;
 using Editor.Shell.Commands;
-using Editor.Shell.Docking;
+using Editor.Shell.Docking.Panels;
 
 namespace Editor.Shell.Composition;
 

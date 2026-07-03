@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Editing;
+using Editor.Core.Models.Transactions;
 using Editor.Shell.Services;
 using Xunit;
 

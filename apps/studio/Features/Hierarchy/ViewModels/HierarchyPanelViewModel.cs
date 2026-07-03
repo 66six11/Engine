@@ -4,11 +4,12 @@ using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Selection;
 using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
-using Editor.Shell.Services;
-using Editor.Shell.ViewModels;
 using Editor.UI.Controls.Tree;
+using Editor.UI.ViewModels;
 
 namespace Editor.Features.Hierarchy.ViewModels;
 
@@ -44,7 +45,7 @@ public sealed class HierarchyPanelViewModel : ViewModelBase, IDisposable
 
         selectionService_ = selectionService;
         sceneSnapshotProvider_ = sceneSnapshotProvider;
-        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
+        uiDispatcher_ = uiDispatcher ?? new ImmediateEditorUiDispatcher();
 
         ToggleExpandedCommand = new RelayCommand<HierarchyNodeRowViewModel>(ToggleExpanded);
         LoadSnapshot(sceneSnapshotProvider_.GetCurrentSnapshot(), preserveExpandedState: false);

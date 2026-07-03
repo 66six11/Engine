@@ -1,4 +1,7 @@
-using Editor.Core.Models;
+using Editor.Core.Models.Contributions;
+using Editor.Core.Models.Diagnostics;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Workbench;
 using Xunit;
 
 namespace Editor.Tests.Core.Models;

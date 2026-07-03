@@ -1,15 +1,30 @@
 using System;
 using System.Collections.Generic;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
-using Editor.Shell.Services;
 using Xunit;
 
 namespace Editor.Tests.Features.Console;
 
 public sealed class ConsolePanelViewModelTests
 {
+    [Fact]
+    public void Console_panel_exposes_empty_state_before_diagnostics()
+    {
+        var diagnostics = new EditorDiagnosticService();
+        var viewModel = new ConsolePanelViewModel(
+            diagnostics,
+            new CapturingUiDispatcher(hasAccess: true));
+
+        Assert.Empty(viewModel.Records);
+        Assert.False(viewModel.HasRecords);
+        Assert.True(viewModel.HasNoRecords);
+        Assert.Equal("No console diagnostics", viewModel.EmptyStateText);
+    }
+
     [Fact]
     public void Console_panel_tracks_recent_diagnostics()
     {
@@ -27,6 +42,8 @@ public sealed class ConsolePanelViewModelTests
 
         Assert.Equal([record], viewModel.Records);
         Assert.Equal("1", viewModel.RecordCountText);
+        Assert.True(viewModel.HasRecords);
+        Assert.False(viewModel.HasNoRecords);
     }
 
     [Fact]
@@ -49,6 +66,8 @@ public sealed class ConsolePanelViewModelTests
         action();
 
         Assert.Equal([record], viewModel.Records);
+        Assert.True(viewModel.HasRecords);
+        Assert.False(viewModel.HasNoRecords);
     }
 
     [Fact]

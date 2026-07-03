@@ -1,5 +1,5 @@
 using System;
-using Editor.Core.Models;
+using Editor.Core.Models.Transactions;
 
 namespace Editor.Core.Abstractions;
 

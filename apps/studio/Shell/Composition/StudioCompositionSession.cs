@@ -1,6 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using Editor.Shell.ViewModels;
+using Editor.Shell.ViewModels.Windowing;
 
 namespace Editor.Shell.Composition;
 

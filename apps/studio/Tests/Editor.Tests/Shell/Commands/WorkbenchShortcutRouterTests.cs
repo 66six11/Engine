@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Input;
 using Editor.Core.Models;
+using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;
 using Xunit;
 

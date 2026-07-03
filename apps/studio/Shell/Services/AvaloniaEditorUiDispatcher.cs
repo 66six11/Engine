@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Threading;
+using Editor.Core.Abstractions;
 
 namespace Editor.Shell.Services;
 

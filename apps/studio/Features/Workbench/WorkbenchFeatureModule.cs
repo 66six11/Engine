@@ -1,6 +1,9 @@
-using System;
+﻿using System;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Extensions;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Workbench;
 using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
@@ -9,7 +12,8 @@ using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.UiStyle;
 using Editor.Shell.CodeFirstUI;
-using Editor.Shell.Icons;
+using Editor.UI.Icons;
+using Editor.Shell.Services;
 
 namespace Editor.Features.Workbench;
 
@@ -18,6 +22,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
     private readonly IEditorSelectionService selectionService_;
     private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
     private readonly IEditorDiagnosticService diagnostics_;
+    private readonly IEditorUiDispatcher uiDispatcher_;
 
     public WorkbenchFeatureModule(IEditorSelectionService selectionService)
         : this(selectionService, new EditorDiagnosticService(), CreateDefaultSceneSnapshotProvider())
@@ -41,7 +46,8 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
     internal WorkbenchFeatureModule(
         IEditorSelectionService selectionService,
         IEditorDiagnosticService diagnostics,
-        ISceneSnapshotProvider sceneSnapshotProvider)
+        ISceneSnapshotProvider sceneSnapshotProvider,
+        IEditorUiDispatcher? uiDispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(selectionService);
         ArgumentNullException.ThrowIfNull(diagnostics);
@@ -50,6 +56,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         selectionService_ = selectionService;
         diagnostics_ = diagnostics;
         sceneSnapshotProvider_ = sceneSnapshotProvider;
+        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
     }
 
     public EditorExtensionId Id { get; } = new("studio.workbench");
@@ -114,8 +121,8 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 () => new SceneViewPanelViewModel(selectionService_),
                 IconKey: "studio.scene-view",
                 Tag: "DOC",
-                TitleDetail: "custom viewport shell",
-                StatusText: "live"),
+                TitleDetail: "viewport deferred",
+                StatusText: "deferred"),
             new PanelDescriptor(
                 "hierarchy",
                 "Hierarchy",
@@ -123,7 +130,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Left,
                 "Window/Panels/Hierarchy",
                 DockContentCachePolicy.KeepAlive,
-                () => new HierarchyPanelViewModel(selectionService_, sceneSnapshotProvider_),
+                () => new HierarchyPanelViewModel(selectionService_, sceneSnapshotProvider_, uiDispatcher_),
                 IconKey: "studio.hierarchy",
                 Tag: "LEFT",
                 TitleDetail: "selection source",
@@ -136,7 +143,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Right,
                 "Window/Panels/Inspector",
                 DockContentCachePolicy.KeepAlive,
-                () => new InspectorPanelViewModel(selectionService_, sceneSnapshotProvider_),
+                () => new InspectorPanelViewModel(selectionService_, sceneSnapshotProvider_, uiDispatcher_),
                 IconKey: "studio.inspector",
                 Tag: "RIGHT",
                 TitleDetail: "context target",
@@ -149,7 +156,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Bottom,
                 "Window/Panels/Console",
                 DockContentCachePolicy.KeepAlive,
-                () => new ConsolePanelViewModel(diagnostics_),
+                () => new ConsolePanelViewModel(diagnostics_, uiDispatcher_),
                 IconKey: "studio.console",
                 Tag: "BOTTOM",
                 TitleDetail: "runtime log stream",
@@ -162,7 +169,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Bottom,
                 "Window/Panels/Problems",
                 DockContentCachePolicy.KeepAlive,
-                () => new ProblemsPanelViewModel(diagnostics_),
+                () => new ProblemsPanelViewModel(diagnostics_, uiDispatcher_),
                 IconKey: "studio.problems",
                 Tag: "BOTTOM",
                 TitleDetail: "validation queue",

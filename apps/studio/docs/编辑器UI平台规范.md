@@ -7,6 +7,8 @@
 
 本文不替代：
 
+- [Studio框架设计.md](Studio框架设计.md)：Studio 编辑器前端的顶层框架理念、分层、数据流和底层接入门槛。
+- [Studio代码分类.md](Studio代码分类.md)：新增或整理代码时的目录分类、放置决策和当前 v0 例外。
 - [项目规范.md](项目规范.md)：目录、命名空间、MVVM、性能和合入规则。
 - [控件开发指南.md](控件开发指南.md)：Avalonia 控件、样式、`Design.PreviewWith` 和主题覆盖规则。
 - [Dock系统指南.md](Dock系统指南.md)：Dock、panel、workbench action 和当前实现事实。

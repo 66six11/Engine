@@ -1,5 +1,6 @@
 using System;
 using Editor.Core.Models;
+using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;
 using Xunit;
 

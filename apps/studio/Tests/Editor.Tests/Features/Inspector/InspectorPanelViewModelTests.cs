@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Selection;
 using Editor.Core.Services;
 using Editor.Features.Inspector.Models;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Selection;
-using Editor.Shell.Services;
 using Xunit;
 
 namespace Editor.Tests.Features.Inspector;

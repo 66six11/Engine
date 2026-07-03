@@ -1,6 +1,7 @@
 using System;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Extensions;
+using Editor.Core.Models.Scene;
 using Editor.Core.Services;
 using Editor.Shell.Composition;
 using Xunit;

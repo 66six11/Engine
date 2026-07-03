@@ -1,5 +1,9 @@
-using System.Linq;
+﻿using System.Linq;
 using Editor.Core.Models;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Diagnostics;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Workbench;
 using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
@@ -9,7 +13,7 @@ using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
 using Editor.Shell.CodeFirstUI;
 using Editor.Shell.Composition;
-using Editor.Shell.Icons;
+using Editor.UI.Icons;
 using Editor.Shell.Selection;
 using Xunit;
 
@@ -35,8 +39,8 @@ public sealed class WorkbenchFeatureModuleTests
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelSceneView,
                     "DOC",
-                    "custom viewport shell",
-                    "live"),
+                    "viewport deferred",
+                    "deferred"),
                 new PanelDescriptorSnapshot(
                     "hierarchy",
                     "Hierarchy",

@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Editor.Shell.Composition;
-using Editor.Shell.Views;
+using Editor.Shell.Views.Windowing;
 
 namespace Editor;
 

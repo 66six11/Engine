@@ -4,11 +4,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Extensions;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Workbench;
 using Editor.Core.Services;
 using Editor.Shell.Commands;
 using Editor.Shell.Composition;
-using Editor.Shell.Docking;
+using Editor.Shell.Docking.Panels;
 using Xunit;
 
 namespace Editor.Tests.Shell.Composition;

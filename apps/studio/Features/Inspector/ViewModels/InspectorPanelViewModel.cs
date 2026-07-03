@@ -4,10 +4,11 @@ using System.Globalization;
 using System.Linq;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Selection;
 using Editor.Core.Services;
 using Editor.Features.Inspector.Models;
-using Editor.Shell.Services;
-using Editor.Shell.ViewModels;
+using Editor.UI.ViewModels;
 
 namespace Editor.Features.Inspector.ViewModels;
 
@@ -34,7 +35,7 @@ public sealed class InspectorPanelViewModel : ViewModelBase, IDisposable
 
         selectionService_ = selectionService;
         sceneSnapshotProvider_ = sceneSnapshotProvider;
-        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
+        uiDispatcher_ = uiDispatcher ?? new ImmediateEditorUiDispatcher();
         currentSelection_ = selectionService.Current;
         document_ = CreateDocument(currentSelection_, sceneSnapshotProvider_);
         selectionService_.SelectionChanged += OnSelectionChanged;

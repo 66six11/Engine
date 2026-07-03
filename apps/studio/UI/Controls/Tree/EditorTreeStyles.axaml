@@ -1,7 +1,7 @@
-<Styles xmlns="https://github.com/avaloniaui"
+﻿<Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:Editor.UI.Controls.Base"
-        xmlns:icons="using:Editor.Shell.Icons"
+        xmlns:icons="using:Editor.UI.Icons"
         xmlns:tree="using:Editor.UI.Controls.Tree">
     <Style Selector="ListBox.editor-tree-list">
         <Setter Property="Background" Value="Transparent" />

@@ -1,6 +1,9 @@
 using System;
 using System.Linq;
-using Editor.Core.Models;
+using Editor.Core.Models.Contributions;
+using Editor.Core.Models.Extensions;
+using Editor.Core.Models.Panels;
+using Editor.Core.Models.Workbench;
 using Editor.Shell.Composition;
 using Xunit;
 

@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Editor.Core.Models;
+using Editor.Core.Models.Extensions;
 
 namespace Editor.Core.Abstractions;
 

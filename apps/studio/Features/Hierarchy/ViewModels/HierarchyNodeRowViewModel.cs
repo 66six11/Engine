@@ -1,7 +1,7 @@
-using System;
+﻿using System;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Features.Hierarchy.Models;
-using Editor.Shell.Icons;
+using Editor.UI.Icons;
 using Editor.UI.Controls.Tree;
 
 namespace Editor.Features.Hierarchy.ViewModels;

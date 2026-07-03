@@ -1,0 +1,11 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Docking"
+             xmlns:views="using:Editor.Shell.Views.Docking"
+             x:Class="Editor.Shell.Views.Docking.EditorDockDropGuideView"
+             x:DataType="vm:EditorDockDragStateViewModel"
+             ClipToBounds="True"
+             IsVisible="{Binding IsDropGuideVisible}">
+    <views:EditorDockFloatingPreviewView HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Stretch" />
+</UserControl>

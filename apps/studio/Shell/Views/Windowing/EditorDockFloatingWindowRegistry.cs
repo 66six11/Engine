@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Avalonia;
-using Editor.Shell.Docking;
-using Editor.Shell.ViewModels;
+using Editor.Shell.Docking.Layout;
+using Editor.Shell.ViewModels.Docking;
+using Editor.Shell.Views.Docking;
 
 namespace Editor.Shell.Views.Windowing;
 

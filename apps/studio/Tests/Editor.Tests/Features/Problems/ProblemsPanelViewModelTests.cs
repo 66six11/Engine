@@ -1,15 +1,30 @@
 using System;
 using System.Collections.Generic;
+using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 using Editor.Core.Services;
 using Editor.Features.Problems.ViewModels;
-using Editor.Shell.Services;
 using Xunit;
 
 namespace Editor.Tests.Features.Problems;
 
 public sealed class ProblemsPanelViewModelTests
 {
+    [Fact]
+    public void Problems_panel_exposes_empty_state_before_diagnostics()
+    {
+        var diagnostics = new EditorDiagnosticService();
+        var viewModel = new ProblemsPanelViewModel(
+            diagnostics,
+            new CapturingUiDispatcher(hasAccess: true));
+
+        Assert.Empty(viewModel.Records);
+        Assert.False(viewModel.HasRecords);
+        Assert.True(viewModel.HasNoRecords);
+        Assert.Equal("No problems", viewModel.EmptyStateText);
+    }
+
     [Fact]
     public void Problems_panel_tracks_problem_diagnostics_only()
     {
@@ -32,6 +47,8 @@ public sealed class ProblemsPanelViewModelTests
 
         Assert.Equal([problem], viewModel.Records);
         Assert.Equal("1", viewModel.RecordCountText);
+        Assert.True(viewModel.HasRecords);
+        Assert.False(viewModel.HasNoRecords);
     }
 
     [Fact]
@@ -54,6 +71,8 @@ public sealed class ProblemsPanelViewModelTests
         action();
 
         Assert.Equal([problem], viewModel.Records);
+        Assert.True(viewModel.HasRecords);
+        Assert.False(viewModel.HasNoRecords);
     }
 
     [Fact]

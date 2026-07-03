@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using Editor.Core.Abstractions;
 using Editor.Core.Models;
+using Editor.Core.Models.Diagnostics;
 using Editor.Core.Services;
-using Editor.Shell.Services;
-using Editor.Shell.ViewModels;
+using Editor.UI.ViewModels;
 
 namespace Editor.Features.Console.ViewModels;
 
@@ -26,7 +26,7 @@ public sealed class ConsolePanelViewModel : ViewModelBase, IDisposable
         IEditorUiDispatcher? uiDispatcher)
     {
         diagnostics_ = diagnostics ?? new EditorDiagnosticService();
-        uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
+        uiDispatcher_ = uiDispatcher ?? new ImmediateEditorUiDispatcher();
         RefreshRecords();
         diagnostics_.DiagnosticsChanged += OnDiagnosticsChanged;
     }
@@ -34,8 +34,21 @@ public sealed class ConsolePanelViewModel : ViewModelBase, IDisposable
     public IReadOnlyList<EditorDiagnosticRecord> Records
     {
         get => records_;
-        private set => SetProperty(ref records_, value);
+        private set
+        {
+            if (SetProperty(ref records_, value))
+            {
+                OnPropertyChanged(nameof(HasRecords));
+                OnPropertyChanged(nameof(HasNoRecords));
+            }
+        }
     }
+
+    public bool HasRecords => records_.Count > 0;
+
+    public bool HasNoRecords => records_.Count == 0;
+
+    public string EmptyStateText => "No console diagnostics";
 
     public string RecordCountText
     {

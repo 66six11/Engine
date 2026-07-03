@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
-using Editor.Core.Models;
+using Editor.Core.Models.Contributions;
+using Editor.Core.Models.Diagnostics;
+using Editor.Core.Models.Panels;
 
 namespace Editor.Core.Services;
 

@@ -1,5 +1,5 @@
 using System;
-using Editor.Shell.ViewModels;
+using Editor.Shell.ViewModels.Docking;
 
 namespace Editor.Shell.Commands;
 

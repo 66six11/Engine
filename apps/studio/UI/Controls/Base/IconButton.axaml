@@ -1,7 +1,7 @@
-<ResourceDictionary xmlns="https://github.com/avaloniaui"
+﻿<ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:base="using:Editor.UI.Controls.Base"
-                    xmlns:icons="using:Editor.Shell.Icons">
+                    xmlns:icons="using:Editor.UI.Icons">
     <Design.PreviewWith>
         <Border Background="{DynamicResource EditorBrushBase00}"
                 Padding="16">
