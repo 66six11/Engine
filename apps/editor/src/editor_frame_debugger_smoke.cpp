@@ -7,9 +7,12 @@
 #include <string>
 #include <string_view>
 
+#include "asharia/archive/archive_value.hpp"
+#include "asharia/archive/json_archive.hpp"
 #include "asharia/core/log.hpp"
 
 #include "editor_frame_debugger.hpp"
+#include "editor_frame_debugger_snapshot_projector.hpp"
 #include "editor_smoke.hpp"
 #include "editor_viewport_overlay_provider.hpp"
 
@@ -180,6 +183,140 @@ namespace asharia::editor {
                    closeFloat(worldGrid.color[3], expected.color[3]);
         }
 
+        [[nodiscard]] const asharia::archive::ArchiveValue*
+        requiredObjectMember(const asharia::archive::ArchiveValue& value, std::string_view key) {
+            const asharia::archive::ArchiveValue* member = value.findMemberValue(key);
+            if (member == nullptr || member->kind != asharia::archive::ArchiveValueKind::Object) {
+                return nullptr;
+            }
+            return member;
+        }
+
+        [[nodiscard]] const asharia::archive::ArchiveValue*
+        requiredArrayMember(const asharia::archive::ArchiveValue& value, std::string_view key) {
+            const asharia::archive::ArchiveValue* member = value.findMemberValue(key);
+            if (member == nullptr || member->kind != asharia::archive::ArchiveValueKind::Array) {
+                return nullptr;
+            }
+            return member;
+        }
+
+        [[nodiscard]] bool requiredStringMemberEquals(
+            const asharia::archive::ArchiveValue& value, std::string_view key,
+            const char* expected) {
+            const asharia::archive::ArchiveValue* member = value.findMemberValue(key);
+            return member != nullptr && member->kind == asharia::archive::ArchiveValueKind::String &&
+                   member->stringValue == expected;
+        }
+
+        [[nodiscard]] bool requiredIntegerMemberEquals(
+            const asharia::archive::ArchiveValue& value, std::string_view key,
+            std::int64_t expected) {
+            const asharia::archive::ArchiveValue* member = value.findMemberValue(key);
+            return member != nullptr &&
+                   member->kind == asharia::archive::ArchiveValueKind::Integer &&
+                   member->integerValue == expected;
+        }
+
+        [[nodiscard]] bool validateStudioFrameDebugSnapshotProjection(
+            const EditorFrameDebugCapture& capture) {
+            const asharia::BasicRenderViewExecutionEvent* selectedEvent = nullptr;
+            for (const asharia::BasicRenderViewExecutionEvent& event :
+                 capture.diagnostics.executionEvents) {
+                if (isInspectableExecutionEvent(event.kind) && event.targetImageResourceIndex) {
+                    selectedEvent = &event;
+                    break;
+                }
+            }
+            if (selectedEvent == nullptr) {
+                asharia::logError(
+                    "Editor frame debugger smoke found no previewable event for Studio snapshot.");
+                return false;
+            }
+
+            EditorFrameDebugger projectedDebugger;
+            if (!projectedDebugger.requestCapture()) {
+                asharia::logError(
+                    "Editor frame debugger smoke could not request projection capture.");
+                return false;
+            }
+            projectedDebugger.beginFrame(capture.frameIndex);
+            projectedDebugger.captureRecordedView(EditorFrameDebugCaptureDesc{
+                .frameIndex = capture.frameIndex,
+                .submittedFrameEpoch = capture.submittedFrameEpoch,
+                .viewKind = capture.viewKind,
+                .requestedExtent = capture.requestedExtent,
+                .diagnostics = capture.diagnostics,
+            });
+            projectedDebugger.endSubmittedFrame(capture.submittedFrameEpoch);
+            if (projectedDebugger.state() != EditorFrameDebuggerState::PausedFrameDebug ||
+                !projectedDebugger.selectReplayEvent(selectedEvent->id) ||
+                !projectedDebugger.preview().selectedImageResourceIndex) {
+                asharia::logError(
+                    "Editor frame debugger smoke could not prepare projected paused snapshot.");
+                return false;
+            }
+
+            auto json = writeStudioFrameDebuggerSnapshotJson(projectedDebugger);
+            if (!json) {
+                asharia::logError("Editor frame debugger smoke could not write Studio snapshot.");
+                return false;
+            }
+
+            auto parsed = asharia::archive::readJsonArchive(*json);
+            if (!parsed) {
+                asharia::logError("Editor frame debugger smoke wrote invalid Studio snapshot JSON.");
+                return false;
+            }
+
+            const asharia::archive::ArchiveValue& root = *parsed;
+            const asharia::archive::ArchiveValue* captureJson =
+                requiredObjectMember(root, "capture");
+            const asharia::archive::ArchiveValue* passes = requiredArrayMember(root, "passes");
+            const asharia::archive::ArchiveValue* resources =
+                requiredArrayMember(root, "resources");
+            const asharia::archive::ArchiveValue* events =
+                requiredArrayMember(root, "executionEvents");
+            const asharia::archive::ArchiveValue* preview =
+                requiredObjectMember(root, "preview");
+            if (!requiredIntegerMemberEquals(root, "schemaVersion", 1) ||
+                !requiredIntegerMemberEquals(root, "version", 1) ||
+                !requiredStringMemberEquals(root, "state", "PausedFrameDebug") ||
+                captureJson == nullptr || passes == nullptr || resources == nullptr ||
+                events == nullptr || preview == nullptr) {
+                asharia::logError(
+                    "Editor frame debugger smoke wrote an incomplete Studio snapshot root.");
+                return false;
+            }
+            if (!requiredIntegerMemberEquals(*captureJson, "frameIndex", capture.frameIndex) ||
+                !requiredIntegerMemberEquals(
+                    *captureJson, "submittedFrameEpoch",
+                    static_cast<std::int64_t>(capture.submittedFrameEpoch)) ||
+                !requiredStringMemberEquals(*captureJson, "viewKind", "Scene")) {
+                asharia::logError(
+                    "Editor frame debugger smoke wrote an incomplete Studio capture snapshot.");
+                return false;
+            }
+            if (passes->arrayValue.size() != capture.diagnostics.renderGraph.passes.size() ||
+                resources->arrayValue.size() !=
+                    capture.diagnostics.renderGraph.resources.size() ||
+                events->arrayValue.size() != capture.diagnostics.executionEvents.size()) {
+                asharia::logError(
+                    "Editor frame debugger smoke projected unexpected Studio snapshot counts.");
+                return false;
+            }
+            if (!requiredStringMemberEquals(*preview, "status", "Pending") ||
+                !requiredIntegerMemberEquals(
+                    *preview, "sourceResourceIndex",
+                    static_cast<std::int64_t>(
+                        *projectedDebugger.preview().selectedImageResourceIndex))) {
+                asharia::logError(
+                    "Editor frame debugger smoke did not project preview metadata.");
+                return false;
+            }
+            return true;
+        }
+
     } // namespace
 
     [[nodiscard]] bool validateFrameDebuggerSmoke(EditorRunMode mode,
@@ -296,6 +433,9 @@ namespace asharia::editor {
         if (!capturedWorldGridSettings(capture->diagnostics.overlay)) {
             asharia::logError(
                 "Editor frame debugger smoke did not preserve world-grid diagnostics.");
+            return false;
+        }
+        if (!validateStudioFrameDebugSnapshotProjection(*capture)) {
             return false;
         }
         if (frameDebugger.pausedCapture()) {

@@ -95,6 +95,7 @@ add_executable(asharia-editor
     src/editor_extension.cpp
     src/editor_frame_debugger.cpp
     src/editor_frame_debugger_replay.cpp
+    src/editor_frame_debugger_snapshot_projector.cpp
     src/editor_frame_debugger_smoke.cpp
     src/editor_frame_debug_preview.cpp
     src/editor_i18n.cpp

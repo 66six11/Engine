@@ -6,6 +6,7 @@ public enum FrameDebuggerState
     Running,
     CaptureRequested,
     CapturingFrame,
+    WaitingGpuFence,
     PausedFrameDebug,
     ResumeRequested,
     Faulted,
