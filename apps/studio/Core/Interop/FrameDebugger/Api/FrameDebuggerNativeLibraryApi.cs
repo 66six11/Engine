@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace Editor.Core.Interop;
+namespace Editor.Core.Interop.FrameDebugger.Api;
 
 internal sealed class FrameDebuggerNativeLibraryApi : IFrameDebuggerNativeApi
 {

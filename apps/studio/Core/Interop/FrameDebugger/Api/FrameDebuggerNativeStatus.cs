@@ -1,4 +1,4 @@
-namespace Editor.Core.Interop;
+namespace Editor.Core.Interop.FrameDebugger.Api;
 
 internal static class FrameDebuggerNativeStatus
 {

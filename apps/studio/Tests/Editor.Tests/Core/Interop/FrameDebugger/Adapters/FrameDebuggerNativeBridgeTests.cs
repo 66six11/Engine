@@ -1,11 +1,12 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-using Editor.Core.Interop;
+using Editor.Core.Interop.FrameDebugger.Adapters;
+using Editor.Core.Interop.FrameDebugger.Api;
 using Editor.Core.Models.FrameDebug;
 using Xunit;
 
-namespace Editor.Tests.Core.Interop;
+namespace Editor.Tests.Core.Interop.FrameDebugger.Adapters;
 
 public sealed class FrameDebuggerNativeBridgeTests
 {

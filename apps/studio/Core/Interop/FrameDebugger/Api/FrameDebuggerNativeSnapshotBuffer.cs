@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using Editor.Core.Models.FrameDebug;
 
-namespace Editor.Core.Interop;
+namespace Editor.Core.Interop.FrameDebugger.Api;
 
 [StructLayout(LayoutKind.Sequential)]
 internal readonly struct FrameDebuggerNativeSnapshotBuffer

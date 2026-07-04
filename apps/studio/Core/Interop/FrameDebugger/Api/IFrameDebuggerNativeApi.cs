@@ -1,6 +1,6 @@
 using System;
 
-namespace Editor.Core.Interop;
+namespace Editor.Core.Interop.FrameDebugger.Api;
 
 internal interface IFrameDebuggerNativeApi
 {

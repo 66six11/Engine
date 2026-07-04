@@ -2,9 +2,10 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using Editor.Core.Abstractions;
+using Editor.Core.Interop.FrameDebugger.Api;
 using Editor.Core.Models.FrameDebug;
 
-namespace Editor.Core.Interop;
+namespace Editor.Core.Interop.FrameDebugger.Adapters;
 
 public sealed class FrameDebuggerNativeBridge : INativeFrameDebuggerBridge
 {

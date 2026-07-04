@@ -826,6 +826,70 @@ public sealed class StudioLayeringTests
         }
     }
 
+    [Fact]
+    public void Frame_debugger_interop_files_separate_api_contracts_from_adapters()
+    {
+        var root = FindRepositoryRoot();
+        var expectedApiNamespace = "namespace Editor.Core.Interop.FrameDebugger.Api;";
+        var expectedAdapterNamespace = "namespace Editor.Core.Interop.FrameDebugger.Adapters;";
+
+        var apiFiles = new[]
+        {
+            "FrameDebuggerNativeLibraryApi.cs",
+            "FrameDebuggerNativeSnapshotBuffer.cs",
+            "FrameDebuggerNativeStatus.cs",
+            "IFrameDebuggerNativeApi.cs",
+        };
+
+        foreach (var fileName in apiFiles)
+        {
+            var path = Path.Combine(root, "Core", "Interop", "FrameDebugger", "Api", fileName);
+            Assert.True(
+                File.Exists(path),
+                $"{fileName} is a raw native API contract and should live under Core/Interop/FrameDebugger/Api.");
+            Assert.Contains(expectedApiNamespace, File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", fileName)));
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", "FrameDebugger", "Adapters", fileName)));
+        }
+
+        var adapterPath = Path.Combine(
+            root,
+            "Core",
+            "Interop",
+            "FrameDebugger",
+            "Adapters",
+            "FrameDebuggerNativeBridge.cs");
+        Assert.True(
+            File.Exists(adapterPath),
+            "FrameDebuggerNativeBridge implements the managed adapter and should live under Core/Interop/FrameDebugger/Adapters.");
+        Assert.Contains(expectedAdapterNamespace, File.ReadAllText(adapterPath), StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", "FrameDebuggerNativeBridge.cs")));
+
+        var testPath = Path.Combine(
+            root,
+            "Tests",
+            "Editor.Tests",
+            "Core",
+            "Interop",
+            "FrameDebugger",
+            "Adapters",
+            "FrameDebuggerNativeBridgeTests.cs");
+        Assert.True(
+            File.Exists(testPath),
+            "Frame debugger native bridge tests should mirror the adapter folder.");
+        Assert.Contains(
+            "namespace Editor.Tests.Core.Interop.FrameDebugger.Adapters;",
+            File.ReadAllText(testPath),
+            StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(
+            root,
+            "Tests",
+            "Editor.Tests",
+            "Core",
+            "Interop",
+            "FrameDebuggerNativeBridgeTests.cs")));
+    }
+
     private static string FindRepositoryRoot()
     {
         var workspaceRoot = Environment.GetEnvironmentVariable("CODEX_WORKSPACE_ROOT");
