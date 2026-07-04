@@ -1,11 +1,107 @@
 using System;
+using Editor.Core.Abstractions;
 using Editor.Core.Models.FrameDebug;
+using Editor.Core.Services;
 using Xunit;
 
 namespace Editor.Tests.Core;
 
 public sealed class FrameDebuggerSnapshotProviderTests
 {
+    [Fact]
+    public void InMemory_provider_exposes_current_snapshot_and_lookup()
+    {
+        var pass = CreatePass("pass:scene-color", "Scene Color");
+        var executionEvent = CreateExecutionEvent("event:draw", pass.Id, pass.Name);
+        var snapshot = CreateSnapshot([pass], [executionEvent]);
+        IFrameDebuggerSnapshotProvider provider = new InMemoryFrameDebuggerSnapshotProvider(snapshot);
+
+        Assert.Same(snapshot, provider.GetCurrentSnapshot());
+        Assert.True(provider.TryGetPass("pass:scene-color", out var actualPass));
+        Assert.Same(pass, actualPass);
+        Assert.True(provider.TryGetExecutionEvent("event:draw", out var actualEvent));
+        Assert.Same(executionEvent, actualEvent);
+        Assert.False(provider.TryGetPass("pass:missing", out var missingPass));
+        Assert.Null(missingPass);
+        Assert.False(provider.TryGetExecutionEvent("event:missing", out var missingEvent));
+        Assert.Null(missingEvent);
+        Assert.False(provider.TryGetPass(" ", out var blankPass));
+        Assert.Null(blankPass);
+        Assert.False(provider.TryGetExecutionEvent(" ", out var blankEvent));
+        Assert.Null(blankEvent);
+    }
+
+    [Fact]
+    public void InMemory_provider_raises_snapshot_changed_once_when_snapshot_is_replaced()
+    {
+        var provider = new InMemoryFrameDebuggerSnapshotProvider(FrameDebuggerSnapshot.Unavailable);
+        var next = CreateSnapshot([CreatePass("pass:scene-color", "Scene Color")], []);
+        var changeCount = 0;
+        object? eventSender = null;
+        provider.SnapshotChanged += (sender, _) =>
+        {
+            changeCount++;
+            eventSender = sender;
+        };
+
+        provider.ReplaceSnapshot(next);
+
+        Assert.Equal(1, changeCount);
+        Assert.Same(provider, eventSender);
+        Assert.Same(next, provider.GetCurrentSnapshot());
+    }
+
+    [Fact]
+    public void InMemory_provider_rebuilds_lookup_when_snapshot_is_replaced()
+    {
+        var oldPass = CreatePass("pass:old", "Old");
+        var newPass = CreatePass("pass:new", "New");
+        var oldEvent = CreateExecutionEvent("event:old", oldPass.Id, oldPass.Name);
+        var newEvent = CreateExecutionEvent("event:new", newPass.Id, newPass.Name);
+        var provider = new InMemoryFrameDebuggerSnapshotProvider(
+            CreateSnapshot([oldPass], [oldEvent]));
+
+        provider.ReplaceSnapshot(CreateSnapshot([newPass], [newEvent]));
+
+        Assert.False(provider.TryGetPass("pass:old", out var missingPass));
+        Assert.Null(missingPass);
+        Assert.True(provider.TryGetPass("pass:new", out var actualPass));
+        Assert.Same(newPass, actualPass);
+        Assert.False(provider.TryGetExecutionEvent("event:old", out var missingEvent));
+        Assert.Null(missingEvent);
+        Assert.True(provider.TryGetExecutionEvent("event:new", out var actualEvent));
+        Assert.Same(newEvent, actualEvent);
+    }
+
+    [Fact]
+    public void InMemory_provider_rejects_duplicate_pass_ids()
+    {
+        var first = CreatePass("pass:duplicate", "First");
+        var second = CreatePass("pass:duplicate", "Second");
+        var snapshot = CreateSnapshot([first, second], []);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => new InMemoryFrameDebuggerSnapshotProvider(snapshot));
+
+        Assert.Contains("pass:duplicate", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InMemory_provider_rejects_duplicate_event_ids_when_snapshot_is_replaced()
+    {
+        var pass = CreatePass("pass:scene-color", "Scene Color");
+        var provider = new InMemoryFrameDebuggerSnapshotProvider(FrameDebuggerSnapshot.Unavailable);
+        var first = CreateExecutionEvent("event:duplicate", pass.Id, pass.Name);
+        var second = CreateExecutionEvent("event:duplicate", pass.Id, pass.Name);
+        var snapshot = CreateSnapshot([pass], [first, second]);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => provider.ReplaceSnapshot(snapshot));
+
+        Assert.Contains("event:duplicate", exception.Message, StringComparison.Ordinal);
+        Assert.Same(FrameDebuggerSnapshot.Unavailable, provider.GetCurrentSnapshot());
+    }
+
     [Fact]
     public void Snapshot_copies_collections_to_read_only_lists()
     {
@@ -189,5 +285,57 @@ public sealed class FrameDebuggerSnapshotProviderTests
         Assert.Empty(snapshot.Transitions);
         Assert.Empty(snapshot.ExecutionEvents);
         Assert.Contains("unavailable", snapshot.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static FrameDebuggerSnapshot CreateSnapshot(
+        FrameDebugPassSnapshot[] passes,
+        FrameDebugExecutionEventSnapshot[] executionEvents)
+    {
+        return new FrameDebuggerSnapshot(
+            1,
+            FrameDebuggerState.PausedFrameDebug,
+            capture: null,
+            passes: passes,
+            executionEvents: executionEvents,
+            message: "Captured frame.");
+    }
+
+    private static FrameDebugPassSnapshot CreatePass(string id, string name)
+    {
+        return new FrameDebugPassSnapshot(
+            id,
+            PassIndex: 0,
+            DeclarationIndex: 0,
+            name,
+            "Raster",
+            "BasicRenderView",
+            AllowCulling: true,
+            HasSideEffects: false,
+            CommandCount: 1,
+            ImageTransitionCount: 0,
+            BufferTransitionCount: 0);
+    }
+
+    private static FrameDebugExecutionEventSnapshot CreateExecutionEvent(
+        string id,
+        string passId,
+        string passName)
+    {
+        return new FrameDebugExecutionEventSnapshot(
+            id,
+            EventIndex: 0,
+            "Draw",
+            passId,
+            passName,
+            CommandId: null,
+            "Draw scene color",
+            SourceResourceId: null,
+            TargetResourceId: null,
+            VertexCount: 3,
+            IndexCount: 0,
+            InstanceCount: 1,
+            GroupCountX: 0,
+            GroupCountY: 0,
+            GroupCountZ: 0);
     }
 }
