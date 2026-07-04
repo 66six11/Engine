@@ -8,13 +8,17 @@ public sealed record EditorDialogResult(EditorDialogResultKind Kind, string? But
     {
         ArgumentNullException.ThrowIfNull(button);
 
-        return button.Role switch
+        if (button.Role == EditorDialogButtonRole.Accept)
         {
-            EditorDialogButtonRole.Accept => new EditorDialogResult(EditorDialogResultKind.Accepted, button.Id),
-            EditorDialogButtonRole.Reject => new EditorDialogResult(EditorDialogResultKind.Rejected, button.Id),
-            EditorDialogButtonRole.Cancel => new EditorDialogResult(EditorDialogResultKind.Canceled, button.Id),
-            _ => new EditorDialogResult(EditorDialogResultKind.Canceled, button.Id),
-        };
+            return new EditorDialogResult(EditorDialogResultKind.Accepted, button.Id);
+        }
+
+        if (button.Role == EditorDialogButtonRole.Reject)
+        {
+            return new EditorDialogResult(EditorDialogResultKind.Rejected, button.Id);
+        }
+
+        return new EditorDialogResult(EditorDialogResultKind.Canceled, button.Id);
     }
 
     public static EditorDialogResult Canceled()

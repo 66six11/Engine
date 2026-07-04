@@ -1,10 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Editor.Core.Models;
 using Editor.Core.Models.Diagnostics;
+using Editor.Core.CodeFirstUI.Models;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Building;
 
 public sealed class GuiFrameBuilder
 {
@@ -698,9 +698,12 @@ public sealed class GuiFrameBuilder
 
     private void PopScope(MutableGuiNode expectedNode)
     {
-        if (nodeStack_.Count <= 1 || !ReferenceEquals(nodeStack_.Peek(), expectedNode))
+        var actualNode = nodeStack_.Count > 0 ? nodeStack_.Peek() : null;
+        if (nodeStack_.Count <= 1 || !ReferenceEquals(actualNode, expectedNode))
         {
-            throw new InvalidOperationException("GUI scope disposal order does not match creation order.");
+            var actualKeyPath = actualNode?.Id.KeyPath ?? "<none>";
+            throw new InvalidOperationException(
+                $"GUI scope disposal order does not match creation order. Expected '{expectedNode.Id.KeyPath}', actual '{actualKeyPath}'.");
         }
 
         nodeStack_.Pop();

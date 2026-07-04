@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Services;
 using Editor.UI.ViewModels;

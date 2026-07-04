@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using Editor.Core.Models;
 using Editor.Core.Models.Diagnostics;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Models;
 
 public sealed record GuiNodePayload
 {

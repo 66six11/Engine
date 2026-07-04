@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Services;
 using Editor.UI.ViewModels;

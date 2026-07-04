@@ -1,5 +1,4 @@
-using System.Collections.ObjectModel;
-using Editor.Core.Models;
+﻿using System.Collections.ObjectModel;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.UI.ViewModels;

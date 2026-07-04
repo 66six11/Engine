@@ -1,9 +1,8 @@
-using System;
-using Editor.Core.Models;
+﻿using System;
 using Editor.Core.Models.Workbench;
 using Xunit;
 
-namespace Editor.Tests.CoreContracts;
+namespace Editor.Tests.Core;
 
 public sealed class EditorCommandFeedbackSnapshotTests
 {

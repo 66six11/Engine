@@ -1,6 +1,7 @@
-using System;
+﻿using System;
+using Editor.Core.CodeFirstUI.Models;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Authoring;
 
 public sealed record GuiNavigationPage
 {

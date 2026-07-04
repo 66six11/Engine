@@ -1,5 +1,4 @@
 ﻿using System.Linq;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Scene;
@@ -11,7 +10,7 @@ using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
-using Editor.Shell.CodeFirstUI;
+using Editor.Shell.CodeFirstUI.Hosting;
 using Editor.Shell.Composition;
 using Editor.UI.Icons;
 using Editor.Shell.Selection;
@@ -86,6 +85,17 @@ public sealed class WorkbenchFeatureModuleTests
                     "validation queue",
                     "0"),
                 new PanelDescriptorSnapshot(
+                    "frame-debugger",
+                    "Frame Debugger",
+                    PanelKind.Tool,
+                    DockArea.Right,
+                    "Window/Panels/Frame Debugger",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelFrameDebugger,
+                    "DEBUG",
+                    "read-only snapshot",
+                    "snapshot"),
+                new PanelDescriptorSnapshot(
                     "ui-style",
                     "UI Style",
                     PanelKind.Tool,
@@ -105,6 +115,7 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.IsType<ConsolePanelViewModel>(descriptors[3].CreateContent());
         Assert.IsType<ProblemsPanelViewModel>(descriptors[4].CreateContent());
         Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[5].CreateContent());
+        Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[6].CreateContent());
     }
 
     [Fact]
@@ -176,6 +187,15 @@ public sealed class WorkbenchFeatureModuleTests
                     IconKey: EditorIconKey.PanelProblems,
                     Category: "Window",
                     SearchText: "validation diagnostics"),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.frame-debugger",
+                    "Frame Debugger",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Frame Debugger",
+                    TargetId: "frame-debugger",
+                    IconKey: EditorIconKey.PanelFrameDebugger,
+                    Category: "Window",
+                    SearchText: "frame debugger render graph pass snapshot"),
                 new WorkbenchActionDescriptor(
                     "workbench.panel.ui-style",
                     "UI Style",
@@ -285,6 +305,7 @@ public sealed class WorkbenchFeatureModuleTests
             descriptor.StatusText);
     }
 
+    // ReSharper disable NotAccessedPositionalProperty.Local
     private sealed record PanelDescriptorSnapshot(
         string Id,
         string Title,
@@ -296,4 +317,5 @@ public sealed class WorkbenchFeatureModuleTests
         string? Tag,
         string? TitleDetail,
         string? StatusText);
+    // ReSharper restore NotAccessedPositionalProperty.Local
 }

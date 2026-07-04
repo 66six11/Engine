@@ -1,7 +1,7 @@
-using Editor.Core.Models;
-using Editor.Core.Models.Panels;
+﻿using Editor.Core.Models.Panels;
+using Editor.Core.CodeFirstUI.Authoring;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Abstractions;
 
 public abstract class CodeFirstEditorPanel
 {

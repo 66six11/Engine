@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Workbench;
@@ -169,10 +168,10 @@ public sealed class MainWindowViewModelTests
         var viewModel = CreateMainWindowViewModel();
 
         Assert.Equal(
-            ["scene-view", "hierarchy", "inspector", "console", "problems", "ui-style"],
+            ["scene-view", "hierarchy", "inspector", "console", "problems", "frame-debugger", "ui-style"],
             viewModel.PanelMenuItems.Select(item => item.PanelId));
         Assert.Equal(
-            ["Scene View", "Hierarchy", "Inspector", "Console", "Problems", "UI Style"],
+            ["Scene View", "Hierarchy", "Inspector", "Console", "Problems", "Frame Debugger", "UI Style"],
             viewModel.PanelMenuItems.Select(item => item.Header));
     }
 

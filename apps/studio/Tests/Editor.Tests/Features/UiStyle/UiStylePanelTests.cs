@@ -1,9 +1,8 @@
-using Editor.Core.CodeFirstUI;
-using Editor.Core.Models;
+﻿using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Diagnostics;
 using Editor.Features.UiStyle;
-using Editor.Shell.CodeFirstUI;
+using Editor.Shell.CodeFirstUI.Hosting;
 using Xunit;
 
 namespace Editor.Tests.Features.UiStyle;
@@ -110,7 +109,7 @@ public sealed class UiStylePanelTests
         Assert.Equal(0.75d, slider.Payload.NumericValue);
         Assert.Equal(2d, slider.Payload.NumericMaximum);
         var colorField = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.ColorField);
-        Assert.Equal(new GuiColorValue(128, 160, 255, 255), colorField.Payload.ColorValue);
+        Assert.Equal(new GuiColorValue(128, 160, 255), colorField.Payload.ColorValue);
         Assert.True(colorField.Payload.ShowAlpha);
         var vector2Field = Assert.Single(navigation.Children, child => child.Kind == GuiNodeKind.Vector2Field);
         Assert.Equal(new GuiVector2Value(1d, 1d), vector2Field.Payload.Vector2Value);

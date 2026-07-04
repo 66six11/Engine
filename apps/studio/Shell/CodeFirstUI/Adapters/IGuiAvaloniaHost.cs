@@ -1,4 +1,4 @@
-using Editor.Core.CodeFirstUI;
+﻿using Editor.Core.CodeFirstUI.Models;
 
 namespace Editor.Shell.CodeFirstUI.Adapters;
 

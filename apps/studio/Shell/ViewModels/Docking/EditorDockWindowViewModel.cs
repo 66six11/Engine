@@ -1,6 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.UI.ViewModels;
 

@@ -1,5 +1,4 @@
-using Editor.Core.Models;
-using Editor.Core.Models.Panels;
+﻿using Editor.Core.Models.Panels;
 using Editor.Core.Models.Scene;
 using Editor.Core.Models.Workbench;
 

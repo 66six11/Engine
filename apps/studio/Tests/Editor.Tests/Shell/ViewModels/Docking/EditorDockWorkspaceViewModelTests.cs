@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Scene;
 using Editor.Core.Services;
@@ -13,7 +12,6 @@ using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Docking.Panels;
 using Editor.Shell.Selection;
-using Editor.Shell.Services;
 using Editor.Shell.ViewModels.Docking;
 using Xunit;
 

@@ -1,5 +1,6 @@
-using Editor.Core.CodeFirstUI;
-using Editor.Shell.CodeFirstUI;
+﻿using Editor.Core.CodeFirstUI.Abstractions;
+using Editor.Core.CodeFirstUI.Authoring;
+using Editor.Shell.CodeFirstUI.Hosting;
 using Editor.Shell.CodeFirstUI.Views;
 using Xunit;
 

@@ -1,7 +1,8 @@
-using Editor.Core.CodeFirstUI;
+﻿using Editor.Core.CodeFirstUI.Models;
+using Editor.Core.CodeFirstUI.State;
 using Xunit;
 
-namespace Editor.Tests.Core.CodeFirstUI;
+namespace Editor.Tests.Core.CodeFirstUI.State;
 
 public sealed class GuiStateStoreTests
 {

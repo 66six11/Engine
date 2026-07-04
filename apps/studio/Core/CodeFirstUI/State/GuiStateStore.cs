@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using Editor.Core.CodeFirstUI.Models;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.State;
 
 public sealed class GuiStateStore
 {

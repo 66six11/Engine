@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
 using Xunit;

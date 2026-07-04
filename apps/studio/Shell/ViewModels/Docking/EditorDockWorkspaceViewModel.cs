@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.Layout;

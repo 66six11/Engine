@@ -1,7 +1,8 @@
-using Editor.Core.CodeFirstUI;
+﻿using Editor.Core.CodeFirstUI.Events;
+using Editor.Core.CodeFirstUI.Models;
 using Xunit;
 
-namespace Editor.Tests.Core.CodeFirstUI;
+namespace Editor.Tests.Core.CodeFirstUI.Events;
 
 public sealed class GuiEventQueueTests
 {

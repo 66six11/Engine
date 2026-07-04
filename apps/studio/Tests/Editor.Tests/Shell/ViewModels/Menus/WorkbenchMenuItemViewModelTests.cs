@@ -1,5 +1,4 @@
-﻿using Editor.Core.Models;
-using Editor.UI.Icons;
+﻿using Editor.UI.Icons;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.ViewModels.Menus;
 using Xunit;

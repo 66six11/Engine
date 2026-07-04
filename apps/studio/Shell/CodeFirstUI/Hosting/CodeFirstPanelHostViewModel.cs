@@ -1,13 +1,18 @@
-using System;
+﻿using System;
 using Editor.Core.Abstractions;
-using Editor.Core.CodeFirstUI;
-using Editor.Core.Models;
+using Editor.Core.CodeFirstUI.Abstractions;
+using Editor.Core.CodeFirstUI.Authoring;
+using Editor.Core.CodeFirstUI.Building;
+using Editor.Core.CodeFirstUI.Events;
+using Editor.Core.CodeFirstUI.Models;
+using Editor.Core.CodeFirstUI.State;
+using Editor.Core.CodeFirstUI.Validation;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.CodeFirstUI.Adapters;
 using Editor.UI.ViewModels;
 
-namespace Editor.Shell.CodeFirstUI;
+namespace Editor.Shell.CodeFirstUI.Hosting;
 
 internal sealed class CodeFirstPanelHostViewModel :
     ViewModelBase,
@@ -264,12 +269,12 @@ internal sealed class CodeFirstPanelHostViewModel :
         ThrowIfDisposed();
 
         if (stateStore_.TryGetText(nodeId, out var currentText)
-            && string.Equals(currentText, text ?? string.Empty, StringComparison.Ordinal))
+            && string.Equals(currentText, text, StringComparison.Ordinal))
         {
             return;
         }
 
-        stateStore_.SetText(nodeId, text ?? string.Empty);
+        stateStore_.SetText(nodeId, text);
     }
 
     internal void CommitText(GuiNodeId nodeId, string text)
@@ -278,12 +283,12 @@ internal sealed class CodeFirstPanelHostViewModel :
         ThrowIfDisposed();
 
         if (stateStore_.TryGetText(nodeId, out var currentText)
-            && string.Equals(currentText, text ?? string.Empty, StringComparison.Ordinal))
+            && string.Equals(currentText, text, StringComparison.Ordinal))
         {
             return;
         }
 
-        stateStore_.SetText(nodeId, text ?? string.Empty);
+        stateStore_.SetText(nodeId, text);
         RequestRebuild(GuiRebuildReason.InputEvent);
     }
 

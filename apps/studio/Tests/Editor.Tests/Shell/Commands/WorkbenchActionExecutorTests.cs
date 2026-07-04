@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;

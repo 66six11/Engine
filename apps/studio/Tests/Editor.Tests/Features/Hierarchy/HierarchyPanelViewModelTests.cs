@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Scene;
-using Editor.Core.Models.Selection;
 using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
 using Editor.Features.Hierarchy.ViewModels;

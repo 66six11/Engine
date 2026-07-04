@@ -1,5 +1,4 @@
-using Avalonia;
-using Editor.Core.Models;
+﻿using Avalonia;
 using Editor.Core.Models.Panels;
 
 namespace Editor.Shell.Docking.DropTargets;

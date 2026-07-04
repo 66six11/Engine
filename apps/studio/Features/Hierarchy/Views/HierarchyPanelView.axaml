@@ -33,6 +33,45 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
+        <Style Selector="ListBox.hierarchy-list">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="Grid.hierarchy-row">
+            <Setter Property="ColumnSpacing" Value="0" />
+            <Setter Property="Height" Value="20" />
+        </Style>
+
+        <Style Selector="controls|IconButton.hierarchy-expander">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="icons|EditorIconView.hierarchy-node-icon">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-node-title">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-node-kind">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-empty">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+
     </UserControl.Styles>
 
     <Border Background="{DynamicResource EditorBrushBase00}">
