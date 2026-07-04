@@ -813,3 +813,11 @@ Tests/Editor.Tests/Features
 - `Core/Services/InMemoryFrameDebuggerSnapshotProvider.cs` is a fixture/test publication seam only; native adapters must publish through the contract later instead of leaking Vulkan or C++ objects into UI.
 - `Features/FrameDebugger/FrameDebuggerPanel.cs` is a Code-first, read-only panel. It may render snapshots and publish diagnostics, but it must not call native ABI, P/Invoke, Vulkan handles, or renderer objects.
 - `Features/Workbench/WorkbenchFeatureModule.cs` may create the fixture-backed provider and register the built-in panel as part of built-in composition wiring.
+
+## 2026-07-04 Frame Debugger editor_native ABI v0 classification
+
+- `apps/editor` owns the `editor-native` shared library target because it already owns the C++ editor Frame Debugger state, replay model, and snapshot projection.
+- `apps/editor/src/native_bridge` owns exported C ABI entrypoints, ABI structs, result codes, and native-owned buffer release functions.
+- `apps/editor/src/editor_frame_debugger_snapshot_projector.*` owns backend-neutral snapshot JSON projection shared by the editor smoke and native ABI bridge.
+- `apps/editor/src/native_bridge/frame_debugger_native_smoke.*` owns CLI smoke coverage for ABI header/version, explicit UTF-8 byte lengths, native-owned snapshot release, and CPU-only command forwarding.
+- The native ABI v0 is CPU-only. It must not create a Vulkan surface, expose renderer handles, or make Avalonia/Studio own swapchain or GPU resource lifetime.

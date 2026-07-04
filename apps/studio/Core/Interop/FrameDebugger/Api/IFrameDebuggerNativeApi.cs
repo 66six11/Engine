@@ -4,13 +4,13 @@ namespace Editor.Core.Interop.FrameDebugger.Api;
 
 internal interface IFrameDebuggerNativeApi
 {
-    int AcquireSnapshot(out FrameDebuggerNativeSnapshotBuffer snapshot);
+    uint AcquireSnapshot(ref FrameDebuggerNativeSnapshotBuffer snapshot);
 
     void ReleaseSnapshot(FrameDebuggerNativeSnapshotBuffer snapshot);
 
-    int RequestCapture();
+    uint RequestCapture();
 
-    int RequestResume();
+    uint RequestResume();
 
-    int SelectExecutionEvent(IntPtr executionEventIdUtf8);
+    uint SelectExecutionEvent(FrameDebuggerNativeStringView executionEventIdUtf8);
 }

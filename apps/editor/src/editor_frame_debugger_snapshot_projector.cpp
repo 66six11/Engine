@@ -529,8 +529,7 @@ namespace asharia::editor {
 
     } // namespace
 
-    Result<std::string>
-    writeStudioFrameDebuggerSnapshotJson(const EditorFrameDebugger& frameDebugger) {
+    Result<std::string> writeFrameDebuggerSnapshotJson(const EditorFrameDebugger& frameDebugger) {
         const std::optional<EditorFrameDebugCapture>& paused = frameDebugger.pausedCapture();
         const std::optional<EditorFrameDebugCapture>& latest = frameDebugger.latestCapture();
         const EditorFrameDebugCapture* capture = nullptr;
@@ -541,5 +540,10 @@ namespace asharia::editor {
         }
 
         return archive::writeJsonArchive(snapshotValue(frameDebugger, capture));
+    }
+
+    Result<std::string>
+    writeStudioFrameDebuggerSnapshotJson(const EditorFrameDebugger& frameDebugger) {
+        return writeFrameDebuggerSnapshotJson(frameDebugger);
     }
 } // namespace asharia::editor

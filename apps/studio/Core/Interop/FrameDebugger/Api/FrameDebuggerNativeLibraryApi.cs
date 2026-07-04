@@ -11,9 +11,9 @@ internal sealed class FrameDebuggerNativeLibraryApi : IFrameDebuggerNativeApi
     {
     }
 
-    public int AcquireSnapshot(out FrameDebuggerNativeSnapshotBuffer snapshot)
+    public uint AcquireSnapshot(ref FrameDebuggerNativeSnapshotBuffer snapshot)
     {
-        return FrameDebuggerNativeEntryPoints.AcquireSnapshot(out snapshot);
+        return FrameDebuggerNativeEntryPoints.AcquireSnapshot(ref snapshot);
     }
 
     public void ReleaseSnapshot(FrameDebuggerNativeSnapshotBuffer snapshot)
@@ -21,17 +21,17 @@ internal sealed class FrameDebuggerNativeLibraryApi : IFrameDebuggerNativeApi
         FrameDebuggerNativeEntryPoints.ReleaseSnapshot(snapshot);
     }
 
-    public int RequestCapture()
+    public uint RequestCapture()
     {
         return FrameDebuggerNativeEntryPoints.RequestCapture();
     }
 
-    public int RequestResume()
+    public uint RequestResume()
     {
         return FrameDebuggerNativeEntryPoints.RequestResume();
     }
 
-    public int SelectExecutionEvent(IntPtr executionEventIdUtf8)
+    public uint SelectExecutionEvent(FrameDebuggerNativeStringView executionEventIdUtf8)
     {
         return FrameDebuggerNativeEntryPoints.SelectExecutionEvent(executionEventIdUtf8);
     }
@@ -42,17 +42,17 @@ internal static partial class FrameDebuggerNativeEntryPoints
     private const string LibraryName = "editor_native";
 
     [LibraryImport(LibraryName, EntryPoint = "editor_frame_debugger_acquire_snapshot")]
-    internal static partial int AcquireSnapshot(out FrameDebuggerNativeSnapshotBuffer snapshot);
+    internal static partial uint AcquireSnapshot(ref FrameDebuggerNativeSnapshotBuffer snapshot);
 
     [LibraryImport(LibraryName, EntryPoint = "editor_frame_debugger_release_snapshot")]
     internal static partial void ReleaseSnapshot(FrameDebuggerNativeSnapshotBuffer snapshot);
 
     [LibraryImport(LibraryName, EntryPoint = "editor_frame_debugger_request_capture")]
-    internal static partial int RequestCapture();
+    internal static partial uint RequestCapture();
 
     [LibraryImport(LibraryName, EntryPoint = "editor_frame_debugger_request_resume")]
-    internal static partial int RequestResume();
+    internal static partial uint RequestResume();
 
     [LibraryImport(LibraryName, EntryPoint = "editor_frame_debugger_select_execution_event")]
-    internal static partial int SelectExecutionEvent(IntPtr executionEventIdUtf8);
+    internal static partial uint SelectExecutionEvent(FrameDebuggerNativeStringView executionEventIdUtf8);
 }

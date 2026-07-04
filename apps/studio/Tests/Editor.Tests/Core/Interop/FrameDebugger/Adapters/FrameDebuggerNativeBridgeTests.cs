@@ -27,7 +27,9 @@ public sealed class FrameDebuggerNativeBridgeTests
         Assert.Equal(NativeFrameDebuggerSnapshotFormat.JsonUtf8, payload.Format);
         Assert.Equal(expectedBytes, payload.Bytes.ToArray());
         Assert.Equal(1, api.ReleaseSnapshotCalls);
-        Assert.Equal((ulong)expectedBytes.Length, api.LastReleasedSnapshot.ByteLength.ToUInt64());
+        Assert.Equal((ulong)expectedBytes.Length, api.LastReleasedSnapshot.ByteLength);
+        Assert.Equal(FrameDebuggerNativeSnapshotBuffer.ExpectedAbiVersion, api.LastAcquireAbiVersion);
+        Assert.Equal(FrameDebuggerNativeSnapshotBuffer.CurrentStructSize, api.LastAcquireStructSize);
     }
 
     [Fact]
@@ -37,6 +39,23 @@ public sealed class FrameDebuggerNativeBridgeTests
         {
             SnapshotBytes = Encoding.UTF8.GetBytes("unsupported"),
             SnapshotFormat = (NativeFrameDebuggerSnapshotFormat)99,
+        };
+        var bridge = new FrameDebuggerNativeBridge(api);
+
+        Assert.False(bridge.TryAcquireSnapshot(out var payload));
+
+        Assert.Null(payload);
+        Assert.Equal(1, api.ReleaseSnapshotCalls);
+    }
+
+    [Fact]
+    public void TryAcquireSnapshot_releases_native_buffer_when_abi_header_is_unsupported()
+    {
+        using var api = new StubFrameDebuggerNativeApi
+        {
+            SnapshotBytes = Encoding.UTF8.GetBytes("""{"schemaVersion":1}"""),
+            SnapshotFormat = NativeFrameDebuggerSnapshotFormat.JsonUtf8,
+            SnapshotAbiVersion = 99,
         };
         var bridge = new FrameDebuggerNativeBridge(api);
 
@@ -63,7 +82,7 @@ public sealed class FrameDebuggerNativeBridgeTests
     }
 
     [Fact]
-    public void SelectExecutionEvent_sends_utf8_null_terminated_identifier()
+    public void SelectExecutionEvent_sends_utf8_identifier_with_explicit_byte_length()
     {
         using var api = new StubFrameDebuggerNativeApi();
         var bridge = new FrameDebuggerNativeBridge(api);
@@ -71,7 +90,7 @@ public sealed class FrameDebuggerNativeBridgeTests
         Assert.True(bridge.SelectExecutionEvent("event:draw-7"));
 
         Assert.Equal("event:draw-7", api.SelectedExecutionEventId);
-        Assert.True(api.SelectedExecutionEventWasNullTerminated);
+        Assert.Equal((ulong)Encoding.UTF8.GetByteCount("event:draw-7"), api.SelectedExecutionEventByteLength);
     }
 
     [Fact]
@@ -108,11 +127,17 @@ public sealed class FrameDebuggerNativeBridgeTests
         public NativeFrameDebuggerSnapshotFormat SnapshotFormat { get; init; } =
             NativeFrameDebuggerSnapshotFormat.JsonUtf8;
 
-        public int AcquireSnapshotResult { get; init; } = FrameDebuggerNativeStatus.Success;
+        public uint SnapshotAbiVersion { get; init; } =
+            FrameDebuggerNativeSnapshotBuffer.ExpectedAbiVersion;
 
-        public int RequestCaptureResult { get; init; } = FrameDebuggerNativeStatus.Success;
+        public uint SnapshotStructSize { get; init; } =
+            FrameDebuggerNativeSnapshotBuffer.CurrentStructSize;
 
-        public int RequestResumeResult { get; init; } = FrameDebuggerNativeStatus.Success;
+        public uint AcquireSnapshotResult { get; init; } = FrameDebuggerNativeStatus.Success;
+
+        public uint RequestCaptureResult { get; init; } = FrameDebuggerNativeStatus.Success;
+
+        public uint RequestResumeResult { get; init; } = FrameDebuggerNativeStatus.Success;
 
         public int ReleaseSnapshotCalls { get; private set; }
 
@@ -120,12 +145,19 @@ public sealed class FrameDebuggerNativeBridgeTests
 
         public string? SelectedExecutionEventId { get; private set; }
 
-        public bool SelectedExecutionEventWasNullTerminated { get; private set; }
+        public ulong SelectedExecutionEventByteLength { get; private set; }
 
         public FrameDebuggerNativeSnapshotBuffer LastReleasedSnapshot { get; private set; }
 
-        public int AcquireSnapshot(out FrameDebuggerNativeSnapshotBuffer snapshot)
+        public uint LastAcquireAbiVersion { get; private set; }
+
+        public uint LastAcquireStructSize { get; private set; }
+
+        public uint AcquireSnapshot(ref FrameDebuggerNativeSnapshotBuffer snapshot)
         {
+            LastAcquireAbiVersion = snapshot.AbiVersion;
+            LastAcquireStructSize = snapshot.StructSize;
+
             if (AcquireSnapshotResult != FrameDebuggerNativeStatus.Success)
             {
                 snapshot = default;
@@ -141,8 +173,10 @@ public sealed class FrameDebuggerNativeBridgeTests
             if (SnapshotBytes.Length == 0)
             {
                 snapshot = new FrameDebuggerNativeSnapshotBuffer(
+                    SnapshotAbiVersion,
+                    SnapshotStructSize,
                     IntPtr.Zero,
-                    UIntPtr.Zero,
+                    0UL,
                     SnapshotFormat);
                 return FrameDebuggerNativeStatus.Success;
             }
@@ -150,8 +184,10 @@ public sealed class FrameDebuggerNativeBridgeTests
             allocatedSnapshot_ = Marshal.AllocHGlobal(SnapshotBytes.Length);
             Marshal.Copy(SnapshotBytes, 0, allocatedSnapshot_, SnapshotBytes.Length);
             snapshot = new FrameDebuggerNativeSnapshotBuffer(
+                SnapshotAbiVersion,
+                SnapshotStructSize,
                 allocatedSnapshot_,
-                (UIntPtr)SnapshotBytes.Length,
+                (ulong)SnapshotBytes.Length,
                 SnapshotFormat);
             return FrameDebuggerNativeStatus.Success;
         }
@@ -170,23 +206,23 @@ public sealed class FrameDebuggerNativeBridgeTests
             }
         }
 
-        public int RequestCapture()
+        public uint RequestCapture()
         {
             return RequestCaptureResult;
         }
 
-        public int RequestResume()
+        public uint RequestResume()
         {
             return RequestResumeResult;
         }
 
-        public int SelectExecutionEvent(IntPtr executionEventIdUtf8)
+        public uint SelectExecutionEvent(FrameDebuggerNativeStringView executionEventIdUtf8)
         {
             SelectExecutionEventCalls++;
-            SelectedExecutionEventId = Marshal.PtrToStringUTF8(executionEventIdUtf8);
-            var byteLength = Encoding.UTF8.GetByteCount(SelectedExecutionEventId ?? string.Empty);
-            SelectedExecutionEventWasNullTerminated =
-                Marshal.ReadByte(executionEventIdUtf8, byteLength) == 0;
+            SelectedExecutionEventByteLength = executionEventIdUtf8.ByteLength;
+            var bytes = new byte[checked((int)executionEventIdUtf8.ByteLength)];
+            Marshal.Copy(executionEventIdUtf8.Data, bytes, 0, bytes.Length);
+            SelectedExecutionEventId = Encoding.UTF8.GetString(bytes);
             return FrameDebuggerNativeStatus.Success;
         }
 

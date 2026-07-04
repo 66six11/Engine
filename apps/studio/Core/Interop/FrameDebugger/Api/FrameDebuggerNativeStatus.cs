@@ -2,11 +2,13 @@ namespace Editor.Core.Interop.FrameDebugger.Api;
 
 internal static class FrameDebuggerNativeStatus
 {
-    public const int Failure = -1;
-    public const int Unavailable = 0;
-    public const int Success = 1;
+    public const uint Success = 0;
+    public const uint InvalidArgument = 1;
+    public const uint Unavailable = 2;
+    public const uint UnsupportedAbi = 3;
+    public const uint InternalError = 4;
 
-    public static bool IsSuccess(int status)
+    public static bool IsSuccess(uint status)
     {
         return status == Success;
     }

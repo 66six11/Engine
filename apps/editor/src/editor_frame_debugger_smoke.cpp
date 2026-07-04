@@ -257,7 +257,7 @@ namespace asharia::editor {
                 return false;
             }
 
-            auto json = writeStudioFrameDebuggerSnapshotJson(projectedDebugger);
+            auto json = writeFrameDebuggerSnapshotJson(projectedDebugger);
             if (!json) {
                 asharia::logError("Editor frame debugger smoke could not write Studio snapshot.");
                 return false;

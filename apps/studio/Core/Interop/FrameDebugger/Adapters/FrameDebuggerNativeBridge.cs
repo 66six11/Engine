@@ -26,7 +26,8 @@ public sealed class FrameDebuggerNativeBridge : INativeFrameDebuggerBridge
     public bool TryAcquireSnapshot(out NativeFrameDebuggerSnapshotPayload? payload)
     {
         payload = null;
-        if (!FrameDebuggerNativeStatus.IsSuccess(api_.AcquireSnapshot(out var snapshot)))
+        var snapshot = FrameDebuggerNativeSnapshotBuffer.CreateForCall();
+        if (!FrameDebuggerNativeStatus.IsSuccess(api_.AcquireSnapshot(ref snapshot)))
         {
             return false;
         }
@@ -67,12 +68,16 @@ public sealed class FrameDebuggerNativeBridge : INativeFrameDebuggerBridge
             return false;
         }
 
-        var executionEventIdUtf8 = CreateNullTerminatedUtf8(executionEventId);
+        var executionEventIdUtf8 = Encoding.UTF8.GetBytes(executionEventId);
         var nativeBytes = Marshal.AllocHGlobal(executionEventIdUtf8.Length);
         try
         {
             Marshal.Copy(executionEventIdUtf8, 0, nativeBytes, executionEventIdUtf8.Length);
-            return FrameDebuggerNativeStatus.IsSuccess(api_.SelectExecutionEvent(nativeBytes));
+            return FrameDebuggerNativeStatus.IsSuccess(
+                api_.SelectExecutionEvent(
+                    new FrameDebuggerNativeStringView(
+                        nativeBytes,
+                        checked((ulong)executionEventIdUtf8.Length))));
         }
         finally
         {
@@ -85,29 +90,21 @@ public sealed class FrameDebuggerNativeBridge : INativeFrameDebuggerBridge
         out byte[] bytes)
     {
         bytes = [];
-        if (snapshot.Data == IntPtr.Zero ||
-            snapshot.ByteLength == UIntPtr.Zero ||
+        if (!snapshot.HasSupportedHeader ||
+            snapshot.Data == IntPtr.Zero ||
+            snapshot.ByteLength == 0UL ||
             snapshot.Format != NativeFrameDebuggerSnapshotFormat.JsonUtf8)
         {
             return false;
         }
 
-        var byteLength = snapshot.ByteLength.ToUInt64();
-        if (byteLength > int.MaxValue)
+        if (snapshot.ByteLength > int.MaxValue)
         {
             return false;
         }
 
-        bytes = new byte[(int)byteLength];
+        bytes = new byte[(int)snapshot.ByteLength];
         Marshal.Copy(snapshot.Data, bytes, 0, bytes.Length);
         return true;
-    }
-
-    private static byte[] CreateNullTerminatedUtf8(string value)
-    {
-        var byteCount = Encoding.UTF8.GetByteCount(value);
-        var bytes = new byte[byteCount + 1];
-        Encoding.UTF8.GetBytes(value, 0, value.Length, bytes, 0);
-        return bytes;
     }
 }
