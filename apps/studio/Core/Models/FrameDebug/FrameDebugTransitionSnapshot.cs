@@ -7,8 +7,8 @@ public sealed record FrameDebugTransitionSnapshot(
     string ResourceId,
     string PassName,
     string ResourceName,
-    string OldAccess,
-    string NewAccess)
+    string? OldAccess,
+    string? NewAccess)
 {
     public string Id { get; init; } = FrameDebugModelGuard.Require(
         Id,

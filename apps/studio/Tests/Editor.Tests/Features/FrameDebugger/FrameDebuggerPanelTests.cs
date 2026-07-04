@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 using System.Linq;
-using Editor.Core.CodeFirstUI;
+using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.FrameDebug;
 using Editor.Core.Models.Panels;
 using Editor.Core.Services;
 using Editor.Features.FrameDebugger;
-using Editor.Shell.CodeFirstUI;
+using Editor.Shell.CodeFirstUI.Hosting;
 using Xunit;
 
 namespace Editor.Tests.Features.FrameDebugger;

@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Editor.Core.CodeFirstUI.Models;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Validation;
 
 public sealed class GuiTreeValidator
 {

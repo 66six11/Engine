@@ -1,5 +1,4 @@
 ﻿using System.Linq;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Scene;
@@ -11,7 +10,7 @@ using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
-using Editor.Shell.CodeFirstUI;
+using Editor.Shell.CodeFirstUI.Hosting;
 using Editor.Shell.Composition;
 using Editor.UI.Icons;
 using Editor.Shell.Selection;
@@ -306,6 +305,7 @@ public sealed class WorkbenchFeatureModuleTests
             descriptor.StatusText);
     }
 
+    // ReSharper disable NotAccessedPositionalProperty.Local
     private sealed record PanelDescriptorSnapshot(
         string Id,
         string Title,
@@ -317,4 +317,5 @@ public sealed class WorkbenchFeatureModuleTests
         string? Tag,
         string? TitleDetail,
         string? StatusText);
+    // ReSharper restore NotAccessedPositionalProperty.Local
 }

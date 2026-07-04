@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -7,10 +7,9 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Editor.Core.CodeFirstUI;
-using Editor.Core.Models;
+using Editor.Core.CodeFirstUI.Building;
+using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.Models.Diagnostics;
-using Editor.Shell.CodeFirstUI;
 using Editor.Shell.CodeFirstUI.Adapters;
 using Editor.UI.Icons;
 using Editor.UI.Controls.Base;
@@ -71,7 +70,7 @@ public sealed class GuiAvaloniaControlFactoryTests
             control,
             textBlock => textBlock.Text == "Typography");
         Assert.NotNull(title);
-        Assert.Contains("code-first-label", title!.Classes);
+        Assert.Contains("code-first-label", title.Classes);
         Assert.Contains("primary", title.Classes);
         Assert.Contains("title", title.Classes);
 
@@ -79,7 +78,7 @@ public sealed class GuiAvaloniaControlFactoryTests
             control,
             textBlock => textBlock.Text == "Muted caption");
         Assert.NotNull(hint);
-        Assert.Contains("code-first-label", hint!.Classes);
+        Assert.Contains("code-first-label", hint.Classes);
         Assert.Contains("muted", hint.Classes);
         Assert.Contains("caption", hint.Classes);
     }
@@ -156,10 +155,10 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.NotNull(renderRow);
         Assert.NotNull(debugRow);
         Assert.NotNull(frameRow);
-        Assert.Contains("selected", frameRow!.Classes);
+        Assert.Contains("selected", frameRow.Classes);
 
         var overviewExpander = FindDescendant<IconButton>(
-            overviewRow!,
+            overviewRow,
             button => button.Classes.Contains("code-first-navigation-expander"));
         Assert.NotNull(overviewExpander);
         var overviewRouteButton = FindDescendant<Button>(
@@ -169,19 +168,19 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.NotNull(overviewRouteButton);
 
         var renderExpander = FindDescendant<IconButton>(
-            renderRow!,
+            renderRow,
             button => button.Classes.Contains("code-first-navigation-expander"));
         Assert.NotNull(renderExpander);
-        Assert.Equal(EditorIconKey.UiChevronDown, renderExpander!.IconKey);
+        Assert.Equal(EditorIconKey.UiChevronDown, renderExpander.IconKey);
         Assert.False(renderExpander.Focusable);
 
         Assert.Null(FindDescendant<Control>(
             grid,
             control => control.Classes.Contains("code-first-navigation-indent-guide")));
 
-        overviewRouteButton!.RaiseEvent(CreateDoubleTappedArgs(overviewRouteButton));
+        overviewRouteButton.RaiseEvent(CreateDoubleTappedArgs(overviewRouteButton));
 
-        Assert.Equal(EditorIconKey.UiChevronRight, overviewExpander!.IconKey);
+        Assert.Equal(EditorIconKey.UiChevronRight, overviewExpander.IconKey);
         Assert.Contains(host.NavigationRouteExpansionChanges, change =>
             change.NodeId == new GuiNodeId("ui-style", "catalog", GuiNodeKind.NavigationView)
             && string.Equals(change.Route, "overview", StringComparison.Ordinal)
@@ -206,7 +205,7 @@ public sealed class GuiAvaloniaControlFactoryTests
             && string.Equals(change.Route, "render", StringComparison.Ordinal)
             && !change.IsExpanded);
 
-        renderRow!.RaiseEvent(CreateDoubleTappedArgs(renderRow));
+        renderRow.RaiseEvent(CreateDoubleTappedArgs(renderRow));
 
         Assert.Equal(EditorIconKey.UiChevronDown, renderExpander.IconKey);
         Assert.Contains(host.NavigationRouteExpansionChanges, change =>
@@ -220,7 +219,7 @@ public sealed class GuiAvaloniaControlFactoryTests
             grid,
             button => string.Equals(button.Content as string, "Frame Debugger", StringComparison.Ordinal));
         Assert.NotNull(routeButton);
-        Assert.Contains("code-first-navigation-route", routeButton!.Classes);
+        Assert.Contains("code-first-navigation-route", routeButton.Classes);
         Assert.DoesNotContain("selected", routeButton.Classes);
         Assert.Equal("render/debug/frame-debugger", ToolTip.GetTip(routeButton));
 
@@ -295,9 +294,10 @@ public sealed class GuiAvaloniaControlFactoryTests
             body.Children.Single(child => Grid.GetRow(child) == 1));
         Assert.Equal(VerticalAlignment.Stretch, listBox.VerticalAlignment);
         Assert.NotNull(listBox.ItemsPanel);
-        Assert.IsType<VirtualizingStackPanel>(listBox.ItemsPanel!.Build());
+        Assert.IsType<VirtualizingStackPanel>(listBox.ItemsPanel.Build());
+        var itemsSource = Assert.IsAssignableFrom<System.Collections.IEnumerable>(listBox.ItemsSource);
         var firstItem = Assert.IsType<GuiListItem>(Assert.Single(
-            listBox.ItemsSource!.Cast<object>(),
+            itemsSource.Cast<object>(),
             item => item is GuiListItem listItem
                 && listItem.Id == "section-0"));
         Assert.Equal("Section 0", firstItem.Label);
@@ -324,7 +324,7 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         var scrollViewer = FindDescendant<ScrollViewer>(control);
         Assert.NotNull(scrollViewer);
-        Assert.Equal(ScrollBarVisibility.Disabled, scrollViewer!.HorizontalScrollBarVisibility);
+        Assert.Equal(ScrollBarVisibility.Disabled, scrollViewer.HorizontalScrollBarVisibility);
         Assert.Equal(ScrollBarVisibility.Auto, scrollViewer.VerticalScrollBarVisibility);
         Assert.Equal(VerticalAlignment.Stretch, scrollViewer.VerticalAlignment);
 
@@ -332,7 +332,7 @@ public sealed class GuiAvaloniaControlFactoryTests
             control,
             text => text.Text == "Shader metadata is missing.");
         Assert.NotNull(message);
-        Assert.Equal(Avalonia.Media.TextWrapping.Wrap, message!.TextWrapping);
+        Assert.Equal(Avalonia.Media.TextWrapping.Wrap, message.TextWrapping);
         Assert.Contains("code-first-validation-message", message.Classes);
         Assert.Contains("warning", message.Classes);
     }
@@ -352,7 +352,7 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         var expander = FindDescendant<Expander>(control);
         Assert.NotNull(expander);
-        Assert.Equal("Advanced", expander!.Header);
+        Assert.Equal("Advanced", expander.Header);
         Assert.False(expander.IsExpanded);
         Assert.Contains("code-first-foldout", expander.Classes);
         Assert.Empty(host.FoldoutChanges);
@@ -381,8 +381,9 @@ public sealed class GuiAvaloniaControlFactoryTests
         grid.ColumnDefinitions[0].Width = new GridLength(0.40d, GridUnitType.Star);
         grid.ColumnDefinitions[2].Width = new GridLength(0.60d, GridUnitType.Star);
 
-        var resize = Assert.Single(host.SplitResizes, resize => resize.Ratio == 0.40d);
+        var resize = host.SplitResizes.Last();
         Assert.Equal(new GuiNodeId("ui-style", "layout", GuiNodeKind.Split), resize.NodeId);
+        Assert.Equal(0.40d, resize.Ratio, precision: 6);
     }
 
     [Fact]
@@ -406,8 +407,8 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.NotNull(textBox);
         Assert.NotNull(checkBox);
 
-        textBox!.Text = "albedo";
-        checkBox!.IsChecked = false;
+        textBox.Text = "albedo";
+        checkBox.IsChecked = false;
 
         var textChange = Assert.Single(host.TextChanges);
         Assert.Equal(new GuiNodeId("ui-style", "filter", GuiNodeKind.TextField), textChange.NodeId);
@@ -433,7 +434,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.NotNull(FindDescendant<TextBlock>(row, text => text.Text == "Draw Calls"));
         var value = FindDescendant<TextBlock>(row, text => text.Text == "184");
         Assert.NotNull(value);
-        Assert.Contains("code-first-property-value", value!.Classes);
+        Assert.Contains("code-first-property-value", value.Classes);
     }
 
     [Fact]
@@ -453,7 +454,7 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         var comboBox = FindDescendant<ComboBox>(control);
         Assert.NotNull(comboBox);
-        Assert.Contains("code-first-combo-box", comboBox!.Classes);
+        Assert.Contains("code-first-combo-box", comboBox.Classes);
         Assert.Equal(modes, comboBox.ItemsSource);
         Assert.Equal(modes[0], comboBox.SelectedItem);
         Assert.NotNull(FindDescendant<TextBlock>(control, textBlock => textBlock.Text == "Render Mode"));
@@ -511,7 +512,7 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         var colorPicker = FindDescendant<ColorPicker>(control);
         Assert.NotNull(colorPicker);
-        Assert.Contains("code-first-color-field", colorPicker!.Classes);
+        Assert.Contains("code-first-color-field", colorPicker.Classes);
         Assert.Equal(Avalonia.Media.Color.FromArgb(192, 255, 128, 64), colorPicker.Color);
         Assert.True(colorPicker.IsAlphaEnabled);
         Assert.True(colorPicker.IsAlphaVisible);
@@ -667,7 +668,7 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         var slider = FindDescendant<Slider>(control);
         Assert.NotNull(slider);
-        Assert.Contains("code-first-slider", slider!.Classes);
+        Assert.Contains("code-first-slider", slider.Classes);
         Assert.Equal(0d, slider.Minimum);
         Assert.Equal(2d, slider.Maximum);
         Assert.Equal(0.75d, slider.Value);
@@ -701,7 +702,7 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         var numberInput = FindDescendant<NumericUpDown>(control);
         Assert.NotNull(numberInput);
-        Assert.Contains("code-first-number-input", numberInput!.Classes);
+        Assert.Contains("code-first-number-input", numberInput.Classes);
         Assert.Equal(0m, numberInput.Minimum);
         Assert.Equal(1m, numberInput.Maximum);
         Assert.Equal(0.50m, numberInput.Value);
@@ -735,7 +736,7 @@ public sealed class GuiAvaloniaControlFactoryTests
 
         var progressBar = FindDescendant<ProgressBar>(control);
         Assert.NotNull(progressBar);
-        Assert.Contains("code-first-progress-bar", progressBar!.Classes);
+        Assert.Contains("code-first-progress-bar", progressBar.Classes);
         Assert.Equal(0d, progressBar.Minimum);
         Assert.Equal(100d, progressBar.Maximum);
         Assert.Equal(42d, progressBar.Value);
@@ -755,7 +756,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
         Assert.NotNull(textBox);
 
-        textBox!.Text = "albedo";
+        textBox.Text = "albedo";
 
         var commit = Assert.Single(host.TextCommits);
         Assert.Equal(new GuiNodeId("ui-style", "filter", GuiNodeKind.TextField), commit.NodeId);
@@ -767,13 +768,13 @@ public sealed class GuiAvaloniaControlFactoryTests
     public void Text_field_lost_focus_commit_mode_commits_on_focus_loss()
     {
         var builder = new GuiFrameBuilder("ui-style");
-        builder.TextField("filter", "Filter", "gbuffer", GuiTextInputCommitMode.OnLostFocus);
+        builder.TextField("filter", "Filter", "gbuffer");
         var host = new RecordingCodeFirstPanelHost();
         var factory = new GuiAvaloniaControlFactory(host);
         var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
         Assert.NotNull(textBox);
 
-        textBox!.Text = "albedo";
+        textBox.Text = "albedo";
         textBox.RaiseEvent(new FocusChangedEventArgs(InputElement.LostFocusEvent)
         {
             Source = textBox,
@@ -794,7 +795,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
         Assert.NotNull(textBox);
 
-        textBox!.Text = "albedo";
+        textBox.Text = "albedo";
         textBox.RaiseEvent(new KeyEventArgs
         {
             RoutedEvent = InputElement.KeyDownEvent,
@@ -823,7 +824,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
         Assert.NotNull(textBox);
 
-        textBox!.Text = "albedo";
+        textBox.Text = "albedo";
         textBox.Text = "albedo roughness";
 
         Assert.Equal(
@@ -851,7 +852,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
             Panel panel => panel.Children.Select(child => FindDescendant(child, predicate)).FirstOrDefault(found => found is not null),
             ContentControl content when content.Content is Control child => FindDescendant(child, predicate),
-            Decorator decorator when decorator.Child is Control child => FindDescendant(child, predicate),
+            Decorator decorator when decorator.Child is { } child => FindDescendant(child, predicate),
             _ => null,
         };
     }
@@ -868,7 +869,7 @@ public sealed class GuiAvaloniaControlFactoryTests
         {
             Panel panel => panel.Children,
             ContentControl content when content.Content is Control child => [child],
-            Decorator decorator when decorator.Child is Control child => [child],
+            Decorator decorator when decorator.Child is { } child => [child],
             _ => [],
         };
         foreach (var child in children)

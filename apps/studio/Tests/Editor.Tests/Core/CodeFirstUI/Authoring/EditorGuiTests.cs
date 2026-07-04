@@ -1,12 +1,16 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using Editor.Core.CodeFirstUI;
-using Editor.Core.Models;
+using Editor.Core.CodeFirstUI.Abstractions;
+using Editor.Core.CodeFirstUI.Authoring;
+using Editor.Core.CodeFirstUI.Building;
+using Editor.Core.CodeFirstUI.Events;
+using Editor.Core.CodeFirstUI.Models;
+using Editor.Core.CodeFirstUI.State;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Workbench;
 using Xunit;
 
-namespace Editor.Tests.Core.CodeFirstUI;
+namespace Editor.Tests.Core.CodeFirstUI.Authoring;
 
 public sealed class EditorGuiTests
 {
@@ -253,8 +257,7 @@ public sealed class EditorGuiTests
         using (gui.NavigationView(
             "catalog",
             [new GuiNavigationPage("overview", "Overview", editorGui => editorGui.Text("title", "Overview"))],
-            "overview",
-            0.30d))
+            "overview"))
         {
         }
 
@@ -850,10 +853,12 @@ public sealed class EditorGuiTests
         }
     }
 
+    // ReSharper disable UnusedMember.Local
     private enum RenderPathMode
     {
         Forward,
         Deferred,
         RayTracing,
     }
+    // ReSharper restore UnusedMember.Local
 }

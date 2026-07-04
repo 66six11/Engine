@@ -1,10 +1,9 @@
-using CommunityToolkit.Mvvm.Input;
+﻿using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Dialogs;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Workbench;

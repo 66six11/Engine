@@ -7,7 +7,7 @@ public sealed record FrameDebugCommandSnapshot(
     int DeclarationIndex,
     string PassName,
     string Kind,
-    string Detail)
+    string? Detail)
 {
     public string Id { get; init; } = FrameDebugModelGuard.Require(
         Id,

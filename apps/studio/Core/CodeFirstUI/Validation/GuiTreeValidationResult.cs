@@ -1,6 +1,6 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Validation;
 
 public sealed record GuiTreeValidationResult(
     IReadOnlyList<GuiTreeValidationError> Errors)

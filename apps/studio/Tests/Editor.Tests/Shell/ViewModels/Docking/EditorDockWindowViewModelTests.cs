@@ -1,5 +1,4 @@
-using Editor.Core.Models;
-using Editor.Core.Models.Panels;
+﻿using Editor.Core.Models.Panels;
 using Editor.Shell.ViewModels.Docking;
 using Xunit;
 

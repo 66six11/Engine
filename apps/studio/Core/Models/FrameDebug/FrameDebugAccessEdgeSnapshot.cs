@@ -6,9 +6,9 @@ public sealed record FrameDebugAccessEdgeSnapshot(
     string ResourceId,
     string PassName,
     string ResourceName,
-    string SlotName,
-    string Access,
-    string ShaderStage)
+    string? SlotName,
+    string? Access,
+    string? ShaderStage)
 {
     public string Id { get; init; } = FrameDebugModelGuard.Require(
         Id,

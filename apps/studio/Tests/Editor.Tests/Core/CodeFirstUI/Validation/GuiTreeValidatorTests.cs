@@ -1,8 +1,10 @@
-using System.Linq;
-using Editor.Core.CodeFirstUI;
+﻿using System.Linq;
+using Editor.Core.CodeFirstUI.Building;
+using Editor.Core.CodeFirstUI.Models;
+using Editor.Core.CodeFirstUI.Validation;
 using Xunit;
 
-namespace Editor.Tests.Core.CodeFirstUI;
+namespace Editor.Tests.Core.CodeFirstUI.Validation;
 
 public sealed class GuiTreeValidatorTests
 {

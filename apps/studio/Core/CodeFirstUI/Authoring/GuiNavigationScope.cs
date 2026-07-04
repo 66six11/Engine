@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Authoring;
 
 public sealed class GuiNavigationScope : IDisposable
 {

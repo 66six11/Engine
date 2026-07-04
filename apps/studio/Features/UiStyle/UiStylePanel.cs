@@ -1,6 +1,7 @@
-using System;
-using Editor.Core.CodeFirstUI;
-using Editor.Core.Models;
+﻿using System;
+using Editor.Core.CodeFirstUI.Abstractions;
+using Editor.Core.CodeFirstUI.Authoring;
+using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.Models.Diagnostics;
 
 namespace Editor.Features.UiStyle;
@@ -35,12 +36,14 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         new("wireframe", "Wireframe"),
     ];
 
+    // ReSharper disable UnusedMember.Local
     private enum UiStyleRenderPath
     {
         Forward,
         Deferred,
         RayTracing,
     }
+    // ReSharper restore UnusedMember.Local
 
     protected override void OnGui(EditorGui gui)
     {
@@ -64,7 +67,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
     {
         gui.Text("title", "Typography", GuiTextTone.Primary, GuiTextSize.Title);
         gui.Text("primary", "Primary text: compact labels, property names, and active values.", GuiTextTone.Primary);
-        gui.Text("secondary", "Secondary text: descriptions, metadata, and low-emphasis hints.", GuiTextTone.Secondary);
+        gui.Text("secondary", "Secondary text: descriptions, metadata, and low-emphasis hints.");
         gui.Text("muted", "Muted caption: disabled, unavailable, or secondary diagnostic context.", GuiTextTone.Muted, GuiTextSize.Caption);
     }
 
@@ -103,9 +106,9 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
         gui.EnumPopup("render-path", "Render Path", UiStyleRenderPath.Deferred);
         gui.RadioGroup("shading-mode", "Shading", ShadingModeOptions, "lit");
         gui.Slider("exposure", "Exposure", 0.75d, 0d, 2d, 0.05d, 0.25d);
-        gui.ColorField("albedo", "Albedo", new GuiColorValue(128, 160, 255), showAlpha: true);
+        gui.ColorField("albedo", "Albedo", new GuiColorValue(128, 160, 255));
         gui.Vector2Field("uv-scale", "UV Scale", new GuiVector2Value(1d, 1d), 0d, 8d, 0.125d, "0.000");
-        gui.Vector3Field("position", "Position", new GuiVector3Value(0d, 1d, 2d), -100d, 100d, 0.1d, "0.###");
+        gui.Vector3Field("position", "Position", new GuiVector3Value(0d, 1d, 2d), -100d, 100d);
         gui.Vector4Field("tiling-offset", "Tiling Offset", new GuiVector4Value(1d, 1d, 0d, 0d), -8d, 8d, 0.125d, "0.000");
         gui.NumberInput("roughness", "Roughness", 0.50d, 0d, 1d, 0.05d, "0.00");
         gui.FloatField("metallic", "Metallic", 0.25f, 0d, 1d, 0.05d, "0.00");
@@ -153,8 +156,6 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
                 "shader-import",
                 "Shader Import",
                 42d,
-                0d,
-                100d,
                 showProgressText: true,
                 progressTextFormat: "{1:0}%");
             gui.ValidationMessage(
@@ -167,8 +168,7 @@ internal sealed class UiStylePanel : CodeFirstEditorPanel
                 EditorDiagnosticSeverity.Warning);
             gui.ValidationMessage(
                 "error",
-                "Error: validation should report through diagnostics instead of silent UI failure.",
-                EditorDiagnosticSeverity.Error);
+                "Error: validation should report through diagnostics instead of silent UI failure.");
         }
     }
 }

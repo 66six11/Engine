@@ -1,4 +1,5 @@
-namespace Editor.Core.CodeFirstUI;
+﻿
+namespace Editor.Core.CodeFirstUI.Validation;
 
 public sealed record GuiTreeValidationError(
     GuiTreeValidationErrorCode Code,

@@ -1,7 +1,6 @@
-using Editor.Core.Models;
-using Editor.Core.Models.Workbench;
+﻿using Editor.Core.Models.Workbench;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Abstractions;
 
 public interface IEditorGuiCommandExecutor
 {

@@ -1,12 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Scene;
 using Editor.Core.Services;
 using Xunit;
 
-namespace Editor.Tests.CoreContracts;
+namespace Editor.Tests.Core;
 
 public sealed class SceneSnapshotProviderTests
 {

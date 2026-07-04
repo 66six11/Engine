@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Services;
 using Editor.Shell.ViewModels.Docking;

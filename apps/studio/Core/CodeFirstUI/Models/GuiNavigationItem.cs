@@ -1,7 +1,7 @@
-using System;
+﻿using System;
 using System.Linq;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Models;
 
 public sealed record GuiNavigationItem
 {

@@ -6,7 +6,7 @@ public sealed record FrameDebugDependencyEdgeSnapshot(
     string ToPassId,
     string ResourceId,
     string ResourceName,
-    string Reason)
+    string? Reason)
 {
     public string Id { get; init; } = FrameDebugModelGuard.Require(
         Id,

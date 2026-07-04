@@ -6,6 +6,7 @@ using Editor.Core.Models.Panels;
 
 namespace Editor.Core.Services;
 
+// ReSharper disable ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
 public sealed class EditorContributionDescriptorValidator
 {
     public EditorContributionValidationResult Validate(
@@ -16,7 +17,7 @@ public sealed class EditorContributionDescriptorValidator
         context ??= EditorContributionValidationContext.Empty;
 
         var errors = new List<EditorContributionValidationError>();
-        var sourceId = descriptorSet.SourceId?.Value ?? string.Empty;
+        var sourceId = descriptorSet.SourceId.Value;
         var registeredPanelIds = CreateRegisteredIdSet(
             context.RegisteredPanelIds,
             nameof(EditorContributionValidationContext.RegisteredPanelIds));
@@ -460,3 +461,4 @@ public sealed class EditorContributionDescriptorValidator
             message));
     }
 }
+// ReSharper restore ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract

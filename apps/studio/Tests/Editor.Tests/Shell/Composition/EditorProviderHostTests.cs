@@ -160,7 +160,15 @@ public sealed class EditorProviderHostTests
     {
         public bool IsDisposed { get; private set; }
 
-        public event EventHandler? SnapshotChanged;
+        public event EventHandler? SnapshotChanged
+        {
+            add
+            {
+            }
+            remove
+            {
+            }
+        }
 
         public SceneSnapshot GetCurrentSnapshot()
         {
@@ -186,11 +194,6 @@ public sealed class EditorProviderHostTests
             {
                 throw disposeException;
             }
-        }
-
-        public void RaiseSnapshotChanged()
-        {
-            SnapshotChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

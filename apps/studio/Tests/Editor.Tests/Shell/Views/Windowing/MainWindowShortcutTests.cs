@@ -1,5 +1,4 @@
-using Avalonia.Controls;
-using Avalonia.Input;
+﻿using Avalonia.Controls;
 using Editor.Shell.Views.Windowing;
 using Xunit;
 

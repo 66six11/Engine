@@ -5,11 +5,11 @@ public sealed record FrameDebugResourceSnapshot(
     string Kind,
     uint ResourceIndex,
     string Name,
-    string Lifetime,
-    string FormatOrSize,
-    string Extent,
-    string InitialAccess,
-    string FinalAccess)
+    string? Lifetime,
+    string? FormatOrSize,
+    string? Extent,
+    string? InitialAccess,
+    string? FinalAccess)
 {
     public string Id { get; init; } = FrameDebugModelGuard.Require(
         Id,

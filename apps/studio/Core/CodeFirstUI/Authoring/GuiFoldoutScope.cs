@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Authoring;
 
 public readonly struct GuiFoldoutScope : IDisposable
 {

@@ -1,6 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Avalonia;
-using Editor.Core.Models;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.TabStrips;
 

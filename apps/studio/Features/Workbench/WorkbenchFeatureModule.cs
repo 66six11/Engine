@@ -13,7 +13,7 @@ using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.UiStyle;
-using Editor.Shell.CodeFirstUI;
+using Editor.Shell.CodeFirstUI.Hosting;
 using Editor.UI.Icons;
 using Editor.Shell.Services;
 

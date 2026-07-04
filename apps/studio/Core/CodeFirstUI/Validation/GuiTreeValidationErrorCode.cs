@@ -1,4 +1,5 @@
-namespace Editor.Core.CodeFirstUI;
+﻿
+namespace Editor.Core.CodeFirstUI.Validation;
 
 public enum GuiTreeValidationErrorCode
 {

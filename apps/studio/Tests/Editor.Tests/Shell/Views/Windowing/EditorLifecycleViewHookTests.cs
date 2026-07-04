@@ -1,9 +1,7 @@
-using System;
+﻿using System;
 using System.IO;
-using System.Linq;
 using Editor.Core.Models.Lifecycle;
 using Editor.Core.Models.Panels;
-using Editor.Shell.Composition;
 using Editor.Shell.Docking.Panels;
 using Editor.Shell.Services;
 using Editor.Shell.ViewModels.Docking;

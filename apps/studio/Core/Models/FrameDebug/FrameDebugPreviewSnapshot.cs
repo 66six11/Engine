@@ -4,7 +4,7 @@ public sealed record FrameDebugPreviewSnapshot(
     string Status,
     string? SelectedPassId,
     string? SelectedExecutionEventId,
-    string Message)
+    string? Message)
 {
     public string Status { get; init; } = FrameDebugModelGuard.Require(
         Status,

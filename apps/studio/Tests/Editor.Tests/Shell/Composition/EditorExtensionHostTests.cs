@@ -426,9 +426,10 @@ public sealed class EditorExtensionHostTests
     public async Task ActivateAsync_checks_cancellation_before_each_module_activation()
     {
         using var cancellation = new CancellationTokenSource();
+        var cancellationActivation = new ActivationCancellation(cancellation);
         var firstModule = new TestExtensionModule(
             "test.first",
-            onActivate: _ => cancellation.Cancel());
+            onActivate: cancellationActivation.Cancel);
         var secondModule = new TestExtensionModule("test.second");
         var host = new EditorExtensionHost([firstModule, secondModule]);
 
@@ -537,6 +538,14 @@ public sealed class EditorExtensionHostTests
             }
 
             return ValueTask.FromResult(lease_);
+        }
+    }
+
+    private sealed class ActivationCancellation(CancellationTokenSource cancellation)
+    {
+        public void Cancel(CancellationToken _)
+        {
+            cancellation.Cancel();
         }
     }
 

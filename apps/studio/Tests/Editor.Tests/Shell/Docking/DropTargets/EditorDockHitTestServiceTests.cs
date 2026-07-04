@@ -1,5 +1,4 @@
-using Avalonia;
-using Editor.Core.Models;
+﻿using Avalonia;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.TabStrips;

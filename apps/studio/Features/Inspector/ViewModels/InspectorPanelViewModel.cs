@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
 using Editor.Core.Models.Scene;
 using Editor.Core.Models.Selection;
 using Editor.Core.Services;

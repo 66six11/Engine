@@ -1,11 +1,12 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Editor.Core.CodeFirstUI;
+using Editor.Core.CodeFirstUI.Validation;
 using Editor.Shell.CodeFirstUI.Adapters;
+using Editor.Shell.CodeFirstUI.Hosting;
 
 namespace Editor.Shell.CodeFirstUI.Views;
 

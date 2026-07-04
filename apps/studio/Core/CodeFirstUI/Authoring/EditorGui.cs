@@ -1,12 +1,16 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Editor.Core.Models;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Workbench;
+using Editor.Core.CodeFirstUI.Abstractions;
+using Editor.Core.CodeFirstUI.Building;
+using Editor.Core.CodeFirstUI.Events;
+using Editor.Core.CodeFirstUI.Models;
+using Editor.Core.CodeFirstUI.State;
 
-namespace Editor.Core.CodeFirstUI;
+namespace Editor.Core.CodeFirstUI.Authoring;
 
 public sealed class EditorGui
 {
@@ -749,6 +753,7 @@ public sealed class EditorGui
             ClampFiniteToBounds(value.W, minimum, maximum, parameterName));
     }
 
+    // ReSharper disable once StaticMemberInGenericType
     private static class EnumPopupCache<TEnum>
         where TEnum : struct, Enum
     {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -8,8 +8,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Editor.Core.CodeFirstUI;
-using Editor.Core.Models;
+using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.Models.Diagnostics;
 using Editor.UI.Icons;
 using Editor.UI.Controls.Base;
@@ -109,7 +108,7 @@ internal sealed class GuiAvaloniaControlFactory
         var title = new TextBlock
         {
             Text = node.Label ?? string.Empty,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         title.Classes.Add("code-first-panel-title");
         Grid.SetRow(title, 0);
@@ -122,7 +121,7 @@ internal sealed class GuiAvaloniaControlFactory
         var border = new Border
         {
             Child = grid,
-            Padding = new Avalonia.Thickness(10d),
+            Padding = new Thickness(10d),
         };
         border.Classes.Add("code-first-panel");
         return border;
@@ -325,15 +324,14 @@ internal sealed class GuiAvaloniaControlFactory
         string? selectedRoute)
     {
         var node = treeRow.Payload;
-        IconButton? expander = null;
-        var isExpanded = treeRow.IsExpanded;
+        var expansionState = new NavigationTreeRowExpansionState(treeRow.IsExpanded);
 
         void SetExpanded(bool expanded, bool notifyHost)
         {
-            isExpanded = expanded;
-            if (expander is not null)
+            expansionState.IsExpanded = expanded;
+            if (expansionState.Expander is not null)
             {
-                expander.IconKey = expanded
+                expansionState.Expander.IconKey = expanded
                     ? EditorIconKey.UiChevronDown
                     : EditorIconKey.UiChevronRight;
             }
@@ -346,7 +344,7 @@ internal sealed class GuiAvaloniaControlFactory
 
         void ToggleExpanded()
         {
-            SetExpanded(!isExpanded, notifyHost: true);
+            SetExpanded(!expansionState.IsExpanded, notifyHost: true);
         }
 
         var indentWidth = treeRow.Depth * EditorTreeMetrics.IndentUnit;
@@ -379,9 +377,9 @@ internal sealed class GuiAvaloniaControlFactory
 
         if (treeRow.HasChildren)
         {
-            expander = CreateNavigationExpander(node.FullRoute, ToggleExpanded);
-            Grid.SetColumn(expander, 1);
-            row.Children.Add(expander);
+            expansionState.Expander = CreateNavigationExpander(node.FullRoute, ToggleExpanded);
+            Grid.SetColumn(expansionState.Expander, 1);
+            row.Children.Add(expansionState.Expander);
         }
 
         var label = node.IsPage
@@ -390,7 +388,7 @@ internal sealed class GuiAvaloniaControlFactory
         Grid.SetColumn(label, 2);
         row.Children.Add(label);
 
-        SetExpanded(isExpanded, notifyHost: false);
+        SetExpanded(expansionState.IsExpanded, notifyHost: false);
         return row;
     }
 
@@ -428,7 +426,7 @@ internal sealed class GuiAvaloniaControlFactory
         var label = new TextBlock
         {
             Text = node.Segment,
-            TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+            TextTrimming = TextTrimming.CharacterEllipsis,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Tag = node.FullRoute,
         };
@@ -594,7 +592,7 @@ internal sealed class GuiAvaloniaControlFactory
         var textBlock = new TextBlock
         {
             Text = node.Label ?? string.Empty,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            TextWrapping = TextWrapping.Wrap,
         };
         textBlock.Classes.Add("code-first-label");
         textBlock.Classes.Add(GetTextToneClass(node.Payload.TextTone ?? GuiTextTone.Secondary));
@@ -604,24 +602,32 @@ internal sealed class GuiAvaloniaControlFactory
 
     private static string GetTextToneClass(GuiTextTone tone)
     {
-        return tone switch
+        if (tone == GuiTextTone.Primary)
         {
-            GuiTextTone.Primary => "primary",
-            GuiTextTone.Secondary => "secondary",
-            GuiTextTone.Muted => "muted",
-            _ => "secondary",
-        };
+            return "primary";
+        }
+
+        if (tone == GuiTextTone.Muted)
+        {
+            return "muted";
+        }
+
+        return "secondary";
     }
 
     private static string GetTextSizeClass(GuiTextSize size)
     {
-        return size switch
+        if (size == GuiTextSize.Caption)
         {
-            GuiTextSize.Body => "body",
-            GuiTextSize.Caption => "caption",
-            GuiTextSize.Title => "title",
-            _ => "body",
-        };
+            return "caption";
+        }
+
+        if (size == GuiTextSize.Title)
+        {
+            return "title";
+        }
+
+        return "body";
     }
 
     private static Control BuildValidationMessage(GuiNode node)
@@ -630,7 +636,7 @@ internal sealed class GuiAvaloniaControlFactory
         var textBlock = new TextBlock
         {
             Text = node.Label ?? string.Empty,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            TextWrapping = TextWrapping.Wrap,
         };
         textBlock.Classes.Add("code-first-validation-message");
         textBlock.Classes.Add(GetDiagnosticSeverityClass(severity));
@@ -639,14 +645,22 @@ internal sealed class GuiAvaloniaControlFactory
 
     private static string GetDiagnosticSeverityClass(EditorDiagnosticSeverity severity)
     {
-        return severity switch
+        if (severity == EditorDiagnosticSeverity.Debug)
         {
-            EditorDiagnosticSeverity.Debug => "debug",
-            EditorDiagnosticSeverity.Info => "info",
-            EditorDiagnosticSeverity.Warning => "warning",
-            EditorDiagnosticSeverity.Error => "error",
-            _ => "error",
-        };
+            return "debug";
+        }
+
+        if (severity == EditorDiagnosticSeverity.Info)
+        {
+            return "info";
+        }
+
+        if (severity == EditorDiagnosticSeverity.Warning)
+        {
+            return "warning";
+        }
+
+        return "error";
     }
 
     private static Control BuildSeparator()
@@ -707,7 +721,7 @@ internal sealed class GuiAvaloniaControlFactory
         {
             Text = node.Label ?? string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         label.Classes.Add("code-first-input-label");
 
@@ -806,7 +820,7 @@ internal sealed class GuiAvaloniaControlFactory
         {
             Text = node.Label ?? string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         label.Classes.Add("code-first-input-label");
 
@@ -818,8 +832,8 @@ internal sealed class GuiAvaloniaControlFactory
             {
                 var itemLabel = new TextBlock
                 {
-                    Text = item?.Label ?? string.Empty,
-                    TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+                    Text = item.Label,
+                    TextWrapping = TextWrapping.NoWrap,
                 };
                 itemLabel.Classes.Add("code-first-combo-box-item-label");
                 return itemLabel;
@@ -856,7 +870,7 @@ internal sealed class GuiAvaloniaControlFactory
         {
             Text = node.Label ?? string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         label.Classes.Add("code-first-input-label");
 
@@ -1117,7 +1131,7 @@ internal sealed class GuiAvaloniaControlFactory
         {
             Text = node.Label ?? string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         label.Classes.Add("code-first-input-label");
 
@@ -1149,7 +1163,7 @@ internal sealed class GuiAvaloniaControlFactory
     {
         var hasObservedInitialValue = false;
         slider.Tag = slider
-            .GetObservable(Slider.ValueProperty)
+            .GetObservable(RangeBase.ValueProperty)
             .Subscribe(new ActionObserver<double>(value =>
             {
                 if (!hasObservedInitialValue)
@@ -1168,7 +1182,7 @@ internal sealed class GuiAvaloniaControlFactory
         {
             Text = node.Label ?? string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         label.Classes.Add("code-first-input-label");
 
@@ -1257,7 +1271,7 @@ internal sealed class GuiAvaloniaControlFactory
         {
             Text = node.Label ?? string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         label.Classes.Add("code-first-input-label");
 
@@ -1300,8 +1314,8 @@ internal sealed class GuiAvaloniaControlFactory
             {
                 var label = new TextBlock
                 {
-                    Text = item?.Label ?? string.Empty,
-                    TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
+                    Text = item.Label,
+                    TextWrapping = TextWrapping.NoWrap,
                 };
                 label.Classes.Add("code-first-list-item-label");
                 return label;
@@ -1330,7 +1344,7 @@ internal sealed class GuiAvaloniaControlFactory
         var textBlock = new TextBlock
         {
             Text = $"{node.Kind}: {node.Label ?? node.Id.KeyPath}",
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            TextWrapping = TextWrapping.Wrap,
         };
         textBlock.Classes.Add("code-first-unsupported");
         return textBlock;
@@ -1391,7 +1405,21 @@ internal sealed class GuiAvaloniaControlFactory
 
     private sealed record SplitRatioSubscriptions(
         IDisposable FirstSubscription,
-        IDisposable SecondSubscription);
+        IDisposable SecondSubscription) : IDisposable
+    {
+        public void Dispose()
+        {
+            FirstSubscription.Dispose();
+            SecondSubscription.Dispose();
+        }
+    }
+
+    private sealed class NavigationTreeRowExpansionState(bool isExpanded)
+    {
+        public bool IsExpanded { get; set; } = isExpanded;
+
+        public IconButton? Expander { get; set; }
+    }
 
     private sealed class ActionObserver<T> : IObserver<T>
     {
