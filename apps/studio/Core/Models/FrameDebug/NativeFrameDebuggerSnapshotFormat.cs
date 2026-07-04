@@ -2,5 +2,6 @@ namespace Editor.Core.Models.FrameDebug;
 
 public enum NativeFrameDebuggerSnapshotFormat
 {
-    JsonUtf8,
+    Unknown = 0,
+    JsonUtf8 = 1,
 }
