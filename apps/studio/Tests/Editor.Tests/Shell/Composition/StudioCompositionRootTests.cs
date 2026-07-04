@@ -22,7 +22,7 @@ public sealed class StudioCompositionRootTests
         var composition = StudioCompositionRoot.CreateDefaultComposition();
 
         Assert.Equal(
-            ["scene-view", "hierarchy", "inspector", "console", "problems", "ui-style"],
+            ["scene-view", "hierarchy", "inspector", "console", "problems", "frame-debugger", "ui-style"],
             composition.PanelRegistry.GetAll().Select(panel => panel.Id));
         Assert.Equal(
             [
@@ -33,6 +33,7 @@ public sealed class StudioCompositionRootTests
                 "workbench.panel.inspector",
                 "workbench.panel.console",
                 "workbench.panel.problems",
+                "workbench.panel.frame-debugger",
                 "workbench.panel.ui-style",
             ],
             composition.ActionRegistry.GetAll().Select(action => action.Id));

@@ -788,3 +788,10 @@ Tests/Editor.Tests/Features
 ```
 
 分类的目标是减少错误依赖，不是追求目录数量。能不搬就不搬；新增代码必须放准。
+## 2026-07-04 Frame Debugger snapshot v0 classification
+
+- `Core/Models/FrameDebug` owns immutable, UI-neutral Frame Debugger snapshot records.
+- `Core/Abstractions/IFrameDebuggerSnapshotProvider.cs` is the provider contract consumed by Studio features.
+- `Core/Services/InMemoryFrameDebuggerSnapshotProvider.cs` is a fixture/test publication seam only; native adapters must publish through the contract later instead of leaking Vulkan or C++ objects into UI.
+- `Features/FrameDebugger/FrameDebuggerPanel.cs` is a Code-first, read-only panel. It may render snapshots and publish diagnostics, but it must not call native ABI, P/Invoke, Vulkan handles, or renderer objects.
+- `Features/Workbench/WorkbenchFeatureModule.cs` may create the fixture-backed provider and register the built-in panel as part of built-in composition wiring.

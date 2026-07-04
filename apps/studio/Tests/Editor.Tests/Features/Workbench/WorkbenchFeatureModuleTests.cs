@@ -86,6 +86,17 @@ public sealed class WorkbenchFeatureModuleTests
                     "validation queue",
                     "0"),
                 new PanelDescriptorSnapshot(
+                    "frame-debugger",
+                    "Frame Debugger",
+                    PanelKind.Tool,
+                    DockArea.Right,
+                    "Window/Panels/Frame Debugger",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelFrameDebugger,
+                    "DEBUG",
+                    "read-only snapshot",
+                    "snapshot"),
+                new PanelDescriptorSnapshot(
                     "ui-style",
                     "UI Style",
                     PanelKind.Tool,
@@ -105,6 +116,7 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.IsType<ConsolePanelViewModel>(descriptors[3].CreateContent());
         Assert.IsType<ProblemsPanelViewModel>(descriptors[4].CreateContent());
         Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[5].CreateContent());
+        Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[6].CreateContent());
     }
 
     [Fact]
@@ -176,6 +188,15 @@ public sealed class WorkbenchFeatureModuleTests
                     IconKey: EditorIconKey.PanelProblems,
                     Category: "Window",
                     SearchText: "validation diagnostics"),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.frame-debugger",
+                    "Frame Debugger",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Frame Debugger",
+                    TargetId: "frame-debugger",
+                    IconKey: EditorIconKey.PanelFrameDebugger,
+                    Category: "Window",
+                    SearchText: "frame debugger render graph pass snapshot"),
                 new WorkbenchActionDescriptor(
                     "workbench.panel.ui-style",
                     "UI Style",

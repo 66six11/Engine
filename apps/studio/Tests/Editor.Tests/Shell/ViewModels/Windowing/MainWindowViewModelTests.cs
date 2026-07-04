@@ -169,10 +169,10 @@ public sealed class MainWindowViewModelTests
         var viewModel = CreateMainWindowViewModel();
 
         Assert.Equal(
-            ["scene-view", "hierarchy", "inspector", "console", "problems", "ui-style"],
+            ["scene-view", "hierarchy", "inspector", "console", "problems", "frame-debugger", "ui-style"],
             viewModel.PanelMenuItems.Select(item => item.PanelId));
         Assert.Equal(
-            ["Scene View", "Hierarchy", "Inspector", "Console", "Problems", "UI Style"],
+            ["Scene View", "Hierarchy", "Inspector", "Console", "Problems", "Frame Debugger", "UI Style"],
             viewModel.PanelMenuItems.Select(item => item.Header));
     }
 

@@ -89,6 +89,7 @@ public sealed class EditorIconRegistry
         registry.RegisterLucide(EditorIconKey.PanelInspector, LucideIconKind.SlidersHorizontal);
         registry.RegisterLucide(EditorIconKey.PanelConsole, LucideIconKind.Terminal);
         registry.RegisterLucide(EditorIconKey.PanelProblems, LucideIconKind.CircleAlert);
+        registry.RegisterLucide(EditorIconKey.PanelFrameDebugger, LucideIconKind.ScanSearch);
         registry.RegisterLucide(EditorIconKey.PanelUiStyle, LucideIconKind.Palette);
         registry.RegisterLucide(EditorIconKey.ObjectDefault, LucideIconKind.Box);
         return registry;
