@@ -1,7 +1,7 @@
 # Studio 代码分类
 
 状态：当前分类规则
-最后更新：2026-07-01
+最后更新：2026-07-04
 
 本文用于回答“新增或整理一段代码应该放在哪里”。它补充 `Studio框架设计.md` 和 `项目规范.md`，不替代具体专题文档。
 
@@ -336,6 +336,20 @@ Assets    应用图标、字体、图片等 Avalonia resource
 - 这里定义“能画什么”和“树是否合法”。
 - 这里不创建 Avalonia 控件。
 - 这里不执行 renderer/native 操作。
+
+### 3.5 Core/Interop
+
+放 UI-neutral 的托管/原生边界代码：
+
+- `Core/Interop/{Feature}/Api`：P/Invoke entrypoint 声明、native buffer/status/format 等 ABI 边界类型、只表达原始 native API 合同。
+- `Core/Interop/{Feature}/Adapters`：把 native frozen payload 复制成 Core snapshot payload 的托管 adapter，或把 Core contract 命令编码成 native API 调用。
+
+规则：
+
+- 只表达稳定 ABI 和内存所有权，不表达 renderer live object、Vulkan handle 或窗口 surface。
+- native buffer 必须在复制到托管内存后释放；UI 层只能继续消费 provider contract 或 immutable snapshot。
+- `Api` 目录不实现 `Core/Abstractions` 的业务接口；业务接口适配放 `Adapters`。
+- 默认 composition 不应在 native shared library 和 renderer lifetime owner 完成前强制加载 native library。
 
 ## 4. Shell
 
@@ -723,6 +737,8 @@ Tests/Editor.Tests/Features
 | Transaction id / service snapshot 合同模型 | `Core/Models/Transactions` |
 | 纯内存默认实现或校验器 | `Core/Services` |
 | Code-first 平台无关 authoring/tree/state | `Core/CodeFirstUI` |
+| UI-neutral native API / P/Invoke 合同 | `Core/Interop/{Feature}/Api` |
+| UI-neutral native adapter / bridge 实现 | `Core/Interop/{Feature}/Adapters` |
 | Code-first Avalonia 控件生成和 host | `Shell/CodeFirstUI` |
 | Dock layout / hit test / drop 管理 | `Shell/Docking` |
 | Panel registry / panel instance lifecycle | `Shell/Docking/Panels` |
@@ -792,6 +808,24 @@ Tests/Editor.Tests/Features
 
 - `Core/Models/FrameDebug` owns immutable, UI-neutral Frame Debugger snapshot records.
 - `Core/Abstractions/IFrameDebuggerSnapshotProvider.cs` is the provider contract consumed by Studio features.
+- `Core/Interop/FrameDebugger/Api` owns raw native API contracts: P/Invoke symbols, native buffer/status structs, and ABI format vocabulary.
+- `Core/Interop/FrameDebugger/Adapters` owns managed bridge code: UTF-8 command encoding, copy-then-release ownership, and `INativeFrameDebuggerBridge` implementation.
 - `Core/Services/InMemoryFrameDebuggerSnapshotProvider.cs` is a fixture/test publication seam only; native adapters must publish through the contract later instead of leaking Vulkan or C++ objects into UI.
 - `Features/FrameDebugger/FrameDebuggerPanel.cs` is a Code-first, read-only panel. It may render snapshots and publish diagnostics, but it must not call native ABI, P/Invoke, Vulkan handles, or renderer objects.
 - `Features/Workbench/WorkbenchFeatureModule.cs` may create the fixture-backed provider and register the built-in panel as part of built-in composition wiring.
+
+## 2026-07-04 Frame Debugger editor_native ABI v0 classification
+
+- `apps/editor` owns the `editor-native` shared library target because it already owns the C++ editor Frame Debugger state, replay model, and snapshot projection.
+- `apps/editor/src/native_bridge` owns exported C ABI entrypoints, ABI structs, result codes, and native-owned buffer release functions.
+- `apps/editor/src/editor_frame_debugger_snapshot_projector.*` owns backend-neutral snapshot JSON projection shared by the editor smoke and native ABI bridge.
+- `apps/editor/src/native_bridge/frame_debugger_native_smoke.*` owns CLI smoke coverage for ABI header/version, explicit UTF-8 byte lengths, native-owned snapshot release, and CPU-only command forwarding.
+- The native ABI v0 is CPU-only. It must not create a Vulkan surface, expose renderer handles, or make Avalonia/Studio own swapchain or GPU resource lifetime.
+
+## 2026-07-05 Viewport contract and scheduler classification
+
+- `Core/Models/Viewports` owns immutable, UI-neutral viewport identity, extent, clock, render reason, update policy, scheduler context, render request, and render result contracts.
+- `Core/Services/ViewportScheduler.cs` owns the pure managed render-request planner for Phase 1. It consumes viewport snapshots and emits `ViewportRenderRequest` snapshots only.
+- The Phase 1 viewport scheduler is CPU-only and must not reference Avalonia controls, composition surfaces, platform window handles, native pointers, Vulkan handles, RenderGraph objects, or renderer live state.
+- `Features/SceneView` may consume these contracts in a later slice, but it must still not own native Vulkan viewport lifetime or renderer handles.
+- Native viewport bridge, Avalonia composition import, and GamePreview swapchain work remain separate implementation slices.

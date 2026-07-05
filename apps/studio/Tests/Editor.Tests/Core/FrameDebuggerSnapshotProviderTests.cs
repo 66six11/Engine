@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.FrameDebug;
 using Editor.Core.Services;
@@ -287,6 +288,86 @@ public sealed class FrameDebuggerSnapshotProviderTests
         Assert.Contains("unavailable", snapshot.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Native_provider_refreshes_snapshot_from_bridge_payload_and_rebuilds_lookup()
+    {
+        var bridge = new StubNativeFrameDebuggerBridge(
+            NativeFrameDebuggerSnapshotPayload.JsonUtf8(Encoding.UTF8.GetBytes(
+                CreateNativeSnapshotJson())));
+        var provider = new NativeFrameDebuggerSnapshotProvider(bridge);
+        var changeCount = 0;
+        provider.SnapshotChanged += (_, _) => changeCount++;
+
+        Assert.True(provider.RefreshSnapshot());
+
+        var snapshot = provider.GetCurrentSnapshot();
+        Assert.Equal(1, bridge.AcquireSnapshotCalls);
+        Assert.Equal(1, changeCount);
+        Assert.Equal(1, snapshot.Version);
+        Assert.Equal(FrameDebuggerState.PausedFrameDebug, snapshot.State);
+        Assert.NotNull(snapshot.Capture);
+        Assert.Equal("frame:42", snapshot.Capture.CaptureId);
+        Assert.Equal(12, snapshot.Capture.FrameIndex);
+        Assert.Equal(42UL, snapshot.Capture.SubmittedFrameEpoch);
+        Assert.Equal("Scene", snapshot.Capture.ViewKind);
+        Assert.Equal(1280, snapshot.Capture.RequestedWidth);
+        Assert.Equal(720, snapshot.Capture.RequestedHeight);
+        Assert.Equal(DateTimeOffset.UnixEpoch, snapshot.Capture.CapturedAtUtc);
+        Assert.Equal("Captured frame 12.", snapshot.Message);
+
+        var pass = Assert.Single(snapshot.Passes);
+        Assert.Equal("pass:0", pass.Id);
+        Assert.Equal("Scene Color", pass.Name);
+        Assert.Single(snapshot.Commands);
+        Assert.Single(snapshot.Resources);
+        Assert.Single(snapshot.AccessEdges);
+        Assert.Single(snapshot.DependencyEdges);
+        Assert.Single(snapshot.Transitions);
+        var executionEvent = Assert.Single(snapshot.ExecutionEvents);
+        Assert.Equal("event:7", executionEvent.Id);
+        Assert.Equal("image:0", executionEvent.TargetResourceId);
+        Assert.Equal("Pending", snapshot.Preview.Status);
+        Assert.Equal("pass:0", snapshot.Preview.SelectedPassId);
+        Assert.Equal("event:7", snapshot.Preview.SelectedExecutionEventId);
+        Assert.True(provider.TryGetPass("pass:0", out var indexedPass));
+        Assert.Same(pass, indexedPass);
+        Assert.True(provider.TryGetExecutionEvent("event:7", out var indexedEvent));
+        Assert.Same(executionEvent, indexedEvent);
+    }
+
+    [Fact]
+    public void Native_provider_keeps_existing_snapshot_when_bridge_has_no_payload()
+    {
+        var bridge = new StubNativeFrameDebuggerBridge(payload: null);
+        var initial = CreateSnapshot([CreatePass("pass:initial", "Initial")], []);
+        var provider = new NativeFrameDebuggerSnapshotProvider(bridge, initial);
+        var changeCount = 0;
+        provider.SnapshotChanged += (_, _) => changeCount++;
+
+        Assert.False(provider.RefreshSnapshot());
+
+        Assert.Equal(1, bridge.AcquireSnapshotCalls);
+        Assert.Equal(0, changeCount);
+        Assert.Same(initial, provider.GetCurrentSnapshot());
+        Assert.True(provider.TryGetPass("pass:initial", out var pass));
+        Assert.Equal("Initial", pass?.Name);
+    }
+
+    [Fact]
+    public void Native_provider_forwards_frame_debugger_commands_to_bridge()
+    {
+        var bridge = new StubNativeFrameDebuggerBridge(payload: null);
+        var provider = new NativeFrameDebuggerSnapshotProvider(bridge);
+
+        Assert.True(provider.RequestCapture());
+        Assert.True(provider.RequestResume());
+        Assert.True(provider.SelectExecutionEvent("event:7"));
+
+        Assert.Equal(1, bridge.RequestCaptureCalls);
+        Assert.Equal(1, bridge.RequestResumeCalls);
+        Assert.Equal("event:7", bridge.SelectedExecutionEventId);
+    }
+
     private static FrameDebuggerSnapshot CreateSnapshot(
         FrameDebugPassSnapshot[] passes,
         FrameDebugExecutionEventSnapshot[] executionEvents)
@@ -337,5 +418,167 @@ public sealed class FrameDebuggerSnapshotProviderTests
             GroupCountX: 0,
             GroupCountY: 0,
             GroupCountZ: 0);
+    }
+
+    private static string CreateNativeSnapshotJson()
+    {
+        return """
+            {
+              "schemaVersion": 1,
+              "version": 1,
+              "state": "PausedFrameDebug",
+              "capture": {
+                "captureId": "frame:42",
+                "frameIndex": 12,
+                "submittedFrameEpoch": 42,
+                "viewKind": "Scene",
+                "requestedWidth": 1280,
+                "requestedHeight": 720
+              },
+              "passes": [
+                {
+                  "id": "pass:0",
+                  "passIndex": 0,
+                  "declarationIndex": 0,
+                  "name": "Scene Color",
+                  "type": "Raster",
+                  "paramsType": "BasicRenderView",
+                  "allowCulling": true,
+                  "hasSideEffects": false,
+                  "commandCount": 1,
+                  "imageTransitionCount": 1,
+                  "bufferTransitionCount": 0
+                }
+              ],
+              "commands": [
+                {
+                  "id": "command:0:0",
+                  "passId": "pass:0",
+                  "passName": "Scene Color",
+                  "commandIndex": 0,
+                  "declarationIndex": 0,
+                  "kind": "DrawFullscreenTriangle",
+                  "detail": "Draw scene color"
+                }
+              ],
+              "resources": [
+                {
+                  "id": "image:0",
+                  "kind": "Image",
+                  "resourceIndex": 0,
+                  "name": "Scene Color",
+                  "imageFormat": "Rgba8Unorm",
+                  "imageExtent": {
+                    "width": 1280,
+                    "height": 720
+                  },
+                  "imageInitialAccess": "Undefined",
+                  "imageFinalAccess": "ColorWrite"
+                }
+              ],
+              "accessEdges": [
+                {
+                  "id": "access:0:0:target",
+                  "passId": "pass:0",
+                  "passName": "Scene Color",
+                  "resourceId": "image:0",
+                  "resourceName": "Scene Color",
+                  "slotName": "target",
+                  "access": "ColorWrite",
+                  "shaderStage": "Fragment"
+                }
+              ],
+              "dependencyEdges": [
+                {
+                  "id": "dependency:0:1:0",
+                  "fromPassId": "pass:0",
+                  "toPassId": "pass:1",
+                  "resourceId": "image:0",
+                  "resourceName": "Scene Color",
+                  "reason": "Color dependency"
+                }
+              ],
+              "transitions": [
+                {
+                  "id": "transition:BeforePass:0:0",
+                  "phase": "BeforePass",
+                  "passId": "pass:0",
+                  "passName": "Scene Color",
+                  "resourceId": "image:0",
+                  "resourceName": "Scene Color",
+                  "oldImageAccess": "Undefined",
+                  "newImageAccess": "ColorWrite"
+                }
+              ],
+              "executionEvents": [
+                {
+                  "id": "event:7",
+                  "eventIndex": 7,
+                  "kind": "DrawFullscreenTriangle",
+                  "passId": "pass:0",
+                  "passName": "Scene Color",
+                  "commandId": "command:0:0",
+                  "label": "Draw scene color",
+                  "targetResourceId": "image:0",
+                  "vertexCount": 3,
+                  "indexCount": 0,
+                  "instanceCount": 1,
+                  "groupCountX": 0,
+                  "groupCountY": 0,
+                  "groupCountZ": 0
+                }
+              ],
+              "preview": {
+                "status": "Pending",
+                "selectedPassId": "pass:0",
+                "selectedExecutionEventId": "event:7",
+                "message": "Preview pending."
+              },
+              "message": "Captured frame 12."
+            }
+            """;
+    }
+
+    private sealed class StubNativeFrameDebuggerBridge : INativeFrameDebuggerBridge
+    {
+        private readonly NativeFrameDebuggerSnapshotPayload? payload_;
+
+        public StubNativeFrameDebuggerBridge(NativeFrameDebuggerSnapshotPayload? payload)
+        {
+            payload_ = payload;
+        }
+
+        public int AcquireSnapshotCalls { get; private set; }
+
+        public int RequestCaptureCalls { get; private set; }
+
+        public int RequestResumeCalls { get; private set; }
+
+        public string? SelectedExecutionEventId { get; private set; }
+
+        public bool TryAcquireSnapshot(out NativeFrameDebuggerSnapshotPayload? payload)
+        {
+            AcquireSnapshotCalls++;
+            payload = payload_;
+            return payload_ is not null;
+        }
+
+        public bool RequestCapture()
+        {
+            RequestCaptureCalls++;
+            return true;
+        }
+
+        public bool RequestResume()
+        {
+            RequestResumeCalls++;
+            return true;
+        }
+
+        public bool SelectExecutionEvent(string executionEventId)
+        {
+            SelectedExecutionEventId = executionEventId;
+            return true;
+        }
     }
 }

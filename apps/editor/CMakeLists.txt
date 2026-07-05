@@ -74,6 +74,38 @@ if(WIN32)
     )
 endif()
 
+add_library(editor-native SHARED
+    src/editor_frame_debugger.cpp
+    src/editor_frame_debugger_replay.cpp
+    src/editor_frame_debugger_snapshot_projector.cpp
+    src/native_bridge/frame_debugger_native_api.cpp
+)
+
+add_library(asharia::editor_native ALIAS editor-native)
+
+set_target_properties(editor-native
+    PROPERTIES
+        OUTPUT_NAME editor_native
+)
+
+target_include_directories(editor-native
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_link_libraries(editor-native
+    PRIVATE
+        asharia::archive
+        asharia::renderer_basic_vulkan
+)
+
+target_compile_definitions(editor-native
+    PRIVATE
+        EDITOR_NATIVE_BUILD=1
+)
+
+asharia_configure_target(editor-native)
+
 add_executable(asharia-editor
     src/editor_action.cpp
     src/editor_app.cpp
@@ -95,6 +127,7 @@ add_executable(asharia-editor
     src/editor_extension.cpp
     src/editor_frame_debugger.cpp
     src/editor_frame_debugger_replay.cpp
+    src/editor_frame_debugger_snapshot_projector.cpp
     src/editor_frame_debugger_smoke.cpp
     src/editor_frame_debug_preview.cpp
     src/editor_i18n.cpp
@@ -135,6 +168,7 @@ add_executable(asharia-editor
     src/imgui_runtime.cpp
     src/imgui_texture_registry.cpp
     src/main.cpp
+    src/native_bridge/frame_debugger_native_smoke.cpp
     src/panels/asset_browser_panel.cpp
     src/panels/editor_settings_panel.cpp
     src/panels/frame_debugger_panel.cpp
@@ -178,6 +212,7 @@ target_link_libraries(asharia-editor
         asharia::asset_core_io
         asharia::asset_pipeline
         asharia::core
+        asharia::editor_native
         asharia::project_core_io
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan

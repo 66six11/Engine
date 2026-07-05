@@ -516,6 +516,39 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
+    public void Viewport_core_models_live_in_viewport_model_folder()
+    {
+        var root = FindRepositoryRoot();
+        var expectedNamespace = "namespace Editor.Core.Models.Viewports;";
+
+        var viewportFiles = new[]
+        {
+            "ViewportClockMode.cs",
+            "ViewportClockSnapshot.cs",
+            "ViewportExtent.cs",
+            "ViewportId.cs",
+            "ViewportKind.cs",
+            "ViewportRenderReason.cs",
+            "ViewportRenderRequest.cs",
+            "ViewportRenderResult.cs",
+            "ViewportSchedulerContext.cs",
+            "ViewportSchedulerOptions.cs",
+            "ViewportStateSnapshot.cs",
+            "ViewportUpdatePolicy.cs",
+        };
+
+        foreach (var fileName in viewportFiles)
+        {
+            var path = Path.Combine(root, "Core", "Models", "Viewports", fileName);
+            Assert.True(
+                File.Exists(path),
+                $"{fileName} is viewport contract data and should live under Core/Models/Viewports.");
+            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
+        }
+    }
+
+    [Fact]
     public void Selection_core_models_live_in_selection_model_folder()
     {
         var root = FindRepositoryRoot();
@@ -824,6 +857,70 @@ public sealed class StudioLayeringTests
             Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
             Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
         }
+    }
+
+    [Fact]
+    public void Frame_debugger_interop_files_separate_api_contracts_from_adapters()
+    {
+        var root = FindRepositoryRoot();
+        var expectedApiNamespace = "namespace Editor.Core.Interop.FrameDebugger.Api;";
+        var expectedAdapterNamespace = "namespace Editor.Core.Interop.FrameDebugger.Adapters;";
+
+        var apiFiles = new[]
+        {
+            "FrameDebuggerNativeLibraryApi.cs",
+            "FrameDebuggerNativeSnapshotBuffer.cs",
+            "FrameDebuggerNativeStatus.cs",
+            "IFrameDebuggerNativeApi.cs",
+        };
+
+        foreach (var fileName in apiFiles)
+        {
+            var path = Path.Combine(root, "Core", "Interop", "FrameDebugger", "Api", fileName);
+            Assert.True(
+                File.Exists(path),
+                $"{fileName} is a raw native API contract and should live under Core/Interop/FrameDebugger/Api.");
+            Assert.Contains(expectedApiNamespace, File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", fileName)));
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", "FrameDebugger", "Adapters", fileName)));
+        }
+
+        var adapterPath = Path.Combine(
+            root,
+            "Core",
+            "Interop",
+            "FrameDebugger",
+            "Adapters",
+            "FrameDebuggerNativeBridge.cs");
+        Assert.True(
+            File.Exists(adapterPath),
+            "FrameDebuggerNativeBridge implements the managed adapter and should live under Core/Interop/FrameDebugger/Adapters.");
+        Assert.Contains(expectedAdapterNamespace, File.ReadAllText(adapterPath), StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", "FrameDebuggerNativeBridge.cs")));
+
+        var testPath = Path.Combine(
+            root,
+            "Tests",
+            "Editor.Tests",
+            "Core",
+            "Interop",
+            "FrameDebugger",
+            "Adapters",
+            "FrameDebuggerNativeBridgeTests.cs");
+        Assert.True(
+            File.Exists(testPath),
+            "Frame debugger native bridge tests should mirror the adapter folder.");
+        Assert.Contains(
+            "namespace Editor.Tests.Core.Interop.FrameDebugger.Adapters;",
+            File.ReadAllText(testPath),
+            StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(
+            root,
+            "Tests",
+            "Editor.Tests",
+            "Core",
+            "Interop",
+            "FrameDebuggerNativeBridgeTests.cs")));
     }
 
     private static string FindRepositoryRoot()
