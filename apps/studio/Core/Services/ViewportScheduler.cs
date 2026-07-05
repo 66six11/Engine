@@ -96,7 +96,12 @@ public sealed class ViewportScheduler
         ViewportRenderReason reason)
     {
         if (viewport.IsFocused
-            && viewport.InteractiveBurstRemaining > TimeSpan.Zero)
+            && viewport.InteractiveBurstRemaining > TimeSpan.Zero
+            && (reason != ViewportRenderReason.None
+                || ShouldTick(
+                    viewport.LastRenderedAtUtc,
+                    nowUtc,
+                    options_.InteractiveBurstInterval)))
         {
             reason |= ViewportRenderReason.InputActive;
         }
@@ -155,6 +160,7 @@ public sealed class ViewportScheduler
         TimeSpan interval)
     {
         return lastRenderedAtUtc is null
+            || lastRenderedAtUtc.Value > nowUtc
             || nowUtc - lastRenderedAtUtc.Value >= interval;
     }
 

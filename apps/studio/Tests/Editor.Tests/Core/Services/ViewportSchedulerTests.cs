@@ -77,7 +77,7 @@ public sealed class ViewportSchedulerTests
 
         var activeRequests = scheduler.BuildRenderPlan(
             [active],
-            new ViewportSchedulerContext(now.AddMilliseconds(16)));
+            new ViewportSchedulerContext(now.AddMilliseconds(17)));
         var idleTooSoon = scheduler.BuildRenderPlan(
             [idle],
             new ViewportSchedulerContext(now.AddMilliseconds(100)));
@@ -91,6 +91,34 @@ public sealed class ViewportSchedulerTests
 
         var idleRequest = Assert.Single(idleAtInterval);
         Assert.True(idleRequest.Reason.HasFlag(ViewportRenderReason.VisibleExposed));
+    }
+
+    [Fact]
+    public void Interactive_burst_respects_configured_interval()
+    {
+        var scheduler = new ViewportScheduler(new ViewportSchedulerOptions(
+            interactiveBurstFramesPerSecond: 10,
+            sceneIdleFramesPerSecond: 5,
+            previewFramesPerSecond: 15,
+            runtimeFramesPerSecond: 60));
+        var now = DateTimeOffset.UnixEpoch;
+        var viewport = CreateViewport(
+            updatePolicy: ViewportUpdatePolicy.InteractiveBurst,
+            isFocused: true,
+            lastRenderedAtUtc: now,
+            interactiveBurstRemaining: TimeSpan.FromSeconds(1));
+
+        var tooSoon = scheduler.BuildRenderPlan(
+            [viewport],
+            new ViewportSchedulerContext(now.AddMilliseconds(99)));
+        var atInterval = scheduler.BuildRenderPlan(
+            [viewport],
+            new ViewportSchedulerContext(now.AddMilliseconds(100)));
+
+        Assert.Empty(tooSoon);
+
+        var request = Assert.Single(atInterval);
+        Assert.True(request.Reason.HasFlag(ViewportRenderReason.InputActive));
     }
 
     [Fact]
@@ -116,6 +144,59 @@ public sealed class ViewportSchedulerTests
         var request = Assert.Single(requests);
         Assert.Same(clock, request.Clock);
         Assert.True(request.Reason.HasFlag(ViewportRenderReason.TimeAdvanced));
+    }
+
+    [Fact]
+    public void Time_playback_with_future_last_rendered_time_still_renders()
+    {
+        var scheduler = new ViewportScheduler();
+        var now = DateTimeOffset.UnixEpoch;
+        var viewport = CreateViewport(
+            updatePolicy: ViewportUpdatePolicy.TimePlayback,
+            lastRenderedAtUtc: now.AddSeconds(1));
+
+        var requests = scheduler.BuildRenderPlan(
+            [viewport],
+            new ViewportSchedulerContext(now));
+
+        var request = Assert.Single(requests);
+        Assert.True(request.Reason.HasFlag(ViewportRenderReason.TimeAdvanced));
+    }
+
+    [Fact]
+    public void Runtime_play_renders_at_runtime_interval()
+    {
+        var scheduler = new ViewportScheduler();
+        var now = DateTimeOffset.UnixEpoch;
+        var viewport = CreateViewport(
+            updatePolicy: ViewportUpdatePolicy.RuntimePlay,
+            isFocused: true,
+            lastRenderedAtUtc: now);
+
+        var requests = scheduler.BuildRenderPlan(
+            [viewport],
+            new ViewportSchedulerContext(now.AddMilliseconds(17)));
+
+        var request = Assert.Single(requests);
+        Assert.True(request.Reason.HasFlag(ViewportRenderReason.RuntimePlaying));
+    }
+
+    [Fact]
+    public void Performance_preview_renders_at_runtime_interval()
+    {
+        var scheduler = new ViewportScheduler();
+        var now = DateTimeOffset.UnixEpoch;
+        var viewport = CreateViewport(
+            updatePolicy: ViewportUpdatePolicy.PerformancePreview,
+            isFocused: true,
+            lastRenderedAtUtc: now);
+
+        var requests = scheduler.BuildRenderPlan(
+            [viewport],
+            new ViewportSchedulerContext(now.AddMilliseconds(17)));
+
+        var request = Assert.Single(requests);
+        Assert.True(request.Reason.HasFlag(ViewportRenderReason.RuntimePlaying));
     }
 
     [Fact]
@@ -170,7 +251,7 @@ public sealed class ViewportSchedulerTests
 
         var requests = scheduler.BuildRenderPlan(
             [low, focused, capture],
-            new ViewportSchedulerContext(now.AddMilliseconds(16), maxViewportRendersThisTick: 2));
+            new ViewportSchedulerContext(now.AddMilliseconds(17), maxViewportRendersThisTick: 2));
 
         Assert.Equal(["frame", "scene"], requests.Select(request => request.Id.Value));
     }
