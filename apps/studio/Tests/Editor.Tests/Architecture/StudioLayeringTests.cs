@@ -516,6 +516,39 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
+    public void Viewport_core_models_live_in_viewport_model_folder()
+    {
+        var root = FindRepositoryRoot();
+        var expectedNamespace = "namespace Editor.Core.Models.Viewports;";
+
+        var viewportFiles = new[]
+        {
+            "ViewportClockMode.cs",
+            "ViewportClockSnapshot.cs",
+            "ViewportExtent.cs",
+            "ViewportId.cs",
+            "ViewportKind.cs",
+            "ViewportRenderReason.cs",
+            "ViewportRenderRequest.cs",
+            "ViewportRenderResult.cs",
+            "ViewportSchedulerContext.cs",
+            "ViewportSchedulerOptions.cs",
+            "ViewportStateSnapshot.cs",
+            "ViewportUpdatePolicy.cs",
+        };
+
+        foreach (var fileName in viewportFiles)
+        {
+            var path = Path.Combine(root, "Core", "Models", "Viewports", fileName);
+            Assert.True(
+                File.Exists(path),
+                $"{fileName} is viewport contract data and should live under Core/Models/Viewports.");
+            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
+        }
+    }
+
+    [Fact]
     public void Selection_core_models_live_in_selection_model_folder()
     {
         var root = FindRepositoryRoot();

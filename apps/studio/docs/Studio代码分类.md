@@ -821,3 +821,11 @@ Tests/Editor.Tests/Features
 - `apps/editor/src/editor_frame_debugger_snapshot_projector.*` owns backend-neutral snapshot JSON projection shared by the editor smoke and native ABI bridge.
 - `apps/editor/src/native_bridge/frame_debugger_native_smoke.*` owns CLI smoke coverage for ABI header/version, explicit UTF-8 byte lengths, native-owned snapshot release, and CPU-only command forwarding.
 - The native ABI v0 is CPU-only. It must not create a Vulkan surface, expose renderer handles, or make Avalonia/Studio own swapchain or GPU resource lifetime.
+
+## 2026-07-05 Viewport contract and scheduler classification
+
+- `Core/Models/Viewports` owns immutable, UI-neutral viewport identity, extent, clock, render reason, update policy, scheduler context, render request, and render result contracts.
+- `Core/Services/ViewportScheduler.cs` owns the pure managed render-request planner for Phase 1. It consumes viewport snapshots and emits `ViewportRenderRequest` snapshots only.
+- The Phase 1 viewport scheduler is CPU-only and must not reference Avalonia controls, composition surfaces, platform window handles, native pointers, Vulkan handles, RenderGraph objects, or renderer live state.
+- `Features/SceneView` may consume these contracts in a later slice, but it must still not own native Vulkan viewport lifetime or renderer handles.
+- Native viewport bridge, Avalonia composition import, and GamePreview swapchain work remain separate implementation slices.
