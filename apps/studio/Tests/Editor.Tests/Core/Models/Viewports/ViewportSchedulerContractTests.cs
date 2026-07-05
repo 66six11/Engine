@@ -35,6 +35,15 @@ public sealed class ViewportSchedulerContractTests
     }
 
     [Fact]
+    public void Scheduler_options_reject_maximum_tick_boundary_frame_rates()
+    {
+        var framesPerSecond =
+            TimeSpan.TicksPerSecond / (double)TimeSpan.MaxValue.Ticks;
+
+        AssertInvalidFrameRate(framesPerSecond);
+    }
+
+    [Fact]
     public void Scheduler_options_expose_ceiling_based_intervals()
     {
         var options = new ViewportSchedulerOptions(

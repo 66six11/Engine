@@ -4,6 +4,9 @@ namespace Editor.Core.Models.Viewports;
 
 public sealed record ViewportSchedulerOptions
 {
+    private static readonly double MaxSafelyConvertibleTicks =
+        Math.BitDecrement(Math.Pow(2, 63));
+
     public ViewportSchedulerOptions(
         double interactiveBurstFramesPerSecond = 60,
         double sceneIdleFramesPerSecond = 5,
@@ -40,34 +43,73 @@ public sealed record ViewportSchedulerOptions
     public double RuntimeFramesPerSecond { get; }
 
     public TimeSpan InteractiveBurstInterval =>
-        GetTargetFrameInterval(InteractiveBurstFramesPerSecond);
+        GetTargetFrameInterval(
+            InteractiveBurstFramesPerSecond,
+            nameof(InteractiveBurstFramesPerSecond));
 
     public TimeSpan SceneIdleInterval =>
-        GetTargetFrameInterval(SceneIdleFramesPerSecond);
+        GetTargetFrameInterval(
+            SceneIdleFramesPerSecond,
+            nameof(SceneIdleFramesPerSecond));
 
     public TimeSpan PreviewInterval =>
-        GetTargetFrameInterval(PreviewFramesPerSecond);
+        GetTargetFrameInterval(
+            PreviewFramesPerSecond,
+            nameof(PreviewFramesPerSecond));
 
     public TimeSpan RuntimeInterval =>
-        GetTargetFrameInterval(RuntimeFramesPerSecond);
+        GetTargetFrameInterval(
+            RuntimeFramesPerSecond,
+            nameof(RuntimeFramesPerSecond));
 
     private static void ValidateFrameRate(
         double framesPerSecond,
         string parameterName)
     {
-        if (framesPerSecond <= 0 || !double.IsFinite(framesPerSecond)
-            || TimeSpan.TicksPerSecond / framesPerSecond > TimeSpan.MaxValue.Ticks)
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                framesPerSecond,
-                "Viewport scheduler frame rate must produce a representable positive interval.");
-        }
+        _ = GetTargetFrameIntervalTicks(framesPerSecond, parameterName);
     }
 
-    private static TimeSpan GetTargetFrameInterval(double framesPerSecond)
+    private static TimeSpan GetTargetFrameInterval(
+        double framesPerSecond,
+        string parameterName)
     {
         return TimeSpan.FromTicks(
-            (long)Math.Ceiling(TimeSpan.TicksPerSecond / framesPerSecond));
+            GetTargetFrameIntervalTicks(framesPerSecond, parameterName));
+    }
+
+    private static long GetTargetFrameIntervalTicks(
+        double framesPerSecond,
+        string parameterName)
+    {
+        if (framesPerSecond <= 0 || !double.IsFinite(framesPerSecond))
+        {
+            throw CreateFrameRateOutOfRangeException(
+                framesPerSecond,
+                parameterName);
+        }
+
+        var intervalTicks = Math.Ceiling(
+            TimeSpan.TicksPerSecond / framesPerSecond);
+
+        if (!double.IsFinite(intervalTicks)
+            || intervalTicks < 1
+            || intervalTicks > MaxSafelyConvertibleTicks)
+        {
+            throw CreateFrameRateOutOfRangeException(
+                framesPerSecond,
+                parameterName);
+        }
+
+        return checked((long)intervalTicks);
+    }
+
+    private static ArgumentOutOfRangeException CreateFrameRateOutOfRangeException(
+        double framesPerSecond,
+        string parameterName)
+    {
+        return new ArgumentOutOfRangeException(
+            parameterName,
+            framesPerSecond,
+            "Viewport scheduler frame rate must produce a representable positive interval.");
     }
 }
