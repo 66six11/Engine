@@ -25,21 +25,13 @@ public sealed class ViewportSchedulerContractTests
     [InlineData(double.PositiveInfinity)]
     public void Scheduler_options_reject_invalid_frame_rates(double framesPerSecond)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ViewportSchedulerOptions(
-                interactiveBurstFramesPerSecond: framesPerSecond));
+        AssertInvalidFrameRate(framesPerSecond);
+    }
 
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ViewportSchedulerOptions(
-                sceneIdleFramesPerSecond: framesPerSecond));
-
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ViewportSchedulerOptions(
-                previewFramesPerSecond: framesPerSecond));
-
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ViewportSchedulerOptions(
-                runtimeFramesPerSecond: framesPerSecond));
+    [Fact]
+    public void Scheduler_options_reject_unrepresentable_frame_rates()
+    {
+        AssertInvalidFrameRate(double.Epsilon);
     }
 
     [Fact]
@@ -133,5 +125,24 @@ public sealed class ViewportSchedulerContractTests
             deltaSeconds: 0,
             frameIndex: 0,
             playbackSpeed: 1);
+    }
+
+    private static void AssertInvalidFrameRate(double framesPerSecond)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ViewportSchedulerOptions(
+                interactiveBurstFramesPerSecond: framesPerSecond));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ViewportSchedulerOptions(
+                sceneIdleFramesPerSecond: framesPerSecond));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ViewportSchedulerOptions(
+                previewFramesPerSecond: framesPerSecond));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ViewportSchedulerOptions(
+                runtimeFramesPerSecond: framesPerSecond));
     }
 }

@@ -55,12 +55,13 @@ public sealed record ViewportSchedulerOptions
         double framesPerSecond,
         string parameterName)
     {
-        if (framesPerSecond <= 0 || !double.IsFinite(framesPerSecond))
+        if (framesPerSecond <= 0 || !double.IsFinite(framesPerSecond)
+            || TimeSpan.TicksPerSecond / framesPerSecond > TimeSpan.MaxValue.Ticks)
         {
             throw new ArgumentOutOfRangeException(
                 parameterName,
                 framesPerSecond,
-                "Viewport scheduler frame rate must be finite and greater than zero.");
+                "Viewport scheduler frame rate must produce a representable positive interval.");
         }
     }
 
