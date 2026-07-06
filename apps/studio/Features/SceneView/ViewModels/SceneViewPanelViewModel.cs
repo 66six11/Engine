@@ -23,12 +23,17 @@ public sealed class SceneViewPanelViewModel : ViewModelBase
 
     public ViewportCompositionCapabilitiesSnapshot? CompositionCapabilities { get; private set; }
 
+    public ViewportNativePresentSnapshot? NativePresent { get; private set; }
+
     public string ViewportStateMessage =>
-        CompositionCapabilities is null
+        NativePresent is not null
+            ? NativePresent.Message
+            : CompositionCapabilities is null
             ? "Scene View is waiting for Avalonia composition GPU interop probing."
             : CompositionCapabilities.Message;
 
-    public string ViewportStatusText => CompositionCapabilities?.Status.ToString() ?? "composition pending";
+    public string ViewportStatusText =>
+        NativePresent?.Status.ToString() ?? CompositionCapabilities?.Status.ToString() ?? "composition pending";
 
     public void UpdateCompositionCapabilities(ViewportCompositionCapabilitiesSnapshot snapshot)
     {
@@ -40,8 +45,31 @@ public sealed class SceneViewPanelViewModel : ViewModelBase
                 nameof(snapshot));
         }
 
+        var hadNativePresent = NativePresent is not null;
         CompositionCapabilities = snapshot;
+        NativePresent = null;
         OnPropertyChanged(nameof(CompositionCapabilities));
+        if (hadNativePresent)
+        {
+            OnPropertyChanged(nameof(NativePresent));
+        }
+
+        OnPropertyChanged(nameof(ViewportStateMessage));
+        OnPropertyChanged(nameof(ViewportStatusText));
+    }
+
+    public void UpdateNativePresent(ViewportNativePresentSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.ViewportId != ViewportId)
+        {
+            throw new ArgumentException(
+                "Native present snapshot must match the Scene View viewport.",
+                nameof(snapshot));
+        }
+
+        NativePresent = snapshot;
+        OnPropertyChanged(nameof(NativePresent));
         OnPropertyChanged(nameof(ViewportStateMessage));
         OnPropertyChanged(nameof(ViewportStatusText));
     }

@@ -109,6 +109,101 @@ public sealed class ViewportNativeBridgeTests
         Assert.Equal(nativePacket, api.LastReleasedPresentPacket.NativePacket);
     }
 
+    [Fact]
+    public void Acquire_present_packet_sends_compatibility_and_extent_to_native_api()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            AcquiredPacketStatus = ViewportNativeStatus.Success,
+        };
+        var bridge = new ViewportNativeBridge(api);
+        var requestedExtent = CreateRequestedExtent();
+
+        var packet = bridge.AcquirePresentPacket(
+            CreateCompositionCapabilities(),
+            requestedExtent);
+
+        Assert.Equal(ViewportNativeStatus.Success, packet.Status);
+        Assert.Equal(ViewportNativeAbiHeader.ExpectedAbiVersion, api.LastPresentRequest.Header.AbiVersion);
+        Assert.Equal(ViewportNativePresentRequest.CurrentStructSize, api.LastPresentRequest.Header.StructSize);
+        Assert.Equal(ViewportNativeHandleTypes.VulkanOpaqueNt, api.LastPresentRequest.Compatibility.ImageHandleType);
+        Assert.Equal(ViewportNativeHandleTypes.VulkanOpaqueNt, api.LastPresentRequest.Compatibility.SemaphoreHandleType);
+        Assert.Equal((uint)requestedExtent.WidthPixels, api.LastPresentRequest.WidthPixels);
+        Assert.Equal((uint)requestedExtent.HeightPixels, api.LastPresentRequest.HeightPixels);
+    }
+
+    [Fact]
+    public void Acquire_present_packet_returns_native_failure_packet_for_caller_release()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            AcquiredPacketStatus = ViewportNativeStatus.RenderFailed,
+        };
+        var bridge = new ViewportNativeBridge(api);
+
+        var packet = bridge.AcquirePresentPacket(
+            CreateCompositionCapabilities(),
+            CreateRequestedExtent());
+
+        Assert.Equal(ViewportNativeStatus.RenderFailed, packet.Status);
+        Assert.Equal(new IntPtr(0x1234), packet.NativePacket);
+        Assert.Equal(0, api.ReleasePresentPacketCalls);
+    }
+
+    [Fact]
+    public void Snapshot_and_release_present_packet_maps_status_copies_message_and_releases_packet()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            AcquiredPacketStatus = ViewportNativeStatus.RenderFailed,
+            PresentPacketMessage = "render failed",
+        };
+        var bridge = new ViewportNativeBridge(api);
+        var requestedExtent = CreateRequestedExtent();
+        var packet = bridge.AcquirePresentPacket(
+            CreateCompositionCapabilities(),
+            requestedExtent);
+
+        var snapshot = bridge.SnapshotAndReleasePresentPacket(
+            packet,
+            new ViewportId("scene-view/main"),
+            requestedExtent);
+
+        Assert.Equal(ViewportNativePresentStatus.RenderFailed, snapshot.Status);
+        Assert.Equal("render failed", snapshot.Message);
+        Assert.Equal("B8G8R8A8_UNORM", snapshot.FormatName);
+        Assert.Equal(1, api.ReleasePresentPacketCalls);
+        Assert.Equal(packet.NativePacket, api.LastReleasedPresentPacket.NativePacket);
+    }
+
+    [Fact]
+    public void Present_packet_creates_avalonia_image_properties_for_bgra_unorm()
+    {
+        var packet = new ViewportNativePresentPacket(
+            new ViewportNativeAbiHeader(ViewportNativePresentPacket.CurrentStructSize),
+            ViewportNativeStatus.Success,
+            new IntPtr(0x1234),
+            new IntPtr(0x1000),
+            new IntPtr(0x2000),
+            new IntPtr(0x3000),
+            widthPixels: 640U,
+            heightPixels: 360U,
+            ViewportNativeImageFormat.Bgra8Unorm,
+            memorySizeBytes: 640UL * 360UL * 4UL,
+            frameIndex: 7UL,
+            IntPtr.Zero,
+            messageByteLength: 0UL);
+
+        var properties = packet.CreateAvaloniaImageProperties();
+
+        Assert.Equal(640, properties.Width);
+        Assert.Equal(360, properties.Height);
+        Assert.Equal(Avalonia.Platform.PlatformGraphicsExternalImageFormat.B8G8R8A8UNorm, properties.Format);
+        Assert.Equal(0UL, properties.MemoryOffset);
+        Assert.Equal(640UL * 360UL * 4UL, properties.MemorySize);
+        Assert.True(properties.TopLeftOrigin);
+    }
+
     private static ViewportCompositionCapabilitiesSnapshot CreateCompositionCapabilities()
     {
         return new ViewportCompositionCapabilitiesSnapshot(
@@ -131,6 +226,7 @@ public sealed class ViewportNativeBridgeTests
     private sealed class StubViewportNativeApi : IViewportNativeApi, IDisposable
     {
         private IntPtr allocatedMessage_;
+        private IntPtr allocatedPresentMessage_;
 
         public uint QueryResultStatus { get; init; } = ViewportNativeStatus.Success;
 
@@ -138,7 +234,13 @@ public sealed class ViewportNativeBridgeTests
 
         public string ResultMessage { get; init; } = "ok";
 
+        public uint AcquiredPacketStatus { get; init; } = ViewportNativeStatus.Unavailable;
+
+        public string PresentPacketMessage { get; init; } = string.Empty;
+
         public ViewportNativeCompatibilityRequest LastRequest { get; private set; }
+
+        public ViewportNativePresentRequest LastPresentRequest { get; private set; }
 
         public int ReleaseCompatibilityResultCalls { get; private set; }
 
@@ -188,15 +290,44 @@ public sealed class ViewportNativeBridgeTests
             in ViewportNativePresentRequest request,
             ref ViewportNativePresentPacket packet)
         {
+            LastPresentRequest = request;
             LastRequest = request.Compatibility;
-            packet = ViewportNativePresentPacket.CreateForCall();
-            return ViewportNativeStatus.Unavailable;
+            var messageBytes = Encoding.UTF8.GetBytes(PresentPacketMessage);
+            if (messageBytes.Length > 0)
+            {
+                allocatedPresentMessage_ = Marshal.AllocHGlobal(messageBytes.Length);
+                Marshal.Copy(messageBytes, 0, allocatedPresentMessage_, messageBytes.Length);
+            }
+
+            packet = new ViewportNativePresentPacket(
+                new ViewportNativeAbiHeader(ViewportNativePresentPacket.CurrentStructSize),
+                AcquiredPacketStatus,
+                new IntPtr(0x1234),
+                new IntPtr(0x1000),
+                new IntPtr(0x2000),
+                new IntPtr(0x3000),
+                request.WidthPixels,
+                request.HeightPixels,
+                ViewportNativeImageFormat.Bgra8Unorm,
+                memorySizeBytes: (ulong)request.WidthPixels * request.HeightPixels * 4UL,
+                frameIndex: 9UL,
+                allocatedPresentMessage_,
+                (ulong)messageBytes.Length);
+            return AcquiredPacketStatus;
         }
 
         public void ReleasePresentPacket(ViewportNativePresentPacket packet)
         {
             ReleasePresentPacketCalls++;
             LastReleasedPresentPacket = packet;
+            if (packet.MessageUtf8 != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(packet.MessageUtf8);
+                if (packet.MessageUtf8 == allocatedPresentMessage_)
+                {
+                    allocatedPresentMessage_ = IntPtr.Zero;
+                }
+            }
         }
 
         public void Shutdown()
@@ -209,6 +340,12 @@ public sealed class ViewportNativeBridgeTests
             {
                 Marshal.FreeHGlobal(allocatedMessage_);
                 allocatedMessage_ = IntPtr.Zero;
+            }
+
+            if (allocatedPresentMessage_ != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(allocatedPresentMessage_);
+                allocatedPresentMessage_ = IntPtr.Zero;
             }
         }
     }

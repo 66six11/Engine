@@ -69,6 +69,52 @@ internal sealed class ViewportNativeBridge
         api_.ReleasePresentPacket(packet);
     }
 
+    public ViewportNativePresentSnapshot SnapshotAndReleasePresentPacket(
+        ViewportNativePresentPacket packet,
+        ViewportId viewportId,
+        ViewportExtent requestedExtent)
+    {
+        ArgumentNullException.ThrowIfNull(requestedExtent);
+
+        var status = MapStatus(packet.Status);
+        var message = CopyMessage(packet) ?? status.ToString();
+        try
+        {
+            return packet.ToSnapshot(
+                viewportId,
+                requestedExtent,
+                status,
+                message);
+        }
+        finally
+        {
+            ReleasePresentPacket(packet);
+        }
+    }
+
+    public ViewportNativePresentPacket AcquirePresentPacket(
+        ViewportCompositionCapabilitiesSnapshot compositionCapabilities,
+        ViewportExtent requestedExtent)
+    {
+        ArgumentNullException.ThrowIfNull(compositionCapabilities);
+        ArgumentNullException.ThrowIfNull(requestedExtent);
+
+        if (compositionCapabilities.Status != ViewportCompositionStatus.Supported)
+        {
+            return CreatePresentPacket(
+                ViewportNativeStatus.UnsupportedCompositionInterop,
+                requestedExtent);
+        }
+
+        var request = new ViewportNativePresentRequest(
+            CreateCompatibilityRequest(compositionCapabilities),
+            checked((uint)requestedExtent.WidthPixels),
+            checked((uint)requestedExtent.HeightPixels));
+        var packet = ViewportNativePresentPacket.CreateForCall();
+        _ = api_.AcquirePresentPacket(request, ref packet);
+        return packet;
+    }
+
     public void Shutdown()
     {
         api_.Shutdown();
@@ -136,18 +182,28 @@ internal sealed class ViewportNativeBridge
 
     private static string? CopyMessage(ViewportNativeCompatibilityResult result)
     {
-        if (result.MessageUtf8 == IntPtr.Zero || result.MessageByteLength == 0UL)
+        return CopyMessage(result.MessageUtf8, result.MessageByteLength);
+    }
+
+    private static string? CopyMessage(ViewportNativePresentPacket packet)
+    {
+        return CopyMessage(packet.MessageUtf8, packet.MessageByteLength);
+    }
+
+    private static string? CopyMessage(IntPtr messageUtf8, ulong messageByteLength)
+    {
+        if (messageUtf8 == IntPtr.Zero || messageByteLength == 0UL)
         {
             return null;
         }
 
-        if (result.MessageByteLength > int.MaxValue)
+        if (messageByteLength > int.MaxValue)
         {
             return null;
         }
 
-        var bytes = new byte[(int)result.MessageByteLength];
-        Marshal.Copy(result.MessageUtf8, bytes, 0, bytes.Length);
+        var bytes = new byte[(int)messageByteLength];
+        Marshal.Copy(messageUtf8, bytes, 0, bytes.Length);
         return Encoding.UTF8.GetString(bytes);
     }
 
@@ -167,6 +223,26 @@ internal sealed class ViewportNativeBridge
             status,
             message,
             DateTimeOffset.UtcNow);
+    }
+
+    private static ViewportNativePresentPacket CreatePresentPacket(
+        uint status,
+        ViewportExtent requestedExtent)
+    {
+        return new ViewportNativePresentPacket(
+            new ViewportNativeAbiHeader(ViewportNativePresentPacket.CurrentStructSize),
+            status,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            checked((uint)requestedExtent.WidthPixels),
+            checked((uint)requestedExtent.HeightPixels),
+            ViewportNativeImageFormat.Unknown,
+            memorySizeBytes: 0UL,
+            frameIndex: 0UL,
+            IntPtr.Zero,
+            messageByteLength: 0UL);
     }
 
     private static ViewportNativePresentStatus MapStatus(uint status)
