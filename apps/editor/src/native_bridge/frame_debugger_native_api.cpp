@@ -1,10 +1,11 @@
 ﻿#include "native_bridge/frame_debugger_native_api.hpp"
 
-#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -128,20 +129,22 @@ editor_frame_debugger_acquire_snapshot(EditorFrameDebuggerNativeSnapshotBuffer* 
         return internalErrorStatus();
     }
 
-    // The C ABI returns a native-owned byte buffer; callers release it through
-    // editor_frame_debugger_release_snapshot.
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-owning-memory)
-    void* const buffer = std::malloc(json->size() + 1U);
-    if (buffer == nullptr) {
+    // The C ABI returns a native-owned byte buffer; callers transfer it back
+    // through editor_frame_debugger_release_snapshot.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+    std::unique_ptr<char[]> buffer;
+    try {
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+        buffer = std::make_unique_for_overwrite<char[]>(json->size() + 1U);
+    } catch (const std::bad_alloc&) {
         return internalErrorStatus();
     }
 
-    std::memcpy(buffer, json->data(), json->size());
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    static_cast<char*>(buffer)[json->size()] = '\0';
+    std::memcpy(buffer.get(), json->data(), json->size());
+    buffer[json->size()] = '\0';
     *snapshot = EditorFrameDebuggerNativeSnapshotBuffer{
         .header = header,
-        .data = buffer,
+        .data = buffer.release(),
         .byteLength = static_cast<std::uint64_t>(json->size()),
         .format = EditorFrameDebuggerNativeSnapshotFormat_JsonUtf8,
     };
@@ -150,8 +153,7 @@ editor_frame_debugger_acquire_snapshot(EditorFrameDebuggerNativeSnapshotBuffer* 
 
 void EDITOR_NATIVE_CALL
 editor_frame_debugger_release_snapshot(EditorFrameDebuggerNativeSnapshotBuffer snapshot) {
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-owning-memory)
-    std::free(snapshot.data);
+    const std::unique_ptr<char[]> data{static_cast<char*>(snapshot.data)};
 }
 
 std::uint32_t EDITOR_NATIVE_CALL editor_frame_debugger_request_capture() {

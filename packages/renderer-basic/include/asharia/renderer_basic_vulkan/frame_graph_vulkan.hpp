@@ -68,13 +68,16 @@ namespace asharia {
         switch (format) {
         case VK_FORMAT_B8G8R8A8_SRGB:
             return RenderGraphImageFormat::B8G8R8A8Srgb;
+        case VK_FORMAT_B8G8R8A8_UNORM:
+            return RenderGraphImageFormat::B8G8R8A8Unorm;
         default:
             return std::unexpected{Error{
                 ErrorDomain::RenderGraph,
                 0,
                 std::string{context} + " uses unsupported Vulkan image format " +
                     basicVulkanFormatDebugName(format) +
-                    "; supported renderer format is VK_FORMAT_B8G8R8A8_SRGB",
+                    "; supported renderer formats are VK_FORMAT_B8G8R8A8_SRGB and "
+                    "VK_FORMAT_B8G8R8A8_UNORM",
             }};
         }
     }
@@ -112,6 +115,7 @@ namespace asharia {
         case RenderGraphImageFormat::D32Sfloat:
             return VK_IMAGE_ASPECT_DEPTH_BIT;
         case RenderGraphImageFormat::B8G8R8A8Srgb:
+        case RenderGraphImageFormat::B8G8R8A8Unorm:
         case RenderGraphImageFormat::Undefined:
         default:
             return VK_IMAGE_ASPECT_COLOR_BIT;

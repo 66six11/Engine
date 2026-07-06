@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <span>
@@ -23,6 +24,11 @@ namespace asharia {
         Required,
     };
 
+    struct VulkanExternalInteropOptions {
+        bool opaqueWin32Memory{};
+        bool opaqueWin32Semaphore{};
+    };
+
     struct VulkanContextDesc {
         std::string applicationName{"Asharia Engine"};
         std::span<const std::string> requiredInstanceExtensions{};
@@ -30,6 +36,13 @@ namespace asharia {
         bool enableValidation{true};
         VulkanDebugLabelMode debugLabels{VulkanDebugLabelMode::Optional};
         bool requireVulkan14{true};
+        VulkanExternalInteropOptions externalInterop;
+    };
+
+    struct VulkanDeviceIdentity {
+        std::array<std::uint8_t, VK_LUID_SIZE> deviceLuid{};
+        std::array<std::uint8_t, VK_UUID_SIZE> deviceUuid{};
+        bool deviceLuidValid{};
     };
 
     struct VulkanDeviceInfo {
@@ -41,6 +54,7 @@ namespace asharia {
         bool graphicsQueueSupportsCompute{};
         std::uint32_t graphicsQueueTimestampValidBits{};
         float timestampPeriodNanoseconds{};
+        VulkanDeviceIdentity identity;
     };
 
     struct VulkanDebugLabelFunctions {

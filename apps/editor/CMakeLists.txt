@@ -75,10 +75,12 @@ if(WIN32)
 endif()
 
 add_library(editor-native SHARED
+    src/editor_shared_viewport_runtime.cpp
     src/editor_frame_debugger.cpp
     src/editor_frame_debugger_replay.cpp
     src/editor_frame_debugger_snapshot_projector.cpp
     src/native_bridge/frame_debugger_native_api.cpp
+    src/native_bridge/viewport_native_api.cpp
 )
 
 add_library(asharia::editor_native ALIAS editor-native)
@@ -97,6 +99,7 @@ target_link_libraries(editor-native
     PRIVATE
         asharia::archive
         asharia::renderer_basic_vulkan
+        asharia::rhi_vulkan
 )
 
 target_compile_definitions(editor-native
@@ -169,6 +172,7 @@ add_executable(asharia-editor
     src/imgui_texture_registry.cpp
     src/main.cpp
     src/native_bridge/frame_debugger_native_smoke.cpp
+    src/native_bridge/viewport_native_smoke.cpp
     src/panels/asset_browser_panel.cpp
     src/panels/editor_settings_panel.cpp
     src/panels/frame_debugger_panel.cpp

@@ -55,6 +55,15 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr.ps1 -IncludeUntracked
 
 该脚本默认只提示；需要先跑 encoding、doc sync 和 whitespace 这三个快速门禁时，追加 `-RunCheapGates`。
 
+涉及 `apps/studio` Avalonia shell、managed viewport models、native interop bridge、Scene View composition host/presenter
+或 Studio ViewModel/XAML 时，必须跑：
+
+```powershell
+dotnet build apps\studio\Editor.csproj -c Release
+dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "SceneView|ViewportNative|Composition"
+dotnet test apps\studio\Editor.sln -c Release
+```
+
 涉及 frame loop、swapchain、RenderGraph、renderer 或 Vulkan adapter 时，必须跑：
 
 ```powershell
@@ -167,6 +176,10 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 ```powershell
 foreach ($preset in @("clangcl-debug", "msvc-debug")) {
     $exe = "build\cmake\$preset\apps\editor\asharia-editor.exe"
+    & $exe --smoke-editor-viewport-native
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-viewport-native failed with exit code $LASTEXITCODE"
+    }
     & $exe --smoke-editor-viewport
     if ($LASTEXITCODE -ne 0) {
         throw "$preset --smoke-editor-viewport failed with exit code $LASTEXITCODE"

@@ -525,9 +525,13 @@ public sealed class StudioLayeringTests
         {
             "ViewportClockMode.cs",
             "ViewportClockSnapshot.cs",
+            "ViewportCompositionCapabilitiesSnapshot.cs",
+            "ViewportCompositionStatus.cs",
             "ViewportExtent.cs",
             "ViewportId.cs",
             "ViewportKind.cs",
+            "ViewportNativePresentSnapshot.cs",
+            "ViewportNativePresentStatus.cs",
             "ViewportRenderReason.cs",
             "ViewportRenderRequest.cs",
             "ViewportRenderResult.cs",
@@ -921,6 +925,76 @@ public sealed class StudioLayeringTests
             "Core",
             "Interop",
             "FrameDebuggerNativeBridgeTests.cs")));
+    }
+
+    [Fact]
+    public void Viewport_interop_files_separate_api_contracts_from_adapters()
+    {
+        var root = FindRepositoryRoot();
+        var expectedApiNamespace = "namespace Editor.Core.Interop.Viewports.Api;";
+        var expectedAdapterNamespace = "namespace Editor.Core.Interop.Viewports.Adapters;";
+
+        var apiFiles = new[]
+        {
+            "IViewportNativeApi.cs",
+            "ViewportNativeAbiHeader.cs",
+            "ViewportNativeCompatibilityRequest.cs",
+            "ViewportNativeCompatibilityResult.cs",
+            "ViewportNativeHandleTypes.cs",
+            "ViewportNativeImageFormat.cs",
+            "ViewportNativeLibraryApi.cs",
+            "ViewportNativePresentPacket.cs",
+            "ViewportNativePresentRequest.cs",
+            "ViewportNativeStatus.cs",
+        };
+
+        foreach (var fileName in apiFiles)
+        {
+            var path = Path.Combine(root, "Core", "Interop", "Viewports", "Api", fileName);
+            Assert.True(
+                File.Exists(path),
+                $"{fileName} is a raw viewport native API contract and should live under Core/Interop/Viewports/Api.");
+            Assert.Contains(expectedApiNamespace, File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", fileName)));
+            Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", "Viewports", "Adapters", fileName)));
+        }
+
+        var adapterPath = Path.Combine(
+            root,
+            "Core",
+            "Interop",
+            "Viewports",
+            "Adapters",
+            "ViewportNativeBridge.cs");
+        Assert.True(
+            File.Exists(adapterPath),
+            "ViewportNativeBridge implements the managed adapter and should live under Core/Interop/Viewports/Adapters.");
+        Assert.Contains(expectedAdapterNamespace, File.ReadAllText(adapterPath), StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Interop", "ViewportNativeBridge.cs")));
+
+        var testPath = Path.Combine(
+            root,
+            "Tests",
+            "Editor.Tests",
+            "Core",
+            "Interop",
+            "Viewports",
+            "Adapters",
+            "ViewportNativeBridgeTests.cs");
+        Assert.True(
+            File.Exists(testPath),
+            "Viewport native bridge tests should mirror the adapter folder.");
+        Assert.Contains(
+            "namespace Editor.Tests.Core.Interop.Viewports.Adapters;",
+            File.ReadAllText(testPath),
+            StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(
+            root,
+            "Tests",
+            "Editor.Tests",
+            "Core",
+            "Interop",
+            "ViewportNativeBridgeTests.cs")));
     }
 
     private static string FindRepositoryRoot()

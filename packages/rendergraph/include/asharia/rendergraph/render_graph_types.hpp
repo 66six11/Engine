@@ -30,6 +30,7 @@ namespace asharia {
     enum class RenderGraphImageFormat {
         Undefined,
         B8G8R8A8Srgb,
+        B8G8R8A8Unorm,
         D32Sfloat,
     };
 

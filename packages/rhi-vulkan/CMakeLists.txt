@@ -22,6 +22,8 @@ add_library(asharia-rhi-vulkan STATIC
     src/vulkan_pipeline.cpp
     src/vulkan_buffer.cpp
     src/vulkan_image.cpp
+    src/vulkan_external_memory.cpp
+    src/vulkan_external_semaphore.cpp
     src/deferred_deletion_queue.cpp
 )
 

@@ -6,6 +6,8 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <StudioNativeBuildPreset Condition="'$(StudioNativeBuildPreset)' == ''">msvc-debug</StudioNativeBuildPreset>
+        <StudioNativeBuildOutputRoot>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)</StudioNativeBuildOutputRoot>
     </PropertyGroup>
 
     <ItemGroup>
@@ -44,4 +46,20 @@
         <SubType>Code</SubType>
       </Compile>
     </ItemGroup>
+
+    <Target Name="CopyStudioNativeRuntimeDependencies" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+      <Error Condition="!Exists('$(StudioNativeBuildOutputRoot)\apps\editor\editor_native.dll')"
+             Text="Missing editor_native.dll under $(StudioNativeBuildOutputRoot). Run the native CMake build for preset $(StudioNativeBuildPreset) before building Studio, or pass /p:StudioNativeBuildPreset=&lt;preset&gt;." />
+      <Error Condition="!Exists('$(StudioNativeBuildOutputRoot)\packages\shader-slang\slang.dll')"
+             Text="Missing slang.dll under $(StudioNativeBuildOutputRoot). Run the native CMake build for preset $(StudioNativeBuildPreset) before building Studio, or pass /p:StudioNativeBuildPreset=&lt;preset&gt;." />
+
+      <ItemGroup>
+        <StudioNativeRuntimeDependency Include="$(StudioNativeBuildOutputRoot)\apps\editor\editor_native.dll" />
+        <StudioNativeRuntimeDependency Include="$(StudioNativeBuildOutputRoot)\packages\shader-slang\slang.dll" />
+      </ItemGroup>
+
+      <Copy SourceFiles="@(StudioNativeRuntimeDependency)"
+            DestinationFolder="$(TargetDir)"
+            SkipUnchangedFiles="true" />
+    </Target>
 </Project>

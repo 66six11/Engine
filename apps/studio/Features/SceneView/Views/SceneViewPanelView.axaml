@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Editor.Features.SceneView.ViewModels"
+             xmlns:views="using:Editor.Features.SceneView.Views"
              x:Class="Editor.Features.SceneView.Views.SceneViewPanelView"
              x:DataType="vm:SceneViewPanelViewModel">
     <UserControl.Styles>
@@ -32,7 +33,8 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid Background="{DynamicResource EditorBrushBase00}">
+    <Grid RowDefinitions="Auto,*"
+          Background="{DynamicResource EditorBrushBase00}">
         <Border Classes="scene-view-status"
                 VerticalAlignment="Top">
             <Grid ColumnDefinitions="*,Auto"
@@ -48,5 +50,8 @@
                            Text="{Binding ViewportStatusText}" />
             </Grid>
         </Border>
+        <views:SceneViewCompositionHost Grid.Row="1"
+                                        x:Name="CompositionHost"
+                                        Focusable="True" />
     </Grid>
 </UserControl>

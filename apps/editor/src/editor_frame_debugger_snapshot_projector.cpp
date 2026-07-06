@@ -108,6 +108,8 @@ namespace asharia::editor {
             switch (format) {
             case RenderGraphImageFormat::B8G8R8A8Srgb:
                 return "B8G8R8A8Srgb";
+            case RenderGraphImageFormat::B8G8R8A8Unorm:
+                return "B8G8R8A8Unorm";
             case RenderGraphImageFormat::D32Sfloat:
                 return "D32Sfloat";
             case RenderGraphImageFormat::Undefined:

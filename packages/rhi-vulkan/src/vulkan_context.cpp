@@ -1,9 +1,8 @@
 ﻿#include "asharia/rhi_vulkan/vulkan_context.hpp"
 
-#include "asharia/core/error.hpp"
-#include "asharia/core/log.hpp"
-#include "asharia/core/version.hpp"
-#include "asharia/rhi_vulkan/vulkan_error.hpp"
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <vulkan/vulkan_win32.h>
 
 #define VMA_IMPLEMENTATION
 // clang-format off
@@ -18,12 +17,22 @@
 #include <string_view>
 #include <utility>
 
+#include "asharia/core/error.hpp"
+#include "asharia/core/log.hpp"
+#include "asharia/core/version.hpp"
+#include "asharia/rhi_vulkan/vulkan_error.hpp"
+
 namespace asharia {
     namespace {
 
         constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
         constexpr std::string_view kDebugUtilsExtension{VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
         constexpr const char* kSwapchainExtension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        constexpr const char* kExternalMemoryExtension = "VK_KHR_external_memory";
+        constexpr const char* kExternalMemoryWin32Extension = "VK_KHR_external_memory_win32";
+        constexpr const char* kExternalSemaphoreExtension = "VK_KHR_external_semaphore";
+        constexpr const char* kExternalSemaphoreWin32Extension =
+            "VK_KHR_external_semaphore_win32";
 
         Result<std::vector<VkLayerProperties>> enumerateInstanceLayers() {
             while (true) {
@@ -336,8 +345,26 @@ namespace asharia {
             return properties.apiVersion >= VK_API_VERSION_1_4;
         }
 
-        Result<bool> supportsSwapchain(VkPhysicalDevice device, bool required) {
-            if (!required) {
+        std::vector<const char*> requiredDeviceExtensions(
+            bool enableSwapchain, VulkanExternalInteropOptions externalInterop) {
+            std::vector<const char*> extensions;
+            if (enableSwapchain) {
+                extensions.push_back(kSwapchainExtension);
+            }
+            if (externalInterop.opaqueWin32Memory) {
+                extensions.push_back(kExternalMemoryExtension);
+                extensions.push_back(kExternalMemoryWin32Extension);
+            }
+            if (externalInterop.opaqueWin32Semaphore) {
+                extensions.push_back(kExternalSemaphoreExtension);
+                extensions.push_back(kExternalSemaphoreWin32Extension);
+            }
+            return extensions;
+        }
+
+        Result<bool> supportsRequiredDeviceExtensions(
+            VkPhysicalDevice device, const std::vector<const char*>& requiredExtensions) {
+            if (requiredExtensions.empty()) {
                 return true;
             }
 
@@ -346,17 +373,32 @@ namespace asharia {
                 return std::unexpected{std::move(extensions.error())};
             }
 
-            return hasExtension(*extensions, kSwapchainExtension);
+            return std::ranges::all_of(requiredExtensions, [&extensions](const char* required) {
+                return hasExtension(*extensions, required);
+            });
         }
 
         struct PhysicalDeviceCandidate {
             VkPhysicalDevice device{VK_NULL_HANDLE};
             VkPhysicalDeviceProperties properties{};
+            VulkanDeviceIdentity identity{};
             QueueSelection queues{};
         };
 
+        [[nodiscard]] VulkanDeviceIdentity
+        makeDeviceIdentity(const VkPhysicalDeviceIDProperties& idProperties) {
+            VulkanDeviceIdentity identity{};
+            std::copy_n(idProperties.deviceLUID, identity.deviceLuid.size(),
+                        identity.deviceLuid.begin());
+            std::copy_n(idProperties.deviceUUID, identity.deviceUuid.size(),
+                        identity.deviceUuid.begin());
+            identity.deviceLuidValid = idProperties.deviceLUIDValid == VK_TRUE;
+            return identity;
+        }
+
         Result<std::optional<PhysicalDeviceCandidate>>
-        choosePhysicalDevice(VkInstance instance, VkSurfaceKHR surface, bool requireVulkan14) {
+        choosePhysicalDevice(VkInstance instance, VkSurfaceKHR surface, bool requireVulkan14,
+                             VulkanExternalInteropOptions externalInterop) {
             std::uint32_t count = 0;
             VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
             if (result != VK_SUCCESS) {
@@ -376,27 +418,38 @@ namespace asharia {
             std::optional<PhysicalDeviceCandidate> best;
 
             for (VkPhysicalDevice device : devices) {
-                VkPhysicalDeviceProperties properties{};
-                vkGetPhysicalDeviceProperties(device, &properties);
+                VkPhysicalDeviceIDProperties idProperties{};
+                idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+
+                VkPhysicalDeviceProperties2 properties2{};
+                properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+                properties2.pNext = &idProperties;
+                vkGetPhysicalDeviceProperties2(device, &properties2);
+
+                const VkPhysicalDeviceProperties& properties = properties2.properties;
 
                 auto queues = selectQueues(device, surface);
                 if (!queues) {
                     return std::unexpected{std::move(queues.error())};
                 }
 
-                auto swapchainSupported = supportsSwapchain(device, surface != VK_NULL_HANDLE);
-                if (!swapchainSupported) {
-                    return std::unexpected{std::move(swapchainSupported.error())};
+                const std::vector<const char*> deviceExtensions =
+                    requiredDeviceExtensions(surface != VK_NULL_HANDLE, externalInterop);
+                auto deviceExtensionsSupported =
+                    supportsRequiredDeviceExtensions(device, deviceExtensions);
+                if (!deviceExtensionsSupported) {
+                    return std::unexpected{std::move(deviceExtensionsSupported.error())};
                 }
 
                 if (!*queues || !supportsRequiredVersion(properties, requireVulkan14) ||
-                    !*swapchainSupported) {
+                    !*deviceExtensionsSupported) {
                     continue;
                 }
 
                 PhysicalDeviceCandidate candidate{
                     .device = device,
                     .properties = properties,
+                    .identity = makeDeviceIdentity(idProperties),
                     .queues = **queues,
                 };
                 if (!best || properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
@@ -499,7 +552,8 @@ namespace asharia {
                                       VkPhysicalDeviceVulkan11Features features11,
                                       VkPhysicalDeviceVulkan13Features features13,
                                       VkPhysicalDeviceVulkan14Features features14,
-                                      bool enableSwapchain) {
+                                      bool enableSwapchain,
+                                      VulkanExternalInteropOptions externalInterop) {
             constexpr float kQueuePriority = 1.0F;
 
             VkDeviceQueueCreateInfo queueInfo{};
@@ -520,11 +574,12 @@ namespace asharia {
             createInfo.queueCreateInfoCount = 1;
             createInfo.pQueueCreateInfos = &queueInfo;
 
-            std::array<const char*, 1> swapchainExtensions{kSwapchainExtension};
-            if (enableSwapchain) {
+            const std::vector<const char*> deviceExtensions =
+                requiredDeviceExtensions(enableSwapchain, externalInterop);
+            if (!deviceExtensions.empty()) {
                 createInfo.enabledExtensionCount =
-                    static_cast<std::uint32_t>(swapchainExtensions.size());
-                createInfo.ppEnabledExtensionNames = swapchainExtensions.data();
+                    static_cast<std::uint32_t>(deviceExtensions.size());
+                createInfo.ppEnabledExtensionNames = deviceExtensions.data();
             }
 
             VkDevice device = VK_NULL_HANDLE;
@@ -537,12 +592,16 @@ namespace asharia {
         }
 
         Result<VmaAllocator> createAllocator(VkInstance instance, VkPhysicalDevice physicalDevice,
-                                             VkDevice device, std::uint32_t apiVersion) {
+                                             VkDevice device, std::uint32_t apiVersion,
+                                             VulkanExternalInteropOptions externalInterop) {
             VmaAllocatorCreateInfo createInfo{};
             createInfo.instance = instance;
             createInfo.physicalDevice = physicalDevice;
             createInfo.device = device;
             createInfo.vulkanApiVersion = apiVersion;
+            if (externalInterop.opaqueWin32Memory) {
+                createInfo.flags |= VMA_ALLOCATOR_CREATE_KHR_EXTERNAL_MEMORY_WIN32_BIT;
+            }
 
             VmaAllocator allocator = nullptr;
             const VkResult result = vmaCreateAllocator(&createInfo, &allocator);
@@ -728,8 +787,8 @@ namespace asharia {
             context.surface_ = *surface;
         }
 
-        auto candidate =
-            choosePhysicalDevice(context.instance_, context.surface_, desc.requireVulkan14);
+        auto candidate = choosePhysicalDevice(context.instance_, context.surface_,
+                                              desc.requireVulkan14, desc.externalInterop);
         if (!candidate) {
             return std::unexpected{std::move(candidate.error())};
         }
@@ -780,7 +839,7 @@ namespace asharia {
 
         auto device = createDevice(selected.device, selected.queues.graphicsFamily, features11,
                                    features13, features14,
-                                   context.surface_ != VK_NULL_HANDLE);
+                                   context.surface_ != VK_NULL_HANDLE, desc.externalInterop);
         if (!device) {
             return std::unexpected{std::move(device.error())};
         }
@@ -792,7 +851,7 @@ namespace asharia {
 
         auto allocator =
             createAllocator(context.instance_, context.physicalDevice_, context.device_,
-                            context.instanceApiVersion_);
+                            context.instanceApiVersion_, desc.externalInterop);
         if (!allocator) {
             return std::unexpected{std::move(allocator.error())};
         }
@@ -807,6 +866,7 @@ namespace asharia {
             .graphicsQueueSupportsCompute = selected.queues.graphicsSupportsCompute,
             .graphicsQueueTimestampValidBits = selected.queues.timestampValidBits,
             .timestampPeriodNanoseconds = selected.properties.limits.timestampPeriod,
+            .identity = selected.identity,
         };
 
         logInfo("Selected Vulkan device: " + context.deviceInfo_.name + " (" +
