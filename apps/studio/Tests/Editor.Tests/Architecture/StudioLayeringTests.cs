@@ -525,9 +525,13 @@ public sealed class StudioLayeringTests
         {
             "ViewportClockMode.cs",
             "ViewportClockSnapshot.cs",
+            "ViewportCompositionCapabilitiesSnapshot.cs",
+            "ViewportCompositionStatus.cs",
             "ViewportExtent.cs",
             "ViewportId.cs",
             "ViewportKind.cs",
+            "ViewportNativePresentSnapshot.cs",
+            "ViewportNativePresentStatus.cs",
             "ViewportRenderReason.cs",
             "ViewportRenderRequest.cs",
             "ViewportRenderResult.cs",

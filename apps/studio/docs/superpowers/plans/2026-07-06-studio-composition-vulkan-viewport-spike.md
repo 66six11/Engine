@@ -196,7 +196,7 @@ namespace Editor.Core.Models.Viewports;
 public enum ViewportNativePresentStatus
 {
     Success,
-    NativeBridgeUnavailable,
+    RenderProducerUnavailable,
     UnsupportedAbi,
     UnsupportedCompositionInterop,
     DeviceMismatch,
@@ -316,7 +316,7 @@ public sealed record ViewportNativePresentSnapshot
 }
 ```
 
-- [ ] **Step 4: Extend architecture placement tests**
+- [ ] **Step 4: Extend viewport model placement tests**
 
 In `apps/studio/Tests/Editor.Tests/Architecture/StudioLayeringTests.cs`, add these files to `Viewport_core_models_live_in_viewport_model_folder()`:
 
@@ -325,23 +325,6 @@ In `apps/studio/Tests/Editor.Tests/Architecture/StudioLayeringTests.cs`, add the
 "ViewportCompositionStatus.cs",
 "ViewportNativePresentSnapshot.cs",
 "ViewportNativePresentStatus.cs",
-```
-
-Add a new architecture test for Viewport interop placement:
-
-```csharp
-[Fact]
-public void Viewport_interop_files_separate_api_contracts_from_adapters()
-{
-    var root = FindRepositoryRoot();
-    var apiPath = Path.Combine(root, "Core", "Interop", "Viewports", "Api", "IViewportNativeApi.cs");
-    var adapterPath = Path.Combine(root, "Core", "Interop", "Viewports", "Adapters", "ViewportNativeBridge.cs");
-
-    Assert.True(File.Exists(apiPath), "Viewport native API contract should live under Core/Interop/Viewports/Api.");
-    Assert.True(File.Exists(adapterPath), "Viewport native adapter should live under Core/Interop/Viewports/Adapters.");
-    Assert.Contains("namespace Editor.Core.Interop.Viewports.Api;", File.ReadAllText(apiPath), StringComparison.Ordinal);
-    Assert.Contains("namespace Editor.Core.Interop.Viewports.Adapters;", File.ReadAllText(adapterPath), StringComparison.Ordinal);
-}
 ```
 
 Run:
@@ -581,6 +564,23 @@ git commit -m "feat: probe scene view composition capabilities"
 
 - [ ] **Step 1: Add managed ABI structs and bridge tests**
 
+Add a new architecture test for Viewport interop placement to `apps/studio/Tests/Editor.Tests/Architecture/StudioLayeringTests.cs`:
+
+```csharp
+[Fact]
+public void Viewport_interop_files_separate_api_contracts_from_adapters()
+{
+    var root = FindRepositoryRoot();
+    var apiPath = Path.Combine(root, "Core", "Interop", "Viewports", "Api", "IViewportNativeApi.cs");
+    var adapterPath = Path.Combine(root, "Core", "Interop", "Viewports", "Adapters", "ViewportNativeBridge.cs");
+
+    Assert.True(File.Exists(apiPath), "Viewport native API contract should live under Core/Interop/Viewports/Api.");
+    Assert.True(File.Exists(adapterPath), "Viewport native adapter should live under Core/Interop/Viewports/Adapters.");
+    Assert.Contains("namespace Editor.Core.Interop.Viewports.Api;", File.ReadAllText(apiPath), StringComparison.Ordinal);
+    Assert.Contains("namespace Editor.Core.Interop.Viewports.Adapters;", File.ReadAllText(adapterPath), StringComparison.Ordinal);
+}
+```
+
 Create `apps/studio/Core/Interop/Viewports/Api/ViewportNativeStatus.cs`:
 
 ```csharp
@@ -720,7 +720,7 @@ Create `apps/studio/Tests/Editor.Tests/Core/Interop/Viewports/Adapters/ViewportN
 - `UnsupportedAbi` maps to `ViewportNativePresentStatus.UnsupportedAbi`
 - `DeviceMismatch` maps to `ViewportNativePresentStatus.DeviceMismatch`
 - native message buffers are released once
-- bridge unavailable maps to `NativeBridgeUnavailable`
+- bridge unavailable maps to `RenderProducerUnavailable`
 
 - [ ] **Step 2: Add native ABI header**
 

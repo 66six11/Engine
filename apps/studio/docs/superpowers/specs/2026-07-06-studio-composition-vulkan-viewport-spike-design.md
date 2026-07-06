@@ -243,7 +243,7 @@ The native present packet should be separate from Core viewport scheduling contr
 ```text
 NativeViewportPresentStatus
   Success
-  NativeBridgeUnavailable
+  RenderProducerUnavailable
   UnsupportedAbi
   UnsupportedCompositionInterop
   DeviceMismatch
