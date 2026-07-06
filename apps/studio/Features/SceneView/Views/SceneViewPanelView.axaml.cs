@@ -6,6 +6,7 @@ using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using Editor.Core.Interop.Viewports.Adapters;
 using Editor.Core.Interop.Viewports.Api;
+using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
 using Editor.Features.SceneView.Interop;
 using Editor.Features.SceneView.ViewModels;
@@ -18,17 +19,25 @@ public partial class SceneViewPanelView : UserControl
     private readonly ViewportNativeBridge nativeBridge_ = new();
     private readonly SceneViewNativeViewportLifecycle viewportLifecycle_ = new();
     private readonly SceneViewCompositionPresenter presenter_;
+    private SceneViewPanelViewModel? frameSourceViewModel_;
 
     public SceneViewPanelView()
     {
         InitializeComponent();
         presenter_ = new SceneViewCompositionPresenter(nativeBridge_);
+        DataContextChanged += OnDataContextChanged;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         ProbeCompositionCapabilities();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        SetFrameSourceViewModel(null);
+        base.OnDetachedFromVisualTree(e);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -68,6 +77,35 @@ public partial class SceneViewPanelView : UserControl
         }
 
         await TryStartNativePresentAsync(viewModel, snapshot, requestedExtent);
+    }
+
+    private async Task TryPresentNativeFrameFromCurrentStateAsync()
+    {
+        if (DataContext is not SceneViewPanelViewModel viewModel)
+        {
+            return;
+        }
+
+        if (viewModel.CompositionCapabilities is not
+            {
+                Status: ViewportCompositionStatus.Supported,
+            } compositionCapabilities)
+        {
+            return;
+        }
+
+        if (viewModel.NativePresent?.Status != ViewportNativePresentStatus.Success)
+        {
+            return;
+        }
+
+        var requestedExtent = TryCreateViewportExtent();
+        if (requestedExtent is null)
+        {
+            return;
+        }
+
+        await TryStartNativePresentAsync(viewModel, compositionCapabilities, requestedExtent);
     }
 
     private async Task TryStartNativePresentAsync(
@@ -216,4 +254,33 @@ public partial class SceneViewPanelView : UserControl
             DateTimeOffset.UtcNow);
     }
 
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        SetFrameSourceViewModel(DataContext as SceneViewPanelViewModel);
+    }
+
+    private void SetFrameSourceViewModel(SceneViewPanelViewModel? viewModel)
+    {
+        if (ReferenceEquals(frameSourceViewModel_, viewModel))
+        {
+            return;
+        }
+
+        if (frameSourceViewModel_ is not null)
+        {
+            frameSourceViewModel_.FrameRequested -= OnSceneViewFrameRequested;
+        }
+
+        frameSourceViewModel_ = viewModel;
+        if (frameSourceViewModel_ is not null)
+        {
+            frameSourceViewModel_.FrameRequested += OnSceneViewFrameRequested;
+        }
+    }
+
+    private void OnSceneViewFrameRequested(object? sender, EditorPanelFrameContext context)
+    {
+        _ = TryPresentNativeFrameFromCurrentStateAsync();
+        context.RequestRepaint();
+    }
 }

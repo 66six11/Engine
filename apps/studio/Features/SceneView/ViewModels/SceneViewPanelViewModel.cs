@@ -1,12 +1,13 @@
 using System;
 using Editor.Core.Abstractions;
+using Editor.Core.Models.Panels;
 using Editor.Core.Models.Selection;
 using Editor.Core.Models.Viewports;
 using Editor.UI.ViewModels;
 
 namespace Editor.Features.SceneView.ViewModels;
 
-public sealed class SceneViewPanelViewModel : ViewModelBase
+public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUpdateSink
 {
     private const string SelectionContextId = "scene-view";
     private static readonly ViewportId DefaultViewportId = new("scene-view/main");
@@ -24,6 +25,11 @@ public sealed class SceneViewPanelViewModel : ViewModelBase
     public ViewportCompositionCapabilitiesSnapshot? CompositionCapabilities { get; private set; }
 
     public ViewportNativePresentSnapshot? NativePresent { get; private set; }
+
+    public EditorPanelFrameUpdateRequest FrameUpdateRequest { get; } =
+        EditorPanelFrameUpdateRequest.Active(targetFramesPerSecond: 30d);
+
+    public event EventHandler<EditorPanelFrameContext>? FrameRequested;
 
     public string ViewportStateMessage =>
         NativePresent is not null
@@ -82,5 +88,12 @@ public sealed class SceneViewPanelViewModel : ViewModelBase
     public void ClearSelection()
     {
         selectionService_.ClearSelection(SelectionContextId);
+    }
+
+    public void OnEditorPanelFrame(EditorPanelFrameContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        FrameRequested?.Invoke(this, context);
     }
 }

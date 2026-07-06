@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Editor.Core.Abstractions;
+using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Shell.Selection;
@@ -149,5 +151,37 @@ public sealed class SceneViewPanelViewModelTests
             DateTimeOffset.UnixEpoch);
 
         Assert.Throws<ArgumentException>(() => viewModel.UpdateNativePresent(snapshot));
+    }
+
+    [Fact]
+    public void Scene_view_requests_active_frame_updates_for_native_viewport()
+    {
+        var viewModel = new SceneViewPanelViewModel(new EditorSelectionService());
+        var frameSink = Assert.IsAssignableFrom<IEditorPanelFrameUpdateSink>(viewModel);
+
+        Assert.Equal(EditorPanelFrameUpdateMode.Active, frameSink.FrameUpdateRequest.Mode);
+        Assert.Equal(30d, frameSink.FrameUpdateRequest.TargetFramesPerSecond);
+    }
+
+    [Fact]
+    public void Scene_view_publishes_panel_frame_context_to_view_subscribers()
+    {
+        var viewModel = new SceneViewPanelViewModel(new EditorSelectionService());
+        var frameSink = Assert.IsAssignableFrom<IEditorPanelFrameUpdateSink>(viewModel);
+        var context = new EditorPanelFrameContext(
+            new EditorPanelLifecycleContext(
+                "scene-view",
+                "Scene View",
+                DockArea.Center,
+                IsFloatingWorkspace: false),
+            DateTimeOffset.UnixEpoch,
+            TimeSpan.FromMilliseconds(16),
+            sequence: 3);
+        EditorPanelFrameContext? receivedContext = null;
+        viewModel.FrameRequested += (_, frameContext) => receivedContext = frameContext;
+
+        frameSink.OnEditorPanelFrame(context);
+
+        Assert.Same(context, receivedContext);
     }
 }

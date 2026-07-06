@@ -23,6 +23,10 @@ public sealed class SceneViewPanelViewSourceTests
         Assert.Contains("UpdateNativePresent(", source, StringComparison.Ordinal);
         Assert.Contains("viewportLifecycle_", source, StringComparison.Ordinal);
         Assert.Contains("TryBeginPresent(", source, StringComparison.Ordinal);
+        Assert.Contains("FrameRequested", source, StringComparison.Ordinal);
+        Assert.Contains("OnSceneViewFrameRequested", source, StringComparison.Ordinal);
+        Assert.Contains("TryPresentNativeFrameFromCurrentStateAsync", source, StringComparison.Ordinal);
+        Assert.Contains("context.RequestRepaint()", source, StringComparison.Ordinal);
         Assert.Contains("TopLevel.GetTopLevel", source, StringComparison.Ordinal);
         Assert.Contains("RenderScaling", source, StringComparison.Ordinal);
         Assert.DoesNotContain("pendingPresent_", source, StringComparison.Ordinal);

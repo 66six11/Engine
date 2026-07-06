@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Threading;
 using Editor.Core.Models.Lifecycle;
 using Editor.UI.Icons;
 using Editor.Shell.ViewModels.Windowing;
@@ -19,6 +20,10 @@ public partial class MainWindow : Window
     private const string MainWindowLifecycleSource = "main-window";
     private readonly List<MenuItem> generatedToolsMenuItems_ = [];
     private readonly List<MenuItem> generatedHelpMenuItems_ = [];
+    private readonly DispatcherTimer panelFrameTimer_ = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(16),
+    };
     private bool restoredFloatingWindows_;
     private bool isDockHostFocused_ = true;
 
@@ -32,6 +37,7 @@ public partial class MainWindow : Window
         DataContextChanged += OnMainWindowDataContextChanged;
         PanelsMenu.SubmenuOpened += OnPanelsMenuSubmenuOpened;
         EditorDockFloatingWindowRegistry.DockContentChanged += OnFloatingDockContentChanged;
+        panelFrameTimer_.Tick += OnPanelFrameTimerTick;
     }
 
     protected override void OnOpened(EventArgs e)
@@ -40,15 +46,26 @@ public partial class MainWindow : Window
         PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationOpened);
         SetDockHostFocusState(IsActive);
         RestoreFloatingWindows();
+        panelFrameTimer_.Start();
     }
 
     protected override void OnClosed(EventArgs e)
     {
         KeyDown -= OnMainWindowKeyDown;
+        panelFrameTimer_.Stop();
+        panelFrameTimer_.Tick -= OnPanelFrameTimerTick;
         Closing -= OnWindowClosing;
         EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged;
         PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationClosed);
         base.OnClosed(e);
+    }
+
+    private void OnPanelFrameTimerTick(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.DockWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UtcNow);
+        }
     }
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
