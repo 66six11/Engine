@@ -62,6 +62,7 @@ namespace asharia::editor {
                     return glfwCreateVulkanSurface(window, instance);
                 },
             .debugLabels = kEditorDebugLabels,
+            .externalInterop = {},
         };
 
         return VulkanContext::create(contextDesc);

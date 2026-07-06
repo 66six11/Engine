@@ -5,3 +5,6 @@ using VmaAllocator = VmaAllocator_T*;
 
 struct VmaAllocation_T;
 using VmaAllocation = VmaAllocation_T*;
+
+struct VmaPool_T;
+using VmaPool = VmaPool_T*;

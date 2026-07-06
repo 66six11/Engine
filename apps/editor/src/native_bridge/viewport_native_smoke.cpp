@@ -1,6 +1,9 @@
 ﻿#include "native_bridge/viewport_native_smoke.hpp"
 
+#include <vulkan/vulkan.h>
+
 #include <cstdint>
+#include <string_view>
 
 #include "asharia/core/log.hpp"
 
@@ -8,6 +11,16 @@
 
 namespace asharia::editor {
     namespace {
+
+        void logPresentPacketMessage(const EditorViewportNativePresentPacket& packet) {
+            if (packet.messageUtf8 == nullptr || packet.messageByteLength == 0U) {
+                return;
+            }
+
+            const auto message = std::string_view{
+                static_cast<const char*>(packet.messageUtf8), packet.messageByteLength};
+            logError(message);
+        }
 
         class SharedViewportRuntimeShutdown final {
         public:
@@ -58,6 +71,20 @@ namespace asharia::editor {
             return request;
         }
 
+        [[nodiscard]] EditorViewportNativePresentRequest makePresentRequest(VkExtent2D extent) {
+            return EditorViewportNativePresentRequest{
+                .header =
+                    EditorViewportNativeAbiHeader{
+                        .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+                        .structSize =
+                            static_cast<std::uint32_t>(sizeof(EditorViewportNativePresentRequest)),
+                    },
+                .compatibility = makeRequest(),
+                .widthPixels = extent.width,
+                .heightPixels = extent.height,
+            };
+        }
+
         void releaseIfNeeded(EditorViewportNativeCompatibilityResult result) {
             if (result.messageUtf8 != nullptr) {
                 editor_viewport_release_compatibility_result(result);
@@ -65,7 +92,7 @@ namespace asharia::editor {
         }
 
         void releaseIfNeeded(EditorViewportNativePresentPacket packet) {
-            if (packet.messageUtf8 != nullptr) {
+            if (packet.nativePacket != nullptr || packet.messageUtf8 != nullptr) {
                 editor_viewport_release_present_packet(packet);
             }
         }
@@ -132,15 +159,45 @@ namespace asharia::editor {
         }
 
         EditorViewportNativePresentPacket packet{};
+        EditorViewportNativePresentRequest firstPresentRequest =
+            makePresentRequest(VkExtent2D{.width = 320U, .height = 180U});
         const std::uint32_t packetStatus =
-            editor_viewport_acquire_present_packet(&supportedRequest, &packet);
-        const bool packetUnavailable = packetStatus == EditorViewportNativeStatus_Unavailable &&
-                                       packet.status == EditorViewportNativeStatus_Unavailable;
-        releaseIfNeeded(packet);
-        if (!packetUnavailable) {
-            logError("Viewport native bridge smoke expected present packet acquisition to wait for B2.");
+            editor_viewport_acquire_present_packet(&firstPresentRequest, &packet);
+        const bool packetAvailable =
+            packetStatus == EditorViewportNativeStatus_Success &&
+            packet.status == EditorViewportNativeStatus_Success &&
+            packet.nativePacket != nullptr && packet.imageHandle != nullptr &&
+            packet.waitSemaphoreHandle != nullptr && packet.signalSemaphoreHandle != nullptr &&
+            packet.widthPixels == 320U && packet.heightPixels == 180U &&
+            packet.format == EditorViewportNativeImageFormat_Bgra8Unorm &&
+            packet.memorySizeBytes >= 320ULL * 180ULL * 4ULL && packet.frameIndex == 1U;
+        if (!packetAvailable) {
+            logPresentPacketMessage(packet);
+            releaseIfNeeded(packet);
+            logError("Viewport native bridge smoke did not produce the first shared present packet.");
             return false;
         }
+        releaseIfNeeded(packet);
+
+        EditorViewportNativePresentPacket resizedPacket{};
+        EditorViewportNativePresentRequest resizedPresentRequest =
+            makePresentRequest(VkExtent2D{.width = 640U, .height = 360U});
+        const std::uint32_t resizedPacketStatus =
+            editor_viewport_acquire_present_packet(&resizedPresentRequest, &resizedPacket);
+        const bool resizedPacketAvailable =
+            resizedPacketStatus == EditorViewportNativeStatus_Success &&
+            resizedPacket.status == EditorViewportNativeStatus_Success &&
+            resizedPacket.nativePacket != nullptr && resizedPacket.imageHandle != nullptr &&
+            resizedPacket.waitSemaphoreHandle != nullptr &&
+            resizedPacket.signalSemaphoreHandle != nullptr && resizedPacket.widthPixels == 640U &&
+            resizedPacket.heightPixels == 360U && resizedPacket.frameIndex == 2U;
+        if (!resizedPacketAvailable) {
+            logPresentPacketMessage(resizedPacket);
+            releaseIfNeeded(resizedPacket);
+            logError("Viewport native bridge smoke did not produce a resized shared present packet.");
+            return false;
+        }
+        releaseIfNeeded(resizedPacket);
 
         return true;
     }

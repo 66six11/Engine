@@ -23,7 +23,7 @@ internal sealed class ViewportNativeLibraryApi : IViewportNativeApi
     }
 
     public uint AcquirePresentPacket(
-        in ViewportNativeCompatibilityRequest request,
+        in ViewportNativePresentRequest request,
         ref ViewportNativePresentPacket packet)
     {
         return ViewportNativeEntryPoints.AcquirePresentPacket(request, ref packet);
@@ -54,7 +54,7 @@ internal static partial class ViewportNativeEntryPoints
 
     [LibraryImport(LibraryName, EntryPoint = "editor_viewport_acquire_present_packet")]
     internal static partial uint AcquirePresentPacket(
-        in ViewportNativeCompatibilityRequest request,
+        in ViewportNativePresentRequest request,
         ref ViewportNativePresentPacket packet);
 
     [LibraryImport(LibraryName, EntryPoint = "editor_viewport_release_present_packet")]

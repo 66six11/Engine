@@ -63,6 +63,7 @@ struct EditorViewportNativeCompatibilityResult {
 struct EditorViewportNativePresentPacket {
     EditorViewportNativeAbiHeader header;
     std::uint32_t status;
+    void* nativePacket;
     void* imageHandle;
     void* waitSemaphoreHandle;
     void* signalSemaphoreHandle;
@@ -75,6 +76,13 @@ struct EditorViewportNativePresentPacket {
     std::uint64_t messageByteLength;
 };
 
+struct EditorViewportNativePresentRequest {
+    EditorViewportNativeAbiHeader header;
+    EditorViewportNativeCompatibilityRequest compatibility;
+    std::uint32_t widthPixels;
+    std::uint32_t heightPixels;
+};
+
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_composition_compatibility(
     const EditorViewportNativeCompatibilityRequest* request,
@@ -84,7 +92,7 @@ EDITOR_NATIVE_API void EDITOR_NATIVE_CALL
 editor_viewport_release_compatibility_result(EditorViewportNativeCompatibilityResult result);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
-    const EditorViewportNativeCompatibilityRequest* request,
+    const EditorViewportNativePresentRequest* request,
     EditorViewportNativePresentPacket* packet);
 
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL

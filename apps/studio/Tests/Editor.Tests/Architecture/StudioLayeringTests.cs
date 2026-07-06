@@ -944,6 +944,7 @@ public sealed class StudioLayeringTests
             "ViewportNativeImageFormat.cs",
             "ViewportNativeLibraryApi.cs",
             "ViewportNativePresentPacket.cs",
+            "ViewportNativePresentRequest.cs",
             "ViewportNativeStatus.cs",
         };
 

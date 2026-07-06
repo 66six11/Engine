@@ -24,6 +24,11 @@ namespace asharia {
         Required,
     };
 
+    struct VulkanExternalInteropOptions {
+        bool opaqueWin32Memory{};
+        bool opaqueWin32Semaphore{};
+    };
+
     struct VulkanContextDesc {
         std::string applicationName{"Asharia Engine"};
         std::span<const std::string> requiredInstanceExtensions{};
@@ -31,6 +36,7 @@ namespace asharia {
         bool enableValidation{true};
         VulkanDebugLabelMode debugLabels{VulkanDebugLabelMode::Optional};
         bool requireVulkan14{true};
+        VulkanExternalInteropOptions externalInterop;
     };
 
     struct VulkanDeviceIdentity {

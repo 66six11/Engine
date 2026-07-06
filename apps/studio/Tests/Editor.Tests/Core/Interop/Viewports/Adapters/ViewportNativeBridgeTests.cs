@@ -86,12 +86,27 @@ public sealed class ViewportNativeBridgeTests
     {
         using var api = new StubViewportNativeApi();
         var bridge = new ViewportNativeBridge(api);
-        var packet = ViewportNativePresentPacket.CreateForCall();
+        var nativePacket = new IntPtr(0x1234);
+        var packet = new ViewportNativePresentPacket(
+            new ViewportNativeAbiHeader(ViewportNativePresentPacket.CurrentStructSize),
+            ViewportNativeStatus.Success,
+            nativePacket,
+            new IntPtr(0x1000),
+            new IntPtr(0x2000),
+            new IntPtr(0x3000),
+            widthPixels: 320U,
+            heightPixels: 180U,
+            ViewportNativeImageFormat.Rgba8Unorm,
+            memorySizeBytes: 320UL * 180UL * 4UL,
+            frameIndex: 1UL,
+            IntPtr.Zero,
+            messageByteLength: 0UL);
 
         bridge.ReleasePresentPacket(packet);
 
         Assert.Equal(1, api.ReleasePresentPacketCalls);
         Assert.Equal(ViewportNativePresentPacket.CurrentStructSize, api.LastReleasedPresentPacket.Header.StructSize);
+        Assert.Equal(nativePacket, api.LastReleasedPresentPacket.NativePacket);
     }
 
     private static ViewportCompositionCapabilitiesSnapshot CreateCompositionCapabilities()
@@ -170,10 +185,10 @@ public sealed class ViewportNativeBridgeTests
         }
 
         public uint AcquirePresentPacket(
-            in ViewportNativeCompatibilityRequest request,
+            in ViewportNativePresentRequest request,
             ref ViewportNativePresentPacket packet)
         {
-            LastRequest = request;
+            LastRequest = request.Compatibility;
             packet = ViewportNativePresentPacket.CreateForCall();
             return ViewportNativeStatus.Unavailable;
         }

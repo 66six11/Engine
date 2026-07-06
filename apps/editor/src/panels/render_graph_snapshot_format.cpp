@@ -33,6 +33,8 @@ namespace asharia::editor::render_graph_snapshot_format {
                 return "Undefined";
             case asharia::RenderGraphImageFormat::B8G8R8A8Srgb:
                 return "B8G8R8A8Srgb";
+            case asharia::RenderGraphImageFormat::B8G8R8A8Unorm:
+                return "B8G8R8A8Unorm";
             case asharia::RenderGraphImageFormat::D32Sfloat:
                 return "D32Sfloat";
             }

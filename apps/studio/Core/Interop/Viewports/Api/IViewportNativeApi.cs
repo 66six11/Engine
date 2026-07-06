@@ -9,7 +9,7 @@ internal interface IViewportNativeApi
     void ReleaseCompatibilityResult(ViewportNativeCompatibilityResult result);
 
     uint AcquirePresentPacket(
-        in ViewportNativeCompatibilityRequest request,
+        in ViewportNativePresentRequest request,
         ref ViewportNativePresentPacket packet);
 
     void ReleasePresentPacket(ViewportNativePresentPacket packet);

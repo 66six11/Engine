@@ -1950,6 +1950,7 @@ namespace {
                 },
             .enableValidation = false,
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(desc);
@@ -1993,6 +1994,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -2087,6 +2089,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -2196,6 +2199,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -2313,6 +2317,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -2423,6 +2428,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -2543,6 +2549,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -2596,6 +2603,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -2650,6 +2658,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -3009,6 +3018,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -3667,6 +3677,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -3831,6 +3842,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -3941,6 +3953,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -4851,6 +4864,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -4973,6 +4987,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -5118,6 +5133,7 @@ namespace {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
             .debugLabels = kSmokeDebugLabels,
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);
@@ -5264,6 +5280,7 @@ namespace {
                 [&window](VkInstance instance) {
                     return asharia::glfwCreateVulkanSurface(*window, instance);
                 },
+            .externalInterop = {},
         };
 
         auto context = asharia::VulkanContext::create(contextDesc);

@@ -8,6 +8,7 @@ internal readonly struct ViewportNativePresentPacket
 {
     private readonly ViewportNativeAbiHeader header_;
     private readonly uint status_;
+    private readonly IntPtr nativePacket_;
     private readonly IntPtr imageHandle_;
     private readonly IntPtr waitSemaphoreHandle_;
     private readonly IntPtr signalSemaphoreHandle_;
@@ -22,6 +23,7 @@ internal readonly struct ViewportNativePresentPacket
     public ViewportNativePresentPacket(
         ViewportNativeAbiHeader header,
         uint status,
+        IntPtr nativePacket,
         IntPtr imageHandle,
         IntPtr waitSemaphoreHandle,
         IntPtr signalSemaphoreHandle,
@@ -35,6 +37,7 @@ internal readonly struct ViewportNativePresentPacket
     {
         header_ = header;
         status_ = status;
+        nativePacket_ = nativePacket;
         imageHandle_ = imageHandle;
         waitSemaphoreHandle_ = waitSemaphoreHandle;
         signalSemaphoreHandle_ = signalSemaphoreHandle;
@@ -57,6 +60,7 @@ internal readonly struct ViewportNativePresentPacket
             IntPtr.Zero,
             IntPtr.Zero,
             IntPtr.Zero,
+            IntPtr.Zero,
             widthPixels: 0U,
             heightPixels: 0U,
             ViewportNativeImageFormat.Unknown,
@@ -69,6 +73,8 @@ internal readonly struct ViewportNativePresentPacket
     public ViewportNativeAbiHeader Header => header_;
 
     public uint Status => status_;
+
+    public IntPtr NativePacket => nativePacket_;
 
     public IntPtr ImageHandle => imageHandle_;
 

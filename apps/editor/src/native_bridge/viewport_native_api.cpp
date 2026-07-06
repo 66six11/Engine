@@ -35,6 +35,13 @@ namespace {
                    sizeof(EditorViewportNativeCompatibilityRequest);
     }
 
+    [[nodiscard]] bool hasSupportedPresentRequestHeader(
+        const EditorViewportNativePresentRequest& request) {
+        return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+               request.header.structSize >= sizeof(EditorViewportNativePresentRequest) &&
+               hasSupportedRequestHeader(request.compatibility);
+    }
+
     [[nodiscard]] bool hasSupportedHandleTypes(
         const EditorViewportNativeCompatibilityRequest& request) {
         return request.imageHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt &&
@@ -69,6 +76,7 @@ namespace {
         *packet = EditorViewportNativePresentPacket{
             .header = presentPacketHeader(),
             .status = status,
+            .nativePacket = nullptr,
             .imageHandle = nullptr,
             .waitSemaphoreHandle = nullptr,
             .signalSemaphoreHandle = nullptr,
@@ -206,8 +214,8 @@ namespace {
         return status;
     }
 
-    [[nodiscard]] std::uint32_t writePresentPacketUnavailable(
-        EditorViewportNativePresentPacket* packet,
+    [[nodiscard]] std::uint32_t writePresentPacketFailure(
+        EditorViewportNativePresentPacket* packet, std::uint32_t status,
         std::string_view message) {
         void* messageData{};
         std::uint64_t messageByteLength{};
@@ -218,7 +226,8 @@ namespace {
 
         *packet = EditorViewportNativePresentPacket{
             .header = presentPacketHeader(),
-            .status = EditorViewportNativeStatus_Unavailable,
+            .status = status,
+            .nativePacket = nullptr,
             .imageHandle = nullptr,
             .waitSemaphoreHandle = nullptr,
             .signalSemaphoreHandle = nullptr,
@@ -230,7 +239,42 @@ namespace {
             .messageUtf8 = messageData,
             .messageByteLength = messageByteLength,
         };
-        return EditorViewportNativeStatus_Unavailable;
+        return status;
+    }
+
+    [[nodiscard]] std::uint32_t writePresentPacketSuccess(
+        EditorViewportNativePresentPacket* packet,
+        const asharia::editor::EditorSharedViewportPresentPacket& present) {
+        std::uint32_t format = EditorViewportNativeImageFormat_Unknown;
+        if (present.format == VK_FORMAT_R8G8B8A8_UNORM) {
+            format = EditorViewportNativeImageFormat_Rgba8Unorm;
+        } else if (present.format == VK_FORMAT_B8G8R8A8_UNORM) {
+            format = EditorViewportNativeImageFormat_Bgra8Unorm;
+        }
+        if (format == EditorViewportNativeImageFormat_Unknown) {
+            asharia::editor::EditorSharedViewportRuntime::instance().releasePresentPacket(
+                present.nativePacket);
+            return writePresentPacketFailure(
+                packet, EditorViewportNativeStatus_RenderFailed,
+                "Shared viewport renderer produced an unsupported image format.");
+        }
+
+        *packet = EditorViewportNativePresentPacket{
+            .header = presentPacketHeader(),
+            .status = EditorViewportNativeStatus_Success,
+            .nativePacket = present.nativePacket,
+            .imageHandle = present.imageHandle,
+            .waitSemaphoreHandle = present.waitSemaphoreHandle,
+            .signalSemaphoreHandle = present.signalSemaphoreHandle,
+            .widthPixels = present.extent.width,
+            .heightPixels = present.extent.height,
+            .format = format,
+            .memorySizeBytes = present.memorySizeBytes,
+            .frameIndex = present.frameIndex,
+            .messageUtf8 = nullptr,
+            .messageByteLength = 0U,
+        };
+        return EditorViewportNativeStatus_Success;
     }
 
 } // namespace
@@ -280,29 +324,63 @@ void EDITOR_NATIVE_CALL editor_viewport_release_compatibility_result(
 }
 
 std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
-    const EditorViewportNativeCompatibilityRequest* request,
+    const EditorViewportNativePresentRequest* request,
     EditorViewportNativePresentPacket* packet) {
     if (request == nullptr || packet == nullptr) {
         clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
         return EditorViewportNativeStatus_InvalidArgument;
     }
 
-    if (!hasSupportedRequestHeader(*request)) {
+    if (!hasSupportedPresentRequestHeader(*request)) {
         clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedAbi);
         return EditorViewportNativeStatus_UnsupportedAbi;
     }
 
-    if (!hasSupportedHandleTypes(*request)) {
+    if (!hasSupportedHandleTypes(request->compatibility)) {
         clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedHandleType);
         return EditorViewportNativeStatus_UnsupportedHandleType;
     }
 
-    return writePresentPacketUnavailable(
-        packet, "Native shared viewport image producer is not initialized in B1.");
+    if (request->widthPixels == 0U || request->heightPixels == 0U) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    auto context = asharia::editor::EditorSharedViewportRuntime::instance().ensureContext();
+    if (!context) {
+        return writePresentPacketFailure(packet, EditorViewportNativeStatus_Unavailable,
+                                         context.error().message);
+    }
+
+    const asharia::VulkanDeviceInfo& deviceInfo = (*context)->deviceInfo();
+    if (!matchesRequestedDevice(request->compatibility, deviceInfo.identity)) {
+        return writePresentPacketFailure(
+            packet, EditorViewportNativeStatus_DeviceMismatch,
+            "Avalonia compositor device does not match the Vulkan viewport device.");
+    }
+
+    auto present = asharia::editor::EditorSharedViewportRuntime::instance().renderSceneViewFrame(
+        asharia::editor::EditorSharedViewportPresentDesc{
+            .panelId = "scene-view/native",
+            .kind = asharia::editor::EditorViewportKind::Scene,
+            .extent =
+                asharia::editor::EditorExtent2D{
+                    .width = request->widthPixels,
+                    .height = request->heightPixels,
+                },
+        });
+    if (!present) {
+        return writePresentPacketFailure(packet, EditorViewportNativeStatus_RenderFailed,
+                                         present.error().message);
+    }
+
+    return writePresentPacketSuccess(packet, *present);
 }
 
 void EDITOR_NATIVE_CALL editor_viewport_release_present_packet(
     EditorViewportNativePresentPacket packet) {
+    asharia::editor::EditorSharedViewportRuntime::instance().releasePresentPacket(
+        packet.nativePacket);
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-owning-memory)
     std::free(packet.messageUtf8);
 }

@@ -47,6 +47,8 @@ namespace {
         switch (format) {
         case asharia::RenderGraphImageFormat::B8G8R8A8Srgb:
             return VK_FORMAT_B8G8R8A8_SRGB;
+        case asharia::RenderGraphImageFormat::B8G8R8A8Unorm:
+            return VK_FORMAT_B8G8R8A8_UNORM;
         case asharia::RenderGraphImageFormat::D32Sfloat:
             return VK_FORMAT_D32_SFLOAT;
         case asharia::RenderGraphImageFormat::Undefined:

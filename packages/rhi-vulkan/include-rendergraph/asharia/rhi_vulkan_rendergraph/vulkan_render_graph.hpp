@@ -40,6 +40,8 @@ namespace asharia {
             return VK_FORMAT_UNDEFINED;
         case RenderGraphImageFormat::B8G8R8A8Srgb:
             return VK_FORMAT_B8G8R8A8_SRGB;
+        case RenderGraphImageFormat::B8G8R8A8Unorm:
+            return VK_FORMAT_B8G8R8A8_UNORM;
         case RenderGraphImageFormat::D32Sfloat:
             return VK_FORMAT_D32_SFLOAT;
         }
