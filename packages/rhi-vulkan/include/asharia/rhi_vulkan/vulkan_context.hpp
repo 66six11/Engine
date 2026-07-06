@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <span>
@@ -32,6 +33,12 @@ namespace asharia {
         bool requireVulkan14{true};
     };
 
+    struct VulkanDeviceIdentity {
+        std::array<std::uint8_t, VK_LUID_SIZE> deviceLuid{};
+        std::array<std::uint8_t, VK_UUID_SIZE> deviceUuid{};
+        bool deviceLuidValid{};
+    };
+
     struct VulkanDeviceInfo {
         std::string name;
         std::uint32_t vendorId{};
@@ -41,6 +48,7 @@ namespace asharia {
         bool graphicsQueueSupportsCompute{};
         std::uint32_t graphicsQueueTimestampValidBits{};
         float timestampPeriodNanoseconds{};
+        VulkanDeviceIdentity identity;
     };
 
     struct VulkanDebugLabelFunctions {

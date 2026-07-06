@@ -352,8 +352,20 @@ namespace asharia {
         struct PhysicalDeviceCandidate {
             VkPhysicalDevice device{VK_NULL_HANDLE};
             VkPhysicalDeviceProperties properties{};
+            VulkanDeviceIdentity identity{};
             QueueSelection queues{};
         };
+
+        [[nodiscard]] VulkanDeviceIdentity
+        makeDeviceIdentity(const VkPhysicalDeviceIDProperties& idProperties) {
+            VulkanDeviceIdentity identity{};
+            std::copy_n(idProperties.deviceLUID, identity.deviceLuid.size(),
+                        identity.deviceLuid.begin());
+            std::copy_n(idProperties.deviceUUID, identity.deviceUuid.size(),
+                        identity.deviceUuid.begin());
+            identity.deviceLuidValid = idProperties.deviceLUIDValid == VK_TRUE;
+            return identity;
+        }
 
         Result<std::optional<PhysicalDeviceCandidate>>
         choosePhysicalDevice(VkInstance instance, VkSurfaceKHR surface, bool requireVulkan14) {
@@ -376,8 +388,15 @@ namespace asharia {
             std::optional<PhysicalDeviceCandidate> best;
 
             for (VkPhysicalDevice device : devices) {
-                VkPhysicalDeviceProperties properties{};
-                vkGetPhysicalDeviceProperties(device, &properties);
+                VkPhysicalDeviceIDProperties idProperties{};
+                idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+
+                VkPhysicalDeviceProperties2 properties2{};
+                properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+                properties2.pNext = &idProperties;
+                vkGetPhysicalDeviceProperties2(device, &properties2);
+
+                const VkPhysicalDeviceProperties& properties = properties2.properties;
 
                 auto queues = selectQueues(device, surface);
                 if (!queues) {
@@ -397,6 +416,7 @@ namespace asharia {
                 PhysicalDeviceCandidate candidate{
                     .device = device,
                     .properties = properties,
+                    .identity = makeDeviceIdentity(idProperties),
                     .queues = **queues,
                 };
                 if (!best || properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
@@ -807,6 +827,7 @@ namespace asharia {
             .graphicsQueueSupportsCompute = selected.queues.graphicsSupportsCompute,
             .graphicsQueueTimestampValidBits = selected.queues.timestampValidBits,
             .timestampPeriodNanoseconds = selected.properties.limits.timestampPeriod,
+            .identity = selected.identity,
         };
 
         logInfo("Selected Vulkan device: " + context.deviceInfo_.name + " (" +
