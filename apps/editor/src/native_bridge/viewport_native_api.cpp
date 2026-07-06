@@ -3,8 +3,9 @@
 #include <array>
 #include <bit>
 #include <cstddef>
-#include <cstdlib>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <string_view>
 
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
@@ -98,15 +99,19 @@ namespace {
             return true;
         }
 
-        // The C ABI returns a native-owned message buffer; callers release it
-        // through the matching editor_viewport_release_* function.
-        // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-owning-memory)
-        data = std::malloc(message.size());
-        if (data == nullptr) {
+        // The C ABI returns a native-owned message buffer; callers transfer it
+        // back through the matching editor_viewport_release_* function.
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+        std::unique_ptr<std::byte[]> buffer;
+        try {
+            // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+            buffer = std::make_unique_for_overwrite<std::byte[]>(message.size());
+        } catch (const std::bad_alloc&) {
             return false;
         }
 
-        std::memcpy(data, message.data(), message.size());
+        std::memcpy(buffer.get(), message.data(), message.size());
+        data = buffer.release();
         byteLength = static_cast<std::uint64_t>(message.size());
         return true;
     }
@@ -319,8 +324,8 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_composition_compatibility
 
 void EDITOR_NATIVE_CALL editor_viewport_release_compatibility_result(
     EditorViewportNativeCompatibilityResult result) {
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-owning-memory)
-    std::free(result.messageUtf8);
+    const std::unique_ptr<std::byte[]> message{
+        static_cast<std::byte*>(result.messageUtf8)};
 }
 
 std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
@@ -381,8 +386,7 @@ void EDITOR_NATIVE_CALL editor_viewport_release_present_packet(
     EditorViewportNativePresentPacket packet) {
     asharia::editor::EditorSharedViewportRuntime::instance().releasePresentPacket(
         packet.nativePacket);
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-owning-memory)
-    std::free(packet.messageUtf8);
+    const std::unique_ptr<std::byte[]> message{static_cast<std::byte*>(packet.messageUtf8)};
 }
 
 void EDITOR_NATIVE_CALL editor_viewport_shutdown() {
