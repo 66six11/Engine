@@ -16,8 +16,8 @@ public partial class SceneViewPanelView : UserControl
 {
     private readonly SceneViewCompositionCapabilityReader compositionReader_ = new();
     private readonly ViewportNativeBridge nativeBridge_ = new();
+    private readonly SceneViewNativeViewportLifecycle viewportLifecycle_ = new();
     private readonly SceneViewCompositionPresenter presenter_;
-    private Task? pendingPresent_;
 
     public SceneViewPanelView()
     {
@@ -75,7 +75,7 @@ public partial class SceneViewPanelView : UserControl
         ViewportCompositionCapabilitiesSnapshot compositionCapabilities,
         ViewportExtent requestedExtent)
     {
-        if (!CanStartPresent())
+        if (!viewportLifecycle_.CanBeginPresent)
         {
             return;
         }
@@ -109,7 +109,7 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
-        if (!CanStartPresent())
+        if (!viewportLifecycle_.CanBeginPresent)
         {
             return;
         }
@@ -125,7 +125,11 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
-        pendingPresent_ = PresentAndUpdateAsync(viewModel, interop, surface, requestedExtent, packet);
+        if (!viewportLifecycle_.TryBeginPresent(
+                () => PresentAndUpdateAsync(viewModel, interop, surface, requestedExtent, packet)))
+        {
+            nativeBridge_.ReleasePresentPacket(packet);
+        }
     }
 
     private async Task PresentAndUpdateAsync(
@@ -212,8 +216,4 @@ public partial class SceneViewPanelView : UserControl
             DateTimeOffset.UtcNow);
     }
 
-    private bool CanStartPresent()
-    {
-        return pendingPresent_ is null || pendingPresent_.IsCompleted;
-    }
 }

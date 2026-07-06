@@ -14,16 +14,19 @@ public sealed class SceneViewPanelViewSourceTests
 
         Assert.Contains("ViewportNativeBridge", source, StringComparison.Ordinal);
         Assert.Contains("SceneViewCompositionPresenter", source, StringComparison.Ordinal);
+        Assert.Contains("SceneViewNativeViewportLifecycle", source, StringComparison.Ordinal);
         Assert.Contains("QueryCompositionCompatibility(", source, StringComparison.Ordinal);
         Assert.Contains("AcquirePresentPacket(", source, StringComparison.Ordinal);
         Assert.Contains("PresentAsync(", source, StringComparison.Ordinal);
         Assert.Contains("CompositionHost.Surface", source, StringComparison.Ordinal);
         Assert.Contains("TryGetCompositionGpuInterop", source, StringComparison.Ordinal);
         Assert.Contains("UpdateNativePresent(", source, StringComparison.Ordinal);
-        Assert.Contains("pendingPresent_", source, StringComparison.Ordinal);
-        Assert.Contains("CanStartPresent()", source, StringComparison.Ordinal);
+        Assert.Contains("viewportLifecycle_", source, StringComparison.Ordinal);
+        Assert.Contains("TryBeginPresent(", source, StringComparison.Ordinal);
         Assert.Contains("TopLevel.GetTopLevel", source, StringComparison.Ordinal);
         Assert.Contains("RenderScaling", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("pendingPresent_", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("CanStartPresent()", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Wait()", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Result", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Thread.Sleep", source, StringComparison.Ordinal);
