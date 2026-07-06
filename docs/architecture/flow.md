@@ -156,6 +156,10 @@ flowchart TD
   selection value contracts；未来
   `packages/editor-core` 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
+- `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Studio viewport contracts
+  分层为 `Core/Models/Viewports` 的 UI-neutral snapshot、`Core/Interop/Viewports` 的 ABI bridge 和
+  `Features/SceneView` 的 Avalonia composition host/presenter。它通过 `editor_native` P/Invoke 请求
+  native-owned Vulkan present packet；不录制 command buffer、不拥有 Vulkan image/semaphore lifetime。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -227,6 +231,51 @@ flowchart TB
 - `apps/editor` 是 editor host 和 smoke harness；它拥有 ImGui backend lifecycle、panel/action/event
   state 和 ImGui texture descriptor lifetime。它可以在 host integration 层录制 ImGui draw data
   到 swapchain，但 editor panel 不能录制 Vulkan commands。
+- `apps/studio` 是 managed shell；Scene View 可以拥有 Avalonia composition surface 和 status ViewModel，
+  但 Vulkan frame recording、external image/semaphore 创建和 native packet release 仍在 native bridge/RHI 边界。
+
+## Studio Avalonia Scene View Composition 流程
+
+```mermaid
+sequenceDiagram
+    participant View as SceneViewPanelView
+    participant VM as SceneViewPanelViewModel
+    participant Avalonia as Avalonia Compositor GPU interop
+    participant Bridge as ViewportNativeBridge
+    participant Native as editor_native ABI
+    participant Runtime as editor shared viewport runtime
+    participant RHI as rhi-vulkan / renderer_basic_vulkan
+
+    View->>Avalonia: ElementComposition.GetElementVisual + TryGetCompositionGpuInterop
+    Avalonia-->>View: device LUID/UUID, image/semaphore handle support
+    View->>VM: UpdateCompositionCapabilities(snapshot)
+    View->>Bridge: QueryCompositionCompatibility(snapshot, extent)
+    Bridge->>Native: editor_viewport_query_composition_compatibility
+    Native-->>Bridge: status + message
+    Bridge-->>View: ViewportNativePresentSnapshot
+    View->>VM: UpdateNativePresent(snapshot)
+    View->>Bridge: AcquirePresentPacket(snapshot, extent)
+    Bridge->>Native: editor_viewport_acquire_present_packet
+    Native->>Runtime: render Scene View frame
+    Runtime->>RHI: record RenderView into external Vulkan image
+    RHI-->>Runtime: image + semaphores ready
+    Native-->>Bridge: native-owned opaque NT handles + packet
+    Bridge-->>View: ViewportNativePresentPacket
+    View->>Avalonia: ImportImage / ImportSemaphore
+    View->>Avalonia: CompositionDrawingSurface.UpdateWithSemaphoresAsync
+    View->>Bridge: ReleasePresentPacket in finally
+    Bridge->>Native: editor_viewport_release_present_packet
+    View->>VM: presented/import-failed snapshot
+```
+
+当前约束：
+
+- `Core/Models/Viewports` 不引用 Avalonia、native pointer、Vulkan handle 或 OS handle，只保存 snapshot。
+- `Core/Interop/Viewports` 是 managed Core 中唯一可持有 ABI structs、`IntPtr` 和 packet release 逻辑的区域。
+- `Features/SceneView` 是 managed Studio 中唯一导入 Avalonia composition external image/semaphore 的区域。
+- `SceneViewCompositionPresenter` 只通过 Avalonia `ICompositionGpuInterop` import opaque NT handles，并在 `finally`
+  释放 native packet；失败 packet 由 bridge 复制 message 后释放。
+- Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
 
 ## 启动与 Context 流程
 
