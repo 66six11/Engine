@@ -15,6 +15,16 @@ sealed class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
                      .UsePlatformDetect()
+                     .With(new Win32PlatformOptions
+                     {
+                         // The composition viewport imports Vulkan opaque NT handles; keep ANGLE and software as fallbacks.
+                         RenderingMode =
+                         [
+                             Win32RenderingMode.Vulkan,
+                             Win32RenderingMode.AngleEgl,
+                             Win32RenderingMode.Software,
+                         ],
+                     })
                      #if DEBUG
                      .WithDeveloperTools()
                      #endif

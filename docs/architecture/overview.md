@@ -85,6 +85,8 @@ RenderGraph 资料。
   P/Invoke entry points 和 native packet release bridge；`Features/SceneView` 拥有 Avalonia composition
   probing、drawing surface host 和 external image/semaphore import。Studio 不录制 Vulkan commands，不拥有
   native GPU resource，只通过 `editor_native` ABI 请求 native-owned present packet 并在 managed import/update 后释放。
+  Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
+  composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 
 ## 所有权模型
 
