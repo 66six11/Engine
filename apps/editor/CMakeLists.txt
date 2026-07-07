@@ -75,6 +75,7 @@ if(WIN32)
 endif()
 
 add_library(editor-native SHARED
+    src/editor_shared_viewport_external_image_pool.cpp
     src/editor_shared_viewport_render_producer.cpp
     src/editor_shared_viewport_runtime.cpp
     src/editor_frame_debugger.cpp

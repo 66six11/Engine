@@ -13,6 +13,8 @@
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vma_fwd.hpp"
 
+#include "editor_shared_viewport_external_image_handle_family.hpp"
+#include "editor_shared_viewport_external_image_pool.hpp"
 #include "editor_viewport.hpp"
 
 namespace asharia {
@@ -25,6 +27,8 @@ namespace asharia::editor {
         std::string_view panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D extent;
+        EditorSharedViewportExternalImageHandleFamily imageHandleFamily{
+            EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt};
     };
 
     struct EditorSharedViewportPresentPacket {
