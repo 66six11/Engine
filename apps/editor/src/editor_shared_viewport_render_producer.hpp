@@ -46,6 +46,12 @@ namespace asharia::editor {
         std::uint64_t framesRendered{};
         std::uint64_t packetsCreated{};
         std::uint64_t rendererCreations{};
+        std::uint64_t externalImagesAcquired{};
+        std::uint64_t externalImagesCreated{};
+        std::uint64_t externalImagesReused{};
+        std::uint64_t externalImagesReleased{};
+        std::uint64_t externalImagesAvailable{};
+        std::uint64_t externalImagesLeased{};
     };
 
     struct EditorSharedViewportPacketState final {
@@ -68,7 +74,7 @@ namespace asharia::editor {
         VkFence fence{VK_NULL_HANDLE};
         bool submitted{false};
         BasicFullscreenTextureRenderer renderer;
-        VulkanExternalImage image;
+        EditorSharedViewportExternalImageLease imageLease;
         VulkanExternalSemaphore waitSemaphore;
         VulkanExternalSemaphore signalSemaphore;
         void* imageHandle{};
@@ -103,6 +109,7 @@ namespace asharia::editor {
         VkQueue graphicsQueue_{VK_NULL_HANDLE};
         std::uint32_t graphicsQueueFamily_{};
         EditorSharedViewportRenderProducerStats stats_;
+        EditorSharedViewportExternalImagePool externalImagePool_;
     };
 
 } // namespace asharia::editor
