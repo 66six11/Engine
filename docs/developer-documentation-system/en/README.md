@@ -9,9 +9,21 @@ Older material under `docs/` remains historical and migration reference. The doc
 | Area | Entry |
 |---|---|
 | Architecture | [architecture/overview.md](architecture/overview.md) |
+| Package dependency map | [architecture/package-dependency-map.md](architecture/package-dependency-map.md) |
+| Data model and persistence boundaries | [architecture/data-model-and-persistence.md](architecture/data-model-and-persistence.md) |
 | Rendering and frame flow | [architecture/rendering-and-frame-flow.md](architecture/rendering-and-frame-flow.md) |
 | Asset, material, and shader flow | [architecture/asset-and-material-flow.md](architecture/asset-and-material-flow.md) |
+| Editor and runtime boundaries | [architecture/editor-runtime-boundaries.md](architecture/editor-runtime-boundaries.md) |
+| Platform/window/profiling design | [design/platform-window-design.md](design/platform-window-design.md) |
+| Asset catalog, import planning, and product execution design | [design/asset-pipeline-design.md](design/asset-pipeline-design.md) |
+| Material, shader authoring, and Slang reflection design | [design/material-shader-design.md](design/material-shader-design.md) |
+| Reflection, serialization, schema, and persistence design | [design/reflection-serialization-design.md](design/reflection-serialization-design.md) |
+| Scene world and runtime resource registry design | [design/scene-resource-design.md](design/scene-resource-design.md) |
 | RenderGraph design | [design/rendergraph-design.md](design/rendergraph-design.md) |
+| Vulkan RHI design | [design/rhi-vulkan-design.md](design/rhi-vulkan-design.md) |
+| Basic renderer and render view design | [design/renderer-basic-design.md](design/renderer-basic-design.md) |
+| Native ImGui editor host design | [design/editor-host-design.md](design/editor-host-design.md) |
+| Avalonia Studio shell design | [design/studio-shell-design.md](design/studio-shell-design.md) |
 | Core API | [api/core-api.md](api/core-api.md) |
 | RenderGraph API | [api/rendergraph-api.md](api/rendergraph-api.md) |
 | Vulkan RHI API | [api/rhi-vulkan-api.md](api/rhi-vulkan-api.md) |

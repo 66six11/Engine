@@ -72,12 +72,88 @@ function Add-DocHints {
     )
 
     if ($ChangedFiles | Where-Object { $_ -match "^packages/rendergraph/" }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/design/rendergraph-design.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/api/rendergraph-api.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/design/rendergraph-design.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/api/rendergraph-api.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
+    }
+
+    if ($ChangedFiles | Where-Object {
+            $_ -match "^engine/core/" -or
+            $_ -match "^engine/platform/" -or
+            $_ -match "^packages/window-glfw/" -or
+            $_ -match "^packages/profiling/"
+        }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/platform-window-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/platform-window-design.md"
+    }
+
+    if ($ChangedFiles | Where-Object {
+            $_ -match "^packages/asset-core/" -or
+            $_ -match "^packages/asset-pipeline/" -or
+            $_ -match "^packages/project-core/" -or
+            $_ -match "^packages/resource-runtime/" -or
+            $_ -match "^tools/asset-processor/"
+        }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/asset-pipeline-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/asset-and-material-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/asset-pipeline-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/asset-and-material-flow.md"
+    }
+
+    if ($ChangedFiles | Where-Object {
+            $_ -match "^packages/material-core/" -or
+            $_ -match "^packages/material-instance/" -or
+            $_ -match "^packages/shader-authoring/" -or
+            $_ -match "^packages/shader-slang/" -or
+            $_ -match "^packages/shader-material-adapter/"
+        }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/material-shader-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/asset-and-material-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/material-shader-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/asset-and-material-flow.md"
+    }
+
+    if ($ChangedFiles | Where-Object {
+            $_ -match "^packages/archive/" -or
+            $_ -match "^packages/schema/" -or
+            $_ -match "^packages/cpp-binding/" -or
+            $_ -match "^packages/persistence/" -or
+            $_ -match "^packages/reflection/" -or
+            $_ -match "^packages/serialization/"
+        }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/reflection-serialization-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/reflection-serialization-design.md"
+    }
+
+    if ($ChangedFiles | Where-Object {
+            $_ -match "^packages/scene-core/" -or
+            $_ -match "^packages/resource-runtime/"
+        }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/scene-resource-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/scene-resource-design.md"
     }
 
     if ($ChangedFiles | Where-Object {
@@ -87,9 +163,11 @@ function Add-DocHints {
             $_ -match "^cmake/"
         }) {
         Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/overview.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/guides/add-package-guide.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/build.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/architecture/overview.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/guides/add-package-guide.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/workflow/build.md"
     }
@@ -103,23 +181,52 @@ function Add-DocHints {
 
     if ($ChangedFiles | Where-Object { $_ -match "^shaders/" -or $_ -match "^packages/shader-slang/" }) {
         Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/asset-and-material-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/material-shader-design.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/review.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/architecture/asset-and-material-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/data-model-and-persistence.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/material-shader-design.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/workflow/review.md"
     }
 
-    if ($ChangedFiles | Where-Object {
-            $_ -match "^packages/rhi-vulkan/" -or
-            $_ -match "^packages/renderer-basic/" -or
-            $_ -match "^apps/"
-        }) {
+    if ($ChangedFiles | Where-Object { $_ -match "^packages/rhi-vulkan/" }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/rhi-vulkan-design.md"
         Add-Unique $Docs "docs/developer-documentation-system/zh/api/rhi-vulkan-api.md"
-        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/rhi-vulkan-design.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/api/rhi-vulkan-api.md"
+    }
+
+    if ($ChangedFiles | Where-Object { $_ -match "^packages/renderer-basic/" }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/renderer-basic-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/renderer-basic-design.md"
+    }
+
+    if ($ChangedFiles | Where-Object { $_ -match "^apps/editor/" }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/editor-runtime-boundaries.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/editor-host-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/editor-runtime-boundaries.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/editor-host-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/workflow/review.md"
+    }
+
+    if ($ChangedFiles | Where-Object { $_ -match "^apps/studio/" }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/editor-runtime-boundaries.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/studio-shell-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/editor-runtime-boundaries.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/studio-shell-design.md"
         Add-Unique $Docs "docs/developer-documentation-system/en/workflow/review.md"
     }
 }

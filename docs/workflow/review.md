@@ -202,6 +202,9 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 2. VMA、Slang、SPIR-V、shader toolchain 官方文档。
 3. 成熟案例：Frostbite FrameGraph、Granite、Diligent Engine、RenderDoc/Nsight 的资源视图思路。
 4. 本仓库当前部署文档：`docs/developer-documentation-system/zh/architecture/overview.md`、
+   `docs/developer-documentation-system/zh/architecture/package-dependency-map.md`、
+   `docs/developer-documentation-system/zh/architecture/data-model-and-persistence.md`、
+   `docs/developer-documentation-system/zh/architecture/editor-runtime-boundaries.md`、
    `docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md`、
    `docs/developer-documentation-system/zh/design/rendergraph-design.md`、
    `docs/developer-documentation-system/zh/workflow/review.md`；英文审查同步检查 `en/` 对应文件。
@@ -319,9 +322,21 @@ diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-Include
 优先更新 `docs/developer-documentation-system/zh/` 与 `docs/developer-documentation-system/en/` 的对应文件：
 
 - `architecture/overview.md`
+- `architecture/package-dependency-map.md`
+- `architecture/data-model-and-persistence.md`
+- `architecture/editor-runtime-boundaries.md`
 - `architecture/rendering-and-frame-flow.md`
 - `architecture/asset-and-material-flow.md`
+- `design/platform-window-design.md`
+- `design/asset-pipeline-design.md`
+- `design/material-shader-design.md`
+- `design/reflection-serialization-design.md`
+- `design/scene-resource-design.md`
 - `design/rendergraph-design.md`
+- `design/rhi-vulkan-design.md`
+- `design/renderer-basic-design.md`
+- `design/editor-host-design.md`
+- `design/studio-shell-design.md`
 - `api/rendergraph-api.md`
 - `api/rhi-vulkan-api.md`
 - `workflow/build.md`

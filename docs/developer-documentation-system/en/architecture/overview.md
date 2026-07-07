@@ -4,6 +4,16 @@
 
 This document describes the current system layers, state ownership, and dependency direction in the codebase. It does not describe the future roadmap. Future work is labeled with `future`.
 
+## Companion Documents
+
+Read these architecture documents for deeper boundaries:
+
+- [package-dependency-map.md](package-dependency-map.md): package and target dependency matrix.
+- [data-model-and-persistence.md](data-model-and-persistence.md): archive, schema, persistence, reflection, serialization, asset, material, and shader data ownership.
+- [rendering-and-frame-flow.md](rendering-and-frame-flow.md): frame loop, RenderGraph, RHI, renderer, and Vulkan flow.
+- [asset-and-material-flow.md](asset-and-material-flow.md): asset product and material/shader flow.
+- [editor-runtime-boundaries.md](editor-runtime-boundaries.md): C++ editor, native bridge, Studio, and runtime ownership.
+
 ## Top-Level Code Structure
 
 | Path | Current responsibility | Build entry |

@@ -9,9 +9,21 @@
 | 任务 | 入口 |
 |---|---|
 | 了解系统分层、状态所有权、依赖方向 | [architecture/overview.md](architecture/overview.md) |
+| 了解 package 和 target 依赖矩阵 | [architecture/package-dependency-map.md](architecture/package-dependency-map.md) |
+| 了解 data model、schema、persistence、asset/material 数据边界 | [architecture/data-model-and-persistence.md](architecture/data-model-and-persistence.md) |
 | 了解渲染 frame flow 和 RenderGraph/RHI 边界 | [architecture/rendering-and-frame-flow.md](architecture/rendering-and-frame-flow.md) |
 | 了解 asset/material/shader 产物流 | [architecture/asset-and-material-flow.md](architecture/asset-and-material-flow.md) |
+| 了解 Studio、native editor、runtime bridge 边界 | [architecture/editor-runtime-boundaries.md](architecture/editor-runtime-boundaries.md) |
+| 设计或修改 platform/window/profiling 支撑层 | [design/platform-window-design.md](design/platform-window-design.md) |
+| 设计或修改资产目录、导入计划和 product execution | [design/asset-pipeline-design.md](design/asset-pipeline-design.md) |
+| 设计或修改材质、Shader authoring 和 Slang reflection | [design/material-shader-design.md](design/material-shader-design.md) |
+| 设计或修改 reflection、serialization、schema、persistence | [design/reflection-serialization-design.md](design/reflection-serialization-design.md) |
+| 设计或修改 scene world 和 runtime resource registry | [design/scene-resource-design.md](design/scene-resource-design.md) |
 | 设计或修改 RenderGraph 功能 | [design/rendergraph-design.md](design/rendergraph-design.md) |
+| 设计或修改 Vulkan RHI | [design/rhi-vulkan-design.md](design/rhi-vulkan-design.md) |
+| 设计或修改 basic renderer 和 render view | [design/renderer-basic-design.md](design/renderer-basic-design.md) |
+| 设计或修改 native ImGui editor host | [design/editor-host-design.md](design/editor-host-design.md) |
+| 设计或修改 Avalonia Studio shell | [design/studio-shell-design.md](design/studio-shell-design.md) |
 | 查询核心错误、Result、日志 API | [api/core-api.md](api/core-api.md) |
 | 查询 RenderGraph API | [api/rendergraph-api.md](api/rendergraph-api.md) |
 | 查询 Vulkan RHI API | [api/rhi-vulkan-api.md](api/rhi-vulkan-api.md) |

@@ -94,6 +94,17 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe --smoke
 | `apps/studio` | `dotnet test apps\studio\Editor.sln` |
 | documentation deployment | inspect `.github/workflows/docs-site-sync.yml`, run encoding and whitespace checks |
 
+## Documentation Candidates
+
+| Changed area | Candidate docs |
+|---|---|
+| CMake target, package manifest, package boundary | `architecture/package-dependency-map.md`, `guides/add-package-guide.md`, `workflow/build.md` |
+| archive, schema, C++ binding, persistence, reflection, serialization | `architecture/data-model-and-persistence.md`, `design/reflection-serialization-design.md` |
+| asset-core, asset-pipeline, project-core, resource-runtime, asset tool | `architecture/data-model-and-persistence.md`, `architecture/asset-and-material-flow.md`, `design/asset-pipeline-design.md` |
+| material, shader authoring, Slang reflection, shader-material adapter | `architecture/data-model-and-persistence.md`, `architecture/asset-and-material-flow.md`, `design/material-shader-design.md` |
+| RenderGraph, Vulkan RHI, renderer-basic | `architecture/package-dependency-map.md`, `architecture/rendering-and-frame-flow.md`, related design/API docs |
+| native editor, editor-native, Studio viewport/frame debugger interop | `architecture/editor-runtime-boundaries.md`, `design/editor-host-design.md`, `design/studio-shell-design.md` |
+
 ## Validation
 
 The review gate is valid when commands above either pass or the PR/issue records:

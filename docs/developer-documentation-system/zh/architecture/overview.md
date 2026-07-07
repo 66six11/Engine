@@ -4,6 +4,16 @@
 
 本文说明当前代码里的系统分层、状态所有权和依赖方向。它先记录当前事实；未来工作只用 `future` 标注。
 
+## 配套文档
+
+更细的边界阅读这些架构文档：
+
+- [package-dependency-map.md](package-dependency-map.md): package 和 target 依赖矩阵。
+- [data-model-and-persistence.md](data-model-and-persistence.md): archive、schema、persistence、reflection、serialization、asset、material、shader 数据所有权。
+- [rendering-and-frame-flow.md](rendering-and-frame-flow.md): frame loop、RenderGraph、RHI、renderer、Vulkan flow。
+- [asset-and-material-flow.md](asset-and-material-flow.md): asset product 和 material/shader flow。
+- [editor-runtime-boundaries.md](editor-runtime-boundaries.md): C++ editor、native bridge、Studio、runtime ownership。
+
 ## 顶层代码结构
 
 | 路径 | 当前职责 | 构建入口 |
