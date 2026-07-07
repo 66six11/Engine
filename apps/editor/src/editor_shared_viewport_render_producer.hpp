@@ -13,6 +13,8 @@
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vma_fwd.hpp"
 
+#include "editor_shared_viewport_external_image_handle_family.hpp"
+#include "editor_shared_viewport_external_image_pool.hpp"
 #include "editor_viewport.hpp"
 
 namespace asharia {
@@ -25,6 +27,8 @@ namespace asharia::editor {
         std::string_view panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D extent;
+        EditorSharedViewportExternalImageHandleFamily imageHandleFamily{
+            EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt};
     };
 
     struct EditorSharedViewportPresentPacket {
@@ -42,6 +46,12 @@ namespace asharia::editor {
         std::uint64_t framesRendered{};
         std::uint64_t packetsCreated{};
         std::uint64_t rendererCreations{};
+        std::uint64_t externalImagesAcquired{};
+        std::uint64_t externalImagesCreated{};
+        std::uint64_t externalImagesReused{};
+        std::uint64_t externalImagesReleased{};
+        std::uint64_t externalImagesAvailable{};
+        std::uint64_t externalImagesLeased{};
     };
 
     struct EditorSharedViewportPacketState final {
@@ -64,7 +74,7 @@ namespace asharia::editor {
         VkFence fence{VK_NULL_HANDLE};
         bool submitted{false};
         BasicFullscreenTextureRenderer renderer;
-        VulkanExternalImage image;
+        EditorSharedViewportExternalImageLease imageLease;
         VulkanExternalSemaphore waitSemaphore;
         VulkanExternalSemaphore signalSemaphore;
         void* imageHandle{};
@@ -99,6 +109,7 @@ namespace asharia::editor {
         VkQueue graphicsQueue_{VK_NULL_HANDLE};
         std::uint32_t graphicsQueueFamily_{};
         EditorSharedViewportRenderProducerStats stats_;
+        EditorSharedViewportExternalImagePool externalImagePool_;
     };
 
 } // namespace asharia::editor

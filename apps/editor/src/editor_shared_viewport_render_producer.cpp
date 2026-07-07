@@ -81,8 +81,10 @@ namespace asharia::editor {
 
         [[nodiscard]] Result<void> recordSharedViewportFrame(
             VkDevice device, VmaAllocator allocator, VkQueue graphicsQueue,
-            std::uint32_t graphicsQueueFamily, EditorSharedViewportPacketState& state,
-            EditorSharedViewportPresentDesc desc, std::uint64_t frameIndex) {
+            std::uint32_t graphicsQueueFamily,
+            EditorSharedViewportExternalImagePool& externalImagePool,
+            EditorSharedViewportPacketState& state, EditorSharedViewportPresentDesc desc,
+            std::uint64_t frameIndex) {
             auto renderer = BasicFullscreenTextureRenderer::create(
                 BasicFullscreenTextureRendererDesc{
                     .device = device,
@@ -94,18 +96,22 @@ namespace asharia::editor {
             }
             state.renderer = std::move(*renderer);
 
-            auto image = VulkanExternalImage::create(VulkanExternalImageDesc{
-                .device = device,
-                .allocator = allocator,
-                .format = kSharedViewportFormat,
-                .extent = VkExtent2D{.width = desc.extent.width, .height = desc.extent.height},
-                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            });
-            if (!image) {
-                return std::unexpected{std::move(image.error())};
+            auto imageLease = externalImagePool.acquire(
+                desc.imageHandleFamily,
+                VulkanExternalImageDesc{
+                    .device = device,
+                    .allocator = allocator,
+                    .format = kSharedViewportFormat,
+                    .extent = VkExtent2D{.width = desc.extent.width, .height = desc.extent.height},
+                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                });
+            if (!imageLease) {
+                return std::unexpected{std::move(imageLease.error())};
             }
-            state.image = std::move(*image);
+            state.imageLease = std::move(*imageLease);
+
+            VulkanExternalImage& targetImage = state.imageLease.image();
 
             auto waitSemaphore =
                 VulkanExternalSemaphore::create(VulkanExternalSemaphoreDesc{.device = device});
@@ -138,11 +144,11 @@ namespace asharia::editor {
 
             const VulkanFrameRecordContext frame{
                 .commandBuffer = state.commandBuffer,
-                .image = state.image.image(),
-                .imageView = state.image.imageView(),
+                .image = targetImage.image(),
+                .imageView = targetImage.imageView(),
                 .imageIndex = 0U,
-                .format = state.image.format(),
-                .extent = state.image.extent(),
+                .format = targetImage.format(),
+                .extent = targetImage.extent(),
                 .clearColor = VkClearColorValue{{0.12F, 0.12F, 0.13F, 1.0F}},
                 .frameLoop = nullptr,
             };
@@ -154,11 +160,11 @@ namespace asharia::editor {
 
             BasicRenderViewDesc view;
             view.target = BasicRenderViewTarget{
-                .image = state.image.image(),
-                .imageView = state.image.imageView(),
-                .format = state.image.format(),
-                .extent = state.image.extent(),
-                .aspectMask = state.image.aspectMask(),
+                .image = targetImage.image(),
+                .imageView = targetImage.imageView(),
+                .format = targetImage.format(),
+                .extent = targetImage.extent(),
+                .aspectMask = targetImage.aspectMask(),
                 .finalUsage = BasicRenderViewTargetFinalUsage::SampledTexture,
             };
             view.viewKind = *viewKind;
@@ -209,7 +215,7 @@ namespace asharia::editor {
             state.submitted = true;
             state.frameIndex = frameIndex;
 
-            auto imageHandle = state.image.exportOpaqueWin32Handle();
+            auto imageHandle = targetImage.exportOpaqueWin32Handle();
             if (!imageHandle) {
                 return std::unexpected{std::move(imageHandle.error())};
             }
@@ -256,14 +262,15 @@ namespace asharia::editor {
 
     EditorSharedViewportPresentPacket
     EditorSharedViewportPacketState::toPresentPacket() {
+        VulkanExternalImage& targetImage = imageLease.image();
         return EditorSharedViewportPresentPacket{
             .nativePacket = this,
             .imageHandle = imageHandle,
             .waitSemaphoreHandle = waitSemaphoreHandle,
             .signalSemaphoreHandle = signalSemaphoreHandle,
-            .format = image.format(),
-            .extent = image.extent(),
-            .memorySizeBytes = image.memorySizeBytes(),
+            .format = targetImage.format(),
+            .extent = targetImage.extent(),
+            .memorySizeBytes = targetImage.memorySizeBytes(),
             .frameIndex = frameIndex,
         };
     }
@@ -291,7 +298,8 @@ namespace asharia::editor {
         EditorSharedViewportPresentDesc desc, std::uint64_t frameIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
         auto rendered = recordSharedViewportFrame(device_, allocator_, graphicsQueue_,
-                                                  graphicsQueueFamily_, *state, desc, frameIndex);
+                                                  graphicsQueueFamily_, externalImagePool_, *state,
+                                                  desc, frameIndex);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
@@ -303,7 +311,15 @@ namespace asharia::editor {
     }
 
     EditorSharedViewportRenderProducerStats EditorSharedViewportRenderProducer::stats() const {
-        return stats_;
+        EditorSharedViewportRenderProducerStats snapshot = stats_;
+        const EditorSharedViewportExternalImagePoolStats poolStats = externalImagePool_.stats();
+        snapshot.externalImagesAcquired = poolStats.acquired;
+        snapshot.externalImagesCreated = poolStats.created;
+        snapshot.externalImagesReused = poolStats.reused;
+        snapshot.externalImagesReleased = poolStats.released;
+        snapshot.externalImagesAvailable = poolStats.available;
+        snapshot.externalImagesLeased = poolStats.leased;
+        return snapshot;
     }
 
 } // namespace asharia::editor
