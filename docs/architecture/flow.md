@@ -244,6 +244,7 @@ sequenceDiagram
     participant Bridge as ViewportNativeBridge
     participant Native as editor_native ABI
     participant Runtime as editor shared viewport runtime
+    participant Producer as native render producer
     participant RHI as rhi-vulkan / renderer_basic_vulkan
 
     View->>Avalonia: ElementComposition.GetElementVisual + TryGetCompositionGpuInterop
@@ -257,8 +258,10 @@ sequenceDiagram
     View->>Bridge: AcquirePresentPacket(snapshot, extent)
     Bridge->>Native: editor_viewport_acquire_present_packet
     Native->>Runtime: render Scene View frame
-    Runtime->>RHI: record RenderView into external Vulkan image
-    RHI-->>Runtime: image + semaphores ready
+    Runtime->>Producer: render Scene View frame
+    Producer->>RHI: record RenderView into external Vulkan image
+    RHI-->>Producer: image + semaphores ready
+    Producer-->>Runtime: native packet state
     Native-->>Bridge: native-owned opaque NT handles + packet
     Bridge-->>View: ViewportNativePresentPacket
     View->>Avalonia: ImportImage / ImportSemaphore
@@ -275,6 +278,11 @@ sequenceDiagram
 - `Features/SceneView` 是 managed Studio 中唯一导入 Avalonia composition external image/semaphore 的区域。
 - `SceneViewCompositionPresenter` 只通过 Avalonia `ICompositionGpuInterop` import opaque NT handles，并在 `finally`
   释放 native packet；失败 packet 由 bridge 复制 message 后释放。
+- `editor shared viewport runtime` 拥有 Vulkan context、producer lifetime、outstanding packet tracking 和 shutdown
+  drain；native render producer 承载 RenderView recording、external image/semaphore packet production 和 per-packet
+  GPU resource ownership。
+- `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI，managed Studio 不依赖该
+  stats 路径驱动渲染。
 - Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
 
 ## 启动与 Context 流程

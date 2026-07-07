@@ -4,30 +4,22 @@
 #include <cstddef>
 #include <mutex>
 #include <optional>
-#include <string_view>
 #include <unordered_set>
 
-#include "editor_viewport.hpp"
+#include "editor_shared_viewport_render_producer.hpp"
 
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 
 namespace asharia::editor {
 
-    struct EditorSharedViewportPresentDesc {
-        std::string_view panelId;
-        EditorViewportKind kind{EditorViewportKind::Scene};
-        EditorExtent2D extent;
-    };
-
-    struct EditorSharedViewportPresentPacket {
-        void* nativePacket{};
-        void* imageHandle{};
-        void* waitSemaphoreHandle{};
-        void* signalSemaphoreHandle{};
-        VkFormat format{VK_FORMAT_UNDEFINED};
-        VkExtent2D extent{};
-        std::uint64_t memorySizeBytes{};
-        std::uint64_t frameIndex{};
+    struct EditorSharedViewportRuntimeStats {
+        std::uint64_t framesRendered{};
+        std::uint64_t producersCreated{};
+        std::uint64_t packetsCreated{};
+        std::size_t outstandingPackets{};
+        bool hasContext{};
+        bool hasRenderProducer{};
+        bool shutdownRequested{};
     };
 
     class EditorSharedViewportRuntime final {
@@ -38,15 +30,22 @@ namespace asharia::editor {
         renderSceneViewFrame(EditorSharedViewportPresentDesc desc);
         void releasePresentPacket(void* nativePacket);
         void shutdown();
+        [[nodiscard]] EditorSharedViewportRuntimeStats stats() const;
 
     private:
+        [[nodiscard]] asharia::Result<EditorSharedViewportRenderProducer*>
+        ensureRenderProducerLocked();
         [[nodiscard]] std::optional<asharia::VulkanContext>
         takeContextForShutdownIfIdleLocked();
 
-        std::mutex mutex_;
+        mutable std::mutex mutex_;
         std::optional<asharia::VulkanContext> context_;
-        std::unordered_set<void*> outstandingPackets_;
+        std::optional<EditorSharedViewportRenderProducer> renderProducer_;
+        std::unordered_set<EditorSharedViewportPacketState*> outstandingPackets_;
         std::size_t releasingPacketCount_{};
+        std::uint64_t producersCreated_{};
+        std::uint64_t framesRendered_{};
+        std::uint64_t packetsCreated_{};
         std::uint64_t nextFrameIndex_{};
         bool shutdownRequested_{};
     };

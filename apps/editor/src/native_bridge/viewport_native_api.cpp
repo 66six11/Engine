@@ -29,6 +29,13 @@ namespace {
         };
     }
 
+    [[nodiscard]] EditorViewportNativeAbiHeader runtimeStatsHeader() {
+        return EditorViewportNativeAbiHeader{
+            .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeRuntimeStats)),
+        };
+    }
+
     [[nodiscard]] bool hasSupportedRequestHeader(
         const EditorViewportNativeCompatibilityRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
@@ -387,6 +394,27 @@ void EDITOR_NATIVE_CALL editor_viewport_release_present_packet(
     asharia::editor::EditorSharedViewportRuntime::instance().releasePresentPacket(
         packet.nativePacket);
     const std::unique_ptr<std::byte[]> message{static_cast<std::byte*>(packet.messageUtf8)};
+}
+
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats(
+    EditorViewportNativeRuntimeStats* stats) {
+    if (stats == nullptr) {
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    const asharia::editor::EditorSharedViewportRuntimeStats runtimeStats =
+        asharia::editor::EditorSharedViewportRuntime::instance().stats();
+    *stats = EditorViewportNativeRuntimeStats{
+        .header = runtimeStatsHeader(),
+        .framesRendered = runtimeStats.framesRendered,
+        .producersCreated = runtimeStats.producersCreated,
+        .packetsCreated = runtimeStats.packetsCreated,
+        .outstandingPackets = static_cast<std::uint64_t>(runtimeStats.outstandingPackets),
+        .hasContext = runtimeStats.hasContext ? 1U : 0U,
+        .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
+        .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,
+    };
+    return EditorViewportNativeStatus_Success;
 }
 
 void EDITOR_NATIVE_CALL editor_viewport_shutdown() {
