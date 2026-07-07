@@ -154,10 +154,21 @@ namespace asharia::editor {
 
     EditorSharedViewportRuntimeStats EditorSharedViewportRuntime::stats() const {
         std::lock_guard lock{mutex_};
+        EditorSharedViewportRenderProducerStats producerStats{};
+        if (renderProducer_) {
+            producerStats = renderProducer_->stats();
+        }
+
         return EditorSharedViewportRuntimeStats{
             .framesRendered = framesRendered_,
             .producersCreated = producersCreated_,
             .packetsCreated = packetsCreated_,
+            .externalImagesAcquired = producerStats.externalImagesAcquired,
+            .externalImagesCreated = producerStats.externalImagesCreated,
+            .externalImagesReused = producerStats.externalImagesReused,
+            .externalImagesReleased = producerStats.externalImagesReleased,
+            .externalImagesAvailable = producerStats.externalImagesAvailable,
+            .externalImagesLeased = producerStats.externalImagesLeased,
             .outstandingPackets = outstandingPackets_.size(),
             .hasContext = context_.has_value(),
             .hasRenderProducer = renderProducer_.has_value(),

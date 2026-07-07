@@ -16,6 +16,12 @@ namespace asharia::editor {
         std::uint64_t framesRendered{};
         std::uint64_t producersCreated{};
         std::uint64_t packetsCreated{};
+        std::uint64_t externalImagesAcquired{};
+        std::uint64_t externalImagesCreated{};
+        std::uint64_t externalImagesReused{};
+        std::uint64_t externalImagesReleased{};
+        std::uint64_t externalImagesAvailable{};
+        std::uint64_t externalImagesLeased{};
         std::size_t outstandingPackets{};
         bool hasContext{};
         bool hasRenderProducer{};
