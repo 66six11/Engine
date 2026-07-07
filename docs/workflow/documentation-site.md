@@ -64,10 +64,25 @@ flowchart LR
 
 ## CI 流程
 
+Engine 仓库负责在 `docs/**` 变更后通知 docs-site。推荐在 Engine 仓库维护
+`.github/workflows/docs-site-sync.yml`：
+
+- `pull_request`：只验证文档编码和 whitespace。
+- `push` 到 `main`：验证后触发 docs-site 同步。
+- `workflow_dispatch`：允许手动指定 `engine_ref` 重新发布文档。
+
+Engine workflow 不保存部署凭据。它通过以下 repository secret / variable 连接外部系统：
+
+| 名称 | 类型 | 说明 |
+| --- | --- | --- |
+| `DOCS_SITE_DISPATCH_TOKEN` | secret | GitHub token，用于向 docs-site 仓库发送 `repository_dispatch`。需要能访问 `66six11/VkEngine-docs-site`。 |
+| `DOCS_SITE_REPOSITORY` | variable | 可选，默认 `66six11/VkEngine-docs-site`。 |
+| `VERCEL_DEPLOY_HOOK_URL` | secret | 可选，Vercel deploy hook URL。配置后 Engine 可直接触发 Vercel 部署。 |
+
 docs-site 的部署 CI 应执行：
 
 1. checkout docs-site 仓库。
-2. checkout 或下载 `VkEngine` 指定分支的 `docs/`。
+2. checkout 或下载 `VkEngine` 指定分支的 `docs/`；如果由 `repository_dispatch` 触发，使用 payload 中的 `engine_ref`。
 3. 运行同步脚本，把内容复制到站点内容目录。
 4. 应用公开筛选规则。
 5. 构建静态站点。
