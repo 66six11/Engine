@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -54,6 +55,28 @@ namespace asharia::editor {
             return {};
         }
 
+        [[noreturn]] void terminateReleasedLeaseAccess() noexcept {
+            logError("Shared viewport external image lease was accessed after release.");
+            std::terminate();
+        }
+
+        [[nodiscard]] EditorSharedViewportExternalImagePoolResource&
+        leasedResource(std::optional<EditorSharedViewportExternalImagePoolResource>& resource) noexcept {
+            if (!resource) {
+                terminateReleasedLeaseAccess();
+            }
+            return *resource;
+        }
+
+        [[nodiscard]] const EditorSharedViewportExternalImagePoolResource&
+        leasedResource(
+            const std::optional<EditorSharedViewportExternalImagePoolResource>& resource) noexcept {
+            if (!resource) {
+                terminateReleasedLeaseAccess();
+            }
+            return *resource;
+        }
+
     } // namespace
 
     struct EditorSharedViewportExternalImagePoolState {
@@ -91,11 +114,11 @@ namespace asharia::editor {
     }
 
     VulkanExternalImage& EditorSharedViewportExternalImageLease::image() {
-        return resource_->image;
+        return leasedResource(resource_).image;
     }
 
     const VulkanExternalImage& EditorSharedViewportExternalImageLease::image() const {
-        return resource_->image;
+        return leasedResource(resource_).image;
     }
 
     bool EditorSharedViewportExternalImageLease::hasImage() const {
