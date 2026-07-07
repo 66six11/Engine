@@ -108,6 +108,13 @@ namespace asharia::editor {
             return matches;
         }
 
+        [[nodiscard]] bool queryRuntimeStatsV2(EditorViewportNativeRuntimeStatsV2& stats) {
+            const std::uint32_t status = editor_viewport_query_runtime_stats_v2(&stats);
+            return status == EditorViewportNativeStatus_Success &&
+                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV2);
+        }
+
     } // namespace
 
     bool runViewportNativeBridgeSmoke() {
@@ -207,6 +214,38 @@ namespace asharia::editor {
         }
         releaseIfNeeded(packet);
 
+        EditorViewportNativePresentPacket secondPacket{};
+        EditorViewportNativePresentRequest secondPresentRequest =
+            makePresentRequest(VkExtent2D{.width = 320U, .height = 180U});
+        const std::uint32_t secondPacketStatus =
+            editor_viewport_acquire_present_packet(&secondPresentRequest, &secondPacket);
+        const bool secondPacketAvailable =
+            secondPacketStatus == EditorViewportNativeStatus_Success &&
+            secondPacket.status == EditorViewportNativeStatus_Success &&
+            secondPacket.nativePacket != nullptr && secondPacket.imageHandle != nullptr &&
+            secondPacket.waitSemaphoreHandle != nullptr &&
+            secondPacket.signalSemaphoreHandle != nullptr && secondPacket.widthPixels == 320U &&
+            secondPacket.heightPixels == 180U && secondPacket.frameIndex == 2U;
+        if (!secondPacketAvailable) {
+            logPresentPacketMessage(secondPacket);
+            releaseIfNeeded(secondPacket);
+            logError("Viewport native bridge smoke did not produce the second same-size packet.");
+            return false;
+        }
+        releaseIfNeeded(secondPacket);
+
+        EditorViewportNativeRuntimeStatsV2 statsAfterSameSizeReuse{};
+        if (!queryRuntimeStatsV2(statsAfterSameSizeReuse) ||
+            statsAfterSameSizeReuse.externalImagesAcquired != 2U ||
+            statsAfterSameSizeReuse.externalImagesCreated != 1U ||
+            statsAfterSameSizeReuse.externalImagesReused < 1U ||
+            statsAfterSameSizeReuse.externalImagesReleased < 2U ||
+            statsAfterSameSizeReuse.externalImagesAvailable < 1U ||
+            statsAfterSameSizeReuse.externalImagesLeased != 0U) {
+            logError("Viewport native bridge smoke did not observe same-size external image reuse.");
+            return false;
+        }
+
         EditorViewportNativePresentPacket resizedPacket{};
         EditorViewportNativePresentRequest resizedPresentRequest =
             makePresentRequest(VkExtent2D{.width = 640U, .height = 360U});
@@ -218,7 +257,7 @@ namespace asharia::editor {
             resizedPacket.nativePacket != nullptr && resizedPacket.imageHandle != nullptr &&
             resizedPacket.waitSemaphoreHandle != nullptr &&
             resizedPacket.signalSemaphoreHandle != nullptr && resizedPacket.widthPixels == 640U &&
-            resizedPacket.heightPixels == 360U && resizedPacket.frameIndex == 2U;
+            resizedPacket.heightPixels == 360U && resizedPacket.frameIndex == 3U;
         if (!resizedPacketAvailable) {
             logPresentPacketMessage(resizedPacket);
             releaseIfNeeded(resizedPacket);
@@ -226,6 +265,18 @@ namespace asharia::editor {
             return false;
         }
         releaseIfNeeded(resizedPacket);
+
+        EditorViewportNativeRuntimeStatsV2 statsAfterResize{};
+        if (!queryRuntimeStatsV2(statsAfterResize) ||
+            statsAfterResize.externalImagesAcquired != 3U ||
+            statsAfterResize.externalImagesCreated != 2U ||
+            statsAfterResize.externalImagesReused < 1U ||
+            statsAfterResize.externalImagesReleased < 3U ||
+            statsAfterResize.externalImagesAvailable < 2U ||
+            statsAfterResize.externalImagesLeased != 0U) {
+            logError("Viewport native bridge smoke did not observe resize external image allocation.");
+            return false;
+        }
 
         EditorViewportNativePresentPacket shutdownPendingPacket{};
         EditorViewportNativePresentRequest shutdownPendingRequest =
@@ -239,7 +290,7 @@ namespace asharia::editor {
             shutdownPendingPacket.imageHandle != nullptr &&
             shutdownPendingPacket.waitSemaphoreHandle != nullptr &&
             shutdownPendingPacket.signalSemaphoreHandle != nullptr &&
-            shutdownPendingPacket.frameIndex == 3U;
+            shutdownPendingPacket.frameIndex == 4U;
         if (!shutdownPendingPacketAvailable) {
             logPresentPacketMessage(shutdownPendingPacket);
             releaseIfNeeded(shutdownPendingPacket);
