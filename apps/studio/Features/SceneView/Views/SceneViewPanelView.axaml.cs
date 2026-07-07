@@ -6,6 +6,7 @@ using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using Editor.Core.Interop.Viewports.Adapters;
 using Editor.Core.Interop.Viewports.Api;
+using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
 using Editor.Features.SceneView.Interop;
 using Editor.Features.SceneView.ViewModels;
@@ -16,19 +17,27 @@ public partial class SceneViewPanelView : UserControl
 {
     private readonly SceneViewCompositionCapabilityReader compositionReader_ = new();
     private readonly ViewportNativeBridge nativeBridge_ = new();
+    private readonly SceneViewNativeViewportLifecycle viewportLifecycle_ = new();
     private readonly SceneViewCompositionPresenter presenter_;
-    private Task? pendingPresent_;
+    private SceneViewPanelViewModel? frameSourceViewModel_;
 
     public SceneViewPanelView()
     {
         InitializeComponent();
         presenter_ = new SceneViewCompositionPresenter(nativeBridge_);
+        DataContextChanged += OnDataContextChanged;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         ProbeCompositionCapabilities();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        SetFrameSourceViewModel(null);
+        base.OnDetachedFromVisualTree(e);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -40,16 +49,85 @@ public partial class SceneViewPanelView : UserControl
         }
     }
 
-    private async void ProbeCompositionCapabilities()
+    private void ProbeCompositionCapabilities()
+    {
+        _ = ProbeCompositionCapabilitiesAsync();
+    }
+
+    private async Task ProbeCompositionCapabilitiesAsync()
     {
         if (DataContext is not SceneViewPanelViewModel viewModel)
         {
             return;
         }
 
-        var snapshot = await compositionReader_.ReadAsync(this, viewModel.ViewportId);
-        viewModel.UpdateCompositionCapabilities(snapshot);
-        if (snapshot.Status != ViewportCompositionStatus.Supported)
+        try
+        {
+            var snapshot = await compositionReader_.ReadAsync(this, viewModel.ViewportId);
+            viewModel.UpdateCompositionCapabilities(snapshot);
+            if (snapshot.Status != ViewportCompositionStatus.Supported)
+            {
+                return;
+            }
+
+            var requestedExtent = TryCreateViewportExtent();
+            if (requestedExtent is null)
+            {
+                return;
+            }
+
+            var nativeSnapshot = nativeBridge_.QueryCompositionCompatibility(snapshot, requestedExtent);
+            viewModel.UpdateNativePresent(nativeSnapshot);
+            if (nativeSnapshot.Status != ViewportNativePresentStatus.Success)
+            {
+                return;
+            }
+
+            await TryStartNativePresentAsync(viewModel, snapshot, requestedExtent);
+        }
+        catch (Exception ex)
+        {
+            viewModel.UpdateCompositionCapabilities(
+                CreateLocalCompositionSnapshot(
+                    viewModel.ViewportId,
+                    ViewportCompositionStatus.GpuInteropUnavailable,
+                    CreateExceptionMessage("Scene View composition capability probe failed", ex)));
+        }
+    }
+
+    private async Task TryPresentNativeFrameFromCurrentStateAsync()
+    {
+        if (DataContext is not SceneViewPanelViewModel viewModel)
+        {
+            return;
+        }
+
+        try
+        {
+            await TryPresentNativeFrameFromCurrentStateCoreAsync(viewModel);
+        }
+        catch (Exception ex)
+        {
+            viewModel.UpdateNativePresent(
+                CreateLocalPresentSnapshot(
+                    viewModel.ViewportId,
+                    viewModel.NativePresent?.RequestedExtent ?? new ViewportExtent(1, 1, renderScale: 1),
+                    ViewportNativePresentStatus.RenderFailed,
+                    CreateExceptionMessage("Scene View native frame present failed", ex)));
+        }
+    }
+
+    private async Task TryPresentNativeFrameFromCurrentStateCoreAsync(SceneViewPanelViewModel viewModel)
+    {
+        if (viewModel.CompositionCapabilities is not
+            {
+                Status: ViewportCompositionStatus.Supported,
+            } compositionCapabilities)
+        {
+            return;
+        }
+
+        if (viewModel.NativePresent?.Status != ViewportNativePresentStatus.Success)
         {
             return;
         }
@@ -60,14 +138,7 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
-        var nativeSnapshot = nativeBridge_.QueryCompositionCompatibility(snapshot, requestedExtent);
-        viewModel.UpdateNativePresent(nativeSnapshot);
-        if (nativeSnapshot.Status != ViewportNativePresentStatus.Success)
-        {
-            return;
-        }
-
-        await TryStartNativePresentAsync(viewModel, snapshot, requestedExtent);
+        await TryStartNativePresentAsync(viewModel, compositionCapabilities, requestedExtent);
     }
 
     private async Task TryStartNativePresentAsync(
@@ -75,7 +146,7 @@ public partial class SceneViewPanelView : UserControl
         ViewportCompositionCapabilitiesSnapshot compositionCapabilities,
         ViewportExtent requestedExtent)
     {
-        if (!CanStartPresent())
+        if (!viewportLifecycle_.CanBeginPresent)
         {
             return;
         }
@@ -109,7 +180,7 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
-        if (!CanStartPresent())
+        if (!viewportLifecycle_.CanBeginPresent)
         {
             return;
         }
@@ -125,7 +196,11 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
-        pendingPresent_ = PresentAndUpdateAsync(viewModel, interop, surface, requestedExtent, packet);
+        if (!viewportLifecycle_.TryBeginPresent(
+                () => PresentAndUpdateAsync(viewModel, interop, surface, requestedExtent, packet)))
+        {
+            nativeBridge_.ReleasePresentPacket(packet);
+        }
     }
 
     private async Task PresentAndUpdateAsync(
@@ -212,8 +287,57 @@ public partial class SceneViewPanelView : UserControl
             DateTimeOffset.UtcNow);
     }
 
-    private bool CanStartPresent()
+    private static ViewportCompositionCapabilitiesSnapshot CreateLocalCompositionSnapshot(
+        ViewportId viewportId,
+        ViewportCompositionStatus status,
+        string message)
     {
-        return pendingPresent_ is null || pendingPresent_.IsCompleted;
+        return new ViewportCompositionCapabilitiesSnapshot(
+            viewportId,
+            status,
+            deviceLuid: null,
+            deviceUuid: null,
+            imageHandleTypes: [],
+            semaphoreHandleTypes: [],
+            synchronizationCapabilities: [],
+            message,
+            DateTimeOffset.UtcNow);
+    }
+
+    private static string CreateExceptionMessage(string prefix, Exception ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.Message)
+            ? $"{prefix}."
+            : $"{prefix}: {ex.Message}";
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        SetFrameSourceViewModel(DataContext as SceneViewPanelViewModel);
+    }
+
+    private void SetFrameSourceViewModel(SceneViewPanelViewModel? viewModel)
+    {
+        if (ReferenceEquals(frameSourceViewModel_, viewModel))
+        {
+            return;
+        }
+
+        if (frameSourceViewModel_ is not null)
+        {
+            frameSourceViewModel_.FrameRequested -= OnSceneViewFrameRequested;
+        }
+
+        frameSourceViewModel_ = viewModel;
+        if (frameSourceViewModel_ is not null)
+        {
+            frameSourceViewModel_.FrameRequested += OnSceneViewFrameRequested;
+        }
+    }
+
+    private void OnSceneViewFrameRequested(object? sender, EditorPanelFrameContext context)
+    {
+        _ = TryPresentNativeFrameFromCurrentStateAsync();
+        context.RequestRepaint();
     }
 }

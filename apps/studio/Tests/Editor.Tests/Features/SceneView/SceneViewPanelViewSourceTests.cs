@@ -14,19 +14,41 @@ public sealed class SceneViewPanelViewSourceTests
 
         Assert.Contains("ViewportNativeBridge", source, StringComparison.Ordinal);
         Assert.Contains("SceneViewCompositionPresenter", source, StringComparison.Ordinal);
+        Assert.Contains("SceneViewNativeViewportLifecycle", source, StringComparison.Ordinal);
         Assert.Contains("QueryCompositionCompatibility(", source, StringComparison.Ordinal);
         Assert.Contains("AcquirePresentPacket(", source, StringComparison.Ordinal);
         Assert.Contains("PresentAsync(", source, StringComparison.Ordinal);
         Assert.Contains("CompositionHost.Surface", source, StringComparison.Ordinal);
         Assert.Contains("TryGetCompositionGpuInterop", source, StringComparison.Ordinal);
         Assert.Contains("UpdateNativePresent(", source, StringComparison.Ordinal);
-        Assert.Contains("pendingPresent_", source, StringComparison.Ordinal);
-        Assert.Contains("CanStartPresent()", source, StringComparison.Ordinal);
+        Assert.Contains("viewportLifecycle_", source, StringComparison.Ordinal);
+        Assert.Contains("TryBeginPresent(", source, StringComparison.Ordinal);
+        Assert.Contains("FrameRequested", source, StringComparison.Ordinal);
+        Assert.Contains("OnSceneViewFrameRequested", source, StringComparison.Ordinal);
+        Assert.Contains("TryPresentNativeFrameFromCurrentStateAsync", source, StringComparison.Ordinal);
+        Assert.Contains("context.RequestRepaint()", source, StringComparison.Ordinal);
         Assert.Contains("TopLevel.GetTopLevel", source, StringComparison.Ordinal);
         Assert.Contains("RenderScaling", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("pendingPresent_", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("CanStartPresent()", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Wait()", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Result", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Thread.Sleep", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Scene_view_guards_async_native_probe_and_frame_request_exceptions()
+    {
+        var source = LoadSource("Features", "SceneView", "Views", "SceneViewPanelView.axaml.cs");
+
+        Assert.DoesNotContain("async void ProbeCompositionCapabilities()", source, StringComparison.Ordinal);
+        Assert.Contains("_ = ProbeCompositionCapabilitiesAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("private async Task ProbeCompositionCapabilitiesAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("catch (Exception ex)", source, StringComparison.Ordinal);
+        Assert.Contains("CreateLocalCompositionSnapshot(", source, StringComparison.Ordinal);
+        Assert.Contains("TryPresentNativeFrameFromCurrentStateCoreAsync", source, StringComparison.Ordinal);
+        Assert.Contains("await TryPresentNativeFrameFromCurrentStateCoreAsync(viewModel)", source, StringComparison.Ordinal);
+        Assert.Contains("ViewportNativePresentStatus.RenderFailed", source, StringComparison.Ordinal);
     }
 
     private static string LoadSource(params string[] pathParts)

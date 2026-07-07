@@ -1,6 +1,8 @@
+using System;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Editor.Core.Interop.Viewports.Api;
 using Editor.Shell.Composition;
 using Editor.Shell.Views.Windowing;
 
@@ -41,5 +43,24 @@ public partial class App : Application
         var session = compositionSession_;
         compositionSession_ = null;
         session?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        ShutdownNativeViewportRuntime();
+    }
+
+    private static void ShutdownNativeViewportRuntime()
+    {
+        try
+        {
+            ViewportNativeLibraryApi.Instance.Shutdown();
+        }
+        catch (Exception ex) when (IsNativeBindingException(ex))
+        {
+        }
+    }
+
+    private static bool IsNativeBindingException(Exception ex)
+    {
+        return ex is DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException;
     }
 }

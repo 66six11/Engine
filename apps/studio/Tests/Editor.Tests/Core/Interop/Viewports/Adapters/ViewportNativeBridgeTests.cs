@@ -82,6 +82,24 @@ public sealed class ViewportNativeBridgeTests
     }
 
     [Fact]
+    public void Query_composition_compatibility_returns_unavailable_snapshot_when_native_library_is_missing()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            QueryException = new DllNotFoundException("missing editor_native"),
+        };
+        var bridge = new ViewportNativeBridge(api);
+
+        var snapshot = bridge.QueryCompositionCompatibility(
+            CreateCompositionCapabilities(),
+            CreateRequestedExtent());
+
+        Assert.Equal(ViewportNativePresentStatus.RenderProducerUnavailable, snapshot.Status);
+        Assert.Contains("missing editor_native", snapshot.Message, StringComparison.Ordinal);
+        Assert.Equal(0, api.ReleaseCompatibilityResultCalls);
+    }
+
+    [Fact]
     public void Release_present_packet_forwards_packet_to_native_api()
     {
         using var api = new StubViewportNativeApi();
@@ -151,6 +169,49 @@ public sealed class ViewportNativeBridgeTests
     }
 
     [Fact]
+    public void Acquire_present_packet_returns_unavailable_packet_when_native_library_is_missing()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            AcquireException = new DllNotFoundException("missing editor_native"),
+        };
+        var bridge = new ViewportNativeBridge(api);
+        var requestedExtent = CreateRequestedExtent();
+
+        var packet = bridge.AcquirePresentPacket(
+            CreateCompositionCapabilities(),
+            requestedExtent);
+
+        Assert.Equal(ViewportNativeStatus.Unavailable, packet.Status);
+        Assert.Equal(IntPtr.Zero, packet.NativePacket);
+        Assert.Equal((uint)requestedExtent.WidthPixels, packet.WidthPixels);
+        Assert.Equal((uint)requestedExtent.HeightPixels, packet.HeightPixels);
+        Assert.Equal(0, api.ReleasePresentPacketCalls);
+    }
+
+    [Fact]
+    public void Snapshot_and_release_present_packet_does_not_release_synthetic_unavailable_packet()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            AcquireException = new DllNotFoundException("missing editor_native"),
+        };
+        var bridge = new ViewportNativeBridge(api);
+        var requestedExtent = CreateRequestedExtent();
+        var packet = bridge.AcquirePresentPacket(
+            CreateCompositionCapabilities(),
+            requestedExtent);
+
+        var snapshot = bridge.SnapshotAndReleasePresentPacket(
+            packet,
+            new ViewportId("scene-view/main"),
+            requestedExtent);
+
+        Assert.Equal(ViewportNativePresentStatus.RenderProducerUnavailable, snapshot.Status);
+        Assert.Equal(0, api.ReleasePresentPacketCalls);
+    }
+
+    [Fact]
     public void Snapshot_and_release_present_packet_maps_status_copies_message_and_releases_packet()
     {
         using var api = new StubViewportNativeApi
@@ -174,6 +235,69 @@ public sealed class ViewportNativeBridgeTests
         Assert.Equal("B8G8R8A8_UNORM", snapshot.FormatName);
         Assert.Equal(1, api.ReleasePresentPacketCalls);
         Assert.Equal(packet.NativePacket, api.LastReleasedPresentPacket.NativePacket);
+    }
+
+    [Fact]
+    public void Shutdown_forwards_to_native_api_once()
+    {
+        using var api = new StubViewportNativeApi();
+        var bridge = new ViewportNativeBridge(api);
+
+        bridge.Shutdown();
+
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Fact]
+    public void Shutdown_ignores_missing_native_library()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            ShutdownException = new DllNotFoundException("missing editor_native"),
+        };
+        var bridge = new ViewportNativeBridge(api);
+
+        bridge.Shutdown();
+
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Fact]
+    public void Shutdown_is_idempotent()
+    {
+        using var api = new StubViewportNativeApi();
+        var bridge = new ViewportNativeBridge(api);
+
+        bridge.Shutdown();
+        bridge.Shutdown();
+
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Fact]
+    public void Release_present_packet_does_not_call_native_api_after_shutdown()
+    {
+        using var api = new StubViewportNativeApi();
+        var bridge = new ViewportNativeBridge(api);
+        var packet = new ViewportNativePresentPacket(
+            new ViewportNativeAbiHeader(ViewportNativePresentPacket.CurrentStructSize),
+            ViewportNativeStatus.Success,
+            new IntPtr(0x1234),
+            new IntPtr(0x1000),
+            new IntPtr(0x2000),
+            new IntPtr(0x3000),
+            widthPixels: 320U,
+            heightPixels: 180U,
+            ViewportNativeImageFormat.Rgba8Unorm,
+            memorySizeBytes: 320UL * 180UL * 4UL,
+            frameIndex: 1UL,
+            IntPtr.Zero,
+            messageByteLength: 0UL);
+
+        bridge.Shutdown();
+        bridge.ReleasePresentPacket(packet);
+
+        Assert.Equal(0, api.ReleasePresentPacketCalls);
     }
 
     [Fact]
@@ -238,6 +362,12 @@ public sealed class ViewportNativeBridgeTests
 
         public string PresentPacketMessage { get; init; } = string.Empty;
 
+        public Exception? QueryException { get; init; }
+
+        public Exception? AcquireException { get; init; }
+
+        public Exception? ShutdownException { get; init; }
+
         public ViewportNativeCompatibilityRequest LastRequest { get; private set; }
 
         public ViewportNativePresentRequest LastPresentRequest { get; private set; }
@@ -250,10 +380,17 @@ public sealed class ViewportNativeBridgeTests
 
         public ViewportNativePresentPacket LastReleasedPresentPacket { get; private set; }
 
+        public int ShutdownCalls { get; private set; }
+
         public uint QueryCompositionCompatibility(
             in ViewportNativeCompatibilityRequest request,
             ref ViewportNativeCompatibilityResult result)
         {
+            if (QueryException is not null)
+            {
+                throw QueryException;
+            }
+
             LastRequest = request;
             var messageBytes = Encoding.UTF8.GetBytes(ResultMessage);
             allocatedMessage_ = Marshal.AllocHGlobal(messageBytes.Length);
@@ -290,6 +427,11 @@ public sealed class ViewportNativeBridgeTests
             in ViewportNativePresentRequest request,
             ref ViewportNativePresentPacket packet)
         {
+            if (AcquireException is not null)
+            {
+                throw AcquireException;
+            }
+
             LastPresentRequest = request;
             LastRequest = request.Compatibility;
             var messageBytes = Encoding.UTF8.GetBytes(PresentPacketMessage);
@@ -332,6 +474,11 @@ public sealed class ViewportNativeBridgeTests
 
         public void Shutdown()
         {
+            ShutdownCalls++;
+            if (ShutdownException is not null)
+            {
+                throw ShutdownException;
+            }
         }
 
         public void Dispose()

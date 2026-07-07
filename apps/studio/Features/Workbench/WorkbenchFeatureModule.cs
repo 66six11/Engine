@@ -146,7 +146,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 DockArea.Center,
                 "Window/Panels/Scene View",
                 DockContentCachePolicy.KeepAlive,
-                () => new SceneViewPanelViewModel(selectionService_),
+                () => new SceneViewPanelViewModel(selectionService_, diagnostics_),
                 IconKey: "studio.scene-view",
                 Tag: "DOC",
                 TitleDetail: "viewport deferred",

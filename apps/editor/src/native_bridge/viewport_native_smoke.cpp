@@ -199,6 +199,44 @@ namespace asharia::editor {
         }
         releaseIfNeeded(resizedPacket);
 
+        EditorViewportNativePresentPacket shutdownPendingPacket{};
+        EditorViewportNativePresentRequest shutdownPendingRequest =
+            makePresentRequest(VkExtent2D{.width = 160U, .height = 90U});
+        const std::uint32_t shutdownPendingStatus =
+            editor_viewport_acquire_present_packet(&shutdownPendingRequest, &shutdownPendingPacket);
+        const bool shutdownPendingPacketAvailable =
+            shutdownPendingStatus == EditorViewportNativeStatus_Success &&
+            shutdownPendingPacket.status == EditorViewportNativeStatus_Success &&
+            shutdownPendingPacket.nativePacket != nullptr &&
+            shutdownPendingPacket.imageHandle != nullptr &&
+            shutdownPendingPacket.waitSemaphoreHandle != nullptr &&
+            shutdownPendingPacket.signalSemaphoreHandle != nullptr &&
+            shutdownPendingPacket.frameIndex == 3U;
+        if (!shutdownPendingPacketAvailable) {
+            logPresentPacketMessage(shutdownPendingPacket);
+            releaseIfNeeded(shutdownPendingPacket);
+            logError("Viewport native bridge smoke did not produce a packet for shutdown ordering.");
+            return false;
+        }
+
+        editor_viewport_shutdown();
+        releaseIfNeeded(shutdownPendingPacket);
+
+        EditorViewportNativePresentPacket afterShutdownPacket{};
+        EditorViewportNativePresentRequest afterShutdownRequest =
+            makePresentRequest(VkExtent2D{.width = 160U, .height = 90U});
+        const std::uint32_t afterShutdownStatus =
+            editor_viewport_acquire_present_packet(&afterShutdownRequest, &afterShutdownPacket);
+        const bool acquireRejectedAfterShutdown =
+            afterShutdownStatus == EditorViewportNativeStatus_Unavailable &&
+            afterShutdownPacket.status == EditorViewportNativeStatus_Unavailable &&
+            afterShutdownPacket.nativePacket == nullptr;
+        releaseIfNeeded(afterShutdownPacket);
+        if (!acquireRejectedAfterShutdown) {
+            logError("Viewport native bridge smoke allowed acquire after viewport shutdown.");
+            return false;
+        }
+
         return true;
     }
 
