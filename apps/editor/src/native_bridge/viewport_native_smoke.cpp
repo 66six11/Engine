@@ -190,6 +190,21 @@ namespace asharia::editor {
             logError("Viewport native bridge smoke did not expose first render producer stats.");
             return false;
         }
+        EditorViewportNativeRuntimeStatsV2 statsV2AfterFirstPacket{};
+        const std::uint32_t statsV2Status =
+            editor_viewport_query_runtime_stats_v2(&statsV2AfterFirstPacket);
+        if (statsV2Status != EditorViewportNativeStatus_Success ||
+            statsV2AfterFirstPacket.header.structSize !=
+                sizeof(EditorViewportNativeRuntimeStatsV2) ||
+            statsV2AfterFirstPacket.framesRendered != 1U ||
+            statsV2AfterFirstPacket.producersCreated != 1U ||
+            statsV2AfterFirstPacket.packetsCreated != 1U ||
+            statsV2AfterFirstPacket.outstandingPackets != 1U ||
+            statsV2AfterFirstPacket.hasRenderProducer == 0U) {
+            releaseIfNeeded(packet);
+            logError("Viewport native bridge smoke did not expose runtime stats v2.");
+            return false;
+        }
         releaseIfNeeded(packet);
 
         EditorViewportNativePresentPacket resizedPacket{};

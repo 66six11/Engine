@@ -36,6 +36,13 @@ namespace {
         };
     }
 
+    [[nodiscard]] EditorViewportNativeAbiHeader runtimeStatsV2Header() {
+        return EditorViewportNativeAbiHeader{
+            .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeRuntimeStatsV2)),
+        };
+    }
+
     [[nodiscard]] bool hasSupportedRequestHeader(
         const EditorViewportNativeCompatibilityRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
@@ -410,6 +417,33 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats(
         .producersCreated = runtimeStats.producersCreated,
         .packetsCreated = runtimeStats.packetsCreated,
         .outstandingPackets = static_cast<std::uint64_t>(runtimeStats.outstandingPackets),
+        .hasContext = runtimeStats.hasContext ? 1U : 0U,
+        .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
+        .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,
+    };
+    return EditorViewportNativeStatus_Success;
+}
+
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v2(
+    EditorViewportNativeRuntimeStatsV2* stats) {
+    if (stats == nullptr) {
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    const asharia::editor::EditorSharedViewportRuntimeStats runtimeStats =
+        asharia::editor::EditorSharedViewportRuntime::instance().stats();
+    *stats = EditorViewportNativeRuntimeStatsV2{
+        .header = runtimeStatsV2Header(),
+        .framesRendered = runtimeStats.framesRendered,
+        .producersCreated = runtimeStats.producersCreated,
+        .packetsCreated = runtimeStats.packetsCreated,
+        .outstandingPackets = static_cast<std::uint64_t>(runtimeStats.outstandingPackets),
+        .externalImagesAcquired = 0U,
+        .externalImagesCreated = 0U,
+        .externalImagesReused = 0U,
+        .externalImagesReleased = 0U,
+        .externalImagesAvailable = 0U,
+        .externalImagesLeased = 0U,
         .hasContext = runtimeStats.hasContext ? 1U : 0U,
         .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
         .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,
