@@ -1,7 +1,8 @@
-﻿using System.Linq;
+using System.Linq;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Scene;
+using Editor.Core.Models.Viewports;
 using Editor.Core.Models.Workbench;
 using Editor.Core.Services;
 using Editor.Features.Console.ViewModels;
@@ -256,6 +257,36 @@ public sealed class WorkbenchFeatureModuleTests
             "validation",
             "scene",
             "Missing reference.");
+        var console = Assert.IsType<ConsolePanelViewModel>(
+            composition.PanelRegistry.GetRequired("console").CreateContent());
+        var problems = Assert.IsType<ProblemsPanelViewModel>(
+            composition.PanelRegistry.GetRequired("problems").CreateContent());
+
+        Assert.Equal([record], console.Records);
+        Assert.Equal([record], problems.Records);
+    }
+
+    [Fact]
+    public void Compose_injects_shared_diagnostics_into_scene_view_console_and_problems_panels()
+    {
+        var diagnostics = new EditorDiagnosticService();
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(new EditorSelectionService(), diagnostics)]).Compose();
+        var sceneView = Assert.IsType<SceneViewPanelViewModel>(
+            composition.PanelRegistry.GetRequired("scene-view").CreateContent());
+        var failure = new ViewportNativePresentSnapshot(
+            sceneView.ViewportId,
+            new ViewportExtent(640, 360, renderScale: 1),
+            actualExtent: null,
+            formatName: "Unknown",
+            colorSpace: "Unknown",
+            frameIndex: 7UL,
+            ViewportNativePresentStatus.DeviceLost,
+            "Native viewport device was lost.",
+            System.DateTimeOffset.UnixEpoch);
+
+        sceneView.UpdateNativePresent(failure);
+        var record = Assert.Single(diagnostics.GetProblemDiagnostics());
         var console = Assert.IsType<ConsolePanelViewModel>(
             composition.PanelRegistry.GetRequired("console").CreateContent());
         var problems = Assert.IsType<ProblemsPanelViewModel>(
