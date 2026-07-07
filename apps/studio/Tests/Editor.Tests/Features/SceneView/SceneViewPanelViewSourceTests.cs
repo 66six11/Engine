@@ -36,6 +36,21 @@ public sealed class SceneViewPanelViewSourceTests
         Assert.DoesNotContain("Thread.Sleep", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Scene_view_guards_async_native_probe_and_frame_request_exceptions()
+    {
+        var source = LoadSource("Features", "SceneView", "Views", "SceneViewPanelView.axaml.cs");
+
+        Assert.DoesNotContain("async void ProbeCompositionCapabilities()", source, StringComparison.Ordinal);
+        Assert.Contains("_ = ProbeCompositionCapabilitiesAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("private async Task ProbeCompositionCapabilitiesAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("catch (Exception ex)", source, StringComparison.Ordinal);
+        Assert.Contains("CreateLocalCompositionSnapshot(", source, StringComparison.Ordinal);
+        Assert.Contains("TryPresentNativeFrameFromCurrentStateCoreAsync", source, StringComparison.Ordinal);
+        Assert.Contains("await TryPresentNativeFrameFromCurrentStateCoreAsync(viewModel)", source, StringComparison.Ordinal);
+        Assert.Contains("ViewportNativePresentStatus.RenderFailed", source, StringComparison.Ordinal);
+    }
+
     private static string LoadSource(params string[] pathParts)
     {
         var root = FindRepositoryRoot();

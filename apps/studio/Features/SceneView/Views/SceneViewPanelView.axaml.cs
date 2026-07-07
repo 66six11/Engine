@@ -49,34 +49,50 @@ public partial class SceneViewPanelView : UserControl
         }
     }
 
-    private async void ProbeCompositionCapabilities()
+    private void ProbeCompositionCapabilities()
+    {
+        _ = ProbeCompositionCapabilitiesAsync();
+    }
+
+    private async Task ProbeCompositionCapabilitiesAsync()
     {
         if (DataContext is not SceneViewPanelViewModel viewModel)
         {
             return;
         }
 
-        var snapshot = await compositionReader_.ReadAsync(this, viewModel.ViewportId);
-        viewModel.UpdateCompositionCapabilities(snapshot);
-        if (snapshot.Status != ViewportCompositionStatus.Supported)
+        try
         {
-            return;
-        }
+            var snapshot = await compositionReader_.ReadAsync(this, viewModel.ViewportId);
+            viewModel.UpdateCompositionCapabilities(snapshot);
+            if (snapshot.Status != ViewportCompositionStatus.Supported)
+            {
+                return;
+            }
 
-        var requestedExtent = TryCreateViewportExtent();
-        if (requestedExtent is null)
+            var requestedExtent = TryCreateViewportExtent();
+            if (requestedExtent is null)
+            {
+                return;
+            }
+
+            var nativeSnapshot = nativeBridge_.QueryCompositionCompatibility(snapshot, requestedExtent);
+            viewModel.UpdateNativePresent(nativeSnapshot);
+            if (nativeSnapshot.Status != ViewportNativePresentStatus.Success)
+            {
+                return;
+            }
+
+            await TryStartNativePresentAsync(viewModel, snapshot, requestedExtent);
+        }
+        catch (Exception ex)
         {
-            return;
+            viewModel.UpdateCompositionCapabilities(
+                CreateLocalCompositionSnapshot(
+                    viewModel.ViewportId,
+                    ViewportCompositionStatus.GpuInteropUnavailable,
+                    CreateExceptionMessage("Scene View composition capability probe failed", ex)));
         }
-
-        var nativeSnapshot = nativeBridge_.QueryCompositionCompatibility(snapshot, requestedExtent);
-        viewModel.UpdateNativePresent(nativeSnapshot);
-        if (nativeSnapshot.Status != ViewportNativePresentStatus.Success)
-        {
-            return;
-        }
-
-        await TryStartNativePresentAsync(viewModel, snapshot, requestedExtent);
     }
 
     private async Task TryPresentNativeFrameFromCurrentStateAsync()
@@ -86,6 +102,23 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
+        try
+        {
+            await TryPresentNativeFrameFromCurrentStateCoreAsync(viewModel);
+        }
+        catch (Exception ex)
+        {
+            viewModel.UpdateNativePresent(
+                CreateLocalPresentSnapshot(
+                    viewModel.ViewportId,
+                    viewModel.NativePresent?.RequestedExtent ?? new ViewportExtent(1, 1, renderScale: 1),
+                    ViewportNativePresentStatus.RenderFailed,
+                    CreateExceptionMessage("Scene View native frame present failed", ex)));
+        }
+    }
+
+    private async Task TryPresentNativeFrameFromCurrentStateCoreAsync(SceneViewPanelViewModel viewModel)
+    {
         if (viewModel.CompositionCapabilities is not
             {
                 Status: ViewportCompositionStatus.Supported,
@@ -252,6 +285,30 @@ public partial class SceneViewPanelView : UserControl
             status,
             message,
             DateTimeOffset.UtcNow);
+    }
+
+    private static ViewportCompositionCapabilitiesSnapshot CreateLocalCompositionSnapshot(
+        ViewportId viewportId,
+        ViewportCompositionStatus status,
+        string message)
+    {
+        return new ViewportCompositionCapabilitiesSnapshot(
+            viewportId,
+            status,
+            deviceLuid: null,
+            deviceUuid: null,
+            imageHandleTypes: [],
+            semaphoreHandleTypes: [],
+            synchronizationCapabilities: [],
+            message,
+            DateTimeOffset.UtcNow);
+    }
+
+    private static string CreateExceptionMessage(string prefix, Exception ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.Message)
+            ? $"{prefix}."
+            : $"{prefix}: {ex.Message}";
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
