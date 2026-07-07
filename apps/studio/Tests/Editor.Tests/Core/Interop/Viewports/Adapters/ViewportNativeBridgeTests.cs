@@ -238,6 +238,69 @@ public sealed class ViewportNativeBridgeTests
     }
 
     [Fact]
+    public void Shutdown_forwards_to_native_api_once()
+    {
+        using var api = new StubViewportNativeApi();
+        var bridge = new ViewportNativeBridge(api);
+
+        bridge.Shutdown();
+
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Fact]
+    public void Shutdown_ignores_missing_native_library()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            ShutdownException = new DllNotFoundException("missing editor_native"),
+        };
+        var bridge = new ViewportNativeBridge(api);
+
+        bridge.Shutdown();
+
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Fact]
+    public void Shutdown_is_idempotent()
+    {
+        using var api = new StubViewportNativeApi();
+        var bridge = new ViewportNativeBridge(api);
+
+        bridge.Shutdown();
+        bridge.Shutdown();
+
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Fact]
+    public void Release_present_packet_does_not_call_native_api_after_shutdown()
+    {
+        using var api = new StubViewportNativeApi();
+        var bridge = new ViewportNativeBridge(api);
+        var packet = new ViewportNativePresentPacket(
+            new ViewportNativeAbiHeader(ViewportNativePresentPacket.CurrentStructSize),
+            ViewportNativeStatus.Success,
+            new IntPtr(0x1234),
+            new IntPtr(0x1000),
+            new IntPtr(0x2000),
+            new IntPtr(0x3000),
+            widthPixels: 320U,
+            heightPixels: 180U,
+            ViewportNativeImageFormat.Rgba8Unorm,
+            memorySizeBytes: 320UL * 180UL * 4UL,
+            frameIndex: 1UL,
+            IntPtr.Zero,
+            messageByteLength: 0UL);
+
+        bridge.Shutdown();
+        bridge.ReleasePresentPacket(packet);
+
+        Assert.Equal(0, api.ReleasePresentPacketCalls);
+    }
+
+    [Fact]
     public void Present_packet_creates_avalonia_image_properties_for_bgra_unorm()
     {
         var packet = new ViewportNativePresentPacket(
@@ -303,6 +366,8 @@ public sealed class ViewportNativeBridgeTests
 
         public Exception? AcquireException { get; init; }
 
+        public Exception? ShutdownException { get; init; }
+
         public ViewportNativeCompatibilityRequest LastRequest { get; private set; }
 
         public ViewportNativePresentRequest LastPresentRequest { get; private set; }
@@ -314,6 +379,8 @@ public sealed class ViewportNativeBridgeTests
         public int ReleasePresentPacketCalls { get; private set; }
 
         public ViewportNativePresentPacket LastReleasedPresentPacket { get; private set; }
+
+        public int ShutdownCalls { get; private set; }
 
         public uint QueryCompositionCompatibility(
             in ViewportNativeCompatibilityRequest request,
@@ -407,6 +474,11 @@ public sealed class ViewportNativeBridgeTests
 
         public void Shutdown()
         {
+            ShutdownCalls++;
+            if (ShutdownException is not null)
+            {
+                throw ShutdownException;
+            }
         }
 
         public void Dispose()

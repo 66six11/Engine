@@ -6,6 +6,7 @@ using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Threading;
+using Editor.Core.Interop.Viewports.Adapters;
 using Editor.Core.Models.Lifecycle;
 using Editor.UI.Icons;
 using Editor.Shell.ViewModels.Windowing;
@@ -26,6 +27,9 @@ public partial class MainWindow : Window
     };
     private bool restoredFloatingWindows_;
     private bool isDockHostFocused_ = true;
+    private bool isClosing_;
+    private bool nativeViewportPresentDrainStarted_;
+    private bool nativeViewportPresentDrainCompleted_;
 
     public MainWindow()
     {
@@ -52,7 +56,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         KeyDown -= OnMainWindowKeyDown;
-        panelFrameTimer_.Stop();
+        StopPanelFrameTimer();
         panelFrameTimer_.Tick -= OnPanelFrameTimerTick;
         Closing -= OnWindowClosing;
         EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged;
@@ -62,15 +66,47 @@ public partial class MainWindow : Window
 
     private void OnPanelFrameTimerTick(object? sender, EventArgs e)
     {
+        if (isClosing_)
+        {
+            return;
+        }
+
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.DockWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UtcNow);
         }
     }
 
-    private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
+    private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
-        PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationClosing);
+        if (!isClosing_)
+        {
+            isClosing_ = true;
+            StopPanelFrameTimer();
+            PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationClosing);
+        }
+
+        ViewportNativePresentDrain.RequestShutdown();
+        if (nativeViewportPresentDrainCompleted_ || !ViewportNativePresentDrain.HasActivePresents)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (nativeViewportPresentDrainStarted_)
+        {
+            return;
+        }
+
+        nativeViewportPresentDrainStarted_ = true;
+        await ViewportNativePresentDrain.WaitForIdleAsync(TimeSpan.FromSeconds(5));
+        nativeViewportPresentDrainCompleted_ = true;
+        Close();
+    }
+
+    private void StopPanelFrameTimer()
+    {
+        panelFrameTimer_.Stop();
     }
 
     private void OnMainWindowDataContextChanged(object? sender, EventArgs e)

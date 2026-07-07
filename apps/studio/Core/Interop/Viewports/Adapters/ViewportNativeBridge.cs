@@ -12,6 +12,7 @@ internal sealed class ViewportNativeBridge
 {
     private const string VulkanOpaqueNtHandleType = "VulkanOpaqueNtHandle";
     private readonly IViewportNativeApi api_;
+    private bool isShutdown_;
 
     public ViewportNativeBridge()
         : this(ViewportNativeLibraryApi.Instance)
@@ -31,6 +32,15 @@ internal sealed class ViewportNativeBridge
     {
         ArgumentNullException.ThrowIfNull(compositionCapabilities);
         ArgumentNullException.ThrowIfNull(requestedExtent);
+
+        if (isShutdown_)
+        {
+            return CreateSnapshot(
+                compositionCapabilities.ViewportId,
+                requestedExtent,
+                ViewportNativePresentStatus.RenderProducerUnavailable,
+                "Native viewport backend has been shut down.");
+        }
 
         if (compositionCapabilities.Status != ViewportCompositionStatus.Supported)
         {
@@ -79,6 +89,11 @@ internal sealed class ViewportNativeBridge
 
     public void ReleasePresentPacket(ViewportNativePresentPacket packet)
     {
+        if (isShutdown_)
+        {
+            return;
+        }
+
         api_.ReleasePresentPacket(packet);
     }
 
@@ -112,6 +127,13 @@ internal sealed class ViewportNativeBridge
         ArgumentNullException.ThrowIfNull(compositionCapabilities);
         ArgumentNullException.ThrowIfNull(requestedExtent);
 
+        if (isShutdown_)
+        {
+            return CreatePresentPacket(
+                ViewportNativeStatus.Unavailable,
+                requestedExtent);
+        }
+
         if (compositionCapabilities.Status != ViewportCompositionStatus.Supported)
         {
             return CreatePresentPacket(
@@ -140,7 +162,19 @@ internal sealed class ViewportNativeBridge
 
     public void Shutdown()
     {
-        api_.Shutdown();
+        if (isShutdown_)
+        {
+            return;
+        }
+
+        isShutdown_ = true;
+        try
+        {
+            api_.Shutdown();
+        }
+        catch (Exception ex) when (IsNativeBindingException(ex))
+        {
+        }
     }
 
     private void ReleasePresentPacketIfNeeded(ViewportNativePresentPacket packet)

@@ -1,9 +1,11 @@
 ﻿#pragma once
 
-#include <mutex>
 #include <cstdint>
+#include <cstddef>
+#include <mutex>
 #include <optional>
 #include <string_view>
+#include <unordered_set>
 
 #include "editor_viewport.hpp"
 
@@ -38,9 +40,15 @@ namespace asharia::editor {
         void shutdown();
 
     private:
+        [[nodiscard]] std::optional<asharia::VulkanContext>
+        takeContextForShutdownIfIdleLocked();
+
         std::mutex mutex_;
         std::optional<asharia::VulkanContext> context_;
+        std::unordered_set<void*> outstandingPackets_;
+        std::size_t releasingPacketCount_{};
         std::uint64_t nextFrameIndex_{};
+        bool shutdownRequested_{};
     };
 
 } // namespace asharia::editor

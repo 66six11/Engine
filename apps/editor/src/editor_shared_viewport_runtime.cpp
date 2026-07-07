@@ -324,6 +324,10 @@ namespace asharia::editor {
 
     asharia::Result<const asharia::VulkanContext*> EditorSharedViewportRuntime::ensureContext() {
         std::lock_guard lock{mutex_};
+        if (shutdownRequested_) {
+            return std::unexpected{vulkanError("Shared viewport runtime has shut down")};
+        }
+
         auto ensured = ensureSharedContextStorage(context_);
         if (!ensured) {
             return std::unexpected{std::move(ensured.error())};
@@ -340,6 +344,10 @@ namespace asharia::editor {
         }
 
         std::lock_guard lock{mutex_};
+        if (shutdownRequested_) {
+            return std::unexpected{vulkanError("Shared viewport runtime has shut down")};
+        }
+
         auto ensured = ensureSharedContextStorage(context_);
         if (!ensured) {
             return std::unexpected{std::move(ensured.error())};
@@ -352,7 +360,9 @@ namespace asharia::editor {
             return std::unexpected{std::move(rendered.error())};
         }
 
-        EditorSharedViewportPacketState* statePtr = state.release();
+        EditorSharedViewportPacketState* statePtr = state.get();
+        outstandingPackets_.insert(statePtr);
+        [[maybe_unused]] EditorSharedViewportPacketState* const releasedState = state.release();
         return EditorSharedViewportPresentPacket{
             .nativePacket = statePtr,
             .imageHandle = statePtr->imageHandle,
@@ -370,15 +380,48 @@ namespace asharia::editor {
             return;
         }
 
-        std::lock_guard lock{mutex_};
-        std::unique_ptr<EditorSharedViewportPacketState> state{
-            static_cast<EditorSharedViewportPacketState*>(nativePacket)};
+        std::unique_ptr<EditorSharedViewportPacketState> state;
+        {
+            std::lock_guard lock{mutex_};
+            if (outstandingPackets_.erase(nativePacket) == 0U) {
+                return;
+            }
+
+            ++releasingPacketCount_;
+            state.reset(static_cast<EditorSharedViewportPacketState*>(nativePacket));
+        }
+
+        state.reset();
+
+        std::optional<asharia::VulkanContext> contextToDestroy;
+        {
+            std::lock_guard lock{mutex_};
+            --releasingPacketCount_;
+            contextToDestroy = takeContextForShutdownIfIdleLocked();
+        }
     }
 
     void EditorSharedViewportRuntime::shutdown() {
-        std::lock_guard lock{mutex_};
+        std::optional<asharia::VulkanContext> contextToDestroy;
+        {
+            std::lock_guard lock{mutex_};
+            shutdownRequested_ = true;
+            contextToDestroy = takeContextForShutdownIfIdleLocked();
+        }
+    }
+
+    std::optional<asharia::VulkanContext>
+    EditorSharedViewportRuntime::takeContextForShutdownIfIdleLocked() {
+        if (!shutdownRequested_ || !outstandingPackets_.empty() || releasingPacketCount_ != 0U ||
+            !context_) {
+            return std::nullopt;
+        }
+
+        std::optional<asharia::VulkanContext> contextToDestroy;
+        contextToDestroy.emplace(std::move(*context_));
         context_.reset();
         nextFrameIndex_ = 0U;
+        return contextToDestroy;
     }
 
 } // namespace asharia::editor
