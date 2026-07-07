@@ -43,7 +43,20 @@ internal sealed class ViewportNativeBridge
 
         var request = CreateCompatibilityRequest(compositionCapabilities);
         var result = ViewportNativeCompatibilityResult.CreateForCall();
-        var queryStatus = api_.QueryCompositionCompatibility(request, ref result);
+        uint queryStatus;
+        try
+        {
+            queryStatus = api_.QueryCompositionCompatibility(request, ref result);
+        }
+        catch (Exception ex) when (IsNativeBindingException(ex))
+        {
+            return CreateSnapshot(
+                compositionCapabilities.ViewportId,
+                requestedExtent,
+                ViewportNativePresentStatus.RenderProducerUnavailable,
+                CreateNativeBackendUnavailableMessage(ex));
+        }
+
         try
         {
             var status = ViewportNativeStatus.IsSuccess(queryStatus)
@@ -88,7 +101,7 @@ internal sealed class ViewportNativeBridge
         }
         finally
         {
-            ReleasePresentPacket(packet);
+            ReleasePresentPacketIfNeeded(packet);
         }
     }
 
@@ -111,13 +124,33 @@ internal sealed class ViewportNativeBridge
             checked((uint)requestedExtent.WidthPixels),
             checked((uint)requestedExtent.HeightPixels));
         var packet = ViewportNativePresentPacket.CreateForCall();
-        _ = api_.AcquirePresentPacket(request, ref packet);
+        try
+        {
+            _ = api_.AcquirePresentPacket(request, ref packet);
+        }
+        catch (Exception ex) when (IsNativeBindingException(ex))
+        {
+            return CreatePresentPacket(
+                ViewportNativeStatus.Unavailable,
+                requestedExtent);
+        }
+
         return packet;
     }
 
     public void Shutdown()
     {
         api_.Shutdown();
+    }
+
+    private void ReleasePresentPacketIfNeeded(ViewportNativePresentPacket packet)
+    {
+        if (packet.NativePacket == IntPtr.Zero && packet.MessageUtf8 == IntPtr.Zero)
+        {
+            return;
+        }
+
+        ReleasePresentPacket(packet);
     }
 
     private static ViewportNativeCompatibilityRequest CreateCompatibilityRequest(
@@ -178,6 +211,20 @@ internal sealed class ViewportNativeBridge
         }
 
         return true;
+    }
+
+    private static bool IsNativeBindingException(Exception ex)
+    {
+        return ex is DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException;
+    }
+
+    private static string CreateNativeBackendUnavailableMessage(Exception ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.Message)
+            ? "Native viewport backend is unavailable."
+            : $"Native viewport backend is unavailable: {ex.Message}";
     }
 
     private static string? CopyMessage(ViewportNativeCompatibilityResult result)
