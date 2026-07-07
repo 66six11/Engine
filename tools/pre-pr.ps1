@@ -72,9 +72,12 @@ function Add-DocHints {
     )
 
     if ($ChangedFiles | Where-Object { $_ -match "^packages/rendergraph/" }) {
-        Add-Unique $Docs "docs/rendergraph/mvp.md"
-        Add-Unique $Docs "docs/rendergraph/rhi-boundary.md"
-        Add-Unique $Docs "docs/architecture/flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/design/rendergraph-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/api/rendergraph-api.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/design/rendergraph-design.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/api/rendergraph-api.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
     }
 
     if ($ChangedFiles | Where-Object {
@@ -83,18 +86,28 @@ function Add-DocHints {
             $_ -match "^CMakeLists\.txt$" -or
             $_ -match "^cmake/"
         }) {
-        Add-Unique $Docs "docs/architecture/package-first.md"
-        Add-Unique $Docs "docs/workflow/package-standalone-build.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/overview.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/guides/add-package-guide.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/build.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/overview.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/guides/add-package-guide.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/workflow/build.md"
     }
 
     if ($ChangedFiles | Where-Object { $_ -match "^tools/" -or $_ -match "^scripts/" }) {
-        Add-Unique $Docs "docs/workflow/review.md"
-        Add-Unique $Docs "docs/workflow/build.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/build.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/workflow/build.md"
     }
 
     if ($ChangedFiles | Where-Object { $_ -match "^shaders/" -or $_ -match "^packages/shader-slang/" }) {
-        Add-Unique $Docs "docs/rendergraph/rhi-boundary.md"
-        Add-Unique $Docs "docs/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/asset-and-material-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/asset-and-material-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/workflow/review.md"
     }
 
     if ($ChangedFiles | Where-Object {
@@ -102,9 +115,12 @@ function Add-DocHints {
             $_ -match "^packages/renderer-basic/" -or
             $_ -match "^apps/"
         }) {
-        Add-Unique $Docs "docs/architecture/flow.md"
-        Add-Unique $Docs "docs/rendergraph/rhi-boundary.md"
-        Add-Unique $Docs "docs/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/api/rhi-vulkan-api.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/workflow/review.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/api/rhi-vulkan-api.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/workflow/review.md"
     }
 }
 
@@ -227,7 +243,6 @@ try {
     Write-Host "  git diff --check"
     Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug`""
     Write-Host "  cmd /c `"build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug`""
-    Write-Host "  python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan_cpp.py . --fail-on warning"
 
     if ($packageTestCommands.Count -gt 0) {
         Write-Host ""
@@ -246,7 +261,7 @@ try {
     if ($requiresRenderingSmokes) {
         Write-Host ""
         Write-Host "Rendering/runtime smoke gate required for this change range:"
-        Write-Host "  Run the smoke list in docs\workflow\review.md for both clangcl-debug and msvc-debug."
+        Write-Host "  Run the smoke list in docs\developer-documentation-system\zh\workflow\review.md or docs\developer-documentation-system\en\workflow\review.md for both clangcl-debug and msvc-debug."
     }
 
     if ($requiresDesignReview) {

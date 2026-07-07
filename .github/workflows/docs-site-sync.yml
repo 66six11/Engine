@@ -3,13 +3,13 @@ name: Docs Site Sync
 on:
   pull_request:
     paths:
-      - docs/**
+      - docs/developer-documentation-system/**
       - .github/workflows/docs-site-sync.yml
   push:
     branches:
       - main
     paths:
-      - docs/**
+      - docs/developer-documentation-system/**
       - .github/workflows/docs-site-sync.yml
   workflow_dispatch:
     inputs:
@@ -80,6 +80,7 @@ jobs:
           DOCS_SITE_REPOSITORY: ${{ vars.DOCS_SITE_REPOSITORY || '66six11/VkEngine-docs-site' }}
           ENGINE_REPOSITORY: ${{ github.repository }}
           ENGINE_REF: ${{ steps.engine.outputs.ref }}
+          ENGINE_DOCS_DIR: docs/developer-documentation-system
           SOURCE_SHA: ${{ github.sha }}
           SOURCE_RUN_ID: ${{ github.run_id }}
         run: |
@@ -92,9 +93,10 @@ jobs:
             --arg event_type "engine-docs-updated" \
             --arg engine_repository "$ENGINE_REPOSITORY" \
             --arg engine_ref "$ENGINE_REF" \
+            --arg engine_docs_dir "$ENGINE_DOCS_DIR" \
             --arg source_sha "$SOURCE_SHA" \
             --arg source_run_id "$SOURCE_RUN_ID" \
-            '{event_type: $event_type, client_payload: {engine_repository: $engine_repository, engine_ref: $engine_ref, source_sha: $source_sha, source_run_id: $source_run_id}}')"
+            '{event_type: $event_type, client_payload: {engine_repository: $engine_repository, engine_ref: $engine_ref, engine_docs_dir: $engine_docs_dir, source_sha: $source_sha, source_run_id: $source_run_id}}')"
 
           curl -fsSL \
             -X POST \

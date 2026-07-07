@@ -59,11 +59,17 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-dept
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-mesh
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-mesh-3d
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-draw-list
-build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-mrt
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-mrt --frames 3
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-descriptor-layout
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-material-binding
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-fullscreen-texture
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-scene-draw-packet
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-render-view-grid-readback
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-offscreen-viewport
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-compute-dispatch
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-buffer-upload
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-texture-upload
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-renderer-format-contract
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-deferred-deletion
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-reflection-registry
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-reflection-transform
@@ -71,6 +77,7 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-refl
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-serialization-roundtrip
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-serialization-json-archive
 build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-serialization-migration
+build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --bench-rendergraph --warmup 10 --frames 100 --output build\rendergraph-bench.json
 ```
 
 无参数启动会打开交互式 triangle viewer；`--smoke-*` 入口用于自动验证和提交前审查。
@@ -90,6 +97,8 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-asset-brows
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-native-bridge
+build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-native
 ```
 
 无参数启动会打开 Dear ImGui editor host；`--smoke-editor-*` 入口用于验证 editor shell、Asset Browser project catalog snapshot、Lucide/custom asset icon resolver、Scene View sampled texture、viewport overlay flags、overlay metadata roundtrip、RenderView diagnostics snapshot、Frame Debug capture/pause/resume state、只读 Render Graph panel snapshot consumption 和 resize/retirement flow。
@@ -102,7 +111,7 @@ AshariaEngine/
   engine/                Stable engine foundation packages.
   packages/              Feature packages: window, RHI, render graph, shader, renderer.
   cmake/                 Shared CMake helpers.
-  docs/                  Categorized workflow, standards, architecture, planning, and research docs.
+  docs/                  Historical docs plus the deployable developer documentation root.
   profiles/              Conan host/build profiles.
   scripts/               Bootstrap scripts.
   tools/                 Repository maintenance tools, including encoding, doc-sync, and line-count checks.
@@ -110,18 +119,14 @@ AshariaEngine/
 
 ## 文档入口
 
-- [docs/README.md](docs/README.md)：知识库导航和建议阅读路径。
-- [docs/workflow/build.md](docs/workflow/build.md)：Conan、CMake Presets、Visual Studio、命令行构建和仓库维护工具。
-- [docs/standards/coding.md](docs/standards/coding.md)：C++23、Vulkan、shader、同步和工程风格规范。
-- [docs/architecture/flow.md](docs/architecture/flow.md)：包依赖、启动流程、frame loop 和 RenderGraph/RHI 数据流。
-- [docs/architecture/editor.md](docs/architecture/editor.md)：当前 editor host 架构、模块所有权、viewport/texture lifetime 和 editor smokes。
-- [docs/rendergraph/rhi-boundary.md](docs/rendergraph/rhi-boundary.md)：RenderGraph 与 Vulkan RHI 边界。
-- [docs/planning/next-development-plan.md](docs/planning/next-development-plan.md)：阶段顺序、近期重点和后续开发计划。
-- [docs/planning/editor-development-plan.md](docs/planning/editor-development-plan.md)：Editor host、ImGui integration、viewport texture registry 和 editor 子阶段。
-- [docs/workflow/review.md](docs/workflow/review.md)：审查和提交前门禁。
+- [docs/developer-documentation-system/README.md](docs/developer-documentation-system/README.md)：新的开发者技术文档体系入口，也是文档站部署源目录。
+- [docs/developer-documentation-system/zh/README.md](docs/developer-documentation-system/zh/README.md)：中文文档入口。
+- [docs/developer-documentation-system/en/README.md](docs/developer-documentation-system/en/README.md)：English documentation entry.
+- [docs/developer-documentation-system/zh/architecture/overview.md](docs/developer-documentation-system/zh/architecture/overview.md)：当前 package 分层、状态所有权和依赖方向。
+- [docs/developer-documentation-system/zh/workflow/review.md](docs/developer-documentation-system/zh/workflow/review.md)：提交前验证和 smoke 命令。
 
 ## 维护约定
 
-- 文档、脚本、配置文件使用 UTF-8 without BOM；C/C++ 源码和头文件使用 UTF-8 with BOM。详见 [docs/standards/encoding.md](docs/standards/encoding.md)。
+- 文档、脚本、配置文件使用 UTF-8 without BOM；C/C++ 源码和头文件使用 UTF-8 with BOM。详见 [docs/developer-documentation-system/zh/standards/encoding.md](docs/developer-documentation-system/zh/standards/encoding.md)。
 - 修改包依赖、target 依赖、smoke 命令、RenderGraph 语义、frame loop、shader pipeline 或 Vulkan 生命周期时，必须同步相关文档。
 - 构建目录、Conan 输出、生成的 toolchain/preset 不进入源码管理。

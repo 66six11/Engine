@@ -44,7 +44,6 @@ powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
 git diff --check
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
-python C:/Users/C66/.codex/skills/vulkan-cpp23-engineering/scripts/review_vulkan_cpp.py . --fail-on warning
 ```
 
 开发中可先运行本地 pre-PR 提示脚本，让它按当前 diff 提示固定门禁、包级 CTest、smoke 范围和需要检查的文档：
@@ -202,7 +201,10 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 1. Khronos Vulkan spec、refpage、Vulkan Guide。
 2. VMA、Slang、SPIR-V、shader toolchain 官方文档。
 3. 成熟案例：Frostbite FrameGraph、Granite、Diligent Engine、RenderDoc/Nsight 的资源视图思路。
-4. 本仓库文档：`docs/architecture/flow.md`、`docs/rendergraph/rhi-boundary.md`、`docs/architecture/package-first.md`、`docs/planning/next-development-plan.md`。
+4. 本仓库当前部署文档：`docs/developer-documentation-system/zh/architecture/overview.md`、
+   `docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md`、
+   `docs/developer-documentation-system/zh/design/rendergraph-design.md`、
+   `docs/developer-documentation-system/zh/workflow/review.md`；英文审查同步检查 `en/` 对应文件。
 5. C++ Core Guidelines、Game Programming Patterns、Unity DOTS / Entities 和 Data-Oriented Design 资料，用于内部代码设计、
    设计模式和数据导向审查。
 
@@ -314,13 +316,17 @@ rg -n "debugWorldLines|camera|viewProjection|viewportSlots_|requestedViewport_|R
 必须在 PR 模板中说明原因；本地临时验证可使用 `-NoDocsReason` 显式给出原因。脚本默认只检查 tracked
 diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-IncludeUntracked`。
 
-优先更新：
+优先更新 `docs/developer-documentation-system/zh/` 与 `docs/developer-documentation-system/en/` 的对应文件：
 
-- `docs/architecture/flow.md`
-- `docs/planning/next-development-plan.md`
-- `docs/rendergraph/mvp.md`
-- `docs/rendergraph/rhi-boundary.md`
-- `docs/architecture/package-first.md`
+- `architecture/overview.md`
+- `architecture/rendering-and-frame-flow.md`
+- `architecture/asset-and-material-flow.md`
+- `design/rendergraph-design.md`
+- `api/rendergraph-api.md`
+- `api/rhi-vulkan-api.md`
+- `workflow/build.md`
+- `workflow/review.md`
+- `standards/documentation.md`
 
 ## 提交规则
 
@@ -331,7 +337,7 @@ diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-Include
 
 ## 阶段完成 tag
 
-当某个 `docs/planning/next-development-plan.md` 中定义的阶段已经完成实现、文档同步和对应验收门禁后，可以给完成该阶段的提交打 tag。
+当某个阶段的 Issue/Epic 验收标准已经完成实现、当前部署文档同步和对应验收门禁后，可以给完成该阶段的提交打 tag。
 
 - tag 只打在“完成阶段验收”的实现提交上；如果后续只是补文档或流程，不移动已有阶段 tag。
 - 命名使用 `stage-<number>-<short-slug>`，例如 `stage-14-render-view-target-recording`。
