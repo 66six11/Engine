@@ -177,6 +177,19 @@ namespace asharia::editor {
             logError("Viewport native bridge smoke did not produce the first shared present packet.");
             return false;
         }
+        EditorViewportNativeRuntimeStats statsAfterFirstPacket{};
+        const std::uint32_t statsStatus =
+            editor_viewport_query_runtime_stats(&statsAfterFirstPacket);
+        if (statsStatus != EditorViewportNativeStatus_Success ||
+            statsAfterFirstPacket.framesRendered != 1U ||
+            statsAfterFirstPacket.producersCreated != 1U ||
+            statsAfterFirstPacket.packetsCreated != 1U ||
+            statsAfterFirstPacket.outstandingPackets != 1U ||
+            statsAfterFirstPacket.hasRenderProducer == 0U) {
+            releaseIfNeeded(packet);
+            logError("Viewport native bridge smoke did not expose first render producer stats.");
+            return false;
+        }
         releaseIfNeeded(packet);
 
         EditorViewportNativePresentPacket resizedPacket{};

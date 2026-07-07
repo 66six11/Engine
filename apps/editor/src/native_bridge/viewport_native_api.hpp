@@ -83,6 +83,17 @@ struct EditorViewportNativePresentRequest {
     std::uint32_t heightPixels;
 };
 
+struct EditorViewportNativeRuntimeStats {
+    EditorViewportNativeAbiHeader header;
+    std::uint64_t framesRendered;
+    std::uint64_t producersCreated;
+    std::uint64_t packetsCreated;
+    std::uint64_t outstandingPackets;
+    std::uint32_t hasContext;
+    std::uint32_t hasRenderProducer;
+    std::uint32_t shutdownRequested;
+};
+
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_composition_compatibility(
     const EditorViewportNativeCompatibilityRequest* request,
@@ -97,6 +108,9 @@ EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_prese
 
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL
 editor_viewport_release_present_packet(EditorViewportNativePresentPacket packet);
+
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats(EditorViewportNativeRuntimeStats* stats);
 
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL editor_viewport_shutdown();
 
