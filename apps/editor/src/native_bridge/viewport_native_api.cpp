@@ -57,6 +57,13 @@ namespace {
         };
     }
 
+    [[nodiscard]] EditorViewportNativeAbiHeader runtimeStatsV5Header() {
+        return EditorViewportNativeAbiHeader{
+            .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeRuntimeStatsV5)),
+        };
+    }
+
     [[nodiscard]] bool hasSupportedRequestHeader(
         const EditorViewportNativeCompatibilityRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
@@ -403,8 +410,12 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
                 },
         });
     if (!present) {
-        return writePresentPacketFailure(packet, EditorViewportNativeStatus_RenderFailed,
-                                         present.error().message);
+        const asharia::editor::EditorSharedViewportRenderFrameError& error = present.error();
+        const std::uint32_t status =
+            error.kind == asharia::editor::EditorSharedViewportRenderFrameErrorKind::Backpressure
+                ? EditorViewportNativeStatus_Unavailable
+                : EditorViewportNativeStatus_RenderFailed;
+        return writePresentPacketFailure(packet, status, error.error.message);
     }
 
     return writePresentPacketSuccess(packet, *present);
@@ -519,6 +530,39 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v4(
         .frameEpochsCompleted = runtimeStats.frameEpochsCompleted,
         .frameEpochsPending = runtimeStats.frameEpochsPending,
         .rendererCreations = runtimeStats.rendererCreations,
+        .hasContext = runtimeStats.hasContext ? 1U : 0U,
+        .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
+        .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,
+    };
+    return EditorViewportNativeStatus_Success;
+}
+
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v5(
+    EditorViewportNativeRuntimeStatsV5* stats) {
+    if (stats == nullptr) {
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    const asharia::editor::EditorSharedViewportRuntimeStats runtimeStats =
+        asharia::editor::EditorSharedViewportRuntime::instance().stats();
+    *stats = EditorViewportNativeRuntimeStatsV5{
+        .header = runtimeStatsV5Header(),
+        .framesRendered = runtimeStats.framesRendered,
+        .producersCreated = runtimeStats.producersCreated,
+        .packetsCreated = runtimeStats.packetsCreated,
+        .outstandingPackets = static_cast<std::uint64_t>(runtimeStats.outstandingPackets),
+        .externalImagesAcquired = runtimeStats.externalImagesAcquired,
+        .externalImagesCreated = runtimeStats.externalImagesCreated,
+        .externalImagesReused = runtimeStats.externalImagesReused,
+        .externalImagesReleased = runtimeStats.externalImagesReleased,
+        .externalImagesAvailable = runtimeStats.externalImagesAvailable,
+        .externalImagesLeased = runtimeStats.externalImagesLeased,
+        .frameEpochsSubmitted = runtimeStats.frameEpochsSubmitted,
+        .frameEpochsCompleted = runtimeStats.frameEpochsCompleted,
+        .frameEpochsPending = runtimeStats.frameEpochsPending,
+        .rendererCreations = runtimeStats.rendererCreations,
+        .maxOutstandingPackets = static_cast<std::uint64_t>(runtimeStats.maxOutstandingPackets),
+        .packetBackpressureHits = runtimeStats.packetBackpressureHits,
         .hasContext = runtimeStats.hasContext ? 1U : 0U,
         .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
         .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,

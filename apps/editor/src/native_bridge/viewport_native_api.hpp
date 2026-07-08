@@ -152,6 +152,29 @@ struct EditorViewportNativeRuntimeStatsV4 {
     std::uint32_t shutdownRequested;
 };
 
+struct EditorViewportNativeRuntimeStatsV5 {
+    EditorViewportNativeAbiHeader header;
+    std::uint64_t framesRendered;
+    std::uint64_t producersCreated;
+    std::uint64_t packetsCreated;
+    std::uint64_t outstandingPackets;
+    std::uint64_t externalImagesAcquired;
+    std::uint64_t externalImagesCreated;
+    std::uint64_t externalImagesReused;
+    std::uint64_t externalImagesReleased;
+    std::uint64_t externalImagesAvailable;
+    std::uint64_t externalImagesLeased;
+    std::uint64_t frameEpochsSubmitted;
+    std::uint64_t frameEpochsCompleted;
+    std::uint64_t frameEpochsPending;
+    std::uint64_t rendererCreations;
+    std::uint64_t maxOutstandingPackets;
+    std::uint64_t packetBackpressureHits;
+    std::uint32_t hasContext;
+    std::uint32_t hasRenderProducer;
+    std::uint32_t shutdownRequested;
+};
+
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_composition_compatibility(
     const EditorViewportNativeCompatibilityRequest* request,
@@ -178,6 +201,9 @@ editor_viewport_query_runtime_stats_v3(EditorViewportNativeRuntimeStatsV3* stats
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_runtime_stats_v4(EditorViewportNativeRuntimeStatsV4* stats);
+
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v5(EditorViewportNativeRuntimeStatsV5* stats);
 
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL editor_viewport_shutdown();
 
