@@ -279,18 +279,22 @@ sequenceDiagram
 - `SceneViewCompositionPresenter` 只通过 Avalonia `ICompositionGpuInterop` import opaque NT handles，并在 `finally`
   释放 native packet；失败 packet 由 bridge 复制 message 后释放。
 - `editor shared viewport runtime` owns Vulkan context, producer lifetime,
-  outstanding packet tracking and shutdown drain. The native render producer owns
-  RenderView recording, per-packet external semaphore/command/fence resources,
-  and a producer-local external image pool keyed by image handle family, format,
-  extent, usage and aspect mask.
+  outstanding packet tracking and shutdown drain. `outstandingPackets` remains
+  the authoritative count for managed compositor packet ownership.
+- The native render producer owns RenderView recording, per-packet render
+  submission, per-packet command/semaphore/fence resources, a producer-local
+  external image pool keyed by image handle family, format, extent, usage and
+  aspect mask, and a producer-local submitted/completed frame epoch tracker.
+- The frame epoch tracker is independent from `VulkanFrameLoop`; epoch
+  completion is driven by packet release observing the packet fence.
 - External image pool entries own Vulkan image resources only. Win32 opaque NT
   image/semaphore handles are exported fresh per packet and are closed during
   native packet release; the pool does not store or close OS handles.
 - Windows `VulkanOpaqueNt` is the current validated composition backend. Other
   platforms must map their handle family through compatibility probing and a
   distinct pool key before image reuse.
-- `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI，managed Studio 不依赖该
-  stats 路径驱动渲染。
+- `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI；v3 native runtime
+  stats expose epoch diagnostics while v1/v2 stats remain unchanged.
 - Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
 
 ## 启动与 Context 流程
