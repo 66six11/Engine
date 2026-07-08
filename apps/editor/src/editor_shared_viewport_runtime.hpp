@@ -1,16 +1,32 @@
 ﻿#pragma once
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <mutex>
 #include <optional>
 #include <unordered_set>
 
-#include "editor_shared_viewport_render_producer.hpp"
-
+#include "asharia/core/result.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 
+#include "editor_shared_viewport_render_producer.hpp"
+
 namespace asharia::editor {
+
+    enum class EditorSharedViewportRenderFrameErrorKind {
+        RenderFailed,
+        Backpressure,
+    };
+
+    struct EditorSharedViewportRenderFrameError {
+        EditorSharedViewportRenderFrameErrorKind kind{
+            EditorSharedViewportRenderFrameErrorKind::RenderFailed};
+        asharia::Error error;
+    };
+
+    using EditorSharedViewportRenderFrameResult =
+        std::expected<EditorSharedViewportPresentPacket, EditorSharedViewportRenderFrameError>;
 
     struct EditorSharedViewportRuntimeStats {
         std::uint64_t framesRendered{};
@@ -26,6 +42,8 @@ namespace asharia::editor {
         std::uint64_t frameEpochsCompleted{};
         std::uint64_t frameEpochsPending{};
         std::uint64_t rendererCreations{};
+        std::uint64_t packetBackpressureHits{};
+        std::size_t maxOutstandingPackets{};
         std::size_t outstandingPackets{};
         bool hasContext{};
         bool hasRenderProducer{};
@@ -36,7 +54,7 @@ namespace asharia::editor {
     public:
         [[nodiscard]] static EditorSharedViewportRuntime& instance();
         [[nodiscard]] asharia::Result<const asharia::VulkanContext*> ensureContext();
-        [[nodiscard]] asharia::Result<EditorSharedViewportPresentPacket>
+        [[nodiscard]] EditorSharedViewportRenderFrameResult
         renderSceneViewFrame(EditorSharedViewportPresentDesc desc);
         void releasePresentPacket(void* nativePacket);
         void shutdown();
@@ -48,6 +66,8 @@ namespace asharia::editor {
         [[nodiscard]] std::optional<asharia::VulkanContext>
         takeContextForShutdownIfIdleLocked();
 
+        static constexpr std::size_t kMaxOutstandingPackets = 1U;
+
         mutable std::mutex mutex_;
         std::optional<asharia::VulkanContext> context_;
         std::optional<EditorSharedViewportRenderProducer> renderProducer_;
@@ -56,6 +76,7 @@ namespace asharia::editor {
         std::uint64_t producersCreated_{};
         std::uint64_t framesRendered_{};
         std::uint64_t packetsCreated_{};
+        std::uint64_t packetBackpressureHits_{};
         std::uint64_t nextFrameIndex_{};
         bool shutdownRequested_{};
     };

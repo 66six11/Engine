@@ -281,6 +281,10 @@ sequenceDiagram
 - `editor shared viewport runtime` owns Vulkan context, producer lifetime,
   outstanding packet tracking and shutdown drain. `outstandingPackets` remains
   the authoritative count for managed compositor packet ownership.
+- The runtime allows at most one outstanding shared viewport packet. A second
+  acquire while a packet is pending is rejected before producer work with
+  native `Unavailable`; this applies backpressure without blocking the UI
+  thread or allocating another packet.
 - The native render producer owns RenderView recording, the persistent
   `BasicFullscreenTextureRenderer`, a producer-local external image pool keyed
   by image handle family, format, extent, usage and aspect mask, and a
@@ -302,8 +306,9 @@ sequenceDiagram
   platforms must map their handle family through compatibility probing and a
   distinct pool key before image reuse.
 - `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI；v3 native runtime
-  stats expose epoch diagnostics and v4 stats expose renderer creation reuse
-  diagnostics while v1/v2/v3 stats remain unchanged.
+  stats expose epoch diagnostics, v4 stats expose renderer creation reuse
+  diagnostics, and v5 stats expose `maxOutstandingPackets` plus
+  `packetBackpressureHits` while v1/v2/v3/v4 stats remain unchanged.
 - Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
 
 ## 启动与 Context 流程

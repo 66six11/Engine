@@ -129,6 +129,13 @@ namespace asharia::editor {
                    stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV4);
         }
 
+        [[nodiscard]] bool queryRuntimeStatsV5(EditorViewportNativeRuntimeStatsV5& stats) {
+            const std::uint32_t status = editor_viewport_query_runtime_stats_v5(&stats);
+            return status == EditorViewportNativeStatus_Success &&
+                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV5);
+        }
+
     } // namespace
 
     bool runViewportNativeBridgeSmoke() {
@@ -255,6 +262,42 @@ namespace asharia::editor {
             logError("Viewport native bridge smoke did not expose runtime stats v4 before release.");
             return false;
         }
+
+        EditorViewportNativePresentPacket backpressuredPacket{};
+        const std::uint32_t backpressuredStatus =
+            editor_viewport_acquire_present_packet(&firstPresentRequest, &backpressuredPacket);
+        const bool acquireRejectedWhilePending =
+            backpressuredStatus == EditorViewportNativeStatus_Unavailable &&
+            backpressuredPacket.status == EditorViewportNativeStatus_Unavailable &&
+            backpressuredPacket.nativePacket == nullptr &&
+            backpressuredPacket.imageHandle == nullptr &&
+            backpressuredPacket.waitSemaphoreHandle == nullptr &&
+            backpressuredPacket.signalSemaphoreHandle == nullptr;
+        if (!acquireRejectedWhilePending) {
+            releaseIfNeeded(backpressuredPacket);
+            releaseIfNeeded(packet);
+            logError("Viewport native bridge smoke allowed acquire while a present packet was "
+                     "still pending.");
+            return false;
+        }
+
+        EditorViewportNativeRuntimeStatsV5 statsV5AfterBackpressure{};
+        if (!queryRuntimeStatsV5(statsV5AfterBackpressure) ||
+            statsV5AfterBackpressure.framesRendered != 1U ||
+            statsV5AfterBackpressure.packetsCreated != 1U ||
+            statsV5AfterBackpressure.outstandingPackets != 1U ||
+            statsV5AfterBackpressure.rendererCreations != 1U ||
+            statsV5AfterBackpressure.maxOutstandingPackets != 1U ||
+            statsV5AfterBackpressure.packetBackpressureHits != 1U ||
+            statsV5AfterBackpressure.frameEpochsSubmitted != 1U ||
+            statsV5AfterBackpressure.frameEpochsCompleted != 0U ||
+            statsV5AfterBackpressure.frameEpochsPending != 1U) {
+            releaseIfNeeded(backpressuredPacket);
+            releaseIfNeeded(packet);
+            logError("Viewport native bridge smoke did not expose v5 backpressure stats.");
+            return false;
+        }
+        releaseIfNeeded(backpressuredPacket);
         releaseIfNeeded(packet);
 
         EditorViewportNativeRuntimeStatsV3 statsV3AfterFirstRelease{};
@@ -274,6 +317,19 @@ namespace asharia::editor {
             statsV4AfterFirstRelease.frameEpochsPending != 0U ||
             statsV4AfterFirstRelease.outstandingPackets != 0U) {
             logError("Viewport native bridge smoke did not preserve renderer reuse stats after first release.");
+            return false;
+        }
+        EditorViewportNativeRuntimeStatsV5 statsV5AfterFirstRelease{};
+        if (!queryRuntimeStatsV5(statsV5AfterFirstRelease) ||
+            statsV5AfterFirstRelease.rendererCreations != 1U ||
+            statsV5AfterFirstRelease.packetsCreated != 1U ||
+            statsV5AfterFirstRelease.outstandingPackets != 0U ||
+            statsV5AfterFirstRelease.maxOutstandingPackets != 1U ||
+            statsV5AfterFirstRelease.packetBackpressureHits != 1U ||
+            statsV5AfterFirstRelease.frameEpochsSubmitted != 1U ||
+            statsV5AfterFirstRelease.frameEpochsCompleted != 1U ||
+            statsV5AfterFirstRelease.frameEpochsPending != 0U) {
+            logError("Viewport native bridge smoke did not preserve v5 stats after first release.");
             return false;
         }
 

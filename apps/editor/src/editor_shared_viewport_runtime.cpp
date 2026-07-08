@@ -37,6 +37,23 @@ namespace asharia::editor {
             return {};
         }
 
+        [[nodiscard]] std::unexpected<EditorSharedViewportRenderFrameError>
+        renderFrameFailure(asharia::Error error) {
+            return std::unexpected{EditorSharedViewportRenderFrameError{
+                .kind = EditorSharedViewportRenderFrameErrorKind::RenderFailed,
+                .error = std::move(error),
+            }};
+        }
+
+        [[nodiscard]] std::unexpected<EditorSharedViewportRenderFrameError>
+        renderFrameBackpressure() {
+            return std::unexpected{EditorSharedViewportRenderFrameError{
+                .kind = EditorSharedViewportRenderFrameErrorKind::Backpressure,
+                .error = vulkanError("Shared viewport present packet is still pending; release it "
+                                     "before acquiring another packet"),
+            }};
+        }
+
     } // namespace
 
     EditorSharedViewportRuntime& EditorSharedViewportRuntime::instance() {
@@ -79,32 +96,37 @@ namespace asharia::editor {
         return &*renderProducer_;
     }
 
-    asharia::Result<EditorSharedViewportPresentPacket>
+    EditorSharedViewportRenderFrameResult
     EditorSharedViewportRuntime::renderSceneViewFrame(EditorSharedViewportPresentDesc desc) {
         if (desc.extent.width == 0 || desc.extent.height == 0) {
-            return std::unexpected{
-                vulkanError("Cannot render a shared viewport frame for an empty extent")};
+            return renderFrameFailure(
+                vulkanError("Cannot render a shared viewport frame for an empty extent"));
         }
 
         std::lock_guard lock{mutex_};
         if (shutdownRequested_) {
-            return std::unexpected{vulkanError("Shared viewport runtime has shut down")};
+            return renderFrameFailure(vulkanError("Shared viewport runtime has shut down"));
+        }
+
+        if (outstandingPackets_.size() >= kMaxOutstandingPackets) {
+            ++packetBackpressureHits_;
+            return renderFrameBackpressure();
         }
 
         auto ensured = ensureSharedContextStorage(context_);
         if (!ensured) {
-            return std::unexpected{std::move(ensured.error())};
+            return renderFrameFailure(std::move(ensured.error()));
         }
 
         auto producer = ensureRenderProducerLocked();
         if (!producer) {
-            return std::unexpected{std::move(producer.error())};
+            return renderFrameFailure(std::move(producer.error()));
         }
 
         const std::uint64_t frameIndex = ++nextFrameIndex_;
         auto state = (*producer)->renderSceneViewFrame(desc, frameIndex);
         if (!state) {
-            return std::unexpected{std::move(state.error())};
+            return renderFrameFailure(std::move(state.error()));
         }
 
         EditorSharedViewportPacketState* statePtr = state->get();
@@ -173,6 +195,8 @@ namespace asharia::editor {
             .frameEpochsCompleted = producerStats.frameEpochsCompleted,
             .frameEpochsPending = producerStats.frameEpochsPending,
             .rendererCreations = producerStats.rendererCreations,
+            .packetBackpressureHits = packetBackpressureHits_,
+            .maxOutstandingPackets = kMaxOutstandingPackets,
             .outstandingPackets = outstandingPackets_.size(),
             .hasContext = context_.has_value(),
             .hasRenderProducer = renderProducer_.has_value(),
