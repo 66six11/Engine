@@ -53,7 +53,7 @@ namespace asharia::editor {
 
         {
             std::lock_guard lock{state_->mutex};
-            ++state_->completed;
+            state_->completed = std::max(state_->completed, epoch_);
         }
 
         completed_ = true;
