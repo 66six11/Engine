@@ -8,6 +8,7 @@
 
 - 用 `AssetCatalog` 维护 source asset records。
 - 用 `scanAssetSourceTree()` 从 source root 找到 source/metadata pairs。
+- 用 `discoverAssetSources()`、`snapshotAssetSourceFiles()` 和 `planScannedAssetImports()` 覆盖 scanned-source helper 路径。
 - 用 `planAssetImports()` 判断 missing product、source/settings/importer/dependency/profile drift。
 - 用 `executeAssetProducts()` 写入 product files 和 product manifest。
 - 用 `RuntimeResourceRegistry` 追踪 runtime resource 的 pending/ready/failed 状态。
@@ -24,14 +25,14 @@
 - `asset-core` 依赖 `core` 和 `archive`；`asset-pipeline` 依赖 `archive`、`asset-core`、`material-instance`、`shader-authoring`。
 - `project-core` 只描述 project descriptor 和 IO。
 - `resource-runtime` 只依赖 `asset-core`。
-- `asharia-asset-processor` 是命令行入口，支持 `dry-run`、`execute` 和 smoke。
+- `asharia-asset-processor` 是命令行入口，支持 `dry-run`、`execute`、`--smoke-dry-run` 和 `--smoke-product-execution`。
 
 ## 总体方案
 
 资产流程分为四段：
 
 1. `project-core` 读取 `asharia.project.json`，得到 source roots 和 discovery 设置。
-2. `asset-pipeline` 扫描 source tree，读取 `.ameta`，生成 discovered sources 和 snapshots。
+2. `asset-pipeline` 扫描 source tree，读取 `.ameta`，并通过 scan/discover/snapshot helper APIs 生成 discovered sources 和 snapshots。
 3. `planAssetImports()` 与现有 product manifest 对比，输出 import requests 和 cache hits。
 4. `executeAssetProducts()` 读取 source bytes/dependency product bytes，写 product files，并产出新的 manifest。
 
@@ -46,8 +47,11 @@ Runtime 阶段只消费 `AssetProductRecord`。`RuntimeResourceRegistry::request
 | `packages/asset-core/include/asharia/asset_core/asset_product.hpp` | product key、dependency、product record |
 | `packages/project-core/include/asharia/project/project_descriptor.hpp` | project id、source root、discovery descriptor |
 | `packages/asset-pipeline/include/asharia/asset_pipeline/asset_source_scan.hpp` | source tree scan |
+| `packages/asset-pipeline/include/asharia/asset_pipeline/asset_source_snapshot.hpp` | source file snapshot 和 hash capture |
 | `packages/asset-pipeline/include/asharia/asset_pipeline/asset_import_planning.hpp` | import plan 和 cache hit |
 | `packages/asset-pipeline/include/asharia/asset_pipeline/asset_product_execution.hpp` | product write 和 manifest update |
+| `packages/asset-pipeline/include/asharia/asset_pipeline/asset_product_blob.hpp` | placeholder、texture、material、shader、reflection product blob readers |
+| `packages/asset-pipeline/include/asharia/asset_pipeline/asset_texture_import.hpp` | raw RGBA8 和 PNG source 的 CPU texture payload import |
 | `packages/resource-runtime/include/asharia/resource_runtime/runtime_resource_registry.hpp` | runtime request/ready/failed state |
 | `tools/asset-processor/src/main.cpp` | CLI argument parsing 和 command dispatch |
 
@@ -67,8 +71,11 @@ Runtime 阶段只消费 `AssetProductRecord`。`RuntimeResourceRegistry::request
 
 - `AssetCatalog::addSource/updateSource/removeSource()` 改变 source catalog。
 - `scanAssetSourceTree(request)` 返回 entries 和 diagnostics。
+- `discoverAssetSources(request)` 把 scan output 转成 source records 和 snapshot entries；`snapshotAssetSourceFiles(entries)` 捕获 file hashes/bytes 供 planning 使用。
 - `planAssetImports(sources, snapshots, manifest, targetProfile, options)` 返回 plan；`succeeded()` 只在无 error diagnostics 时为 true。
+- `planScannedAssetImports(request)` 组合 scanned source discovery、snapshotting 和 import planning，供 tool-style workflows 使用。
 - `executeAssetProducts(request)` 返回 written products、cache hits、新 manifest 和 diagnostics。
+- `readTexture2DProductPayload(request)` 和相关 product blob readers 解析 product files，供 runtime/tool consumers 使用。
 - `RuntimeResourceRegistry::request/markReady/markFailed/resolveProductRecords()` 维护 generation-safe 状态机。
 
 ## 关键流程
@@ -104,7 +111,7 @@ Runtime 阶段只消费 `AssetProductRecord`。`RuntimeResourceRegistry::request
 
 ## 错误处理
 
-资产规划和执行使用 diagnostics vectors；catalog、descriptor、metadata、runtime registry 使用 `Result`/`VoidResult`。错误消息应包含 source path、relative product path、target profile 或 resource key。
+资产规划和执行使用 diagnostics vectors；catalog、descriptor、metadata、runtime registry 使用 `Result`/`VoidResult`，runtime registry errors 以 `RuntimeResourceDiagnosticCode` 标识。错误消息应包含 source path、relative product path、target profile 或 resource key。
 
 ## 测试方案
 

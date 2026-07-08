@@ -46,7 +46,7 @@ Runtime resource registry 是独立状态机。调用方用 asset handle 和 ass
 | 数据 | 关键字段 | 说明 |
 |---|---|---|
 | `EntityId` | index、generation | stale handle detection |
-| `TransformComponent` | translation/rotation/scale fields | CPU-side transform |
+| `TransformComponent` | position/rotation/scale fields | CPU-side transform |
 | `World::EntitySlot` | generation、alive、name、transform | internal storage |
 | `RuntimeResourceKey` | `guid`、`assetType` | runtime resource identity |
 | `RuntimeResourceRecord` | `state`、`generation`、`expectedProductKey`、`product`、`failure` | load state |
@@ -75,8 +75,8 @@ Runtime resource registry 是独立状态机。调用方用 asset handle 和 ass
 
 - invalid entity：World API 返回 `SceneErrorCode::InvalidEntity`。
 - capacity 超限：create 返回 `SceneErrorCode::EntityCapacityExceeded`。
-- invalid resource key/product key：registry 返回 diagnostics。
-- product record 不匹配：registry 返回 product key mismatch。
+- invalid resource key/product key：registry 返回以 `RuntimeResourceDiagnosticCode` 标识的 `Result<T>` errors。
+- product record 不匹配：registry 返回 product-key mismatch error。
 
 ### 边界流程
 
@@ -90,7 +90,7 @@ World 拥有 entity slots。Entity destroy 后，旧 `EntityId` 不再 alive。R
 
 ## 错误处理
 
-Scene errors 使用 `ErrorDomain::Scene` 或 project error mapping。Runtime resource diagnostics 保留 expected/actual generation 和 product key，便于定位 stale completion。
+Scene errors 使用 `ErrorDomain::Scene` 或 project error mapping。Runtime resource errors 保留 expected/actual generation 和 product key，便于定位 stale completion。
 
 ## 测试方案
 
@@ -108,4 +108,4 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-scen
 
 - 缓存 transform pointer 会在 vector mutation 后失效。缓解：API 注释要求 immediate access only。
 - Runtime resource generation 若不检查，会出现 old loader completion 覆盖新 product。缓解：ticket-based completion。
-- Scene 和 renderer 直接耦合会阻塞未来多 world/multi viewport。缓解：通过 draw packets 和 resource keys 传递。
+- Scene 和 renderer 直接耦合会阻塞未来多 world/multi viewport。缓解：传递显式 view/resource data，而不是 renderer-owned scene objects。

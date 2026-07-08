@@ -82,8 +82,14 @@ function Add-DocHints {
         Add-Unique $Docs "docs/developer-documentation-system/en/architecture/rendering-and-frame-flow.md"
     }
 
+    if ($ChangedFiles | Where-Object { $_ -match "^engine/core/" }) {
+        Add-Unique $Docs "docs/developer-documentation-system/zh/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/zh/api/core-api.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/architecture/package-dependency-map.md"
+        Add-Unique $Docs "docs/developer-documentation-system/en/api/core-api.md"
+    }
+
     if ($ChangedFiles | Where-Object {
-            $_ -match "^engine/core/" -or
             $_ -match "^engine/platform/" -or
             $_ -match "^packages/window-glfw/" -or
             $_ -match "^packages/profiling/"

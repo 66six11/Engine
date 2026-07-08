@@ -92,6 +92,18 @@ Renders a frame using caller-provided command recording.
 
 Updates desired swapchain extent. Call before `recreate()` or frame rendering paths that react to resize.
 
+### `recreate()`
+
+Recreates swapchain-dependent frame resources and returns `VulkanFrameStatus::Recreated` when successful.
+
+### Swapchain Accessors
+
+| Function | Returns |
+|---|---|
+| `format()` | Current swapchain `VkFormat` |
+| `extent()` | Current swapchain `VkExtent2D` |
+| `swapchainImageCount()` | Number of swapchain images |
+
 ### `deferDeletion(callback)`
 
 Queues Vulkan cleanup work until submitted frame work has completed.
@@ -117,6 +129,19 @@ Per-frame recording context.
 | `beginDebugLabel(name)` | Begin debug label if available |
 | `endDebugLabel()` | End debug label |
 | `setDebugObjectName(type, handle, name)` | Name Vulkan object |
+
+## Resource And Pipeline Wrappers
+
+These wrappers live in the base `asharia::rhi_vulkan` target and do not depend on RenderGraph.
+
+| API | Responsibility |
+|---|---|
+| `VulkanBuffer` | VMA-backed buffer allocation, mapping, upload, and stats |
+| `VulkanImage` / `VulkanImageView` | VMA-backed images and image views |
+| `VulkanExternalImage` / `VulkanExternalSemaphore` | Win32 external memory and semaphore interop when requested by `VulkanContextDesc::externalInterop` |
+| `VulkanDescriptorSetLayout`, `VulkanDescriptorPool`, `VulkanDescriptorAllocator` | Descriptor layout creation, pool allocation, and allocation stats |
+| `updateVulkanDescriptorBuffers()` / `updateVulkanDescriptorImages()` | Descriptor write helpers |
+| `VulkanGraphicsPipeline::createDynamicRendering()` | Dynamic-rendering graphics pipeline creation |
 
 ## Example
 

@@ -22,6 +22,7 @@
 ## 当前约束
 
 - Studio 使用 `apps/studio/Editor.sln`。
+- Studio target 是 `net10.0`，使用 Avalonia、CommunityToolkit.Mvvm 和 Lucide.Avalonia。
 - Core abstractions 位于 `apps/studio/Core/Abstractions/`。
 - Native interop 位于 `apps/studio/Core/Interop/`。
 - Tests 位于 `apps/studio/Tests/`。
@@ -29,9 +30,9 @@
 
 ## 总体方案
 
-Studio shell 用 dependency-injected services 表达 editor 能力。Feature modules 注册 actions、panels、diagnostics sources 和 lifecycle hooks。Panels 通过 view models 观察 service snapshots，而不是直接修改底层 runtime。
+Studio shell 用 dependency-injected services 表达 editor 能力。`EditorExtensionHost` v0 只组合受信任的内置 modules。Module 当前通过 `IEditorContributionBuilder` 声明 panel、action 和 scene-provider contributions；diagnostic-source 与 lifecycle contribution point 尚未作为 contribution declaration 实现。Panel lifecycle 由 activation lease 和 panel content sink interfaces 处理。
 
-Native viewport bridge 通过 C ABI 请求 compatibility，然后 acquire present packet。C# 侧只持有可释放 packet/handle 的托管 wrapper，释放必须回到 native release function。Frame debugger bridge 同样把 native snapshot payload 转成 Studio model。
+Native viewport bridge 通过 C ABI 请求 compatibility，然后 acquire present packet。C# 侧只持有可释放 packet/handle 的托管 wrapper，释放必须回到 native release function。Studio Frame Debugger v0 默认是 fixture-backed 的只读面板；native frame-debugger bridge 和 JSON projection 已作为可注入服务存在，但 Workbench 默认 provider 尚未接入它们。
 
 ## 模块划分
 
@@ -58,8 +59,8 @@ Native viewport bridge 通过 C ABI 请求 compatibility，然后 acquire presen
 
 ## API 设计
 
-- Feature modules implement registration interfaces and should expose capabilities through abstractions.
-- Transaction service owns persistent mutations; panels request edits through commands.
+- Feature modules implement registration interfaces，并通过 abstractions 暴露 panel/action/scene-provider capabilities。
+- Transaction service 用于 persistent mutations 且已有测试；默认 Workbench feature panels 尚未广泛接入它。
 - Native adapters wrap C ABI calls and convert status into managed result objects.
 - CodeFirst UI validator rejects malformed node trees before rendering.
 
@@ -71,7 +72,7 @@ Native viewport bridge 通过 C ABI 请求 compatibility，然后 acquire presen
 2. Feature modules register panel/action contributions.
 3. Workbench creates panels from descriptors.
 4. Panels read snapshots from services.
-5. User edits create transactions.
+5. User edit flows 在显式接入时可以使用 transactions。
 6. Viewport panel queries native compatibility and acquires present packets.
 7. Frame debugger panel displays snapshot model.
 
@@ -81,7 +82,7 @@ Native viewport bridge 通过 C ABI 请求 compatibility，然后 acquire presen
 - invalid edit command：transaction service rejects before mutation。
 - UI tree invalid：CodeFirst validator reports errors。
 - native ABI incompatible：adapter reports unsupported ABI/device/handle status。
-- native packet release failure path：adapter logs diagnostic and drops managed reference.
+- native packet release failure path：viewport packet release 调用 native release API，然后放弃 managed ownership；当前不记录 diagnostic。
 
 ### 边界流程
 
@@ -104,6 +105,8 @@ dotnet build apps\studio\Editor.csproj -c Release
 dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "SceneView|ViewportNative|Composition"
 dotnet test apps\studio\Editor.sln -c Release
 ```
+
+Windows 上先构建提供 `editor_native.dll` 和 `slang.dll` 的 native preset，或传入 `/p:StudioNativeBuildPreset=<preset>`。
 
 ## 风险
 

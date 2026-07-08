@@ -45,7 +45,7 @@
 | 错误和返回值 | `engine/core` | `asharia::Error`、`Result<T>`、`VoidResult` |
 | schema registry | `packages/schema` | `asharia::schema::SchemaRegistry` |
 | runtime reflection registry | `packages/reflection` | `asharia::reflection::TypeRegistry` |
-| scene world | `packages/scene-core` | `asharia::scene::World` |
+| scene world | `packages/scene-core` | `asharia::World` |
 | asset identity/catalog metadata | `packages/asset-core` | `AssetGuid`、`SourceAssetRecord`、`AssetCatalog` |
 | asset import planning/execution | `packages/asset-pipeline` | `planAssetImports()`、`executeAssetProducts()` |
 | render graph declarations and compile result | `packages/rendergraph` | `RenderGraph`、`RenderGraphCompileResult` |

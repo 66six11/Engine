@@ -67,13 +67,14 @@
 2. `cpp-binding` 把 C++ field access 映射到 schema fields。
 3. `persistence` 读取 archive object，验证 type/version/fields，需要时应用已注册 migration，然后写入 bound C++ storage。
 4. 失败时返回带上下文的项目 error types；测试覆盖 unsupported fields、unknown versions、missing required fields、migration。
+5. MVP persistence 支持 `Bool`、`Integer`、`Float`、`String`、`Object`、`InlineStruct` 字段。`Enum`、`Array`、`AssetReference`、`EntityReference` 字段在对应文件格式和 binding contract 实现前会主动失败。
 
 ## 生命周期
 
 - Document model package 用普通 C++ object 拥有 parsed values。可失败 IO 返回 `Result<T>` 或 package-specific diagnostics。
 - Schema 和 reflection registry 是显式 object，不是隐式 global state。
 - Asset catalog data 从 source records 和 product records 构建，再通过 catalog views 暴露。
-- Runtime resource registry tickets 通过解析 product records 推进；stale generation 或 mismatched product keys 会变成 diagnostics，而不是静默产出 ready handle。
+- Runtime resource registry tickets 通过解析 product records 推进；stale generation 或 mismatched product keys 会返回以 `RuntimeResourceDiagnosticCode` 标识的 `Result<T>` errors，而不是静默产出 ready handle。
 - Material/shader contracts 在 renderer binding 前创建。Renderer code 消费 signatures 和 pipeline keys；它不解析 `.amat` 或 `.ashader` documents。
 
 ## 错误处理
@@ -83,7 +84,7 @@
 | Malformed JSON/archive input | 读取文件的 IO package | 返回带上下文的 error 或 diagnostic；不创建 partial ready state。 |
 | Unsupported schema version | `packages/persistence` | 有 migration 时尝试迁移；否则带 version context 失败。 |
 | Unknown 或 unsupported field kind | `packages/persistence` 或 `packages/schema` | 在 validation 或 load 阶段拒绝。 |
-| Missing asset product record | `packages/asset-core` view 或 `packages/resource-runtime` | 标记 missing/stale/failed status，并保留 diagnostics。 |
+| Missing asset product record | `packages/asset-core` view 或 `packages/resource-runtime` | 标记 missing/stale/failed status；runtime registry failure 保留 `RuntimeResourceDiagnosticCode` 上下文。 |
 | Product key mismatch | `packages/resource-runtime` | 拒绝 stale product records，并保持 handle unresolved。 |
 | Shader reflection mismatch | `packages/shader-material-adapter` | 在产出不兼容 material signature 前失败。 |
 

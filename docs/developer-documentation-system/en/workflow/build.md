@@ -37,6 +37,7 @@ This runs `conan install` for:
 - `windows-clangcl-release`.
 
 It uses `conan.lock` when present.
+The bootstrap script removes stale `ConanPresets.json` before install so generated presets reflect the current Conan profiles.
 
 Current Conan requirements are `glfw/3.4`, `glm/1.0.1`, `imgui/1.92.7-docking`, `nlohmann_json/3.12.0`, `stb/cci.20240531`, `vulkan-headers/1.4.313.0`, and `vulkan-memory-allocator/3.3.0`.
 
@@ -52,6 +53,14 @@ Top-level presets currently define:
 | `clangcl-release` | ClangCL release check | `ASHARIA_BUILD_TESTS=OFF` |
 
 Build and test presets use `jobs: 20`. Package-local test builds explicitly pass `-DASHARIA_BUILD_TESTS=ON`.
+
+Top-level CMake options:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `ASHARIA_BUILD_APPS` | `ON` | Build `apps/editor` and `apps/sample-viewer` |
+| `ASHARIA_BUILD_TESTS` | `OFF` | Enable package-local CTest targets |
+| `ASHARIA_ENABLE_CLANG_TIDY` | `OFF` | Enable clang-tidy where supported; `clangcl-debug` turns it on |
 
 ## Configure And Build
 
@@ -85,8 +94,10 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 ## Studio Build
 
 Avalonia Studio lives under `apps/studio` and uses .NET project files.
+On Windows, Studio build/test expects the native output tree for `editor_native.dll` and `slang.dll` to exist under `build/cmake/<preset>`. Build the matching native CMake preset first, or pass `/p:StudioNativeBuildPreset=<preset>` to point Studio at an existing native output tree.
 
 ```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 dotnet test apps\studio\Editor.sln
 ```
 

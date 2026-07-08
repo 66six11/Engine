@@ -46,7 +46,7 @@ Current rules:
 | JSON-like archive value | Archive value types owned separately by `packages/archive` and `packages/serialization` | package API |
 | schema registry | `packages/schema` | `asharia::schema::SchemaRegistry` |
 | runtime reflection registry | `packages/reflection` | `asharia::reflection::TypeRegistry` |
-| scene world | `packages/scene-core` | `asharia::scene::World` |
+| scene world | `packages/scene-core` | `asharia::World` |
 | asset identity and catalog metadata | `packages/asset-core` | `AssetGuid`, `SourceAssetRecord`, `AssetCatalog` |
 | asset import planning and execution | `packages/asset-pipeline` | `planAssetImports()`, `executeAssetProducts()` |
 | render graph declarations and compile result | `packages/rendergraph` | `RenderGraph`, `RenderGraphCompileResult` |

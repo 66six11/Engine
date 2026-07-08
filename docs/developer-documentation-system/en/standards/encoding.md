@@ -5,7 +5,7 @@
 | File type | Encoding |
 |---|---|
 | C/C++ sources and headers: `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`, `.ipp`, `.inl` | UTF-8 with BOM |
-| Everything else: `.json`, `.cmake`, `.py`, `.md`, `.slang`, `.ps1`, `.clang-format`, `.clang-tidy` | UTF-8 without BOM |
+| Everything else: `.json`, `.cmake`, `.py`, `.md`, `.slang`, `.txt`, `.ps1`, `.clang-format`, `.clang-tidy`, root files such as `CODEOWNERS` | UTF-8 without BOM |
 
 ## Why It Matters
 
@@ -18,6 +18,16 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 ```
+
+Useful options:
+
+| Option | Purpose |
+|---|---|
+| `-Root <path>` | Check another repository root |
+| `-VerboseList` | Print each checked file and detected encoding |
+| `-Fix` | Rewrite files to the repository policy |
+
+The checker ignores generated or external directories such as `.git`, `build`, and common dependency caches.
 
 ## Fix
 

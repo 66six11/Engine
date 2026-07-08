@@ -76,11 +76,21 @@
 
 ### `execute()`
 
-执行 pass 直接绑定的 callbacks。
+不传显式 schema registry 编译 graph，并执行 pass 直接绑定的 callbacks。
 
 ### `execute(const RenderGraphExecutorRegistry& executorRegistry)`
 
-先执行 pass-bound callbacks；没有 callback 时按 pass type 从 registry 查 executor。
+不传显式 schema registry 编译 graph；先执行 pass-bound callbacks，没有 callback 时按 pass type 从 registry 查 executor。
+
+### `execute(const RenderGraphCompileResult& compiled)`
+
+使用 pass-bound callbacks 执行已编译的计划。
+
+### `execute(const RenderGraphCompileResult& compiled, const RenderGraphExecutorRegistry& executorRegistry)`
+
+执行已编译的计划；先使用 pass-bound callbacks，没有 callback 时按 pass type 从 registry 查 executor。
+
+如果 graph declaration generation、pass count、image count 或 buffer count 已经和当前 graph 不匹配，execution 会拒绝 stale compile result。
 
 ### `diagnosticsSnapshot(const RenderGraphCompileResult& compiled)`
 

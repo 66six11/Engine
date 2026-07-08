@@ -25,7 +25,7 @@ It does not describe panel layout details or single-feature implementation plans
 | Frame debugger capture state and JSON snapshot buffer | `apps/editor` native frame debugger bridge | Studio copies UTF-8 JSON payloads, then releases native buffers. |
 | ImGui panels, native menu/actions/tools, native editor smokes | `apps/editor` | Avalonia Studio does not mutate this state directly. |
 | Dock workspace, command palette, contribution descriptors, lifecycle events | `apps/studio/Shell` and `apps/studio/Core` | Native runtime is not a managed shell dependency. |
-| Scene View scheduling, composition capability snapshots, viewport present snapshots | `apps/studio/Core/Models/Viewports` and `apps/studio/Core/Services` | Native bridge is queried through adapter classes. |
+| Scene View scheduling plans and viewport status snapshots | `apps/studio/Core/Models/Viewports`, `apps/studio/Core/Services`, and Scene View feature code | `ViewportScheduler` is a pure planner; live Scene View cadence also flows through panel frame scheduling, lifecycle, native present presenter, and present drain. |
 | Studio feature panel view models | `apps/studio/Features/*` | Feature code consumes shell/core abstractions, not native C++ package internals. |
 
 ## Dependency Direction
@@ -50,6 +50,8 @@ Viewport composition flow:
 7. Studio converts the packet to a managed snapshot, then calls `editor_viewport_release_present_packet()`.
 
 Frame debugger flow:
+
+Frame Debugger v0 is read-only and fixture-backed in the default Workbench wiring. The native bridge exists as an injectable path:
 
 1. Studio calls `FrameDebuggerNativeBridge.RequestCapture()` or `RequestResume()`.
 2. Studio calls `TryAcquireSnapshot()` when it needs current data.
@@ -79,6 +81,7 @@ Frame debugger flow:
 | Failure | Owner | Expected behavior |
 |---|---|---|
 | Native DLL missing, entry point missing, or bad image | Studio interop adapter | Catch binding exception and return unavailable managed status. |
+| Frame debugger native DLL binding failure | Studio frame debugger bridge | This bridge currently does not wrap DLL or entry-point binding exceptions the same way as `ViewportNativeBridge`; callers should keep fixture/read-only fallback paths available. |
 | Unsupported ABI or struct size | Native bridge and managed model validation | Return unsupported ABI status; do not dereference incompatible buffers. |
 | Unsupported composition handle type | Native bridge | Return unsupported composition or unsupported handle type status. |
 | Device mismatch | Native bridge | Return device mismatch; Studio should keep managed state inspectable. |

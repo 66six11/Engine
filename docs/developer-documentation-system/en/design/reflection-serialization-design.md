@@ -65,7 +65,7 @@ The archive layer stores generic values: null, bool, integer, floating, string, 
 - `TypeRegistry::registerType()` registers complete types; `freeze()` locks the registry.
 - `serializeObject(registry, type, object, policy)` returns `serialization::ArchiveValue`.
 - `deserializeObject(registry, type, value, object, policy)` writes into an existing object.
-- `UnknownFieldPolicy` supports `Error`, `Ignore`, and `Preserve`; preserve is a policy shape and concrete support must be validated by implementation.
+- `UnknownFieldPolicy` declares `Error`, `Ignore`, and `Preserve`; current implementation rejects `Preserve` with an unsupported-preserve error.
 - `MissingFieldPolicy` supports `Error`, `KeepConstructedValue`, and `UseDefault`.
 
 ## Key Flows
@@ -85,11 +85,14 @@ The archive layer stores generic values: null, bool, integer, floating, string, 
 - Register after freeze: registry returns an error.
 - Unknown field with `Error` policy: deserialize returns an error.
 - Missing field with `Error` policy: deserialize returns an error.
+- Unknown field with `Preserve` policy: deserialize returns an unsupported-preserve error.
 - Field validator failure: deserialize returns an error.
 
 ### Boundary Flow
 
 - Accessors are valid only during reflection/serialization operations; do not cache field addresses.
+- Serialization requires a frozen `reflection::TypeRegistry`.
+- Only fields tagged `storage_attributes::persistent()` and not tagged `storage_attributes::transient()` are serialized.
 - Archive must not depend on reflection.
 - Reflection registry owns type metadata, not object instances.
 

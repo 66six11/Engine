@@ -23,7 +23,8 @@ Base runtime support is provided by `engine/core`, `engine/platform`, `packages/
 
 - `engine/core` is a static library.
 - `engine/platform` is an interface target and depends on `core`.
-- `window-glfw` depends on `core`, `platform`, and Conan `glfw`.
+- `window-glfw` depends on `core`, `platform`, Conan `glfw`, and public
+  `VulkanHeaders` because its public API exposes `VkSurfaceKHR`.
 - `profiling` is an interface target.
 - Vulkan surface creation is exposed through `glfwCreateVulkanSurface(window, instance)` for RHI context setup.
 
@@ -49,7 +50,7 @@ Profiling is a lightweight utility layer. It does not own renderer or app state;
 | Data | Key fields | Notes |
 |---|---|---|
 | `Error` | domain, code, message | project error payload |
-| `WindowDesc` | width, height, title | window creation input |
+| `WindowDesc` | width, height, title, visible | window creation input |
 | `WindowFramebufferExtent` | width, height | swapchain target extent |
 | `GlfwInstance` | GLFW init owner | process-level GLFW lifetime |
 | `GlfwWindow` | `GLFWwindow*` | window lifetime owner |
@@ -58,7 +59,7 @@ Profiling is a lightweight utility layer. It does not own renderer or app state;
 
 - `GlfwInstance::create()` initializes GLFW and returns a move-only owner.
 - `GlfwWindow::create(instance, desc)` creates a window tied to instance lifetime.
-- `requiredGlfwVulkanInstanceExtensions()` returns extensions for `VulkanContextDesc`.
+- `glfwRequiredVulkanInstanceExtensions(instance)` returns extensions for `VulkanContextDesc`.
 - `glfwCreateVulkanSurface(window, instance)` returns `Result<VkSurfaceKHR>`.
 - `GlfwWindow::pollEvents()` keeps event pumping outside frame-loop internals.
 

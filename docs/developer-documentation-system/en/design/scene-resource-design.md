@@ -46,7 +46,7 @@ The runtime resource registry is an independent state machine. Callers create `R
 | Data | Key fields | Notes |
 |---|---|---|
 | `EntityId` | index, generation | stale handle detection |
-| `TransformComponent` | translation/rotation/scale fields | CPU-side transform |
+| `TransformComponent` | position/rotation/scale fields | CPU-side transform |
 | `World::EntitySlot` | generation, alive, name, transform | internal storage |
 | `RuntimeResourceKey` | `guid`, `assetType` | runtime resource identity |
 | `RuntimeResourceRecord` | `state`, `generation`, `expectedProductKey`, `product`, `failure` | load state |
@@ -75,8 +75,8 @@ The runtime resource registry is an independent state machine. Callers create `R
 
 - Invalid entity: World API returns `SceneErrorCode::InvalidEntity`.
 - Capacity exceeded: create returns `SceneErrorCode::EntityCapacityExceeded`.
-- Invalid resource key/product key: registry returns diagnostics.
-- Product record mismatch: registry returns product key mismatch.
+- Invalid resource key/product key: registry returns `Result<T>` errors keyed by `RuntimeResourceDiagnosticCode`.
+- Product record mismatch: registry returns a product-key mismatch error.
 
 ### Boundary Flow
 
@@ -90,7 +90,7 @@ World owns entity slots. After entity destroy, the old `EntityId` is no longer a
 
 ## Error Handling
 
-Scene errors use `ErrorDomain::Scene` or project error mapping. Runtime resource diagnostics preserve expected/actual generation and product key for stale completion debugging.
+Scene errors use `ErrorDomain::Scene` or project error mapping. Runtime resource errors preserve expected/actual generation and product key for stale completion debugging.
 
 ## Test Plan
 
@@ -108,4 +108,4 @@ build\cmake\msvc-debug\apps\sample-viewer\asharia-sample-viewer.exe --smoke-scen
 
 - Cached transform pointers can be invalidated by vector mutation. Mitigation: API comments require immediate access only.
 - If runtime resource generation is ignored, old loader completion can overwrite a newer product. Mitigation: ticket-based completion.
-- Direct scene/renderer coupling would block future multi-world or multi-viewport flows. Mitigation: pass draw packets and resource keys.
+- Direct scene/renderer coupling would block future multi-world or multi-viewport flows. Mitigation: pass explicit view/resource data instead of renderer-owned scene objects.

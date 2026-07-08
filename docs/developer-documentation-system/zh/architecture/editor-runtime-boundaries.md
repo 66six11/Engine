@@ -25,7 +25,7 @@
 | Frame debugger capture state 和 JSON snapshot buffer | `apps/editor` native frame debugger bridge | Studio 复制 UTF-8 JSON payload，然后释放 native buffers。 |
 | ImGui panels、native menu/actions/tools、native editor smokes | `apps/editor` | Avalonia Studio 不直接修改该状态。 |
 | Dock workspace、command palette、contribution descriptors、lifecycle events | `apps/studio/Shell` 和 `apps/studio/Core` | Native runtime 不是 managed shell dependency。 |
-| Scene View scheduling、composition capability snapshots、viewport present snapshots | `apps/studio/Core/Models/Viewports` 和 `apps/studio/Core/Services` | Native bridge 通过 adapter class 查询。 |
+| Scene View scheduling plans 和 viewport status snapshots | `apps/studio/Core/Models/Viewports`、`apps/studio/Core/Services` 和 Scene View feature code | `ViewportScheduler` 是 pure planner；live Scene View cadence 还经过 panel frame scheduling、lifecycle、native present presenter 和 present drain。 |
 | Studio feature panel view models | `apps/studio/Features/*` | Feature code 消费 shell/core abstractions，不消费 native C++ package internals。 |
 
 ## 依赖方向
@@ -49,7 +49,7 @@ Viewport composition flow：
 6. Native code 返回 image/semaphore handles、format、memory size、frame index、status。
 7. Studio 把 packet 转换成 managed snapshot，然后调用 `editor_viewport_release_present_packet()`。
 
-Frame debugger flow：
+Frame Debugger v0 在默认 Workbench wiring 中是 fixture-backed 的只读面板。Native bridge 作为可注入路径存在：
 
 1. Studio 调用 `FrameDebuggerNativeBridge.RequestCapture()` 或 `RequestResume()`。
 2. Studio 需要当前数据时调用 `TryAcquireSnapshot()`。
@@ -79,6 +79,7 @@ Frame debugger flow：
 | 失败 | Owner | 预期行为 |
 |---|---|---|
 | Native DLL missing、entry point missing、bad image | Studio interop adapter | 捕获 binding exception，并返回 unavailable managed status。 |
+| Frame debugger native DLL binding failure | Studio frame debugger bridge | 该 bridge 当前不像 `ViewportNativeBridge` 那样包装 DLL 或 entry-point binding exceptions；调用方应保留 fixture/read-only fallback path。 |
 | Unsupported ABI 或 struct size | Native bridge 和 managed model validation | 返回 unsupported ABI status；不解引用不兼容 buffer。 |
 | Unsupported composition handle type | Native bridge | 返回 unsupported composition 或 unsupported handle type status。 |
 | Device mismatch | Native bridge | 返回 device mismatch；Studio 保持 managed state 可检查。 |

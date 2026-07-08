@@ -8,6 +8,7 @@ The current asset system is split across `asset-core`, `project-core`, `asset-pi
 
 - Use `AssetCatalog` to maintain source asset records.
 - Use `scanAssetSourceTree()` to discover source/metadata pairs under a source root.
+- Use `discoverAssetSources()`, `snapshotAssetSourceFiles()`, and `planScannedAssetImports()` for the scanned-source helper path.
 - Use `planAssetImports()` to detect missing products and source/settings/importer/dependency/profile drift.
 - Use `executeAssetProducts()` to write product files and product manifests.
 - Use `RuntimeResourceRegistry` to track pending/ready/failed runtime resources.
@@ -24,14 +25,14 @@ The current asset system is split across `asset-core`, `project-core`, `asset-pi
 - `asset-core` depends on `core` and `archive`; `asset-pipeline` depends on `archive`, `asset-core`, `material-instance`, and `shader-authoring`.
 - `project-core` only describes project descriptors and IO.
 - `resource-runtime` only depends on `asset-core`.
-- `asharia-asset-processor` is the command-line entry point and supports `dry-run`, `execute`, and smoke commands.
+- `asharia-asset-processor` is the command-line entry point and supports `dry-run`, `execute`, `--smoke-dry-run`, and `--smoke-product-execution`.
 
 ## Overall Design
 
 The asset flow has four stages:
 
 1. `project-core` reads `asharia.project.json` and returns source roots and discovery settings.
-2. `asset-pipeline` scans source trees, reads `.ameta`, and creates discovered sources and snapshots.
+2. `asset-pipeline` scans source trees, reads `.ameta`, and creates discovered sources and snapshots through the scan/discover/snapshot helper APIs.
 3. `planAssetImports()` compares current sources with the existing product manifest and returns import requests plus cache hits.
 4. `executeAssetProducts()` reads source bytes and dependency product bytes, writes product files, and produces a new manifest.
 
@@ -46,8 +47,11 @@ Runtime code only consumes `AssetProductRecord`. `RuntimeResourceRegistry::reque
 | `packages/asset-core/include/asharia/asset_core/asset_product.hpp` | product key, dependency, and product record |
 | `packages/project-core/include/asharia/project/project_descriptor.hpp` | project id, source root, and discovery descriptor |
 | `packages/asset-pipeline/include/asharia/asset_pipeline/asset_source_scan.hpp` | source tree scan |
+| `packages/asset-pipeline/include/asharia/asset_pipeline/asset_source_snapshot.hpp` | source file snapshot and hash capture |
 | `packages/asset-pipeline/include/asharia/asset_pipeline/asset_import_planning.hpp` | import plan and cache hit |
 | `packages/asset-pipeline/include/asharia/asset_pipeline/asset_product_execution.hpp` | product write and manifest update |
+| `packages/asset-pipeline/include/asharia/asset_pipeline/asset_product_blob.hpp` | placeholder, texture, material, shader, and reflection product blob readers |
+| `packages/asset-pipeline/include/asharia/asset_pipeline/asset_texture_import.hpp` | CPU texture payload import for raw RGBA8 and PNG sources |
 | `packages/resource-runtime/include/asharia/resource_runtime/runtime_resource_registry.hpp` | runtime request/ready/failed state |
 | `tools/asset-processor/src/main.cpp` | CLI argument parsing and command dispatch |
 
@@ -67,8 +71,11 @@ Public APIs use value structs and `Result`/diagnostics instead of exceptions.
 
 - `AssetCatalog::addSource/updateSource/removeSource()` mutates the source catalog.
 - `scanAssetSourceTree(request)` returns entries and diagnostics.
+- `discoverAssetSources(request)` turns scan output into source records and snapshot entries; `snapshotAssetSourceFiles(entries)` captures file hashes/bytes for planning.
 - `planAssetImports(sources, snapshots, manifest, targetProfile, options)` returns a plan; `succeeded()` is true only when no error diagnostics exist.
+- `planScannedAssetImports(request)` combines scanned source discovery, snapshotting, and import planning for tool-style workflows.
 - `executeAssetProducts(request)` returns written products, cache hits, a new manifest, and diagnostics.
+- `readTexture2DProductPayload(request)` and related product blob readers parse product files for runtime/tool consumers.
 - `RuntimeResourceRegistry::request/markReady/markFailed/resolveProductRecords()` maintains a generation-safe state machine.
 
 ## Key Flows
@@ -104,7 +111,7 @@ Public APIs use value structs and `Result`/diagnostics instead of exceptions.
 
 ## Error Handling
 
-Asset planning and execution use diagnostics vectors. Catalog, descriptor, metadata, and runtime registry APIs use `Result`/`VoidResult`. Error messages should include source path, relative product path, target profile, or resource key.
+Asset planning and execution use diagnostics vectors. Catalog, descriptor, metadata, and runtime registry APIs use `Result`/`VoidResult`; runtime registry errors are keyed by `RuntimeResourceDiagnosticCode`. Error messages should include source path, relative product path, target profile, or resource key.
 
 ## Test Plan
 

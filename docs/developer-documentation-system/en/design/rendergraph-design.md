@@ -7,7 +7,7 @@ The current renderer needs to declare passes, resources, and command summaries w
 ## Goals
 
 - Let callers declare images, buffers, passes, slots, params, and command summaries.
-- Validate schemas, resource access, and command legality during compile.
+- Validate resource access during compile; schema, params-type, slot-schema, and command-schema checks run when callers use `compile(schemaRegistry)`.
 - Generate pass order, transitions, dependencies, culled passes, and diagnostics.
 - Allow backend execution through callbacks or an executor registry.
 - Keep the public API backend-agnostic.
@@ -30,10 +30,10 @@ The current renderer needs to declare passes, resources, and command summaries w
 
 ## Overall Design
 
-Callers first build a graph declaration. The compile stage reads declarations and the schema registry:
+Callers first build a graph declaration. The compile stage reads declarations and the optional schema registry:
 
 1. Validate resource descriptions.
-2. Validate pass slots and commands.
+2. Validate pass slots and commands; schema validation runs only when a registry is provided.
 3. Build dependencies from resource reads and writes.
 4. Cull passes that allow culling and have no reachable output or side effects.
 5. Reorder transient producers before readers.
@@ -44,7 +44,7 @@ Callers first build a graph declaration. The compile stage reads declarations an
 Execution has two paths:
 
 - `RenderGraphPassCallback`: the pass binds a callback directly.
-- `RenderGraphExecutorRegistry`: the pass type selects an executor.
+- `RenderGraphExecutorRegistry`: `execute(executorRegistry)` uses the pass-bound callback first, then finds an executor by pass type.
 
 ## Module Breakdown
 
@@ -117,6 +117,7 @@ auto compiled = graph.compile(schemas);
 - Slot access mismatch: `compile(schemaRegistry)` returns error.
 - Command kind not allowed by schema: `compile(schemaRegistry)` returns error.
 - Executor missing at execution time: execute returns `Result<void>` error.
+- Stale compile result: `execute(compiled)` returns an error when graph declarations changed after compile.
 
 ### Boundary Flow
 
@@ -126,7 +127,7 @@ auto compiled = graph.compile(schemas);
 
 ## Lifetime
 
-`RenderGraph` owns declarations through an internal `Impl`. It is copyable and movable. The compile result is a value returned to the caller. Backend execution must not mutate graph declarations in a way that changes previously returned compile results.
+`RenderGraph` owns declarations through an internal `Impl`. It is copyable and movable. The compile result is a value returned to the caller. Execution checks declaration generation and declared pass/image/buffer counts before accepting a compile result, so callers must recompile after mutating a graph.
 
 ## Error Handling
 

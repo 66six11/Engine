@@ -22,6 +22,7 @@
 ## Current Constraints
 
 - Studio uses `apps/studio/Editor.sln`.
+- Studio targets `net10.0` and uses Avalonia, CommunityToolkit.Mvvm, and Lucide.Avalonia.
 - Core abstractions live under `apps/studio/Core/Abstractions/`.
 - Native interop lives under `apps/studio/Core/Interop/`.
 - Tests live under `apps/studio/Tests/`.
@@ -29,9 +30,9 @@
 
 ## Overall Design
 
-Studio shell expresses editor capabilities through dependency-injected services. Feature modules register actions, panels, diagnostic sources, and lifecycle hooks. Panels observe service snapshots through view models instead of directly mutating the lower runtime.
+Studio shell expresses editor capabilities through dependency-injected services. `EditorExtensionHost` v0 composes trusted built-in modules. Modules currently declare panel, action, and scene-provider contributions through `IEditorContributionBuilder`; diagnostic-source and lifecycle contribution points are not implemented as contribution declarations. Panel lifecycle is handled by activation leases and panel content sink interfaces.
 
-The native viewport bridge calls the C ABI for compatibility and then acquires present packets. The C# side only owns managed wrappers for releasable packet/handle data, and release must call the matching native release function. The frame debugger bridge similarly converts native snapshot payload into Studio models.
+The native viewport bridge calls the C ABI for compatibility and then acquires present packets. The C# side only owns managed wrappers for releasable packet/handle data, and release must call the matching native release function. Studio Frame Debugger v0 is read-only and fixture-backed by default; native frame-debugger bridge and JSON projection exist as injectable services, but Workbench does not use them as the default provider yet.
 
 ## Module Breakdown
 
@@ -58,8 +59,8 @@ The native viewport bridge calls the C ABI for compatibility and then acquires p
 
 ## API Design
 
-- Feature modules implement registration interfaces and expose capabilities through abstractions.
-- Transaction service owns persistent mutations; panels request edits through commands.
+- Feature modules implement registration interfaces and expose panel/action/scene-provider capabilities through abstractions.
+- Transaction service exists for persistent mutations and is tested; default Workbench feature panels are not broadly wired to it yet.
 - Native adapters wrap C ABI calls and convert status into managed result objects.
 - CodeFirst UI validator rejects malformed node trees before rendering.
 
@@ -71,7 +72,7 @@ The native viewport bridge calls the C ABI for compatibility and then acquires p
 2. Feature modules register panel/action contributions.
 3. Workbench creates panels from descriptors.
 4. Panels read snapshots from services.
-5. User edits create transactions.
+5. User edit flows may use transactions where explicitly wired.
 6. Viewport panel queries native compatibility and acquires present packets.
 7. Frame debugger panel displays snapshot model.
 
@@ -81,7 +82,7 @@ The native viewport bridge calls the C ABI for compatibility and then acquires p
 - Invalid edit command: transaction service rejects before mutation.
 - Invalid UI tree: CodeFirst validator reports errors.
 - Native ABI incompatible: adapter reports unsupported ABI/device/handle status.
-- Native packet release failure path: adapter logs diagnostic and drops managed reference.
+- Native packet release failure path: viewport packet release calls the native release API and then drops managed ownership; it does not currently log a diagnostic.
 
 ### Boundary Flow
 
@@ -104,6 +105,8 @@ dotnet build apps\studio\Editor.csproj -c Release
 dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "SceneView|ViewportNative|Composition"
 dotnet test apps\studio\Editor.sln -c Release
 ```
+
+On Windows, build the native preset that provides `editor_native.dll` and `slang.dll` first, or pass `/p:StudioNativeBuildPreset=<preset>`.
 
 ## Risks
 

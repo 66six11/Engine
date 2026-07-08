@@ -26,8 +26,22 @@ Example:
 ```json
 {
   "name": "com.asharia.example",
+  "version": "0.1.0",
+  "displayName": "Asharia Example",
+  "description": "Example reusable engine package.",
   "dependencies": [
     "com.asharia.core"
+  ],
+  "targets": [
+    "asharia-example"
+  ],
+  "targetDependencies": [
+    {
+      "target": "asharia-example",
+      "dependencies": [
+        "asharia::core"
+      ]
+    }
   ],
   "testTargets": [
     "asharia-example-smoke-tests"
@@ -35,7 +49,7 @@ Example:
 }
 ```
 
-Manifest names document package-level dependency intent. CMake target dependencies still live in `CMakeLists.txt`.
+Manifest names document package-level dependency intent. `targets` and `targetDependencies` mirror the intended CMake shape for review, but actual target links still live in `CMakeLists.txt`.
 
 ### 3. Write CMake Target
 

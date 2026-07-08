@@ -15,6 +15,16 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset
 `tools\pre-pr.ps1 -IncludeUntracked` 会按 changed files 打印候选 gates。
 `clangcl-debug` preset 开启 `ASHARIA_ENABLE_CLANG_TIDY=ON`；仓库当前没有单独提交的 Vulkan review 脚本。
 
+常用 review helper 参数：
+
+| Tool | 参数 | 用途 |
+|---|---|---|
+| `tools\check-doc-sync.ps1` | `-BaseRef <ref>` | 对比非 `HEAD` base |
+| `tools\check-doc-sync.ps1` | `-Staged` | 只检查 staged changes |
+| `tools\check-doc-sync.ps1` | `-IncludeUntracked` | 对比 `HEAD` 时包含 untracked files |
+| `tools\check-doc-sync.ps1` | `-NoDocsReason <text>` | doc-sensitive files changed 但确实不需要 docs 时使用；原因也要写入 PR 或关联 Issue |
+| `tools\pre-pr.ps1` | `-RunCheapGates` | 运行 encoding、doc sync、whitespace 和按需 asset boundary checks |
+
 ## Runtime Smoke Commands
 
 `asharia-sample-viewer` 当前支持：
@@ -91,6 +101,12 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe --smoke
 | `apps/editor` | editor smokes |
 | `apps/studio` | `dotnet test apps\studio\Editor.sln` |
 | documentation deployment | inspect `.github/workflows/docs-site-sync.yml`, run encoding and whitespace checks |
+
+修改 frame-loop、swapchain、RenderGraph、RHI、renderer 或 native viewport bridge 时，相关 smoke 清单需要在 `clangcl-debug` 和 `msvc-debug` 两套构建上运行。无法运行时记录 blocker 和 merge 前必须重跑的具体验证。
+
+Windows 上运行 Studio tests 前，需要先有包含 `editor_native.dll` 和 `slang.dll` 的 native output tree。先构建匹配的 native preset，或传入 `/p:StudioNativeBuildPreset=<preset>`。
+
+Asset boundary gate 证明 `asset-core` 保持 generic：具体 texture profile/importer policy patterns 应留在 `asset-pipeline` 或 editor/tool adapters，不能进入 `asset-core`。
 
 ## Documentation Candidates
 

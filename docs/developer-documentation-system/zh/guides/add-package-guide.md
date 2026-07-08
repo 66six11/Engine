@@ -24,14 +24,30 @@ packages/<package-name>/
 ```json
 {
   "name": "com.asharia.example",
+  "version": "0.1.0",
+  "displayName": "Asharia Example",
+  "description": "Example reusable engine package.",
   "dependencies": [
     "com.asharia.core"
+  ],
+  "targets": [
+    "asharia-example"
+  ],
+  "targetDependencies": [
+    {
+      "target": "asharia-example",
+      "dependencies": [
+        "asharia::core"
+      ]
+    }
   ],
   "testTargets": [
     "asharia-example-smoke-tests"
   ]
 }
 ```
+
+Manifest 记录 package-level dependency intent。`targets` 和 `targetDependencies` 用于 review CMake 形态；真实 target links 仍写在 `CMakeLists.txt`。
 
 ### 3. 写 CMake target
 

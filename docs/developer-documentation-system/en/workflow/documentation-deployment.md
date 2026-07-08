@@ -16,8 +16,9 @@ This directory is the source sent to the external docs-site repository. Older fi
 
 Current behavior:
 
-- Pull requests validate changes under `docs/developer-documentation-system/**`.
-- Pushes to `main` validate the same directory.
+- Pull requests validate changes under `docs/developer-documentation-system/**` and `.github/workflows/docs-site-sync.yml`.
+- Pushes to `main` validate the same paths.
+- Manual `workflow_dispatch` may pass `engine_ref`; when omitted, the workflow SHA is dispatched.
 - On non-PR runs, the workflow dispatches the docs-site workflow only when `DOCS_SITE_DISPATCH_TOKEN` is configured; otherwise it exits after a notice.
 - The dispatch payload includes:
   - `engine_repository`,
@@ -60,5 +61,7 @@ git diff --check
 Checkpoints:
 
 - Workflow path filters include `docs/developer-documentation-system/**`.
+- Workflow path filters include `.github/workflows/docs-site-sync.yml`.
+- `workflow_dispatch.inputs.engine_ref` can override the engine ref sent to docs-site.
 - Dispatch payload includes `engine_docs_dir`.
 - `docs/developer-documentation-system/README.md`, `docs/developer-documentation-system/zh/README.md`, and `docs/developer-documentation-system/en/README.md` exist.

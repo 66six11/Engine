@@ -15,6 +15,16 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset
 Use `tools\pre-pr.ps1 -IncludeUntracked` to print candidate gates for the changed file set.
 The `clangcl-debug` preset enables `ASHARIA_ENABLE_CLANG_TIDY=ON`; the repository does not track a separate Vulkan review script.
 
+Useful review helper options:
+
+| Tool | Option | Purpose |
+|---|---|---|
+| `tools\check-doc-sync.ps1` | `-BaseRef <ref>` | Compare against a non-`HEAD` base |
+| `tools\check-doc-sync.ps1` | `-Staged` | Check staged changes only |
+| `tools\check-doc-sync.ps1` | `-IncludeUntracked` | Include untracked files when comparing against `HEAD` |
+| `tools\check-doc-sync.ps1` | `-NoDocsReason <text>` | Allow doc-sensitive changes without docs only when the reason is also recorded in the PR or linked issue |
+| `tools\pre-pr.ps1` | `-RunCheapGates` | Run encoding, doc sync, whitespace, and asset boundary checks when selected |
+
 ## Runtime Smoke Commands
 
 `asharia-sample-viewer` supports these smoke flags in `apps/sample-viewer/src/main.cpp`:
@@ -93,6 +103,12 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe --smoke
 | `apps/editor` | editor smokes |
 | `apps/studio` | `dotnet test apps\studio\Editor.sln` |
 | documentation deployment | inspect `.github/workflows/docs-site-sync.yml`, run encoding and whitespace checks |
+
+For frame-loop, swapchain, RenderGraph, RHI, renderer, or native viewport bridge changes, run the relevant smoke list on both `clangcl-debug` and `msvc-debug` builds. If that is blocked, record the blocker and the exact validation that must be rerun before merge.
+
+Studio tests on Windows require the native output tree containing `editor_native.dll` and `slang.dll`. Build the matching native preset first, or pass `/p:StudioNativeBuildPreset=<preset>`.
+
+The asset boundary gate proves that `asset-core` stays generic: concrete texture profile/importer policy patterns belong in `asset-pipeline` or editor/tool adapters, not in `asset-core`.
 
 ## Documentation Candidates
 

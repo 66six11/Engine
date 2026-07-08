@@ -76,11 +76,21 @@ Errors:
 
 ### `execute()`
 
-Executes callbacks attached to passes.
+Compiles the graph without an explicit schema registry and executes callbacks attached to passes.
 
 ### `execute(const RenderGraphExecutorRegistry& executorRegistry)`
 
-Executes using pass-bound callbacks first, then falls back to registered executors by pass type.
+Compiles the graph without an explicit schema registry and executes using pass-bound callbacks first, then falls back to registered executors by pass type.
+
+### `execute(const RenderGraphCompileResult& compiled)`
+
+Executes a previously compiled plan using pass-bound callbacks.
+
+### `execute(const RenderGraphCompileResult& compiled, const RenderGraphExecutorRegistry& executorRegistry)`
+
+Executes a previously compiled plan using pass-bound callbacks first, then executor registry entries.
+
+Execution rejects stale compile results when the graph declaration generation, pass count, image count, or buffer count no longer matches the current graph.
 
 ### `diagnosticsSnapshot(const RenderGraphCompileResult& compiled)`
 

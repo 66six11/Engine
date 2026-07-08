@@ -65,7 +65,7 @@ Archive 层只保存通用值：null、bool、integer、floating、string、arra
 - `TypeRegistry::registerType()` 注册完整 type；`freeze()` 锁定 registry。
 - `serializeObject(registry, type, object, policy)` 输出 `serialization::ArchiveValue`。
 - `deserializeObject(registry, type, value, object, policy)` 写入已有对象。
-- `UnknownFieldPolicy` 支持 `Error`、`Ignore`、`Preserve`；当前 preserve 是 policy 形态，具体支持必须由实现验证。
+- `UnknownFieldPolicy` 声明 `Error`、`Ignore`、`Preserve`；当前实现会对 `Preserve` 返回 unsupported-preserve error。
 - `MissingFieldPolicy` 支持 `Error`、`KeepConstructedValue`、`UseDefault`。
 
 ## 关键流程
@@ -85,11 +85,14 @@ Archive 层只保存通用值：null、bool、integer、floating、string、arra
 - freeze 后注册：registry 返回 error。
 - unknown field 且 policy 为 `Error`：deserialize 返回 error。
 - missing field 且 policy 为 `Error`：deserialize 返回 error。
+- unknown field 且 policy 为 `Preserve`：deserialize 返回 unsupported-preserve error。
 - field validator 失败：deserialize 返回 error。
 
 ### 边界流程
 
 - accessor 只在 serialization/reflection 操作期间使用，不能长期缓存 field address。
+- Serialization 要求 `reflection::TypeRegistry` 已 freeze。
+- 只有标记 `storage_attributes::persistent()` 且未标记 `storage_attributes::transient()` 的字段会被序列化。
 - archive 层不能依赖 reflection。
 - reflection registry 不拥有对象实例，只拥有 type metadata。
 

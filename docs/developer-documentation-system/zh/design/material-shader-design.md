@@ -23,7 +23,7 @@
 
 - `material-core` 只依赖 `core`。
 - `material-instance` 依赖 `core`、`archive`、`asset-core`、`shader-authoring`。
-- `shader-material-adapter` 依赖 `material-core`、`shader-authoring`、`shader-slang`。
+- `shader-material-adapter` library target 依赖 `core`、`material-core` 和 `shader-slang`；`shader-authoring` 只由 generated Slang reflection smoke tests 使用，不是 adapter library target 的依赖。
 - `MaterialResourceBinding` 限制 set、binding、name、kind、visibility、arrayCount。
 
 ## 总体方案
@@ -62,7 +62,7 @@ Material instance 通过 `AmatMaterialTypeReference` 指向 material type asset 
 - `makeMaterialResourceSignatureHash(signature)` 生成稳定 hash。
 - `validateMaterialSignatureCompatibility(materialSignature, shaderSignature)` 比较 material 与 shader contract。
 - `readAmatText/readAmatFile/writeAmatText/writeAmatFile()` 负责 `.amat` IO。
-- `resolveAmatDocument()` 输出 resolved document、diagnostics 和 override diffs。
+- `resolveAmatOverrides(document, shader, options)` 会把 `.amat` overrides 与 `AshaderDocument` 对比，并返回 override diffs 和 diagnostics。
 - `makeReflectionMaterialSignature(shaderSignature)` 输出 signature 和 hash。
 
 ## 关键流程
@@ -86,7 +86,7 @@ Material instance 通过 `AmatMaterialTypeReference` 指向 material type asset 
 ### 边界流程
 
 - `material-core` 不能 include Slang、Vulkan、RenderGraph、asset-pipeline 或 editor headers。
-- shader adapter 可以依赖 `shader-slang`，但输出必须是 material-core 类型。
+- shader adapter library 可以依赖 `shader-slang`，但输出必须是 material-core 类型。Test target 可以额外使用 `shader-authoring` fixtures。
 - `.amat` import metadata 是导入记录，不是 renderer runtime state。
 
 ## 生命周期

@@ -67,13 +67,14 @@ Current schema/persistence flow:
 2. `cpp-binding` maps C++ field access to schema fields.
 3. `persistence` reads an archive object, validates type/version/fields, applies registered migrations when needed, and writes into bound C++ storage.
 4. Failure returns project error types with context; tests cover unsupported fields, unknown versions, missing required fields, and migration.
+5. MVP persistence supports `Bool`, `Integer`, `Float`, `String`, `Object`, and `InlineStruct` fields. `Enum`, `Array`, `AssetReference`, and `EntityReference` fields intentionally fail until their file and binding contracts are implemented.
 
 ## Lifecycle
 
 - Document model packages own parsed values as ordinary C++ objects. Failable IO returns `Result<T>` or package-specific diagnostics.
 - Schema and reflection registries are explicit objects, not implicit global state.
 - Asset catalog data is built from source records and product records, then exposed through catalog views.
-- Runtime resource registry tickets advance by resolving product records; stale generation or mismatched product keys become diagnostics instead of silently producing a ready handle.
+- Runtime resource registry tickets advance by resolving product records; stale generation or mismatched product keys return `Result<T>` errors keyed by `RuntimeResourceDiagnosticCode` instead of silently producing a ready handle.
 - Material/shader contracts are created before renderer binding. Renderer code consumes signatures and pipeline keys; it does not parse `.amat` or `.ashader` documents.
 
 ## Error Handling
@@ -83,7 +84,7 @@ Current schema/persistence flow:
 | Malformed JSON/archive input | IO package that reads the file | Return a contextual error or diagnostic; do not create partial ready state. |
 | Unsupported schema version | `packages/persistence` | Attempt registered migration when available; otherwise fail with version context. |
 | Unknown or unsupported field kind | `packages/persistence` or `packages/schema` | Reject during validation or load. |
-| Missing asset product record | `packages/asset-core` view or `packages/resource-runtime` | Mark missing/stale/failed status with diagnostics. |
+| Missing asset product record | `packages/asset-core` view or `packages/resource-runtime` | Mark missing/stale/failed status; runtime registry failures carry `RuntimeResourceDiagnosticCode` context. |
 | Product key mismatch | `packages/resource-runtime` | Reject stale product records and keep handle unresolved. |
 | Shader reflection mismatch | `packages/shader-material-adapter` | Fail before producing an incompatible material signature. |
 

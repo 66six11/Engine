@@ -15,7 +15,8 @@ docs/developer-documentation-system
 当前行为：
 
 - Pull request 只验证 `docs/developer-documentation-system/**` 和 workflow 文件。
-- push 到 `main` 验证同一目录。
+- push 到 `main` 验证同一组路径。
+- 手动 `workflow_dispatch` 可传入 `engine_ref`；未传入时发送当前 workflow SHA。
 - 没有 `DOCS_SITE_DISPATCH_TOKEN` 时，workflow 打印 notice 后跳过 repository dispatch。
 - dispatch payload 包含 `engine_repository`、`engine_ref`、`engine_docs_dir`、`source_sha`、`source_run_id`。
 - `VERCEL_DEPLOY_HOOK_URL` 配置时，会额外触发 Vercel deploy hook。
@@ -53,5 +54,7 @@ git diff --check
 检查点：
 
 - path filters 包含 `docs/developer-documentation-system/**`。
+- path filters 包含 `.github/workflows/docs-site-sync.yml`。
+- `workflow_dispatch.inputs.engine_ref` 可以覆盖发送给 docs-site 的 engine ref。
 - dispatch payload 包含 `engine_docs_dir`。
 - `docs/developer-documentation-system/README.md`、`zh/README.md`、`en/README.md` 存在。

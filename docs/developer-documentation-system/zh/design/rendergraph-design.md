@@ -126,7 +126,7 @@ auto compiled = graph.compile(schemas);
 
 ## 生命周期
 
-`RenderGraph` 通过内部 `Impl` 拥有 declarations。它可 copy 和 move。compile result 是返回给调用方的 value。Backend execution 不能以改变已返回 compile result 语义的方式修改 graph declarations。
+`RenderGraph` 通过内部 `Impl` 拥有 declarations。它可 copy 和 move。compile result 是返回给调用方的 value。Execution 会检查 declaration generation 和 declared pass/image/buffer counts；调用方修改 graph 后必须重新 compile，不能继续执行 stale compile result。
 
 ## 错误处理
 

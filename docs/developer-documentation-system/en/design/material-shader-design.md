@@ -23,7 +23,7 @@ The material path currently spans `material-core`, `material-instance`, `shader-
 
 - `material-core` only depends on `core`.
 - `material-instance` depends on `core`, `archive`, `asset-core`, and `shader-authoring`.
-- `shader-material-adapter` depends on `material-core`, `shader-authoring`, and `shader-slang`.
+- The `shader-material-adapter` library target depends on `core`, `material-core`, and `shader-slang`; `shader-authoring` is used by generated Slang reflection smoke tests, not by the adapter library target.
 - `MaterialResourceBinding` constrains set, binding, name, kind, visibility, and array count.
 
 ## Overall Design
@@ -62,7 +62,7 @@ Material instances use `AmatMaterialTypeReference` to point at a material type a
 - `makeMaterialResourceSignatureHash(signature)` creates a stable hash.
 - `validateMaterialSignatureCompatibility(materialSignature, shaderSignature)` compares material and shader contracts.
 - `readAmatText/readAmatFile/writeAmatText/writeAmatFile()` handle `.amat` IO.
-- `resolveAmatDocument()` returns resolved data, diagnostics, and override diffs.
+- `resolveAmatOverrides(document, shader, options)` compares `.amat` overrides against an `AshaderDocument` and returns override diffs plus diagnostics.
 - `makeReflectionMaterialSignature(shaderSignature)` returns signature and hash.
 
 ## Key Flows
@@ -86,7 +86,7 @@ Material instances use `AmatMaterialTypeReference` to point at a material type a
 ### Boundary Flow
 
 - `material-core` must not include Slang, Vulkan, RenderGraph, asset-pipeline, or editor headers.
-- The shader adapter may depend on `shader-slang`, but its output must be material-core types.
+- The shader adapter library may depend on `shader-slang`, but its output must be material-core types. Test targets may additionally use `shader-authoring` fixtures.
 - `.amat` import metadata is an import record, not renderer runtime state.
 
 ## Lifetime

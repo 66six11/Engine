@@ -28,6 +28,7 @@ CMake 前先运行：
 ```
 
 它为 `windows-msvc-debug`、`windows-msvc-release`、`windows-clangcl-debug`、`windows-clangcl-release` 运行 `conan install`，并在存在 `conan.lock` 时使用 lockfile。
+Bootstrap script 会在 install 前删除 stale `ConanPresets.json`，确保 generated presets 与当前 Conan profiles 一致。
 
 当前 Conan requirements：`glfw/3.4`、`glm/1.0.1`、`imgui/1.92.7-docking`、`nlohmann_json/3.12.0`、`stb/cci.20240531`、`vulkan-headers/1.4.313.0`、`vulkan-memory-allocator/3.3.0`。
 
@@ -41,6 +42,14 @@ CMake 前先运行：
 | `clangcl-release` | ClangCL release check | `ASHARIA_BUILD_TESTS=OFF` |
 
 Build/test presets 使用 `jobs: 20`。Package-local tests 通过 `-DASHARIA_BUILD_TESTS=ON` 显式打开。
+
+Top-level CMake options：
+
+| Option | Default | 用途 |
+|---|---|---|
+| `ASHARIA_BUILD_APPS` | `ON` | 构建 `apps/editor` 和 `apps/sample-viewer` |
+| `ASHARIA_BUILD_TESTS` | `OFF` | 启用 package-local CTest targets |
+| `ASHARIA_ENABLE_CLANG_TIDY` | `OFF` | 启用支持 target 的 clang-tidy；`clangcl-debug` 会打开它 |
 
 ## Configure And Build
 
@@ -60,8 +69,10 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 ## Studio Build
 
 Avalonia Studio 位于 `apps/studio`，使用 .NET project files。
+Windows 上 build/test Studio 前，需要先有包含 `editor_native.dll` 和 `slang.dll` 的 native output tree，默认位于 `build/cmake/<preset>`。先构建匹配的 native CMake preset，或传入 `/p:StudioNativeBuildPreset=<preset>` 指向已有 native 输出。
 
 ```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 dotnet test apps\studio\Editor.sln
 ```
 

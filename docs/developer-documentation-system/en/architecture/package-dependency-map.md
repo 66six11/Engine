@@ -42,7 +42,7 @@ It records current code facts. Future automation is labeled with `future`.
 | `packages/rhi-vulkan` | `asharia::rhi_vulkan`, `asharia::rhi_vulkan_rendergraph` | `com.asharia.core`, `com.asharia.rendergraph` | Vulkan backend and the separate RenderGraph-to-Vulkan bridge |
 | `packages/renderer-basic` | `asharia::renderer_basic`, `asharia::renderer_basic_vulkan` | `com.asharia.core`, `com.asharia.material-core`, `com.asharia.rendergraph`, `com.asharia.rhi-vulkan`, `com.asharia.shader-slang` | backend-agnostic renderer schemas and Vulkan recorders |
 | `packages/window-glfw` | `asharia::window_glfw` | `com.asharia.core`, `com.asharia.platform` | GLFW window integration |
-| `packages/scene-core` | `asharia::scene_core` | `com.asharia.core` | scene world, nodes, transforms, draw packets |
+| `packages/scene-core` | `asharia::scene_core` | `com.asharia.core` | scene world, entity IDs, names, transforms |
 | `apps/sample-viewer` | `asharia-sample-viewer` | runtime aggregate | sample host and runtime smoke entry point |
 | `apps/editor` | `asharia-editor`, `editor-native` | editor/runtime aggregate | C++ ImGui editor host, native bridge, editor smokes |
 | `apps/studio` | `apps/studio/Editor.sln` | managed project references | Avalonia Studio shell, managed models, .NET tests |
@@ -55,6 +55,7 @@ The manifest dependency list names package-level facts. CMake target dependencie
 - `packages/rhi-vulkan` has a package-level dependency on `com.asharia.rendergraph` because the package contains `asharia::rhi_vulkan_rendergraph`. The base `asharia::rhi_vulkan` target links `asharia::core` and Vulkan dependencies only.
 - `packages/renderer-basic` contains both `asharia::renderer_basic` and `asharia::renderer_basic_vulkan`. The backend-agnostic `asharia::renderer_basic` target links `asharia::core`, `asharia::rendergraph`, and `asharia::shader_slang`; Vulkan command recording is isolated in `asharia::renderer_basic_vulkan`.
 - `packages/asset-core` and `packages/project-core` split model targets from IO targets. The model target stays smaller; the IO target brings in `asharia::archive`.
+- `packages/shader-material-adapter` test targets may use `shader-authoring` fixtures, but the adapter library target links only `asharia::core`, `asharia::material_core`, and `asharia::shader_slang`.
 - `apps/editor` builds a shared `editor-native` bridge for Studio interop and the `asharia-editor` executable for the native ImGui host.
 
 ## State Ownership By Layer
