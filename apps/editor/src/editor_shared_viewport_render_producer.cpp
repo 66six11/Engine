@@ -247,8 +247,10 @@ namespace asharia::editor {
             const VkResult waited = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
             if (waited != VK_SUCCESS) {
                 logError("Shared viewport packet fence wait failed during release.");
+                frameEpoch.abandon();
+            } else {
+                frameEpoch.complete();
             }
-            frameEpoch = EditorSharedViewportFrameEpochLease{};
         }
 
         closeHandle(imageHandle);

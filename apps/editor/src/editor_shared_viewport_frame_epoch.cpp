@@ -61,6 +61,12 @@ namespace asharia::editor {
         epoch_ = 0U;
     }
 
+    void EditorSharedViewportFrameEpochLease::abandon() noexcept {
+        completed_ = true;
+        state_.reset();
+        epoch_ = 0U;
+    }
+
     EditorSharedViewportFrameEpochTracker::EditorSharedViewportFrameEpochTracker()
         : state_{std::make_shared<EditorSharedViewportFrameEpochState>()} {}
 

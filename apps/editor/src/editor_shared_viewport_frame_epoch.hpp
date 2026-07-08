@@ -28,6 +28,8 @@ namespace asharia::editor {
 
         [[nodiscard]] bool hasEpoch() const noexcept;
         [[nodiscard]] std::uint64_t epoch() const noexcept;
+        void complete() noexcept;
+        void abandon() noexcept;
 
     private:
         friend class EditorSharedViewportFrameEpochTracker;
@@ -35,8 +37,6 @@ namespace asharia::editor {
         EditorSharedViewportFrameEpochLease(
             std::shared_ptr<EditorSharedViewportFrameEpochState> state,
             std::uint64_t epoch) noexcept;
-
-        void complete() noexcept;
 
         std::shared_ptr<EditorSharedViewportFrameEpochState> state_;
         std::uint64_t epoch_{};
