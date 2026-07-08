@@ -15,6 +15,7 @@
 
 #include "editor_shared_viewport_external_image_handle_family.hpp"
 #include "editor_shared_viewport_external_image_pool.hpp"
+#include "editor_shared_viewport_frame_epoch.hpp"
 #include "editor_viewport.hpp"
 
 namespace asharia {
@@ -52,6 +53,9 @@ namespace asharia::editor {
         std::uint64_t externalImagesReleased{};
         std::uint64_t externalImagesAvailable{};
         std::uint64_t externalImagesLeased{};
+        std::uint64_t frameEpochsSubmitted{};
+        std::uint64_t frameEpochsCompleted{};
+        std::uint64_t frameEpochsPending{};
     };
 
     struct EditorSharedViewportPacketState final {
@@ -73,6 +77,7 @@ namespace asharia::editor {
         VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
         VkFence fence{VK_NULL_HANDLE};
         bool submitted{false};
+        EditorSharedViewportFrameEpochLease frameEpoch;
         BasicFullscreenTextureRenderer renderer;
         EditorSharedViewportExternalImageLease imageLease;
         VulkanExternalSemaphore waitSemaphore;
@@ -110,6 +115,7 @@ namespace asharia::editor {
         std::uint32_t graphicsQueueFamily_{};
         EditorSharedViewportRenderProducerStats stats_;
         EditorSharedViewportExternalImagePool externalImagePool_;
+        EditorSharedViewportFrameEpochTracker frameEpochTracker_;
     };
 
 } // namespace asharia::editor
