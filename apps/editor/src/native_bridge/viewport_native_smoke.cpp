@@ -115,6 +115,13 @@ namespace asharia::editor {
                    stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV2);
         }
 
+        [[nodiscard]] bool queryRuntimeStatsV3(EditorViewportNativeRuntimeStatsV3& stats) {
+            const std::uint32_t status = editor_viewport_query_runtime_stats_v3(&stats);
+            return status == EditorViewportNativeStatus_Success &&
+                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV3);
+        }
+
     } // namespace
 
     bool runViewportNativeBridgeSmoke() {
@@ -212,7 +219,31 @@ namespace asharia::editor {
             logError("Viewport native bridge smoke did not expose runtime stats v2.");
             return false;
         }
+        EditorViewportNativeRuntimeStatsV3 statsV3AfterFirstPacket{};
+        if (!queryRuntimeStatsV3(statsV3AfterFirstPacket) ||
+            statsV3AfterFirstPacket.framesRendered != 1U ||
+            statsV3AfterFirstPacket.producersCreated != 1U ||
+            statsV3AfterFirstPacket.packetsCreated != 1U ||
+            statsV3AfterFirstPacket.outstandingPackets != 1U ||
+            statsV3AfterFirstPacket.hasRenderProducer == 0U ||
+            statsV3AfterFirstPacket.frameEpochsSubmitted != 1U ||
+            statsV3AfterFirstPacket.frameEpochsCompleted != 0U ||
+            statsV3AfterFirstPacket.frameEpochsPending != 1U) {
+            releaseIfNeeded(packet);
+            logError("Viewport native bridge smoke did not expose runtime stats v3 before release.");
+            return false;
+        }
         releaseIfNeeded(packet);
+
+        EditorViewportNativeRuntimeStatsV3 statsV3AfterFirstRelease{};
+        if (!queryRuntimeStatsV3(statsV3AfterFirstRelease) ||
+            statsV3AfterFirstRelease.frameEpochsSubmitted != 1U ||
+            statsV3AfterFirstRelease.frameEpochsCompleted != 1U ||
+            statsV3AfterFirstRelease.frameEpochsPending != 0U ||
+            statsV3AfterFirstRelease.outstandingPackets != 0U) {
+            logError("Viewport native bridge smoke did not expose completed epoch stats after first release.");
+            return false;
+        }
 
         EditorViewportNativePresentPacket secondPacket{};
         EditorViewportNativePresentRequest secondPresentRequest =
@@ -233,6 +264,15 @@ namespace asharia::editor {
             return false;
         }
         releaseIfNeeded(secondPacket);
+
+        EditorViewportNativeRuntimeStatsV3 statsV3AfterSecondRelease{};
+        if (!queryRuntimeStatsV3(statsV3AfterSecondRelease) ||
+            statsV3AfterSecondRelease.frameEpochsSubmitted != 2U ||
+            statsV3AfterSecondRelease.frameEpochsCompleted != 2U ||
+            statsV3AfterSecondRelease.frameEpochsPending != 0U) {
+            logError("Viewport native bridge smoke did not advance epoch stats after the second release.");
+            return false;
+        }
 
         EditorViewportNativeRuntimeStatsV2 statsAfterSameSizeReuse{};
         if (!queryRuntimeStatsV2(statsAfterSameSizeReuse) ||
@@ -266,6 +306,15 @@ namespace asharia::editor {
         }
         releaseIfNeeded(resizedPacket);
 
+        EditorViewportNativeRuntimeStatsV3 statsV3AfterResizeRelease{};
+        if (!queryRuntimeStatsV3(statsV3AfterResizeRelease) ||
+            statsV3AfterResizeRelease.frameEpochsSubmitted != 3U ||
+            statsV3AfterResizeRelease.frameEpochsCompleted != 3U ||
+            statsV3AfterResizeRelease.frameEpochsPending != 0U) {
+            logError("Viewport native bridge smoke did not advance epoch stats after the resized release.");
+            return false;
+        }
+
         EditorViewportNativeRuntimeStatsV2 statsAfterResize{};
         if (!queryRuntimeStatsV2(statsAfterResize) ||
             statsAfterResize.externalImagesAcquired != 3U ||
@@ -295,6 +344,17 @@ namespace asharia::editor {
             logPresentPacketMessage(shutdownPendingPacket);
             releaseIfNeeded(shutdownPendingPacket);
             logError("Viewport native bridge smoke did not produce a packet for shutdown ordering.");
+            return false;
+        }
+
+        EditorViewportNativeRuntimeStatsV3 statsV3BeforeShutdown{};
+        if (!queryRuntimeStatsV3(statsV3BeforeShutdown) ||
+            statsV3BeforeShutdown.frameEpochsSubmitted != 4U ||
+            statsV3BeforeShutdown.frameEpochsCompleted != 3U ||
+            statsV3BeforeShutdown.frameEpochsPending != 1U ||
+            statsV3BeforeShutdown.outstandingPackets != 1U) {
+            releaseIfNeeded(shutdownPendingPacket);
+            logError("Viewport native bridge smoke did not preserve pending epoch stats before shutdown.");
             return false;
         }
 

@@ -82,6 +82,7 @@ namespace asharia::editor {
         [[nodiscard]] Result<void> recordSharedViewportFrame(
             VkDevice device, VmaAllocator allocator, VkQueue graphicsQueue,
             std::uint32_t graphicsQueueFamily,
+            EditorSharedViewportFrameEpochTracker& frameEpochTracker,
             EditorSharedViewportExternalImagePool& externalImagePool,
             EditorSharedViewportPacketState& state, EditorSharedViewportPresentDesc desc,
             std::uint64_t frameIndex) {
@@ -212,6 +213,7 @@ namespace asharia::editor {
             if (!result) {
                 return std::unexpected{std::move(result.error())};
             }
+            state.frameEpoch = frameEpochTracker.submit();
             state.submitted = true;
             state.frameIndex = frameIndex;
 
@@ -245,6 +247,9 @@ namespace asharia::editor {
             const VkResult waited = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
             if (waited != VK_SUCCESS) {
                 logError("Shared viewport packet fence wait failed during release.");
+                frameEpoch.abandon();
+            } else {
+                frameEpoch.complete();
             }
         }
 
@@ -298,8 +303,8 @@ namespace asharia::editor {
         EditorSharedViewportPresentDesc desc, std::uint64_t frameIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
         auto rendered = recordSharedViewportFrame(device_, allocator_, graphicsQueue_,
-                                                  graphicsQueueFamily_, externalImagePool_, *state,
-                                                  desc, frameIndex);
+                                                  graphicsQueueFamily_, frameEpochTracker_,
+                                                  externalImagePool_, *state, desc, frameIndex);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
@@ -312,7 +317,11 @@ namespace asharia::editor {
 
     EditorSharedViewportRenderProducerStats EditorSharedViewportRenderProducer::stats() const {
         EditorSharedViewportRenderProducerStats snapshot = stats_;
+        const EditorSharedViewportFrameEpochStats epochStats = frameEpochTracker_.stats();
         const EditorSharedViewportExternalImagePoolStats poolStats = externalImagePool_.stats();
+        snapshot.frameEpochsSubmitted = epochStats.submitted;
+        snapshot.frameEpochsCompleted = epochStats.completed;
+        snapshot.frameEpochsPending = epochStats.pending;
         snapshot.externalImagesAcquired = poolStats.acquired;
         snapshot.externalImagesCreated = poolStats.created;
         snapshot.externalImagesReused = poolStats.reused;
