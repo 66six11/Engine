@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 #include "asharia/core/result.hpp"
 #include "asharia/renderer_basic_vulkan/fullscreen_texture_renderer.hpp"
@@ -78,7 +79,8 @@ namespace asharia::editor {
         VkFence fence{VK_NULL_HANDLE};
         bool submitted{false};
         EditorSharedViewportFrameEpochLease frameEpoch;
-        BasicFullscreenTextureRenderer renderer;
+        VulkanTransientImagePool transientImagePool;
+        std::vector<VulkanTransientImageResource> transientImages;
         EditorSharedViewportExternalImageLease imageLease;
         VulkanExternalSemaphore waitSemaphore;
         VulkanExternalSemaphore signalSemaphore;
@@ -116,6 +118,7 @@ namespace asharia::editor {
         EditorSharedViewportRenderProducerStats stats_;
         EditorSharedViewportExternalImagePool externalImagePool_;
         EditorSharedViewportFrameEpochTracker frameEpochTracker_;
+        BasicFullscreenTextureRenderer renderer_;
     };
 
 } // namespace asharia::editor

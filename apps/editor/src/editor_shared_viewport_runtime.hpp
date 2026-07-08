@@ -25,6 +25,7 @@ namespace asharia::editor {
         std::uint64_t frameEpochsSubmitted{};
         std::uint64_t frameEpochsCompleted{};
         std::uint64_t frameEpochsPending{};
+        std::uint64_t rendererCreations{};
         std::size_t outstandingPackets{};
         bool hasContext{};
         bool hasRenderProducer{};

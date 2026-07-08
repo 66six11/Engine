@@ -122,6 +122,13 @@ namespace asharia::editor {
                    stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV3);
         }
 
+        [[nodiscard]] bool queryRuntimeStatsV4(EditorViewportNativeRuntimeStatsV4& stats) {
+            const std::uint32_t status = editor_viewport_query_runtime_stats_v4(&stats);
+            return status == EditorViewportNativeStatus_Success &&
+                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV4);
+        }
+
     } // namespace
 
     bool runViewportNativeBridgeSmoke() {
@@ -233,6 +240,21 @@ namespace asharia::editor {
             logError("Viewport native bridge smoke did not expose runtime stats v3 before release.");
             return false;
         }
+        EditorViewportNativeRuntimeStatsV4 statsV4AfterFirstPacket{};
+        if (!queryRuntimeStatsV4(statsV4AfterFirstPacket) ||
+            statsV4AfterFirstPacket.framesRendered != 1U ||
+            statsV4AfterFirstPacket.producersCreated != 1U ||
+            statsV4AfterFirstPacket.packetsCreated != 1U ||
+            statsV4AfterFirstPacket.outstandingPackets != 1U ||
+            statsV4AfterFirstPacket.hasRenderProducer == 0U ||
+            statsV4AfterFirstPacket.frameEpochsSubmitted != 1U ||
+            statsV4AfterFirstPacket.frameEpochsCompleted != 0U ||
+            statsV4AfterFirstPacket.frameEpochsPending != 1U ||
+            statsV4AfterFirstPacket.rendererCreations != 1U) {
+            releaseIfNeeded(packet);
+            logError("Viewport native bridge smoke did not expose runtime stats v4 before release.");
+            return false;
+        }
         releaseIfNeeded(packet);
 
         EditorViewportNativeRuntimeStatsV3 statsV3AfterFirstRelease{};
@@ -242,6 +264,16 @@ namespace asharia::editor {
             statsV3AfterFirstRelease.frameEpochsPending != 0U ||
             statsV3AfterFirstRelease.outstandingPackets != 0U) {
             logError("Viewport native bridge smoke did not expose completed epoch stats after first release.");
+            return false;
+        }
+        EditorViewportNativeRuntimeStatsV4 statsV4AfterFirstRelease{};
+        if (!queryRuntimeStatsV4(statsV4AfterFirstRelease) ||
+            statsV4AfterFirstRelease.rendererCreations != 1U ||
+            statsV4AfterFirstRelease.frameEpochsSubmitted != 1U ||
+            statsV4AfterFirstRelease.frameEpochsCompleted != 1U ||
+            statsV4AfterFirstRelease.frameEpochsPending != 0U ||
+            statsV4AfterFirstRelease.outstandingPackets != 0U) {
+            logError("Viewport native bridge smoke did not preserve renderer reuse stats after first release.");
             return false;
         }
 
@@ -271,6 +303,16 @@ namespace asharia::editor {
             statsV3AfterSecondRelease.frameEpochsCompleted != 2U ||
             statsV3AfterSecondRelease.frameEpochsPending != 0U) {
             logError("Viewport native bridge smoke did not advance epoch stats after the second release.");
+            return false;
+        }
+        EditorViewportNativeRuntimeStatsV4 statsV4AfterSecondRelease{};
+        if (!queryRuntimeStatsV4(statsV4AfterSecondRelease) ||
+            statsV4AfterSecondRelease.rendererCreations != 1U ||
+            statsV4AfterSecondRelease.packetsCreated != 2U ||
+            statsV4AfterSecondRelease.frameEpochsSubmitted != 2U ||
+            statsV4AfterSecondRelease.frameEpochsCompleted != 2U ||
+            statsV4AfterSecondRelease.frameEpochsPending != 0U) {
+            logError("Viewport native bridge smoke did not preserve renderer reuse stats after the second release.");
             return false;
         }
 
@@ -314,6 +356,16 @@ namespace asharia::editor {
             logError("Viewport native bridge smoke did not advance epoch stats after the resized release.");
             return false;
         }
+        EditorViewportNativeRuntimeStatsV4 statsV4AfterResizeRelease{};
+        if (!queryRuntimeStatsV4(statsV4AfterResizeRelease) ||
+            statsV4AfterResizeRelease.rendererCreations != 1U ||
+            statsV4AfterResizeRelease.packetsCreated != 3U ||
+            statsV4AfterResizeRelease.frameEpochsSubmitted != 3U ||
+            statsV4AfterResizeRelease.frameEpochsCompleted != 3U ||
+            statsV4AfterResizeRelease.frameEpochsPending != 0U) {
+            logError("Viewport native bridge smoke did not preserve renderer reuse stats after the resized release.");
+            return false;
+        }
 
         EditorViewportNativeRuntimeStatsV2 statsAfterResize{};
         if (!queryRuntimeStatsV2(statsAfterResize) ||
@@ -355,6 +407,18 @@ namespace asharia::editor {
             statsV3BeforeShutdown.outstandingPackets != 1U) {
             releaseIfNeeded(shutdownPendingPacket);
             logError("Viewport native bridge smoke did not preserve pending epoch stats before shutdown.");
+            return false;
+        }
+        EditorViewportNativeRuntimeStatsV4 statsV4BeforeShutdown{};
+        if (!queryRuntimeStatsV4(statsV4BeforeShutdown) ||
+            statsV4BeforeShutdown.rendererCreations != 1U ||
+            statsV4BeforeShutdown.packetsCreated != 4U ||
+            statsV4BeforeShutdown.frameEpochsSubmitted != 4U ||
+            statsV4BeforeShutdown.frameEpochsCompleted != 3U ||
+            statsV4BeforeShutdown.frameEpochsPending != 1U ||
+            statsV4BeforeShutdown.outstandingPackets != 1U) {
+            releaseIfNeeded(shutdownPendingPacket);
+            logError("Viewport native bridge smoke did not preserve renderer reuse stats before shutdown.");
             return false;
         }
 
