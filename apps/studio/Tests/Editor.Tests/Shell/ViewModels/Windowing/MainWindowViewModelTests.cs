@@ -199,22 +199,24 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void Tools_menu_command_updates_latest_command_feedback()
+    public void Tools_menu_command_updates_latest_status_message()
     {
         var viewModel = CreateMainWindowViewModel();
         var item = Assert.Single(viewModel.ToolsMenuItems);
 
         item.OpenCommand.Execute(null);
 
-        Assert.True(viewModel.HasCommandFeedback);
-        Assert.True(viewModel.IsCommandFeedbackSuccess);
-        Assert.Equal(EditorCommandFeedbackSeverity.Success, viewModel.LastCommandFeedback?.Severity);
-        Assert.Equal("workbench.commandPalette.open", viewModel.LastCommandFeedback?.CommandId);
-        Assert.Equal("Command 'workbench.commandPalette.open' completed.", viewModel.CommandFeedbackMessage);
+        Assert.True(viewModel.HasStatusMessage);
+        Assert.True(viewModel.IsStatusMessageSuccess);
+        Assert.Equal(EditorStatusMessageSeverity.Success, viewModel.LastStatusMessage?.Severity);
+        Assert.Equal(EditorStatusMessageSource.Command, viewModel.LastStatusMessage?.Source);
+        Assert.Equal("Command 'workbench.commandPalette.open' completed.", viewModel.StatusMessageText);
+        Assert.False(viewModel.CanOpenStatusMessageTarget);
+        Assert.False(viewModel.OpenStatusMessageTargetCommand.CanExecute(null));
     }
 
     [Fact]
-    public void Command_feedback_publishes_debug_diagnostic_and_updates_latest_status()
+    public void Command_status_message_publishes_debug_diagnostic_and_updates_latest_status()
     {
         var diagnostics = new EditorDiagnosticService();
         var viewModel = CreateMainWindowViewModel(diagnostics: diagnostics);
@@ -226,11 +228,11 @@ public sealed class MainWindowViewModelTests
         Assert.Equal(EditorDiagnosticChannel.Debug, record.Channel);
         Assert.Equal("workbench.commandPalette.open", record.Source);
         Assert.Equal("workbench", record.Category);
-        Assert.Equal(record.Message, viewModel.CommandFeedbackMessage);
+        Assert.Equal(record.Message, viewModel.StatusMessageText);
     }
 
     [Fact]
-    public void External_diagnostic_updates_latest_status_feedback()
+    public void External_diagnostic_updates_latest_status_message()
     {
         var diagnostics = new EditorDiagnosticService();
         var viewModel = CreateMainWindowViewModel(diagnostics: diagnostics);
@@ -242,10 +244,10 @@ public sealed class MainWindowViewModelTests
             "scene",
             "Missing reference.");
 
-        Assert.True(viewModel.HasCommandFeedback);
-        Assert.True(viewModel.IsCommandFeedbackError);
-        Assert.Null(viewModel.LastCommandFeedback);
-        Assert.Equal(record.Message, viewModel.CommandFeedbackMessage);
+        Assert.True(viewModel.HasStatusMessage);
+        Assert.True(viewModel.IsStatusMessageError);
+        Assert.Null(viewModel.LastStatusMessage);
+        Assert.Equal(record.Message, viewModel.StatusMessageText);
     }
 
     [Fact]
@@ -468,7 +470,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void Command_palette_failure_updates_local_and_global_feedback()
+    public void Command_palette_failure_updates_local_and_global_status_message()
     {
         var actions = new WorkbenchActionRegistry();
         actions.Register(new WorkbenchActionDescriptor(
@@ -488,10 +490,11 @@ public sealed class MainWindowViewModelTests
         viewModel.CommandPalette.ExecuteSelectedCommand.Execute(null);
 
         Assert.True(viewModel.CommandPalette.HasLastResultMessage);
-        Assert.True(viewModel.HasCommandFeedback);
-        Assert.True(viewModel.IsCommandFeedbackError);
-        Assert.Equal(WorkbenchCommandExecutionStatus.Failed, viewModel.LastCommandFeedback?.Status);
-        Assert.Equal(viewModel.CommandPalette.LastResultMessage, viewModel.CommandFeedbackMessage);
+        Assert.True(viewModel.HasStatusMessage);
+        Assert.True(viewModel.IsStatusMessageError);
+        Assert.Equal(EditorStatusMessageSource.Command, viewModel.LastStatusMessage?.Source);
+        Assert.Equal(viewModel.CommandPalette.LastResultMessage, viewModel.StatusMessageText);
+        Assert.False(viewModel.CanOpenStatusMessageTarget);
     }
 
     [Fact]
@@ -510,7 +513,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void Shortcut_command_updates_latest_command_feedback()
+    public void Shortcut_command_updates_latest_status_message()
     {
         var viewModel = CreateMainWindowViewModel();
 
@@ -520,27 +523,85 @@ public sealed class MainWindowViewModelTests
             isTextInputFocused: false);
 
         Assert.NotNull(result);
-        Assert.True(viewModel.HasCommandFeedback);
-        Assert.True(viewModel.IsCommandFeedbackSuccess);
-        Assert.Equal("workbench.commandPalette.open", viewModel.LastCommandFeedback?.CommandId);
+        Assert.True(viewModel.HasStatusMessage);
+        Assert.True(viewModel.IsStatusMessageSuccess);
+        Assert.Equal(EditorStatusMessageSource.Command, viewModel.LastStatusMessage?.Source);
+        Assert.Equal("Command 'workbench.commandPalette.open' completed.", viewModel.StatusMessageText);
+        Assert.Null(viewModel.LastStatusMessage?.TargetPanelId);
     }
 
     [Fact]
-    public void Command_feedback_raises_visibility_message_and_severity_notifications()
+    public void Status_message_raises_visibility_message_severity_and_target_notifications()
     {
         var changedProperties = new List<string>();
         var viewModel = CreateMainWindowViewModel();
         viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName ?? string.Empty);
 
+        viewModel.PublishStatusMessage(new EditorStatusMessageSnapshot(
+            EditorStatusMessageSeverity.Debug,
+            EditorStatusMessageSource.Console,
+            "Console debug line",
+            TargetPanelId: "console"));
+
+        Assert.Contains(nameof(MainWindowViewModel.LastStatusMessage), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.HasStatusMessage), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.StatusMessageText), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsStatusMessageDebug), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsStatusMessageInfo), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsStatusMessageSuccess), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsStatusMessageWarning), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.IsStatusMessageError), changedProperties);
+        Assert.Contains(nameof(MainWindowViewModel.CanOpenStatusMessageTarget), changedProperties);
+    }
+
+    [Fact]
+    public void Passive_command_status_message_does_not_open_target_panel()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var console = viewModel.DockWorkspace.BottomWindow.Tabs.Single(tab => tab.Id == "console");
+        Assert.True(viewModel.DockWorkspace.CloseTab(console));
+
         viewModel.ToolsMenuItems.Single().OpenCommand.Execute(null);
 
-        Assert.Contains(nameof(MainWindowViewModel.LastCommandFeedback), changedProperties);
-        Assert.Contains(nameof(MainWindowViewModel.HasCommandFeedback), changedProperties);
-        Assert.Contains(nameof(MainWindowViewModel.CommandFeedbackMessage), changedProperties);
-        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackSuccess), changedProperties);
-        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackWarning), changedProperties);
-        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackError), changedProperties);
-        Assert.Contains(nameof(MainWindowViewModel.IsCommandFeedbackInfo), changedProperties);
+        Assert.False(viewModel.CanOpenStatusMessageTarget);
+        Assert.False(viewModel.OpenStatusMessageTargetCommand.CanExecute(null));
+        viewModel.OpenStatusMessageTargetCommand.Execute(null);
+        Assert.False(viewModel.DockWorkspace.ContainsPanel("console"));
+    }
+
+    [Fact]
+    public void Console_targeted_status_message_opens_console_panel()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        var console = viewModel.DockWorkspace.BottomWindow.Tabs.Single(tab => tab.Id == "console");
+        Assert.True(viewModel.DockWorkspace.CloseTab(console));
+        viewModel.PublishStatusMessage(new EditorStatusMessageSnapshot(
+            EditorStatusMessageSeverity.Debug,
+            EditorStatusMessageSource.Console,
+            "Console debug line",
+            TargetPanelId: "console"));
+
+        Assert.True(viewModel.CanOpenStatusMessageTarget);
+        Assert.True(viewModel.OpenStatusMessageTargetCommand.CanExecute(null));
+
+        viewModel.OpenStatusMessageTargetCommand.Execute(null);
+
+        Assert.True(viewModel.DockWorkspace.ContainsPanel("console"));
+    }
+
+    [Fact]
+    public void Unknown_targeted_status_message_does_not_enable_or_throw()
+    {
+        var viewModel = CreateMainWindowViewModel();
+        viewModel.PublishStatusMessage(new EditorStatusMessageSnapshot(
+            EditorStatusMessageSeverity.Error,
+            EditorStatusMessageSource.Console,
+            "Unknown target",
+            TargetPanelId: "missing-panel"));
+
+        Assert.False(viewModel.CanOpenStatusMessageTarget);
+        Assert.False(viewModel.OpenStatusMessageTargetCommand.CanExecute(null));
+        viewModel.OpenStatusMessageTargetCommand.Execute(null);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
 using Avalonia;
@@ -28,16 +28,17 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly WorkbenchShortcutRouter shortcutRouter_;
     private readonly IEditorBackgroundTaskService backgroundTasks_;
     private readonly IEditorUiDispatcher uiDispatcher_;
+    private readonly IEditorDiagnosticService diagnostics_;
+    private readonly RelayCommand openStatusMessageTargetCommand_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
     private Action? closeFloatingWindows_;
     private bool hasActiveBackgroundTasks_;
     private string activeBackgroundTaskTitle_ = string.Empty;
     private string activeBackgroundTaskMessage_ = string.Empty;
-    private EditorCommandFeedbackSnapshot? lastCommandFeedback_;
+    private EditorStatusMessageSnapshot? lastStatusMessage_;
     private EditorDiagnosticRecord? latestStatusDiagnostic_;
-    private EditorCommandFeedbackSeverity? statusFeedbackSeverity_;
-    private readonly IEditorDiagnosticService diagnostics_;
+    private EditorStatusMessageSeverity? statusMessageSeverity_;
     private bool isDisposed_;
 
     public MainWindowViewModel()
@@ -90,14 +91,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             panelCommandService_,
             OpenCommandPaletteFromCommand,
             OpenAboutDialogFromCommand);
-        var actionExecutor = new WorkbenchActionExecutor(
-            commandHandlers);
-        var commandRouter = new WorkbenchCommandFeedbackRouter(
+        var actionExecutor = new WorkbenchActionExecutor(commandHandlers);
+        var commandRouter = new WorkbenchCommandStatusMessageRouter(
             new WorkbenchCommandRouter(actionRegistry, actionExecutor),
-            PublishCommandFeedback);
+            PublishCommandStatusMessage);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
         OpenPanelCommand = new RelayCommand<string?>(
             panelId => panelCommandService_.OpenOrFocusPanel(panelId));
+        openStatusMessageTargetCommand_ = new RelayCommand(
+            OpenStatusMessageTarget,
+            () => CanOpenStatusMessageTarget);
         CommandPalette = new CommandPaletteViewModel(actions, commandRouter.Execute);
         shortcutRouter_ = WorkbenchShortcutRouter.FromActions(actions, commandRouter);
         ToolsMenuItems = CreateCommandMenuItems(actions, "Tools/", commandRouter);
@@ -125,6 +128,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public IRelayCommand ResetLayoutCommand { get; }
 
     public IRelayCommand<string?> OpenPanelCommand { get; }
+
+    public IRelayCommand OpenStatusMessageTargetCommand => openStatusMessageTargetCommand_;
 
     public CommandPaletteViewModel CommandPalette { get; }
 
@@ -154,41 +159,43 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         private set => SetProperty(ref activeBackgroundTaskMessage_, value);
     }
 
-    public EditorCommandFeedbackSnapshot? LastCommandFeedback
+    public EditorStatusMessageSnapshot? LastStatusMessage
     {
-        get => lastCommandFeedback_;
+        get => lastStatusMessage_;
         private set
         {
-            if (SetProperty(ref lastCommandFeedback_, value))
+            if (SetProperty(ref lastStatusMessage_, value))
             {
-                OnPropertyChanged(nameof(HasCommandFeedback));
-                OnPropertyChanged(nameof(CommandFeedbackMessage));
-                OnPropertyChanged(nameof(IsCommandFeedbackSuccess));
-                OnPropertyChanged(nameof(IsCommandFeedbackWarning));
-                OnPropertyChanged(nameof(IsCommandFeedbackError));
-                OnPropertyChanged(nameof(IsCommandFeedbackInfo));
+                OnStatusMessageProjectionChanged();
             }
         }
     }
 
-    public bool HasCommandFeedback => latestStatusDiagnostic_ is not null || LastCommandFeedback is not null;
+    public bool HasStatusMessage => latestStatusDiagnostic_ is not null || LastStatusMessage is not null;
 
-    public string CommandFeedbackMessage => latestStatusDiagnostic_?.Message ?? LastCommandFeedback?.Message ?? string.Empty;
+    public string StatusMessageText =>
+        latestStatusDiagnostic_?.Message ?? LastStatusMessage?.Message ?? string.Empty;
 
-    public bool IsCommandFeedbackSuccess =>
-        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Success;
+    public bool IsStatusMessageDebug =>
+        CurrentStatusMessageSeverity == EditorStatusMessageSeverity.Debug;
 
-    public bool IsCommandFeedbackWarning =>
-        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Warning;
+    public bool IsStatusMessageInfo =>
+        CurrentStatusMessageSeverity == EditorStatusMessageSeverity.Info;
 
-    public bool IsCommandFeedbackError =>
-        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Error;
+    public bool IsStatusMessageSuccess =>
+        CurrentStatusMessageSeverity == EditorStatusMessageSeverity.Success;
 
-    public bool IsCommandFeedbackInfo =>
-        CurrentCommandFeedbackSeverity == EditorCommandFeedbackSeverity.Info;
+    public bool IsStatusMessageWarning =>
+        CurrentStatusMessageSeverity == EditorStatusMessageSeverity.Warning;
 
-    private EditorCommandFeedbackSeverity? CurrentCommandFeedbackSeverity =>
-        statusFeedbackSeverity_ ?? LastCommandFeedback?.Severity;
+    public bool IsStatusMessageError =>
+        CurrentStatusMessageSeverity == EditorStatusMessageSeverity.Error;
+
+    public bool CanOpenStatusMessageTarget =>
+        panelCommandService_.CanOpenOrFocusPanel(LastStatusMessage?.TargetPanelId);
+
+    private EditorStatusMessageSeverity? CurrentStatusMessageSeverity =>
+        statusMessageSeverity_ ?? LastStatusMessage?.Severity;
 
     public void SetFloatingWindowCallbacks(
         Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>> captureFloatingWindowSnapshots,
@@ -309,6 +316,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnPanelCommandStateChanged(object? sender, EventArgs e)
     {
         RefreshPanelMenuOpenStates();
+        OnPropertyChanged(nameof(CanOpenStatusMessageTarget));
+        openStatusMessageTargetCommand_.NotifyCanExecuteChanged();
     }
 
     private void OnBackgroundTasksChanged(object? sender, EventArgs e)
@@ -350,16 +359,34 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
     }
 
-    private void PublishCommandFeedback(WorkbenchCommandExecutionResult result)
+    internal void PublishStatusMessage(EditorStatusMessageSnapshot snapshot)
     {
-        var feedback = EditorCommandFeedbackSnapshot.FromResult(result);
-        LastCommandFeedback = feedback;
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        LastStatusMessage = snapshot;
+    }
+
+    private void PublishCommandStatusMessage(WorkbenchCommandExecutionResult result)
+    {
+        var statusMessage = EditorStatusMessageSnapshot.FromCommandResult(result);
+        LastStatusMessage = statusMessage;
         diagnostics_.Publish(
-            MapCommandFeedbackSeverity(feedback.Severity),
+            MapStatusMessageSeverity(statusMessage.Severity),
             EditorDiagnosticChannel.Debug,
-            feedback.CommandId,
+            result.CommandId,
             "workbench",
-            feedback.Message);
+            statusMessage.Message);
+    }
+
+    private void OpenStatusMessageTarget()
+    {
+        var targetPanelId = LastStatusMessage?.TargetPanelId;
+        if (!panelCommandService_.CanOpenOrFocusPanel(targetPanelId))
+        {
+            return;
+        }
+
+        panelCommandService_.OpenOrFocusPanel(targetPanelId);
     }
 
     private void RefreshLatestDiagnostic()
@@ -371,44 +398,53 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         latestStatusDiagnostic_ = latestDiagnostic;
-        statusFeedbackSeverity_ = ResolveStatusFeedbackSeverity(latestDiagnostic);
-        OnPropertyChanged(nameof(HasCommandFeedback));
-        OnPropertyChanged(nameof(CommandFeedbackMessage));
-        OnPropertyChanged(nameof(IsCommandFeedbackSuccess));
-        OnPropertyChanged(nameof(IsCommandFeedbackWarning));
-        OnPropertyChanged(nameof(IsCommandFeedbackError));
-        OnPropertyChanged(nameof(IsCommandFeedbackInfo));
+        statusMessageSeverity_ = ResolveStatusMessageSeverity(latestDiagnostic);
+        OnStatusMessageProjectionChanged();
     }
 
-    private EditorCommandFeedbackSeverity? ResolveStatusFeedbackSeverity(
+    private void OnStatusMessageProjectionChanged()
+    {
+        OnPropertyChanged(nameof(HasStatusMessage));
+        OnPropertyChanged(nameof(StatusMessageText));
+        OnPropertyChanged(nameof(IsStatusMessageDebug));
+        OnPropertyChanged(nameof(IsStatusMessageInfo));
+        OnPropertyChanged(nameof(IsStatusMessageSuccess));
+        OnPropertyChanged(nameof(IsStatusMessageWarning));
+        OnPropertyChanged(nameof(IsStatusMessageError));
+        OnPropertyChanged(nameof(CanOpenStatusMessageTarget));
+        openStatusMessageTargetCommand_.NotifyCanExecuteChanged();
+    }
+
+    private EditorStatusMessageSeverity? ResolveStatusMessageSeverity(
         EditorDiagnosticRecord? diagnostic)
     {
         if (diagnostic is null)
         {
-            return LastCommandFeedback?.Severity;
+            return LastStatusMessage?.Severity;
         }
 
-        if (LastCommandFeedback is { } feedback
-            && string.Equals(feedback.CommandId, diagnostic.Source, StringComparison.Ordinal)
-            && string.Equals(feedback.Message, diagnostic.Message, StringComparison.Ordinal))
+        if (LastStatusMessage is { } statusMessage
+            && string.Equals(statusMessage.Message, diagnostic.Message, StringComparison.Ordinal))
         {
-            return feedback.Severity;
+            return statusMessage.Severity;
         }
 
         return diagnostic.Severity switch
         {
-            EditorDiagnosticSeverity.Warning => EditorCommandFeedbackSeverity.Warning,
-            EditorDiagnosticSeverity.Error => EditorCommandFeedbackSeverity.Error,
-            _ => EditorCommandFeedbackSeverity.Info,
+            EditorDiagnosticSeverity.Debug => EditorStatusMessageSeverity.Debug,
+            EditorDiagnosticSeverity.Warning => EditorStatusMessageSeverity.Warning,
+            EditorDiagnosticSeverity.Error => EditorStatusMessageSeverity.Error,
+            _ => EditorStatusMessageSeverity.Info,
         };
     }
 
-    private static EditorDiagnosticSeverity MapCommandFeedbackSeverity(EditorCommandFeedbackSeverity severity)
+    private static EditorDiagnosticSeverity MapStatusMessageSeverity(EditorStatusMessageSeverity severity)
     {
         return severity switch
         {
-            EditorCommandFeedbackSeverity.Warning => EditorDiagnosticSeverity.Warning,
-            EditorCommandFeedbackSeverity.Error => EditorDiagnosticSeverity.Error,
+            EditorStatusMessageSeverity.Debug => EditorDiagnosticSeverity.Debug,
+            EditorStatusMessageSeverity.Warning => EditorDiagnosticSeverity.Warning,
+            EditorStatusMessageSeverity.Error => EditorDiagnosticSeverity.Error,
             _ => EditorDiagnosticSeverity.Info,
         };
     }

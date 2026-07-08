@@ -1,14 +1,14 @@
-﻿using System;
+using System;
 using Editor.Core.Models.Workbench;
 
 namespace Editor.Shell.Commands;
 
-internal sealed class WorkbenchCommandFeedbackRouter : IWorkbenchCommandRouter
+internal sealed class WorkbenchCommandStatusMessageRouter : IWorkbenchCommandRouter
 {
     private readonly IWorkbenchCommandRouter inner_;
     private readonly Action<WorkbenchCommandExecutionResult> publishResult_;
 
-    public WorkbenchCommandFeedbackRouter(
+    public WorkbenchCommandStatusMessageRouter(
         IWorkbenchCommandRouter inner,
         Action<WorkbenchCommandExecutionResult> publishResult)
     {

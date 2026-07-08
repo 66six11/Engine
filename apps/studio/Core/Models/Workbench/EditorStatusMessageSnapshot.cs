@@ -2,32 +2,31 @@ using System;
 
 namespace Editor.Core.Models.Workbench;
 
-public sealed record EditorCommandFeedbackSnapshot(
-    EditorCommandFeedbackSeverity Severity,
-    WorkbenchCommandExecutionStatus Status,
-    string CommandId,
-    string Message)
+public sealed record EditorStatusMessageSnapshot(
+    EditorStatusMessageSeverity Severity,
+    EditorStatusMessageSource Source,
+    string Message,
+    string? TargetPanelId = null)
 {
-    public static EditorCommandFeedbackSnapshot FromResult(WorkbenchCommandExecutionResult result)
+    public static EditorStatusMessageSnapshot FromCommandResult(WorkbenchCommandExecutionResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        return new EditorCommandFeedbackSnapshot(
+        return new EditorStatusMessageSnapshot(
             MapSeverity(result.Status),
-            result.Status,
-            result.CommandId,
+            EditorStatusMessageSource.Command,
             CreateMessage(result));
     }
 
-    private static EditorCommandFeedbackSeverity MapSeverity(WorkbenchCommandExecutionStatus status)
+    private static EditorStatusMessageSeverity MapSeverity(WorkbenchCommandExecutionStatus status)
     {
         return status switch
         {
-            WorkbenchCommandExecutionStatus.Succeeded => EditorCommandFeedbackSeverity.Success,
-            WorkbenchCommandExecutionStatus.Disabled => EditorCommandFeedbackSeverity.Warning,
-            WorkbenchCommandExecutionStatus.NotFound => EditorCommandFeedbackSeverity.Error,
-            WorkbenchCommandExecutionStatus.Failed => EditorCommandFeedbackSeverity.Error,
-            _ => EditorCommandFeedbackSeverity.Info,
+            WorkbenchCommandExecutionStatus.Succeeded => EditorStatusMessageSeverity.Success,
+            WorkbenchCommandExecutionStatus.Disabled => EditorStatusMessageSeverity.Warning,
+            WorkbenchCommandExecutionStatus.NotFound => EditorStatusMessageSeverity.Error,
+            WorkbenchCommandExecutionStatus.Failed => EditorStatusMessageSeverity.Error,
+            _ => EditorStatusMessageSeverity.Info,
         };
     }
 

@@ -671,8 +671,9 @@ public sealed class StudioLayeringTests
 
         var workbenchFiles = new[]
         {
-            "EditorCommandFeedbackSeverity.cs",
-            "EditorCommandFeedbackSnapshot.cs",
+            "EditorStatusMessageSeverity.cs",
+            "EditorStatusMessageSnapshot.cs",
+            "EditorStatusMessageSource.cs",
             "WorkbenchActionDescriptor.cs",
             "WorkbenchActionKind.cs",
             "WorkbenchActionScope.cs",

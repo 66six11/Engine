@@ -68,7 +68,7 @@ public sealed class StudioCompositionRootTests
 
         var record = Assert.Single(console.Records);
         Assert.Equal(EditorDiagnosticChannel.Debug, record.Channel);
-        Assert.Equal(record.Message, session.MainWindowViewModel.CommandFeedbackMessage);
+        Assert.Equal(record.Message, session.MainWindowViewModel.StatusMessageText);
     }
 
     [Fact]

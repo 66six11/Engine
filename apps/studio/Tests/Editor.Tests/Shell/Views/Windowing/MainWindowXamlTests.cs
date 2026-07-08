@@ -7,21 +7,28 @@ namespace Editor.Tests.Shell.Views.Windowing;
 public sealed class MainWindowXamlTests
 {
     [Fact]
-    public void Status_bar_binds_latest_command_feedback_with_severity_classes()
+    public void Status_bar_binds_latest_status_message_with_severity_classes_and_target_command()
     {
         var xaml = LoadMainWindowXaml();
 
-        Assert.Contains("Classes=\"command-feedback-status\"", xaml);
-        Assert.Contains("Text=\"{Binding CommandFeedbackMessage}\"", xaml);
-        Assert.Contains("IsVisible=\"{Binding HasCommandFeedback}\"", xaml);
-        Assert.Contains("Classes.success=\"{Binding IsCommandFeedbackSuccess}\"", xaml);
-        Assert.Contains("Classes.warning=\"{Binding IsCommandFeedbackWarning}\"", xaml);
-        Assert.Contains("Classes.error=\"{Binding IsCommandFeedbackError}\"", xaml);
-        Assert.Contains("Classes.info=\"{Binding IsCommandFeedbackInfo}\"", xaml);
+        Assert.Contains("Classes=\"status-message-status\"", xaml);
+        Assert.Contains("Command=\"{Binding OpenStatusMessageTargetCommand}\"", xaml);
+        Assert.Contains("IsHitTestVisible=\"{Binding CanOpenStatusMessageTarget}\"", xaml);
+        Assert.Contains("IsVisible=\"{Binding HasStatusMessage}\"", xaml);
+        Assert.Contains("Text=\"{Binding StatusMessageText}\"", xaml);
+        Assert.Contains("TextTrimming=\"CharacterEllipsis\"", xaml);
+        Assert.Contains("TextAlignment=\"Right\"", xaml);
+        Assert.Contains("Classes.debug=\"{Binding IsStatusMessageDebug}\"", xaml);
+        Assert.Contains("Classes.success=\"{Binding IsStatusMessageSuccess}\"", xaml);
+        Assert.Contains("Classes.warning=\"{Binding IsStatusMessageWarning}\"", xaml);
+        Assert.Contains("Classes.error=\"{Binding IsStatusMessageError}\"", xaml);
+        Assert.Contains("Classes.info=\"{Binding IsStatusMessageInfo}\"", xaml);
         Assert.Contains("EditorBrushSuccess", xaml);
         Assert.Contains("EditorBrushWarning", xaml);
         Assert.Contains("EditorBrushError", xaml);
         Assert.Contains("EditorBrushInfo", xaml);
+        Assert.DoesNotContain("command" + "-feedback-status", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Command" + "Feedback", xaml, StringComparison.Ordinal);
     }
 
     [Fact]

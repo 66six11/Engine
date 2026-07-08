@@ -317,6 +317,32 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         return true;
     }
 
+    public bool CanOpenPanel(string? panelId)
+    {
+        if (!IsMainWindow
+            || panelRegistry_ is null
+            || string.IsNullOrWhiteSpace(panelId))
+        {
+            return false;
+        }
+
+        if (ContainsPanel(panelId))
+        {
+            return true;
+        }
+
+        foreach (var descriptor in panelRegistry_.GetAll())
+        {
+            if (string.Equals(descriptor.Id, panelId, StringComparison.Ordinal)
+                && windowsByArea_.ContainsKey(descriptor.DefaultArea))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public void BeginDrag(EditorDockTabViewModel tab)
     {
         var window = FindWindow(tab);

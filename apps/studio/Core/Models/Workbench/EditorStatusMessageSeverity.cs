@@ -1,7 +1,8 @@
 namespace Editor.Core.Models.Workbench;
 
-public enum EditorCommandFeedbackSeverity
+public enum EditorStatusMessageSeverity
 {
+    Debug,
     Info,
     Success,
     Warning,
