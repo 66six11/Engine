@@ -82,21 +82,11 @@ namespace asharia::editor {
         [[nodiscard]] Result<void> recordSharedViewportFrame(
             VkDevice device, VmaAllocator allocator, VkQueue graphicsQueue,
             std::uint32_t graphicsQueueFamily,
+            BasicFullscreenTextureRenderer& renderer,
             EditorSharedViewportFrameEpochTracker& frameEpochTracker,
             EditorSharedViewportExternalImagePool& externalImagePool,
             EditorSharedViewportPacketState& state, EditorSharedViewportPresentDesc desc,
             std::uint64_t frameIndex) {
-            auto renderer = BasicFullscreenTextureRenderer::create(
-                BasicFullscreenTextureRendererDesc{
-                    .device = device,
-                    .allocator = allocator,
-                    .shaderDirectory = ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR,
-                });
-            if (!renderer) {
-                return std::unexpected{std::move(renderer.error())};
-            }
-            state.renderer = std::move(*renderer);
-
             auto imageLease = externalImagePool.acquire(
                 desc.imageHandleFamily,
                 VulkanExternalImageDesc{
@@ -177,7 +167,9 @@ namespace asharia::editor {
             };
             view.viewName = desc.panelId.empty() ? "Studio Scene View" : desc.panelId;
 
-            auto recorded = state.renderer.recordViewFrame(frame, view);
+            auto recorded =
+                renderer.recordViewFrame(frame, view, state.transientImagePool,
+                                         state.transientImages);
             if (!recorded) {
                 const VkResult endedAfterFailure = vkEndCommandBuffer(state.commandBuffer);
                 if (endedAfterFailure != VK_SUCCESS) {
@@ -295,6 +287,18 @@ namespace asharia::editor {
         producer.allocator_ = context.allocator();
         producer.graphicsQueue_ = context.graphicsQueue();
         producer.graphicsQueueFamily_ = context.graphicsQueueFamily();
+        auto renderer = BasicFullscreenTextureRenderer::create(
+            BasicFullscreenTextureRendererDesc{
+                .device = producer.device_,
+                .allocator = producer.allocator_,
+                .shaderDirectory = ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR,
+            });
+        if (!renderer) {
+            return std::unexpected{std::move(renderer.error())};
+        }
+
+        producer.renderer_ = std::move(*renderer);
+        ++producer.stats_.rendererCreations;
         return producer;
     }
 
@@ -302,16 +306,22 @@ namespace asharia::editor {
     EditorSharedViewportRenderProducer::renderSceneViewFrame(
         EditorSharedViewportPresentDesc desc, std::uint64_t frameIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
+        if (frameEpochTracker_.stats().pending == 0U) {
+            // Descriptor sets are rewritten during record; rewind only after prior
+            // packet fences have completed.
+            renderer_.resetFrameResourceCursors();
+        }
+
         auto rendered = recordSharedViewportFrame(device_, allocator_, graphicsQueue_,
-                                                  graphicsQueueFamily_, frameEpochTracker_,
-                                                  externalImagePool_, *state, desc, frameIndex);
+                                                  graphicsQueueFamily_, renderer_,
+                                                  frameEpochTracker_, externalImagePool_, *state,
+                                                  desc, frameIndex);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
-        ++stats_.rendererCreations;
         return state;
     }
 

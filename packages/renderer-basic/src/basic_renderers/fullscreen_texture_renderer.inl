@@ -472,6 +472,15 @@ VkDescriptorSet BasicFullscreenTextureRenderer::acquireCompositeDescriptorSet(
     return compositeDescriptorSets_[compositeDescriptorSetCursor_++];
 }
 
+void BasicFullscreenTextureRenderer::resetFrameResourceCursors() noexcept {
+    descriptorSetEpoch_ = 0U;
+    compositeDescriptorSetEpoch_ = 0U;
+    debugLineVertexBufferEpoch_ = 0U;
+    descriptorSetCursor_ = 0U;
+    compositeDescriptorSetCursor_ = 0U;
+    debugLineVertexBufferCursor_ = 0U;
+}
+
 Result<VkBuffer> BasicFullscreenTextureRenderer::uploadDebugLineVertices(
     const VulkanFrameRecordContext& frame, std::span<const std::byte> vertices) {
     if (vertices.empty()) {
@@ -573,6 +582,14 @@ BasicFullscreenTextureRenderer::recordFrame(const VulkanFrameRecordContext& fram
 Result<VulkanFrameRecordResult>
 BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& frame,
                                                 BasicRenderViewDesc view) {
+    return recordViewFrame(frame, std::move(view), transientImagePool_, transientImages_);
+}
+
+Result<VulkanFrameRecordResult>
+BasicFullscreenTextureRenderer::recordViewFrame(
+    const VulkanFrameRecordContext& frame, BasicRenderViewDesc view,
+    VulkanTransientImagePool& transientImagePool,
+    std::vector<VulkanTransientImageResource>& transientImages) {
     auto target = validateBasicRenderViewTarget(view.target, "Fullscreen render view");
     if (!target) {
         return std::unexpected{std::move(target.error())};
@@ -777,7 +794,7 @@ BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& 
     }
 
     auto prepared = prepareTransientResources(frame, device_, allocator_, *compiled, bindings,
-                                              transientImagePool_, transientImages_);
+                                              transientImagePool, transientImages);
     if (!prepared) {
         return std::unexpected{std::move(prepared.error())};
     }

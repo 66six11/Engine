@@ -281,10 +281,18 @@ sequenceDiagram
 - `editor shared viewport runtime` owns Vulkan context, producer lifetime,
   outstanding packet tracking and shutdown drain. `outstandingPackets` remains
   the authoritative count for managed compositor packet ownership.
-- The native render producer owns RenderView recording, per-packet render
-  submission, per-packet command/semaphore/fence resources, a producer-local
-  external image pool keyed by image handle family, format, extent, usage and
-  aspect mask, and a producer-local submitted/completed frame epoch tracker.
+- The native render producer owns RenderView recording, the persistent
+  `BasicFullscreenTextureRenderer`, a producer-local external image pool keyed
+  by image handle family, format, extent, usage and aspect mask, and a
+  producer-local submitted/completed frame epoch tracker.
+- Each shared viewport packet owns its external image lease, transient
+  RenderGraph images recorded for that packet, wait/signal semaphores, command
+  pool, command buffer, fence, exported image/semaphore OS handles and frame
+  epoch lease. The persistent renderer rewinds rewritten descriptor/resource
+  cursors only when the producer epoch tracker reports no pending packet.
+- Runtime shutdown drain keeps the producer and Vulkan context alive while
+  packets or packet release operations are outstanding, so persistent renderer
+  resources are destroyed only after packet-owned GPU work has completed.
 - The frame epoch tracker is independent from `VulkanFrameLoop`; epoch
   completion is driven by packet release observing the packet fence.
 - External image pool entries own Vulkan image resources only. Win32 opaque NT
@@ -294,7 +302,8 @@ sequenceDiagram
   platforms must map their handle family through compatibility probing and a
   distinct pool key before image reuse.
 - `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI；v3 native runtime
-  stats expose epoch diagnostics while v1/v2 stats remain unchanged.
+  stats expose epoch diagnostics and v4 stats expose renderer creation reuse
+  diagnostics while v1/v2/v3 stats remain unchanged.
 - Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
 
 ## 启动与 Context 流程

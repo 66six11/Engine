@@ -172,6 +172,7 @@ namespace asharia::editor {
             .frameEpochsSubmitted = producerStats.frameEpochsSubmitted,
             .frameEpochsCompleted = producerStats.frameEpochsCompleted,
             .frameEpochsPending = producerStats.frameEpochsPending,
+            .rendererCreations = producerStats.rendererCreations,
             .outstandingPackets = outstandingPackets_.size(),
             .hasContext = context_.has_value(),
             .hasRenderProducer = renderProducer_.has_value(),

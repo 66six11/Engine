@@ -34,10 +34,15 @@ namespace asharia {
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordViewFrame(const VulkanFrameRecordContext& frame, BasicRenderViewDesc view);
         [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordViewFrame(const VulkanFrameRecordContext& frame, BasicRenderViewDesc view,
+                        VulkanTransientImagePool& transientImagePool,
+                        std::vector<VulkanTransientImageResource>& transientImages);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
         recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame,
                                      VkExtent2D viewportExtent);
+        void resetFrameResourceCursors() noexcept;
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
         [[nodiscard]] BasicOffscreenViewportStats offscreenViewportStats() const;
         [[nodiscard]] BasicOffscreenViewportTarget offscreenViewportTarget() const;
