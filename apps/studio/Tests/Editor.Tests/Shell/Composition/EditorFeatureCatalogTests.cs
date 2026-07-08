@@ -1,7 +1,5 @@
 using System.Linq;
 using Editor.Shell.Composition;
-using Editor.Shell.Commands;
-using Editor.Shell.Docking;
 using Xunit;
 
 namespace Editor.Tests.Shell.Composition;
@@ -11,27 +9,17 @@ public sealed class EditorFeatureCatalogTests
     [Fact]
     public void CreateDefaultModules_registers_default_workbench_panels()
     {
-        var registry = new PanelRegistry();
-
-        foreach (var module in EditorFeatureCatalog.CreateDefaultModules())
-        {
-            module.RegisterPanels(registry);
-        }
+        var composition = new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules()).Compose();
 
         Assert.Equal(
-            ["scene-view", "hierarchy", "inspector", "console", "problems"],
-            registry.GetAll().Select(descriptor => descriptor.Id));
+            ["scene-view", "hierarchy", "inspector", "console", "problems", "frame-debugger", "ui-style"],
+            composition.PanelRegistry.GetAll().Select(descriptor => descriptor.Id));
     }
 
     [Fact]
     public void CreateDefaultModules_registers_default_workbench_actions()
     {
-        var registry = new WorkbenchActionRegistry();
-
-        foreach (var module in EditorFeatureCatalog.CreateDefaultModules())
-        {
-            module.RegisterActions(registry);
-        }
+        var composition = new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules()).Compose();
 
         Assert.Equal(
             [
@@ -42,7 +30,9 @@ public sealed class EditorFeatureCatalogTests
                 "workbench.panel.inspector",
                 "workbench.panel.console",
                 "workbench.panel.problems",
+                "workbench.panel.frame-debugger",
+                "workbench.panel.ui-style",
             ],
-            registry.GetAll().Select(action => action.Id));
+            composition.ActionRegistry.GetAll().Select(action => action.Id));
     }
 }

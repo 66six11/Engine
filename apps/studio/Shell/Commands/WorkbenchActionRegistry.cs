@@ -1,18 +1,32 @@
 using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Extensions;
+using Editor.Core.Models.Workbench;
 
 namespace Editor.Shell.Commands;
 
 public sealed class WorkbenchActionRegistry : IWorkbenchActionRegistry
 {
-    private readonly Dictionary<string, WorkbenchActionDescriptor> descriptors_ = new(StringComparer.Ordinal);
-    private readonly List<WorkbenchActionDescriptor> descriptorsInRegistrationOrder_ = [];
+    private static readonly EditorExtensionId DirectRegistrationOwnerId =
+        new("studio.workbench-action-registry.direct");
+
+    private readonly Dictionary<string, WorkbenchActionRegistryEntry> descriptors_ =
+        new(StringComparer.Ordinal);
+    private readonly List<WorkbenchActionRegistryEntry> descriptorsInRegistrationOrder_ = [];
+    private long nextRegistrationId_;
 
     public void Register(WorkbenchActionDescriptor descriptor)
     {
+        _ = RegisterOwned(descriptor, DirectRegistrationOwnerId);
+    }
+
+    internal IDisposable RegisterOwned(
+        WorkbenchActionDescriptor descriptor,
+        EditorExtensionId ownerId)
+    {
         ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(ownerId);
 
         if (string.IsNullOrWhiteSpace(descriptor.Id))
         {
@@ -45,23 +59,86 @@ public sealed class WorkbenchActionRegistry : IWorkbenchActionRegistry
             throw new ArgumentException("OpenPanel workbench actions must specify a target panel id.", nameof(descriptor));
         }
 
-        if (!descriptors_.TryAdd(descriptor.Id, descriptor))
+        var entry = new WorkbenchActionRegistryEntry(
+            descriptor,
+            ownerId,
+            ++nextRegistrationId_);
+
+        if (!descriptors_.TryAdd(descriptor.Id, entry))
         {
-            throw new InvalidOperationException($"Workbench action id '{descriptor.Id}' is already registered.");
+            throw new InvalidOperationException(
+                $"Workbench action id '{descriptor.Id}' is already registered by "
+                + $"'{descriptors_[descriptor.Id].OwnerId}'; new owner '{ownerId}' cannot register it.");
         }
 
-        descriptorsInRegistrationOrder_.Add(descriptor);
+        descriptorsInRegistrationOrder_.Add(entry);
+        return new WorkbenchActionRegistrationLease(
+            this,
+            descriptor.Id,
+            entry.RegistrationId);
     }
 
     public IReadOnlyList<WorkbenchActionDescriptor> GetAll()
     {
-        return descriptorsInRegistrationOrder_.ToArray();
+        var descriptors = new WorkbenchActionDescriptor[descriptorsInRegistrationOrder_.Count];
+        for (var index = 0; index < descriptors.Length; index++)
+        {
+            descriptors[index] = descriptorsInRegistrationOrder_[index].Descriptor;
+        }
+
+        return descriptors;
     }
 
     public WorkbenchActionDescriptor? FindById(string id)
     {
         ArgumentNullException.ThrowIfNull(id);
 
-        return descriptors_.GetValueOrDefault(id);
+        return descriptors_.GetValueOrDefault(id)?.Descriptor;
+    }
+
+    internal EditorExtensionId GetOwnerId(string id)
+    {
+        if (descriptors_.TryGetValue(id, out var entry))
+        {
+            return entry.OwnerId;
+        }
+
+        throw new KeyNotFoundException($"Workbench action id '{id}' is not registered.");
+    }
+
+    private void RemoveRegistration(string id, long registrationId)
+    {
+        if (!descriptors_.TryGetValue(id, out var entry)
+            || entry.RegistrationId != registrationId)
+        {
+            return;
+        }
+
+        descriptors_.Remove(id);
+        var index = descriptorsInRegistrationOrder_.FindIndex(
+            item => item.RegistrationId == registrationId);
+        if (index >= 0)
+        {
+            descriptorsInRegistrationOrder_.RemoveAt(index);
+        }
+    }
+
+    private sealed record WorkbenchActionRegistryEntry(
+        WorkbenchActionDescriptor Descriptor,
+        EditorExtensionId OwnerId,
+        long RegistrationId);
+
+    private sealed class WorkbenchActionRegistrationLease(
+        WorkbenchActionRegistry registry,
+        string id,
+        long registrationId) : IDisposable
+    {
+        private WorkbenchActionRegistry? registry_ = registry;
+
+        public void Dispose()
+        {
+            registry_?.RemoveRegistration(id, registrationId);
+            registry_ = null;
+        }
     }
 }

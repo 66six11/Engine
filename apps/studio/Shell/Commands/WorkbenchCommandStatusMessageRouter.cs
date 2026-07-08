@@ -1,28 +1,28 @@
 using System;
-using Editor.Core.Models;
+using Editor.Core.Models.Workbench;
 
 namespace Editor.Shell.Commands;
 
 internal sealed class WorkbenchCommandStatusMessageRouter : IWorkbenchCommandRouter
 {
     private readonly IWorkbenchCommandRouter inner_;
-    private readonly Action<EditorStatusMessageSnapshot> publishStatusMessage_;
+    private readonly Action<WorkbenchCommandExecutionResult> publishResult_;
 
     public WorkbenchCommandStatusMessageRouter(
         IWorkbenchCommandRouter inner,
-        Action<EditorStatusMessageSnapshot> publishStatusMessage)
+        Action<WorkbenchCommandExecutionResult> publishResult)
     {
         ArgumentNullException.ThrowIfNull(inner);
-        ArgumentNullException.ThrowIfNull(publishStatusMessage);
+        ArgumentNullException.ThrowIfNull(publishResult);
 
         inner_ = inner;
-        publishStatusMessage_ = publishStatusMessage;
+        publishResult_ = publishResult;
     }
 
     public WorkbenchCommandExecutionResult Execute(string commandId)
     {
         var result = inner_.Execute(commandId);
-        publishStatusMessage_(EditorStatusMessageSnapshot.FromCommandResult(result));
+        publishResult_(result);
         return result;
     }
 }

@@ -156,6 +156,10 @@ flowchart TD
   selection value contracts；未来
   `packages/editor-core` 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
+- `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Studio viewport contracts
+  分层为 `Core/Models/Viewports` 的 UI-neutral snapshot、`Core/Interop/Viewports` 的 ABI bridge 和
+  `Features/SceneView` 的 Avalonia composition host/presenter。它通过 `editor_native` P/Invoke 请求
+  native-owned Vulkan present packet；不录制 command buffer、不拥有 Vulkan image/semaphore lifetime。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -227,6 +231,85 @@ flowchart TB
 - `apps/editor` 是 editor host 和 smoke harness；它拥有 ImGui backend lifecycle、panel/action/event
   state 和 ImGui texture descriptor lifetime。它可以在 host integration 层录制 ImGui draw data
   到 swapchain，但 editor panel 不能录制 Vulkan commands。
+- `apps/studio` 是 managed shell；Scene View 可以拥有 Avalonia composition surface 和 status ViewModel，
+  但 Vulkan frame recording、external image/semaphore 创建和 native packet release 仍在 native bridge/RHI 边界。
+
+## Studio Avalonia Scene View Composition 流程
+
+```mermaid
+sequenceDiagram
+    participant View as SceneViewPanelView
+    participant VM as SceneViewPanelViewModel
+    participant Avalonia as Avalonia Compositor GPU interop
+    participant Bridge as ViewportNativeBridge
+    participant Native as editor_native ABI
+    participant Runtime as editor shared viewport runtime
+    participant Producer as native render producer
+    participant RHI as rhi-vulkan / renderer_basic_vulkan
+
+    View->>Avalonia: ElementComposition.GetElementVisual + TryGetCompositionGpuInterop
+    Avalonia-->>View: device LUID/UUID, image/semaphore handle support
+    View->>VM: UpdateCompositionCapabilities(snapshot)
+    View->>Bridge: QueryCompositionCompatibility(snapshot, extent)
+    Bridge->>Native: editor_viewport_query_composition_compatibility
+    Native-->>Bridge: status + message
+    Bridge-->>View: ViewportNativePresentSnapshot
+    View->>VM: UpdateNativePresent(snapshot)
+    View->>Bridge: AcquirePresentPacket(snapshot, extent)
+    Bridge->>Native: editor_viewport_acquire_present_packet
+    Native->>Runtime: render Scene View frame
+    Runtime->>Producer: render Scene View frame
+    Producer->>RHI: record RenderView into external Vulkan image
+    RHI-->>Producer: image + semaphores ready
+    Producer-->>Runtime: native packet state
+    Native-->>Bridge: native-owned opaque NT handles + packet
+    Bridge-->>View: ViewportNativePresentPacket
+    View->>Avalonia: ImportImage / ImportSemaphore
+    View->>Avalonia: CompositionDrawingSurface.UpdateWithSemaphoresAsync
+    View->>Bridge: ReleasePresentPacket in finally
+    Bridge->>Native: editor_viewport_release_present_packet
+    View->>VM: presented/import-failed snapshot
+```
+
+当前约束：
+
+- `Core/Models/Viewports` 不引用 Avalonia、native pointer、Vulkan handle 或 OS handle，只保存 snapshot。
+- `Core/Interop/Viewports` 是 managed Core 中唯一可持有 ABI structs、`IntPtr` 和 packet release 逻辑的区域。
+- `Features/SceneView` 是 managed Studio 中唯一导入 Avalonia composition external image/semaphore 的区域。
+- `SceneViewCompositionPresenter` 只通过 Avalonia `ICompositionGpuInterop` import opaque NT handles，并在 `finally`
+  释放 native packet；失败 packet 由 bridge 复制 message 后释放。
+- `editor shared viewport runtime` owns Vulkan context, producer lifetime,
+  outstanding packet tracking and shutdown drain. `outstandingPackets` remains
+  the authoritative count for managed compositor packet ownership.
+- The runtime allows at most one outstanding shared viewport packet. A second
+  acquire while a packet is pending is rejected before producer work with
+  native `Unavailable`; this applies backpressure without blocking the UI
+  thread or allocating another packet.
+- The native render producer owns RenderView recording, the persistent
+  `BasicFullscreenTextureRenderer`, a producer-local external image pool keyed
+  by image handle family, format, extent, usage and aspect mask, and a
+  producer-local submitted/completed frame epoch tracker.
+- Each shared viewport packet owns its external image lease, transient
+  RenderGraph images recorded for that packet, wait/signal semaphores, command
+  pool, command buffer, fence, exported image/semaphore OS handles and frame
+  epoch lease. The persistent renderer rewinds rewritten descriptor/resource
+  cursors only when the producer epoch tracker reports no pending packet.
+- Runtime shutdown drain keeps the producer and Vulkan context alive while
+  packets or packet release operations are outstanding, so persistent renderer
+  resources are destroyed only after packet-owned GPU work has completed.
+- The frame epoch tracker is independent from `VulkanFrameLoop`; epoch
+  completion is driven by packet release observing the packet fence.
+- External image pool entries own Vulkan image resources only. Win32 opaque NT
+  image/semaphore handles are exported fresh per packet and are closed during
+  native packet release; the pool does not store or close OS handles.
+- Windows `VulkanOpaqueNt` is the current validated composition backend. Other
+  platforms must map their handle family through compatibility probing and a
+  distinct pool key before image reuse.
+- `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI；v3 native runtime
+  stats expose epoch diagnostics, v4 stats expose renderer creation reuse
+  diagnostics, and v5 stats expose `maxOutstandingPackets` plus
+  `packetBackpressureHits` while v1/v2/v3/v4 stats remain unchanged.
+- Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
 
 ## 启动与 Context 流程
 

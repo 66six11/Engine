@@ -31,7 +31,7 @@ internal sealed record WorkbenchShortcutGesture(Key Key, KeyModifiers Modifiers)
                 continue;
             }
 
-            if (key != Key.None || !Enum.TryParse<Key>(part, ignoreCase: true, out key))
+            if (key != Key.None || !Enum.TryParse(part, ignoreCase: true, out key))
             {
                 return false;
             }

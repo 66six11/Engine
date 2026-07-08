@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Abstractions;
-using Editor.Core.Models;
+using Editor.Core.Models.Transactions;
 
 namespace Editor.Shell.Services;
 
@@ -68,7 +68,7 @@ public sealed class EditorTransactionService : IEditorTransactionService
 
         if (transaction.Commands.Count > 0)
         {
-            undoStack_.Add(new TransactionEntry(transaction.DisplayLabel, transaction.Commands.ToArray()));
+            undoStack_.Add(new TransactionEntry(transaction.Commands.ToArray()));
             redoStack_.Clear();
         }
 
@@ -187,7 +187,5 @@ public sealed class EditorTransactionService : IEditorTransactionService
         public List<IEditorEditCommand> Commands { get; } = [];
     }
 
-    private sealed record TransactionEntry(
-        string DisplayLabel,
-        IReadOnlyList<IEditorEditCommand> Commands);
+    private sealed record TransactionEntry(IReadOnlyList<IEditorEditCommand> Commands);
 }

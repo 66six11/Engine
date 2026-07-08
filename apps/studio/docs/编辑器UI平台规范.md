@@ -1,12 +1,14 @@
 # Studio 编辑器 UI 平台规范
 
 状态：当前阶段执行规范
-更新日期：2026-06-22
+更新日期：2026-06-24
 
 本文定义 `apps/studio` 当前阶段的编辑器 UI 平台边界。目标是先把弹窗、后台加载反馈、快捷键、命令菜单、状态反馈和设计时预览做成稳定基础，再继续 Scene、Play Session、native bridge 或插件热更新。
 
 本文不替代：
 
+- [Studio框架设计.md](Studio框架设计.md)：Studio 编辑器前端的顶层框架理念、分层、数据流和底层接入门槛。
+- [Studio代码分类.md](Studio代码分类.md)：新增或整理代码时的目录分类、放置决策和当前 v0 例外。
 - [项目规范.md](项目规范.md)：目录、命名空间、MVVM、性能和合入规则。
 - [控件开发指南.md](控件开发指南.md)：Avalonia 控件、样式、`Design.PreviewWith` 和主题覆盖规则。
 - [Dock系统指南.md](Dock系统指南.md)：Dock、panel、workbench action 和当前实现事实。
@@ -51,10 +53,17 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 | 后台任务状态 | `IEditorBackgroundTaskService`, `EditorBackgroundTaskService` | Current |
 | 事务服务 v0 | `IEditorTransactionService`, `EditorTransactionService` | Current / UI-neutral |
 | 生命周期事件 v0 | `IEditorLifecycleEventService`, `EditorLifecycleEventService` | Current / Shell window lifecycle only |
+| 内置扩展组合 v0 | `EditorExtensionHost`, `EditorContributionBuilder`, `StudioCompositionRoot` | Current / built-in panel-action composition only |
+| Contribution ownership v0 | `PanelRegistry.RegisterOwned`, `WorkbenchActionRegistry.RegisterOwned`, `EditorExtensionHost`, `StudioCompositionSession` removal leases | Current / built-in panel-action owner tracking only |
+| Panel instance lifetime v0 | `PanelInstanceManager`, `EditorDockWorkspaceViewModel`, `EditorDockTabViewModel.ReleasePanelInstance` | Current / built-in panel content close-reset-shutdown disposal |
+| Panel lifecycle callbacks v0 | `IEditorPanelLifecycleSink`, `EditorPanelLifecycleContext`, `PanelInstanceManager`, `EditorDockWorkspaceViewModel` | Current / logical attach-activate-deactivate-detach only |
+| Panel frame update scheduler v0 | `IEditorPanelFrameUpdateSink`, `EditorPanelFrameUpdateRequest`, `EditorPanelFrameScheduler` | Current / UI-neutral Tick(now), active/visible throttling and repaint requests only |
 | Dock tab overflow v0 | `EditorDockTabStripScrollController`, `EditorDockTabStripView` | Current / view-only scroll state |
 | 状态栏反馈 | `ActivityIndicator`, `EditorStatusMessageSnapshot`, `MainWindowViewModel` summary/status properties | Current / status-debug message v0 |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
 | 只读 Scene snapshot | `ISceneSnapshotProvider`, `InMemorySceneSnapshotProvider` | Current / read-only |
+| Provider contribution v0 | `SceneProviderDescriptor`, `EditorProviderHost`, `EditorProviderRoles.ActiveScene` | Current / fixture-backed active scene provider registration |
+| Diagnostic projection v0 | `IEditorDiagnosticService`, `EditorDiagnosticService`, `ConsolePanelViewModel`, `ProblemsPanelViewModel` | Current / UI-neutral latest-status, console and problems projection only |
 
 当前仍不稳定或未实现：
 
@@ -71,6 +80,15 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 | Managed plugin hot reload | Deferred；等 contribution registry、diagnostics、ALC unload negative smoke |
 | Native C ABI | Deferred；等 CPU-only bridge consumer 和 ABI checklist |
 | Avalonia native Vulkan viewport | Deferred；等 CPU-only native bridge 与 viewport ownership 设计 |
+
+`EditorExtensionHost v0` 统一内置 panel/action/provider contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider reload、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
+
+`PanelInstanceManager v0` 接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close、workspace/session shutdown disposal 和逻辑 attached/activated/deactivated/detached callbacks。`IEditorPanelLifecycleSink` 只暴露 UI-neutral `EditorPanelLifecycleContext`，不暴露 Avalonia controls、native handles 或 renderer state；provider reload/runtime lifecycle、插件重载和 native viewport ownership 仍未实现。
+
+`EditorPanelFrameScheduler v0` 只调度已 attached panel content 暴露的 `IEditorPanelFrameUpdateSink`，支持 manual、visible、active-only mode 和可选 target FPS throttle。测试和未来 UI timer 通过显式 `Tick(now)` 驱动；`EditorPanelFrameContext.RequestRepaint()` 只记录 repaint request，不触发 Avalonia `Render`、native viewport presentation、renderer FPS 控制、swapchain present 或 engine simulation。
+
+`EditorProviderHost v0` 只接管 fixture-backed active scene provider contribution 的 role 唯一性、lazy materialization、Ready/Faulted status 和注册释放；`ISceneSnapshotProvider` 仍然只有 `GetCurrentSnapshot()` / `SnapshotChanged` / `TryGetObject()`，不加入 `Connect()`、`Disconnect()`、native handle 或写回语义。
+`EditorDiagnosticService v0` owns bounded UI-neutral diagnostic records and exposes latest, recent and problem-filtered snapshots. `MainWindowViewModel` publishes command feedback into this stream and uses the latest diagnostic as status text; Console consumes all recent diagnostics and Problems consumes only `EditorDiagnosticChannel.Problem`. This is not native engine log ingestion, shell command input, persisted log storage, provider reload diagnostics, plugin diagnostics or a final Console/Problems data grid.
 
 ## 3. 分层规则
 
@@ -359,6 +377,7 @@ WorkbenchActionDescriptor
 2. command failure 默认不弹 modal；只有用户必须决策时才转成 dialog。
 3. long-running command 必须创建 background task，再由 task 状态驱动 status bar 和任务面板。
 4. diagnostics 记录应可被 Console / Problems 复用，不绑定某个临时 overlay。
+5. Current diagnostic projection v0 uses one shared `IEditorDiagnosticService` per composition. Status shows the latest diagnostic message, Console shows recent diagnostics, and Problems filters to problem-channel diagnostics; native log streams, shell command execution, plugin/provider reload diagnostics and persistence remain deferred.
 
 ## 9. Design Preview 合同
 
@@ -591,12 +610,14 @@ UI-sensitive 改动还需要手工或截图确认：
 - [superpowers/plans/2026-06-21-studio-command-palette-follow-up.md](superpowers/plans/2026-06-21-studio-command-palette-follow-up.md)
 - [superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md](superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md)
 - [superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md](superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md)
+- [superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md](superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md)
 - [../../../docs/architecture/managed-extension-model.md](../../../docs/architecture/managed-extension-model.md)
 
 官方资料与优秀案例：
 
 - [Avalonia compiled bindings](https://docs.avaloniaui.net/docs/data-binding/compiled-bindings)：`x:DataType` / compiled binding 作为长期可维护性和性能边界。
 - [Avalonia XAML previewer and design-time settings](https://docs.avaloniaui.net/docs/app-development/xaml-preview-and-design-settings)：design-time data 只服务预览，不进入 runtime service。
-- [Unity EditorWindow](https://docs.unity3d.com/Manual/editor-EditorWindows.html)：编辑器窗口是工具入口，但 Asharia 当前只借鉴 window/menu/workbench 关系，不复制 Unity 扩展 ABI。
+- [Unity EditorWindow](https://docs.unity3d.com/ScriptReference/EditorWindow.html)：借鉴 `Update` / `Repaint` 的 editor-window 调度语义；Asharia 当前只做 panel frame request，不复制 Unity 扩展 ABI。
+- [Avalonia threading model](https://docs.avaloniaui.net/docs/app-development/threading) / [DispatcherTimer](https://api-docs.avaloniaui.net/docs/T_Avalonia_Threading_DispatcherTimer)：未来可用 UI-thread timer 驱动 scheduler，但 v0 contract 不直接创建 timer 或访问 controls。
 - [Godot EditorPlugin custom dock](https://docs.godotengine.org/en/stable/tutorials/plugins/editor/making_plugins.html#a-custom-dock)：dock/plugin 生命周期需要明确初始化与清理；Asharia 当前只做内置 feature 注册和 Shell-owned dock。
 - [Unreal Editor Utility Widgets](https://dev.epicgames.com/documentation/en-us/unreal-engine/editor-utility-widgets-in-unreal-engine)：工具 UI 可以作为编辑器内 surface 暴露；Asharia 当前仍禁止外部脚本直接拥有 Avalonia window/control。

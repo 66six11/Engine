@@ -1,6 +1,5 @@
-using System.Collections.Generic;
-using System.Linq;
-using Editor.Core.Models;
+﻿using System.Collections.Generic;
+using Editor.Core.Models.Selection;
 using Editor.Shell.Selection;
 using Xunit;
 

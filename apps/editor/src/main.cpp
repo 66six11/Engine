@@ -17,6 +17,8 @@
 #include "editor_app.hpp"
 #include "editor_asset_catalog.hpp"
 #include "editor_asset_catalog_report.hpp"
+#include "native_bridge/frame_debugger_native_smoke.hpp"
+#include "native_bridge/viewport_native_smoke.hpp"
 
 namespace {
 
@@ -221,6 +223,26 @@ namespace {
         return snapshot.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
+    [[nodiscard]] int runNativeBridgeSmoke(std::span<char*> args) {
+        if (!validateSingleSmokeArg(args, "--smoke-editor-native-bridge")) {
+            return EXIT_FAILURE;
+        }
+        if (!asharia::editor::runFrameDebuggerNativeBridgeSmoke()) {
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
+    [[nodiscard]] int runViewportNativeSmoke(std::span<char*> args) {
+        if (!validateSingleSmokeArg(args, "--smoke-editor-viewport-native")) {
+            return EXIT_FAILURE;
+        }
+        if (!asharia::editor::runViewportNativeBridgeSmoke()) {
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
     void printVersion() {
         std::cout << asharia::kEngineName << " editor " << asharia::kEngineVersion.major << '.'
                   << asharia::kEngineVersion.minor << '.' << asharia::kEngineVersion.patch << '\n';
@@ -230,7 +252,8 @@ namespace {
         std::cout
             << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
                "[--smoke-editor-asset-browser] [--smoke-editor-viewport] "
-               "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger]\n"
+               "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger] "
+               "[--smoke-editor-native-bridge] [--smoke-editor-viewport-native]\n"
                "       asharia-editor [--project <asharia.project.json|project-dir>] "
                "[--product-manifest <products.aproducts.json>] "
                "[--asset-target-profile <profile>]\n"
@@ -290,6 +313,14 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
             return asharia::editor::runEditor(asharia::editor::EditorRunMode::SmokeFrameDebugger);
+        }
+
+        if (hasArg(args, "--smoke-editor-native-bridge")) {
+            return runNativeBridgeSmoke(args);
+        }
+
+        if (hasArg(args, "--smoke-editor-viewport-native")) {
+            return runViewportNativeSmoke(args);
         }
 
         if (args.size() == 1) {

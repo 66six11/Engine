@@ -1,5 +1,5 @@
 using System;
-using Editor.Core.Models;
+using Editor.Core.Models.Workbench;
 using Xunit;
 
 namespace Editor.Tests.CoreContracts;

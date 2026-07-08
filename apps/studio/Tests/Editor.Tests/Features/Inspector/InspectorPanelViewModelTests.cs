@@ -1,12 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Editor.Core.Models;
+using Editor.Core.Abstractions;
+using Editor.Core.Models.Scene;
+using Editor.Core.Models.Selection;
 using Editor.Core.Services;
 using Editor.Features.Inspector.Models;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Selection;
-using Editor.Shell.Services;
 using Xunit;
 
 namespace Editor.Tests.Features.Inspector;
@@ -248,7 +249,7 @@ public sealed class InspectorPanelViewModelTests
     private static void AssertSingleSelectionDocument(InspectorDocumentModel? document)
     {
         Assert.NotNull(document);
-        var actual = document!;
+        var actual = document;
         Assert.False(actual.IsMultiSelection);
         Assert.Equal(1, actual.SelectionCount);
         Assert.Equal("Cube", actual.Title);

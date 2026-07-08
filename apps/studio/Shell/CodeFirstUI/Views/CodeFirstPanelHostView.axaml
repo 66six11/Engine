@@ -1,0 +1,209 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.CodeFirstUI.Hosting"
+             x:Class="Editor.Shell.CodeFirstUI.Views.CodeFirstPanelHostView"
+             x:DataType="vm:CodeFirstPanelHostViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.code-first-panel">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBlock.code-first-panel-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeTitle}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.primary">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.secondary">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.muted">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.body">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.caption">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="LineHeight" Value="16" />
+        </Style>
+        <Style Selector="TextBlock.code-first-label.title">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeHeading}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="TextBlock.code-first-unsupported">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        </Style>
+        <Style Selector="Border.code-first-placeholder">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBlock.code-first-placeholder-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushError}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.code-first-placeholder-message">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="ScrollViewer.code-first-scroll">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="Expander.code-first-foldout">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="StackPanel.code-first-foldout-content">
+            <Setter Property="Margin" Value="12,4,0,0" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.debug">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.info">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushInfo}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.warning">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-validation-message.error">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushError}" />
+        </Style>
+        <Style Selector="Button.code-first-button">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="Padding" Value="10,2" />
+        </Style>
+        <Style Selector="Separator.code-first-separator">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Height" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Grid.code-first-property-row">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
+        <Style Selector="TextBlock.code-first-input-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style Selector="TextBlock.code-first-property-value">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="TextBox.code-first-text-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
+        <Style Selector="ComboBox.code-first-combo-box">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="StackPanel.code-first-radio-group">
+            <Setter Property="Orientation" Value="Horizontal" />
+            <Setter Property="Spacing" Value="8" />
+        </Style>
+        <Style Selector="RadioButton.code-first-radio-button">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
+        <Style Selector="ColorPicker.code-first-color-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Grid.code-first-vector3-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Grid.code-first-vector2-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Grid.code-first-vector4-field">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="TextBlock.code-first-vector-component-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+        </Style>
+        <Style Selector="NumericUpDown.code-first-vector-component">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Slider.code-first-slider">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="NumericUpDown.code-first-number-input">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="ProgressBar.code-first-progress-bar">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="CheckBox.code-first-toggle">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorWidgetUnit}" />
+        </Style>
+        <Style Selector="ListBox.code-first-list">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="MinHeight" Value="160" />
+        </Style>
+        <Style Selector="ListBox.code-first-list ListBoxItem">
+            <Setter Property="Height" Value="{DynamicResource EditorWidgetUnit}" />
+            <Setter Property="Padding" Value="8,2" />
+        </Style>
+        <Style Selector="GridSplitter.code-first-splitter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="GridSplitter.code-first-splitter.vertical">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="Cursor" Value="SizeWestEast" />
+        </Style>
+        <Style Selector="GridSplitter.code-first-splitter.horizontal">
+            <Setter Property="Height" Value="4" />
+            <Setter Property="Cursor" Value="SizeNorthSouth" />
+        </Style>
+        <Style Selector="ScrollViewer.code-first-navigation-directory">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="2" />
+        </Style>
+        <Style Selector="TextBlock.code-first-navigation-group">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="4,0,8,0" />
+        </Style>
+        <Style Selector="Grid.code-first-navigation-tree-row.selected Button.code-first-navigation-route">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}"
+            Padding="8">
+        <ContentControl x:Name="GuiHost" />
+    </Border>
+</UserControl>

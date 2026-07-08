@@ -1,0 +1,119 @@
+name: Docs Site Sync
+
+on:
+  pull_request:
+    paths:
+      - docs/developer-documentation-system/**
+      - .github/workflows/docs-site-sync.yml
+  push:
+    branches:
+      - main
+    paths:
+      - docs/developer-documentation-system/**
+      - .github/workflows/docs-site-sync.yml
+  workflow_dispatch:
+    inputs:
+      engine_ref:
+        description: Engine ref to publish. Defaults to the workflow SHA.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-site-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-docs:
+    name: Validate docs
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Engine
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check text encoding
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
+
+      - name: Check whitespace
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            git fetch origin $env:GITHUB_BASE_REF --depth=1
+            git diff --check "origin/$env:GITHUB_BASE_REF...HEAD"
+          } elseif ("${{ github.event.before }}" -and "${{ github.event.before }}" -notmatch "^0+$") {
+            git diff --check "${{ github.event.before }}..${{ github.sha }}"
+          } else {
+            git diff --check HEAD
+          }
+
+  notify-docs-site:
+    name: Notify docs site
+    runs-on: ubuntu-latest
+    needs: validate-docs
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Resolve Engine ref
+        id: engine
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENGINE_REF: ${{ inputs.engine_ref }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_ENGINE_REF" ]; then
+            echo "ref=$INPUT_ENGINE_REF" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$GITHUB_SHA_VALUE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch docs-site workflow
+        shell: bash
+        env:
+          DOCS_SITE_DISPATCH_TOKEN: ${{ secrets.DOCS_SITE_DISPATCH_TOKEN }}
+          DOCS_SITE_REPOSITORY: ${{ vars.DOCS_SITE_REPOSITORY || '66six11/VkEngine-docs-site' }}
+          ENGINE_REPOSITORY: ${{ github.repository }}
+          ENGINE_REF: ${{ steps.engine.outputs.ref }}
+          ENGINE_DOCS_DIR: docs/developer-documentation-system
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$DOCS_SITE_DISPATCH_TOKEN" ]; then
+            echo "::notice::DOCS_SITE_DISPATCH_TOKEN is not configured; skipping docs-site repository_dispatch."
+            exit 0
+          fi
+
+          payload="$(jq -n \
+            --arg event_type "engine-docs-updated" \
+            --arg engine_repository "$ENGINE_REPOSITORY" \
+            --arg engine_ref "$ENGINE_REF" \
+            --arg engine_docs_dir "$ENGINE_DOCS_DIR" \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg source_run_id "$SOURCE_RUN_ID" \
+            '{event_type: $event_type, client_payload: {engine_repository: $engine_repository, engine_ref: $engine_ref, engine_docs_dir: $engine_docs_dir, source_sha: $source_sha, source_run_id: $source_run_id}}')"
+
+          curl -fsSL \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $DOCS_SITE_DISPATCH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$DOCS_SITE_REPOSITORY/dispatches" \
+            -d "$payload"
+
+      - name: Trigger optional Vercel deploy hook
+        shell: bash
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$VERCEL_DEPLOY_HOOK_URL" ]; then
+            echo "::notice::VERCEL_DEPLOY_HOOK_URL is not configured; skipping direct Vercel deploy hook."
+            exit 0
+          fi
+
+          curl -fsSL -X POST "$VERCEL_DEPLOY_HOOK_URL"

@@ -80,6 +80,13 @@ RenderGraph 资料。
 - `apps/editor`：Dear ImGui editor host。它组合 `window-glfw`、`rhi-vulkan`、`renderer_basic_vulkan` 和
   ImGui backend，拥有 shell、panel/action/event、viewport coordination、texture registry、Frame Debug 和
   editor smokes；未来 `editor-core` 只能接收 backend-neutral editor state。
+- `apps/studio`：Avalonia managed Studio shell。`Core/Models/Viewports` 只拥有 UI-neutral viewport id、
+  extent、composition capability 和 native-present snapshot；`Core/Interop/Viewports` 拥有 ABI structs、
+  P/Invoke entry points 和 native packet release bridge；`Features/SceneView` 拥有 Avalonia composition
+  probing、drawing surface host 和 external image/semaphore import。Studio 不录制 Vulkan commands，不拥有
+  native GPU resource，只通过 `editor_native` ABI 请求 native-owned present packet 并在 managed import/update 后释放。
+  Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
+  composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 
 ## 所有权模型
 
@@ -97,6 +104,13 @@ RenderGraph 资料。
   registration 和 delayed retirement。Scene View panel 只提交 `EditorViewportRequest`；
   `EditorViewportCoordinator` 才把 keyed request 转换成 sampled RenderView target、keyed diagnostics snapshot
   和 ImGui texture publication。
+- `apps/studio` 的 viewport 状态分三层所有权：`Core/Models/Viewports` 保存不可变 status snapshot；
+  `Core/Interop/Viewports` 负责把 Avalonia compositor device id/handle capability 转成 native ABI request，并负责释放
+  native present packet；`Features/SceneView` 持有 `SceneViewCompositionHost`、`CompositionDrawingSurface` 和
+  `SceneViewCompositionPresenter`，只导入 native opaque NT image/semaphore handle 到 Avalonia composition。
+- native shared viewport runtime 仍由 C++ `apps/editor` / `rhi-vulkan` / `renderer_basic_vulkan` 侧拥有 Vulkan
+  image、semaphore、RenderView recording 和 deferred GPU lifetime。managed Studio 只能观察 packet metadata，
+  不能关闭、重用或延迟销毁 Vulkan resource。
 
 销毁顺序：
 
@@ -149,6 +163,24 @@ RenderGraph 资料。
 7. frame loop submit、present、retire deferred deletion 和 timestamp/debug state。
 8. editor path 将 sampled RenderView target 注册给 ImGui texture registry；Frame Debug / Live RG View 只读
    diagnostics snapshot。
+
+Studio Avalonia composition viewport spike 的当前路径：
+
+1. `SceneViewPanelView` attach 或 bounds 改变时，`SceneViewCompositionCapabilityReader` 通过
+   `ElementComposition.GetElementVisual(...)` 和 `Compositor.TryGetCompositionGpuInterop()` 探测 Avalonia
+   composition GPU interop。
+2. `SceneViewPanelViewModel` 保存 `ViewportCompositionCapabilitiesSnapshot`。新的 capability snapshot 会清除旧的
+   native-present snapshot，避免显示过期的成功状态。
+3. 只有 capability 为 `Supported` 且 viewport 有非零像素 extent 时，`ViewportNativeBridge` 才调用
+   `editor_viewport_query_composition_compatibility`，把 compositor device LUID/UUID 和 Vulkan opaque NT
+   image/semaphore handle capability 传给 native。
+4. compatibility 成功后，Scene View 请求 native present packet。native runtime 渲染一帧 Scene View 到
+   native-owned external Vulkan image，并导出 opaque NT image handle、render-complete semaphore handle 和
+   compositor-release semaphore handle。
+5. `SceneViewCompositionPresenter` 用 `ICompositionGpuInterop.ImportImage` / `ImportSemaphore` 导入 handles，并调用
+   `CompositionDrawingSurface.UpdateWithSemaphoresAsync(...)`。managed code 不等待 Win32 handle，不阻塞 UI thread。
+6. present packet 在 presenter `finally` 中释放；native acquire 失败 packet 由 bridge 转为
+   `ViewportNativePresentSnapshot` 后释放。ViewModel 只显示 status/message/format/frame metadata。
 
 当前建议仍保持：
 

@@ -7,7 +7,8 @@
 | 主题 | 先读 |
 | --- | --- |
 | 构建、门禁和日常 workflow | [workflow/build.md](workflow/build.md)、[workflow/review.md](workflow/review.md)、[workflow/technical-stack.md](workflow/technical-stack.md) |
-| 编码和文本规则 | [standards/coding.md](standards/coding.md)、[standards/encoding.md](standards/encoding.md)、[standards/naming.md](standards/naming.md) |
+| 编码、文档和文本规则 | [standards/coding.md](standards/coding.md)、[standards/documentation.md](standards/documentation.md)、[standards/encoding.md](standards/encoding.md)、[standards/naming.md](standards/naming.md) |
+| 文档站部署 | [workflow/documentation-site.md](workflow/documentation-site.md)、[standards/documentation.md](standards/documentation.md) |
 | 当前架构和真实数据流 | [architecture/overview.md](architecture/overview.md)、[architecture/flow.md](architecture/flow.md)、[architecture/package-first.md](architecture/package-first.md) |
 | RenderGraph / RHI 边界 | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[rendergraph/roadmap.md](rendergraph/roadmap.md) |
 | Editor 架构和 UI | [architecture/editor.md](architecture/editor.md)、[architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[architecture/editor-ui-visual-target.md](architecture/editor-ui-visual-target.md)、[planning/editor-development-plan.md](planning/editor-development-plan.md) |

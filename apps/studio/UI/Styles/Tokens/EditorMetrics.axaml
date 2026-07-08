@@ -9,6 +9,7 @@
 
     <FontFamily x:Key="EditorFontFamilyGlobal">avares://Editor/Assets/Fonts#Source Han Sans SC, Source Han Sans SC, Inter, Segoe UI</FontFamily>
     <sys:Double x:Key="EditorFontSizeDefault">12</sys:Double>
+    <sys:Double x:Key="EditorFontSizeHeading">13</sys:Double>
     <sys:Double x:Key="EditorFontSizeSmall">10</sys:Double>
     <sys:Double x:Key="EditorFontSizeTiny">9</sys:Double>
     <sys:Double x:Key="EditorFontSizeTitle">12</sys:Double>
