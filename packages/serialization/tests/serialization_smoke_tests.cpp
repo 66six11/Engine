@@ -1,4 +1,5 @@
 ﻿#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -10,6 +11,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -23,6 +25,50 @@
 #include "asharia/serialization/text_archive.hpp"
 
 namespace {
+
+    [[nodiscard]] std::filesystem::path createUniqueTestDirectory() {
+        constexpr std::uint32_t kMaximumCreateAttempts = 128U;
+        const auto temporaryRoot = std::filesystem::temp_directory_path();
+
+        for (std::uint32_t attempt = 0U; attempt < kMaximumCreateAttempts; ++attempt) {
+            const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+            const auto candidate =
+                temporaryRoot / ("asharia-serialization-smoke-tests-" + std::to_string(timestamp) +
+                                 "." + std::to_string(attempt));
+            std::error_code error;
+            if (std::filesystem::create_directory(candidate, error)) {
+                return candidate;
+            }
+            if (error && error != std::errc::file_exists) {
+                throw std::filesystem::filesystem_error{
+                    "Could not create serialization test directory", candidate, error};
+            }
+        }
+
+        throw std::runtime_error{"Could not allocate a unique serialization test directory."};
+    }
+
+    class ScopedTestDirectory final {
+    public:
+        ScopedTestDirectory() : path_(createUniqueTestDirectory()) {}
+
+        ~ScopedTestDirectory() {
+            std::error_code error;
+            std::filesystem::remove_all(path_, error);
+        }
+
+        ScopedTestDirectory(const ScopedTestDirectory&) = delete;
+        ScopedTestDirectory& operator=(const ScopedTestDirectory&) = delete;
+        ScopedTestDirectory(ScopedTestDirectory&&) = delete;
+        ScopedTestDirectory& operator=(ScopedTestDirectory&&) = delete;
+
+        [[nodiscard]] const std::filesystem::path& path() const noexcept {
+            return path_;
+        }
+
+    private:
+        std::filesystem::path path_;
+    };
 
     constexpr std::string_view kSmokeVec3TypeName = "com.asharia.smoke.Vec3";
     constexpr std::string_view kSmokeQuatTypeName = "com.asharia.smoke.Quat";
@@ -876,8 +922,8 @@ namespace {
             return false;
         }
 
-        const std::filesystem::path archivePath = std::filesystem::temp_directory_path() /
-                                                  "asharia-serialization-json-archive-smoke.json";
+        const ScopedTestDirectory testDirectory;
+        const std::filesystem::path archivePath = testDirectory.path() / "archive.json";
         {
             std::ofstream stale{archivePath, std::ios::binary | std::ios::trunc};
             stale << "stale serialization content that must be replaced";
@@ -901,15 +947,13 @@ namespace {
             return false;
         }
         auto fileParsed = asharia::serialization::readTextArchiveFile(archivePath);
-        for (const auto& entry : std::filesystem::directory_iterator{archivePath.parent_path()}) {
+        for (const auto& entry : std::filesystem::directory_iterator{testDirectory.path()}) {
             const std::string filename = entry.path().filename().string();
             if (filename.starts_with(archivePath.filename().string() + ".tmp.")) {
                 logFailure("JSON archive smoke left an atomic-write temporary file behind.");
                 return false;
             }
         }
-        std::error_code removeError;
-        std::filesystem::remove(archivePath, removeError);
         if (!fileParsed) {
             logFailure(fileParsed.error().message);
             return false;

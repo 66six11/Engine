@@ -1,14 +1,62 @@
-﻿#include <cstdint>
+﻿#include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
 
 #include "asharia/archive/json_archive.hpp"
 
 namespace {
+
+    [[nodiscard]] std::filesystem::path createUniqueTestDirectory() {
+        constexpr std::uint32_t kMaximumCreateAttempts = 128U;
+        const auto temporaryRoot = std::filesystem::temp_directory_path();
+
+        for (std::uint32_t attempt = 0U; attempt < kMaximumCreateAttempts; ++attempt) {
+            const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+            const auto candidate =
+                temporaryRoot / ("asharia-archive-smoke-tests-" + std::to_string(timestamp) + "." +
+                                 std::to_string(attempt));
+            std::error_code error;
+            if (std::filesystem::create_directory(candidate, error)) {
+                return candidate;
+            }
+            if (error && error != std::errc::file_exists) {
+                throw std::filesystem::filesystem_error{"Could not create archive test directory",
+                                                        candidate, error};
+            }
+        }
+
+        throw std::runtime_error{"Could not allocate a unique archive test directory."};
+    }
+
+    class ScopedTestDirectory final {
+    public:
+        ScopedTestDirectory() : path_(createUniqueTestDirectory()) {}
+
+        ~ScopedTestDirectory() {
+            std::error_code error;
+            std::filesystem::remove_all(path_, error);
+        }
+
+        ScopedTestDirectory(const ScopedTestDirectory&) = delete;
+        ScopedTestDirectory& operator=(const ScopedTestDirectory&) = delete;
+        ScopedTestDirectory(ScopedTestDirectory&&) = delete;
+        ScopedTestDirectory& operator=(ScopedTestDirectory&&) = delete;
+
+        [[nodiscard]] const std::filesystem::path& path() const noexcept {
+            return path_;
+        }
+
+    private:
+        std::filesystem::path path_;
+    };
 
     [[nodiscard]] bool contains(std::string_view text, std::string_view needle) {
         return text.find(needle) != std::string_view::npos;
@@ -16,6 +64,8 @@ namespace {
 
 } // namespace
 
+// Unexpected test exceptions are reported as a failing process by the test runner.
+// NOLINTNEXTLINE(bugprone-exception-escape)
 int main() {
     std::string escaped = "quote \" slash \\ newline \n carriage \r tab \t";
     escaped.push_back('\b');
@@ -67,8 +117,8 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    const std::filesystem::path archivePath =
-        std::filesystem::temp_directory_path() / "asharia-archive-smoke.json";
+    const ScopedTestDirectory testDirectory;
+    const std::filesystem::path archivePath = testDirectory.path() / "archive.json";
     {
         std::ofstream stale{archivePath, std::ios::binary | std::ios::trunc};
         stale << "stale archive content that must be replaced";
@@ -90,15 +140,13 @@ int main() {
         return EXIT_FAILURE;
     }
     auto fileParsed = asharia::archive::readJsonArchiveFile(archivePath);
-    for (const auto& entry : std::filesystem::directory_iterator{archivePath.parent_path()}) {
+    for (const auto& entry : std::filesystem::directory_iterator{testDirectory.path()}) {
         const std::string filename = entry.path().filename().string();
         if (filename.starts_with(archivePath.filename().string() + ".tmp.")) {
             std::cerr << "Archive JSON left an atomic-write temporary file behind.\n";
             return EXIT_FAILURE;
         }
     }
-    std::error_code removeError;
-    std::filesystem::remove(archivePath, removeError);
     if (!fileParsed) {
         std::cerr << fileParsed.error().message << '\n';
         return EXIT_FAILURE;
