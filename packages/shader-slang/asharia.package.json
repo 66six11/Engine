@@ -7,6 +7,6 @@
   "targets": ["asharia-shader-slang", "asharia-slang-reflect"],
   "targetDependencies": {
     "asharia-shader-slang": ["asharia-core"],
-    "asharia-slang-reflect": []
+    "asharia-slang-reflect": ["asharia-core"]
   }
 }

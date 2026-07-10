@@ -2,9 +2,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
-#include <fstream>
-#include <iterator>
 #include <span>
 #include <string>
 #include <utility>
@@ -13,6 +12,7 @@
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 
 namespace asharia::editor {
     namespace {
@@ -21,44 +21,25 @@ namespace asharia::editor {
             return asharia::Error{asharia::ErrorDomain::Core, 0, std::move(message)};
         }
 
+        constexpr std::uint64_t kMaxEditorMetadataBytes = 16ULL * 1024ULL * 1024ULL;
+
         [[nodiscard]] asharia::Result<std::string> readTextFile(const std::filesystem::path& path) {
-            std::ifstream file{path, std::ios::binary};
-            if (!file) {
+            auto text = asharia::core::readFileText(path, {.maxBytes = kMaxEditorMetadataBytes});
+            if (!text) {
                 return std::unexpected{importSettingsCommandError(
                     "Editor import settings command could not read metadata file '" +
-                    path.string() + "'.")};
-            }
-
-            std::string text;
-            file.seekg(0, std::ios::end);
-            const std::streampos size = file.tellg();
-            if (size > std::streampos{0}) {
-                text.resize(static_cast<std::size_t>(size));
-                file.seekg(0, std::ios::beg);
-                file.read(text.data(), static_cast<std::streamsize>(text.size()));
-            }
-            if (!file && !file.eof()) {
-                return std::unexpected{importSettingsCommandError(
-                    "Editor import settings command failed while reading metadata file '" +
-                    path.string() + "'.")};
+                    path.string() + "': " + text.error().message)};
             }
             return text;
         }
 
         [[nodiscard]] asharia::VoidResult writeTextFile(const std::filesystem::path& path,
                                                         std::string_view text) {
-            std::ofstream file{path, std::ios::binary | std::ios::trunc};
-            if (!file) {
+            auto written = asharia::core::writeFileTextAtomically(path, text);
+            if (!written) {
                 return std::unexpected{importSettingsCommandError(
-                    "Editor import settings command could not write metadata file '" +
-                    path.string() + "'.")};
-            }
-
-            file.write(text.data(), static_cast<std::streamsize>(text.size()));
-            if (!file) {
-                return std::unexpected{importSettingsCommandError(
-                    "Editor import settings command failed while writing metadata file '" +
-                    path.string() + "'.")};
+                    "Editor import settings command could not commit metadata file '" +
+                    path.string() + "': " + written.error().message)};
             }
             return {};
         }

@@ -65,6 +65,7 @@ target_include_directories(asharia-slang-reflect
 
 target_link_libraries(asharia-slang-reflect
     PRIVATE
+        asharia::core
         "${ASHARIA_SLANG_LIBRARY}"
 )
 

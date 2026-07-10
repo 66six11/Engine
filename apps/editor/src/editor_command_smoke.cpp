@@ -15,6 +15,7 @@
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/core/result.hpp"
 
@@ -219,6 +220,20 @@ namespace asharia::editor {
             EditorAssetReimportRequestLog reimportRequests;
         };
 
+        constexpr std::uint64_t kMaxEditorMetadataBytes = 16ULL * 1024ULL * 1024ULL;
+
+        [[nodiscard]] bool hasAtomicTemporarySibling(const std::filesystem::path& target) {
+            std::error_code error;
+            for (const std::filesystem::directory_entry& entry :
+                 std::filesystem::directory_iterator{target.parent_path(), error}) {
+                if (entry.path().filename().string().starts_with(target.filename().string() +
+                                                                 ".tmp.")) {
+                    return true;
+                }
+            }
+            return static_cast<bool>(error);
+        }
+
         [[nodiscard]] bool prepareImportSettingsSmokeContext(ImportSettingsSmokeContext& context) {
             context.root = commandSmokeRoot();
             context.metadataFile = context.root / "profile.png.ameta";
@@ -243,12 +258,19 @@ namespace asharia::editor {
                 return false;
             }
             context.originalDocument = std::move(*document);
-            context.originalText = std::move(*text);
+            context.originalText = std::move(*text) + " \n\t";
+            auto exactFixtureWritten =
+                asharia::core::writeFileTextAtomically(context.metadataFile, context.originalText);
+            if (!exactFixtureWritten) {
+                asharia::logError(exactFixtureWritten.error().message);
+                return false;
+            }
             return true;
         }
 
-        [[nodiscard]] bool executeImportSettingsSmokeEdit(ImportSettingsSmokeContext& context,
-                                                          EditorCommandHistory& history) {
+        [[nodiscard]] bool
+        editImportSettingsReplacesMetadataAtomically(ImportSettingsSmokeContext& context,
+                                                     EditorCommandHistory& history) {
             auto command = makeEditorTextureProfileEditCommand(
                 context.metadataFile, "editor-debug", "SpriteSheet", context.reimportRequests);
             if (!command) {
@@ -267,6 +289,7 @@ namespace asharia::editor {
                 !expectReadableTextureProfile(context.metadataFile,
                                               asharia::asset::kTextureImportProfileSpriteSheet) ||
                 context.reimportRequests.size() != 1U ||
+                hasAtomicTemporarySibling(context.metadataFile) ||
                 !expectReimportRequest(context.reimportRequests.requests().back(),
                                        "Assets/Textures/profile.png", "editor-debug",
                                        context.metadataFile)) {
@@ -284,8 +307,9 @@ namespace asharia::editor {
             return true;
         }
 
-        [[nodiscard]] bool undoImportSettingsSmokeEdit(ImportSettingsSmokeContext& context,
-                                                       EditorCommandHistory& history) {
+        [[nodiscard]] bool
+        undoImportSettingsRestoresExactOriginalBytes(ImportSettingsSmokeContext& context,
+                                                     EditorCommandHistory& history) {
             if (auto undone = history.undo(); !undone) {
                 asharia::logError(undone.error().message);
                 return false;
@@ -295,7 +319,8 @@ namespace asharia::editor {
                 asharia::logError(restoredDocument.error().message);
                 return false;
             }
-            auto undoText = asharia::asset::writeAssetMetadataText(*restoredDocument);
+            auto undoText = asharia::core::readFileText(context.metadataFile,
+                                                        {.maxBytes = kMaxEditorMetadataBytes});
             if (!undoText || *undoText != context.originalText ||
                 !expectTextureProfile(context.metadataFile,
                                       asharia::asset::kTextureImportProfileTexture2D,
@@ -310,6 +335,64 @@ namespace asharia::editor {
                 return false;
             }
             return true;
+        }
+
+        [[nodiscard]] bool failedMetadataCommitAddsNoReimportRequest() {
+            ImportSettingsSmokeContext context;
+            if (!prepareImportSettingsSmokeContext(context)) {
+                return false;
+            }
+
+            auto command = makeEditorTextureProfileEditCommand(
+                context.metadataFile, "editor-debug", "SpriteSheet", context.reimportRequests);
+            if (!command || !(*command)->execute()) {
+                asharia::logError(
+                    "Editor command smoke: could not prepare failed metadata commit fixture.");
+                return false;
+            }
+
+            context.reimportRequests.clear();
+            std::error_code removeError;
+            std::filesystem::remove_all(context.root, removeError);
+            auto undone = (*command)->undo();
+            if (removeError || undone || !context.reimportRequests.requests().empty()) {
+                asharia::logError(
+                    "Editor command smoke: failed metadata commit recorded reimport work.");
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool rejectsOversizedImportMetadataWithoutMutation() {
+            ImportSettingsSmokeContext context;
+            if (!prepareImportSettingsSmokeContext(context)) {
+                return false;
+            }
+
+            std::string oversizedText = context.originalText;
+            oversizedText.append(
+                static_cast<std::size_t>(kMaxEditorMetadataBytes + 1ULL - oversizedText.size()),
+                ' ');
+            auto fixtureWritten =
+                asharia::core::writeFileTextAtomically(context.metadataFile, oversizedText);
+            auto command = makeEditorTextureProfileEditCommand(
+                context.metadataFile, "editor-debug", "SpriteSheet", context.reimportRequests);
+            const auto executed = command ? (*command)->execute() : asharia::VoidResult{};
+            auto afterText = asharia::core::readFileText(
+                context.metadataFile, {.maxBytes = kMaxEditorMetadataBytes + 1ULL});
+
+            const bool passed = fixtureWritten && command && !executed &&
+                                executed.error().message.find("exceeds configured byte limit") !=
+                                    std::string::npos &&
+                                afterText && *afterText == oversizedText &&
+                                context.reimportRequests.requests().empty();
+            if (!passed) {
+                asharia::logError("Editor command smoke: oversized metadata was not rejected "
+                                  "without mutation.");
+            }
+            std::error_code cleanupError;
+            std::filesystem::remove_all(context.root, cleanupError);
+            return passed;
         }
 
         [[nodiscard]] bool redoImportSettingsSmokeEdit(ImportSettingsSmokeContext& context,
@@ -602,12 +685,14 @@ namespace asharia::editor {
             ImportSettingsSmokeContext context;
             EditorCommandHistory history;
             const bool passed = prepareImportSettingsSmokeContext(context) &&
-                                executeImportSettingsSmokeEdit(context, history) &&
-                                undoImportSettingsSmokeEdit(context, history) &&
+                                editImportSettingsReplacesMetadataAtomically(context, history) &&
+                                undoImportSettingsRestoresExactOriginalBytes(context, history) &&
                                 redoImportSettingsSmokeEdit(context, history) &&
                                 expectNoopImportSettingsEdit(context) &&
                                 expectInvalidImportSettingsEdits(context) &&
-                                expectPendingReimportState(context);
+                                expectPendingReimportState(context) &&
+                                failedMetadataCommitAddsNoReimportRequest() &&
+                                rejectsOversizedImportMetadataWithoutMutation();
             std::error_code error;
             std::filesystem::remove_all(context.root, error);
             return passed;

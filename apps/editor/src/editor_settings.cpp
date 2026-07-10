@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -22,6 +23,8 @@
 namespace asharia::editor {
 
     namespace {
+
+        constexpr std::uint64_t kMaxEditorSettingsBytes = 16ULL * 1024ULL * 1024ULL;
 
         [[nodiscard]] asharia::Error editorSettingsError(std::string message) {
             return asharia::Error{asharia::ErrorDomain::Core, 0, std::move(message)};
@@ -281,7 +284,8 @@ namespace asharia::editor {
             return settings;
         }
 
-        auto archive = asharia::archive::readJsonArchiveFile(path);
+        auto archive =
+            asharia::archive::readJsonArchiveFile(path, {.maxBytes = kMaxEditorSettingsBytes});
         if (!archive) {
             return std::unexpected{editorSettingsError("Failed to read editor settings '" +
                                                        path.string() +
