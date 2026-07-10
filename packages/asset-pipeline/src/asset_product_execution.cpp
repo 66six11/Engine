@@ -33,6 +33,8 @@
 #include "asharia/shader_authoring/ashader_generated_slang.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
 
+#include "asset_product_publication.hpp"
+
 namespace asharia::asset {
     namespace {
 
@@ -1293,82 +1295,6 @@ namespace asharia::asset {
             };
         }
 
-        [[nodiscard]] bool writeProductFile(AssetProductExecutionResult& result,
-                                            const PreparedProduct& product) {
-            const std::filesystem::path parent = product.outputPath.parent_path();
-            if (!parent.empty()) {
-                std::error_code createError;
-                std::filesystem::create_directories(parent, createError);
-                if (createError) {
-                    addRequestDiagnostic(
-                        result, AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                        *product.request,
-                        "Asset product execution could not create product output directory '" +
-                            pathText(parent) + "': " + createError.message() + ".");
-                    return false;
-                }
-            }
-
-            std::ofstream file(product.outputPath, std::ios::binary);
-            if (!file) {
-                addRequestDiagnostic(
-                    result, AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                    *product.request,
-                    "Asset product execution could not open product output file '" +
-                        pathText(product.outputPath) + "'.");
-                return false;
-            }
-
-            for (const std::uint8_t byte : product.bytes) {
-                file.put(static_cast<char>(byte));
-                if (!file) {
-                    addRequestDiagnostic(
-                        result, AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                        *product.request,
-                        "Asset product execution could not write product output file '" +
-                            pathText(product.outputPath) + "'.");
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        [[nodiscard]] bool writeManifestFile(AssetProductExecutionResult& result,
-                                             const AssetProductExecutionRequest& request) {
-            if (request.productManifestOutputPath.empty()) {
-                return true;
-            }
-
-            const std::filesystem::path parent = request.productManifestOutputPath.parent_path();
-            if (!parent.empty()) {
-                std::error_code createError;
-                std::filesystem::create_directories(parent, createError);
-                if (createError) {
-                    addDiagnostic(result, AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                                  {}, {},
-                                  "Asset product execution could not create product manifest "
-                                  "directory '" +
-                                      pathText(parent) + "': " + createError.message() + ".");
-                    return false;
-                }
-            }
-
-            if (auto written = writeAssetProductManifestFile(request.productManifestOutputPath,
-                                                             result.manifest);
-                !written) {
-                addDiagnostic(result, AssetProductExecutionDiagnosticCode::ManifestWriteFailed, {},
-                              {},
-                              "Asset product execution could not write product manifest '" +
-                                  pathText(request.productManifestOutputPath) +
-                                  "': " + written.error().message);
-                return false;
-            }
-
-            result.manifestWritten = true;
-            return true;
-        }
-
     } // namespace
 
     AssetProductExecutionResult executeAssetProducts(const AssetProductExecutionRequest& request) {
@@ -1442,18 +1368,33 @@ namespace asharia::asset {
             return result;
         }
 
-        for (const PreparedProduct& product : preparedProducts) {
-            if (!writeProductFile(result, product)) {
-                return result;
-            }
-            result.writtenProducts.push_back(AssetProductWrite{
+        std::vector<detail::AssetProductPublicationItem> publicationItems;
+        publicationItems.reserve(preparedProducts.size());
+        for (PreparedProduct& product : preparedProducts) {
+            publicationItems.push_back(detail::AssetProductPublicationItem{
                 .source = product.request->source,
                 .product = product.product,
-                .productFilePath = product.outputPath,
+                .finalPath = product.outputPath,
+                .bytes = std::move(product.bytes),
             });
         }
 
-        (void)writeManifestFile(result, request);
+        auto publication = detail::publishAssetProducts(
+            detail::AssetProductPublicationRequest{
+                .outputRoot = request.productOutputRoot,
+                .manifestPath = request.productManifestOutputPath,
+                .manifest = result.manifest,
+                .products = publicationItems,
+            },
+            detail::assetProductPublicationOperations());
+        if (!publication) {
+            const auto code =
+                static_cast<AssetProductExecutionDiagnosticCode>(publication.error().code);
+            addDiagnostic(result, code, {}, {}, publication.error().message);
+            return result;
+        }
+        result.writtenProducts = std::move(publication->writes);
+        result.manifestWritten = publication->manifestWritten;
         return result;
     }
 

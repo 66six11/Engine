@@ -22,6 +22,7 @@ add_library(asharia-asset-pipeline STATIC
     src/asset_product_blob.cpp
     src/asset_product_blob_limits.cpp
     src/asset_product_execution.cpp
+    src/asset_product_publication.cpp
     src/asset_product_manifest_io.cpp
     src/asset_scanned_import_planning.cpp
     src/asset_source_scan.cpp

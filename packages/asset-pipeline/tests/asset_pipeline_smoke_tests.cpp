@@ -1,17 +1,25 @@
 ﻿#include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata_io.hpp"
@@ -27,6 +35,7 @@
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 
 #include "asset_product_blob_limits.hpp"
+#include "asset_product_publication.hpp"
 
 namespace {
 
@@ -60,7 +69,14 @@ namespace {
             return {};
         }
 
-        return temp / std::string{name};
+#if defined(_WIN32)
+        const auto processId = static_cast<std::uint64_t>(_getpid());
+#else
+        const auto processId = static_cast<std::uint64_t>(getpid());
+#endif
+        static std::atomic<std::uint64_t> nextRootId{1U};
+        return temp / (std::string{name} + "-" + std::to_string(processId) + "-" +
+                       std::to_string(nextRootId.fetch_add(1U)));
     }
 
     [[nodiscard]] std::vector<asharia::asset::AssetImportSetting> defaultSettings() {
@@ -621,6 +637,306 @@ namespace {
             hash *= 1099511628211ULL;
         }
         return hash;
+    }
+
+    enum class PublicationFailurePoint : std::uint8_t {
+        None,
+        ProductStageWrite,
+        ProductStageRead,
+        ProductFinalPublish,
+        ManifestStageWrite,
+        ManifestStageRead,
+        ManifestFinalPublish,
+        Cleanup,
+    };
+
+    enum class StagedProductMutation : std::uint8_t {
+        None,
+        Size,
+        Hash,
+    };
+
+    struct FakeAssetProductPublicationOperations final
+        : public asharia::asset::detail::AssetProductPublicationOperations {
+        explicit FakeAssetProductPublicationOperations(std::filesystem::path manifestPath)
+            : manifestPath_(std::move(manifestPath)) {}
+
+        [[nodiscard]] asharia::Result<std::filesystem::path>
+        createUniqueStagingDirectory(const std::filesystem::path& outputRoot) override {
+            events.emplace_back("create-staging");
+            ownedStagingPath_ = outputRoot / ".asharia-product-staging" / "fake-1";
+            return ownedStagingPath_;
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        writeFileAtomically(const std::filesystem::path& path,
+                            std::span<const std::byte> bytes) override {
+            const bool manifest = isManifestStagingPath(path);
+            events.emplace_back(manifest ? "write-manifest-staging" : "write-product-staging");
+            if (failurePoint == (manifest ? PublicationFailurePoint::ManifestStageWrite
+                                          : PublicationFailurePoint::ProductStageWrite)) {
+                return std::unexpected{injectedError("staging write")};
+            }
+            files[path] = std::vector<std::byte>{bytes.begin(), bytes.end()};
+            return {};
+        }
+
+        [[nodiscard]] asharia::Result<std::vector<std::byte>>
+        readFileBytes(const std::filesystem::path& path,
+                      asharia::core::FileReadLimits limits) override {
+            (void)limits;
+            const bool manifest = isManifestStagingPath(path);
+            events.emplace_back(manifest ? "read-manifest-staging" : "read-product-staging");
+            if (failurePoint == (manifest ? PublicationFailurePoint::ManifestStageRead
+                                          : PublicationFailurePoint::ProductStageRead)) {
+                return std::unexpected{injectedError("staging read")};
+            }
+
+            auto found = files.find(path);
+            if (found == files.end()) {
+                return std::unexpected{injectedError("missing staged file")};
+            }
+            std::vector<std::byte> bytes = found->second;
+            if (!manifest && stagedProductMutation == StagedProductMutation::Size) {
+                bytes.push_back(std::byte{0x5A});
+            } else if (!manifest && stagedProductMutation == StagedProductMutation::Hash &&
+                       !bytes.empty()) {
+                bytes.front() ^= std::byte{0xFF};
+            } else if (manifest && corruptStagedManifest) {
+                bytes.assign(1, std::byte{'{'});
+            }
+            return bytes;
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        // Mirrors the package operation contract under test.
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+        publishFileAtomically(const std::filesystem::path& stagingFilePath,
+                              const std::filesystem::path& finalPath,
+                              std::span<const std::byte> verifiedBytes) override {
+            (void)stagingFilePath;
+            const bool manifest = finalPath == manifestPath_;
+            events.emplace_back(manifest ? "publish-manifest-final" : "publish-product-final");
+            if (failurePoint == (manifest ? PublicationFailurePoint::ManifestFinalPublish
+                                          : PublicationFailurePoint::ProductFinalPublish)) {
+                return std::unexpected{injectedError("final publish")};
+            }
+            files[finalPath] = std::vector<std::byte>{verifiedBytes.begin(), verifiedBytes.end()};
+            return {};
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        removeStagingDirectory(const std::filesystem::path& ownedStagingPath) override {
+            events.emplace_back("cleanup-staging");
+            cleanupAttempted = true;
+            if (failurePoint == PublicationFailurePoint::Cleanup) {
+                return std::unexpected{injectedError("cleanup")};
+            }
+            const std::string prefix = ownedStagingPath.generic_string() + "/";
+            for (auto file = files.begin(); file != files.end();) {
+                if (file->first.generic_string().starts_with(prefix)) {
+                    file = files.erase(file);
+                } else {
+                    ++file;
+                }
+            }
+            return {};
+        }
+
+        [[nodiscard]] bool manifestMatches(std::span<const std::byte> expected) const {
+            const auto found = files.find(manifestPath_);
+            return found != files.end() && std::ranges::equal(found->second, expected);
+        }
+
+        [[nodiscard]] bool hasStagedFiles() const {
+            const std::string prefix = ownedStagingPath_.generic_string() + "/";
+            return std::ranges::any_of(files, [&prefix](const auto& file) {
+                return file.first.generic_string().starts_with(prefix);
+            });
+        }
+
+        // Test fakes expose knobs and observations directly to keep failure cases compact.
+        // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+        PublicationFailurePoint failurePoint{PublicationFailurePoint::None};
+        StagedProductMutation stagedProductMutation{StagedProductMutation::None};
+        bool corruptStagedManifest{};
+        bool cleanupAttempted{};
+        std::vector<std::string> events;
+        std::map<std::filesystem::path, std::vector<std::byte>> files;
+        // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
+
+    private:
+        [[nodiscard]] static asharia::Error injectedError(std::string_view phase) {
+            return asharia::Error{asharia::ErrorDomain::Asset, 0,
+                                  "injected publication " + std::string{phase} + " failure"};
+        }
+
+        [[nodiscard]] static bool isManifestStagingPath(const std::filesystem::path& path) {
+            return path.filename() == "manifest.json";
+        }
+
+        std::filesystem::path manifestPath_;
+        std::filesystem::path ownedStagingPath_;
+    };
+
+    struct PublicationFixture {
+        std::filesystem::path outputRoot{"PublicationRoot"};
+        std::filesystem::path manifestPath{outputRoot / "product-manifest.json"};
+        std::vector<std::uint8_t> productBytes{bytesFromText("staged product bytes")};
+        asharia::asset::detail::AssetProductPublicationItem product;
+        asharia::asset::AssetProductManifestDocument manifest;
+
+        PublicationFixture() {
+            product.source = makeDocument("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                          "Content/Textures/Crate.png", 0x1000F00D1234CAFEULL)
+                                 .source;
+            const std::array dependencies{
+                asharia::asset::AssetDependency{
+                    .owner = product.source.guid,
+                    .kind = asharia::asset::AssetDependencyKind::SourceFile,
+                    .path = product.source.sourcePath,
+                    .hash = product.source.sourceHash,
+                },
+            };
+            product.product.key = asharia::asset::makeAssetProductKey(
+                product.source, asharia::asset::hashAssetDependencies(dependencies),
+                asharia::asset::makeAssetTargetProfileHash("windows-msvc-debug"));
+            product.product.relativeProductPath = "textures/crate.product";
+            product.product.productSizeBytes = static_cast<std::uint64_t>(productBytes.size());
+            product.product.productHash = smokeHashBytes(productBytes);
+            product.finalPath = outputRoot / product.product.relativeProductPath;
+            product.bytes = productBytes;
+            manifest.products.push_back(product.product);
+        }
+
+        [[nodiscard]] asharia::asset::detail::AssetProductPublicationRequest request() const {
+            return asharia::asset::detail::AssetProductPublicationRequest{
+                .outputRoot = outputRoot,
+                .manifestPath = manifestPath,
+                .manifest = manifest,
+                .products =
+                    std::span<const asharia::asset::detail::AssetProductPublicationItem>{&product,
+                                                                                         1},
+            };
+        }
+    };
+
+    [[nodiscard]] std::vector<std::byte> byteText(std::string_view text) {
+        const auto bytes = std::as_bytes(std::span<const char>{text.data(), text.size()});
+        return std::vector<std::byte>{bytes.begin(), bytes.end()};
+    }
+
+    [[nodiscard]] bool smokeProductPublicationCommitsManifestLast() {
+        const PublicationFixture fixture;
+        FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+        const auto result =
+            asharia::asset::detail::publishAssetProducts(fixture.request(), operations);
+        const std::vector<std::string> expectedEvents{
+            "create-staging",         "write-product-staging", "read-product-staging",
+            "write-manifest-staging", "read-manifest-staging", "publish-product-final",
+            "publish-manifest-final", "cleanup-staging",
+        };
+        if (!result || result->writes.size() != 1 || !result->manifestWritten ||
+            operations.events != expectedEvents || !operations.cleanupAttempted ||
+            operations.hasStagedFiles()) {
+            logFailure("Asset product publication smoke did not commit manifest last.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductPublicationPreservesManifestOnHandledFailures() {
+        constexpr std::array failurePoints{
+            PublicationFailurePoint::ProductStageWrite,
+            PublicationFailurePoint::ProductStageRead,
+            PublicationFailurePoint::ProductFinalPublish,
+            PublicationFailurePoint::ManifestStageWrite,
+            PublicationFailurePoint::ManifestStageRead,
+            PublicationFailurePoint::ManifestFinalPublish,
+        };
+        const std::vector<std::byte> oldManifest = byteText("old manifest");
+        for (const PublicationFailurePoint failurePoint : failurePoints) {
+            const PublicationFixture fixture;
+            FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+            operations.failurePoint = failurePoint;
+            operations.files[fixture.manifestPath] = oldManifest;
+            const auto result =
+                asharia::asset::detail::publishAssetProducts(fixture.request(), operations);
+            const bool productFailure =
+                failurePoint == PublicationFailurePoint::ProductStageWrite ||
+                failurePoint == PublicationFailurePoint::ProductStageRead ||
+                failurePoint == PublicationFailurePoint::ProductFinalPublish;
+            const int expectedCode = static_cast<int>(
+                productFailure
+                    ? asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed
+                    : asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed);
+            if (result || result.error().code != expectedCode ||
+                !messageContains(result.error().message, "phase=") ||
+                !messageContains(result.error().message, "stagingPath=") ||
+                !messageContains(result.error().message, "finalPath=") ||
+                !operations.manifestMatches(oldManifest) || !operations.cleanupAttempted ||
+                operations.events.back() != "cleanup-staging" || operations.hasStagedFiles()) {
+                logFailure("Asset product publication smoke violated handled failure consistency.");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool smokeProductPublicationRejectsStagedMutation() {
+        struct MutationCase {
+            StagedProductMutation mutation{StagedProductMutation::None};
+            std::string_view expectedToken;
+        };
+        constexpr std::array mutationCases{
+            MutationCase{.mutation = StagedProductMutation::Size, .expectedToken = "size mismatch"},
+            MutationCase{.mutation = StagedProductMutation::Hash, .expectedToken = "hash mismatch"},
+        };
+        for (const MutationCase& mutationCase : mutationCases) {
+            const PublicationFixture fixture;
+            FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+            operations.stagedProductMutation = mutationCase.mutation;
+            const auto result =
+                asharia::asset::detail::publishAssetProducts(fixture.request(), operations);
+            if (result ||
+                result.error().code !=
+                    static_cast<int>(
+                        asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed) ||
+                !messageContains(result.error().message, mutationCase.expectedToken) ||
+                !operations.cleanupAttempted || operations.hasStagedFiles()) {
+                logFailure("Asset product publication smoke accepted staged product mutation.");
+                return false;
+            }
+        }
+
+        const PublicationFixture fixture;
+        FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+        operations.corruptStagedManifest = true;
+        const auto result =
+            asharia::asset::detail::publishAssetProducts(fixture.request(), operations);
+        return !result &&
+               result.error().code ==
+                   static_cast<int>(
+                       asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) &&
+               messageContains(result.error().message, "validate-manifest-staging") &&
+               operations.cleanupAttempted && !operations.hasStagedFiles();
+    }
+
+    [[nodiscard]] bool smokeProductPublicationReportsCleanupAfterManifestCommit() {
+        const PublicationFixture fixture;
+        FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+        operations.failurePoint = PublicationFailurePoint::Cleanup;
+        const std::vector<std::byte> oldManifest = byteText("old manifest");
+        operations.files[fixture.manifestPath] = oldManifest;
+        const auto result =
+            asharia::asset::detail::publishAssetProducts(fixture.request(), operations);
+        return !result &&
+               result.error().code ==
+                   static_cast<int>(
+                       asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) &&
+               messageContains(result.error().message, "cleanup-after-manifest-commit") &&
+               messageContains(result.error().message, "manifestCommitted=true") &&
+               !operations.manifestMatches(oldManifest) && operations.cleanupAttempted;
     }
 
     [[nodiscard]] bool createDirectories(const std::filesystem::path& path) {
@@ -2496,6 +2812,10 @@ shader "asharia.material.compile_reflection" {
             asharia::asset::executeAssetProducts(compileRequest);
         if (!compileExecution.succeeded() || compileExecution.writtenProducts.size() != 1U ||
             compileExecution.manifest.products.size() != 2U || !compileExecution.manifestWritten) {
+            for (const asharia::asset::AssetProductExecutionDiagnostic& diagnostic :
+                 compileExecution.diagnostics) {
+                logFailure(diagnostic.message);
+            }
             logFailure("Asset product execution smoke failed shader compile/reflection write.");
             return false;
         }
@@ -4281,6 +4601,10 @@ int main() {
         smokeScannedImportPlanningStopsOnScanDiagnostics() &&
         smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
         smokeScannedImportPlanningPlanDiagnostics() &&
+        smokeProductPublicationCommitsManifestLast() &&
+        smokeProductPublicationPreservesManifestOnHandledFailures() &&
+        smokeProductPublicationRejectsStagedMutation() &&
+        smokeProductPublicationReportsCleanupAfterManifestCommit() &&
         smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobPrivateValidation() &&
         smokeProductBlobReadLimits() && smokeProductBlobReadDiagnostics() &&
         smokeProductExecutionWritesPngTextureProduct() &&
