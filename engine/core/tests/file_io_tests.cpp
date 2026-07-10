@@ -17,6 +17,12 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 #include "asharia/core/file_io.hpp"
 
 #include "file_io_internal.hpp"
@@ -224,6 +230,23 @@ namespace {
         return replacementRead && *replacementRead == "new";
     }
 
+    [[nodiscard]] bool createsPermanentFileUsingWindowsPlatformBackend() {
+#if defined(_WIN32)
+        const TempFile file{"asharia-core-file-io-atomic-attributes.txt"};
+        auto written = asharia::core::writeFileTextAtomically(file.path(), "persistent");
+        if (!written) {
+            std::cerr << written.error().message << '\n';
+            return false;
+        }
+
+        const DWORD attributes = GetFileAttributesW(file.path().c_str());
+        return attributes != INVALID_FILE_ATTRIBUTES &&
+               (attributes & FILE_ATTRIBUTE_TEMPORARY) == 0U;
+#else
+        return true;
+#endif
+    }
+
     [[nodiscard]] bool rejectsZeroReadLimit() {
         const TempFile file{"asharia-core-file-io-zero-limit.bin"};
         if (!file.write("x")) {
@@ -303,6 +326,8 @@ int main() {
                                               rejectsMissingAtomicWriteParent},
             std::pair<std::string_view, Test>{"writesAndReplacesUsingPlatformBackend",
                                               writesAndReplacesUsingPlatformBackend},
+            std::pair<std::string_view, Test>{"createsPermanentFileUsingWindowsPlatformBackend",
+                                              createsPermanentFileUsingWindowsPlatformBackend},
         };
 
         for (const auto& [name, test] : tests) {

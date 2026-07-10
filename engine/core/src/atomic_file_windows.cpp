@@ -46,7 +46,7 @@ namespace asharia::core::detail {
             for (std::uint32_t attempt = 0U; attempt < kMaximumCreateAttempts; ++attempt) {
                 auto temporary = temporaryPathFor(target, nextTemporaryId.fetch_add(1U));
                 const HANDLE handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr,
-                                                  CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+                                                  CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
                 if (handle != INVALID_HANDLE_VALUE) {
                     return OpenTemporary{.handle = handle, .path = std::move(temporary)};
                 }
@@ -135,8 +135,8 @@ namespace asharia::core::detail {
                                const std::filesystem::path& target) override {
                 const DWORD targetAttributes = GetFileAttributesW(target.c_str());
                 if (targetAttributes != INVALID_FILE_ATTRIBUTES) {
-                    if (ReplaceFileW(target.c_str(), temporary.c_str(), nullptr,
-                                     REPLACEFILE_WRITE_THROUGH, nullptr, nullptr) == FALSE) {
+                    if (ReplaceFileW(target.c_str(), temporary.c_str(), nullptr, 0, nullptr,
+                                     nullptr) == FALSE) {
                         return std::unexpected{
                             windowsFileError("replacement", target, GetLastError())};
                     }
