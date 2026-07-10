@@ -51,6 +51,11 @@ namespace {
         return message.find(token) != std::string_view::npos;
     }
 
+    [[nodiscard]] bool messageHasFinalPath(std::string_view message,
+                                           const std::filesystem::path& path) {
+        return messageContains(message, "finalPath=\"" + path.generic_string() + "\"");
+    }
+
     [[nodiscard]] bool prepareWorkspace(const std::filesystem::path& root) {
         std::error_code removeError;
         std::filesystem::remove_all(root, removeError);
@@ -1179,6 +1184,7 @@ namespace {
     }
 
     [[nodiscard]] bool smokeProductPublicationRejectsUnownedStagingPath() {
+        bool preservedEndpointIdentity = true;
         const PublicationFixture fixture;
         FakeAssetProductPublicationOperations operations{fixture.manifestPath};
         operations.createdStagingPathOverride =
@@ -1189,8 +1195,11 @@ namespace {
         if (result || operations.events != std::vector<std::string>{"create-staging"} ||
             operations.cleanupAttempted || !operations.files.empty() || !outcome.writes.empty() ||
             outcome.manifestWritten ||
-            !messageContains(result.error().message, "validate-owned-staging")) {
-            return false;
+            !messageContains(result.error().message, "validate-owned-staging") ||
+            !messageHasFinalPath(result.error().message, fixture.products.front().finalPath) ||
+            messageHasFinalPath(result.error().message, fixture.outputRoot)) {
+            logFailure("Asset product publication lost owned-staging product endpoint identity.");
+            preservedEndpointIdentity = false;
         }
 
         FakeAssetProductPublicationOperations manifestOperations{fixture.manifestPath};
@@ -1205,13 +1214,19 @@ namespace {
                 .products = {},
             },
             manifestOperations, manifestOutcome);
-        return !manifestResult &&
-               manifestResult.error().code ==
-                   static_cast<int>(
-                       asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) &&
-               !manifestOutcome.failingProductIndex &&
-               !messageContains(manifestResult.error().message, "productKeyHash=") &&
-               !messageContains(manifestResult.error().message, "productHash=");
+        if (manifestResult ||
+            manifestResult.error().code !=
+                static_cast<int>(
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) ||
+            manifestOutcome.failingProductIndex ||
+            messageContains(manifestResult.error().message, "productKeyHash=") ||
+            messageContains(manifestResult.error().message, "productHash=") ||
+            !messageHasFinalPath(manifestResult.error().message, fixture.manifestPath) ||
+            messageHasFinalPath(manifestResult.error().message, fixture.outputRoot)) {
+            logFailure("Asset product publication lost owned-staging manifest endpoint identity.");
+            preservedEndpointIdentity = false;
+        }
+        return preservedEndpointIdentity;
     }
 
     [[nodiscard]] bool createRedirectedDirectoryLink(const std::filesystem::path& linkPath,
@@ -2686,6 +2701,8 @@ namespace {
         const asharia::asset::AssetProductExecutionResult unownedStagingExecution =
             asharia::asset::detail::executeAssetProductsWithPublicationOperations(
                 request, unownedStagingOperations);
+        const std::filesystem::path expectedUnownedProductFinal =
+            outputRoot / plan.requests.front().relativeProductPath;
         if (unownedStagingExecution.diagnostics.size() != 1U ||
             unownedStagingExecution.diagnostics.front().code !=
                 asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
@@ -2696,8 +2713,45 @@ namespace {
                              "productKeyHash=") ||
             !messageContains(unownedStagingExecution.diagnostics.front().message, "productHash=") ||
             !messageContains(unownedStagingExecution.diagnostics.front().message,
-                             "phase=validate-owned-staging")) {
+                             "phase=validate-owned-staging") ||
+            !messageHasFinalPath(unownedStagingExecution.diagnostics.front().message,
+                                 expectedUnownedProductFinal) ||
+            messageHasFinalPath(unownedStagingExecution.diagnostics.front().message, outputRoot)) {
             logFailure("Asset product execution lost owned-staging diagnostic identity.");
+            preservedSharedBoundaryIdentity = false;
+        }
+
+        asharia::asset::AssetImportPlanResult manifestOnlyPlan = plan;
+        manifestOnlyPlan.requests.clear();
+        const std::filesystem::path manifestOnlyOutputRoot = outputRoot / "ManifestOnly";
+        const std::filesystem::path manifestOnlyPath =
+            manifestOnlyOutputRoot / "product-manifest.json";
+        const asharia::asset::AssetProductExecutionRequest manifestOnlyRequest{
+            .plan = std::move(manifestOnlyPlan),
+            .existingManifest = {},
+            .sourceBytes = {},
+            .dependencyProductBytes = {},
+            .productOutputRoot = manifestOnlyOutputRoot,
+            .productManifestOutputPath = manifestOnlyPath,
+        };
+        FakeAssetProductPublicationOperations manifestOnlyOperations{manifestOnlyPath};
+        manifestOnlyOperations.createdStagingPathOverride =
+            manifestOnlyOutputRoot.parent_path() / "unowned-manifest-execution-staging";
+        const asharia::asset::AssetProductExecutionResult manifestOnlyExecution =
+            asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                manifestOnlyRequest, manifestOnlyOperations);
+        if (manifestOnlyExecution.diagnostics.size() != 1U ||
+            manifestOnlyExecution.diagnostics.front().code !=
+                asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed ||
+            !manifestOnlyExecution.diagnostics.front().sourcePath.empty() ||
+            !manifestOnlyExecution.diagnostics.front().relativeProductPath.empty() ||
+            messageContains(manifestOnlyExecution.diagnostics.front().message, "productKeyHash=") ||
+            messageContains(manifestOnlyExecution.diagnostics.front().message, "productHash=") ||
+            !messageHasFinalPath(manifestOnlyExecution.diagnostics.front().message,
+                                 manifestOnlyPath) ||
+            messageHasFinalPath(manifestOnlyExecution.diagnostics.front().message,
+                                manifestOnlyOutputRoot)) {
+            logFailure("Asset product execution lost manifest-only staging endpoint identity.");
             preservedSharedBoundaryIdentity = false;
         }
 
@@ -2714,6 +2768,53 @@ namespace {
             logFailure("Asset product execution could not create redirected staging fixture.");
             return false;
         }
+
+        PublicationFixture preflightPublicationFixture;
+        preflightPublicationFixture.outputRoot = preflightOutputRoot;
+        preflightPublicationFixture.manifestPath =
+            preflightOutputRoot / "direct-product-manifest.json";
+        for (asharia::asset::detail::AssetProductPublicationItem& item :
+             preflightPublicationFixture.products) {
+            item.finalPath = preflightOutputRoot / item.product.relativeProductPath;
+        }
+        FakeAssetProductPublicationOperations directProductOperations{
+            preflightPublicationFixture.manifestPath};
+        asharia::asset::detail::AssetProductPublicationResult directProductOutcome;
+        const auto directProductPreflight = asharia::asset::detail::publishAssetProducts(
+            preflightPublicationFixture.request(), directProductOperations, directProductOutcome);
+        if (directProductPreflight || !directProductOperations.events.empty() ||
+            !directProductOutcome.failingProductIndex ||
+            *directProductOutcome.failingProductIndex != 0U ||
+            !messageHasFinalPath(directProductPreflight.error().message,
+                                 preflightPublicationFixture.products.front().finalPath) ||
+            messageHasFinalPath(directProductPreflight.error().message, preflightOutputRoot)) {
+            logFailure("Asset product publication lost preflight product endpoint identity.");
+            preservedSharedBoundaryIdentity = false;
+        }
+
+        const std::filesystem::path directManifestPath =
+            preflightOutputRoot / "direct-manifest-only.json";
+        FakeAssetProductPublicationOperations directManifestOperations{directManifestPath};
+        asharia::asset::detail::AssetProductPublicationResult directManifestOutcome;
+        const auto directManifestPreflight = asharia::asset::detail::publishAssetProducts(
+            asharia::asset::detail::AssetProductPublicationRequest{
+                .outputRoot = preflightOutputRoot,
+                .manifestPath = directManifestPath,
+                .manifest = {},
+                .products = {},
+            },
+            directManifestOperations, directManifestOutcome);
+        if (directManifestPreflight || !directManifestOperations.events.empty() ||
+            directManifestPreflight.error().code !=
+                static_cast<int>(
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) ||
+            directManifestOutcome.failingProductIndex ||
+            !messageHasFinalPath(directManifestPreflight.error().message, directManifestPath) ||
+            messageHasFinalPath(directManifestPreflight.error().message, preflightOutputRoot)) {
+            logFailure("Asset product publication lost preflight manifest endpoint identity.");
+            preservedSharedBoundaryIdentity = false;
+        }
+
         asharia::asset::AssetProductExecutionRequest preflightRequest = request;
         preflightRequest.productOutputRoot = preflightOutputRoot;
         preflightRequest.productManifestOutputPath = preflightOutputRoot / "product-manifest.json";
@@ -2722,8 +2823,8 @@ namespace {
         const asharia::asset::AssetProductExecutionResult preflightExecution =
             asharia::asset::detail::executeAssetProductsWithPublicationOperations(
                 preflightRequest, preflightOperations);
-        std::error_code unlinkError;
-        const bool linkRemoved = std::filesystem::remove(stagingRoot, unlinkError);
+        const std::filesystem::path expectedPreflightProductFinal =
+            preflightOutputRoot / plan.requests.front().relativeProductPath;
         if (preflightExecution.diagnostics.size() != 1U ||
             preflightExecution.diagnostics.front().code !=
                 asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
@@ -2734,8 +2835,53 @@ namespace {
             !messageContains(preflightExecution.diagnostics.front().message, "productHash=") ||
             !messageContains(preflightExecution.diagnostics.front().message,
                              "phase=preflight-staging-root") ||
-            !preflightOperations.events.empty() || !linkRemoved || unlinkError) {
+            !messageHasFinalPath(preflightExecution.diagnostics.front().message,
+                                 expectedPreflightProductFinal) ||
+            messageHasFinalPath(preflightExecution.diagnostics.front().message,
+                                preflightOutputRoot) ||
+            !preflightOperations.events.empty()) {
             logFailure("Asset product execution lost preflight-staging diagnostic identity.");
+            preservedSharedBoundaryIdentity = false;
+        }
+
+        asharia::asset::AssetImportPlanResult preflightManifestPlan = plan;
+        preflightManifestPlan.requests.clear();
+        const std::filesystem::path preflightManifestPath =
+            preflightOutputRoot / "execution-manifest-only.json";
+        const asharia::asset::AssetProductExecutionRequest preflightManifestRequest{
+            .plan = std::move(preflightManifestPlan),
+            .existingManifest = {},
+            .sourceBytes = {},
+            .dependencyProductBytes = {},
+            .productOutputRoot = preflightOutputRoot,
+            .productManifestOutputPath = preflightManifestPath,
+        };
+        FakeAssetProductPublicationOperations preflightManifestOperations{preflightManifestPath};
+        const asharia::asset::AssetProductExecutionResult preflightManifestExecution =
+            asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                preflightManifestRequest, preflightManifestOperations);
+        if (preflightManifestExecution.diagnostics.size() != 1U ||
+            preflightManifestExecution.diagnostics.front().code !=
+                asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed ||
+            !preflightManifestExecution.diagnostics.front().sourcePath.empty() ||
+            !preflightManifestExecution.diagnostics.front().relativeProductPath.empty() ||
+            messageContains(preflightManifestExecution.diagnostics.front().message,
+                            "productKeyHash=") ||
+            messageContains(preflightManifestExecution.diagnostics.front().message,
+                            "productHash=") ||
+            !messageHasFinalPath(preflightManifestExecution.diagnostics.front().message,
+                                 preflightManifestPath) ||
+            messageHasFinalPath(preflightManifestExecution.diagnostics.front().message,
+                                preflightOutputRoot) ||
+            !preflightManifestOperations.events.empty()) {
+            logFailure("Asset product execution lost preflight manifest endpoint identity.");
+            preservedSharedBoundaryIdentity = false;
+        }
+
+        std::error_code unlinkError;
+        const bool linkRemoved = std::filesystem::remove(stagingRoot, unlinkError);
+        if (!linkRemoved || unlinkError) {
+            logFailure("Asset product execution could not remove redirected staging fixture.");
             preservedSharedBoundaryIdentity = false;
         }
 
@@ -5249,12 +5395,12 @@ int main() {
         smokeProductPublicationReportsCleanupAfterManifestCommit() &&
         smokeProductPublicationPreservesPartialOutcome() &&
         smokeProductPublicationPreflightsEndpoints() &&
+        smokeProductExecutionScopesPublicationDiagnostics() &&
         smokeProductPublicationRejectsUnownedStagingPath() &&
         smokeNativeProductPublicationRejectsRedirectedStagingRoot() &&
         smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobPrivateValidation() &&
         smokeProductBlobReadLimits() && smokeProductBlobReadDiagnostics() &&
         smokeProductCleanupFailurePreservesDiagnosticIdentity() &&
-        smokeProductExecutionScopesPublicationDiagnostics() &&
         smokeProductExecutionPreservesPublicationOutcome() &&
         smokeProductExecutionWritesPngTextureProduct() &&
         smokeProductExecutionPngTextureDiagnostics() &&

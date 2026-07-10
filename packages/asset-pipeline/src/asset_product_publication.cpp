@@ -102,15 +102,15 @@ namespace asharia::asset::detail {
         [[nodiscard]] Error sharedBoundaryPublicationError(
             const AssetProductPublicationRequest& request, AssetProductPublicationResult& outcome,
             std::string_view phase, const std::filesystem::path& stagingPath,
-            const std::filesystem::path& finalPath, std::string_view reason) {
+            std::string_view reason) {
             if (request.products.empty()) {
                 return publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                                        phase, stagingPath, finalPath, reason);
+                                        phase, stagingPath, request.manifestPath, reason);
             }
             constexpr std::size_t kAffectedProductIndex = 0U;
             outcome.failingProductIndex = kAffectedProductIndex;
             return publicationError(AssetProductExecutionDiagnosticCode::ProductWriteFailed, phase,
-                                    stagingPath, finalPath, reason, false,
+                                    stagingPath, request.products.front().finalPath, reason, false,
                                     &request.products[kAffectedProductIndex],
                                     kAffectedProductIndex);
         }
@@ -246,30 +246,29 @@ namespace asharia::asset::detail {
                                       AssetProductPublicationResult& outcome) {
             auto canonicalRoot = canonicalEndpoint(request.outputRoot, "output root");
             if (!canonicalRoot) {
-                return std::unexpected{sharedBoundaryPublicationError(
-                    request, outcome, "preflight-output-root",
-                    request.outputRoot / ".asharia-product-staging", request.outputRoot,
-                    canonicalRoot.error().message)};
+                return std::unexpected{
+                    sharedBoundaryPublicationError(request, outcome, "preflight-output-root",
+                                                   request.outputRoot / ".asharia-product-staging",
+                                                   canonicalRoot.error().message)};
             }
 
             auto canonicalStagingRoot =
                 canonicalEndpoint(request.outputRoot / ".asharia-product-staging", "staging root");
             if (!canonicalStagingRoot) {
-                return std::unexpected{sharedBoundaryPublicationError(
-                    request, outcome, "preflight-staging-root",
-                    request.outputRoot / ".asharia-product-staging", request.outputRoot,
-                    canonicalStagingRoot.error().message)};
+                return std::unexpected{
+                    sharedBoundaryPublicationError(request, outcome, "preflight-staging-root",
+                                                   request.outputRoot / ".asharia-product-staging",
+                                                   canonicalStagingRoot.error().message)};
             }
             auto stagingContained = isStrictDescendant(*canonicalStagingRoot, *canonicalRoot);
             if (!stagingContained) {
                 return std::unexpected{sharedBoundaryPublicationError(
                     request, outcome, "preflight-staging-root", *canonicalStagingRoot,
-                    request.outputRoot, stagingContained.error().message)};
+                    stagingContained.error().message)};
             }
             if (!*stagingContained) {
                 return std::unexpected{sharedBoundaryPublicationError(
                     request, outcome, "preflight-staging-root", *canonicalStagingRoot,
-                    request.outputRoot,
                     "reserved staging root is not a descendant of the output root")};
             }
 
@@ -669,30 +668,30 @@ namespace asharia::asset::detail {
         auto canonicalOwnedStaging = canonicalEndpoint(*stagingDirectory, "owned staging");
         if (!canonicalOwnedStaging) {
             return std::unexpected{sharedBoundaryPublicationError(
-                request, outcome, "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                request, outcome, "validate-owned-staging", *stagingDirectory,
                 canonicalOwnedStaging.error().message)};
         }
         auto ownedByStagingRoot =
             isStrictDescendant(*canonicalOwnedStaging, boundaries->stagingRoot);
         if (!ownedByStagingRoot) {
             return std::unexpected{sharedBoundaryPublicationError(
-                request, outcome, "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                request, outcome, "validate-owned-staging", *stagingDirectory,
                 ownedByStagingRoot.error().message)};
         }
         if (!*ownedByStagingRoot) {
             return std::unexpected{sharedBoundaryPublicationError(
-                request, outcome, "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                request, outcome, "validate-owned-staging", *stagingDirectory,
                 "operations returned a staging path outside the reserved staging root")};
         }
         auto ownedByOutputRoot = isStrictDescendant(*canonicalOwnedStaging, boundaries->outputRoot);
         if (!ownedByOutputRoot) {
             return std::unexpected{sharedBoundaryPublicationError(
-                request, outcome, "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                request, outcome, "validate-owned-staging", *stagingDirectory,
                 ownedByOutputRoot.error().message)};
         }
         if (!*ownedByOutputRoot) {
             return std::unexpected{sharedBoundaryPublicationError(
-                request, outcome, "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                request, outcome, "validate-owned-staging", *stagingDirectory,
                 "operations returned a staging path outside the output root")};
         }
         *stagingDirectory = std::move(*canonicalOwnedStaging);
