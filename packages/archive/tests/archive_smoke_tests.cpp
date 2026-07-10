@@ -1,5 +1,7 @@
-﻿#include <cstdlib>
+﻿#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -67,11 +69,34 @@ int main() {
 
     const std::filesystem::path archivePath =
         std::filesystem::temp_directory_path() / "asharia-archive-smoke.json";
+    {
+        std::ofstream stale{archivePath, std::ios::binary | std::ios::trunc};
+        stale << "stale archive content that must be replaced";
+    }
     if (auto written = asharia::archive::writeJsonArchiveFile(archivePath, archive); !written) {
         std::cerr << written.error().message << '\n';
         return EXIT_FAILURE;
     }
+    auto exactLimitParsed = asharia::archive::readJsonArchiveFile(
+        archivePath, {.maxBytes = static_cast<std::uint64_t>(firstText->size())});
+    if (!exactLimitParsed) {
+        std::cerr << "Archive JSON rejected a file at the exact byte limit.\n";
+        return EXIT_FAILURE;
+    }
+    auto oversized = asharia::archive::readJsonArchiveFile(
+        archivePath, {.maxBytes = static_cast<std::uint64_t>(firstText->size() - 1U)});
+    if (oversized || !contains(oversized.error().message, "limit")) {
+        std::cerr << "Archive JSON accepted a file one byte above the byte limit.\n";
+        return EXIT_FAILURE;
+    }
     auto fileParsed = asharia::archive::readJsonArchiveFile(archivePath);
+    for (const auto& entry : std::filesystem::directory_iterator{archivePath.parent_path()}) {
+        const std::string filename = entry.path().filename().string();
+        if (filename.starts_with(archivePath.filename().string() + ".tmp.")) {
+            std::cerr << "Archive JSON left an atomic-write temporary file behind.\n";
+            return EXIT_FAILURE;
+        }
+    }
     std::error_code removeError;
     std::filesystem::remove(archivePath, removeError);
     if (!fileParsed) {

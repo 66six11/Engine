@@ -23,6 +23,8 @@ namespace asharia::asset {
         using archive::ArchiveValueKind;
         using namespace std::string_view_literals;
 
+        inline constexpr std::uint64_t kMaxAssetProductManifestBytes = 64ULL * 1024ULL * 1024ULL;
+
         struct HashTextField {
             std::string_view text;
             std::string_view fieldName;
@@ -574,7 +576,8 @@ namespace asharia::asset {
 
     Result<AssetProductManifestDocument>
     readAssetProductManifestFile(const std::filesystem::path& path) {
-        auto archive = archive::readJsonArchiveFile(path);
+        auto archive =
+            archive::readJsonArchiveFile(path, {.maxBytes = kMaxAssetProductManifestBytes});
         if (!archive) {
             return std::unexpected{
                 productManifestIoError("Failed to parse asset product manifest file '" +

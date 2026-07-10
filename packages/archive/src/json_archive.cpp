@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <expected>
-#include <fstream>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -12,6 +11,7 @@
 #include <vector>
 
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 
 namespace asharia::archive {
     namespace {
@@ -180,16 +180,11 @@ namespace asharia::archive {
                                                     path.string() + "': " + text.error().message)};
         }
 
-        std::ofstream file{path, std::ios::binary | std::ios::trunc};
-        if (!file) {
-            return std::unexpected{
-                jsonArchiveError("Failed to open archive file for writing: " + path.string())};
-        }
-
-        file.write(text->data(), static_cast<std::streamsize>(text->size()));
-        if (!file) {
-            return std::unexpected{
-                jsonArchiveError("Failed to write archive file: " + path.string())};
+        auto written = core::writeFileTextAtomically(path, *text);
+        if (!written) {
+            return std::unexpected{jsonArchiveError("Failed to write archive file '" +
+                                                    path.string() +
+                                                    "': " + written.error().message)};
         }
         return {};
     }
@@ -210,27 +205,15 @@ namespace asharia::archive {
         }
     }
 
-    Result<ArchiveValue> readJsonArchiveFile(const std::filesystem::path& path) {
-        std::ifstream file{path, std::ios::binary | std::ios::ate};
-        if (!file) {
-            return std::unexpected{
-                jsonArchiveError("Failed to open archive file: " + path.string())};
+    Result<ArchiveValue> readJsonArchiveFile(const std::filesystem::path& path,
+                                             JsonArchiveFileOptions options) {
+        auto text = core::readFileText(path, {.maxBytes = options.maxBytes});
+        if (!text) {
+            return std::unexpected{jsonArchiveError("Failed to read archive file '" +
+                                                    path.string() + "': " + text.error().message)};
         }
 
-        const std::streamsize size = file.tellg();
-        if (size < 0) {
-            return std::unexpected{
-                jsonArchiveError("Failed to measure archive file: " + path.string())};
-        }
-
-        std::string text(static_cast<std::size_t>(size), '\0');
-        file.seekg(0, std::ios::beg);
-        if (!file.read(text.data(), size)) {
-            return std::unexpected{
-                jsonArchiveError("Failed to read archive file: " + path.string())};
-        }
-
-        auto archive = readJsonArchive(text);
+        auto archive = readJsonArchive(*text);
         if (!archive) {
             return std::unexpected{jsonArchiveError("Failed to parse archive file '" +
                                                     path.string() +

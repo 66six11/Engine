@@ -124,6 +124,20 @@ namespace {
             return false;
         }
 
+        const std::uint64_t fixtureBytes = std::filesystem::file_size(fixturePath);
+        auto exactLimit =
+            asharia::schema::readSchemaDocumentFile(fixturePath, {.maxBytes = fixtureBytes});
+        if (!exactLimit) {
+            std::cerr << "Schema document rejected a file at the exact byte limit.\n";
+            return false;
+        }
+        auto oversized =
+            asharia::schema::readSchemaDocumentFile(fixturePath, {.maxBytes = fixtureBytes - 1U});
+        if (oversized || !contains(oversized.error().message, "limit")) {
+            std::cerr << "Schema document accepted a file above the byte limit.\n";
+            return false;
+        }
+
         const asharia::schema::TypeSchema* vec3 = findLoadedType(*loaded, kGoldenVec3TypeName);
         if (vec3 == nullptr || vec3->version != 2U ||
             vec3->kind != asharia::schema::ValueKind::InlineStruct ||

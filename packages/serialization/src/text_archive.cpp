@@ -3,13 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <expected>
-#include <fstream>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "asharia/core/file_io.hpp"
 
 namespace asharia::serialization {
     namespace {
@@ -178,16 +179,11 @@ namespace asharia::serialization {
                                                     path.string() + "': " + text.error().message)};
         }
 
-        std::ofstream file{path, std::ios::binary | std::ios::trunc};
-        if (!file) {
-            return std::unexpected{
-                textArchiveError("Failed to open text archive file for writing: " + path.string())};
-        }
-
-        file.write(text->data(), static_cast<std::streamsize>(text->size()));
-        if (!file) {
-            return std::unexpected{
-                textArchiveError("Failed to write text archive file: " + path.string())};
+        auto written = core::writeFileTextAtomically(path, *text);
+        if (!written) {
+            return std::unexpected{textArchiveError("Failed to write text archive file '" +
+                                                    path.string() +
+                                                    "': " + written.error().message)};
         }
         return {};
     }
@@ -208,27 +204,15 @@ namespace asharia::serialization {
         }
     }
 
-    Result<ArchiveValue> readTextArchiveFile(const std::filesystem::path& path) {
-        std::ifstream file{path, std::ios::binary | std::ios::ate};
-        if (!file) {
-            return std::unexpected{
-                textArchiveError("Failed to open text archive file: " + path.string())};
+    Result<ArchiveValue> readTextArchiveFile(const std::filesystem::path& path,
+                                             TextArchiveFileOptions options) {
+        auto text = core::readFileText(path, {.maxBytes = options.maxBytes});
+        if (!text) {
+            return std::unexpected{textArchiveError("Failed to read text archive file '" +
+                                                    path.string() + "': " + text.error().message)};
         }
 
-        const std::streamsize size = file.tellg();
-        if (size < 0) {
-            return std::unexpected{
-                textArchiveError("Failed to measure text archive file: " + path.string())};
-        }
-
-        std::string text(static_cast<std::size_t>(size), '\0');
-        file.seekg(0, std::ios::beg);
-        if (!file.read(text.data(), size)) {
-            return std::unexpected{
-                textArchiveError("Failed to read text archive file: " + path.string())};
-        }
-
-        auto archive = readTextArchive(text);
+        auto archive = readTextArchive(*text);
         if (!archive) {
             return std::unexpected{textArchiveError("Failed to parse text archive file '" +
                                                     path.string() +

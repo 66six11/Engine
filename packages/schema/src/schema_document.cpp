@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -13,6 +12,7 @@
 #include <vector>
 
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 #include "asharia/schema/ids.hpp"
 
 namespace asharia::schema {
@@ -720,27 +720,15 @@ namespace asharia::schema {
         }
     }
 
-    Result<std::vector<TypeSchema>> readSchemaDocumentFile(const std::filesystem::path& path) {
-        std::ifstream file{path, std::ios::binary | std::ios::ate};
-        if (!file) {
-            return std::unexpected{
-                makeSchemaDocumentError("Failed to open schema document: " + path.string())};
+    Result<std::vector<TypeSchema>> readSchemaDocumentFile(const std::filesystem::path& path,
+                                                           SchemaDocumentFileOptions options) {
+        auto text = core::readFileText(path, {.maxBytes = options.maxBytes});
+        if (!text) {
+            return std::unexpected{makeSchemaDocumentError(
+                "Failed to read schema document '" + path.string() + "': " + text.error().message)};
         }
 
-        const std::streamsize size = file.tellg();
-        if (size < 0) {
-            return std::unexpected{
-                makeSchemaDocumentError("Failed to measure schema document: " + path.string())};
-        }
-
-        std::string text(static_cast<std::size_t>(size), '\0');
-        file.seekg(0, std::ios::beg);
-        if (!file.read(text.data(), size)) {
-            return std::unexpected{
-                makeSchemaDocumentError("Failed to read schema document: " + path.string())};
-        }
-
-        auto document = readSchemaDocument(text);
+        auto document = readSchemaDocument(*text);
         if (!document) {
             return std::unexpected{makeSchemaDocumentError("Failed to parse schema document '" +
                                                            path.string() +

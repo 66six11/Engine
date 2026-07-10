@@ -5,6 +5,7 @@
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <fstream>
 #include <initializer_list>
 #include <iostream>
 #include <limits>
@@ -877,13 +878,36 @@ namespace {
 
         const std::filesystem::path archivePath = std::filesystem::temp_directory_path() /
                                                   "asharia-serialization-json-archive-smoke.json";
+        {
+            std::ofstream stale{archivePath, std::ios::binary | std::ios::trunc};
+            stale << "stale serialization content that must be replaced";
+        }
         auto fileWritten = asharia::serialization::writeTextArchiveFile(archivePath, archive);
         if (!fileWritten) {
             logFailure(fileWritten.error().message);
             return false;
         }
 
+        auto exactLimitParsed = asharia::serialization::readTextArchiveFile(
+            archivePath, {.maxBytes = static_cast<std::uint64_t>(firstText->size())});
+        if (!exactLimitParsed) {
+            logFailure("JSON archive smoke rejected a file at the exact byte limit.");
+            return false;
+        }
+        auto oversized = asharia::serialization::readTextArchiveFile(
+            archivePath, {.maxBytes = static_cast<std::uint64_t>(firstText->size() - 1U)});
+        if (oversized || oversized.error().message.find("limit") == std::string::npos) {
+            logFailure("JSON archive smoke accepted a file above the byte limit.");
+            return false;
+        }
         auto fileParsed = asharia::serialization::readTextArchiveFile(archivePath);
+        for (const auto& entry : std::filesystem::directory_iterator{archivePath.parent_path()}) {
+            const std::string filename = entry.path().filename().string();
+            if (filename.starts_with(archivePath.filename().string() + ".tmp.")) {
+                logFailure("JSON archive smoke left an atomic-write temporary file behind.");
+                return false;
+            }
+        }
         std::error_code removeError;
         std::filesystem::remove(archivePath, removeError);
         if (!fileParsed) {

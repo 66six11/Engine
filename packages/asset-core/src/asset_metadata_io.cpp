@@ -21,6 +21,8 @@ namespace asharia::asset {
         using archive::ArchiveValueKind;
         using namespace std::string_view_literals;
 
+        inline constexpr std::uint64_t kMaxAssetMetadataBytes = 16ULL * 1024ULL * 1024ULL;
+
         struct HashTextField {
             std::string_view text;
             std::string_view fieldName;
@@ -475,7 +477,7 @@ namespace asharia::asset {
     }
 
     Result<AssetMetadataDocument> readAssetMetadataFile(const std::filesystem::path& path) {
-        auto archive = archive::readJsonArchiveFile(path);
+        auto archive = archive::readJsonArchiveFile(path, {.maxBytes = kMaxAssetMetadataBytes});
         if (!archive) {
             return std::unexpected{assetMetadataIoError("Failed to parse asset metadata file '" +
                                                         path.string() +
