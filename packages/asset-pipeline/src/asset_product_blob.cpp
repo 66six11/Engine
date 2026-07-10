@@ -1,10 +1,11 @@
 ﻿#include "asharia/asset_pipeline/asset_product_blob.hpp"
 
+#include <algorithm>
+#include <bit>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <ios>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -15,7 +16,10 @@
 
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 #include "asharia/material_instance/amat_io.hpp"
+
+#include "asset_product_blob_limits.hpp"
 
 namespace asharia::asset {
     namespace {
@@ -54,33 +58,67 @@ namespace asharia::asset {
                          "Asset product blob " + product + " " + std::move(message) + "."};
         }
 
-        [[nodiscard]] Result<std::vector<std::uint8_t>>
-        readProductFileBytes(const AssetProductBlobReadRequest& request) {
+        [[nodiscard]] Result<std::vector<std::byte>>
+        readProductFileBytes(const AssetProductBlobReadRequest& request,
+                             AssetProductBlobReadLimits limits) {
             if (request.productFilePath.empty()) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingProduct,
                                                  request.relativeProductPath,
                                                  "has no product file path")};
             }
 
-            std::ifstream file(request.productFilePath, std::ios::binary);
-            if (!file) {
+            std::error_code existsError;
+            const bool exists = std::filesystem::exists(request.productFilePath, existsError);
+            if (existsError || !exists) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::MissingProduct,
                                                  request.relativeProductPath,
                                                  "is missing from the product cache")};
             }
 
-            std::vector<std::uint8_t> bytes;
-            char byte{};
-            while (file.get(byte)) {
-                bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(byte)));
-            }
-            if (!file.eof()) {
+            auto bytes = core::readFileBytes(
+                request.productFilePath, core::FileReadLimits{.maxBytes = limits.maxProductBytes});
+            if (!bytes) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::ProductReadFailed,
                                                  request.relativeProductPath,
-                                                 "could not be read completely")};
+                                                 "could not be read: " + bytes.error().message)};
             }
 
-            return bytes;
+            return *std::move(bytes);
+        }
+
+        [[nodiscard]] std::span<const std::uint8_t>
+        asUint8Span(std::span<const std::byte> bytes) noexcept {
+            // std::uint8_t is an unsigned character type on supported targets and may alias bytes.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            return {reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()};
+        }
+
+        [[nodiscard]] Result<void> validateProductByteCount(std::size_t byteCount,
+                                                            AssetProductBlobReadLimits limits,
+                                                            std::string_view relativeProductPath) {
+            if (limits.maxProductBytes == 0U || byteCount > limits.maxProductBytes) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "exceeds the configured product byte limit of " +
+                                                     std::to_string(limits.maxProductBytes))};
+            }
+            return {};
+        }
+
+        [[nodiscard]] std::size_t headerLineCount(std::string_view header) noexcept {
+            if (header.empty()) {
+                return 0U;
+            }
+            std::size_t count = 1U;
+            for (const char character : header) {
+                if (character == '\n') {
+                    ++count;
+                }
+            }
+            if (header.back() == '\n') {
+                --count;
+            }
+            return count;
         }
 
         struct HeaderLookupRequest {
@@ -248,7 +286,8 @@ namespace asharia::asset {
 
         [[nodiscard]] Result<std::vector<std::uint8_t>>
         requireHexBytesField(std::string_view header, std::string_view key,
-                             std::string_view relativeProductPath) {
+                             std::string_view relativeProductPath, std::uint64_t declaredSize,
+                             std::string_view payloadName) {
             auto value = requirePresentStringField(header, key, relativeProductPath);
             if (!value) {
                 return std::unexpected{std::move(value.error())};
@@ -258,6 +297,12 @@ namespace asharia::asset {
                     blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                               std::string{relativeProductPath},
                               "has odd-length hex field '" + std::string{key} + "'")};
+            }
+            if (declaredSize > header.size() / 2U || value->size() / 2U != declaredSize) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has a " + std::string{payloadName} + " payload size mismatch")};
             }
 
             std::vector<std::uint8_t> bytes;
@@ -393,6 +438,9 @@ namespace asharia::asset {
             std::string_view header;
             std::uint64_t mipCount{};
             std::uint64_t payloadSize{};
+            std::uint32_t width{};
+            std::uint32_t height{};
+            std::uint32_t maxMipRecords{};
             std::string_view relativeProductPath;
         };
 
@@ -467,9 +515,29 @@ namespace asharia::asset {
 
         [[nodiscard]] Result<std::vector<AssetTextureMipPayload>>
         parseTextureProductMips(const TextureProductMipParseRequest& request) {
+            auto count = detail::validateAssetProductRecordCount({
+                .count = request.mipCount,
+                .hardLimit = request.maxMipRecords,
+                .headerLineCount = headerLineCount(request.header),
+                .minimumLinesPerRecord = 5U,
+                .recordName = "mip records",
+                .relativeProductPath = request.relativeProductPath,
+            });
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
+            }
+            const std::uint64_t dimensionMipLimit =
+                std::bit_width(std::max(request.width, request.height));
+            if (request.mipCount > dimensionMipLimit) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{request.relativeProductPath},
+                              "has mip records incompatible with the declared dimensions")};
+            }
+
             std::vector<AssetTextureMipPayload> mips;
-            mips.reserve(static_cast<std::size_t>(request.mipCount));
-            for (std::uint64_t mipIndex = 0; mipIndex < request.mipCount; ++mipIndex) {
+            mips.reserve(*count);
+            for (std::size_t mipIndex = 0; mipIndex < *count; ++mipIndex) {
                 const std::string prefix = "mip." + std::to_string(mipIndex) + ".";
                 auto level = requireUint32Field(request.header, prefix + "level",
                                                 request.relativeProductPath);
@@ -673,16 +741,23 @@ namespace asharia::asset {
 
         [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductProperty>>
         parseShaderAuthoringProperties(std::string_view header, std::uint64_t propertyCount,
-                                       std::string_view relativeProductPath) {
-            if (propertyCount > SIZE_MAX) {
-                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
-                                                 std::string{relativeProductPath},
-                                                 "has too many property records")};
+                                       std::string_view relativeProductPath,
+                                       std::uint32_t maxProperties) {
+            auto count = detail::validateAssetProductRecordCount({
+                .count = propertyCount,
+                .hardLimit = maxProperties,
+                .headerLineCount = headerLineCount(header),
+                .minimumLinesPerRecord = 3U,
+                .recordName = "property records",
+                .relativeProductPath = relativeProductPath,
+            });
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
             }
 
             std::vector<AssetShaderAuthoringProductProperty> properties;
-            properties.reserve(static_cast<std::size_t>(propertyCount));
-            for (std::uint64_t index = 0; index < propertyCount; ++index) {
+            properties.reserve(*count);
+            for (std::size_t index = 0; index < *count; ++index) {
                 const std::string prefix = "property." + std::to_string(index) + ".";
                 auto name = requireStringField(header, prefix + "name", relativeProductPath);
                 auto type = requireStringField(header, prefix + "type", relativeProductPath);
@@ -708,16 +783,22 @@ namespace asharia::asset {
 
         [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductPass>>
         parseShaderAuthoringPasses(std::string_view header, std::uint64_t passCount,
-                                   std::string_view relativeProductPath) {
-            if (passCount > SIZE_MAX) {
-                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
-                                                 std::string{relativeProductPath},
-                                                 "has too many pass records")};
+                                   std::string_view relativeProductPath, std::uint32_t maxPasses) {
+            auto count = detail::validateAssetProductRecordCount({
+                .count = passCount,
+                .hardLimit = maxPasses,
+                .headerLineCount = headerLineCount(header),
+                .minimumLinesPerRecord = 5U,
+                .recordName = "pass records",
+                .relativeProductPath = relativeProductPath,
+            });
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
             }
 
             std::vector<AssetShaderAuthoringProductPass> passes;
-            passes.reserve(static_cast<std::size_t>(passCount));
-            for (std::uint64_t index = 0; index < passCount; ++index) {
+            passes.reserve(*count);
+            for (std::size_t index = 0; index < *count; ++index) {
                 const std::string prefix = "pass." + std::to_string(index) + ".";
                 auto name = requireStringField(header, prefix + "name", relativeProductPath);
                 auto tag = requirePresentStringField(header, prefix + "tag", relativeProductPath);
@@ -755,16 +836,23 @@ namespace asharia::asset {
 
         [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductBinding>>
         parseShaderAuthoringBindings(std::string_view header, std::uint64_t bindingCount,
-                                     std::string_view relativeProductPath) {
-            if (bindingCount > SIZE_MAX) {
-                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
-                                                 std::string{relativeProductPath},
-                                                 "has too many binding records")};
+                                     std::string_view relativeProductPath,
+                                     std::uint32_t maxBindings) {
+            auto count = detail::validateAssetProductRecordCount({
+                .count = bindingCount,
+                .hardLimit = maxBindings,
+                .headerLineCount = headerLineCount(header),
+                .minimumLinesPerRecord = 5U,
+                .recordName = "binding records",
+                .relativeProductPath = relativeProductPath,
+            });
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
             }
 
             std::vector<AssetShaderAuthoringProductBinding> bindings;
-            bindings.reserve(static_cast<std::size_t>(bindingCount));
-            for (std::uint64_t index = 0; index < bindingCount; ++index) {
+            bindings.reserve(*count);
+            for (std::size_t index = 0; index < *count; ++index) {
                 const std::string prefix = "binding." + std::to_string(index) + ".";
                 auto name = requireStringField(header, prefix + "name", relativeProductPath);
                 auto type = requireStringField(header, prefix + "type", relativeProductPath);
@@ -800,16 +888,23 @@ namespace asharia::asset {
 
         [[nodiscard]] Result<std::vector<AssetShaderAuthoringProductEntry>>
         parseShaderAuthoringEntries(std::string_view header, std::uint64_t entryCount,
-                                    std::string_view relativeProductPath) {
-            if (entryCount > SIZE_MAX) {
-                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
-                                                 std::string{relativeProductPath},
-                                                 "has too many entry records")};
+                                    std::string_view relativeProductPath,
+                                    std::uint32_t maxEntries) {
+            auto count = detail::validateAssetProductRecordCount({
+                .count = entryCount,
+                .hardLimit = maxEntries,
+                .headerLineCount = headerLineCount(header),
+                .minimumLinesPerRecord = 5U,
+                .recordName = "entry records",
+                .relativeProductPath = relativeProductPath,
+            });
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
             }
 
             std::vector<AssetShaderAuthoringProductEntry> entries;
-            entries.reserve(static_cast<std::size_t>(entryCount));
-            for (std::uint64_t index = 0; index < entryCount; ++index) {
+            entries.reserve(*count);
+            for (std::size_t index = 0; index < *count; ++index) {
                 const std::string prefix = "entry." + std::to_string(index) + ".";
                 auto passName =
                     requireStringField(header, prefix + "passName", relativeProductPath);
@@ -975,27 +1070,19 @@ namespace asharia::asset {
                 requireHexUint64Field(header, prefix + "slangcDiagnosticHash", relativeProductPath);
             auto slangcDiagnosticSize =
                 requireUint64Field(header, prefix + "slangcDiagnosticSize", relativeProductPath);
-            auto slangcDiagnosticBytes =
-                requireHexBytesField(header, prefix + "slangcDiagnosticHex", relativeProductPath);
             auto spirvValExitCode =
                 requireUint64Field(header, prefix + "spirvValExitCode", relativeProductPath);
             auto spirvValDiagnosticHash = requireHexUint64Field(
                 header, prefix + "spirvValDiagnosticHash", relativeProductPath);
             auto spirvValDiagnosticSize =
                 requireUint64Field(header, prefix + "spirvValDiagnosticSize", relativeProductPath);
-            auto spirvValDiagnosticBytes =
-                requireHexBytesField(header, prefix + "spirvValDiagnosticHex", relativeProductPath);
             auto spirvHash =
                 requireHexUint64Field(header, prefix + "spirvHash", relativeProductPath);
             auto spirvSize = requireUint64Field(header, prefix + "spirvSize", relativeProductPath);
-            auto spirvBytes =
-                requireHexBytesField(header, prefix + "spirvHex", relativeProductPath);
             auto reflectionJsonHash =
                 requireHexUint64Field(header, prefix + "reflectionJsonHash", relativeProductPath);
             auto reflectionJsonSize =
                 requireUint64Field(header, prefix + "reflectionJsonSize", relativeProductPath);
-            auto reflectionJsonBytes =
-                requireHexBytesField(header, prefix + "reflectionJsonHex", relativeProductPath);
 
             Error error;
             if (!captureError(passName, error) || !captureError(stage, error) ||
@@ -1003,14 +1090,27 @@ namespace asharia::asset {
                 !captureError(wrapper, error) || !captureError(slangcExitCode, error) ||
                 !captureError(slangcDiagnosticHash, error) ||
                 !captureError(slangcDiagnosticSize, error) ||
-                !captureError(slangcDiagnosticBytes, error) ||
                 !captureError(spirvValExitCode, error) ||
                 !captureError(spirvValDiagnosticHash, error) ||
-                !captureError(spirvValDiagnosticSize, error) ||
-                !captureError(spirvValDiagnosticBytes, error) || !captureError(spirvHash, error) ||
-                !captureError(spirvSize, error) || !captureError(spirvBytes, error) ||
-                !captureError(reflectionJsonHash, error) ||
-                !captureError(reflectionJsonSize, error) ||
+                !captureError(spirvValDiagnosticSize, error) || !captureError(spirvHash, error) ||
+                !captureError(spirvSize, error) || !captureError(reflectionJsonHash, error) ||
+                !captureError(reflectionJsonSize, error)) {
+                return std::unexpected{std::move(error)};
+            }
+
+            auto slangcDiagnosticBytes =
+                requireHexBytesField(header, prefix + "slangcDiagnosticHex", relativeProductPath,
+                                     *slangcDiagnosticSize, "slangc diagnostic");
+            auto spirvValDiagnosticBytes =
+                requireHexBytesField(header, prefix + "spirvValDiagnosticHex", relativeProductPath,
+                                     *spirvValDiagnosticSize, "spirv-val diagnostic");
+            auto spirvBytes = requireHexBytesField(header, prefix + "spirvHex", relativeProductPath,
+                                                   *spirvSize, "SPIR-V");
+            auto reflectionJsonBytes =
+                requireHexBytesField(header, prefix + "reflectionJsonHex", relativeProductPath,
+                                     *reflectionJsonSize, "reflection JSON");
+            if (!captureError(slangcDiagnosticBytes, error) ||
+                !captureError(spirvValDiagnosticBytes, error) || !captureError(spirvBytes, error) ||
                 !captureError(reflectionJsonBytes, error)) {
                 return std::unexpected{std::move(error)};
             }
@@ -1098,16 +1198,23 @@ namespace asharia::asset {
 
         [[nodiscard]] Result<std::vector<AssetShaderCompileReflectionProductEntry>>
         parseShaderCompileReflectionEntries(std::string_view header, std::uint64_t entryCount,
-                                            std::string_view relativeProductPath) {
-            if (entryCount > SIZE_MAX) {
-                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
-                                                 std::string{relativeProductPath},
-                                                 "has too many compiled shader entry records")};
+                                            std::string_view relativeProductPath,
+                                            std::uint32_t maxEntries) {
+            auto count = detail::validateAssetProductRecordCount({
+                .count = entryCount,
+                .hardLimit = maxEntries,
+                .headerLineCount = headerLineCount(header),
+                .minimumLinesPerRecord = 19U,
+                .recordName = "compiled shader entry records",
+                .relativeProductPath = relativeProductPath,
+            });
+            if (!count) {
+                return std::unexpected{std::move(count.error())};
             }
 
             std::vector<AssetShaderCompileReflectionProductEntry> entries;
-            entries.reserve(static_cast<std::size_t>(entryCount));
-            for (std::uint64_t index = 0; index < entryCount; ++index) {
+            entries.reserve(*count);
+            for (std::size_t index = 0; index < *count; ++index) {
                 auto fields =
                     parseShaderCompileReflectionEntryFields(header, index, relativeProductPath);
                 if (!fields) {
@@ -1159,20 +1266,26 @@ namespace asharia::asset {
     } // namespace
 
     Result<AssetProductBlobPayload>
-    readPlaceholderProductSourceBytes(const AssetProductBlobReadRequest& request) {
-        auto bytes = readProductFileBytes(request);
+    readPlaceholderProductSourceBytes(const AssetProductBlobReadRequest& request,
+                                      AssetProductBlobReadLimits limits) {
+        auto bytes = readProductFileBytes(request, limits);
         if (!bytes) {
             return std::unexpected{std::move(bytes.error())};
         }
 
-        return readPlaceholderProductSourceBytes(
-            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
-            request.relativeProductPath);
+        return readPlaceholderProductSourceBytes(asUint8Span(*bytes), request.relativeProductPath,
+                                                 limits);
     }
 
     Result<AssetProductBlobPayload>
     readPlaceholderProductSourceBytes(std::span<const std::uint8_t> productBytes,
-                                      std::string_view relativeProductPath) {
+                                      std::string_view relativeProductPath,
+                                      AssetProductBlobReadLimits limits) {
+        if (auto validBytes =
+                validateProductByteCount(productBytes.size(), limits, relativeProductPath);
+            !validBytes) {
+            return std::unexpected{std::move(validBytes.error())};
+        }
         if (productBytes.empty()) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                              std::string{relativeProductPath}, "is empty")};
@@ -1211,20 +1324,26 @@ namespace asharia::asset {
     }
 
     Result<AssetTextureProductPayload>
-    readTexture2DProductPayload(const AssetProductBlobReadRequest& request) {
-        auto bytes = readProductFileBytes(request);
+    readTexture2DProductPayload(const AssetProductBlobReadRequest& request,
+                                AssetProductBlobReadLimits limits) {
+        auto bytes = readProductFileBytes(request, limits);
         if (!bytes) {
             return std::unexpected{std::move(bytes.error())};
         }
 
-        return readTexture2DProductPayload(
-            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
-            request.relativeProductPath);
+        return readTexture2DProductPayload(asUint8Span(*bytes), request.relativeProductPath,
+                                           limits);
     }
 
     Result<AssetTextureProductPayload>
     readTexture2DProductPayload(std::span<const std::uint8_t> productBytes,
-                                std::string_view relativeProductPath) {
+                                std::string_view relativeProductPath,
+                                AssetProductBlobReadLimits limits) {
+        if (auto validBytes =
+                validateProductByteCount(productBytes.size(), limits, relativeProductPath);
+            !validBytes) {
+            return std::unexpected{std::move(validBytes.error())};
+        }
         if (productBytes.empty()) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                              std::string{relativeProductPath}, "is empty")};
@@ -1260,7 +1379,7 @@ namespace asharia::asset {
 
         const auto payloadByteCount = static_cast<std::size_t>(header->payloadSize);
         const std::size_t payloadEnd = payloadBegin + payloadByteCount;
-        if (productBytes.size() < payloadEnd + kEnd.size() ||
+        if (payloadEnd > productBytes.size() || kEnd.size() > productBytes.size() - payloadEnd ||
             productText.substr(payloadEnd, kEnd.size()) != kEnd) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
@@ -1282,6 +1401,9 @@ namespace asharia::asset {
             .header = headerText,
             .mipCount = header->mipCount,
             .payloadSize = header->payloadSize,
+            .width = header->width,
+            .height = header->height,
+            .maxMipRecords = limits.maxTextureMipRecords,
             .relativeProductPath = relativeProductPath,
         });
         if (!mips) {
@@ -1302,20 +1424,26 @@ namespace asharia::asset {
     }
 
     Result<AssetMaterialInstanceProductPayload>
-    readMaterialInstanceProductPayload(const AssetProductBlobReadRequest& request) {
-        auto bytes = readProductFileBytes(request);
+    readMaterialInstanceProductPayload(const AssetProductBlobReadRequest& request,
+                                       AssetProductBlobReadLimits limits) {
+        auto bytes = readProductFileBytes(request, limits);
         if (!bytes) {
             return std::unexpected{std::move(bytes.error())};
         }
 
-        return readMaterialInstanceProductPayload(
-            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
-            request.relativeProductPath);
+        return readMaterialInstanceProductPayload(asUint8Span(*bytes), request.relativeProductPath,
+                                                  limits);
     }
 
     Result<AssetMaterialInstanceProductPayload>
     readMaterialInstanceProductPayload(std::span<const std::uint8_t> productBytes,
-                                       std::string_view relativeProductPath) {
+                                       std::string_view relativeProductPath,
+                                       AssetProductBlobReadLimits limits) {
+        if (auto validBytes =
+                validateProductByteCount(productBytes.size(), limits, relativeProductPath);
+            !validBytes) {
+            return std::unexpected{std::move(validBytes.error())};
+        }
         if (productBytes.empty()) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                              std::string{relativeProductPath}, "is empty")};
@@ -1351,7 +1479,7 @@ namespace asharia::asset {
 
         const auto payloadByteCount = static_cast<std::size_t>(header->amatSize);
         const std::size_t payloadEnd = payloadBegin + payloadByteCount;
-        if (productBytes.size() < payloadEnd + kEnd.size() ||
+        if (payloadEnd > productBytes.size() || kEnd.size() > productBytes.size() - payloadEnd ||
             productText.substr(payloadEnd, kEnd.size()) != kEnd) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
@@ -1401,20 +1529,26 @@ namespace asharia::asset {
     }
 
     Result<AssetShaderAuthoringProductPayload>
-    readShaderAuthoringProductPayload(const AssetProductBlobReadRequest& request) {
-        auto bytes = readProductFileBytes(request);
+    readShaderAuthoringProductPayload(const AssetProductBlobReadRequest& request,
+                                      AssetProductBlobReadLimits limits) {
+        auto bytes = readProductFileBytes(request, limits);
         if (!bytes) {
             return std::unexpected{std::move(bytes.error())};
         }
 
-        return readShaderAuthoringProductPayload(
-            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
-            request.relativeProductPath);
+        return readShaderAuthoringProductPayload(asUint8Span(*bytes), request.relativeProductPath,
+                                                 limits);
     }
 
     Result<AssetShaderAuthoringProductPayload>
     readShaderAuthoringProductPayload(std::span<const std::uint8_t> productBytes,
-                                      std::string_view relativeProductPath) {
+                                      std::string_view relativeProductPath,
+                                      AssetProductBlobReadLimits limits) {
+        if (auto validBytes =
+                validateProductByteCount(productBytes.size(), limits, relativeProductPath);
+            !validBytes) {
+            return std::unexpected{std::move(validBytes.error())};
+        }
         if (productBytes.empty()) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                              std::string{relativeProductPath}, "is empty")};
@@ -1450,7 +1584,7 @@ namespace asharia::asset {
 
         const auto payloadByteCount = static_cast<std::size_t>(header->generatedSlangSize);
         const std::size_t payloadEnd = payloadBegin + payloadByteCount;
-        if (productBytes.size() < payloadEnd + kEnd.size() ||
+        if (payloadEnd > productBytes.size() || kEnd.size() > productBytes.size() - payloadEnd ||
             productText.substr(payloadEnd, kEnd.size()) != kEnd) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
@@ -1467,23 +1601,23 @@ namespace asharia::asset {
                                              "has a generated Slang payload hash mismatch")};
         }
 
-        auto properties =
-            parseShaderAuthoringProperties(headerText, header->propertyCount, relativeProductPath);
+        auto properties = parseShaderAuthoringProperties(
+            headerText, header->propertyCount, relativeProductPath, limits.maxShaderProperties);
         if (!properties) {
             return std::unexpected{std::move(properties.error())};
         }
-        auto passes =
-            parseShaderAuthoringPasses(headerText, header->passCount, relativeProductPath);
+        auto passes = parseShaderAuthoringPasses(headerText, header->passCount, relativeProductPath,
+                                                 limits.maxShaderPasses);
         if (!passes) {
             return std::unexpected{std::move(passes.error())};
         }
-        auto bindings =
-            parseShaderAuthoringBindings(headerText, header->bindingCount, relativeProductPath);
+        auto bindings = parseShaderAuthoringBindings(headerText, header->bindingCount,
+                                                     relativeProductPath, limits.maxShaderBindings);
         if (!bindings) {
             return std::unexpected{std::move(bindings.error())};
         }
-        auto entries =
-            parseShaderAuthoringEntries(headerText, header->entryCount, relativeProductPath);
+        auto entries = parseShaderAuthoringEntries(headerText, header->entryCount,
+                                                   relativeProductPath, limits.maxShaderEntries);
         if (!entries) {
             return std::unexpected{std::move(entries.error())};
         }
@@ -1508,20 +1642,26 @@ namespace asharia::asset {
     }
 
     Result<AssetShaderCompileReflectionProductPayload>
-    readShaderCompileReflectionProductPayload(const AssetProductBlobReadRequest& request) {
-        auto bytes = readProductFileBytes(request);
+    readShaderCompileReflectionProductPayload(const AssetProductBlobReadRequest& request,
+                                              AssetProductBlobReadLimits limits) {
+        auto bytes = readProductFileBytes(request, limits);
         if (!bytes) {
             return std::unexpected{std::move(bytes.error())};
         }
 
-        return readShaderCompileReflectionProductPayload(
-            std::span<const std::uint8_t>{bytes->data(), bytes->size()},
-            request.relativeProductPath);
+        return readShaderCompileReflectionProductPayload(asUint8Span(*bytes),
+                                                         request.relativeProductPath, limits);
     }
 
     Result<AssetShaderCompileReflectionProductPayload>
     readShaderCompileReflectionProductPayload(std::span<const std::uint8_t> productBytes,
-                                              std::string_view relativeProductPath) {
+                                              std::string_view relativeProductPath,
+                                              AssetProductBlobReadLimits limits) {
+        if (auto validBytes =
+                validateProductByteCount(productBytes.size(), limits, relativeProductPath);
+            !validBytes) {
+            return std::unexpected{std::move(validBytes.error())};
+        }
         if (productBytes.empty()) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                              std::string{relativeProductPath}, "is empty")};
@@ -1539,8 +1679,8 @@ namespace asharia::asset {
             return std::unexpected{std::move(header.error())};
         }
 
-        auto entries = parseShaderCompileReflectionEntries(productText, header->entryCount,
-                                                           relativeProductPath);
+        auto entries = parseShaderCompileReflectionEntries(
+            productText, header->entryCount, relativeProductPath, limits.maxShaderEntries);
         if (!entries) {
             return std::unexpected{std::move(entries.error())};
         }

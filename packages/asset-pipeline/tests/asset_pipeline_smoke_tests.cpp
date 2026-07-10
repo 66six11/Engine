@@ -1,9 +1,11 @@
 ﻿#include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -1073,22 +1075,23 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] bool hasToolVersionDependency(
-        std::span<const asharia::asset::AssetDependency> dependencies,
-        const asharia::asset::AssetGuid& owner, std::string_view toolName,
-        std::uint64_t versionHash) {
+    [[nodiscard]] bool
+    hasToolVersionDependency(std::span<const asharia::asset::AssetDependency> dependencies,
+                             const asharia::asset::AssetGuid& owner, std::string_view toolName,
+                             std::uint64_t versionHash) {
         return std::ranges::any_of(
-            dependencies, [&owner, toolName, versionHash](const asharia::asset::AssetDependency&
-                                                              dependency) {
+            dependencies,
+            [&owner, toolName, versionHash](const asharia::asset::AssetDependency& dependency) {
                 return dependency.owner == owner &&
                        dependency.kind == asharia::asset::AssetDependencyKind::ToolVersion &&
                        dependency.path == toolName && dependency.hash == versionHash;
             });
     }
 
-    [[nodiscard]] bool hasToolVersionDependencyNamed(
-        std::span<const asharia::asset::AssetDependency> dependencies,
-        const asharia::asset::AssetGuid& owner, std::string_view toolName) {
+    [[nodiscard]] bool
+    hasToolVersionDependencyNamed(std::span<const asharia::asset::AssetDependency> dependencies,
+                                  const asharia::asset::AssetGuid& owner,
+                                  std::string_view toolName) {
         return std::ranges::any_of(
             dependencies, [&owner, toolName](const asharia::asset::AssetDependency& dependency) {
                 return dependency.owner == owner &&
@@ -1099,8 +1102,7 @@ namespace {
 
     [[nodiscard]] bool smokeImportPlanningShaderToolVersionChanged() {
         constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
-        constexpr std::string_view kImporterName =
-            "com.asharia.importer.shader-compile-reflection";
+        constexpr std::string_view kImporterName = "com.asharia.importer.shader-compile-reflection";
         auto guid = asharia::asset::parseAssetGuid("69bc6326-c04a-49d8-a4d2-653445a0e423");
         const std::vector<asharia::asset::AssetImportSetting> settings{
             asharia::asset::AssetImportSetting{
@@ -1163,10 +1165,9 @@ namespace {
                 },
         };
 
-        const asharia::asset::AssetImportPlanResult first =
-            asharia::asset::planAssetImports(
-                sources, snapshots, asharia::asset::AssetProductManifestDocument{},
-                "windows-msvc-debug", toolchainV1);
+        const asharia::asset::AssetImportPlanResult first = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug", toolchainV1);
         if (!first.succeeded() || first.requests.size() != 1U ||
             !hasToolVersionDependency(first.requests.front().dependencies, source.source.guid,
                                       "slangc", 0x1111111111111111ULL) ||
@@ -1179,9 +1180,9 @@ namespace {
         }
 
         const asharia::asset::AssetImportPlanResult defaultToolchain =
-            asharia::asset::planAssetImports(
-                sources, snapshots, asharia::asset::AssetProductManifestDocument{},
-                "windows-msvc-debug");
+            asharia::asset::planAssetImports(sources, snapshots,
+                                             asharia::asset::AssetProductManifestDocument{},
+                                             "windows-msvc-debug");
         if (!defaultToolchain.succeeded() || defaultToolchain.requests.size() != 1U ||
             !hasToolVersionDependencyNamed(defaultToolchain.requests.front().dependencies,
                                            source.source.guid, "slangc") ||
@@ -1194,12 +1195,10 @@ namespace {
         const asharia::asset::AssetProductManifestDocument manifest{
             .products = {makeProductFromImportRequest(first.requests.front())},
         };
-        const asharia::asset::AssetImportPlanResult unchanged =
-            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug",
-                                             toolchainV1);
-        const asharia::asset::AssetImportPlanResult changed =
-            asharia::asset::planAssetImports(sources, snapshots, manifest, "windows-msvc-debug",
-                                             toolchainV2);
+        const asharia::asset::AssetImportPlanResult unchanged = asharia::asset::planAssetImports(
+            sources, snapshots, manifest, "windows-msvc-debug", toolchainV1);
+        const asharia::asset::AssetImportPlanResult changed = asharia::asset::planAssetImports(
+            sources, snapshots, manifest, "windows-msvc-debug", toolchainV2);
         if (!unchanged.succeeded() || unchanged.cacheHits.size() != 1U ||
             !unchanged.requests.empty() || !changed.succeeded() || !changed.cacheHits.empty() ||
             changed.requests.size() != 1U ||
@@ -1670,6 +1669,22 @@ namespace {
         }
 
         return true;
+    }
+
+    template <typename Operation>
+    [[nodiscard]] bool expectProductBlobErrorWithoutException(
+        Operation&& operation, asharia::asset::AssetProductBlobDiagnosticCode expectedCode,
+        std::string_view expectedToken) {
+        try {
+            const auto result = std::forward<Operation>(operation)();
+            return expectProductBlobError(result, expectedCode, expectedToken);
+        } catch (const std::exception& exception) {
+            logFailure("Asset product blob smoke escaped an exception: " +
+                       std::string{exception.what()});
+        } catch (...) {
+            logFailure("Asset product blob smoke escaped a non-standard exception.");
+        }
+        return false;
     }
 
     [[nodiscard]] bool smokeProductExecutionWritesDeterministicProducts() {
@@ -2805,6 +2820,381 @@ shader "asharia.material.compile_reflection" {
                                          "Unsupported Slang stage 'meshxx'");
     }
 
+    [[nodiscard]] std::string smokeHex64(std::uint64_t value) {
+        constexpr std::string_view kDigits = "0123456789abcdef";
+        std::string text(16U, '0');
+        for (std::size_t index = text.size(); index > 0U; --index) {
+            text[index - 1U] = kDigits[static_cast<std::size_t>(value & 0x0FULL)];
+            value >>= 4U;
+        }
+        return text;
+    }
+
+    [[nodiscard]] std::vector<std::uint8_t>
+    makeBoundedTextureProduct(std::uint64_t mipCount, std::uint32_t width, std::uint32_t height,
+                              std::uint64_t payloadSize = 0U) {
+        std::string text = "schema=com.asharia.asset.texture2d-product.v1\n"
+                           "sourcePath=Content/Textures/Bounded.rgba8\n"
+                           "productType=Texture2D\n"
+                           "importProfile=Texture 2D\n"
+                           "settingsVersion=1\n"
+                           "format=rgba8-unorm\n"
+                           "width=" +
+                           std::to_string(width) + "\nheight=" + std::to_string(height) +
+                           "\nmip.count=" + std::to_string(mipCount) +
+                           "\npayload.size=" + std::to_string(payloadSize) +
+                           "\npayloadHash=cbf29ce484222325\n";
+        if (mipCount <= 32U) {
+            for (std::uint64_t index = 0; index < mipCount; ++index) {
+                const std::string prefix = "mip." + std::to_string(index) + ".";
+                text += prefix + "level=" + std::to_string(index) + "\n";
+                text += prefix + "width=1\n";
+                text += prefix + "height=1\n";
+                text += prefix + "byteOffset=0\n";
+                text += prefix + "byteSize=0\n";
+            }
+        }
+        text += "payload.begin\n\npayload.end\n";
+        return bytesFromText(text);
+    }
+
+    [[nodiscard]] std::vector<std::uint8_t>
+    makeBoundedShaderAuthoringProduct(std::uint64_t propertyCount, std::uint64_t passCount,
+                                      std::uint64_t bindingCount, std::uint64_t entryCount,
+                                      std::uint64_t generatedSlangSize = 0U) {
+        std::string text = "schema=com.asharia.asset.shader-authoring-product.v1\n"
+                           "sourcePath=Content/Shaders/Bounded.ashader\n"
+                           "shader.stableTypeId=asharia.material.bounded\n"
+                           "ashader.schemaVersion=2\n"
+                           "property.count=" +
+                           std::to_string(propertyCount) +
+                           "\npass.count=" + std::to_string(passCount) +
+                           "\nbinding.count=" + std::to_string(bindingCount) +
+                           "\nentry.count=" + std::to_string(entryCount) +
+                           "\ngeneratedSlang.size=" + std::to_string(generatedSlangSize) +
+                           "\ngeneratedSlangHash=cbf29ce484222325\n";
+        if (propertyCount <= 8U) {
+            for (std::uint64_t index = 0; index < propertyCount; ++index) {
+                const std::string prefix = "property." + std::to_string(index) + ".";
+                text += prefix + "name=value" + std::to_string(index) + "\n";
+                text += prefix + "type=float\n";
+                text += prefix + "default=0.0\n";
+            }
+        }
+        if (passCount <= 8U) {
+            for (std::uint64_t index = 0; index < passCount; ++index) {
+                const std::string prefix = "pass." + std::to_string(index) + ".";
+                text += prefix + "name=Forward" + std::to_string(index) + "\n";
+                text += prefix + "tag=SceneForward\n";
+                text += prefix + "vertex=vertexMain\n";
+                text += prefix + "fragment=fragmentMain\n";
+                text += prefix + "compute=\n";
+            }
+        }
+        if (bindingCount <= 8U) {
+            for (std::uint64_t index = 0; index < bindingCount; ++index) {
+                const std::string prefix = "binding." + std::to_string(index) + ".";
+                text += prefix + "name=resource" + std::to_string(index) + "\n";
+                text += prefix + "type=Texture2D\n";
+                text += prefix + "set=0\n";
+                text += prefix + "binding=" + std::to_string(index) + "\n";
+                text += prefix + "inMaterialParameterBlock=false\n";
+            }
+        }
+        if (entryCount <= 8U) {
+            for (std::uint64_t index = 0; index < entryCount; ++index) {
+                const std::string prefix = "entry." + std::to_string(index) + ".";
+                text += prefix + "passName=Forward0\n";
+                text += prefix + "stage=vertex\n";
+                text += prefix + "sourceEntry=vertexMain\n";
+                text += prefix + "compileEntry=vertexMain\n";
+                text += prefix + "generatedWrapper=wrapper" + std::to_string(index) + "\n";
+            }
+        }
+        text += "generatedSlang.begin\n\ngeneratedSlang.end\n";
+        return bytesFromText(text);
+    }
+
+    [[nodiscard]] std::vector<std::uint8_t>
+    makeBoundedShaderCompileProduct(std::uint64_t entryCount, std::uint64_t spirvSize = 1U) {
+        const std::vector<std::uint8_t> spirv{0U};
+        const std::vector<std::uint8_t> reflection = bytesFromText("{}");
+        std::string text = "schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
+                           "sourcePath=Content/Shaders/Bounded.ashader\n"
+                           "shader.stableTypeId=asharia.material.bounded\n"
+                           "authoringProductPath=generated/Bounded.authoring.product\n"
+                           "authoringProductHash=0000000000000001\n"
+                           "generatedSlangHash=0000000000000002\n"
+                           "productKeyHash=0000000000000003\n"
+                           "profile=glsl_450\n"
+                           "target=spirv\n"
+                           "entry.count=" +
+                           std::to_string(entryCount) + "\n";
+        if (entryCount <= 8U) {
+            for (std::uint64_t index = 0; index < entryCount; ++index) {
+                const std::string prefix = "entry." + std::to_string(index) + ".";
+                text += prefix + "passName=Forward\n";
+                text += prefix + "stage=vertex\n";
+                text += prefix + "sourceEntry=vertexMain\n";
+                text += prefix + "compileEntry=vertexMain\n";
+                text += prefix + "generatedWrapper=wrapper" + std::to_string(index) + "\n";
+                text += prefix + "slangcExitCode=0\n";
+                text += prefix + "slangcDiagnosticHash=cbf29ce484222325\n";
+                text += prefix + "slangcDiagnosticSize=0\n";
+                text += prefix + "slangcDiagnosticHex=\n";
+                text += prefix + "spirvValExitCode=0\n";
+                text += prefix + "spirvValDiagnosticHash=cbf29ce484222325\n";
+                text += prefix + "spirvValDiagnosticSize=0\n";
+                text += prefix + "spirvValDiagnosticHex=\n";
+                text += prefix + "spirvHash=" + smokeHex64(smokeHashBytes(spirv)) + "\n";
+                text += prefix + "spirvSize=" + std::to_string(spirvSize) + "\n";
+                text += prefix + "spirvHex=00\n";
+                text +=
+                    prefix + "reflectionJsonHash=" + smokeHex64(smokeHashBytes(reflection)) + "\n";
+                text += prefix + "reflectionJsonSize=2\n";
+                text += prefix + "reflectionJsonHex=7b7d\n";
+            }
+        }
+        return bytesFromText(text);
+    }
+
+    [[nodiscard]] bool smokeProductBlobReadLimits() {
+        const auto placeholder =
+            bytesFromText("schema=placeholder\nsourceBytes.begin\nabc\nsourceBytes.end\n");
+        asharia::asset::AssetProductBlobReadLimits limits{
+            .maxProductBytes = placeholder.size(),
+            .maxTextureMipRecords = 2U,
+            .maxShaderProperties = 2U,
+            .maxShaderPasses = 2U,
+            .maxShaderBindings = 2U,
+            .maxShaderEntries = 2U,
+        };
+        const auto exactPlaceholder = asharia::asset::readPlaceholderProductSourceBytes(
+            std::span<const std::uint8_t>{placeholder}, "bounded/exact.product", limits);
+        if (!exactPlaceholder || exactPlaceholder->sourceBytes != bytesFromText("abc")) {
+            logFailure("Asset product blob limit smoke rejected the exact byte limit.");
+            return false;
+        }
+        limits.maxProductBytes = placeholder.size() - 1U;
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readPlaceholderProductSourceBytes(
+                        std::span<const std::uint8_t>{placeholder}, "bounded/bytes.product",
+                        limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "product byte limit")) {
+            return false;
+        }
+
+        limits.maxProductBytes = 64ULL * 1024ULL;
+        const auto texture = makeBoundedTextureProduct(2U, 2U, 2U);
+        if (!asharia::asset::readTexture2DProductPayload(std::span<const std::uint8_t>{texture},
+                                                         "bounded/texture-exact.product", limits)) {
+            logFailure("Asset product blob limit smoke rejected the exact mip limit.");
+            return false;
+        }
+        limits.maxTextureMipRecords = 1U;
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readTexture2DProductPayload(
+                        std::span<const std::uint8_t>{texture}, "bounded/mip-limit.product",
+                        limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "mip records")) {
+            return false;
+        }
+        limits.maxTextureMipRecords = 2U;
+        const auto impossibleMips = makeBoundedTextureProduct(2U, 1U, 1U);
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readTexture2DProductPayload(
+                        std::span<const std::uint8_t>{impossibleMips},
+                        "bounded/impossible-mips.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "declared dimensions")) {
+            return false;
+        }
+
+        const auto authoring = makeBoundedShaderAuthoringProduct(2U, 2U, 2U, 2U);
+        if (!asharia::asset::readShaderAuthoringProductPayload(
+                std::span<const std::uint8_t>{authoring}, "bounded/authoring-exact.product",
+                limits)) {
+            logFailure("Asset product blob limit smoke rejected exact shader record limits.");
+            return false;
+        }
+        struct AuthoringLimitCase {
+            std::uint32_t asharia::asset::AssetProductBlobReadLimits::* member;
+            std::string_view recordName;
+        };
+        constexpr std::array kAuthoringLimitCases{
+            AuthoringLimitCase{.member =
+                                   &asharia::asset::AssetProductBlobReadLimits::maxShaderProperties,
+                               .recordName = "property records"},
+            AuthoringLimitCase{.member =
+                                   &asharia::asset::AssetProductBlobReadLimits::maxShaderPasses,
+                               .recordName = "pass records"},
+            AuthoringLimitCase{.member =
+                                   &asharia::asset::AssetProductBlobReadLimits::maxShaderBindings,
+                               .recordName = "binding records"},
+            AuthoringLimitCase{.member =
+                                   &asharia::asset::AssetProductBlobReadLimits::maxShaderEntries,
+                               .recordName = "entry records"},
+        };
+        for (const AuthoringLimitCase& limitCase : kAuthoringLimitCases) {
+            auto restricted = limits;
+            restricted.*(limitCase.member) = 1U;
+            if (!expectProductBlobErrorWithoutException(
+                    [&] {
+                        return asharia::asset::readShaderAuthoringProductPayload(
+                            std::span<const std::uint8_t>{authoring},
+                            "bounded/authoring-limit.product", restricted);
+                    },
+                    asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                    limitCase.recordName)) {
+                return false;
+            }
+        }
+
+        const auto compiled = makeBoundedShaderCompileProduct(2U);
+        if (!asharia::asset::readShaderCompileReflectionProductPayload(
+                std::span<const std::uint8_t>{compiled}, "bounded/compiled-exact.product",
+                limits)) {
+            logFailure("Asset product blob limit smoke rejected the exact compiled entry limit.");
+            return false;
+        }
+        limits.maxShaderEntries = 1U;
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readShaderCompileReflectionProductPayload(
+                        std::span<const std::uint8_t>{compiled}, "bounded/compiled-limit.product",
+                        limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "compiled shader entry records")) {
+            return false;
+        }
+
+        limits = {};
+        const auto maxCount = std::numeric_limits<std::uint64_t>::max();
+        const auto maxMipCountProduct = makeBoundedTextureProduct(maxCount, 1U, 1U);
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readTexture2DProductPayload(
+                        std::span<const std::uint8_t>{maxMipCountProduct},
+                        "bounded/max-mips.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "mip records")) {
+            return false;
+        }
+        const std::array authoringMaxCounts{
+            makeBoundedShaderAuthoringProduct(maxCount, 1U, 0U, 1U),
+            makeBoundedShaderAuthoringProduct(0U, maxCount, 0U, 1U),
+            makeBoundedShaderAuthoringProduct(0U, 1U, maxCount, 1U),
+            makeBoundedShaderAuthoringProduct(0U, 1U, 0U, maxCount),
+        };
+        for (const auto& bytes : authoringMaxCounts) {
+            if (!expectProductBlobErrorWithoutException(
+                    [&] {
+                        return asharia::asset::readShaderAuthoringProductPayload(
+                            std::span<const std::uint8_t>{bytes},
+                            "bounded/max-authoring-count.product", limits);
+                    },
+                    asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                    "records")) {
+                return false;
+            }
+        }
+        const auto compileMaxCount = makeBoundedShaderCompileProduct(maxCount);
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readShaderCompileReflectionProductPayload(
+                        std::span<const std::uint8_t>{compileMaxCount},
+                        "bounded/max-compiled-count.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "compiled shader entry records")) {
+            return false;
+        }
+
+        const auto oversizedTexture = makeBoundedTextureProduct(1U, 1U, 1U, maxCount);
+        const auto oversizedMaterial =
+            bytesFromText("schema=com.asharia.asset.material-instance-product.v1\n"
+                          "sourcePath=Content/Materials/Bounded.amat\n"
+                          "materialType.assetGuid=11111111-1111-1111-1111-111111111111\n"
+                          "materialType.stableTypeId=asharia.material.bounded\n"
+                          "materialType.expectedTypeHash=0000000000000001\n"
+                          "import.lastCookedSignatureHash=0000000000000002\n"
+                          "amat.size=18446744073709551615\n"
+                          "amatHash=cbf29ce484222325\n"
+                          "amat.begin\n\namat.end\n");
+        const auto oversizedAuthoring = makeBoundedShaderAuthoringProduct(0U, 1U, 0U, 1U, maxCount);
+        const auto oversizedCompile = makeBoundedShaderCompileProduct(1U, maxCount);
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readTexture2DProductPayload(
+                        std::span<const std::uint8_t>{oversizedTexture},
+                        "bounded/oversized-texture.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                "texture payload") ||
+            !expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readMaterialInstanceProductPayload(
+                        std::span<const std::uint8_t>{oversizedMaterial},
+                        "bounded/oversized-material.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                ".amat payload") ||
+            !expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readShaderAuthoringProductPayload(
+                        std::span<const std::uint8_t>{oversizedAuthoring},
+                        "bounded/oversized-authoring.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
+                "generated Slang payload") ||
+            !expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readShaderCompileReflectionProductPayload(
+                        std::span<const std::uint8_t>{oversizedCompile},
+                        "bounded/oversized-compile.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "SPIR-V payload size mismatch")) {
+            return false;
+        }
+
+        const std::filesystem::path root = smokeRoot("asharia-product-blob-bounded-file");
+        const std::filesystem::path productPath = root / "bounded.product";
+        if (root.empty() || !prepareWorkspace(root) ||
+            !writeTextFile(productPath, std::string{placeholder.begin(), placeholder.end()})) {
+            return false;
+        }
+        limits.maxProductBytes = placeholder.size();
+        const auto exactFile = asharia::asset::readPlaceholderProductSourceBytes(
+            asharia::asset::AssetProductBlobReadRequest{
+                .productFilePath = productPath,
+                .relativeProductPath = "bounded/file-exact.product",
+            },
+            limits);
+        limits.maxProductBytes = placeholder.size() - 1U;
+        return exactFile && expectProductBlobErrorWithoutException(
+                                [&] {
+                                    return asharia::asset::readPlaceholderProductSourceBytes(
+                                        asharia::asset::AssetProductBlobReadRequest{
+                                            .productFilePath = productPath,
+                                            .relativeProductPath = "bounded/file-too-large.product",
+                                        },
+                                        limits);
+                                },
+                                asharia::asset::AssetProductBlobDiagnosticCode::ProductReadFailed,
+                                "bounded/file-too-large.product");
+    }
+
     [[nodiscard]] bool smokeProductBlobReadDiagnostics() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-product-blob-read");
@@ -3693,8 +4083,8 @@ int main() {
         smokeScannedImportPlanningStopsOnScanDiagnostics() &&
         smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
         smokeScannedImportPlanningPlanDiagnostics() &&
-        smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobReadDiagnostics() &&
-        smokeProductExecutionWritesPngTextureProduct() &&
+        smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobReadLimits() &&
+        smokeProductBlobReadDiagnostics() && smokeProductExecutionWritesPngTextureProduct() &&
         smokeProductExecutionPngTextureDiagnostics() &&
         smokeProductExecutionWritesAmatMaterialProduct() &&
         smokeProductExecutionAmatDiagnostics() &&
@@ -3709,16 +4099,16 @@ int main() {
         smokeProductExecutionAcceptsDependencyProductBytes() &&
         smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
         smokeImportPlanningMetadataSourceHashDriftWarning() &&
-        smokeImportPlanningSettingsChanged() &&
-        smokeImportPlanningShaderToolVersionChanged() && smokeImportPlanningMissingSnapshot() &&
-        smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
-        smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&
-        smokeTextureImportContractPng() && smokeTextureImportContractDiagnostics() &&
-        smokeTextureImportProfiles() && smokeProductManifestRoundTrip() &&
-        smokeProductManifestMalformedInput() && smokeProductManifestDuplicateField() &&
-        smokeProductManifestMissingField() && smokeProductManifestUnknownField() &&
-        smokeProductManifestDuplicateProductKey() && smokeProductManifestDuplicateProductPath() &&
-        smokeProductManifestInvalidProductPath() && smokeProductManifestProductKeyHashMismatch() &&
+        smokeImportPlanningSettingsChanged() && smokeImportPlanningShaderToolVersionChanged() &&
+        smokeImportPlanningMissingSnapshot() && smokeImportPlanningDuplicateSource() &&
+        smokeImportPlanningDuplicateSnapshot() && smokeImportPlanningInvalidTargetProfile() &&
+        smokeTextureImportContractRawRgba8() && smokeTextureImportContractPng() &&
+        smokeTextureImportContractDiagnostics() && smokeTextureImportProfiles() &&
+        smokeProductManifestRoundTrip() && smokeProductManifestMalformedInput() &&
+        smokeProductManifestDuplicateField() && smokeProductManifestMissingField() &&
+        smokeProductManifestUnknownField() && smokeProductManifestDuplicateProductKey() &&
+        smokeProductManifestDuplicateProductPath() && smokeProductManifestInvalidProductPath() &&
+        smokeProductManifestProductKeyHashMismatch() &&
         smokeSourceSnapshotValidAndDeterministic() && smokeSourceSnapshotContentChange() &&
         smokeSourceSnapshotMissingFile() && smokeSourceSnapshotDirectory() &&
         smokeSourceSnapshotInvalidSourcePath() && smokeSourceSnapshotDuplicateSourcePath() &&

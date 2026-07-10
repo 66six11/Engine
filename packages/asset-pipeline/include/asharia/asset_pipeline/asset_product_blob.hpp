@@ -21,6 +21,18 @@ namespace asharia::asset {
         UnterminatedPayload,
     };
 
+    struct AssetProductBlobReadLimits {
+        std::uint64_t maxProductBytes{512ULL * 1024ULL * 1024ULL};
+        std::uint32_t maxTextureMipRecords{32};
+        std::uint32_t maxShaderProperties{4096};
+        std::uint32_t maxShaderPasses{1024};
+        std::uint32_t maxShaderBindings{16384};
+        std::uint32_t maxShaderEntries{4096};
+
+        [[nodiscard]] friend bool operator==(const AssetProductBlobReadLimits&,
+                                             const AssetProductBlobReadLimits&) = default;
+    };
+
     struct AssetProductBlobReadRequest {
         std::filesystem::path productFilePath;
         std::string relativeProductPath;
@@ -162,38 +174,48 @@ namespace asharia::asset {
     assetProductBlobDiagnosticCodeName(AssetProductBlobDiagnosticCode code) noexcept;
 
     [[nodiscard]] Result<AssetProductBlobPayload>
-    readPlaceholderProductSourceBytes(const AssetProductBlobReadRequest& request);
+    readPlaceholderProductSourceBytes(const AssetProductBlobReadRequest& request,
+                                      AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetProductBlobPayload>
     readPlaceholderProductSourceBytes(std::span<const std::uint8_t> productBytes,
-                                      std::string_view relativeProductPath);
+                                      std::string_view relativeProductPath,
+                                      AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetTextureProductPayload>
-    readTexture2DProductPayload(const AssetProductBlobReadRequest& request);
+    readTexture2DProductPayload(const AssetProductBlobReadRequest& request,
+                                AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetTextureProductPayload>
     readTexture2DProductPayload(std::span<const std::uint8_t> productBytes,
-                                std::string_view relativeProductPath);
+                                std::string_view relativeProductPath,
+                                AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetMaterialInstanceProductPayload>
-    readMaterialInstanceProductPayload(const AssetProductBlobReadRequest& request);
+    readMaterialInstanceProductPayload(const AssetProductBlobReadRequest& request,
+                                       AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetMaterialInstanceProductPayload>
     readMaterialInstanceProductPayload(std::span<const std::uint8_t> productBytes,
-                                       std::string_view relativeProductPath);
+                                       std::string_view relativeProductPath,
+                                       AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetShaderAuthoringProductPayload>
-    readShaderAuthoringProductPayload(const AssetProductBlobReadRequest& request);
+    readShaderAuthoringProductPayload(const AssetProductBlobReadRequest& request,
+                                      AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetShaderAuthoringProductPayload>
     readShaderAuthoringProductPayload(std::span<const std::uint8_t> productBytes,
-                                      std::string_view relativeProductPath);
+                                      std::string_view relativeProductPath,
+                                      AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetShaderCompileReflectionProductPayload>
-    readShaderCompileReflectionProductPayload(const AssetProductBlobReadRequest& request);
+    readShaderCompileReflectionProductPayload(const AssetProductBlobReadRequest& request,
+                                              AssetProductBlobReadLimits limits = {});
 
     [[nodiscard]] Result<AssetShaderCompileReflectionProductPayload>
     readShaderCompileReflectionProductPayload(std::span<const std::uint8_t> productBytes,
-                                              std::string_view relativeProductPath);
+                                              std::string_view relativeProductPath,
+                                              AssetProductBlobReadLimits limits = {});
 
 } // namespace asharia::asset

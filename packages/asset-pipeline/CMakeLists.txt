@@ -10,6 +10,7 @@ endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 find_package(stb CONFIG REQUIRED)
+asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
@@ -19,6 +20,7 @@ asharia_require_package_target(asharia::shader_authoring packages/shader-authori
 add_library(asharia-asset-pipeline STATIC
     src/asset_import_planning.cpp
     src/asset_product_blob.cpp
+    src/asset_product_blob_limits.cpp
     src/asset_product_execution.cpp
     src/asset_product_manifest_io.cpp
     src/asset_scanned_import_planning.cpp
@@ -40,6 +42,7 @@ target_link_libraries(asharia-asset-pipeline
     PUBLIC
         asharia::asset_core
     PRIVATE
+        asharia::core
         asharia::archive
         asharia::asset_core_io
         asharia::material_instance
