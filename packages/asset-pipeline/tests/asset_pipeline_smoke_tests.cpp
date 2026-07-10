@@ -1183,10 +1183,53 @@ namespace {
         asharia::asset::detail::AssetProductPublicationResult outcome;
         const auto result =
             asharia::asset::detail::publishAssetProducts(fixture.request(), operations, outcome);
-        return !result && operations.events == std::vector<std::string>{"create-staging"} &&
-               !operations.cleanupAttempted && operations.files.empty() && outcome.writes.empty() &&
-               !outcome.manifestWritten &&
-               messageContains(result.error().message, "validate-owned-staging");
+        if (result || operations.events != std::vector<std::string>{"create-staging"} ||
+            operations.cleanupAttempted || !operations.files.empty() || !outcome.writes.empty() ||
+            outcome.manifestWritten ||
+            !messageContains(result.error().message, "validate-owned-staging")) {
+            return false;
+        }
+
+        FakeAssetProductPublicationOperations manifestOperations{fixture.manifestPath};
+        manifestOperations.createdStagingPathOverride =
+            fixture.outputRoot.parent_path() / "unowned-manifest-staging";
+        asharia::asset::detail::AssetProductPublicationResult manifestOutcome;
+        const auto manifestResult = asharia::asset::detail::publishAssetProducts(
+            asharia::asset::detail::AssetProductPublicationRequest{
+                .outputRoot = fixture.outputRoot,
+                .manifestPath = fixture.manifestPath,
+                .manifest = fixture.manifest,
+                .products = {},
+            },
+            manifestOperations, manifestOutcome);
+        return !manifestResult &&
+               manifestResult.error().code ==
+                   static_cast<int>(
+                       asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) &&
+               !manifestOutcome.failingProductIndex &&
+               !messageContains(manifestResult.error().message, "productKeyHash=") &&
+               !messageContains(manifestResult.error().message, "productHash=");
+    }
+
+    [[nodiscard]] bool createRedirectedDirectoryLink(const std::filesystem::path& linkPath,
+                                                     const std::filesystem::path& targetPath) {
+#if defined(_WIN32)
+        const std::wstring junctionCommand =
+            L"mklink /J \"" + linkPath.native() + L"\" \"" + targetPath.native() + L"\" >nul 2>&1";
+        // Paths are agent-owned temporary paths and are quoted; mklink /J is the available
+        // unprivileged Windows junction creation mechanism for these native regressions.
+        // NOLINTNEXTLINE(cert-env33-c)
+        if (_wsystem(junctionCommand.c_str()) == 0) {
+            return true;
+        }
+        return CreateSymbolicLinkW(linkPath.c_str(), targetPath.c_str(),
+                                   SYMBOLIC_LINK_FLAG_DIRECTORY |
+                                       SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != FALSE;
+#else
+        std::error_code linkError;
+        std::filesystem::create_directory_symlink(targetPath, linkPath, linkError);
+        return !linkError;
+#endif
     }
 
     [[nodiscard]] bool smokeNativeProductPublicationRejectsRedirectedStagingRoot() {
@@ -1208,33 +1251,7 @@ namespace {
             return false;
         }
 
-        bool linkCreated{};
-#if defined(_WIN32)
-        const std::wstring junctionCommand = L"mklink /J \"" + stagingRoot.native() + L"\" \"" +
-                                             outsideRoot.native() + L"\" >nul 2>&1";
-        // Paths are agent-owned temporary paths and are quoted; mklink /J is the available
-        // unprivileged Windows junction creation mechanism for this native regression.
-        // NOLINTNEXTLINE(cert-env33-c)
-        linkCreated = _wsystem(junctionCommand.c_str()) == 0;
-        if (linkCreated) {
-            std::cout << "Native publication staging junction probe created." << '\n';
-        }
-        if (!linkCreated) {
-            linkCreated =
-                CreateSymbolicLinkW(stagingRoot.c_str(), outsideRoot.c_str(),
-                                    SYMBOLIC_LINK_FLAG_DIRECTORY |
-                                        SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != FALSE;
-        }
-        if (!linkCreated) {
-            std::cout << "Native publication staging junction/symlink probe unavailable "
-                         "Win32Error="
-                      << GetLastError() << '\n';
-        }
-#else
-        std::error_code linkError;
-        std::filesystem::create_directory_symlink(outsideRoot, stagingRoot, linkError);
-        linkCreated = !linkError;
-#endif
+        const bool linkCreated = createRedirectedDirectoryLink(stagingRoot, outsideRoot);
         if (!linkCreated) {
             // The injected operation regression still proves coordinator rejection when the host
             // policy does not permit creating a directory link.
@@ -2573,7 +2590,67 @@ namespace {
             }
         }
 
-        return true;
+        bool preservedSharedBoundaryIdentity = true;
+        FakeAssetProductPublicationOperations unownedStagingOperations{manifestPath};
+        unownedStagingOperations.createdStagingPathOverride =
+            outputRoot.parent_path() / "unowned-execution-staging";
+        const asharia::asset::AssetProductExecutionResult unownedStagingExecution =
+            asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                request, unownedStagingOperations);
+        if (unownedStagingExecution.diagnostics.size() != 1U ||
+            unownedStagingExecution.diagnostics.front().code !=
+                asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
+            unownedStagingExecution.diagnostics.front().sourcePath != document.source.sourcePath ||
+            unownedStagingExecution.diagnostics.front().relativeProductPath !=
+                plan.requests.front().relativeProductPath ||
+            !messageContains(unownedStagingExecution.diagnostics.front().message,
+                             "productKeyHash=") ||
+            !messageContains(unownedStagingExecution.diagnostics.front().message, "productHash=") ||
+            !messageContains(unownedStagingExecution.diagnostics.front().message,
+                             "phase=validate-owned-staging")) {
+            logFailure("Asset product execution lost owned-staging diagnostic identity.");
+            preservedSharedBoundaryIdentity = false;
+        }
+
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-publication-preflight-diagnostic");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+        const std::filesystem::path preflightOutputRoot = root / "ProductCache";
+        const std::filesystem::path outsideRoot = root / "Outside";
+        const std::filesystem::path stagingRoot = preflightOutputRoot / ".asharia-product-staging";
+        if (!createDirectories(preflightOutputRoot) || !createDirectories(outsideRoot) ||
+            !createRedirectedDirectoryLink(stagingRoot, outsideRoot)) {
+            logFailure("Asset product execution could not create redirected staging fixture.");
+            return false;
+        }
+        asharia::asset::AssetProductExecutionRequest preflightRequest = request;
+        preflightRequest.productOutputRoot = preflightOutputRoot;
+        preflightRequest.productManifestOutputPath = preflightOutputRoot / "product-manifest.json";
+        FakeAssetProductPublicationOperations preflightOperations{
+            preflightRequest.productManifestOutputPath};
+        const asharia::asset::AssetProductExecutionResult preflightExecution =
+            asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                preflightRequest, preflightOperations);
+        std::error_code unlinkError;
+        const bool linkRemoved = std::filesystem::remove(stagingRoot, unlinkError);
+        if (preflightExecution.diagnostics.size() != 1U ||
+            preflightExecution.diagnostics.front().code !=
+                asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
+            preflightExecution.diagnostics.front().sourcePath != document.source.sourcePath ||
+            preflightExecution.diagnostics.front().relativeProductPath !=
+                plan.requests.front().relativeProductPath ||
+            !messageContains(preflightExecution.diagnostics.front().message, "productKeyHash=") ||
+            !messageContains(preflightExecution.diagnostics.front().message, "productHash=") ||
+            !messageContains(preflightExecution.diagnostics.front().message,
+                             "phase=preflight-staging-root") ||
+            !preflightOperations.events.empty() || !linkRemoved || unlinkError) {
+            logFailure("Asset product execution lost preflight-staging diagnostic identity.");
+            preservedSharedBoundaryIdentity = false;
+        }
+
+        return preservedSharedBoundaryIdentity;
     }
 
     [[nodiscard]] bool smokeProductExecutionPreservesPublicationOutcome() {
