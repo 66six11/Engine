@@ -115,6 +115,21 @@ namespace asharia::asset::detail {
                                     kAffectedProductIndex);
         }
 
+        [[nodiscard]] Error cleanupPublicationError(const AssetProductPublicationRequest& request,
+                                                    AssetProductPublicationResult& outcome,
+                                                    const std::filesystem::path& stagingPath,
+                                                    std::string_view reason) {
+            if (outcome.manifestWritten || request.products.empty()) {
+                return publicationError(
+                    AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                    outcome.manifestWritten ? "cleanup-after-manifest-commit"
+                                            : "cleanup-after-products-published",
+                    stagingPath, request.manifestPath, reason, outcome.manifestWritten);
+            }
+            return productPublicationError(outcome, 0U, "cleanup-after-products-published",
+                                           stagingPath, request.products.front(), reason);
+        }
+
         [[nodiscard]] Error cleanupAfterFailure(AssetProductPublicationOperations& operations,
                                                 const std::filesystem::path& stagingPath,
                                                 Error error) {
@@ -720,14 +735,8 @@ namespace asharia::asset::detail {
         }
 
         if (auto cleaned = operations.removeStagingDirectory(*stagingDirectory); !cleaned) {
-            const bool manifestCommitted = outcome.manifestWritten;
-            return std::unexpected{publicationError(
-                manifestCommitted ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
-                                  : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                manifestCommitted ? "cleanup-after-manifest-commit"
-                                  : "cleanup-after-products-published",
-                *stagingDirectory, request.manifestPath, cleaned.error().message,
-                manifestCommitted)};
+            return std::unexpected{cleanupPublicationError(request, outcome, *stagingDirectory,
+                                                           cleaned.error().message)};
         }
 
         return {};

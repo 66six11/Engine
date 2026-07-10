@@ -1040,8 +1040,11 @@ namespace {
                        asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) &&
                messageContains(result.error().message, "cleanup-after-manifest-commit") &&
                messageContains(result.error().message, "manifestCommitted=true") &&
+               !messageContains(result.error().message, "productKeyHash=") &&
+               !messageContains(result.error().message, "productHash=") &&
                !operations.manifestMatches(oldManifest) && operations.cleanupAttempted &&
-               outcome.writes.size() == 2 && outcome.manifestWritten;
+               outcome.writes.size() == 2 && outcome.manifestWritten &&
+               !outcome.failingProductIndex;
     }
 
     [[nodiscard]] bool smokeProductPublicationPreservesPartialOutcome() {
@@ -2541,6 +2544,92 @@ namespace {
         };
     }
 
+    [[nodiscard]] bool smokeProductCleanupFailurePreservesDiagnosticIdentity() {
+        bool preservesIdentity = true;
+
+        const PublicationFixture fixture;
+        auto publicationRequest = fixture.request();
+        publicationRequest.manifestPath.clear();
+        FakeAssetProductPublicationOperations publicationOperations{std::filesystem::path{}};
+        publicationOperations.failurePoint = PublicationFailurePoint::Cleanup;
+        asharia::asset::detail::AssetProductPublicationResult publicationOutcome;
+        const auto publication = asharia::asset::detail::publishAssetProducts(
+            publicationRequest, publicationOperations, publicationOutcome);
+        const std::string expectedFinalPath =
+            "finalPath=\"" + fixture.products.front().finalPath.generic_string() + "\"";
+        if (publication ||
+            publication.error().code !=
+                static_cast<int>(
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed) ||
+            publicationOutcome.writes.size() != fixture.products.size() ||
+            publicationOutcome.manifestWritten || !publicationOutcome.failingProductIndex ||
+            *publicationOutcome.failingProductIndex != 0U ||
+            !messageContains(publication.error().message,
+                             fixture.products.front().source.sourcePath) ||
+            !messageContains(publication.error().message,
+                             fixture.products.front().product.relativeProductPath) ||
+            !messageContains(publication.error().message, "productKeyHash=") ||
+            !messageContains(publication.error().message, "productHash=") ||
+            !messageContains(publication.error().message,
+                             "phase=cleanup-after-products-published") ||
+            !messageContains(publication.error().message, "stagingPath=") ||
+            !messageContains(publication.error().message, expectedFinalPath) ||
+            !messageContains(publication.error().message, "injected publication cleanup failure") ||
+            !publicationOperations.cleanupAttempted) {
+            logFailure("Asset product publication lost product cleanup diagnostic identity.");
+            preservesIdentity = false;
+        }
+
+        const std::vector<std::uint8_t> sourceBytes =
+            bytesFromText("cleanup diagnostic execution bytes");
+        auto document =
+            makeDocument("3834a790-aec0-4db1-a1ea-ddaa14735132",
+                         "Content/Textures/CleanupDiagnostic.png", smokeHashBytes(sourceBytes));
+        const asharia::asset::AssetImportPlanResult plan =
+            makeSingleProductExecutionPlan(document.source, document.settings);
+        const std::filesystem::path outputRoot{"PublicationCleanupExecutionRoot"};
+        const asharia::asset::AssetProductExecutionRequest executionRequest{
+            .plan = plan,
+            .existingManifest = {},
+            .sourceBytes =
+                {
+                    asharia::asset::AssetProductSourceBytes{
+                        .sourcePath = document.source.sourcePath,
+                        .bytes = sourceBytes,
+                    },
+                },
+            .dependencyProductBytes = {},
+            .productOutputRoot = outputRoot,
+            .productManifestOutputPath = {},
+        };
+        FakeAssetProductPublicationOperations executionOperations{std::filesystem::path{}};
+        executionOperations.failurePoint = PublicationFailurePoint::Cleanup;
+        const asharia::asset::AssetProductExecutionResult execution =
+            asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                executionRequest, executionOperations);
+        if (execution.writtenProducts.size() != 1U || execution.manifestWritten ||
+            execution.diagnostics.size() != 1U ||
+            execution.diagnostics.front().code !=
+                asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
+            execution.diagnostics.front().sourcePath != document.source.sourcePath ||
+            execution.diagnostics.front().relativeProductPath !=
+                plan.requests.front().relativeProductPath ||
+            !messageContains(execution.diagnostics.front().message, "productKeyHash=") ||
+            !messageContains(execution.diagnostics.front().message, "productHash=") ||
+            !messageContains(execution.diagnostics.front().message,
+                             "phase=cleanup-after-products-published") ||
+            !messageContains(execution.diagnostics.front().message, "stagingPath=") ||
+            !messageContains(execution.diagnostics.front().message, "finalPath=\"") ||
+            messageContains(execution.diagnostics.front().message, "finalPath=\"\"") ||
+            !messageContains(execution.diagnostics.front().message,
+                             "injected publication cleanup failure")) {
+            logFailure("Asset product execution lost product cleanup diagnostic identity.");
+            preservesIdentity = false;
+        }
+
+        return preservesIdentity;
+    }
+
     [[nodiscard]] bool smokeProductExecutionScopesPublicationDiagnostics() {
         const std::vector<std::uint8_t> sourceBytes = bytesFromText("publication diagnostic bytes");
         auto document =
@@ -2726,8 +2815,14 @@ namespace {
                 request, cleanupOperations);
         if (cleanupFailure.writtenProducts.size() != 2U || !cleanupFailure.manifestWritten ||
             cleanupFailure.diagnostics.size() != 1U ||
+            cleanupFailure.diagnostics.front().code !=
+                asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed ||
+            !cleanupFailure.diagnostics.front().sourcePath.empty() ||
+            !cleanupFailure.diagnostics.front().relativeProductPath.empty() ||
             !messageContains(cleanupFailure.diagnostics.front().message,
-                             "manifestCommitted=true")) {
+                             "manifestCommitted=true") ||
+            messageContains(cleanupFailure.diagnostics.front().message, "productKeyHash=") ||
+            messageContains(cleanupFailure.diagnostics.front().message, "productHash=")) {
             logFailure("Asset product execution hid a committed manifest after cleanup failure.");
             return false;
         }
@@ -5158,6 +5253,7 @@ int main() {
         smokeNativeProductPublicationRejectsRedirectedStagingRoot() &&
         smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobPrivateValidation() &&
         smokeProductBlobReadLimits() && smokeProductBlobReadDiagnostics() &&
+        smokeProductCleanupFailurePreservesDiagnosticIdentity() &&
         smokeProductExecutionScopesPublicationDiagnostics() &&
         smokeProductExecutionPreservesPublicationOutcome() &&
         smokeProductExecutionWritesPngTextureProduct() &&
