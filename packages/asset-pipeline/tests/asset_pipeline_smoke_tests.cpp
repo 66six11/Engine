@@ -16,6 +16,10 @@
 #include <vector>
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
 #include <process.h>
 #else
 #include <unistd.h>
@@ -664,7 +668,15 @@ namespace {
         [[nodiscard]] asharia::Result<std::filesystem::path>
         createUniqueStagingDirectory(const std::filesystem::path& outputRoot) override {
             events.emplace_back("create-staging");
-            ownedStagingPath_ = outputRoot / ".asharia-product-staging" / "fake-1";
+            const std::filesystem::path requestedPath =
+                createdStagingPathOverride.empty()
+                    ? outputRoot / ".asharia-product-staging" / "fake-1"
+                    : createdStagingPathOverride;
+            std::error_code canonicalError;
+            ownedStagingPath_ = std::filesystem::weakly_canonical(requestedPath, canonicalError);
+            if (canonicalError) {
+                return std::unexpected{injectedError("staging path canonicalization")};
+            }
             return ownedStagingPath_;
         }
 
@@ -774,6 +786,7 @@ namespace {
         StagedProductMutation stagedProductMutation{StagedProductMutation::None};
         bool corruptStagedManifest{};
         bool cleanupAttempted{};
+        std::filesystem::path createdStagingPathOverride;
         std::size_t failingProductIndex{};
         std::size_t productPublishCount{};
         std::vector<std::string> events;
@@ -1070,6 +1083,29 @@ namespace {
             logFailure("Asset product publication staged Windows-cased endpoint aliases.");
             return false;
         }
+
+        PublicationFixture windowsUnicodeProducts;
+        windowsUnicodeProducts.products[0].finalPath = windowsUnicodeProducts.outputRoot /
+                                                       "textures" /
+                                                       std::filesystem::path{L"\u00C4.product"};
+        windowsUnicodeProducts.products[1].finalPath = windowsUnicodeProducts.outputRoot /
+                                                       "textures" /
+                                                       std::filesystem::path{L"\u00E4.product"};
+        if (!expectPreflightFailure(windowsUnicodeProducts)) {
+            logFailure("Asset product publication staged Windows Unicode product aliases.");
+            return false;
+        }
+
+        PublicationFixture windowsUnicodeManifest;
+        windowsUnicodeManifest.products[0].finalPath = windowsUnicodeManifest.outputRoot /
+                                                       "textures" /
+                                                       std::filesystem::path{L"\u00C4.product"};
+        windowsUnicodeManifest.manifestPath = windowsUnicodeManifest.outputRoot / "textures" /
+                                              std::filesystem::path{L"\u00E4.product"};
+        if (!expectPreflightFailure(windowsUnicodeManifest)) {
+            logFailure("Asset product publication staged a Windows Unicode manifest alias.");
+            return false;
+        }
 #endif
 
         PublicationFixture outsideRoot;
@@ -1077,6 +1113,22 @@ namespace {
             outsideRoot.outputRoot.parent_path() / "outside.product";
         if (!expectPreflightFailure(outsideRoot)) {
             logFailure("Asset product publication staged an out-of-root product endpoint.");
+            return false;
+        }
+
+        PublicationFixture reservedProduct;
+        reservedProduct.products[0].finalPath =
+            reservedProduct.outputRoot / ".asharia-product-staging";
+        if (!expectPreflightFailure(reservedProduct)) {
+            logFailure("Asset product publication accepted a product in the staging namespace.");
+            return false;
+        }
+
+        PublicationFixture reservedManifest;
+        reservedManifest.manifestPath = reservedManifest.outputRoot / ".asharia-product-staging" /
+                                        "predicted-1" / "manifest.json";
+        if (!expectPreflightFailure(reservedManifest)) {
+            logFailure("Asset product publication accepted a manifest in the staging namespace.");
             return false;
         }
 
@@ -1093,6 +1145,90 @@ namespace {
         }
 
         return true;
+    }
+
+    [[nodiscard]] bool smokeProductPublicationRejectsUnownedStagingPath() {
+        const PublicationFixture fixture;
+        FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+        operations.createdStagingPathOverride =
+            fixture.outputRoot.parent_path() / "unowned-product-staging";
+        asharia::asset::detail::AssetProductPublicationResult outcome;
+        const auto result =
+            asharia::asset::detail::publishAssetProducts(fixture.request(), operations, outcome);
+        return !result && operations.events == std::vector<std::string>{"create-staging"} &&
+               !operations.cleanupAttempted && operations.files.empty() && outcome.writes.empty() &&
+               !outcome.manifestWritten &&
+               messageContains(result.error().message, "validate-owned-staging");
+    }
+
+    [[nodiscard]] bool smokeNativeProductPublicationRejectsRedirectedStagingRoot() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-publication-staging-link");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+        const std::filesystem::path outputRoot = root / "ProductCache";
+        const std::filesystem::path outsideRoot = root / "Outside";
+        const std::filesystem::path stagingRoot = outputRoot / ".asharia-product-staging";
+        std::error_code directoryError;
+        std::filesystem::create_directories(outputRoot, directoryError);
+        if (directoryError) {
+            return false;
+        }
+        std::filesystem::create_directories(outsideRoot, directoryError);
+        if (directoryError || !writeTextFile(outsideRoot / "sentinel.txt", "outside sentinel")) {
+            return false;
+        }
+
+        bool linkCreated{};
+#if defined(_WIN32)
+        const std::wstring junctionCommand = L"mklink /J \"" + stagingRoot.native() + L"\" \"" +
+                                             outsideRoot.native() + L"\" >nul 2>&1";
+        // Paths are agent-owned temporary paths and are quoted; mklink /J is the available
+        // unprivileged Windows junction creation mechanism for this native regression.
+        // NOLINTNEXTLINE(cert-env33-c)
+        linkCreated = _wsystem(junctionCommand.c_str()) == 0;
+        if (linkCreated) {
+            std::cout << "Native publication staging junction probe created." << '\n';
+        }
+        if (!linkCreated) {
+            linkCreated =
+                CreateSymbolicLinkW(stagingRoot.c_str(), outsideRoot.c_str(),
+                                    SYMBOLIC_LINK_FLAG_DIRECTORY |
+                                        SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != FALSE;
+        }
+        if (!linkCreated) {
+            std::cout << "Native publication staging junction/symlink probe unavailable "
+                         "Win32Error="
+                      << GetLastError() << '\n';
+        }
+#else
+        std::error_code linkError;
+        std::filesystem::create_directory_symlink(outsideRoot, stagingRoot, linkError);
+        linkCreated = !linkError;
+#endif
+        if (!linkCreated) {
+            // The injected operation regression still proves coordinator rejection when the host
+            // policy does not permit creating a directory link.
+            return true;
+        }
+
+        auto staging = asharia::asset::detail::assetProductPublicationOperations()
+                           .createUniqueStagingDirectory(outputRoot);
+        std::error_code sentinelError;
+        const bool sentinelExists =
+            std::filesystem::exists(outsideRoot / "sentinel.txt", sentinelError);
+        std::error_code emptyError;
+        std::size_t outsideEntries{};
+        for (std::filesystem::directory_iterator entry(outsideRoot, emptyError);
+             !emptyError && entry != std::filesystem::directory_iterator{};
+             entry.increment(emptyError)) {
+            ++outsideEntries;
+        }
+        std::error_code unlinkError;
+        const bool linkRemoved = std::filesystem::remove(stagingRoot, unlinkError);
+        return !staging && sentinelExists && !sentinelError && !emptyError &&
+               outsideEntries == 1U && linkRemoved && !unlinkError;
     }
 
     [[nodiscard]] bool createDirectories(const std::filesystem::path& path) {
@@ -4898,6 +5034,8 @@ int main() {
         smokeProductPublicationReportsCleanupAfterManifestCommit() &&
         smokeProductPublicationPreservesPartialOutcome() &&
         smokeProductPublicationPreflightsEndpoints() &&
+        smokeProductPublicationRejectsUnownedStagingPath() &&
+        smokeNativeProductPublicationRejectsRedirectedStagingRoot() &&
         smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobPrivateValidation() &&
         smokeProductBlobReadLimits() && smokeProductBlobReadDiagnostics() &&
         smokeProductExecutionScopesPublicationDiagnostics() &&

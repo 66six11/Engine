@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
-#include <cwctype>
 #include <expected>
 #include <filesystem>
 #include <limits>
@@ -17,6 +17,10 @@
 #include <vector>
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
 #include <process.h>
 #else
 #include <unistd.h>
@@ -109,27 +113,45 @@ namespace asharia::asset::detail {
             return std::max<std::uint64_t>(expectedBytes, 1U);
         }
 
-        [[nodiscard]] bool pathComponentEquals(const std::filesystem::path& left,
-                                               const std::filesystem::path& right) {
+        [[nodiscard]] Result<bool> pathComponentEquals(const std::filesystem::path& left,
+                                                       const std::filesystem::path& right) {
 #if defined(_WIN32)
-            std::wstring leftText = left.native();
-            std::wstring rightText = right.native();
-            std::ranges::transform(leftText, leftText.begin(),
-                                   [](wchar_t value) { return std::towlower(value); });
-            std::ranges::transform(rightText, rightText.begin(),
-                                   [](wchar_t value) { return std::towlower(value); });
-            return leftText == rightText;
+            const std::wstring& leftText = left.native();
+            const std::wstring& rightText = right.native();
+            constexpr auto kMaxOrdinalLength = static_cast<std::size_t>(INT_MAX);
+            if (leftText.size() > kMaxOrdinalLength || rightText.size() > kMaxOrdinalLength) {
+                return std::unexpected{
+                    Error{ErrorDomain::Asset, 0,
+                          "Could not compare publication path components: component exceeds the "
+                          "Windows ordinal comparison length."}};
+            }
+            const int comparison =
+                CompareStringOrdinal(leftText.data(), static_cast<int>(leftText.size()),
+                                     rightText.data(), static_cast<int>(rightText.size()), TRUE);
+            if (comparison == 0) {
+                const DWORD errorCode = GetLastError();
+                return std::unexpected{
+                    Error{ErrorDomain::Asset, static_cast<int>(errorCode),
+                          "Could not compare publication path components with Windows ordinal "
+                          "semantics: " +
+                              std::system_category().message(static_cast<int>(errorCode)) + "."}};
+            }
+            return comparison == CSTR_EQUAL;
 #else
             return left == right;
 #endif
         }
 
-        [[nodiscard]] bool endpointEquals(const std::filesystem::path& left,
-                                          const std::filesystem::path& right) {
+        [[nodiscard]] Result<bool> endpointEquals(const std::filesystem::path& left,
+                                                  const std::filesystem::path& right) {
             auto leftComponent = left.begin();
             auto rightComponent = right.begin();
             while (leftComponent != left.end() && rightComponent != right.end()) {
-                if (!pathComponentEquals(*leftComponent, *rightComponent)) {
+                auto equal = pathComponentEquals(*leftComponent, *rightComponent);
+                if (!equal) {
+                    return std::unexpected{std::move(equal.error())};
+                }
+                if (!*equal) {
                     return false;
                 }
                 ++leftComponent;
@@ -138,17 +160,35 @@ namespace asharia::asset::detail {
             return leftComponent == left.end() && rightComponent == right.end();
         }
 
-        [[nodiscard]] bool isStrictDescendant(const std::filesystem::path& candidate,
-                                              const std::filesystem::path& root) {
+        [[nodiscard]] Result<bool> isStrictDescendant(const std::filesystem::path& candidate,
+                                                      const std::filesystem::path& root) {
             auto candidateComponent = candidate.begin();
             for (auto rootComponent = root.begin(); rootComponent != root.end(); ++rootComponent) {
-                if (candidateComponent == candidate.end() ||
-                    !pathComponentEquals(*candidateComponent, *rootComponent)) {
+                if (candidateComponent == candidate.end()) {
+                    return false;
+                }
+                auto equal = pathComponentEquals(*candidateComponent, *rootComponent);
+                if (!equal) {
+                    return std::unexpected{std::move(equal.error())};
+                }
+                if (!*equal) {
                     return false;
                 }
                 ++candidateComponent;
             }
             return candidateComponent != candidate.end();
+        }
+
+        [[nodiscard]] Result<bool> isEqualOrDescendant(const std::filesystem::path& candidate,
+                                                       const std::filesystem::path& root) {
+            auto equal = endpointEquals(candidate, root);
+            if (!equal) {
+                return std::unexpected{std::move(equal.error())};
+            }
+            if (*equal) {
+                return true;
+            }
+            return isStrictDescendant(candidate, root);
         }
 
         [[nodiscard]] Result<std::filesystem::path>
@@ -165,7 +205,12 @@ namespace asharia::asset::detail {
             return canonical;
         }
 
-        [[nodiscard]] VoidResult
+        struct PublicationBoundaries {
+            std::filesystem::path outputRoot;
+            std::filesystem::path stagingRoot;
+        };
+
+        [[nodiscard]] Result<PublicationBoundaries>
         preflightPublicationEndpoints(const AssetProductPublicationRequest& request,
                                       AssetProductPublicationResult& outcome) {
             auto canonicalRoot = canonicalEndpoint(request.outputRoot, "output root");
@@ -176,6 +221,34 @@ namespace asharia::asset::detail {
                         : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
                     "preflight-output-root", request.outputRoot / ".asharia-product-staging",
                     request.outputRoot, canonicalRoot.error().message)};
+            }
+
+            auto canonicalStagingRoot =
+                canonicalEndpoint(request.outputRoot / ".asharia-product-staging", "staging root");
+            if (!canonicalStagingRoot) {
+                return std::unexpected{publicationError(
+                    request.products.empty()
+                        ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                        : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                    "preflight-staging-root", request.outputRoot / ".asharia-product-staging",
+                    request.outputRoot, canonicalStagingRoot.error().message)};
+            }
+            auto stagingContained = isStrictDescendant(*canonicalStagingRoot, *canonicalRoot);
+            if (!stagingContained) {
+                return std::unexpected{
+                    publicationError(request.products.empty()
+                                         ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                                         : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                                     "preflight-staging-root", *canonicalStagingRoot,
+                                     request.outputRoot, stagingContained.error().message)};
+            }
+            if (!*stagingContained) {
+                return std::unexpected{publicationError(
+                    request.products.empty()
+                        ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                        : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                    "preflight-staging-root", *canonicalStagingRoot, request.outputRoot,
+                    "reserved staging root is not a descendant of the output root")};
             }
 
             std::vector<std::filesystem::path> canonicalProducts;
@@ -190,15 +263,44 @@ namespace asharia::asset::detail {
                                                 request.outputRoot / ".asharia-product-staging",
                                                 item, canonicalProduct.error().message)};
                 }
-                if (!isStrictDescendant(*canonicalProduct, *canonicalRoot)) {
+                auto productContained = isStrictDescendant(*canonicalProduct, *canonicalRoot);
+                if (!productContained) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-comparison",
+                        request.outputRoot / ".asharia-product-staging", item,
+                        productContained.error().message)};
+                }
+                if (!*productContained) {
                     return std::unexpected{productPublicationError(
                         outcome, productIndex, "preflight-product-containment",
                         request.outputRoot / ".asharia-product-staging", item,
                         "product final endpoint is not a descendant of the output root")};
                 }
+                auto productReserved =
+                    isEqualOrDescendant(*canonicalProduct, *canonicalStagingRoot);
+                if (!productReserved) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-comparison",
+                        request.outputRoot / ".asharia-product-staging", item,
+                        productReserved.error().message)};
+                }
+                if (*productReserved) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-staging-namespace",
+                        request.outputRoot / ".asharia-product-staging", item,
+                        "product final endpoint overlaps the reserved staging namespace")};
+                }
                 for (std::size_t priorIndex = 0; priorIndex < canonicalProducts.size();
                      ++priorIndex) {
-                    if (endpointEquals(*canonicalProduct, canonicalProducts[priorIndex])) {
+                    auto duplicate =
+                        endpointEquals(*canonicalProduct, canonicalProducts[priorIndex]);
+                    if (!duplicate) {
+                        return std::unexpected{productPublicationError(
+                            outcome, productIndex, "preflight-product-comparison",
+                            request.outputRoot / ".asharia-product-staging", item,
+                            duplicate.error().message)};
+                    }
+                    if (*duplicate) {
                         return std::unexpected{productPublicationError(
                             outcome, productIndex, "preflight-product-alias",
                             request.outputRoot / ".asharia-product-staging", item,
@@ -210,7 +312,8 @@ namespace asharia::asset::detail {
             }
 
             if (request.manifestPath.empty()) {
-                return {};
+                return PublicationBoundaries{.outputRoot = std::move(*canonicalRoot),
+                                             .stagingRoot = std::move(*canonicalStagingRoot)};
             }
 
             // A caller-owned manifest endpoint may intentionally live outside outputRoot. It is
@@ -222,8 +325,31 @@ namespace asharia::asset::detail {
                     "preflight-manifest-endpoint", request.outputRoot / ".asharia-product-staging",
                     request.manifestPath, canonicalManifest.error().message)};
             }
+            auto manifestReserved = isEqualOrDescendant(*canonicalManifest, *canonicalStagingRoot);
+            if (!manifestReserved) {
+                return std::unexpected{
+                    publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                     "preflight-manifest-comparison",
+                                     request.outputRoot / ".asharia-product-staging",
+                                     request.manifestPath, manifestReserved.error().message)};
+            }
+            if (*manifestReserved) {
+                return std::unexpected{publicationError(
+                    AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                    "preflight-manifest-staging-namespace",
+                    request.outputRoot / ".asharia-product-staging", request.manifestPath,
+                    "manifest final endpoint overlaps the reserved staging namespace")};
+            }
             for (const std::filesystem::path& canonicalProduct : canonicalProducts) {
-                if (endpointEquals(*canonicalManifest, canonicalProduct)) {
+                auto aliasesProduct = endpointEquals(*canonicalManifest, canonicalProduct);
+                if (!aliasesProduct) {
+                    return std::unexpected{
+                        publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                         "preflight-manifest-comparison",
+                                         request.outputRoot / ".asharia-product-staging",
+                                         request.manifestPath, aliasesProduct.error().message)};
+                }
+                if (*aliasesProduct) {
                     return std::unexpected{publicationError(
                         AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
                         "preflight-manifest-product-alias",
@@ -231,7 +357,8 @@ namespace asharia::asset::detail {
                         "manifest final endpoint aliases a product final endpoint")};
                 }
             }
-            return {};
+            return PublicationBoundaries{.outputRoot = std::move(*canonicalRoot),
+                                         .stagingRoot = std::move(*canonicalStagingRoot)};
         }
 
         class NativeAssetProductPublicationOperations final
@@ -240,6 +367,9 @@ namespace asharia::asset::detail {
             [[nodiscard]] Result<std::filesystem::path>
             createUniqueStagingDirectory(const std::filesystem::path& outputRoot) override {
                 const std::filesystem::path stagingRoot = outputRoot / ".asharia-product-staging";
+                if (auto valid = validateStagingRoot(outputRoot, stagingRoot); !valid) {
+                    return std::unexpected{std::move(valid.error())};
+                }
                 std::error_code createRootError;
                 std::filesystem::create_directories(stagingRoot, createRootError);
                 if (createRootError) {
@@ -248,11 +378,15 @@ namespace asharia::asset::detail {
                                                      pathText(stagingRoot) +
                                                      "': " + createRootError.message() + "."}};
                 }
+                auto canonicalStagingRoot = validateStagingRoot(outputRoot, stagingRoot);
+                if (!canonicalStagingRoot) {
+                    return std::unexpected{std::move(canonicalStagingRoot.error())};
+                }
 
                 for (;;) {
                     const std::uint64_t stagingId = nextStagingId_.fetch_add(1U);
                     std::filesystem::path stagingPath =
-                        stagingRoot /
+                        *canonicalStagingRoot /
                         (std::to_string(processId()) + "-" + std::to_string(stagingId));
                     std::error_code createError;
                     if (std::filesystem::create_directory(stagingPath, createError)) {
@@ -305,6 +439,31 @@ namespace asharia::asset::detail {
             }
 
         private:
+            [[nodiscard]] static Result<std::filesystem::path>
+            validateStagingRoot(const std::filesystem::path& outputRoot,
+                                const std::filesystem::path& stagingRoot) {
+                auto canonicalOutputRoot = canonicalEndpoint(outputRoot, "output root");
+                if (!canonicalOutputRoot) {
+                    return std::unexpected{std::move(canonicalOutputRoot.error())};
+                }
+                auto canonicalStagingRoot = canonicalEndpoint(stagingRoot, "staging root");
+                if (!canonicalStagingRoot) {
+                    return std::unexpected{std::move(canonicalStagingRoot.error())};
+                }
+                auto contained = isStrictDescendant(*canonicalStagingRoot, *canonicalOutputRoot);
+                if (!contained) {
+                    return std::unexpected{std::move(contained.error())};
+                }
+                if (!*contained) {
+                    return std::unexpected{Error{ErrorDomain::Asset, 0,
+                                                 "Asset product staging root '" +
+                                                     pathText(stagingRoot) +
+                                                     "' does not resolve beneath output root '" +
+                                                     pathText(outputRoot) + "'."}};
+                }
+                return canonicalStagingRoot;
+            }
+
             [[nodiscard]] static VoidResult createParent(const std::filesystem::path& path) {
                 const std::filesystem::path parent = path.parent_path();
                 if (parent.empty()) {
@@ -461,8 +620,9 @@ namespace asharia::asset::detail {
                                     AssetProductPublicationOperations& operations,
                                     AssetProductPublicationResult& outcome) {
         outcome = {};
-        if (auto preflight = preflightPublicationEndpoints(request, outcome); !preflight) {
-            return preflight;
+        auto boundaries = preflightPublicationEndpoints(request, outcome);
+        if (!boundaries) {
+            return std::unexpected{std::move(boundaries.error())};
         }
 
         auto stagingDirectory = operations.createUniqueStagingDirectory(request.outputRoot);
@@ -480,6 +640,47 @@ namespace asharia::asset::detail {
                                  "create-staging", request.outputRoot / ".asharia-product-staging",
                                  finalPath, stagingDirectory.error().message)};
         }
+
+        auto canonicalOwnedStaging = canonicalEndpoint(*stagingDirectory, "owned staging");
+        if (!canonicalOwnedStaging) {
+            return std::unexpected{publicationError(
+                request.products.empty() ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                                         : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                canonicalOwnedStaging.error().message)};
+        }
+        auto ownedByStagingRoot =
+            isStrictDescendant(*canonicalOwnedStaging, boundaries->stagingRoot);
+        if (!ownedByStagingRoot) {
+            return std::unexpected{publicationError(
+                request.products.empty() ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                                         : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                ownedByStagingRoot.error().message)};
+        }
+        if (!*ownedByStagingRoot) {
+            return std::unexpected{publicationError(
+                request.products.empty() ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                                         : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                "operations returned a staging path outside the reserved staging root")};
+        }
+        auto ownedByOutputRoot = isStrictDescendant(*canonicalOwnedStaging, boundaries->outputRoot);
+        if (!ownedByOutputRoot) {
+            return std::unexpected{publicationError(
+                request.products.empty() ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                                         : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                ownedByOutputRoot.error().message)};
+        }
+        if (!*ownedByOutputRoot) {
+            return std::unexpected{publicationError(
+                request.products.empty() ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                                         : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                "validate-owned-staging", *stagingDirectory, request.outputRoot,
+                "operations returned a staging path outside the output root")};
+        }
+        *stagingDirectory = std::move(*canonicalOwnedStaging);
 
         auto verifiedProducts = stageProducts(request, *stagingDirectory, operations, outcome);
         if (!verifiedProducts) {
