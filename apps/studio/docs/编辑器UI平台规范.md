@@ -1,13 +1,21 @@
 # Studio 编辑器 UI 平台规范
 
-状态：当前阶段执行规范
-更新日期：2026-06-24
+状态：Partial（迁移期 UI 实现规范）
+
+更新日期：2026-07-11
+
+> 本文仍可用于当前 Dialog、Command、Shortcut、Background Task、样式和部分 Shell 行为，但其中关于 native viewport、Play Mode、provider/extension 延后以及长期分层的结论不再是目标架构。正式框架合同以 [architecture/README.md](architecture/README.md) 为入口。
 
 本文定义 `apps/studio` 当前阶段的编辑器 UI 平台边界。目标是先把弹窗、后台加载反馈、快捷键、命令菜单、状态反馈和设计时预览做成稳定基础，再继续 Scene、Play Session、native bridge 或插件热更新。
 
 本文不替代：
 
-- [Studio框架设计.md](Studio框架设计.md)：Studio 编辑器前端的顶层框架理念、分层、数据流和底层接入门槛。
+- [architecture/studio-overview.md](architecture/studio-overview.md)：正式目标分层、所有权和依赖方向。
+- [architecture/studio-lifecycle.md](architecture/studio-lifecycle.md)：异步启动、关闭、任务和资源排空。
+- [architecture/editor-worlds-and-play-mode.md](architecture/editor-worlds-and-play-mode.md)：Edit/Play/Preview World 和 Game View。
+- [architecture/viewport-rendering.md](architecture/viewport-rendering.md)：跨平台 production viewport。
+
+- [Studio框架设计.md](Studio框架设计.md)：Superseded 的 v0 顶层框架背景。
 - [Studio代码分类.md](Studio代码分类.md)：新增或整理代码时的目录分类、放置决策和当前 v0 例外。
 - [项目规范.md](项目规范.md)：目录、命名空间、MVVM、性能和合入规则。
 - [控件开发指南.md](控件开发指南.md)：Avalonia 控件、样式、`Design.PreviewWith` 和主题覆盖规则。
@@ -75,11 +83,11 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 | Advanced tab strategy | Planned；多行 tab、隐藏 tab 菜单、pin/preview tab 另起切片 |
 | Writable Inspector | Deferred；等 schema metadata、真实 provider、dirty-state UI 和写回 gate |
 | Scene authoring / hierarchy mutation | Deferred；等 native/scene bridge 和 edit/apply contract |
-| Feature/provider/plugin lifecycle | Deferred；当前 lifecycle events 只覆盖 Shell window 生命周期 |
-| Play Session | Deferred；等 Edit World / Play World copy 或 load 语义 |
+| Feature/provider/plugin lifecycle | Partial；内置 extension/provider host 已存在，外部 plugin 与 hot reload 仍 Deferred |
+| Play Session | Target / Not implemented；正式语义见 `architecture/editor-worlds-and-play-mode.md` |
 | Managed plugin hot reload | Deferred；等 contribution registry、diagnostics、ALC unload negative smoke |
-| Native C ABI | Deferred；等 CPU-only bridge consumer 和 ABI checklist |
-| Avalonia native Vulkan viewport | Deferred；等 CPU-only native bridge 与 viewport ownership 设计 |
+| Native C ABI | Experimental/Partial；已有 Windows viewport bridge，生产 ABI ownership 尚未成立 |
+| Avalonia native Vulkan viewport | Windows Experimental/Partial；跨平台 production 目标见 `architecture/viewport-rendering.md` |
 
 `EditorExtensionHost v0` 统一内置 panel/action/provider contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider reload、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
 

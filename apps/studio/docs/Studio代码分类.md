@@ -1,9 +1,12 @@
 # Studio 代码分类
 
-状态：当前分类规则
-最后更新：2026-07-04
+状态：Partial（当前单项目迁移期分类规则）
 
-本文用于回答“新增或整理一段代码应该放在哪里”。它补充 `Studio框架设计.md` 和 `项目规范.md`，不替代具体专题文档。
+最后更新：2026-07-11
+
+> 本文继续约束当前 `Editor.csproj` 内的目录放置，但不再定义长期模块边界。目标六项目结构和允许依赖以 [architecture/studio-overview.md](architecture/studio-overview.md) 与 [adr/0003-studio-project-boundaries.md](adr/0003-studio-project-boundaries.md) 为准。迁移期间不得为了符合旧目录规则，把 Avalonia、P/Invoke 或 platform GPU handle 继续上移到 `Core`。
+
+本文用于回答“迁移完成前，新增或整理一段代码应该放在哪里”。它补充正式架构文档和 `项目规范.md`，不替代具体专题文档。
 
 当前 `apps/studio` 仍是单 `.csproj` Avalonia 应用，分类边界先通过目录、命名空间、测试和文档约束表达。不要为了分类而提前拆项目。
 
