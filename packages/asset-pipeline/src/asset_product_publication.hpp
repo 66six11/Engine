@@ -45,6 +45,10 @@ namespace asharia::asset::detail {
         [[nodiscard]] virtual Result<std::vector<std::byte>>
         readFileBytes(const std::filesystem::path& path, core::FileReadLimits limits) = 0;
 
+        [[nodiscard]] virtual Result<bool>
+        publicationEndpointsEquivalent(const std::filesystem::path& left,
+                                       const std::filesystem::path& right) = 0;
+
         [[nodiscard]] virtual VoidResult
         publishFileAtomically(const std::filesystem::path& stagingPath,
                               const std::filesystem::path& finalPath,

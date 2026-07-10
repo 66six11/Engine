@@ -53,7 +53,9 @@ namespace {
 
     [[nodiscard]] bool messageHasFinalPath(std::string_view message,
                                            const std::filesystem::path& path) {
-        return messageContains(message, "finalPath=\"" + path.generic_string() + "\"");
+        const std::u8string utf8 = path.generic_u8string();
+        return messageContains(message,
+                               "finalPath=\"" + std::string{utf8.begin(), utf8.end()} + "\"");
     }
 
     [[nodiscard]] bool prepareWorkspace(const std::filesystem::path& root) {
@@ -730,6 +732,14 @@ namespace {
             return bytes;
         }
 
+        [[nodiscard]] asharia::Result<bool>
+        publicationEndpointsEquivalent(const std::filesystem::path& left,
+                                       const std::filesystem::path& right) override {
+            (void)left;
+            (void)right;
+            return false;
+        }
+
         [[nodiscard]] asharia::VoidResult
         // Mirrors the package operation contract under test.
         // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -813,6 +823,77 @@ namespace {
         std::filesystem::path manifestPath_;
         std::filesystem::path ownedStagingPath_;
     };
+
+#if defined(_WIN32)
+    class HardLinkInjectingPublicationOperations final
+        : public asharia::asset::detail::AssetProductPublicationOperations {
+    public:
+        HardLinkInjectingPublicationOperations(std::filesystem::path triggerEndpoint,
+                                               std::filesystem::path aliasEndpoint)
+            : triggerEndpoint_(std::move(triggerEndpoint)),
+              aliasEndpoint_(std::move(aliasEndpoint)) {}
+
+        [[nodiscard]] asharia::Result<std::filesystem::path>
+        createUniqueStagingDirectory(const std::filesystem::path& outputRoot) override {
+            return native().createUniqueStagingDirectory(outputRoot);
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        writeFileAtomically(const std::filesystem::path& path,
+                            std::span<const std::byte> bytes) override {
+            return native().writeFileAtomically(path, bytes);
+        }
+
+        [[nodiscard]] asharia::Result<std::vector<std::byte>>
+        readFileBytes(const std::filesystem::path& path,
+                      asharia::core::FileReadLimits limits) override {
+            return native().readFileBytes(path, limits);
+        }
+
+        [[nodiscard]] asharia::Result<bool>
+        publicationEndpointsEquivalent(const std::filesystem::path& left,
+                                       const std::filesystem::path& right) override {
+            return native().publicationEndpointsEquivalent(left, right);
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        publishFileAtomically(const std::filesystem::path& stagingPath,
+                              const std::filesystem::path& finalPath,
+                              std::span<const std::byte> verifiedBytes) override {
+            auto published = native().publishFileAtomically(stagingPath, finalPath, verifiedBytes);
+            if (!published || injected_ || finalPath != triggerEndpoint_) {
+                return published;
+            }
+            injected_ = true;
+            if (CreateHardLinkW(aliasEndpoint_.c_str(), finalPath.c_str(), nullptr) == 0) {
+                const DWORD errorCode = GetLastError();
+                return std::unexpected{asharia::Error{
+                    asharia::ErrorDomain::Asset, static_cast<int>(errorCode),
+                    "Could not inject publication hard-link alias: " +
+                        std::system_category().message(static_cast<int>(errorCode)) + "."}};
+            }
+            return {};
+        }
+
+        [[nodiscard]] asharia::VoidResult
+        removeStagingDirectory(const std::filesystem::path& stagingPath) override {
+            return native().removeStagingDirectory(stagingPath);
+        }
+
+        [[nodiscard]] bool injected() const noexcept {
+            return injected_;
+        }
+
+    private:
+        [[nodiscard]] static asharia::asset::detail::AssetProductPublicationOperations& native() {
+            return asharia::asset::detail::assetProductPublicationOperations();
+        }
+
+        std::filesystem::path triggerEndpoint_;
+        std::filesystem::path aliasEndpoint_;
+        bool injected_{};
+    };
+#endif
 
     struct PublicationFixture {
         std::filesystem::path outputRoot{"PublicationRoot"};
@@ -1181,6 +1262,414 @@ namespace {
         }
 
         return true;
+    }
+
+    [[nodiscard]] asharia::asset::AssetImportPlanResult
+    makeSingleProductExecutionPlan(const asharia::asset::SourceAssetRecord& source,
+                                   std::span<const asharia::asset::AssetImportSetting> settings);
+
+    [[nodiscard]] bool smokeWindowsPublicationEndpointSemantics() {
+#if !defined(_WIN32)
+        return true;
+#else
+        bool rejectedAmbiguousEndpoints = true;
+        const auto expectProductPreflightFailure = [&rejectedAmbiguousEndpoints](
+                                                       const PublicationFixture& fixture,
+                                                       std::size_t productIndex) {
+            FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+            asharia::asset::detail::AssetProductPublicationResult outcome;
+            const auto result = asharia::asset::detail::publishAssetProducts(fixture.request(),
+                                                                             operations, outcome);
+            if (result || !operations.events.empty() || !outcome.failingProductIndex ||
+                *outcome.failingProductIndex != productIndex ||
+                result.error().code !=
+                    static_cast<int>(
+                        asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed) ||
+                !messageHasFinalPath(result.error().message,
+                                     fixture.products[productIndex].finalPath)) {
+                logFailure("Asset product publication accepted an ambiguous Windows product "
+                           "endpoint.");
+                rejectedAmbiguousEndpoints = false;
+            }
+        };
+        const auto expectManifestPreflightFailure = [&rejectedAmbiguousEndpoints](
+                                                        const PublicationFixture& fixture) {
+            FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+            asharia::asset::detail::AssetProductPublicationResult outcome;
+            const auto result = asharia::asset::detail::publishAssetProducts(fixture.request(),
+                                                                             operations, outcome);
+            if (result || !operations.events.empty() || outcome.failingProductIndex ||
+                result.error().code !=
+                    static_cast<int>(
+                        asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) ||
+                !messageHasFinalPath(result.error().message, fixture.manifestPath)) {
+                logFailure("Asset product publication accepted an ambiguous Windows manifest "
+                           "endpoint.");
+                rejectedAmbiguousEndpoints = false;
+            }
+        };
+
+        for (const std::wstring_view suffix : {std::wstring_view{L"."}, std::wstring_view{L" "}}) {
+            PublicationFixture duplicateProducts;
+            duplicateProducts.products[1].finalPath =
+                duplicateProducts.products[0].finalPath.native() + std::wstring{suffix};
+            expectProductPreflightFailure(duplicateProducts, 1U);
+
+            PublicationFixture manifestProductAlias;
+            manifestProductAlias.manifestPath =
+                manifestProductAlias.products[0].finalPath.native() + std::wstring{suffix};
+            expectManifestPreflightFailure(manifestProductAlias);
+
+            PublicationFixture reservedProduct;
+            reservedProduct.products[0].finalPath =
+                reservedProduct.outputRoot /
+                (std::wstring{L".asharia-product-staging"} + std::wstring{suffix}) / L"escape.bin";
+            expectProductPreflightFailure(reservedProduct, 0U);
+
+            PublicationFixture ambiguousRoot;
+            ambiguousRoot.outputRoot = ambiguousRoot.outputRoot.native() + std::wstring{suffix};
+            for (asharia::asset::detail::AssetProductPublicationItem& item :
+                 ambiguousRoot.products) {
+                item.finalPath = ambiguousRoot.outputRoot / item.product.relativeProductPath;
+            }
+            ambiguousRoot.manifestPath = ambiguousRoot.outputRoot / "product-manifest.json";
+            expectProductPreflightFailure(ambiguousRoot, 0U);
+        }
+
+        for (const std::filesystem::path& ambiguousLeaf :
+             {std::filesystem::path{L"stream.product:payload"}, std::filesystem::path{L"NUL.txt"},
+              std::filesystem::path{L"COM\u00B9.bin"}, std::filesystem::path{L"LPT\u00B2.bin"}}) {
+            PublicationFixture invalidProduct;
+            invalidProduct.products[0].finalPath =
+                invalidProduct.outputRoot / "textures" / ambiguousLeaf;
+            expectProductPreflightFailure(invalidProduct, 0U);
+        }
+
+        PublicationFixture invalidManifest;
+        invalidManifest.manifestPath = invalidManifest.outputRoot / L"AUX.manifest";
+        expectManifestPreflightFailure(invalidManifest);
+
+        PublicationFixture ambiguousOwnedPath;
+        FakeAssetProductPublicationOperations ambiguousOwnedOperations{
+            ambiguousOwnedPath.manifestPath};
+        ambiguousOwnedOperations.createdStagingPathOverride =
+            ambiguousOwnedPath.outputRoot / ".asharia-product-staging" / L"fake-1.";
+        asharia::asset::detail::AssetProductPublicationResult ambiguousOwnedOutcome;
+        const auto ambiguousOwnedResult = asharia::asset::detail::publishAssetProducts(
+            ambiguousOwnedPath.request(), ambiguousOwnedOperations, ambiguousOwnedOutcome);
+        if (ambiguousOwnedResult ||
+            ambiguousOwnedOperations.events != std::vector<std::string>{"create-staging"} ||
+            !ambiguousOwnedOutcome.failingProductIndex ||
+            *ambiguousOwnedOutcome.failingProductIndex != 0U ||
+            !messageHasFinalPath(ambiguousOwnedResult.error().message,
+                                 ambiguousOwnedPath.products.front().finalPath)) {
+            logFailure("Asset product publication accepted an ambiguous owned staging path.");
+            rejectedAmbiguousEndpoints = false;
+        }
+
+        const std::vector<std::uint8_t> sourceBytes =
+            bytesFromText("Windows publication endpoint execution bytes");
+        auto document =
+            makeDocument("829281e3-c888-4df7-9610-3fbe6db51557",
+                         "Content/Textures/WindowsEndpoint.png", smokeHashBytes(sourceBytes));
+        const asharia::asset::AssetImportPlanResult basePlan =
+            makeSingleProductExecutionPlan(document.source, document.settings);
+        for (const std::string_view suffix : {std::string_view{"."}, std::string_view{" "}}) {
+            const std::filesystem::path executionRoot =
+                std::filesystem::path{"WindowsEndpointExecution"} /
+                (suffix == "." ? "Dot" : "Space");
+            const std::filesystem::path productFinal =
+                executionRoot / basePlan.requests.front().relativeProductPath;
+            std::filesystem::path manifestAlias = productFinal;
+            manifestAlias += suffix;
+            const asharia::asset::AssetProductExecutionRequest manifestAliasRequest{
+                .plan = basePlan,
+                .existingManifest = {},
+                .sourceBytes = {{.sourcePath = document.source.sourcePath, .bytes = sourceBytes}},
+                .dependencyProductBytes = {},
+                .productOutputRoot = executionRoot,
+                .productManifestOutputPath = manifestAlias,
+            };
+            FakeAssetProductPublicationOperations manifestAliasOperations{manifestAlias};
+            const auto manifestAliasExecution =
+                asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                    manifestAliasRequest, manifestAliasOperations);
+            if (manifestAliasExecution.diagnostics.size() != 1U ||
+                manifestAliasExecution.diagnostics.front().code !=
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed ||
+                !messageHasFinalPath(manifestAliasExecution.diagnostics.front().message,
+                                     manifestAlias) ||
+                !manifestAliasOperations.events.empty()) {
+                logFailure("Asset product execution accepted a Windows-normalized manifest "
+                           "alias.");
+                rejectedAmbiguousEndpoints = false;
+            }
+
+            asharia::asset::AssetImportPlanResult ambiguousProductPlan = basePlan;
+            ambiguousProductPlan.requests.front().relativeProductPath += suffix;
+            const std::filesystem::path ambiguousProductFinal =
+                executionRoot / ambiguousProductPlan.requests.front().relativeProductPath;
+            const asharia::asset::AssetProductExecutionRequest ambiguousProductRequest{
+                .plan = std::move(ambiguousProductPlan),
+                .existingManifest = {},
+                .sourceBytes = {{.sourcePath = document.source.sourcePath, .bytes = sourceBytes}},
+                .dependencyProductBytes = {},
+                .productOutputRoot = executionRoot,
+                .productManifestOutputPath = {},
+            };
+            FakeAssetProductPublicationOperations ambiguousProductOperations{
+                std::filesystem::path{}};
+            const auto ambiguousProductExecution =
+                asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                    ambiguousProductRequest, ambiguousProductOperations);
+            if (ambiguousProductExecution.diagnostics.size() != 1U ||
+                ambiguousProductExecution.diagnostics.front().code !=
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
+                !messageHasFinalPath(ambiguousProductExecution.diagnostics.front().message,
+                                     ambiguousProductFinal) ||
+                !ambiguousProductOperations.events.empty()) {
+                logFailure("Asset product execution accepted an ambiguous Windows product leaf.");
+                rejectedAmbiguousEndpoints = false;
+            }
+
+            asharia::asset::AssetImportPlanResult reservedPlan = basePlan;
+            reservedPlan.requests.front().relativeProductPath =
+                ".asharia-product-staging" + std::string{suffix} + "/escape.product";
+            const std::filesystem::path reservedFinal =
+                executionRoot / reservedPlan.requests.front().relativeProductPath;
+            const asharia::asset::AssetProductExecutionRequest reservedRequest{
+                .plan = std::move(reservedPlan),
+                .existingManifest = {},
+                .sourceBytes = {{.sourcePath = document.source.sourcePath, .bytes = sourceBytes}},
+                .dependencyProductBytes = {},
+                .productOutputRoot = executionRoot,
+                .productManifestOutputPath = {},
+            };
+            FakeAssetProductPublicationOperations reservedOperations{std::filesystem::path{}};
+            const auto reservedExecution =
+                asharia::asset::detail::executeAssetProductsWithPublicationOperations(
+                    reservedRequest, reservedOperations);
+            if (reservedExecution.diagnostics.size() != 1U ||
+                reservedExecution.diagnostics.front().code !=
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
+                !messageHasFinalPath(reservedExecution.diagnostics.front().message,
+                                     reservedFinal) ||
+                !reservedOperations.events.empty()) {
+                logFailure("Asset product execution accepted an ambiguous Windows staging "
+                           "namespace.");
+                rejectedAmbiguousEndpoints = false;
+            }
+        }
+
+        const std::filesystem::path probeRoot =
+            smokeRoot("asharia-asset-pipeline-smoke-win32-spelling-alias");
+        if (probeRoot.empty() || !prepareWorkspace(probeRoot)) {
+            return false;
+        }
+        const std::filesystem::path probeFile = probeRoot / "item.bin";
+        {
+            std::ofstream stream{probeFile, std::ios::binary};
+            stream << "win32 alias probe";
+        }
+        const std::filesystem::path dottedProbe = probeFile.native() + std::wstring{L"."};
+        const std::filesystem::path spacedProbe = probeFile.native() + std::wstring{L" "};
+        const bool dottedAlias = GetFileAttributesW(dottedProbe.c_str()) != INVALID_FILE_ATTRIBUTES;
+        const bool spacedAlias = GetFileAttributesW(spacedProbe.c_str()) != INVALID_FILE_ATTRIBUTES;
+        std::error_code probeCountError;
+        const auto probeEntries = static_cast<std::size_t>(
+            std::distance(std::filesystem::directory_iterator{probeRoot, probeCountError},
+                          std::filesystem::directory_iterator{}));
+        if (!dottedAlias || !spacedAlias || probeCountError || probeEntries != 1U) {
+            logFailure("Win32 spelling alias probe did not confirm trailing dot/space identity.");
+            rejectedAmbiguousEndpoints = false;
+        }
+        std::error_code cleanupError;
+        std::filesystem::remove_all(probeRoot, cleanupError);
+        if (cleanupError) {
+            logFailure("Win32 spelling alias probe could not clean its exclusive root.");
+            rejectedAmbiguousEndpoints = false;
+        }
+        return rejectedAmbiguousEndpoints;
+#endif
+    }
+
+    [[nodiscard]] bool smokeWindowsPublicationFileIdentity() {
+#if !defined(_WIN32)
+        return true;
+#else
+        bool rejectedAliases = true;
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-win32-file-identity");
+        const auto createProbeDirectories = [](const std::filesystem::path& path) {
+            std::error_code error;
+            std::filesystem::create_directories(path, error);
+            return !error;
+        };
+        if (root.empty() || !prepareWorkspace(root) || !createProbeDirectories(root / "textures")) {
+            return false;
+        }
+
+        const auto writeProbeFile = [](const std::filesystem::path& path, std::string_view bytes) {
+            std::ofstream stream{path, std::ios::binary};
+            stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            return stream.good();
+        };
+        const auto expectHardLink = [](const std::filesystem::path& alias,
+                                       const std::filesystem::path& existing) {
+            return CreateHardLinkW(alias.c_str(), existing.c_str(), nullptr) != 0;
+        };
+
+        const std::filesystem::path productFile = root / "textures" / "identity-a.product";
+        const std::filesystem::path productAlias = root / "textures" / "identity-b.product";
+        if (!writeProbeFile(productFile, "existing product identity") ||
+            !expectHardLink(productAlias, productFile)) {
+            logFailure("Asset product publication could not prepare existing hard-link aliases.");
+            return false;
+        }
+        PublicationFixture existingProducts;
+        existingProducts.outputRoot = root;
+        existingProducts.manifestPath.clear();
+        existingProducts.products[0].finalPath = productFile;
+        existingProducts.products[1].finalPath = productAlias;
+        asharia::asset::detail::AssetProductPublicationResult existingProductOutcome;
+        const auto existingProductResult = asharia::asset::detail::publishAssetProducts(
+            existingProducts.request(), asharia::asset::detail::assetProductPublicationOperations(),
+            existingProductOutcome);
+        if (existingProductResult || !existingProductOutcome.failingProductIndex ||
+            *existingProductOutcome.failingProductIndex != 1U ||
+            !messageHasFinalPath(existingProductResult.error().message, productAlias) ||
+            !messageContains(existingProductResult.error().message, "preflight-product-alias")) {
+            logFailure("Asset product publication accepted existing product hard-link aliases.");
+            rejectedAliases = false;
+        }
+
+        if (!prepareWorkspace(root) || !createProbeDirectories(root / "textures")) {
+            return false;
+        }
+        const std::filesystem::path manifestProduct = root / "textures" / "manifest-source.product";
+        const std::filesystem::path manifestAlias = root / "product-manifest.json";
+        if (!writeProbeFile(manifestProduct, "existing manifest identity") ||
+            !expectHardLink(manifestAlias, manifestProduct)) {
+            logFailure("Asset product publication could not prepare a manifest hard-link alias.");
+            return false;
+        }
+        PublicationFixture existingManifest;
+        existingManifest.outputRoot = root;
+        existingManifest.products.resize(1U);
+        existingManifest.manifest.products.resize(1U);
+        existingManifest.products.front().finalPath = manifestProduct;
+        existingManifest.manifestPath = manifestAlias;
+        asharia::asset::detail::AssetProductPublicationResult existingManifestOutcome;
+        const auto existingManifestResult = asharia::asset::detail::publishAssetProducts(
+            existingManifest.request(), asharia::asset::detail::assetProductPublicationOperations(),
+            existingManifestOutcome);
+        if (existingManifestResult || existingManifestOutcome.failingProductIndex ||
+            !messageHasFinalPath(existingManifestResult.error().message, manifestAlias) ||
+            !messageContains(existingManifestResult.error().message,
+                             "preflight-manifest-product-alias")) {
+            logFailure("Asset product publication accepted an existing manifest hard-link alias.");
+            rejectedAliases = false;
+        }
+
+        if (!prepareWorkspace(root) || !createProbeDirectories(root / "textures")) {
+            return false;
+        }
+        const std::filesystem::path longPath =
+            root / "textures" / "LongPublicationEndpointIdentity.product";
+        if (!writeProbeFile(longPath, "short-name identity probe")) {
+            return false;
+        }
+        const DWORD shortLength = GetShortPathNameW(longPath.c_str(), nullptr, 0U);
+        std::filesystem::path shortPath;
+        if (shortLength != 0U) {
+            std::vector<wchar_t> shortBuffer(shortLength);
+            const DWORD written =
+                GetShortPathNameW(longPath.c_str(), shortBuffer.data(), shortLength);
+            if (written != 0U && written < shortLength) {
+                shortPath = std::filesystem::path{shortBuffer.data()};
+            }
+        }
+        if (shortPath.empty() || shortPath == longPath) {
+            std::cout << "Win32 8.3 alias probe: disabled\n";
+        } else {
+            std::cout << "Win32 8.3 alias probe: enabled\n";
+            PublicationFixture shortAliasFixture;
+            shortAliasFixture.outputRoot = root;
+            shortAliasFixture.manifestPath.clear();
+            shortAliasFixture.products[0].finalPath = longPath;
+            shortAliasFixture.products[1].finalPath = shortPath;
+            asharia::asset::detail::AssetProductPublicationResult shortAliasOutcome;
+            const auto shortAliasResult = asharia::asset::detail::publishAssetProducts(
+                shortAliasFixture.request(),
+                asharia::asset::detail::assetProductPublicationOperations(), shortAliasOutcome);
+            if (shortAliasResult || !shortAliasOutcome.failingProductIndex ||
+                *shortAliasOutcome.failingProductIndex != 1U ||
+                !messageHasFinalPath(shortAliasResult.error().message, shortPath)) {
+                logFailure("Asset product publication accepted an enabled 8.3 endpoint alias.");
+                rejectedAliases = false;
+            }
+        }
+
+        if (!prepareWorkspace(root)) {
+            return false;
+        }
+        PublicationFixture dynamicProducts;
+        dynamicProducts.outputRoot = root;
+        dynamicProducts.manifestPath = root / "product-manifest.json";
+        for (asharia::asset::detail::AssetProductPublicationItem& item : dynamicProducts.products) {
+            item.finalPath = root / item.product.relativeProductPath;
+        }
+        HardLinkInjectingPublicationOperations productInjection{
+            dynamicProducts.products[0].finalPath, dynamicProducts.products[1].finalPath};
+        asharia::asset::detail::AssetProductPublicationResult dynamicProductOutcome;
+        const auto dynamicProductResult = asharia::asset::detail::publishAssetProducts(
+            dynamicProducts.request(), productInjection, dynamicProductOutcome);
+        if (dynamicProductResult || !productInjection.injected() ||
+            dynamicProductOutcome.writes.size() != 1U || dynamicProductOutcome.manifestWritten ||
+            !dynamicProductOutcome.failingProductIndex ||
+            *dynamicProductOutcome.failingProductIndex != 1U ||
+            !messageHasFinalPath(dynamicProductResult.error().message,
+                                 dynamicProducts.products[1].finalPath) ||
+            !messageContains(dynamicProductResult.error().message, "revalidate-product-alias")) {
+            logFailure("Asset product publication missed a product alias created after preflight.");
+            rejectedAliases = false;
+        }
+
+        if (!prepareWorkspace(root)) {
+            return false;
+        }
+        PublicationFixture dynamicManifest;
+        dynamicManifest.outputRoot = root;
+        dynamicManifest.products.resize(1U);
+        dynamicManifest.manifest.products.resize(1U);
+        dynamicManifest.products.front().finalPath =
+            root / dynamicManifest.products.front().product.relativeProductPath;
+        dynamicManifest.manifestPath = root / "product-manifest.json";
+        HardLinkInjectingPublicationOperations manifestInjection{
+            dynamicManifest.products.front().finalPath, dynamicManifest.manifestPath};
+        asharia::asset::detail::AssetProductPublicationResult dynamicManifestOutcome;
+        const auto dynamicManifestResult = asharia::asset::detail::publishAssetProducts(
+            dynamicManifest.request(), manifestInjection, dynamicManifestOutcome);
+        if (dynamicManifestResult || !manifestInjection.injected() ||
+            dynamicManifestOutcome.writes.size() != 1U || dynamicManifestOutcome.manifestWritten ||
+            dynamicManifestOutcome.failingProductIndex ||
+            !messageHasFinalPath(dynamicManifestResult.error().message,
+                                 dynamicManifest.manifestPath) ||
+            !messageContains(dynamicManifestResult.error().message,
+                             "revalidate-manifest-product-alias")) {
+            logFailure(
+                "Asset product publication missed a manifest alias created after preflight.");
+            rejectedAliases = false;
+        }
+
+        std::error_code cleanupError;
+        std::filesystem::remove_all(root, cleanupError);
+        if (cleanupError) {
+            logFailure("Asset product publication could not clean the file-identity probe root.");
+            rejectedAliases = false;
+        }
+        return rejectedAliases;
+#endif
     }
 
     [[nodiscard]] bool smokeProductPublicationRejectsUnownedStagingPath() {
@@ -5394,7 +5883,8 @@ int main() {
         smokeProductPublicationRejectsStagedMutation() &&
         smokeProductPublicationReportsCleanupAfterManifestCommit() &&
         smokeProductPublicationPreservesPartialOutcome() &&
-        smokeProductPublicationPreflightsEndpoints() &&
+        smokeProductPublicationPreflightsEndpoints() && smokeWindowsPublicationFileIdentity() &&
+        smokeWindowsPublicationEndpointSemantics() &&
         smokeProductExecutionScopesPublicationDiagnostics() &&
         smokeProductPublicationRejectsUnownedStagingPath() &&
         smokeNativeProductPublicationRejectsRedirectedStagingRoot() &&

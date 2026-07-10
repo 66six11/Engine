@@ -1,6 +1,7 @@
 ﻿#include "asset_product_publication.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <climits>
 #include <cstddef>
@@ -173,8 +174,87 @@ namespace asharia::asset::detail {
 #endif
         }
 
-        [[nodiscard]] Result<bool> endpointEquals(const std::filesystem::path& left,
-                                                  const std::filesystem::path& right) {
+#if defined(_WIN32)
+        [[nodiscard]] constexpr wchar_t foldAscii(wchar_t character) noexcept {
+            return character >= L'a' && character <= L'z'
+                       ? static_cast<wchar_t>(character - (L'a' - L'A'))
+                       : character;
+        }
+
+        [[nodiscard]] bool equalsAsciiIgnoreCase(std::wstring_view left,
+                                                 std::wstring_view right) noexcept {
+            return left.size() == right.size() &&
+                   std::ranges::equal(
+                       left, right, [](wchar_t leftCharacter, wchar_t rightCharacter) {
+                           return foldAscii(leftCharacter) == foldAscii(rightCharacter);
+                       });
+        }
+
+        [[nodiscard]] bool isReservedDeviceBasename(std::wstring_view component) noexcept {
+            const std::size_t extension = component.find(L'.');
+            const std::wstring_view basename = component.substr(0U, extension);
+            constexpr std::array fixedNames{std::wstring_view{L"CON"}, std::wstring_view{L"PRN"},
+                                            std::wstring_view{L"AUX"}, std::wstring_view{L"NUL"},
+                                            std::wstring_view{L"CLOCK$"}};
+            if (std::ranges::any_of(fixedNames, [&basename](std::wstring_view reserved) {
+                    return equalsAsciiIgnoreCase(basename, reserved);
+                })) {
+                return true;
+            }
+            if (basename.size() != 4U ||
+                (!equalsAsciiIgnoreCase(basename.substr(0U, 3U), L"COM") &&
+                 !equalsAsciiIgnoreCase(basename.substr(0U, 3U), L"LPT"))) {
+                return false;
+            }
+            const wchar_t suffix = basename.back();
+            return (suffix >= L'1' && suffix <= L'9') || suffix == L'\u00B9' ||
+                   suffix == L'\u00B2' || suffix == L'\u00B3';
+        }
+#endif
+
+        [[nodiscard]] VoidResult validatePublicationPathGrammar(const std::filesystem::path& path,
+                                                                std::string_view endpointLabel) {
+#if defined(_WIN32)
+            const auto invalid = [&path, endpointLabel](const std::filesystem::path& component,
+                                                        std::string_view reason) {
+                return std::unexpected{Error{ErrorDomain::Asset, 0,
+                                             "Invalid Windows " + std::string{endpointLabel} +
+                                                 " endpoint '" + pathText(path) + "': component '" +
+                                                 pathText(component) + "' " + std::string{reason} +
+                                                 "."}};
+            };
+
+            const std::filesystem::path rootName = path.root_name();
+            const std::filesystem::path rootDirectory = path.root_directory();
+            for (const std::filesystem::path& component : path) {
+                if ((!rootName.empty() && component == rootName) ||
+                    (!rootDirectory.empty() && component == rootDirectory) || component == "." ||
+                    component == "..") {
+                    continue;
+                }
+                const std::wstring& text = component.native();
+                if (text.empty()) {
+                    continue;
+                }
+                if (text.back() == L'.' || text.back() == L' ') {
+                    return invalid(component, "ends in a period or space");
+                }
+                if (text.find(L':') != std::wstring::npos) {
+                    return invalid(component, "contains an alternate-data-stream separator");
+                }
+                if (isReservedDeviceBasename(text)) {
+                    return invalid(component, "uses a reserved DOS device basename");
+                }
+            }
+#else
+            (void)path;
+            (void)endpointLabel;
+#endif
+            return {};
+        }
+
+        [[nodiscard]] Result<bool> endpointSpellingEquals(const std::filesystem::path& left,
+                                                          const std::filesystem::path& right) {
             auto leftComponent = left.begin();
             auto rightComponent = right.begin();
             while (leftComponent != left.end() && rightComponent != right.end()) {
@@ -189,6 +269,48 @@ namespace asharia::asset::detail {
                 ++rightComponent;
             }
             return leftComponent == left.end() && rightComponent == right.end();
+        }
+
+        [[nodiscard]] Result<bool> existingEndpointEquivalent(const std::filesystem::path& left,
+                                                              const std::filesystem::path& right) {
+            std::error_code leftError;
+            const bool leftExists = std::filesystem::exists(left, leftError);
+            if (leftError) {
+                return std::unexpected{
+                    Error{ErrorDomain::Asset, leftError.value(),
+                          "Could not inspect publication endpoint '" + pathText(left) +
+                              "' for file identity: " + leftError.message() + "."}};
+            }
+            std::error_code rightError;
+            const bool rightExists = std::filesystem::exists(right, rightError);
+            if (rightError) {
+                return std::unexpected{
+                    Error{ErrorDomain::Asset, rightError.value(),
+                          "Could not inspect publication endpoint '" + pathText(right) +
+                              "' for file identity: " + rightError.message() + "."}};
+            }
+            if (!leftExists || !rightExists) {
+                return false;
+            }
+            std::error_code equivalentError;
+            const bool equivalent = std::filesystem::equivalent(left, right, equivalentError);
+            if (equivalentError) {
+                return std::unexpected{Error{
+                    ErrorDomain::Asset, equivalentError.value(),
+                    "Could not compare publication endpoint file identity for '" + pathText(left) +
+                        "' and '" + pathText(right) + "': " + equivalentError.message() + "."}};
+            }
+            return equivalent;
+        }
+
+        [[nodiscard]] Result<bool> endpointEquals(const std::filesystem::path& left,
+                                                  const std::filesystem::path& right,
+                                                  AssetProductPublicationOperations& operations) {
+            auto spellingEqual = endpointSpellingEquals(left, right);
+            if (!spellingEqual || *spellingEqual) {
+                return spellingEqual;
+            }
+            return operations.publicationEndpointsEquivalent(left, right);
         }
 
         [[nodiscard]] Result<bool> isStrictDescendant(const std::filesystem::path& candidate,
@@ -212,7 +334,7 @@ namespace asharia::asset::detail {
 
         [[nodiscard]] Result<bool> isEqualOrDescendant(const std::filesystem::path& candidate,
                                                        const std::filesystem::path& root) {
-            auto equal = endpointEquals(candidate, root);
+            auto equal = endpointSpellingEquals(candidate, root);
             if (!equal) {
                 return std::unexpected{std::move(equal.error())};
             }
@@ -236,6 +358,44 @@ namespace asharia::asset::detail {
             return canonical;
         }
 
+        [[nodiscard]] VoidResult
+        validatePublicationRequestGrammar(const AssetProductPublicationRequest& request,
+                                          AssetProductPublicationResult& outcome) {
+            const std::filesystem::path stagingRoot =
+                request.outputRoot / ".asharia-product-staging";
+            if (auto valid = validatePublicationPathGrammar(request.outputRoot, "output root");
+                !valid) {
+                return std::unexpected{sharedBoundaryPublicationError(
+                    request, outcome, "preflight-output-root", stagingRoot, valid.error().message)};
+            }
+            if (auto valid = validatePublicationPathGrammar(stagingRoot, "staging root"); !valid) {
+                return std::unexpected{
+                    sharedBoundaryPublicationError(request, outcome, "preflight-staging-root",
+                                                   stagingRoot, valid.error().message)};
+            }
+            for (std::size_t productIndex = 0; productIndex < request.products.size();
+                 ++productIndex) {
+                const AssetProductPublicationItem& item = request.products[productIndex];
+                if (auto valid = validatePublicationPathGrammar(item.finalPath, "product final");
+                    !valid) {
+                    return std::unexpected{
+                        productPublicationError(outcome, productIndex, "preflight-product-endpoint",
+                                                stagingRoot, item, valid.error().message)};
+                }
+            }
+            if (!request.manifestPath.empty()) {
+                if (auto valid =
+                        validatePublicationPathGrammar(request.manifestPath, "manifest final");
+                    !valid) {
+                    return std::unexpected{
+                        publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                         "preflight-manifest-endpoint", stagingRoot,
+                                         request.manifestPath, valid.error().message)};
+                }
+            }
+            return {};
+        }
+
         struct PublicationBoundaries {
             std::filesystem::path outputRoot;
             std::filesystem::path stagingRoot;
@@ -243,7 +403,11 @@ namespace asharia::asset::detail {
 
         [[nodiscard]] Result<PublicationBoundaries>
         preflightPublicationEndpoints(const AssetProductPublicationRequest& request,
-                                      AssetProductPublicationResult& outcome) {
+                                      AssetProductPublicationResult& outcome,
+                                      AssetProductPublicationOperations& operations) {
+            if (auto valid = validatePublicationRequestGrammar(request, outcome); !valid) {
+                return std::unexpected{std::move(valid.error())};
+            }
             auto canonicalRoot = canonicalEndpoint(request.outputRoot, "output root");
             if (!canonicalRoot) {
                 return std::unexpected{
@@ -313,8 +477,8 @@ namespace asharia::asset::detail {
                 }
                 for (std::size_t priorIndex = 0; priorIndex < canonicalProducts.size();
                      ++priorIndex) {
-                    auto duplicate =
-                        endpointEquals(*canonicalProduct, canonicalProducts[priorIndex]);
+                    auto duplicate = endpointEquals(*canonicalProduct,
+                                                    canonicalProducts[priorIndex], operations);
                     if (!duplicate) {
                         return std::unexpected{productPublicationError(
                             outcome, productIndex, "preflight-product-comparison",
@@ -362,7 +526,8 @@ namespace asharia::asset::detail {
                     "manifest final endpoint overlaps the reserved staging namespace")};
             }
             for (const std::filesystem::path& canonicalProduct : canonicalProducts) {
-                auto aliasesProduct = endpointEquals(*canonicalManifest, canonicalProduct);
+                auto aliasesProduct =
+                    endpointEquals(*canonicalManifest, canonicalProduct, operations);
                 if (!aliasesProduct) {
                     return std::unexpected{
                         publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
@@ -434,6 +599,12 @@ namespace asharia::asset::detail {
             [[nodiscard]] Result<std::vector<std::byte>>
             readFileBytes(const std::filesystem::path& path, core::FileReadLimits limits) override {
                 return core::readFileBytes(path, limits);
+            }
+
+            [[nodiscard]] Result<bool>
+            publicationEndpointsEquivalent(const std::filesystem::path& left,
+                                           const std::filesystem::path& right) override {
+                return existingEndpointEquivalent(left, right);
             }
 
             [[nodiscard]] VoidResult
@@ -619,6 +790,22 @@ namespace asharia::asset::detail {
             outcome.writes.reserve(products.size());
             for (std::size_t productIndex = 0; productIndex < products.size(); ++productIndex) {
                 const VerifiedProduct& product = products[productIndex];
+                for (std::size_t priorIndex = 0; priorIndex < productIndex; ++priorIndex) {
+                    auto aliasesPrior = endpointEquals(
+                        product.item->finalPath, products[priorIndex].item->finalPath, operations);
+                    if (!aliasesPrior) {
+                        return std::unexpected{productPublicationError(
+                            outcome, productIndex, "revalidate-product-comparison",
+                            product.stagingPath, *product.item, aliasesPrior.error().message)};
+                    }
+                    if (*aliasesPrior) {
+                        return std::unexpected{productPublicationError(
+                            outcome, productIndex, "revalidate-product-alias", product.stagingPath,
+                            *product.item,
+                            "product final endpoint aliases published product index " +
+                                std::to_string(priorIndex))};
+                    }
+                }
                 if (auto published = operations.publishFileAtomically(
                         product.stagingPath, product.item->finalPath, product.bytes);
                     !published) {
@@ -635,6 +822,31 @@ namespace asharia::asset::detail {
             return {};
         }
 
+        [[nodiscard]] VoidResult
+        revalidateManifestProductAliases(const AssetProductPublicationRequest& request,
+                                         std::span<const VerifiedProduct> products,
+                                         const std::filesystem::path& stagedManifestPath,
+                                         AssetProductPublicationOperations& operations) {
+            for (const VerifiedProduct& product : products) {
+                auto aliasesProduct =
+                    endpointEquals(request.manifestPath, product.item->finalPath, operations);
+                if (!aliasesProduct) {
+                    return std::unexpected{publicationError(
+                        AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                        "revalidate-manifest-product-comparison", stagedManifestPath,
+                        request.manifestPath, aliasesProduct.error().message)};
+                }
+                if (*aliasesProduct) {
+                    return std::unexpected{publicationError(
+                        AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                        "revalidate-manifest-product-alias", stagedManifestPath,
+                        request.manifestPath,
+                        "manifest final endpoint aliases a published product endpoint")};
+                }
+            }
+            return {};
+        }
+
     } // namespace
 
     VoidResult publishAssetProducts(const AssetProductPublicationRequest& request,
@@ -644,7 +856,7 @@ namespace asharia::asset::detail {
         if (request.products.empty() && request.manifestPath.empty()) {
             return {};
         }
-        auto boundaries = preflightPublicationEndpoints(request, outcome);
+        auto boundaries = preflightPublicationEndpoints(request, outcome, operations);
         if (!boundaries) {
             return std::unexpected{std::move(boundaries.error())};
         }
@@ -665,6 +877,12 @@ namespace asharia::asset::detail {
                                  finalPath, stagingDirectory.error().message)};
         }
 
+        if (auto valid = validatePublicationPathGrammar(*stagingDirectory, "owned staging");
+            !valid) {
+            return std::unexpected{
+                sharedBoundaryPublicationError(request, outcome, "validate-owned-staging",
+                                               *stagingDirectory, valid.error().message)};
+        }
         auto canonicalOwnedStaging = canonicalEndpoint(*stagingDirectory, "owned staging");
         if (!canonicalOwnedStaging) {
             return std::unexpected{sharedBoundaryPublicationError(
@@ -721,6 +939,12 @@ namespace asharia::asset::detail {
         }
 
         if (!request.manifestPath.empty()) {
+            if (auto aliases = revalidateManifestProductAliases(request, *verifiedProducts,
+                                                                stagedManifestPath, operations);
+                !aliases) {
+                return std::unexpected{
+                    cleanupAfterFailure(operations, *stagingDirectory, std::move(aliases.error()))};
+            }
             if (auto published = operations.publishFileAtomically(
                     stagedManifestPath, request.manifestPath, verifiedManifestBytes);
                 !published) {
