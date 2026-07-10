@@ -620,6 +620,9 @@ namespace asharia::asset::detail {
                                     AssetProductPublicationOperations& operations,
                                     AssetProductPublicationResult& outcome) {
         outcome = {};
+        if (request.products.empty() && request.manifestPath.empty()) {
+            return {};
+        }
         auto boundaries = preflightPublicationEndpoints(request, outcome);
         if (!boundaries) {
             return std::unexpected{std::move(boundaries.error())};

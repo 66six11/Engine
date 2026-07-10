@@ -916,6 +916,34 @@ namespace {
         return !zero && !undersized && exact && *exact == bytes;
     }
 
+    [[nodiscard]] bool smokeEmptyProductPublicationIsNoOp() {
+        const PublicationFixture fixture;
+        FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+        asharia::asset::detail::AssetProductPublicationResult outcome{
+            .writes =
+                {
+                    asharia::asset::AssetProductWrite{
+                        .source = fixture.products.front().source,
+                        .product = fixture.products.front().product,
+                        .productFilePath = fixture.products.front().finalPath,
+                    },
+                },
+            .manifestWritten = true,
+            .failingProductIndex = 0U,
+        };
+        const auto result = asharia::asset::detail::publishAssetProducts(
+            asharia::asset::detail::AssetProductPublicationRequest{
+                .outputRoot = "unused-empty-publication-root",
+                .manifestPath = {},
+                .manifest = {},
+                .products = {},
+            },
+            operations, outcome);
+        return result && outcome.writes.empty() && !outcome.manifestWritten &&
+               !outcome.failingProductIndex && operations.events.empty() &&
+               operations.files.empty() && !operations.cleanupAttempted;
+    }
+
     [[nodiscard]] bool smokeProductPublicationPreservesManifestOnHandledFailures() {
         constexpr std::array failurePoints{
             PublicationFailurePoint::ProductStageWrite,
@@ -2406,9 +2434,24 @@ namespace {
                 .productOutputRoot = outputRoot,
                 .productManifestOutputPath = manifestPath,
             });
+        const asharia::asset::AssetProductExecutionResult noManifestCacheExecution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = cachePlan.plan,
+                .existingManifest = first.manifest,
+                .sourceBytes = sourceBytes,
+                .dependencyProductBytes = {},
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = {},
+            });
 
         if (!cacheExecution.succeeded() || !cacheExecution.writtenProducts.empty() ||
-            cacheExecution.cacheHits.size() != 2 || cacheExecution.manifest != first.manifest) {
+            cacheExecution.cacheHits.size() != 2 || cacheExecution.manifest != first.manifest ||
+            !noManifestCacheExecution.succeeded() ||
+            !noManifestCacheExecution.writtenProducts.empty() ||
+            noManifestCacheExecution.cacheHits.size() != 2 ||
+            noManifestCacheExecution.manifest != first.manifest ||
+            noManifestCacheExecution.manifestWritten ||
+            !noManifestCacheExecution.diagnostics.empty()) {
             logFailure("Asset product execution smoke failed unchanged-input cache hit rerun.");
             return false;
         }
@@ -5028,7 +5071,7 @@ int main() {
         smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
         smokeScannedImportPlanningPlanDiagnostics() &&
         smokeProductPublicationCommitsManifestLast() &&
-        smokeProductPublicationFakeEnforcesReadLimits() &&
+        smokeProductPublicationFakeEnforcesReadLimits() && smokeEmptyProductPublicationIsNoOp() &&
         smokeProductPublicationPreservesManifestOnHandledFailures() &&
         smokeProductPublicationRejectsStagedMutation() &&
         smokeProductPublicationReportsCleanupAfterManifestCommit() &&
