@@ -15,6 +15,12 @@ add_library(asharia-core STATIC
     src/log.cpp
 )
 
+if(WIN32)
+  target_sources(asharia-core PRIVATE src/atomic_file_windows.cpp)
+else()
+  target_sources(asharia-core PRIVATE src/atomic_file_posix.cpp)
+endif()
+
 add_library(asharia::core ALIAS asharia-core)
 
 target_include_directories(asharia-core

@@ -6,6 +6,7 @@
 #include <expected>
 #include <fstream>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -69,6 +70,24 @@ namespace asharia::core {
             return bytes;
         }
 
+        VoidResult writeFileBytesAtomicallyWithBackend(const std::filesystem::path& target,
+                                                       std::span<const std::byte> bytes,
+                                                       AtomicFileWriteOptions options,
+                                                       AtomicFileBackend& backend) {
+            auto temporary = backend.writeUniqueTemporary(target, bytes, options);
+            if (!temporary) {
+                return std::unexpected{std::move(temporary.error())};
+            }
+
+            auto replaced = backend.replace(*temporary, target);
+            if (!replaced) {
+                backend.removeTemporary(*temporary);
+                return std::unexpected{std::move(replaced.error())};
+            }
+
+            return {};
+        }
+
     } // namespace detail
 
     Result<std::vector<std::byte>> readFileBytes(const std::filesystem::path& path,
@@ -107,6 +126,19 @@ namespace asharia::core {
             std::memcpy(text.data(), bytes->data(), bytes->size());
         }
         return text;
+    }
+
+    VoidResult writeFileBytesAtomically(const std::filesystem::path& path,
+                                        std::span<const std::byte> bytes,
+                                        AtomicFileWriteOptions options) {
+        return detail::writeFileBytesAtomicallyWithBackend(path, bytes, options,
+                                                           detail::atomicFileBackend());
+    }
+
+    VoidResult writeFileTextAtomically(const std::filesystem::path& path, std::string_view text,
+                                       AtomicFileWriteOptions options) {
+        const auto characters = std::span<const char>{text.data(), text.size()};
+        return writeFileBytesAtomically(path, std::as_bytes(characters), options);
     }
 
 } // namespace asharia::core
