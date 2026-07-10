@@ -26,6 +26,8 @@
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 
+#include "asset_product_blob_limits.hpp"
+
 namespace {
 
     void logFailure(std::string_view message) {
@@ -2915,8 +2917,20 @@ shader "asharia.material.compile_reflection" {
         return bytesFromText(text);
     }
 
+    struct BoundedCompiledPayloadFields {
+        std::uint64_t slangcDiagnosticSize{};
+        std::string_view slangcDiagnosticHex;
+        std::uint64_t spirvValDiagnosticSize{};
+        std::string_view spirvValDiagnosticHex;
+        std::uint64_t spirvSize{1U};
+        std::string_view spirvHex{"00"};
+        std::uint64_t reflectionJsonSize{2U};
+        std::string_view reflectionJsonHex{"7b7d"};
+    };
+
     [[nodiscard]] std::vector<std::uint8_t>
-    makeBoundedShaderCompileProduct(std::uint64_t entryCount, std::uint64_t spirvSize = 1U) {
+    makeBoundedShaderCompileProduct(std::uint64_t entryCount,
+                                    const BoundedCompiledPayloadFields& payloads = {}) {
         const std::vector<std::uint8_t> spirv{0U};
         const std::vector<std::uint8_t> reflection = bytesFromText("{}");
         std::string text = "schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
@@ -2940,22 +2954,209 @@ shader "asharia.material.compile_reflection" {
                 text += prefix + "generatedWrapper=wrapper" + std::to_string(index) + "\n";
                 text += prefix + "slangcExitCode=0\n";
                 text += prefix + "slangcDiagnosticHash=cbf29ce484222325\n";
-                text += prefix + "slangcDiagnosticSize=0\n";
-                text += prefix + "slangcDiagnosticHex=\n";
+                text += prefix +
+                        "slangcDiagnosticSize=" + std::to_string(payloads.slangcDiagnosticSize) +
+                        "\n";
+                text += prefix +
+                        "slangcDiagnosticHex=" + std::string{payloads.slangcDiagnosticHex} + "\n";
                 text += prefix + "spirvValExitCode=0\n";
                 text += prefix + "spirvValDiagnosticHash=cbf29ce484222325\n";
-                text += prefix + "spirvValDiagnosticSize=0\n";
-                text += prefix + "spirvValDiagnosticHex=\n";
+                text += prefix + "spirvValDiagnosticSize=" +
+                        std::to_string(payloads.spirvValDiagnosticSize) + "\n";
+                text += prefix +
+                        "spirvValDiagnosticHex=" + std::string{payloads.spirvValDiagnosticHex} +
+                        "\n";
                 text += prefix + "spirvHash=" + smokeHex64(smokeHashBytes(spirv)) + "\n";
-                text += prefix + "spirvSize=" + std::to_string(spirvSize) + "\n";
-                text += prefix + "spirvHex=00\n";
+                text += prefix + "spirvSize=" + std::to_string(payloads.spirvSize) + "\n";
+                text += prefix + "spirvHex=" + std::string{payloads.spirvHex} + "\n";
                 text +=
                     prefix + "reflectionJsonHash=" + smokeHex64(smokeHashBytes(reflection)) + "\n";
-                text += prefix + "reflectionJsonSize=2\n";
-                text += prefix + "reflectionJsonHex=7b7d\n";
+                text += prefix +
+                        "reflectionJsonSize=" + std::to_string(payloads.reflectionJsonSize) + "\n";
+                text +=
+                    prefix + "reflectionJsonHex=" + std::string{payloads.reflectionJsonHex} + "\n";
             }
         }
         return bytesFromText(text);
+    }
+
+    enum class BoundedCompiledPayloadKind : std::uint8_t {
+        SlangcDiagnostic,
+        SpirvValDiagnostic,
+        Spirv,
+        ReflectionJson,
+    };
+
+    [[nodiscard]] std::vector<std::uint8_t>
+    makeBoundedShaderCompileProductWithDeclaredSize(BoundedCompiledPayloadKind kind,
+                                                    std::uint64_t declaredSize) {
+        BoundedCompiledPayloadFields payloads;
+        switch (kind) {
+        case BoundedCompiledPayloadKind::SlangcDiagnostic:
+            payloads.slangcDiagnosticSize = declaredSize;
+            break;
+        case BoundedCompiledPayloadKind::SpirvValDiagnostic:
+            payloads.spirvValDiagnosticSize = declaredSize;
+            break;
+        case BoundedCompiledPayloadKind::Spirv:
+            payloads.spirvSize = declaredSize;
+            break;
+        case BoundedCompiledPayloadKind::ReflectionJson:
+            payloads.reflectionJsonSize = declaredSize;
+            break;
+        }
+        return makeBoundedShaderCompileProduct(1U, payloads);
+    }
+
+    [[nodiscard]] bool smokeProductBlobPrivateValidation() {
+        const std::string header = "payload=0011\n";
+        std::string_view expectedPayload{header};
+        expectedPayload.remove_prefix(8U);
+        expectedPayload.remove_suffix(1U);
+        const auto payload = asharia::asset::detail::requirePresentAssetProductHeaderValue(
+            header, "payload", "bounded/header-view.product");
+        if (!payload || *payload != "0011" || payload->data() != expectedPayload.data()) {
+            logFailure("Asset product blob private validation copied a header field value.");
+            return false;
+        }
+
+        const auto invalidMinimum = asharia::asset::detail::validateAssetProductRecordCount({
+            .count = 1U,
+            .hardLimit = 1U,
+            .headerLineCount = 1U,
+            .minimumLinesPerRecord = 0U,
+            .recordName = "private test records",
+            .relativeProductPath = "bounded/invalid-minimum.product",
+        });
+        if (invalidMinimum || invalidMinimum.error().domain != asharia::ErrorDomain::Asset ||
+            invalidMinimum.error().code !=
+                static_cast<int>(
+                    asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob) ||
+            !messageContains(invalidMinimum.error().message, "no minimum field count") ||
+            !messageContains(invalidMinimum.error().message, "invalid-minimum.product")) {
+            logFailure("Asset product record validator missed an invalid minimum field count.");
+            return false;
+        }
+
+        const auto insufficientHeader = asharia::asset::detail::validateAssetProductRecordCount({
+            .count = 2U,
+            .hardLimit = 2U,
+            .headerLineCount = 3U,
+            .minimumLinesPerRecord = 2U,
+            .recordName = "private test records",
+            .relativeProductPath = "bounded/insufficient-header.product",
+        });
+        if (insufficientHeader ||
+            insufficientHeader.error().domain != asharia::ErrorDomain::Asset ||
+            insufficientHeader.error().code !=
+                static_cast<int>(
+                    asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob) ||
+            !messageContains(insufficientHeader.error().message,
+                             "available product header fields") ||
+            !messageContains(insufficientHeader.error().message, "private test records")) {
+            logFailure("Asset product record validator missed insufficient header fields.");
+            return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] bool
+    smokeTextureProductDimensionValidation(asharia::asset::AssetProductBlobReadLimits limits) {
+        const auto impossibleMips = makeBoundedTextureProduct(2U, 1U, 1U);
+        if (!expectProductBlobErrorWithoutException(
+                [&] {
+                    return asharia::asset::readTexture2DProductPayload(
+                        std::span<const std::uint8_t>{impossibleMips},
+                        "bounded/impossible-mips.product", limits);
+                },
+                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                "declared dimensions")) {
+            return false;
+        }
+
+        for (const auto& invalidDimensions :
+             {makeBoundedTextureProduct(1U, 0U, 1U), makeBoundedTextureProduct(1U, 1U, 0U),
+              makeBoundedTextureProduct(1U, 0U, 0U)}) {
+            if (!expectProductBlobErrorWithoutException(
+                    [&] {
+                        return asharia::asset::readTexture2DProductPayload(
+                            std::span<const std::uint8_t>{invalidDimensions},
+                            "bounded/zero-dimension.product", limits);
+                    },
+                    asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                    "declared dimensions")) {
+                return false;
+            }
+        }
+
+        const auto extremeDimensions =
+            makeBoundedTextureProduct(32U, std::numeric_limits<std::uint32_t>::max(),
+                                      std::numeric_limits<std::uint32_t>::max());
+        limits.maxTextureMipRecords = 32U;
+        if (!asharia::asset::readTexture2DProductPayload(
+                std::span<const std::uint8_t>{extremeDimensions},
+                "bounded/extreme-dimensions.product", limits)) {
+            logFailure("Asset product blob limit smoke rejected 32 valid extreme-dimension mips.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool smokeCompiledPayloadDeclaredSizeValidation(
+        const asharia::asset::AssetProductBlobReadLimits& limits, std::uint64_t maxCount) {
+        struct DeclaredCompiledPayloadCase {
+            BoundedCompiledPayloadKind kind;
+            std::string_view payloadName;
+        };
+        constexpr std::array kDeclaredCompiledPayloadCases{
+            DeclaredCompiledPayloadCase{
+                .kind = BoundedCompiledPayloadKind::SlangcDiagnostic,
+                .payloadName = "slangc diagnostic payload size mismatch",
+            },
+            DeclaredCompiledPayloadCase{
+                .kind = BoundedCompiledPayloadKind::SpirvValDiagnostic,
+                .payloadName = "spirv-val diagnostic payload size mismatch",
+            },
+            DeclaredCompiledPayloadCase{
+                .kind = BoundedCompiledPayloadKind::Spirv,
+                .payloadName = "SPIR-V payload size mismatch",
+            },
+            DeclaredCompiledPayloadCase{
+                .kind = BoundedCompiledPayloadKind::ReflectionJson,
+                .payloadName = "reflection JSON payload size mismatch",
+            },
+        };
+        for (const DeclaredCompiledPayloadCase& payloadCase : kDeclaredCompiledPayloadCases) {
+            const auto bytes =
+                makeBoundedShaderCompileProductWithDeclaredSize(payloadCase.kind, maxCount);
+            if (!expectProductBlobErrorWithoutException(
+                    [&] {
+                        return asharia::asset::readShaderCompileReflectionProductPayload(
+                            std::span<const std::uint8_t>{bytes},
+                            "bounded/max-compiled-payload.product", limits);
+                    },
+                    asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                    payloadCase.payloadName)) {
+                return false;
+            }
+        }
+
+        const std::string largeHex(std::size_t{64U} * 1024U, '0');
+        BoundedCompiledPayloadFields largePayloads;
+        largePayloads.spirvHex = largeHex;
+        const auto mismatchedLargeCompile = makeBoundedShaderCompileProduct(1U, largePayloads);
+        return expectProductBlobErrorWithoutException(
+            [&] {
+                return asharia::asset::readShaderCompileReflectionProductPayload(
+                    std::span<const std::uint8_t>{mismatchedLargeCompile},
+                    "bounded/large-compiled-payload.product",
+                    asharia::asset::AssetProductBlobReadLimits{
+                        .maxProductBytes = mismatchedLargeCompile.size(),
+                    });
+            },
+            asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
+            "SPIR-V payload size mismatch");
     }
 
     [[nodiscard]] bool smokeProductBlobReadLimits() {
@@ -3006,15 +3207,7 @@ shader "asharia.material.compile_reflection" {
             return false;
         }
         limits.maxTextureMipRecords = 2U;
-        const auto impossibleMips = makeBoundedTextureProduct(2U, 1U, 1U);
-        if (!expectProductBlobErrorWithoutException(
-                [&] {
-                    return asharia::asset::readTexture2DProductPayload(
-                        std::span<const std::uint8_t>{impossibleMips},
-                        "bounded/impossible-mips.product", limits);
-                },
-                asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
-                "declared dimensions")) {
+        if (!smokeTextureProductDimensionValidation(limits)) {
             return false;
         }
 
@@ -3132,7 +3325,8 @@ shader "asharia.material.compile_reflection" {
                           "amatHash=cbf29ce484222325\n"
                           "amat.begin\n\namat.end\n");
         const auto oversizedAuthoring = makeBoundedShaderAuthoringProduct(0U, 1U, 0U, 1U, maxCount);
-        const auto oversizedCompile = makeBoundedShaderCompileProduct(1U, maxCount);
+        const auto oversizedCompile = makeBoundedShaderCompileProductWithDeclaredSize(
+            BoundedCompiledPayloadKind::Spirv, maxCount);
         if (!expectProductBlobErrorWithoutException(
                 [&] {
                     return asharia::asset::readTexture2DProductPayload(
@@ -3165,6 +3359,10 @@ shader "asharia.material.compile_reflection" {
                 },
                 asharia::asset::AssetProductBlobDiagnosticCode::InvalidProductBlob,
                 "SPIR-V payload size mismatch")) {
+            return false;
+        }
+
+        if (!smokeCompiledPayloadDeclaredSizeValidation(limits, maxCount)) {
             return false;
         }
 
@@ -4083,8 +4281,9 @@ int main() {
         smokeScannedImportPlanningStopsOnScanDiagnostics() &&
         smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
         smokeScannedImportPlanningPlanDiagnostics() &&
-        smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobReadLimits() &&
-        smokeProductBlobReadDiagnostics() && smokeProductExecutionWritesPngTextureProduct() &&
+        smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobPrivateValidation() &&
+        smokeProductBlobReadLimits() && smokeProductBlobReadDiagnostics() &&
+        smokeProductExecutionWritesPngTextureProduct() &&
         smokeProductExecutionPngTextureDiagnostics() &&
         smokeProductExecutionWritesAmatMaterialProduct() &&
         smokeProductExecutionAmatDiagnostics() &&

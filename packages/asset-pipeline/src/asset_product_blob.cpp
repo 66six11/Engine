@@ -285,12 +285,19 @@ namespace asharia::asset {
         }
 
         [[nodiscard]] Result<std::vector<std::uint8_t>>
-        requireHexBytesField(std::string_view header, std::string_view key,
+        requireHexBytesField(const std::string& header, std::string_view key,
                              std::string_view relativeProductPath, std::uint64_t declaredSize,
                              std::string_view payloadName) {
-            auto value = requirePresentStringField(header, key, relativeProductPath);
+            auto value =
+                detail::requirePresentAssetProductHeaderValue(header, key, relativeProductPath);
             if (!value) {
                 return std::unexpected{std::move(value.error())};
+            }
+            if (declaredSize > header.size() / 2U) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{relativeProductPath},
+                              "has a " + std::string{payloadName} + " payload size mismatch")};
             }
             if ((value->size() % 2U) != 0U) {
                 return std::unexpected{
@@ -298,7 +305,7 @@ namespace asharia::asset {
                               std::string{relativeProductPath},
                               "has odd-length hex field '" + std::string{key} + "'")};
             }
-            if (declaredSize > header.size() / 2U || value->size() / 2U != declaredSize) {
+            if (value->size() / 2U != declaredSize) {
                 return std::unexpected{
                     blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                               std::string{relativeProductPath},
@@ -525,6 +532,12 @@ namespace asharia::asset {
             });
             if (!count) {
                 return std::unexpected{std::move(count.error())};
+            }
+            if (request.width == 0U || request.height == 0U) {
+                return std::unexpected{
+                    blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                              std::string{request.relativeProductPath},
+                              "has mip records incompatible with the declared dimensions")};
             }
             const std::uint64_t dimensionMipLimit =
                 std::bit_width(std::max(request.width, request.height));
@@ -1053,7 +1066,7 @@ namespace asharia::asset {
         };
 
         [[nodiscard]] Result<ShaderCompileReflectionEntryFields>
-        parseShaderCompileReflectionEntryFields(std::string_view header, std::uint64_t index,
+        parseShaderCompileReflectionEntryFields(const std::string& header, std::uint64_t index,
                                                 std::string_view relativeProductPath) {
             const std::string prefix = "entry." + std::to_string(index) + ".";
             auto passName = requireStringField(header, prefix + "passName", relativeProductPath);
@@ -1197,7 +1210,7 @@ namespace asharia::asset {
         }
 
         [[nodiscard]] Result<std::vector<AssetShaderCompileReflectionProductEntry>>
-        parseShaderCompileReflectionEntries(std::string_view header, std::uint64_t entryCount,
+        parseShaderCompileReflectionEntries(const std::string& header, std::uint64_t entryCount,
                                             std::string_view relativeProductPath,
                                             std::uint32_t maxEntries) {
             auto count = detail::validateAssetProductRecordCount({
@@ -1264,6 +1277,26 @@ namespace asharia::asset {
         }
 
     } // namespace
+
+    namespace detail {
+
+        Result<std::string_view>
+        requirePresentAssetProductHeaderValue(const std::string& header, std::string_view key,
+                                              std::string_view relativeProductPath) {
+            const std::optional<std::string_view> value = findHeaderValue({
+                .header = header,
+                .key = key,
+            });
+            if (!value) {
+                return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
+                                                 std::string{relativeProductPath},
+                                                 "is missing field '" + std::string{key} + "'")};
+            }
+
+            return *value;
+        }
+
+    } // namespace detail
 
     Result<AssetProductBlobPayload>
     readPlaceholderProductSourceBytes(const AssetProductBlobReadRequest& request,

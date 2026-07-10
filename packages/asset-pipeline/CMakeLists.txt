@@ -79,6 +79,11 @@ if(ASHARIA_BUILD_TESTS)
           asharia::asset_core_io
   )
 
+  target_include_directories(asharia-asset-pipeline-smoke-tests
+      PRIVATE
+          "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+
   target_link_libraries(asharia-asset-pipeline-header-tests
       PRIVATE
           asharia::asset_pipeline
