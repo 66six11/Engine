@@ -4,9 +4,11 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cwctype>
 #include <expected>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -51,17 +53,46 @@ namespace asharia::asset::detail {
             return hash;
         }
 
-        [[nodiscard]] Error publicationError(AssetProductExecutionDiagnosticCode code,
-                                             std::string_view phase,
-                                             const std::filesystem::path& stagingPath,
-                                             const std::filesystem::path& finalPath,
-                                             std::string_view reason,
-                                             bool manifestCommitted = false) {
-            return Error{ErrorDomain::Asset, static_cast<int>(code),
-                         "Asset product publication failed phase=" + std::string{phase} +
-                             " stagingPath=\"" + pathText(stagingPath) + "\" finalPath=\"" +
-                             pathText(finalPath) + "\" manifestCommitted=" +
-                             (manifestCommitted ? "true" : "false") + ": " + std::string{reason}};
+        [[nodiscard]] std::string formatHash64(std::uint64_t value) {
+            constexpr std::string_view kHexDigits = "0123456789abcdef";
+            std::string text(16, '0');
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                const auto shift = static_cast<std::uint32_t>((text.size() - index - 1U) * 4U);
+                text[index] = kHexDigits[(value >> shift) & 0xFU];
+            }
+            return text;
+        }
+
+        [[nodiscard]] Error
+        publicationError(AssetProductExecutionDiagnosticCode code, std::string_view phase,
+                         const std::filesystem::path& stagingPath,
+                         const std::filesystem::path& finalPath, std::string_view reason,
+                         bool manifestCommitted = false,
+                         const AssetProductPublicationItem* item = nullptr,
+                         std::optional<std::size_t> productIndex = std::nullopt) {
+            std::string message = "Asset product publication failed phase=" + std::string{phase} +
+                                  " stagingPath=\"" + pathText(stagingPath) + "\" finalPath=\"" +
+                                  pathText(finalPath) +
+                                  "\" manifestCommitted=" + (manifestCommitted ? "true" : "false");
+            if (item != nullptr && productIndex) {
+                message += " productIndex=\"" + std::to_string(*productIndex) + "\" sourcePath=\"" +
+                           item->source.sourcePath + "\" relativeProductPath=\"" +
+                           item->product.relativeProductPath + "\" productKeyHash=\"" +
+                           formatHash64(hashAssetProductKey(item->product.key)) +
+                           "\" productHash=\"" + formatHash64(item->product.productHash) + "\"";
+            }
+            message += ": " + std::string{reason};
+            return Error{ErrorDomain::Asset, static_cast<int>(code), std::move(message)};
+        }
+
+        [[nodiscard]] Error
+        productPublicationError(AssetProductPublicationResult& outcome, std::size_t productIndex,
+                                std::string_view phase, const std::filesystem::path& stagingPath,
+                                const AssetProductPublicationItem& item, std::string_view reason) {
+            outcome.failingProductIndex = productIndex;
+            return publicationError(AssetProductExecutionDiagnosticCode::ProductWriteFailed, phase,
+                                    stagingPath, item.finalPath, reason, false, &item,
+                                    productIndex);
         }
 
         [[nodiscard]] Error cleanupAfterFailure(AssetProductPublicationOperations& operations,
@@ -76,6 +107,131 @@ namespace asharia::asset::detail {
 
         [[nodiscard]] std::uint64_t boundedReadLimit(std::uint64_t expectedBytes) noexcept {
             return std::max<std::uint64_t>(expectedBytes, 1U);
+        }
+
+        [[nodiscard]] bool pathComponentEquals(const std::filesystem::path& left,
+                                               const std::filesystem::path& right) {
+#if defined(_WIN32)
+            std::wstring leftText = left.native();
+            std::wstring rightText = right.native();
+            std::ranges::transform(leftText, leftText.begin(),
+                                   [](wchar_t value) { return std::towlower(value); });
+            std::ranges::transform(rightText, rightText.begin(),
+                                   [](wchar_t value) { return std::towlower(value); });
+            return leftText == rightText;
+#else
+            return left == right;
+#endif
+        }
+
+        [[nodiscard]] bool endpointEquals(const std::filesystem::path& left,
+                                          const std::filesystem::path& right) {
+            auto leftComponent = left.begin();
+            auto rightComponent = right.begin();
+            while (leftComponent != left.end() && rightComponent != right.end()) {
+                if (!pathComponentEquals(*leftComponent, *rightComponent)) {
+                    return false;
+                }
+                ++leftComponent;
+                ++rightComponent;
+            }
+            return leftComponent == left.end() && rightComponent == right.end();
+        }
+
+        [[nodiscard]] bool isStrictDescendant(const std::filesystem::path& candidate,
+                                              const std::filesystem::path& root) {
+            auto candidateComponent = candidate.begin();
+            for (auto rootComponent = root.begin(); rootComponent != root.end(); ++rootComponent) {
+                if (candidateComponent == candidate.end() ||
+                    !pathComponentEquals(*candidateComponent, *rootComponent)) {
+                    return false;
+                }
+                ++candidateComponent;
+            }
+            return candidateComponent != candidate.end();
+        }
+
+        [[nodiscard]] Result<std::filesystem::path>
+        canonicalEndpoint(const std::filesystem::path& path, std::string_view endpointLabel) {
+            std::error_code canonicalError;
+            std::filesystem::path canonical =
+                std::filesystem::weakly_canonical(path, canonicalError).lexically_normal();
+            if (canonicalError) {
+                return std::unexpected{Error{ErrorDomain::Asset, 0,
+                                             "Could not resolve " + std::string{endpointLabel} +
+                                                 " endpoint '" + pathText(path) +
+                                                 "': " + canonicalError.message() + "."}};
+            }
+            return canonical;
+        }
+
+        [[nodiscard]] VoidResult
+        preflightPublicationEndpoints(const AssetProductPublicationRequest& request,
+                                      AssetProductPublicationResult& outcome) {
+            auto canonicalRoot = canonicalEndpoint(request.outputRoot, "output root");
+            if (!canonicalRoot) {
+                return std::unexpected{publicationError(
+                    request.products.empty()
+                        ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
+                        : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
+                    "preflight-output-root", request.outputRoot / ".asharia-product-staging",
+                    request.outputRoot, canonicalRoot.error().message)};
+            }
+
+            std::vector<std::filesystem::path> canonicalProducts;
+            canonicalProducts.reserve(request.products.size());
+            for (std::size_t productIndex = 0; productIndex < request.products.size();
+                 ++productIndex) {
+                const AssetProductPublicationItem& item = request.products[productIndex];
+                auto canonicalProduct = canonicalEndpoint(item.finalPath, "product final");
+                if (!canonicalProduct) {
+                    return std::unexpected{
+                        productPublicationError(outcome, productIndex, "preflight-product-endpoint",
+                                                request.outputRoot / ".asharia-product-staging",
+                                                item, canonicalProduct.error().message)};
+                }
+                if (!isStrictDescendant(*canonicalProduct, *canonicalRoot)) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-containment",
+                        request.outputRoot / ".asharia-product-staging", item,
+                        "product final endpoint is not a descendant of the output root")};
+                }
+                for (std::size_t priorIndex = 0; priorIndex < canonicalProducts.size();
+                     ++priorIndex) {
+                    if (endpointEquals(*canonicalProduct, canonicalProducts[priorIndex])) {
+                        return std::unexpected{productPublicationError(
+                            outcome, productIndex, "preflight-product-alias",
+                            request.outputRoot / ".asharia-product-staging", item,
+                            "product final endpoint aliases product index " +
+                                std::to_string(priorIndex))};
+                    }
+                }
+                canonicalProducts.push_back(std::move(*canonicalProduct));
+            }
+
+            if (request.manifestPath.empty()) {
+                return {};
+            }
+
+            // A caller-owned manifest endpoint may intentionally live outside outputRoot. It is
+            // still resolved under platform filesystem semantics and must not alias a product.
+            auto canonicalManifest = canonicalEndpoint(request.manifestPath, "manifest final");
+            if (!canonicalManifest) {
+                return std::unexpected{publicationError(
+                    AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                    "preflight-manifest-endpoint", request.outputRoot / ".asharia-product-staging",
+                    request.manifestPath, canonicalManifest.error().message)};
+            }
+            for (const std::filesystem::path& canonicalProduct : canonicalProducts) {
+                if (endpointEquals(*canonicalManifest, canonicalProduct)) {
+                    return std::unexpected{publicationError(
+                        AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                        "preflight-manifest-product-alias",
+                        request.outputRoot / ".asharia-product-staging", request.manifestPath,
+                        "manifest final endpoint aliases a product final endpoint")};
+                }
+            }
+            return {};
         }
 
         class NativeAssetProductPublicationOperations final
@@ -177,7 +333,8 @@ namespace asharia::asset::detail {
         [[nodiscard]] Result<std::vector<VerifiedProduct>>
         stageProducts(const AssetProductPublicationRequest& request,
                       const std::filesystem::path& stagingDirectory,
-                      AssetProductPublicationOperations& operations) {
+                      AssetProductPublicationOperations& operations,
+                      AssetProductPublicationResult& outcome) {
             std::vector<VerifiedProduct> verifiedProducts;
             verifiedProducts.reserve(request.products.size());
             for (std::size_t productIndex = 0; productIndex < request.products.size();
@@ -191,9 +348,8 @@ namespace asharia::asset::detail {
                 if (auto written = operations.writeFileAtomically(stagingPath, sourceBytes);
                     !written) {
                     return std::unexpected{
-                        publicationError(AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                                         "write-product-staging", stagingPath, item.finalPath,
-                                         written.error().message)};
+                        productPublicationError(outcome, productIndex, "write-product-staging",
+                                                stagingPath, item, written.error().message)};
                 }
 
                 auto stagedBytes = operations.readFileBytes(
@@ -202,23 +358,20 @@ namespace asharia::asset::detail {
                                  });
                 if (!stagedBytes) {
                     return std::unexpected{
-                        publicationError(AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                                         "read-product-staging", stagingPath, item.finalPath,
-                                         stagedBytes.error().message)};
+                        productPublicationError(outcome, productIndex, "read-product-staging",
+                                                stagingPath, item, stagedBytes.error().message)};
                 }
                 if (stagedBytes->size() != item.product.productSizeBytes) {
-                    return std::unexpected{publicationError(
-                        AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                        "validate-product-staging", stagingPath, item.finalPath,
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "validate-product-staging", stagingPath, item,
                         "staged product size mismatch expected=\"" +
                             std::to_string(item.product.productSizeBytes) + "\" actual=\"" +
                             std::to_string(stagedBytes->size()) + "\"")};
                 }
                 if (hashBytes(*stagedBytes) != item.product.productHash) {
                     return std::unexpected{
-                        publicationError(AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                                         "validate-product-staging", stagingPath, item.finalPath,
-                                         "staged product hash mismatch")};
+                        productPublicationError(outcome, productIndex, "validate-product-staging",
+                                                stagingPath, item, "staged product hash mismatch")};
                 }
                 verifiedProducts.push_back(VerifiedProduct{
                     .item = &item,
@@ -280,47 +433,55 @@ namespace asharia::asset::detail {
             return stagedBytes;
         }
 
-        [[nodiscard]] Result<std::vector<AssetProductWrite>>
-        publishProducts(std::span<const VerifiedProduct> products,
-                        AssetProductPublicationOperations& operations) {
-            std::vector<AssetProductWrite> writes;
-            writes.reserve(products.size());
-            for (const VerifiedProduct& product : products) {
+        [[nodiscard]] VoidResult publishProducts(std::span<const VerifiedProduct> products,
+                                                 AssetProductPublicationOperations& operations,
+                                                 AssetProductPublicationResult& outcome) {
+            outcome.writes.reserve(products.size());
+            for (std::size_t productIndex = 0; productIndex < products.size(); ++productIndex) {
+                const VerifiedProduct& product = products[productIndex];
                 if (auto published = operations.publishFileAtomically(
                         product.stagingPath, product.item->finalPath, product.bytes);
                     !published) {
-                    return std::unexpected{
-                        publicationError(AssetProductExecutionDiagnosticCode::ProductWriteFailed,
-                                         "publish-product-final", product.stagingPath,
-                                         product.item->finalPath, published.error().message)};
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "publish-product-final", product.stagingPath,
+                        *product.item, published.error().message)};
                 }
-                writes.push_back(AssetProductWrite{
+                outcome.writes.push_back(AssetProductWrite{
                     .source = product.item->source,
                     .product = product.item->product,
                     .productFilePath = product.item->finalPath,
                 });
             }
-            return writes;
+            return {};
         }
 
     } // namespace
 
-    Result<AssetProductPublicationResult>
-    publishAssetProducts(const AssetProductPublicationRequest& request,
-                         AssetProductPublicationOperations& operations) {
+    VoidResult publishAssetProducts(const AssetProductPublicationRequest& request,
+                                    AssetProductPublicationOperations& operations,
+                                    AssetProductPublicationResult& outcome) {
+        outcome = {};
+        if (auto preflight = preflightPublicationEndpoints(request, outcome); !preflight) {
+            return preflight;
+        }
+
         auto stagingDirectory = operations.createUniqueStagingDirectory(request.outputRoot);
         if (!stagingDirectory) {
             const bool productPhase = !request.products.empty();
             const std::filesystem::path finalPath =
                 productPhase ? request.products.front().finalPath : request.manifestPath;
-            return std::unexpected{publicationError(
-                productPhase ? AssetProductExecutionDiagnosticCode::ProductWriteFailed
-                             : AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                "create-staging", request.outputRoot / ".asharia-product-staging", finalPath,
-                stagingDirectory.error().message)};
+            if (productPhase) {
+                return std::unexpected{productPublicationError(
+                    outcome, 0U, "create-staging", request.outputRoot / ".asharia-product-staging",
+                    request.products.front(), stagingDirectory.error().message)};
+            }
+            return std::unexpected{
+                publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                 "create-staging", request.outputRoot / ".asharia-product-staging",
+                                 finalPath, stagingDirectory.error().message)};
         }
 
-        auto verifiedProducts = stageProducts(request, *stagingDirectory, operations);
+        auto verifiedProducts = stageProducts(request, *stagingDirectory, operations, outcome);
         if (!verifiedProducts) {
             return std::unexpected{cleanupAfterFailure(operations, *stagingDirectory,
                                                        std::move(verifiedProducts.error()))};
@@ -338,13 +499,11 @@ namespace asharia::asset::detail {
             verifiedManifestBytes = std::move(*stagedManifest);
         }
 
-        AssetProductPublicationResult result;
-        auto publishedProducts = publishProducts(*verifiedProducts, operations);
+        auto publishedProducts = publishProducts(*verifiedProducts, operations, outcome);
         if (!publishedProducts) {
             return std::unexpected{cleanupAfterFailure(operations, *stagingDirectory,
                                                        std::move(publishedProducts.error()))};
         }
-        result.writes = std::move(*publishedProducts);
 
         if (!request.manifestPath.empty()) {
             if (auto published = operations.publishFileAtomically(
@@ -356,11 +515,11 @@ namespace asharia::asset::detail {
                                      "publish-manifest-final", stagedManifestPath,
                                      request.manifestPath, published.error().message))};
             }
-            result.manifestWritten = true;
+            outcome.manifestWritten = true;
         }
 
         if (auto cleaned = operations.removeStagingDirectory(*stagingDirectory); !cleaned) {
-            const bool manifestCommitted = result.manifestWritten;
+            const bool manifestCommitted = outcome.manifestWritten;
             return std::unexpected{publicationError(
                 manifestCommitted ? AssetProductExecutionDiagnosticCode::ManifestWriteFailed
                                   : AssetProductExecutionDiagnosticCode::ProductWriteFailed,
@@ -370,7 +529,7 @@ namespace asharia::asset::detail {
                 manifestCommitted)};
         }
 
-        return result;
+        return {};
     }
 
     AssetProductPublicationOperations& assetProductPublicationOperations() {

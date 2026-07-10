@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -28,6 +29,7 @@ namespace asharia::asset::detail {
     struct AssetProductPublicationResult {
         std::vector<AssetProductWrite> writes;
         bool manifestWritten{};
+        std::optional<std::size_t> failingProductIndex;
     };
 
     class AssetProductPublicationOperations {
@@ -52,9 +54,13 @@ namespace asharia::asset::detail {
         removeStagingDirectory(const std::filesystem::path& stagingPath) = 0;
     };
 
-    [[nodiscard]] Result<AssetProductPublicationResult>
-    publishAssetProducts(const AssetProductPublicationRequest& request,
-                         AssetProductPublicationOperations& operations);
+    [[nodiscard]] VoidResult publishAssetProducts(const AssetProductPublicationRequest& request,
+                                                  AssetProductPublicationOperations& operations,
+                                                  AssetProductPublicationResult& outcome);
+
+    [[nodiscard]] AssetProductExecutionResult
+    executeAssetProductsWithPublicationOperations(const AssetProductExecutionRequest& request,
+                                                  AssetProductPublicationOperations& operations);
 
     [[nodiscard]] AssetProductPublicationOperations& assetProductPublicationOperations();
 

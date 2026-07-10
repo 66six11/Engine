@@ -1297,7 +1297,9 @@ namespace asharia::asset {
 
     } // namespace
 
-    AssetProductExecutionResult executeAssetProducts(const AssetProductExecutionRequest& request) {
+    AssetProductExecutionResult detail::executeAssetProductsWithPublicationOperations(
+        const AssetProductExecutionRequest& request,
+        AssetProductPublicationOperations& operations) {
         AssetProductExecutionResult result{
             .targetProfile = request.plan.targetProfile,
             .targetProfileHash = request.plan.targetProfileHash,
@@ -1379,6 +1381,7 @@ namespace asharia::asset {
             });
         }
 
+        detail::AssetProductPublicationResult publicationOutcome;
         auto publication = detail::publishAssetProducts(
             detail::AssetProductPublicationRequest{
                 .outputRoot = request.productOutputRoot,
@@ -1386,16 +1389,30 @@ namespace asharia::asset {
                 .manifest = result.manifest,
                 .products = publicationItems,
             },
-            detail::assetProductPublicationOperations());
+            operations, publicationOutcome);
+        result.writtenProducts = publicationOutcome.writes;
+        result.manifestWritten = publicationOutcome.manifestWritten;
         if (!publication) {
             const auto code =
                 static_cast<AssetProductExecutionDiagnosticCode>(publication.error().code);
-            addDiagnostic(result, code, {}, {}, publication.error().message);
+            if (publicationOutcome.failingProductIndex &&
+                *publicationOutcome.failingProductIndex < publicationItems.size()) {
+                const detail::AssetProductPublicationItem& failedProduct =
+                    publicationItems[*publicationOutcome.failingProductIndex];
+                addDiagnostic(result, code, failedProduct.source.sourcePath,
+                              failedProduct.product.relativeProductPath,
+                              publication.error().message);
+            } else {
+                addDiagnostic(result, code, {}, {}, publication.error().message);
+            }
             return result;
         }
-        result.writtenProducts = std::move(publication->writes);
-        result.manifestWritten = publication->manifestWritten;
         return result;
+    }
+
+    AssetProductExecutionResult executeAssetProducts(const AssetProductExecutionRequest& request) {
+        return detail::executeAssetProductsWithPublicationOperations(
+            request, detail::assetProductPublicationOperations());
     }
 
 } // namespace asharia::asset
