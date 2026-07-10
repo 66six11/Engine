@@ -317,7 +317,7 @@ GPU/window smoke tests remain a documented local pre-commit gate because hosted 
 | Swapchain | Existing resize smoke plus repeated recreation asserting retirement pending count remains zero |
 | Tool fingerprint | Same bytes at different paths/timestamps produce identical fingerprints; one-byte change produces a different fingerprint |
 | Vulkan enumeration | Injected `VK_INCOMPLETE` retry tests where seams exist, plus Vulkan review and runtime smokes |
-| Presets and CI | Clean test binary directories configure, build, and run 22 native CTests under both compilers |
+| Presets and CI | Clean test binary directories configure, build, and run every registered native CTest under both compilers; the current 22-test baseline plus all tests added by this work must pass |
 | Repository gate | Encoding check, `git diff --check`, standard MSVC and ClangCL builds, and all non-Studio native smokes |
 
 ## 11. Delivery slices
