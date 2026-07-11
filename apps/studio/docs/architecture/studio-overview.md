@@ -18,14 +18,14 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 
 ## 2. 当前实现
 
-当前 `apps/studio` 是一个 `Editor.csproj` Avalonia 应用，目录分为 `Core`、`Shell`、`UI`、`Features` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
+当前 production `apps/studio` 仍是一个 `Editor.csproj` Avalonia 应用，目录分为 `Core`、`Shell`、`UI`、`Features` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。迁移用 `Asharia.Studio.sln` 已加入独立 `Asharia.Editor` public assembly；目前只落地 module identity/policy/lifecycle 与 capability Epoch snapshot，还没有 production consumer。
 
 当前仍为 Partial：
 
 - `Core` 混合 UI-neutral model、service、P/Invoke、native adapter 和部分 Avalonia vocabulary；
 - App、View、Shell 和静态 native API 分散拥有启动与关闭；
 - `WorkbenchFeatureModule` 聚合大多数 Feature 和 fixture provider；
-- 尚无公共 `Asharia.Editor` assembly、项目 `Editor/` build 或 Package loader；
+- `Asharia.Editor` 尚无 contribution/service/Code-first API、项目 `Editor/` build 或 Package loader，legacy app 也尚未引用它；
 - `ViewportScheduler` 未接入 production frame loop；
 - Scene View bridge 固定使用 Windows NT handle；
 - 尚无正式 Project/Edit/Play/Preview session、Game View 和 Linux/macOS backend。

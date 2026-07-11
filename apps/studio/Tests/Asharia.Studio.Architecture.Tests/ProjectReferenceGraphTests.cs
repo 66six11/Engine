@@ -61,11 +61,44 @@ public sealed class ProjectReferenceGraphTests
         Assert.Equal(
             [
                 "Editor.csproj",
+                "Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj",
                 "Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj",
                 "Tests/Editor.Tests/Editor.Tests.csproj",
                 "src/Asharia.Editor/Asharia.Editor.csproj",
             ],
             projectPaths);
+    }
+
+    [Fact]
+    public void Public_editor_sources_do_not_reference_ui_native_or_studio_implementation()
+    {
+        var sourceRoot = Path.Combine(FindStudioRoot(), "src", "Asharia.Editor");
+        var forbiddenTokens = new[]
+        {
+            "Avalonia",
+            "LibraryImport",
+            "DllImport",
+            "System.Runtime.InteropServices",
+            "Editor.Shell",
+            "Editor.Features",
+            "Asharia.Studio.",
+            "Vulkan",
+        };
+
+        var offenders = Directory
+            .EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => new
+            {
+                Path = Path.GetRelativePath(sourceRoot, path),
+                Text = File.ReadAllText(path),
+            })
+            .SelectMany(file => forbiddenTokens
+                .Where(token => file.Text.Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{file.Path}: {token}"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Empty(offenders);
     }
 
     private static string RequiredProperty(XDocument project, string propertyName)
