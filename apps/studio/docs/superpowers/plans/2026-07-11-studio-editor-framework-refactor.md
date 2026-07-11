@@ -586,7 +586,7 @@ git commit -m "refactor(studio): extract editor service contracts"
 
 **Slice size:** L
 
-**Current checkpoint (#243):** `Asharia.Studio.Application` and its test project exist in the target Solution and reference only `Asharia.Editor`. `StaticPackageGenerationHost.Create` validates duplicate registrations before invoking factories, creates each definition object once, calls `Configure` once, freezes its declaration, and publishes a read-only definition map only after the complete static set succeeds. `EditorScopeTransaction.Prepare` builds an invisible immutable candidate, validates scope/required dependency/mixed module-capability cycle/Panel contribution/capability-provider structure against its captured registry snapshot, and `Commit` performs one stale-checked registry swap. `EditorModuleHost` now single-flights each scope instance while allowing different Project scopes to activate concurrently, records `Active`/`WaitingForCapability`/`Faulted`/`Blocked` outcomes, isolates required dependent failure chains, and disposes activation leases dependents-first with reverse-registration tie breaking. Compatibility adapters and service moves remain pending.
+**Current checkpoint (#243):** `Asharia.Studio.Application` and its test project exist in the target Solution and reference only `Asharia.Editor`. `StaticPackageGenerationHost.Create` validates duplicate registrations before invoking factories, creates each definition object once, calls `Configure` once, freezes its declaration, and publishes a read-only definition map only after the complete static set succeeds. `EditorScopeTransaction.Prepare` builds an invisible immutable candidate, validates scope/required dependency/mixed module-capability cycle/Panel contribution/capability-provider structure against its captured registry snapshot, and `Commit` performs one stale-checked registry swap. `EditorModuleHost` single-flights each scope instance while allowing different Project scopes to activate concurrently, records `Active`/`WaitingForCapability`/`Faulted`/`Blocked` outcomes, isolates required dependent failure chains, and disposes activation leases dependents-first with reverse-registration tie breaking. The legacy executable now references Application through one `LegacyEditorModuleCompatibilityAdapter`; it projects legacy built-ins into ordered Application definitions while temporarily retaining legacy Panel/Action/Provider registration. UI-neutral service moves remain pending.
 
 **Files:**
 
@@ -598,6 +598,7 @@ git commit -m "refactor(studio): extract editor service contracts"
 - Create: `apps/studio/src/Asharia.Studio.Application/Extensions/EditorScopePartition.cs`
 - Create: `apps/studio/src/Asharia.Studio.Application/Extensions/EditorScopeTransaction.cs`
 - Move: `Shell/Composition/EditorExtensionHost.cs` behavior into `Application/Extensions/EditorModuleHost.cs`
+- Create: `apps/studio/Shell/Compatibility/LegacyEditorModuleCompatibilityAdapter.cs`
 - Move: `Shell/Composition/EditorProviderHost.cs` into `Application/Providers/EditorProviderHost.cs`
 - Move: `Shell/Commands/**` into `Application/Commands/**`
 - Move: `Shell/Selection/EditorSelectionService.cs` into `Application/Selection/EditorSelectionService.cs`
@@ -655,7 +656,7 @@ It creates each definition once, calls `Configure` once into a staging builder, 
 
 `EditorScopeTransaction.Prepare` validates identity, contribution, role, scope direction, required dependency, and capability-provider graphs without mutating visible registries. `Commit` swaps one immutable partition reference. A structural error returns diagnostics and leaves the old partition untouched.
 
-- [ ] **Step 5: Port current host behavior behind an adapter**
+- [x] **Step 5: Port current host behavior behind an adapter**
 
 Create one compatibility adapter in the legacy executable that converts legacy built-in modules to `StaticEditorModuleRegistration`. It is the only caller of legacy `IEditorExtensionModule` after this Task. Mark the adapter for deletion in Task 8 and add an architecture test that prevents any new caller.
 

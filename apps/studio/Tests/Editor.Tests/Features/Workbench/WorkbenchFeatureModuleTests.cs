@@ -19,6 +19,7 @@ using Editor.Shell.Composition;
 using Editor.UI.Icons;
 using Editor.Shell.Selection;
 using Xunit;
+using EditorExtensionHost = Editor.Shell.Compatibility.LegacyEditorModuleCompatibilityAdapter;
 
 namespace Editor.Tests.Features.Workbench;
 

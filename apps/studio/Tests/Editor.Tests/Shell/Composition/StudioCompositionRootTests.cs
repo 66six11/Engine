@@ -9,6 +9,7 @@ using Editor.Core.Models.Extensions;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
+using Editor.Shell.Compatibility;
 using Editor.Shell.Composition;
 using Xunit;
 
@@ -99,10 +100,7 @@ public sealed class StudioCompositionRootTests
 
         var session = new StudioCompositionRoot().CreateMainWindowSession(
             savedLayout: null,
-            modules:
-            [
-                module,
-            ]);
+            modules: new LegacyEditorModuleCompatibilityAdapter([module]));
 
         Assert.Equal(["test.lifecycle"], activationOrder);
         Assert.Empty(disposalOrder);

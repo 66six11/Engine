@@ -3,26 +3,52 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Editor.Extensions;
+using Asharia.Studio.Application.Extensions;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Contributions;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Services;
 using Editor.Shell.Commands;
+using Editor.Shell.Composition;
 using Editor.Shell.Docking.Panels;
 
-namespace Editor.Shell.Composition;
+namespace Editor.Shell.Compatibility;
 
-internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> modules) : IAsyncDisposable
+// Task 8 deletes this adapter after built-in features move to the public module API.
+internal sealed class LegacyEditorModuleCompatibilityAdapter : IAsyncDisposable
 {
-    private readonly IEditorExtensionModule[] modules_ = CreateModuleArray(modules);
-    private readonly List<IAsyncDisposable> activationLeases_ = [];
+    private static readonly EditorAssemblyId LegacyAssemblyId = EditorAssemblyId.Create(
+        PackageName.Create("asharia.studio"),
+        EditorAssemblyName.Create("Editor.Legacy"));
+
+    private readonly IEditorExtensionModule[] modules_;
+    private readonly EditorModuleHost moduleHost_ = new();
+    private readonly EditorModuleRegistry moduleRegistry_ = new();
     private readonly List<IDisposable> contributionLeases_ = [];
+    private LegacyEditorModuleBridge[]? bridges_;
+    private EditorScopePartition? applicationPartition_;
+    private EditorScopeActivation? applicationActivation_;
+
+    public LegacyEditorModuleCompatibilityAdapter(IEnumerable<IEditorExtensionModule> modules)
+    {
+        modules_ = CreateModuleArray(modules);
+    }
+
+    internal EditorScopePartition ApplicationPartition
+    {
+        get
+        {
+            EnsurePrepared();
+            return applicationPartition_!;
+        }
+    }
 
     public EditorExtensionComposition Compose()
     {
-        ValidateUniqueExtensionIds();
+        EnsurePrepared();
 
-        var contributions = DeclareContributions();
+        var contributions = bridges_!.Select(bridge => bridge.Contributions).ToArray();
         ValidateUniquePanelIds(contributions);
         ValidateUniqueActionIds(contributions);
         ValidateUniqueSceneProviderIds(contributions);
@@ -73,48 +99,63 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
 
     public async ValueTask ActivateAsync(CancellationToken cancellationToken = default)
     {
-        var startedLeases = new List<IAsyncDisposable>();
+        EnsurePrepared();
 
+        EditorScopeActivation activation;
         try
         {
-            foreach (var module in modules_)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var lease = await module.ActivateAsync(
-                    EditorExtensionActivationContext.Instance,
-                    cancellationToken);
-
-                if (lease is not null)
-                {
-                    startedLeases.Add(lease);
-                }
-            }
+            activation = await moduleHost_.ActivateScopeAsync(
+                applicationPartition_!,
+                [],
+                cancellationToken);
         }
         catch (Exception activationException)
         {
-            var disposeExceptions = await DisposeLeasesAsync(startedLeases);
-            disposeExceptions.AddRange(DisposeRegistrationLeases(contributionLeases_));
-            if (disposeExceptions.Count > 0)
+            var reportedException = activationException is OperationCanceledException
+                && cancellationToken.IsCancellationRequested
+                ? new OperationCanceledException(cancellationToken)
+                : activationException;
+            var disposeFailures = DisposeRegistrationLeases(contributionLeases_);
+            if (disposeFailures.Count > 0)
             {
-                throw new AggregateException(
-                    [activationException, .. disposeExceptions]);
+                throw new AggregateException([reportedException, .. disposeFailures]);
             }
 
-            throw;
+            throw reportedException;
         }
 
-        activationLeases_.AddRange(startedLeases);
+        var activationFailure = activation.Instances.Values
+            .FirstOrDefault(instance => instance.State == EditorModuleInstanceState.Faulted)
+            ?.Failure;
+        if (activationFailure is null)
+        {
+            applicationActivation_ = activation;
+            return;
+        }
+
+        var failures = new List<Exception> { activationFailure };
+        await AddDisposeFailureAsync(failures, activation.DisposeAsync());
+        failures.AddRange(DisposeRegistrationLeases(contributionLeases_));
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(failures);
+        }
+
+        throw activationFailure;
     }
 
     public async ValueTask DisposeAsync()
     {
-        var disposeExceptions = await DisposeLeasesAsync(activationLeases_);
-        disposeExceptions.AddRange(DisposeRegistrationLeases(contributionLeases_));
-        if (disposeExceptions.Count > 0)
+        var failures = new List<Exception>();
+        if (applicationActivation_ is not null)
         {
-            throw new AggregateException(disposeExceptions);
+            await AddDisposeFailureAsync(failures, applicationActivation_.DisposeAsync());
+            applicationActivation_ = null;
         }
+
+        await AddDisposeFailureAsync(failures, moduleHost_.DisposeAsync());
+        failures.AddRange(DisposeRegistrationLeases(contributionLeases_));
+        ThrowFailures(failures);
     }
 
     private static IEditorExtensionModule[] CreateModuleArray(
@@ -144,19 +185,57 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         }
     }
 
-    private EditorDeclaredContributions[] DeclareContributions()
+    private void EnsurePrepared()
     {
-        var contributions = new EditorDeclaredContributions[modules_.Length];
+        if (applicationPartition_ is not null)
+        {
+            return;
+        }
+
+        ValidateUniqueExtensionIds();
+        bridges_ = new LegacyEditorModuleBridge[modules_.Length];
+        var registrations = new StaticEditorModuleRegistration[modules_.Length];
+        EditorModuleDefinitionId? previousDefinitionId = null;
 
         for (var index = 0; index < modules_.Length; index++)
         {
             var module = modules_[index];
-            var builder = new EditorContributionBuilder();
-            module.Declare(builder);
-            contributions[index] = builder.Build(module.Id);
+            var definitionId = CreateDefinitionId(module.Id);
+            var bridge = new LegacyEditorModuleBridge(
+                module,
+                definitionId,
+                previousDefinitionId);
+            var metadata = new EditorModuleMetadata(
+                definitionId,
+                module.GetType().FullName ?? module.GetType().Name,
+                EditorModuleActivationPolicy.OnScopeReady,
+                EditorModuleHandoverPolicy.Coexist);
+            bridges_[index] = bridge;
+            registrations[index] = new StaticEditorModuleRegistration(
+                definitionId,
+                () => bridge,
+                metadata);
+            previousDefinitionId = definitionId;
         }
 
-        return contributions;
+        var generation = StaticPackageGenerationHost.Create(registrations);
+        var definitions = bridges_
+            .Select(bridge => generation.GetRequiredDefinition(bridge.DefinitionId))
+            .ToArray();
+        var transaction = EditorScopeTransaction.Prepare(
+            moduleRegistry_,
+            ScopeInstanceId.Application,
+            definitions);
+        transaction.Commit();
+        applicationPartition_ = transaction.Candidate;
+    }
+
+    private static EditorModuleDefinitionId CreateDefinitionId(EditorExtensionId extensionId)
+    {
+        return EditorModuleDefinitionId.Create(
+            LegacyAssemblyId,
+            ModuleLocalId.Create(extensionId.Value),
+            EditorModuleScopeKind.Application);
     }
 
     private static void ValidateUniquePanelIds(
@@ -307,30 +386,99 @@ internal sealed class EditorExtensionHost(IEnumerable<IEditorExtensionModule> mo
         return exceptions;
     }
 
-    private static async ValueTask<List<Exception>> DisposeLeasesAsync(
-        List<IAsyncDisposable> leases)
+    private static async ValueTask AddDisposeFailureAsync(
+        ICollection<Exception> failures,
+        ValueTask disposal)
     {
-        var exceptions = new List<Exception>();
-
         try
         {
-            for (var index = leases.Count - 1; index >= 0; index--)
+            await disposal;
+        }
+        catch (AggregateException exception)
+        {
+            foreach (var innerException in exception.InnerExceptions)
             {
-                try
-                {
-                    await leases[index].DisposeAsync();
-                }
-                catch (Exception exception)
-                {
-                    exceptions.Add(exception);
-                }
+                failures.Add(innerException);
             }
         }
-        finally
+        catch (Exception exception)
         {
-            leases.Clear();
+            failures.Add(exception);
+        }
+    }
+
+    private static void ThrowFailures(IReadOnlyList<Exception> failures)
+    {
+        if (failures.Count == 1)
+        {
+            throw failures[0];
         }
 
-        return exceptions;
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(failures);
+        }
+    }
+
+    private sealed class LegacyEditorModuleBridge(
+        IEditorExtensionModule module,
+        EditorModuleDefinitionId definitionId,
+        EditorModuleDefinitionId? previousDefinitionId)
+        : EditorModule
+    {
+        private EditorDeclaredContributions? contributions_;
+
+        public EditorModuleDefinitionId DefinitionId { get; } = definitionId;
+
+        public EditorDeclaredContributions Contributions =>
+            contributions_ ?? throw new InvalidOperationException(
+                $"Legacy module '{DefinitionId}' has not been configured.");
+
+        public override void Configure(EditorModuleBuilder editor)
+        {
+            if (previousDefinitionId is not null)
+            {
+                editor.Dependencies.RequireModule(previousDefinitionId.Value);
+            }
+
+            var legacyBuilder = new EditorContributionBuilder();
+            module.Declare(legacyBuilder);
+            contributions_ = legacyBuilder.Build(module.Id);
+        }
+
+        public override async ValueTask<IEditorModuleActivation> ActivateAsync(
+            EditorModuleContext context,
+            CancellationToken cancellationToken)
+        {
+            var lease = await module.ActivateAsync(
+                EditorExtensionActivationContext.Instance,
+                cancellationToken);
+            return lease is null
+                ? EditorModuleActivation.Empty
+                : new LegacyEditorModuleActivation(lease);
+        }
+    }
+
+    private sealed class LegacyEditorModuleActivation(IAsyncDisposable lease)
+        : IEditorModuleActivation
+    {
+        public ValueTask<EditorModuleQuiesceResult> QuiesceAsync(
+            EditorModuleStopReason reason,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult(EditorModuleQuiesceResult.Ready);
+        }
+
+        public ValueTask ResumeAsync(
+            EditorModuleResumeContext context,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return lease.DisposeAsync();
+        }
     }
 }

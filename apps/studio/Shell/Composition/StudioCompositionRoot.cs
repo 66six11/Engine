@@ -1,9 +1,8 @@
 using System;
-using System.Collections.Generic;
 using Asharia.Editor.Diagnostics;
 using Asharia.Editor.Selection;
-using Editor.Core.Abstractions;
 using Editor.Core.Services;
+using Editor.Shell.Compatibility;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Selection;
 using Editor.Shell.ViewModels.Windowing;
@@ -23,14 +22,15 @@ internal sealed class StudioCompositionRoot
         var diagnostics = new EditorDiagnosticService();
         return CreateMainWindowSession(
             savedLayout,
-            EditorFeatureCatalog.CreateDefaultModules(selectionService, diagnostics),
+            new LegacyEditorModuleCompatibilityAdapter(
+                EditorFeatureCatalog.CreateDefaultModules(selectionService, diagnostics)),
             selectionService,
             diagnostics);
     }
 
     internal StudioCompositionSession CreateMainWindowSession(
         EditorDockLayoutSnapshot? savedLayout,
-        IEnumerable<IEditorExtensionModule> modules)
+        LegacyEditorModuleCompatibilityAdapter modules)
     {
         return CreateMainWindowSession(
             savedLayout,
@@ -41,37 +41,37 @@ internal sealed class StudioCompositionRoot
 
     private static StudioCompositionSession CreateMainWindowSession(
         EditorDockLayoutSnapshot? savedLayout,
-        IEnumerable<IEditorExtensionModule> modules,
+        LegacyEditorModuleCompatibilityAdapter modules,
         IEditorSelectionService selectionService,
         IEditorDiagnosticService diagnostics)
     {
-        var host = new EditorExtensionHost(modules);
-        var composition = host.Compose();
+        var compatibilityAdapter = modules;
+        var composition = compatibilityAdapter.Compose();
         try
         {
-            host.ActivateAsync().GetAwaiter().GetResult();
+            compatibilityAdapter.ActivateAsync().GetAwaiter().GetResult();
             var viewModel = new MainWindowViewModel(
                 composition.PanelRegistry,
                 composition.ActionRegistry,
                 savedLayout,
                 selectionService,
                 diagnostics: diagnostics);
-            return new StudioCompositionSession(viewModel, composition, host);
+            return new StudioCompositionSession(viewModel, composition, compatibilityAdapter);
         }
         catch (Exception exception)
         {
-            DisposeHostAfterCreationFailure(host, exception);
+            DisposeAdapterAfterCreationFailure(compatibilityAdapter, exception);
             throw;
         }
     }
 
-    private static void DisposeHostAfterCreationFailure(
-        EditorExtensionHost host,
+    private static void DisposeAdapterAfterCreationFailure(
+        LegacyEditorModuleCompatibilityAdapter compatibilityAdapter,
         Exception creationException)
     {
         try
         {
-            host.DisposeAsync().GetAwaiter().GetResult();
+            compatibilityAdapter.DisposeAsync().GetAwaiter().GetResult();
         }
         catch (Exception disposeException)
         {
@@ -85,13 +85,14 @@ internal sealed class StudioCompositionRoot
     {
         selectionService ??= new EditorSelectionService();
         diagnostics ??= new EditorDiagnosticService();
-        return CreateDefaultHost(selectionService, diagnostics).Compose();
+        return CreateDefaultCompatibilityAdapter(selectionService, diagnostics).Compose();
     }
 
-    private static EditorExtensionHost CreateDefaultHost(
+    private static LegacyEditorModuleCompatibilityAdapter CreateDefaultCompatibilityAdapter(
         IEditorSelectionService selectionService,
         IEditorDiagnosticService diagnostics)
     {
-        return new EditorExtensionHost(EditorFeatureCatalog.CreateDefaultModules(selectionService, diagnostics));
+        return new LegacyEditorModuleCompatibilityAdapter(
+            EditorFeatureCatalog.CreateDefaultModules(selectionService, diagnostics));
     }
 }

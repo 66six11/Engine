@@ -1,6 +1,7 @@
 using System.Linq;
 using Editor.Shell.Composition;
 using Xunit;
+using EditorExtensionHost = Editor.Shell.Compatibility.LegacyEditorModuleCompatibilityAdapter;
 
 namespace Editor.Tests.Shell.Composition;
 

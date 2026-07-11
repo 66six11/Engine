@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Editor.Extensions;
 using Asharia.Editor.Panels;
 using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Abstractions;
@@ -15,6 +16,7 @@ using Editor.Shell.Commands;
 using Editor.Shell.Composition;
 using Editor.Shell.Docking.Panels;
 using Xunit;
+using EditorExtensionHost = Editor.Shell.Compatibility.LegacyEditorModuleCompatibilityAdapter;
 
 namespace Editor.Tests.Shell.Composition;
 
@@ -66,6 +68,28 @@ public sealed class EditorExtensionHostTests
         Assert.Equal(
             ["first.action", "second.action"],
             composition.ActionRegistry.GetAll().Select(action => action.Id));
+    }
+
+    [Fact]
+    public void Compose_projects_legacy_modules_into_ordered_application_definitions()
+    {
+        var firstModule = new TestExtensionModule("test.first");
+        var secondModule = new TestExtensionModule("test.second");
+        var host = new EditorExtensionHost([firstModule, secondModule]);
+
+        host.Compose();
+
+        var partition = host.ApplicationPartition;
+        Assert.Equal(ScopeInstanceId.Application, partition.ScopeInstanceId);
+        Assert.Equal(
+            ["test.first", "test.second"],
+            partition.RegistrationOrder.Select(instance => instance.Definition.Id.Module.Value));
+        Assert.Empty(partition.RegistrationOrder[0].Definition.Declaration.RequiredModules);
+        Assert.Equal(
+            partition.RegistrationOrder[0].Definition.Id,
+            Assert.Single(partition.RegistrationOrder[1].Definition.Declaration.RequiredModules));
+        Assert.Equal(1, firstModule.DeclareCallCount);
+        Assert.Equal(1, secondModule.DeclareCallCount);
     }
 
     [Fact]
