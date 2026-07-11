@@ -19,6 +19,8 @@
 
     <ItemGroup>
         <Compile Remove="Tests\**\*.cs" />
+        <Compile Remove="src\**\*.cs" />
+        <AvaloniaResource Remove="src\**\*.axaml" />
     </ItemGroup>
 
     <ItemGroup>

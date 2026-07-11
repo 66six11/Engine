@@ -44,7 +44,7 @@ apps/studio/
   src/
     Asharia.Editor/
     Asharia.Editor.Avalonia/
-    Asharia.Editor.Analyzers/                 # project shell only in Wave 1
+    Asharia.Editor.Analyzers/                 # created with module generation in Wave 2
     Asharia.Studio.Application/
     Asharia.Studio.EngineInterop/
     Asharia.Studio.EngineBridge/
@@ -61,7 +61,7 @@ apps/studio/
     Asharia.Studio.Architecture.Tests/
 ```
 
-The analyzer project is created as a buildable shell so the final project graph is stable. Analyzer rules and the module-index source generator belong to Wave 2 because they are coupled to the finalized `.asmdef` and generated-project schema.
+The analyzer project is not created in Wave 1. Analyzer rules, the project itself, and the module-index source generator belong to Wave 2 because they are coupled to the finalized `.asmdef` and generated-project schema; an empty project shell would not enforce a real boundary.
 
 ### Current-to-target ownership
 
@@ -87,107 +87,109 @@ The analyzer project is created as a buildable shell so the final project graph 
 
 **Files:**
 
-- Create: `apps/studio/Directory.Build.props`
 - Create: `apps/studio/Asharia.Studio.sln`
 - Create: `apps/studio/src/Asharia.Editor/Asharia.Editor.csproj`
-- Create: `apps/studio/src/Asharia.Editor/AssemblyMarker.cs`
-- Create: `apps/studio/src/Asharia.Editor.Analyzers/Asharia.Editor.Analyzers.csproj`
-- Create: `apps/studio/src/Asharia.Editor.Analyzers/AnalyzerAssemblyMarker.cs`
-- Create: `apps/studio/tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj`
-- Create: `apps/studio/tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj`
-- Create: `apps/studio/tests/Asharia.Studio.Architecture.Tests/ProjectReferenceGraphTests.cs`
+- Create: `apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj`
+- Create: `apps/studio/Tests/Asharia.Studio.Architecture.Tests/ProjectReferenceGraphTests.cs`
 - Modify: `apps/studio/Editor.csproj`
-- Modify: `apps/studio/docs/architecture/README.md`
+- Modify: `apps/studio/docs/architecture/studio-code-framework.md`
 
 **Interfaces:**
 
 - Consumes: the current `Editor.csproj` executable and existing `Editor.Tests` suite.
-- Produces: a stable solution name, shared compiler policy, empty public/analyzer assemblies, and an architecture test that later Tasks extend.
+- Produces: a stable solution name, an empty public assembly boundary, legacy glob exclusions, and an architecture test that later Tasks extend.
 
-- [ ] **Step 1: Write the failing project-graph test**
+- [x] **Step 1: Write the failing project-graph test**
 
-Create `ProjectReferenceGraphTests.cs` with a repository-root finder and this first assertion:
+Create `ProjectReferenceGraphTests.cs` with a repository-root finder and a test that loads `src/Asharia.Editor/Asharia.Editor.csproj`, rejects all ProjectReference/PackageReference items, and asserts `net10.0`, assembly/root namespace `Asharia.Editor`, and nullable enabled:
 
 ```csharp
 [Fact]
-public void Editor_public_api_has_no_project_references()
+public void Public_editor_project_is_a_dependency_free_net10_library()
 {
     var project = LoadProject("src/Asharia.Editor/Asharia.Editor.csproj");
     Assert.Empty(project.Descendants("ProjectReference"));
+    Assert.Empty(project.Descendants("PackageReference"));
 }
 ```
 
 `LoadProject` must use `XDocument.Load`, normalize separators, and fail with the absolute missing path. Do not shell out to MSBuild from a unit test.
 
-- [ ] **Step 2: Run the architecture test and verify it fails**
+- [x] **Step 2: Run the architecture test and verify it fails**
 
 Run:
 
 ```powershell
-dotnet test apps/studio/tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release
+dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release
 ```
 
-Expected: FAIL because the test project and target project do not exist.
+Expected: FAIL because the target public project does not exist.
 
-- [ ] **Step 3: Add shared build policy and the first projects**
+- [x] **Step 3: Add the first public project boundary**
 
-Use this `Directory.Build.props`:
-
-```xml
-<Project>
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <LangVersion>14.0</LangVersion>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>disable</ImplicitUsings>
-    <Deterministic>true</Deterministic>
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-  </PropertyGroup>
-</Project>
-```
-
-Use this public project:
+Use this complete public project and do not add source files, PackageReference, ProjectReference, or shared `Directory.Build.props` in this Slice:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Asharia.Editor</AssemblyName>
     <RootNamespace>Asharia.Editor</RootNamespace>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 </Project>
 ```
 
-Use `Microsoft.NET.Sdk` plus pinned Roslyn package references with `PrivateAssets="all"` for the analyzer shell; set `IncludeBuildOutput=false` until Task 2 adds real analyzer output. The analyzer project must not be referenced by any runtime project in Wave 1.
+- [x] **Step 4: Write and run the legacy glob exclusion test**
 
-- [ ] **Step 4: Keep legacy default globbing away from the new tree**
+Add `Legacy_editor_project_excludes_the_target_source_and_test_trees`, load `Editor.csproj`, normalize backslashes to slashes, and assert removal patterns `src/**/*.cs`, existing `Tests/**/*.cs`, and `src/**/*.axaml`. Migration keeps the existing uppercase test root until the legacy tree can be renamed atomically for case-sensitive and case-insensitive filesystems.
+
+Run:
+
+```powershell
+dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release --filter FullyQualifiedName~Legacy_editor_project_excludes
+```
+
+Expected: FAIL because `Editor.csproj` only excludes the legacy uppercase `Tests` tree.
+
+- [x] **Step 5: Keep legacy default globbing away from the new tree**
 
 Add to `Editor.csproj`:
 
 ```xml
 <ItemGroup>
   <Compile Remove="src\**\*.cs" />
-  <Compile Remove="tests\**\*.cs" />
   <AvaloniaResource Remove="src\**\*.axaml" />
 </ItemGroup>
 ```
 
 This prevents the compatibility executable from compiling new project sources twice.
 
-- [ ] **Step 5: Create and populate the target solution**
+- [x] **Step 6: Write and run the target Solution membership test**
+
+Add `Target_solution_contains_only_the_declared_boundary_projects`. Parse only `.csproj` Project lines and assert the exact set: `Editor.csproj`, `Tests/Editor.Tests/Editor.Tests.csproj`, `src/Asharia.Editor/Asharia.Editor.csproj`, and `Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj`.
+
+Run:
+
+```powershell
+dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release --filter FullyQualifiedName~Target_solution_contains
+```
+
+Expected: FAIL because `Asharia.Studio.sln` does not exist.
+
+- [x] **Step 7: Create and populate the target solution**
 
 Run:
 
 ```powershell
 dotnet new sln --name Asharia.Studio --format sln --output apps/studio
-dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/Editor.csproj
-dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/Tests/Editor.Tests/Editor.Tests.csproj
-dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/src/Asharia.Editor/Asharia.Editor.csproj
-dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/src/Asharia.Editor.Analyzers/Asharia.Editor.Analyzers.csproj
-dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj
-dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj
+dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/Editor.csproj --in-root
+dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/Tests/Editor.Tests/Editor.Tests.csproj --in-root
+dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/src/Asharia.Editor/Asharia.Editor.csproj --in-root
+dotnet sln apps/studio/Asharia.Studio.sln add apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj --in-root
 ```
 
-- [ ] **Step 6: Run both solutions**
+- [x] **Step 8: Run both solutions**
 
 Run:
 
@@ -198,10 +200,10 @@ dotnet test apps/studio/Asharia.Studio.sln -c Release
 
 Expected: the existing 657 tests pass; the new architecture test passes.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 9: Commit**
 
 ```powershell
-git add apps/studio/Directory.Build.props apps/studio/Asharia.Studio.sln apps/studio/src apps/studio/tests apps/studio/Editor.csproj apps/studio/docs/architecture/README.md
+git add apps/studio/Asharia.Studio.sln apps/studio/src/Asharia.Editor apps/studio/Tests/Asharia.Studio.Architecture.Tests apps/studio/Editor.csproj apps/studio/docs/architecture/studio-code-framework.md apps/studio/docs/superpowers/plans/2026-07-11-studio-editor-framework-refactor.md
 git commit -m "build(studio): establish target solution graph"
 ```
 
