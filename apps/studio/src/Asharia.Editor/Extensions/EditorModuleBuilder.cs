@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Asharia.Editor.Panels;
 
 namespace Asharia.Editor.Extensions;
 
@@ -27,6 +29,7 @@ public sealed class EditorModuleBuilder
     private readonly List<EditorCapabilityId> requiredCapabilities_ = [];
     private readonly List<EditorCapabilityId> optionalCapabilities_ = [];
     private readonly List<EditorCapabilityId> providedCapabilities_ = [];
+    private readonly List<EditorPanelDescriptor> panels_ = [];
     private EditorModuleDeclaration? declaration_;
 
     public EditorModuleBuilder(EditorModuleDefinitionContext definitionContext)
@@ -35,6 +38,7 @@ public sealed class EditorModuleBuilder
         DefinitionContext = definitionContext;
         Dependencies = new EditorModuleDependencyBuilder(this);
         Capabilities = new EditorModuleCapabilityBuilder(this);
+        Panels = new EditorPanelContributionBuilder(this);
     }
 
     public EditorModuleDefinitionContext DefinitionContext { get; }
@@ -42,6 +46,8 @@ public sealed class EditorModuleBuilder
     public EditorModuleDependencyBuilder Dependencies { get; }
 
     public EditorModuleCapabilityBuilder Capabilities { get; }
+
+    public EditorPanelContributionBuilder Panels { get; }
 
     public EditorModuleDeclaration Build()
     {
@@ -51,7 +57,8 @@ public sealed class EditorModuleBuilder
             optionalModules_,
             requiredCapabilities_,
             optionalCapabilities_,
-            providedCapabilities_);
+            providedCapabilities_,
+            panels_);
 
         return declaration_;
     }
@@ -99,6 +106,25 @@ public sealed class EditorModuleBuilder
         }
 
         providedCapabilities_.Add(capability);
+    }
+
+    internal void AddPanel(EditorPanelDescriptor descriptor)
+    {
+        EnsureMutable();
+
+        if (panels_.Any(panel => panel.Id == descriptor.Id))
+        {
+            throw new InvalidOperationException(
+                $"Panel contribution '{descriptor.Id}' is already declared by this module.");
+        }
+
+        if (panels_.Any(panel => panel.ContentFactory == descriptor.ContentFactory))
+        {
+            throw new InvalidOperationException(
+                $"Panel factory '{descriptor.ContentFactory}' is already declared by this module.");
+        }
+
+        panels_.Add(descriptor);
     }
 
     private void EnsureMutable()

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Asharia.Editor.Panels;
 
 namespace Asharia.Editor.Extensions;
 
@@ -13,7 +14,8 @@ public sealed class EditorModuleDeclaration
         IEnumerable<EditorModuleDefinitionId> optionalModules,
         IEnumerable<EditorCapabilityId> requiredCapabilities,
         IEnumerable<EditorCapabilityId> optionalCapabilities,
-        IEnumerable<EditorCapabilityId> providedCapabilities)
+        IEnumerable<EditorCapabilityId> providedCapabilities,
+        IEnumerable<EditorPanelDescriptor> panels)
     {
         DefinitionContext = definitionContext;
         RequiredModules = Copy(requiredModules);
@@ -21,6 +23,7 @@ public sealed class EditorModuleDeclaration
         RequiredCapabilities = Copy(requiredCapabilities);
         OptionalCapabilities = Copy(optionalCapabilities);
         ProvidedCapabilities = Copy(providedCapabilities);
+        Panels = Copy(panels);
     }
 
     public EditorModuleDefinitionContext DefinitionContext { get; }
@@ -34,6 +37,8 @@ public sealed class EditorModuleDeclaration
     public IReadOnlyList<EditorCapabilityId> OptionalCapabilities { get; }
 
     public IReadOnlyList<EditorCapabilityId> ProvidedCapabilities { get; }
+
+    public IReadOnlyList<EditorPanelDescriptor> Panels { get; }
 
     private static ReadOnlyCollection<T> Copy<T>(IEnumerable<T> values)
     {
