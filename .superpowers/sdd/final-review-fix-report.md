@@ -47,3 +47,11 @@ Complete. The requested whole-branch review findings are implemented, verified, 
 
 - A full unscoped `dotnet format` of the legacy `Editor.Tests` project still reports seven pre-existing `CHARSET` diagnostics in untouched test files. The two legacy files changed by this fix pass scoped format verification, and the repository encoding checker reports zero violations; unrelated files were intentionally not modified.
 - The legacy focused test command exits successfully but this project suppresses the normal console test-count summary in the current environment; the exit code is the recorded evidence.
+
+## Controller verification follow-up
+
+- Reproduced CS8631 with a forced Release rebuild under `-warnaserror`; the incremental build had initially skipped compilation and therefore did not expose it.
+- Replaced the nullable `.Where(value => value is not null)` pipeline with `.OfType<string>()`, preserving the exact reference normalization, ordinal ordering, and assertion while producing `string[]`.
+- `dotnet build apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release --no-restore -warnaserror -t:Rebuild` — passed with 0 warnings and 0 errors.
+- `dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release --no-restore` — 6 passed, 0 failed.
+- Architecture `dotnet format --verify-no-changes`, repository encoding, working/cached diff, and strict UTF-8 checks passed.

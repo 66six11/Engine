@@ -52,7 +52,7 @@ public sealed class ProjectReferenceGraphTests
         var references = project
             .Descendants("ProjectReference")
             .Select(element => element.Attribute("Include")?.Value.Replace('\\', '/'))
-            .Where(value => value is not null)
+            .OfType<string>()
             .Order(StringComparer.Ordinal)
             .ToArray();
 
