@@ -1,9 +1,12 @@
 # Studio 框架设计
 
-状态：当前阶段框架总纲
-更新日期：2026-07-01
+状态：Superseded（保留为 v0 历史总纲）
 
-本文整理 `apps/studio` 的核心设计理念和框架边界。它不是功能清单，也不是实现进度表。它回答三个问题：
+更新日期：2026-07-11
+
+> 本文描述 2026-07-01 前的 Studio v0 判断，其中“native Vulkan viewport 延后”、单项目 `Core/Shell/UI/Features` 作为长期边界等结论已经失效。正式目标架构以 [architecture/README.md](architecture/README.md) 和 [architecture/studio-overview.md](architecture/studio-overview.md) 为准。本文仅用于理解早期设计背景和迁移来源。
+
+本文整理早期 `apps/studio` 的核心设计理念和框架边界。它不是当前目标架构，也不是实现进度表。它曾回答三个问题：
 
 1. Studio 这个编辑器前端到底按什么框架组织。
 2. 当前哪些框架合同已经成立，哪些还只是 v0。

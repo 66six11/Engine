@@ -65,7 +65,7 @@ The local Studio docs already constrain this work:
 - `docs/项目规范.md` says Scene View rendering must not be implemented by swapping a normal Avalonia `Image` every frame.
 - `docs/Studio代码分类.md` says bottom-layer data must enter UI as `Core` snapshots or provider contracts, and views must not query runtime/native/renderer objects.
 - `docs/Code-first UI设计.md` says backend/native/runtime integration is outside Code-first UI v1 and must first enter Studio as snapshots, diagnostics, provider status, or command results.
-- `docs/architecture/managed-extension-model.md` says Avalonia owns presentation, not Vulkan/RHI/RenderGraph lifetime, and C++ owns the engine truth.
+- Current replacement `docs/architecture/studio-extension-model.md` says Avalonia owns presentation, not Vulkan/RHI/RenderGraph lifetime, and C++ owns the engine truth.
 
 ## External API Evidence
 

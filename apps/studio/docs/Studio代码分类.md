@@ -1,9 +1,14 @@
 # Studio 代码分类
 
-状态：当前分类规则
-最后更新：2026-07-04
+状态：Partial（当前单项目迁移期分类规则）
 
-本文用于回答“新增或整理一段代码应该放在哪里”。它补充 `Studio框架设计.md` 和 `项目规范.md`，不替代具体专题文档。
+最后更新：2026-07-11
+
+> 本文继续约束当前 `Editor.csproj` 内的目录放置，但不再定义长期模块边界。目标公共 Editor Framework、八项目结构和允许依赖以 [architecture/studio-overview.md](architecture/studio-overview.md)、[architecture/studio-code-framework.md](architecture/studio-code-framework.md) 与 [ADR-0004](adr/0004-unified-editor-extension-framework.md) 为准。迁移期间不得为了符合旧目录规则，把 Avalonia、P/Invoke 或 platform GPU handle 继续上移到 `Core`。
+
+目标 solution/project、命名空间和当前路径迁移表见 [architecture/studio-code-framework.md](architecture/studio-code-framework.md)。
+
+本文用于回答“迁移完成前，新增或整理一段代码应该放在哪里”。它补充正式架构文档和 `项目规范.md`，不替代具体专题文档。
 
 当前 `apps/studio` 仍是单 `.csproj` Avalonia 应用，分类边界先通过目录、命名空间、测试和文档约束表达。不要为了分类而提前拆项目。
 
@@ -670,7 +675,7 @@ Features/{FeatureName}
 - 放具体面板业务逻辑。
 - 绕过 Core/Shell 注册机制直接操作 Dock tree。
 
-如果后续引入外部插件或多 feature catalog，`WorkbenchFeatureModule` 应继续收敛为内置声明层，而不是扩张成 service locator。
+目标架构已经决定引入统一 Editor Framework。`WorkbenchFeatureModule` 只作为当前迁移兼容聚合层；Feature 将迁移到 `Asharia.Studio.BuiltInExtensions` 中的独立 `[EditorModule]`，并且只能引用公共 `Asharia.Editor*` API。它不得继续扩张成 service locator。
 
 ## 7. Tests
 

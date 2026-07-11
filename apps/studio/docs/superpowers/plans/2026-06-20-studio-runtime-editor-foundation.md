@@ -27,7 +27,7 @@ Local constraints used:
 - `apps/studio/docs/项目规范.md`: Studio should keep Core/Shell/UI/Features boundaries and must not move the engine world into the Avalonia control tree.
 - `docs/systems/scene-world.md`: Edit World and Play World must be separate; editor mutation goes through transactions; renderer consumes snapshots/draw packets.
 - `docs/systems/reflection-serialization.md`: schema is the fact source; editor/script/asset/scene consume typed metadata projections.
-- `docs/architecture/managed-extension-model.md`: managed/plugin/ABI work is contract-only until scene, transaction, asset, Play Session, diagnostics, and ABI gates are stable.
+- Historical note: this reference is replaced by `docs/architecture/studio-extension-model.md` and ADR-0004/0005; the old deferral statement no longer defines the target.
 
 ## Scope Decision
 
