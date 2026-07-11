@@ -586,7 +586,7 @@ git commit -m "refactor(studio): extract editor service contracts"
 
 **Slice size:** L
 
-**Current checkpoint (#243):** `Asharia.Studio.Application` and its test project exist in the target Solution and reference only `Asharia.Editor`. `StaticPackageGenerationHost.Create` validates duplicate registrations before invoking factories, creates each definition object once, calls `Configure` once, freezes its declaration, and publishes a read-only definition map only after the complete static set succeeds. `EditorScopeTransaction.Prepare` now builds an invisible immutable candidate, validates scope/required dependency/cycle/Panel contribution/capability-provider structure against its captured registry snapshot, and `Commit` performs one stale-checked registry swap. Scope activation, capability runtime waiting, failure propagation, reverse-order disposal, compatibility adapters, and service moves remain pending.
+**Current checkpoint (#243):** `Asharia.Studio.Application` and its test project exist in the target Solution and reference only `Asharia.Editor`. `StaticPackageGenerationHost.Create` validates duplicate registrations before invoking factories, creates each definition object once, calls `Configure` once, freezes its declaration, and publishes a read-only definition map only after the complete static set succeeds. `EditorScopeTransaction.Prepare` builds an invisible immutable candidate, validates scope/required dependency/mixed module-capability cycle/Panel contribution/capability-provider structure against its captured registry snapshot, and `Commit` performs one stale-checked registry swap. `EditorModuleHost` now single-flights each scope instance while allowing different Project scopes to activate concurrently, records `Active`/`WaitingForCapability`/`Faulted`/`Blocked` outcomes, isolates required dependent failure chains, and disposes activation leases dependents-first with reverse-registration tie breaking. Compatibility adapters and service moves remain pending.
 
 **Files:**
 
@@ -612,7 +612,7 @@ git commit -m "refactor(studio): extract editor service contracts"
 - Consumes: only `Asharia.Editor`.
 - Produces: definition/configure-once semantics, Application/Project instance identities, staged registry partitions, activation leases, reverse-order disposal, and a static built-in generation host. It does not load files or create ALCs.
 
-- [ ] **Step 1: Write host state-machine tests**
+- [x] **Step 1: Write host state-machine tests**
 
 Add fake modules proving:
 
