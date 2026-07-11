@@ -8,11 +8,13 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 #include "file_io_internal.hpp"
 
@@ -34,12 +36,113 @@ namespace asharia::core::detail {
             return target.parent_path() / temporaryName;
         }
 
+        class OpenPosixTemporary final {
+        public:
+            OpenPosixTemporary(int descriptor, std::filesystem::path path)
+                : descriptor_(descriptor), path_(std::move(path)) {}
+
+            ~OpenPosixTemporary() {
+                if (descriptor_ >= 0) {
+                    close(descriptor_);
+                    unlink(path_.c_str());
+                }
+            }
+
+            OpenPosixTemporary(const OpenPosixTemporary&) = delete;
+            OpenPosixTemporary& operator=(const OpenPosixTemporary&) = delete;
+            OpenPosixTemporary(OpenPosixTemporary&&) = delete;
+            OpenPosixTemporary& operator=(OpenPosixTemporary&&) = delete;
+
+            [[nodiscard]] int descriptor() const noexcept {
+                return descriptor_;
+            }
+
+            [[nodiscard]] const std::filesystem::path& path() const noexcept {
+                return path_;
+            }
+
+            void release() noexcept {
+                descriptor_ = -1;
+            }
+
+        private:
+            int descriptor_{-1};
+            std::filesystem::path path_;
+        };
+
+        class PosixAtomicTemporaryFile final : public AtomicTemporaryFile {
+        public:
+            PosixAtomicTemporaryFile(int descriptor, std::filesystem::path path)
+                : descriptor_(descriptor), path_(std::move(path)) {}
+
+            ~PosixAtomicTemporaryFile() override {
+                if (descriptor_ >= 0) {
+                    close(descriptor_);
+                }
+                if (!released_) {
+                    unlink(path_.c_str());
+                }
+            }
+
+            PosixAtomicTemporaryFile(const PosixAtomicTemporaryFile&) = delete;
+            PosixAtomicTemporaryFile& operator=(const PosixAtomicTemporaryFile&) = delete;
+            PosixAtomicTemporaryFile(PosixAtomicTemporaryFile&&) = delete;
+            PosixAtomicTemporaryFile& operator=(PosixAtomicTemporaryFile&&) = delete;
+
+            [[nodiscard]] Result<std::size_t> write(std::span<const std::byte> bytes) override {
+                const auto chunkSize = std::min<std::size_t>(
+                    bytes.size(), static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()));
+                ssize_t written = -1;
+                do {
+                    written = ::write(descriptor_, bytes.data(), chunkSize);
+                } while (written < 0 && errno == EINTR);
+
+                if (written < 0) {
+                    return std::unexpected{posixFileError("temporary write", path_, errno)};
+                }
+                if (written == 0 && !bytes.empty()) {
+                    return std::unexpected{posixFileError("temporary write", path_, EIO)};
+                }
+                return static_cast<std::size_t>(written);
+            }
+
+            [[nodiscard]] VoidResult flush() override {
+                int flushResult = -1;
+                do {
+                    flushResult = fsync(descriptor_);
+                } while (flushResult < 0 && errno == EINTR);
+                if (flushResult < 0) {
+                    return std::unexpected{posixFileError("temporary flush", path_, errno)};
+                }
+                return {};
+            }
+
+            [[nodiscard]] VoidResult close() override {
+                const int descriptor = std::exchange(descriptor_, -1);
+                if (::close(descriptor) < 0) {
+                    return std::unexpected{posixFileError("temporary close", path_, errno)};
+                }
+                return {};
+            }
+
+            [[nodiscard]] const std::filesystem::path& path() const noexcept override {
+                return path_;
+            }
+
+            void releaseAfterReplace() noexcept override {
+                released_ = true;
+            }
+
+        private:
+            int descriptor_{-1};
+            std::filesystem::path path_;
+            bool released_{};
+        };
+
         class PosixAtomicFileBackend final : public AtomicFileBackend {
         public:
-            Result<std::filesystem::path>
-            writeUniqueTemporary(const std::filesystem::path& target,
-                                 std::span<const std::byte> bytes,
-                                 AtomicFileWriteOptions options) override {
+            Result<std::unique_ptr<AtomicTemporaryFile>>
+            createUniqueTemporary(const std::filesystem::path& target) override {
                 constexpr std::uint32_t kMaximumCreateAttempts = 128U;
                 mode_t temporaryMode = 0666;
                 bool copyTargetMode = false;
@@ -69,55 +172,18 @@ namespace asharia::core::detail {
                     return std::unexpected{posixFileError("temporary creation", target, EEXIST)};
                 }
 
-                if (copyTargetMode && fchmod(descriptor, temporaryMode) < 0) {
-                    const int modeError = errno;
-                    const int closeResult = close(descriptor);
-                    const int closeError = closeResult < 0 ? errno : 0;
-                    unlink(temporary.c_str());
+                OpenPosixTemporary openTemporary{descriptor, std::move(temporary)};
+
+                if (copyTargetMode && fchmod(openTemporary.descriptor(), temporaryMode) < 0) {
                     return std::unexpected{
-                        posixFileError(closeResult < 0 ? "temporary close" : "permission copy",
-                                       temporary, closeResult < 0 ? closeError : modeError)};
+                        posixFileError("permission copy", openTemporary.path(), errno)};
                 }
 
-                std::size_t offset = 0U;
-                while (offset < bytes.size()) {
-                    const auto remaining = bytes.size() - offset;
-                    const auto chunkSize = std::min<std::size_t>(
-                        remaining, static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()));
-                    const ssize_t written = write(descriptor, bytes.data() + offset, chunkSize);
-                    if (written < 0 && errno == EINTR) {
-                        continue;
-                    }
-                    if (written <= 0) {
-                        const int writeError = written == 0 ? EIO : errno;
-                        const int closeResult = close(descriptor);
-                        const int closeError = closeResult < 0 ? errno : 0;
-                        unlink(temporary.c_str());
-                        return std::unexpected{
-                            posixFileError(closeResult < 0 ? "temporary close" : "temporary write",
-                                           temporary, closeResult < 0 ? closeError : writeError)};
-                    }
-                    offset += static_cast<std::size_t>(written);
-                }
-
-                if (options.flushFileBuffers && fsync(descriptor) < 0) {
-                    const int flushError = errno;
-                    const int closeResult = close(descriptor);
-                    const int closeError = closeResult < 0 ? errno : 0;
-                    unlink(temporary.c_str());
-                    return std::unexpected{
-                        posixFileError(closeResult < 0 ? "temporary close" : "temporary flush",
-                                       temporary, closeResult < 0 ? closeError : flushError)};
-                }
-
-                if (close(descriptor) < 0) {
-                    const int closeError = errno;
-                    unlink(temporary.c_str());
-                    return std::unexpected{
-                        posixFileError("temporary close", temporary, closeError)};
-                }
-
-                return temporary;
+                std::unique_ptr<AtomicTemporaryFile> result =
+                    std::make_unique<PosixAtomicTemporaryFile>(openTemporary.descriptor(),
+                                                               openTemporary.path());
+                openTemporary.release();
+                return result;
             }
 
             VoidResult replace(const std::filesystem::path& temporary,
@@ -126,10 +192,6 @@ namespace asharia::core::detail {
                     return std::unexpected{posixFileError("replacement", target, errno)};
                 }
                 return {};
-            }
-
-            void removeTemporary(const std::filesystem::path& temporary) noexcept override {
-                unlink(temporary.c_str());
             }
 
         private:

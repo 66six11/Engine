@@ -74,17 +74,42 @@ namespace asharia::core {
                                                        std::span<const std::byte> bytes,
                                                        AtomicFileWriteOptions options,
                                                        AtomicFileBackend& backend) {
-            auto temporary = backend.writeUniqueTemporary(target, bytes, options);
+            auto temporary = backend.createUniqueTemporary(target);
             if (!temporary) {
                 return std::unexpected{std::move(temporary.error())};
             }
 
-            auto replaced = backend.replace(*temporary, target);
+            std::size_t offset = 0U;
+            while (offset < bytes.size()) {
+                auto written = (*temporary)->write(bytes.subspan(offset));
+                if (!written) {
+                    return std::unexpected{std::move(written.error())};
+                }
+                if (*written == 0U) {
+                    return std::unexpected{
+                        fileIoError("write", target, "temporary write made no progress")};
+                }
+                offset += *written;
+            }
+
+            if (options.flushFileBuffers) {
+                auto flushed = (*temporary)->flush();
+                if (!flushed) {
+                    return std::unexpected{std::move(flushed.error())};
+                }
+            }
+
+            auto closed = (*temporary)->close();
+            if (!closed) {
+                return std::unexpected{std::move(closed.error())};
+            }
+
+            auto replaced = backend.replace((*temporary)->path(), target);
             if (!replaced) {
-                backend.removeTemporary(*temporary);
                 return std::unexpected{std::move(replaced.error())};
             }
 
+            (*temporary)->releaseAfterReplace();
             return {};
         }
 

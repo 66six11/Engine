@@ -9,6 +9,7 @@
 #include <expected>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -34,101 +35,132 @@ namespace asharia::core::detail {
             return target.parent_path() / temporaryName;
         }
 
-        struct OpenTemporary {
-            HANDLE handle{INVALID_HANDLE_VALUE};
-            std::filesystem::path path;
+        class OpenWindowsTemporary final {
+        public:
+            OpenWindowsTemporary(HANDLE handle, std::filesystem::path path)
+                : handle_(handle), path_(std::move(path)) {}
+
+            ~OpenWindowsTemporary() {
+                if (handle_ != INVALID_HANDLE_VALUE) {
+                    CloseHandle(handle_);
+                    DeleteFileW(path_.c_str());
+                }
+            }
+
+            OpenWindowsTemporary(const OpenWindowsTemporary&) = delete;
+            OpenWindowsTemporary& operator=(const OpenWindowsTemporary&) = delete;
+            OpenWindowsTemporary(OpenWindowsTemporary&&) = delete;
+            OpenWindowsTemporary& operator=(OpenWindowsTemporary&&) = delete;
+
+            [[nodiscard]] HANDLE handle() const noexcept {
+                return handle_;
+            }
+
+            [[nodiscard]] const std::filesystem::path& path() const noexcept {
+                return path_;
+            }
+
+            void release() noexcept {
+                handle_ = INVALID_HANDLE_VALUE;
+            }
+
+        private:
+            HANDLE handle_{INVALID_HANDLE_VALUE};
+            std::filesystem::path path_;
         };
 
-        [[nodiscard]] Result<OpenTemporary>
-        createUniqueTemporary(const std::filesystem::path& target,
-                              std::atomic<std::uint64_t>& nextTemporaryId) {
-            constexpr std::uint32_t kMaximumCreateAttempts = 128U;
-            for (std::uint32_t attempt = 0U; attempt < kMaximumCreateAttempts; ++attempt) {
-                auto temporary = temporaryPathFor(target, nextTemporaryId.fetch_add(1U));
-                const HANDLE handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr,
-                                                  CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-                if (handle != INVALID_HANDLE_VALUE) {
-                    return OpenTemporary{.handle = handle, .path = std::move(temporary)};
-                }
+        class WindowsAtomicTemporaryFile final : public AtomicTemporaryFile {
+        public:
+            WindowsAtomicTemporaryFile(HANDLE handle, std::filesystem::path path)
+                : handle_(handle), path_(std::move(path)) {}
 
-                const DWORD createError = GetLastError();
-                if (createError != ERROR_FILE_EXISTS && createError != ERROR_ALREADY_EXISTS) {
-                    return std::unexpected{
-                        windowsFileError("temporary creation", target, createError)};
+            ~WindowsAtomicTemporaryFile() override {
+                if (handle_ != INVALID_HANDLE_VALUE) {
+                    CloseHandle(handle_);
+                }
+                if (!released_) {
+                    DeleteFileW(path_.c_str());
                 }
             }
 
-            return std::unexpected{
-                windowsFileError("temporary creation", target, ERROR_FILE_EXISTS)};
-        }
+            WindowsAtomicTemporaryFile(const WindowsAtomicTemporaryFile&) = delete;
+            WindowsAtomicTemporaryFile& operator=(const WindowsAtomicTemporaryFile&) = delete;
+            WindowsAtomicTemporaryFile(WindowsAtomicTemporaryFile&&) = delete;
+            WindowsAtomicTemporaryFile& operator=(WindowsAtomicTemporaryFile&&) = delete;
 
-        [[nodiscard]] Error closeAndRemoveFailedTemporary(HANDLE handle,
-                                                          const std::filesystem::path& temporary,
-                                                          std::string_view action,
-                                                          DWORD operationError) {
-            if (CloseHandle(handle) == FALSE) {
-                const DWORD closeError = GetLastError();
-                DeleteFileW(temporary.c_str());
-                return windowsFileError("temporary close", temporary, closeError);
-            }
-
-            DeleteFileW(temporary.c_str());
-            return windowsFileError(action, temporary, operationError);
-        }
-
-        [[nodiscard]] VoidResult writeAllTemporary(HANDLE handle,
-                                                   const std::filesystem::path& temporary,
-                                                   std::span<const std::byte> bytes) {
-            std::size_t offset = 0U;
-            while (offset < bytes.size()) {
-                const auto remaining = bytes.size() - offset;
+            [[nodiscard]] Result<std::size_t> write(std::span<const std::byte> bytes) override {
                 const auto chunkSize = static_cast<DWORD>(
-                    std::min<std::size_t>(remaining, std::numeric_limits<DWORD>::max()));
+                    std::min<std::size_t>(bytes.size(), std::numeric_limits<DWORD>::max()));
                 DWORD written = 0U;
-                const BOOL writeSucceeded =
-                    WriteFile(handle, bytes.data() + offset, chunkSize, &written, nullptr);
-                if (writeSucceeded == FALSE || written == 0U) {
-                    const DWORD writeError =
-                        writeSucceeded == FALSE ? GetLastError() : ERROR_WRITE_FAULT;
-                    return std::unexpected{closeAndRemoveFailedTemporary(
-                        handle, temporary, "temporary write", writeError)};
+                if (WriteFile(handle_, bytes.data(), chunkSize, &written, nullptr) == FALSE) {
+                    return std::unexpected{
+                        windowsFileError("temporary write", path_, GetLastError())};
                 }
-                offset += written;
+                if (written == 0U && !bytes.empty()) {
+                    return std::unexpected{
+                        windowsFileError("temporary write", path_, ERROR_WRITE_FAULT)};
+                }
+                return static_cast<std::size_t>(written);
             }
 
-            return {};
-        }
+            [[nodiscard]] VoidResult flush() override {
+                if (FlushFileBuffers(handle_) == FALSE) {
+                    return std::unexpected{
+                        windowsFileError("temporary flush", path_, GetLastError())};
+                }
+                return {};
+            }
+
+            [[nodiscard]] VoidResult close() override {
+                if (CloseHandle(handle_) == FALSE) {
+                    return std::unexpected{
+                        windowsFileError("temporary close", path_, GetLastError())};
+                }
+                handle_ = INVALID_HANDLE_VALUE;
+                return {};
+            }
+
+            [[nodiscard]] const std::filesystem::path& path() const noexcept override {
+                return path_;
+            }
+
+            void releaseAfterReplace() noexcept override {
+                released_ = true;
+            }
+
+        private:
+            HANDLE handle_{INVALID_HANDLE_VALUE};
+            std::filesystem::path path_;
+            bool released_{};
+        };
 
         class WindowsAtomicFileBackend final : public AtomicFileBackend {
         public:
-            Result<std::filesystem::path>
-            writeUniqueTemporary(const std::filesystem::path& target,
-                                 std::span<const std::byte> bytes,
-                                 AtomicFileWriteOptions options) override {
-                auto temporary = createUniqueTemporary(target, nextTemporaryId_);
-                if (!temporary) {
-                    return std::unexpected{std::move(temporary.error())};
+            Result<std::unique_ptr<AtomicTemporaryFile>>
+            createUniqueTemporary(const std::filesystem::path& target) override {
+                constexpr std::uint32_t kMaximumCreateAttempts = 128U;
+                for (std::uint32_t attempt = 0U; attempt < kMaximumCreateAttempts; ++attempt) {
+                    auto temporary = temporaryPathFor(target, nextTemporaryId_.fetch_add(1U));
+                    const HANDLE handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr,
+                                                      CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (handle != INVALID_HANDLE_VALUE) {
+                        OpenWindowsTemporary openTemporary{handle, std::move(temporary)};
+                        std::unique_ptr<AtomicTemporaryFile> result =
+                            std::make_unique<WindowsAtomicTemporaryFile>(openTemporary.handle(),
+                                                                         openTemporary.path());
+                        openTemporary.release();
+                        return result;
+                    }
+
+                    const DWORD createError = GetLastError();
+                    if (createError != ERROR_FILE_EXISTS && createError != ERROR_ALREADY_EXISTS) {
+                        return std::unexpected{
+                            windowsFileError("temporary creation", target, createError)};
+                    }
                 }
 
-                auto written = writeAllTemporary(temporary->handle, temporary->path, bytes);
-                if (!written) {
-                    return std::unexpected{std::move(written.error())};
-                }
-
-                if (options.flushFileBuffers && FlushFileBuffers(temporary->handle) == FALSE) {
-                    const DWORD flushError = GetLastError();
-                    return std::unexpected{closeAndRemoveFailedTemporary(
-                        temporary->handle, temporary->path, "temporary flush", flushError)};
-                }
-
-                if (CloseHandle(temporary->handle) == FALSE) {
-                    const DWORD closeError = GetLastError();
-                    DeleteFileW(temporary->path.c_str());
-                    return std::unexpected{
-                        windowsFileError("temporary close", temporary->path, closeError)};
-                }
-
-                return std::move(temporary->path);
+                return std::unexpected{
+                    windowsFileError("temporary creation", target, ERROR_FILE_EXISTS)};
             }
 
             VoidResult replace(const std::filesystem::path& temporary,
@@ -155,10 +187,6 @@ namespace asharia::core::detail {
                     return std::unexpected{windowsFileError("replacement", target, GetLastError())};
                 }
                 return {};
-            }
-
-            void removeTemporary(const std::filesystem::path& temporary) noexcept override {
-                DeleteFileW(temporary.c_str());
             }
 
         private:

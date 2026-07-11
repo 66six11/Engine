@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <memory>
 #include <span>
 #include <sstream>
 #include <stdexcept>
@@ -95,101 +97,214 @@ namespace {
         return bytes;
     }
 
-    class FakeAtomicFileBackend final : public asharia::core::detail::AtomicFileBackend {
+    struct FakeAtomicFileState {
+        std::vector<std::byte> targetBytes{bytesOf("old")};
+        std::vector<std::byte> temporaryBytes;
+        std::filesystem::path targetPath;
+        std::filesystem::path temporaryPath;
+        std::size_t writeCalls{};
+        std::size_t flushCalls{};
+        std::size_t closeCalls{};
+        std::size_t replaceCalls{};
+        bool temporaryExists{};
+        bool released{};
+    };
+
+    struct FakeAtomicTemporaryConfig {
+        std::size_t maximumWriteBytes;
+        std::size_t failWriteCall;
+        bool failFlush;
+        bool failClose;
+    };
+
+    class FakeAtomicTemporaryFile final : public asharia::core::detail::AtomicTemporaryFile {
     public:
-        [[nodiscard]] asharia::Result<std::filesystem::path>
-        writeUniqueTemporary(const std::filesystem::path& target, std::span<const std::byte> bytes,
-                             asharia::core::AtomicFileWriteOptions options) override {
-            writeCalled = true;
-            writeTarget = target;
-            observedOptions = options;
-            if (failWrite) {
+        FakeAtomicTemporaryFile(FakeAtomicFileState* state, FakeAtomicTemporaryConfig config)
+            : state_(state), config_(config) {}
+
+        ~FakeAtomicTemporaryFile() override {
+            if (!state_->released) {
+                state_->temporaryExists = false;
+            }
+        }
+
+        FakeAtomicTemporaryFile(const FakeAtomicTemporaryFile&) = delete;
+        FakeAtomicTemporaryFile& operator=(const FakeAtomicTemporaryFile&) = delete;
+        FakeAtomicTemporaryFile(FakeAtomicTemporaryFile&&) = delete;
+        FakeAtomicTemporaryFile& operator=(FakeAtomicTemporaryFile&&) = delete;
+
+        [[nodiscard]] asharia::Result<std::size_t>
+        write(std::span<const std::byte> bytes) override {
+            ++state_->writeCalls;
+            if (state_->writeCalls == config_.failWriteCall) {
                 return std::unexpected{
-                    asharia::Error{asharia::ErrorDomain::Core, 11, "temporary write failed"}};
+                    asharia::Error{asharia::ErrorDomain::Core, 12, "temporary write failed"}};
             }
 
-            temporaryPath = target.parent_path() / (target.filename().string() + ".tmp.fake");
-            temporaryBytes.assign(bytes.begin(), bytes.end());
-            temporaryExists = true;
-            return temporaryPath;
+            const auto written = std::min(bytes.size(), config_.maximumWriteBytes);
+            state_->temporaryBytes.insert(state_->temporaryBytes.end(), bytes.begin(),
+                                          bytes.begin() + static_cast<std::ptrdiff_t>(written));
+            return written;
+        }
+
+        [[nodiscard]] asharia::VoidResult flush() override {
+            ++state_->flushCalls;
+            if (config_.failFlush) {
+                return std::unexpected{
+                    asharia::Error{asharia::ErrorDomain::Core, 13, "temporary flush failed"}};
+            }
+            return {};
+        }
+
+        [[nodiscard]] asharia::VoidResult close() override {
+            ++state_->closeCalls;
+            if (config_.failClose) {
+                return std::unexpected{
+                    asharia::Error{asharia::ErrorDomain::Core, 14, "temporary close failed"}};
+            }
+            return {};
+        }
+
+        [[nodiscard]] const std::filesystem::path& path() const noexcept override {
+            return state_->temporaryPath;
+        }
+
+        void releaseAfterReplace() noexcept override {
+            state_->released = true;
+            state_->temporaryExists = false;
+        }
+
+    private:
+        FakeAtomicFileState* state_;
+        FakeAtomicTemporaryConfig config_;
+    };
+
+    class FakeAtomicFileBackend final : public asharia::core::detail::AtomicFileBackend {
+    public:
+        [[nodiscard]] asharia::Result<std::unique_ptr<asharia::core::detail::AtomicTemporaryFile>>
+        createUniqueTemporary(const std::filesystem::path& target) override {
+            state.targetPath = target;
+            if (failCreate) {
+                return std::unexpected{
+                    asharia::Error{asharia::ErrorDomain::Core, 11, "temporary create failed"}};
+            }
+
+            state.temporaryPath = target.parent_path() / (target.filename().string() + ".tmp.fake");
+            state.temporaryExists = true;
+            return std::make_unique<FakeAtomicTemporaryFile>(
+                &state, FakeAtomicTemporaryConfig{.maximumWriteBytes = maximumWriteBytes,
+                                                  .failWriteCall = failWriteCall,
+                                                  .failFlush = failFlush,
+                                                  .failClose = failClose});
         }
 
         [[nodiscard]] asharia::VoidResult replace(const std::filesystem::path& temporary,
                                                   const std::filesystem::path& target) override {
-            replaceCalled = true;
-            replaceTemporary = temporary;
-            replaceTarget = target;
+            ++state.replaceCalls;
             if (failReplace) {
                 return std::unexpected{
                     asharia::Error{asharia::ErrorDomain::Core, 22, "replace failed"}};
             }
 
-            targetBytes = temporaryBytes;
-            temporaryExists = false;
+            if (temporary != state.temporaryPath || target != state.targetPath) {
+                return std::unexpected{
+                    asharia::Error{asharia::ErrorDomain::Core, 23, "replace paths mismatched"}};
+            }
+            state.targetBytes = state.temporaryBytes;
             return {};
         }
 
-        void removeTemporary(const std::filesystem::path& temporary) noexcept override {
-            cleanupCalled = true;
-            cleanupMatchedTemporary = temporary == temporaryPath;
-            temporaryExists = false;
-        }
-
-        bool failWrite{};
+        bool failCreate{};
+        std::size_t maximumWriteBytes{std::numeric_limits<std::size_t>::max()};
+        std::size_t failWriteCall{std::numeric_limits<std::size_t>::max()};
+        bool failFlush{};
+        bool failClose{};
         bool failReplace{};
-        bool writeCalled{};
-        bool replaceCalled{};
-        bool cleanupCalled{};
-        bool cleanupMatchedTemporary{};
-        bool temporaryExists{};
-        asharia::core::AtomicFileWriteOptions observedOptions{};
-        std::filesystem::path writeTarget;
-        std::filesystem::path temporaryPath;
-        std::filesystem::path replaceTemporary;
-        std::filesystem::path replaceTarget;
-        std::vector<std::byte> targetBytes{bytesOf("old")};
-        std::vector<std::byte> temporaryBytes;
+        FakeAtomicFileState state;
     };
 
-    [[nodiscard]] bool completesAtomicReplacement() {
+    [[nodiscard]] bool createFailurePreservesOriginal() {
         FakeAtomicFileBackend backend;
-        const auto replacement = bytesOf("new");
-        const std::filesystem::path target{"save/data.bin"};
-
-        const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
-            target, replacement, {.flushFileBuffers = false}, backend);
-
-        return result && backend.writeCalled && backend.replaceCalled && !backend.cleanupCalled &&
-               !backend.temporaryExists && backend.writeTarget == target &&
-               backend.replaceTarget == target &&
-               backend.replaceTemporary == backend.temporaryPath &&
-               backend.targetBytes == replacement && !backend.observedOptions.flushFileBuffers;
-    }
-
-    [[nodiscard]] bool propagatesTemporaryWriteFailure() {
-        FakeAtomicFileBackend backend;
-        backend.failWrite = true;
+        backend.failCreate = true;
         const auto replacement = bytesOf("new");
 
         const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
             "save/data.bin", replacement, {}, backend);
 
-        return !result && result.error().code == 11 && backend.writeCalled &&
-               !backend.replaceCalled && !backend.cleanupCalled &&
-               backend.targetBytes == bytesOf("old");
+        return !result && result.error().code == 11 && backend.state.writeCalls == 0U &&
+               backend.state.replaceCalls == 0U && !backend.state.temporaryExists &&
+               backend.state.targetBytes == bytesOf("old");
+    }
+
+    [[nodiscard]] bool partialWriteFailurePreservesOriginalAndCleansTemporary() {
+        FakeAtomicFileBackend backend;
+        backend.maximumWriteBytes = 2U;
+        backend.failWriteCall = 2U;
+        const auto replacement = bytesOf("new-data");
+
+        const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
+            "save/data.bin", replacement, {}, backend);
+
+        return !result && result.error().code == 12 && backend.state.writeCalls == 2U &&
+               backend.state.replaceCalls == 0U && !backend.state.temporaryExists &&
+               backend.state.targetBytes == bytesOf("old");
+    }
+
+    [[nodiscard]] bool flushFailurePreservesOriginalAndCleansTemporary() {
+        FakeAtomicFileBackend backend;
+        backend.failFlush = true;
+        const auto replacement = bytesOf("new");
+
+        const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
+            "save/data.bin", replacement, {}, backend);
+
+        return !result && result.error().code == 13 && backend.state.flushCalls == 1U &&
+               backend.state.closeCalls == 0U && backend.state.replaceCalls == 0U &&
+               !backend.state.temporaryExists && backend.state.targetBytes == bytesOf("old");
+    }
+
+    [[nodiscard]] bool closeFailurePreservesOriginalAndCleansTemporary() {
+        FakeAtomicFileBackend backend;
+        backend.failClose = true;
+        const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
+            "save/data.bin", bytesOf("new"), {}, backend);
+
+        return !result && result.error().code == 14 && backend.state.closeCalls == 1U &&
+               backend.state.replaceCalls == 0U && !backend.state.temporaryExists &&
+               backend.state.targetBytes == bytesOf("old");
     }
 
     [[nodiscard]] bool replaceFailurePreservesOriginalAndCleansTemporary() {
         FakeAtomicFileBackend backend;
         backend.failReplace = true;
-        const auto replacement = bytesOf("new");
+        const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
+            "save/data.bin", bytesOf("new"), {}, backend);
 
+        return !result && result.error().code == 22 && backend.state.replaceCalls == 1U &&
+               !backend.state.released && !backend.state.temporaryExists &&
+               backend.state.targetBytes == bytesOf("old");
+    }
+
+    [[nodiscard]] bool partialWritesCompleteReplacementAndReleaseTemporary() {
+        FakeAtomicFileBackend backend;
+        backend.maximumWriteBytes = 2U;
+        const auto replacement = bytesOf("new-data");
         const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
             "save/data.bin", replacement, {}, backend);
 
-        return !result && result.error().code == 22 && backend.replaceCalled &&
-               backend.cleanupCalled && backend.cleanupMatchedTemporary &&
-               !backend.temporaryExists && backend.targetBytes == bytesOf("old");
+        return result && backend.state.writeCalls == 4U && backend.state.flushCalls == 1U &&
+               backend.state.closeCalls == 1U && backend.state.replaceCalls == 1U &&
+               backend.state.released && !backend.state.temporaryExists &&
+               backend.state.targetBytes == replacement;
+    }
+
+    [[nodiscard]] bool disabledFlushSkipsFlushStage() {
+        FakeAtomicFileBackend backend;
+        const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
+            "save/data.bin", bytesOf("new"), {.flushFileBuffers = false}, backend);
+
+        return result && backend.state.flushCalls == 0U && backend.state.closeCalls == 1U &&
+               backend.state.released;
     }
 
     [[nodiscard]] bool rejectsMissingAtomicWriteParent() {
@@ -316,12 +431,21 @@ int main() {
             std::pair<std::string_view, Test>{"readsEmptyFile", readsEmptyFile},
             std::pair<std::string_view, Test>{"rejectsGrowthAfterMeasuredSize",
                                               rejectsGrowthAfterMeasuredSize},
-            std::pair<std::string_view, Test>{"completesAtomicReplacement",
-                                              completesAtomicReplacement},
-            std::pair<std::string_view, Test>{"propagatesTemporaryWriteFailure",
-                                              propagatesTemporaryWriteFailure},
+            std::pair<std::string_view, Test>{"createFailurePreservesOriginal",
+                                              createFailurePreservesOriginal},
+            std::pair<std::string_view, Test>{
+                "partialWriteFailurePreservesOriginalAndCleansTemporary",
+                partialWriteFailurePreservesOriginalAndCleansTemporary},
+            std::pair<std::string_view, Test>{"flushFailurePreservesOriginalAndCleansTemporary",
+                                              flushFailurePreservesOriginalAndCleansTemporary},
+            std::pair<std::string_view, Test>{"closeFailurePreservesOriginalAndCleansTemporary",
+                                              closeFailurePreservesOriginalAndCleansTemporary},
             std::pair<std::string_view, Test>{"replaceFailurePreservesOriginalAndCleansTemporary",
                                               replaceFailurePreservesOriginalAndCleansTemporary},
+            std::pair<std::string_view, Test>{"partialWritesCompleteReplacementAndReleaseTemporary",
+                                              partialWritesCompleteReplacementAndReleaseTemporary},
+            std::pair<std::string_view, Test>{"disabledFlushSkipsFlushStage",
+                                              disabledFlushSkipsFlushStage},
             std::pair<std::string_view, Test>{"rejectsMissingAtomicWriteParent",
                                               rejectsMissingAtomicWriteParent},
             std::pair<std::string_view, Test>{"writesAndReplacesUsingPlatformBackend",
