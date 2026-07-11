@@ -1052,24 +1052,28 @@ In `EditorDialogHostViewModel.cs`:
 1. Replace the legacy Dialog namespace import with `using Asharia.Editor.Dialogs;`.
 2. Keep the existing field/property types, which now resolve to the public request/result types.
 3. Replace `request.Buttons` with `request.Actions`.
-4. Replace the action command body with:
+4. Scope the action command to the completion created for that `ShowAsync` call:
 
 ```csharp
-new RelayCommand(() => Complete(EditorDialogResult.ActionInvoked(action.Id)))
+new RelayCommand(() => Complete(
+    completion,
+    EditorDialogResult.ActionInvoked(action.Id)))
 ```
 
-5. Replace `TryCancel()` with:
+5. Replace `TryCancel()` with a system-dismiss path that snapshots and claims the expected completion:
 
 ```csharp
 public bool TrySystemDismiss()
 {
-    if (ActiveRequest is null || !ActiveRequest.AllowSystemDismiss)
+    var completion = completion_;
+    if (completion is null
+        || ActiveRequest is null
+        || !ActiveRequest.AllowSystemDismiss)
     {
         return false;
     }
 
-    Complete(EditorDialogResult.SystemDismissed());
-    return true;
+    return Complete(completion, EditorDialogResult.SystemDismissed());
 }
 ```
 
@@ -1079,11 +1083,13 @@ The complete projection becomes:
 Buttons = request.Actions
     .Select(action => new EditorDialogButtonViewModel(
         action,
-        new RelayCommand(() => Complete(EditorDialogResult.ActionInvoked(action.Id)))))
+        new RelayCommand(() => Complete(
+            completion,
+            EditorDialogResult.ActionInvoked(action.Id)))))
     .ToArray();
 ```
 
-Keep `TaskCreationOptions.RunContinuationsAsynchronously` and the existing clear-before-`TrySetResult` order.
+`Complete(expectedCompletion, result)` atomically clears `completion_` only when it still references `expectedCompletion`; otherwise it is a no-op. Keep `TaskCreationOptions.RunContinuationsAsynchronously` and the clear-before-`TrySetResult` order.
 
 - [x] **Step 6: Migrate Presentation callers and Escape bridge**
 
@@ -1369,6 +1375,6 @@ Do not push or create the PR before task reviews and the final whole-branch revi
 
 Issue `#237` evidence：Task 1 action contracts 得到预期 missing-namespace compile RED，随后 focused 33/33 GREEN；Task 2 request/result 得到预期 missing-type compile RED，随后 Dialog public 23/23 与完整 public 174/174 GREEN；Task 3 compatibility Host tests 得到预期 legacy/new contract mismatch compile RED，随后 Host/View 9/9 GREEN；Task 4 architecture test 因 legacy folder 存在得到预期 assertion RED，删除六个 legacy model 后 focused 1/1 与 architecture 8/8 GREEN。最终 public contract 构造验证 enum、ID、text、action count/identity/role、Dismiss/default/destructive 和 result invariant，并冻结防御性只读 action snapshot；compatibility Host、About path 与 legacy `Editor` 已迁移到唯一的 `Asharia.Editor.Dialogs` public ABI，legacy model family 已删除。
 
-Fresh final validation（2026-07-12）：两个 warning-as-error build 均为 0 warning/0 error；public 174/174、architecture 8/8、focused compatibility 46/46、`Editor.sln` 599/599、`Asharia.Studio.sln` 174+8+599，全部 0 failed/0 skipped。四个 format verify、742-file repository encoding、44-file branch strict UTF-8/no-BOM、doc sync、working/staged diff checks 全部通过。
+Fresh final validation（2026-07-12）：两个 warning-as-error build 均为 0 warning/0 error；public 174/174、architecture 8/8、focused compatibility 49/49、`Editor.sln` 602/602、`Asharia.Studio.sln` 174+8+602，全部 0 failed/0 skipped。四个 format verify、742-file repository encoding、repo-wide tracked C#/Markdown strict UTF-8/no-BOM、doc sync、working/staged diff checks 全部通过。
 
 Draft PR handoff：标题可用 `feat(studio): establish public dialog contracts`，正文包含 `Closes #237`。摘要说明 Windows ContentDialog、Apple Alerts、GNOME dialog/button guidance 促成 role/default/destructive 正交设计，Avalonia owner requirement 促成 Host ownership 边界，.NET cancellation 与 record/collection guidance 促成 cancellation/result 分离及 defensive snapshot。ABI impact 是新增七个 dependency-free、UI/native-neutral public types并删除未发布的 legacy namespace；compatibility Host 保持当前 About/Dialog 行为。明确 Windows/Linux/macOS 共用数据 ABI，但本 Slice 不承诺屏幕顺序。非目标包括 service、owner routing、custom content、localization、file picker、progress、notification 与 modal queue；后续严格按 Application static Host/scope resolution → `IEditorDialogService` → owner-window/per-platform layout tests 推进。PR 在最终 whole-branch review 前保持 Draft，不提前 push/create。

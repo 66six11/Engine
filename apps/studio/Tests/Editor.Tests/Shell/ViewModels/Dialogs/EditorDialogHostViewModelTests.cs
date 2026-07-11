@@ -116,6 +116,78 @@ public sealed class EditorDialogHostViewModelTests
         Assert.Contains("already active", exception.Message);
     }
 
+    [Fact]
+    public async Task Stale_first_generation_button_does_not_complete_second_dialog()
+    {
+        var host = new EditorDialogHostViewModel();
+        var firstResultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [
+                Action("accept", "Accept"),
+                DismissAction(),
+            ]));
+        var staleButton = host.Buttons.First();
+
+        host.Buttons.Last().Command.Execute(null);
+        _ = await firstResultTask;
+        var secondResultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [DismissAction()]));
+
+        staleButton.Command.Execute(null);
+
+        Assert.False(secondResultTask.IsCompleted);
+        Assert.True(host.IsOpen);
+        host.Buttons.Single().Command.Execute(null);
+        _ = await secondResultTask;
+    }
+
+    [Fact]
+    public async Task Repeated_action_signal_completes_only_its_own_dialog()
+    {
+        var host = new EditorDialogHostViewModel();
+        var firstResultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [DismissAction()]));
+        var firstButton = host.Buttons.Single();
+
+        firstButton.Command.Execute(null);
+        _ = await firstResultTask;
+        var secondResultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [DismissAction()]));
+
+        firstButton.Command.Execute(null);
+
+        Assert.False(secondResultTask.IsCompleted);
+        Assert.True(host.IsOpen);
+        host.Buttons.Single().Command.Execute(null);
+        _ = await secondResultTask;
+    }
+
+    [Fact]
+    public async Task Action_signal_after_system_dismiss_does_not_complete_later_dialog()
+    {
+        var host = new EditorDialogHostViewModel();
+        var firstResultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [DismissAction()]));
+        var staleButton = host.Buttons.Single();
+
+        Assert.True(host.TrySystemDismiss());
+        _ = await firstResultTask;
+        var secondResultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [DismissAction()]));
+
+        staleButton.Command.Execute(null);
+
+        Assert.False(secondResultTask.IsCompleted);
+        Assert.True(host.IsOpen);
+        host.Buttons.Single().Command.Execute(null);
+        _ = await secondResultTask;
+    }
+
     private static EditorDialogRequest CreateRequest(
         bool allowSystemDismiss,
         EditorDialogActionDescriptor[] actions)
@@ -135,5 +207,13 @@ public sealed class EditorDialogHostViewModelTests
             "Close",
             EditorDialogActionRole.Dismiss,
             isDefault);
+    }
+
+    private static EditorDialogActionDescriptor Action(string id, string text)
+    {
+        return new EditorDialogActionDescriptor(
+            EditorDialogActionId.Create(id),
+            text,
+            EditorDialogActionRole.Primary);
     }
 }

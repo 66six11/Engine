@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Editor.Dialogs;
 using CommunityToolkit.Mvvm.Input;
@@ -55,28 +56,39 @@ public class EditorDialogHostViewModel : ViewModelBase
         Buttons = request.Actions
             .Select(action => new EditorDialogButtonViewModel(
                 action,
-                new RelayCommand(() => Complete(EditorDialogResult.ActionInvoked(action.Id)))))
+                new RelayCommand(() => Complete(
+                    completion,
+                    EditorDialogResult.ActionInvoked(action.Id)))))
             .ToArray();
         return completion.Task;
     }
 
     public bool TrySystemDismiss()
     {
-        if (ActiveRequest is null || !ActiveRequest.AllowSystemDismiss)
+        var completion = completion_;
+        if (completion is null
+            || ActiveRequest is null
+            || !ActiveRequest.AllowSystemDismiss)
         {
             return false;
         }
 
-        Complete(EditorDialogResult.SystemDismissed());
-        return true;
+        return Complete(completion, EditorDialogResult.SystemDismissed());
     }
 
-    private void Complete(EditorDialogResult result)
+    private bool Complete(
+        TaskCompletionSource<EditorDialogResult> expectedCompletion,
+        EditorDialogResult result)
     {
-        var completion = completion_;
-        completion_ = null;
+        if (!ReferenceEquals(
+                Interlocked.CompareExchange(ref completion_, null, expectedCompletion),
+                expectedCompletion))
+        {
+            return false;
+        }
+
         Buttons = [];
         ActiveRequest = null;
-        completion?.TrySetResult(result);
+        return expectedCompletion.TrySetResult(result);
     }
 }

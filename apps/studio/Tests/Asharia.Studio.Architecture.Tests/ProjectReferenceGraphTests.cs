@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml.Linq;
 using Xunit;
 
@@ -45,6 +46,20 @@ public sealed class ProjectReferenceGraphTests
             properties,
             property => typeof(Delegate).IsAssignableFrom(property.PropertyType));
 
+        var apiParameterTypes = dialogTypes
+            .SelectMany(type => type.GetConstructors().SelectMany(constructor => constructor.GetParameters())
+                .Concat(type.GetMethods()
+                    .Where(method => method.IsStatic && method.DeclaringType == type)
+                    .SelectMany(method => method.GetParameters())))
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+        Assert.DoesNotContain(apiParameterTypes, type => type == typeof(Type));
+        Assert.DoesNotContain(apiParameterTypes, type => type == typeof(object));
+        Assert.DoesNotContain(apiParameterTypes, type => type == typeof(CancellationToken));
+        Assert.DoesNotContain(
+            apiParameterTypes,
+            type => typeof(Delegate).IsAssignableFrom(type));
+
         var sourceRoot = Path.Combine(studioRoot, "src", "Asharia.Editor", "Dialogs");
         var source = string.Join(
             Environment.NewLine,
@@ -62,6 +77,7 @@ public sealed class ProjectReferenceGraphTests
             "Vulkan",
             "Asharia.Studio.",
             "Editor.Core",
+            "CancellationToken",
         })
         {
             Assert.DoesNotContain(forbidden, source, StringComparison.Ordinal);
