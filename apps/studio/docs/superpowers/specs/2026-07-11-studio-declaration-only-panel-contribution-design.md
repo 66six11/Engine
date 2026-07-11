@@ -1,6 +1,6 @@
 # Studio Declaration-only Panel Contribution Contract Design
 
-状态：Proposed（设计方向已批准，等待书面 spec 审阅）
+状态：Approved（实施待开始）
 
 更新日期：2026-07-11
 
