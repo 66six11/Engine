@@ -393,7 +393,7 @@ The first targeted run fails at compile time because `EditorModuleBuilder` has n
 
 Reject duplicate module/capability declarations, required/optional overlap, module self-dependency, invalid default identities, and Application→Project module edges. Project→Application and same-scope edges remain valid. Cross-Package dependency legality, provider ambiguity, cycles, and runtime capability availability remain Host responsibilities.
 
-- [ ] **Step 4: Run full gates, commit, and open the Slice PR**
+- [x] **Step 4: Run full gates, commit, and open the Slice PR**
 
 ```powershell
 dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --no-restore -warnaserror
