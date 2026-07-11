@@ -116,12 +116,20 @@ namespace {
         };
     }
 
+    struct AssetGuidText {
+        std::string_view value;
+    };
+
+    [[nodiscard]] constexpr AssetGuidText assetGuidText(std::string_view value) {
+        return AssetGuidText{.value = value};
+    }
+
     [[nodiscard]] asharia::asset::AssetMetadataDocument
-    makeDocument(std::string_view guidText, std::string_view sourcePath, std::uint64_t sourceHash) {
+    makeDocument(AssetGuidText guidText, std::string_view sourcePath, std::uint64_t sourceHash) {
         constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
         constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
 
-        auto guid = asharia::asset::parseAssetGuid(guidText);
+        auto guid = asharia::asset::parseAssetGuid(guidText.value);
         auto settings = defaultSettings();
         const std::uint64_t settingsHash = asharia::asset::hashAssetImportSettings(settings);
         return asharia::asset::AssetMetadataDocument{
@@ -141,10 +149,15 @@ namespace {
         };
     }
 
+    [[nodiscard]] asharia::asset::AssetMetadataDocument
+    makeDocument(const char* guidText, std::string_view sourcePath, std::uint64_t sourceHash) {
+        return makeDocument(assetGuidText(guidText), sourcePath, sourceHash);
+    }
+
     [[nodiscard]] asharia::asset::DiscoveredSourceAsset
     makeDiscoveredSource(std::string_view guidText, std::string_view sourcePath,
                          std::uint64_t sourceHash, std::string_view compression = "auto") {
-        auto document = makeDocument(guidText, sourcePath, sourceHash);
+        auto document = makeDocument(assetGuidText(guidText), sourcePath, sourceHash);
         document.settings = textureSettings(compression);
         document.source.settingsHash = asharia::asset::hashAssetImportSettings(document.settings);
         return asharia::asset::DiscoveredSourceAsset{
@@ -159,8 +172,8 @@ namespace {
     }
 
     [[nodiscard]] asharia::asset::SourceAssetRecord
-    makeTextureProfileSmokeRecord(std::string_view guidText, std::string_view sourcePath) {
-        auto guid = asharia::asset::parseAssetGuid(guidText);
+    makeTextureProfileSmokeRecord(AssetGuidText guidText, std::string_view sourcePath) {
+        auto guid = asharia::asset::parseAssetGuid(guidText.value);
         constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture";
         constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
         return asharia::asset::SourceAssetRecord{
@@ -174,6 +187,11 @@ namespace {
             .sourceHash = 0x9000ULL,
             .settingsHash = 0xA000ULL,
         };
+    }
+
+    [[nodiscard]] asharia::asset::SourceAssetRecord
+    makeTextureProfileSmokeRecord(const char* guidText, std::string_view sourcePath) {
+        return makeTextureProfileSmokeRecord(assetGuidText(guidText), sourcePath);
     }
 
     [[nodiscard]] std::vector<asharia::asset::AssetImportSetting> textureImportContractSettings(
@@ -739,6 +757,8 @@ namespace {
         }
 
         [[nodiscard]] asharia::Result<bool>
+        // This override must preserve the symmetric two-path virtual comparison contract.
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
         publicationEndpointsEquivalent(const std::filesystem::path& left,
                                        const std::filesystem::path& right) override {
             (void)left;
@@ -747,7 +767,8 @@ namespace {
         }
 
         [[nodiscard]] asharia::VoidResult
-        // Mirrors the package operation contract under test.
+        // This override must preserve the two-path virtual contract; the endpoint names document
+        // ordering at the only dynamically dispatched boundary.
         // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
         publishFileAtomically(const std::filesystem::path& stagingFilePath,
                               const std::filesystem::path& finalPath,
@@ -926,9 +947,9 @@ namespace {
             };
             for (std::size_t index = 0; index < products.size(); ++index) {
                 auto& product = products[index];
-                product.source =
-                    makeDocument(guids[index], sourcePaths[index], 0x1000F00D1234CAFEULL + index)
-                        .source;
+                product.source = makeDocument(assetGuidText(guids[index]), sourcePaths[index],
+                                              0x1000F00D1234CAFEULL + index)
+                                     .source;
                 const std::array dependencies{
                     asharia::asset::AssetDependency{
                         .owner = product.source.guid,
@@ -1274,63 +1295,68 @@ namespace {
     makeSingleProductExecutionPlan(const asharia::asset::SourceAssetRecord& source,
                                    std::span<const asharia::asset::AssetImportSetting> settings);
 
+#if defined(_WIN32)
+    [[nodiscard]] bool expectWindowsProductPreflightFailure(const PublicationFixture& fixture,
+                                                            std::size_t productIndex) {
+        FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+        asharia::asset::detail::AssetProductPublicationResult outcome;
+        const auto result =
+            asharia::asset::detail::publishAssetProducts(fixture.request(), operations, outcome);
+        const bool rejected =
+            !result && operations.events.empty() && outcome.failingProductIndex &&
+            *outcome.failingProductIndex == productIndex &&
+            result.error().code ==
+                static_cast<int>(
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed) &&
+            messageHasFinalPath(result.error().message, fixture.products[productIndex].finalPath);
+        if (!rejected) {
+            logFailure("Asset product publication accepted an ambiguous Windows product endpoint.");
+        }
+        return rejected;
+    }
+
+    [[nodiscard]] bool expectWindowsManifestPreflightFailure(const PublicationFixture& fixture) {
+        FakeAssetProductPublicationOperations operations{fixture.manifestPath};
+        asharia::asset::detail::AssetProductPublicationResult outcome;
+        const auto result =
+            asharia::asset::detail::publishAssetProducts(fixture.request(), operations, outcome);
+        const bool rejected =
+            !result && operations.events.empty() && !outcome.failingProductIndex &&
+            result.error().code ==
+                static_cast<int>(
+                    asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) &&
+            messageHasFinalPath(result.error().message, fixture.manifestPath);
+        if (!rejected) {
+            logFailure(
+                "Asset product publication accepted an ambiguous Windows manifest endpoint.");
+        }
+        return rejected;
+    }
+#endif
+
     [[nodiscard]] bool smokeWindowsPublicationEndpointSemantics() {
 #if !defined(_WIN32)
         return true;
 #else
         bool rejectedAmbiguousEndpoints = true;
-        const auto expectProductPreflightFailure = [&rejectedAmbiguousEndpoints](
-                                                       const PublicationFixture& fixture,
-                                                       std::size_t productIndex) {
-            FakeAssetProductPublicationOperations operations{fixture.manifestPath};
-            asharia::asset::detail::AssetProductPublicationResult outcome;
-            const auto result = asharia::asset::detail::publishAssetProducts(fixture.request(),
-                                                                             operations, outcome);
-            if (result || !operations.events.empty() || !outcome.failingProductIndex ||
-                *outcome.failingProductIndex != productIndex ||
-                result.error().code !=
-                    static_cast<int>(
-                        asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed) ||
-                !messageHasFinalPath(result.error().message,
-                                     fixture.products[productIndex].finalPath)) {
-                logFailure("Asset product publication accepted an ambiguous Windows product "
-                           "endpoint.");
-                rejectedAmbiguousEndpoints = false;
-            }
-        };
-        const auto expectManifestPreflightFailure = [&rejectedAmbiguousEndpoints](
-                                                        const PublicationFixture& fixture) {
-            FakeAssetProductPublicationOperations operations{fixture.manifestPath};
-            asharia::asset::detail::AssetProductPublicationResult outcome;
-            const auto result = asharia::asset::detail::publishAssetProducts(fixture.request(),
-                                                                             operations, outcome);
-            if (result || !operations.events.empty() || outcome.failingProductIndex ||
-                result.error().code !=
-                    static_cast<int>(
-                        asharia::asset::AssetProductExecutionDiagnosticCode::ManifestWriteFailed) ||
-                !messageHasFinalPath(result.error().message, fixture.manifestPath)) {
-                logFailure("Asset product publication accepted an ambiguous Windows manifest "
-                           "endpoint.");
-                rejectedAmbiguousEndpoints = false;
-            }
-        };
-
         for (const std::wstring_view suffix : {std::wstring_view{L"."}, std::wstring_view{L" "}}) {
             PublicationFixture duplicateProducts;
             duplicateProducts.products[1].finalPath =
                 duplicateProducts.products[0].finalPath.native() + std::wstring{suffix};
-            expectProductPreflightFailure(duplicateProducts, 1U);
+            rejectedAmbiguousEndpoints &=
+                expectWindowsProductPreflightFailure(duplicateProducts, 1U);
 
             PublicationFixture manifestProductAlias;
             manifestProductAlias.manifestPath =
                 manifestProductAlias.products[0].finalPath.native() + std::wstring{suffix};
-            expectManifestPreflightFailure(manifestProductAlias);
+            rejectedAmbiguousEndpoints &=
+                expectWindowsManifestPreflightFailure(manifestProductAlias);
 
             PublicationFixture reservedProduct;
             reservedProduct.products[0].finalPath =
                 reservedProduct.outputRoot /
                 (std::wstring{L".asharia-product-staging"} + std::wstring{suffix}) / L"escape.bin";
-            expectProductPreflightFailure(reservedProduct, 0U);
+            rejectedAmbiguousEndpoints &= expectWindowsProductPreflightFailure(reservedProduct, 0U);
 
             PublicationFixture ambiguousRoot;
             ambiguousRoot.outputRoot = ambiguousRoot.outputRoot.native() + std::wstring{suffix};
@@ -1339,7 +1365,7 @@ namespace {
                 item.finalPath = ambiguousRoot.outputRoot / item.product.relativeProductPath;
             }
             ambiguousRoot.manifestPath = ambiguousRoot.outputRoot / "product-manifest.json";
-            expectProductPreflightFailure(ambiguousRoot, 0U);
+            rejectedAmbiguousEndpoints &= expectWindowsProductPreflightFailure(ambiguousRoot, 0U);
         }
 
         for (const std::filesystem::path& ambiguousLeaf :
@@ -1348,12 +1374,12 @@ namespace {
             PublicationFixture invalidProduct;
             invalidProduct.products[0].finalPath =
                 invalidProduct.outputRoot / "textures" / ambiguousLeaf;
-            expectProductPreflightFailure(invalidProduct, 0U);
+            rejectedAmbiguousEndpoints &= expectWindowsProductPreflightFailure(invalidProduct, 0U);
         }
 
         PublicationFixture invalidManifest;
         invalidManifest.manifestPath = invalidManifest.outputRoot / L"AUX.manifest";
-        expectManifestPreflightFailure(invalidManifest);
+        rejectedAmbiguousEndpoints &= expectWindowsManifestPreflightFailure(invalidManifest);
 
         PublicationFixture ambiguousOwnedPath;
         FakeAssetProductPublicationOperations ambiguousOwnedOperations{
@@ -1499,6 +1525,63 @@ namespace {
 #endif
     }
 
+#if defined(_WIN32)
+    [[nodiscard]] bool writeWindowsIdentityProbe(const std::filesystem::path& path,
+                                                 std::string_view bytes) {
+        std::ofstream stream{path, std::ios::binary};
+        stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        return stream.good();
+    }
+
+    [[nodiscard]] bool smokeWindowsShortPathIdentity(const std::filesystem::path& root) {
+        std::error_code createError;
+        if (!prepareWorkspace(root)) {
+            return false;
+        }
+        std::filesystem::create_directories(root / "textures", createError);
+        if (createError) {
+            return false;
+        }
+        const std::filesystem::path longPath =
+            root / "textures" / "LongPublicationEndpointIdentity.product";
+        if (!writeWindowsIdentityProbe(longPath, "short-name identity probe")) {
+            return false;
+        }
+        const DWORD shortLength = GetShortPathNameW(longPath.c_str(), nullptr, 0U);
+        std::filesystem::path shortPath;
+        if (shortLength != 0U) {
+            std::vector<wchar_t> shortBuffer(shortLength);
+            const DWORD written =
+                GetShortPathNameW(longPath.c_str(), shortBuffer.data(), shortLength);
+            if (written != 0U && written < shortLength) {
+                shortPath = std::filesystem::path{shortBuffer.data()};
+            }
+        }
+        if (shortPath.empty() || shortPath == longPath) {
+            std::cout << "Win32 8.3 alias probe: disabled\n";
+            return true;
+        }
+
+        std::cout << "Win32 8.3 alias probe: enabled\n";
+        PublicationFixture shortAliasFixture;
+        shortAliasFixture.outputRoot = root;
+        shortAliasFixture.manifestPath.clear();
+        shortAliasFixture.products[0].finalPath = longPath;
+        shortAliasFixture.products[1].finalPath = shortPath;
+        asharia::asset::detail::AssetProductPublicationResult shortAliasOutcome;
+        const auto shortAliasResult = asharia::asset::detail::publishAssetProducts(
+            shortAliasFixture.request(),
+            asharia::asset::detail::assetProductPublicationOperations(), shortAliasOutcome);
+        const bool rejected = !shortAliasResult && shortAliasOutcome.failingProductIndex &&
+                              *shortAliasOutcome.failingProductIndex == 1U &&
+                              messageHasFinalPath(shortAliasResult.error().message, shortPath);
+        if (!rejected) {
+            logFailure("Asset product publication accepted an enabled 8.3 endpoint alias.");
+        }
+        return rejected;
+    }
+#endif
+
     [[nodiscard]] bool smokeWindowsPublicationFileIdentity() {
 #if !defined(_WIN32)
         return true;
@@ -1515,11 +1598,6 @@ namespace {
             return false;
         }
 
-        const auto writeProbeFile = [](const std::filesystem::path& path, std::string_view bytes) {
-            std::ofstream stream{path, std::ios::binary};
-            stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-            return stream.good();
-        };
         const auto expectHardLink = [](const std::filesystem::path& alias,
                                        const std::filesystem::path& existing) {
             return CreateHardLinkW(alias.c_str(), existing.c_str(), nullptr) != 0;
@@ -1527,7 +1605,7 @@ namespace {
 
         const std::filesystem::path productFile = root / "textures" / "identity-a.product";
         const std::filesystem::path productAlias = root / "textures" / "identity-b.product";
-        if (!writeProbeFile(productFile, "existing product identity") ||
+        if (!writeWindowsIdentityProbe(productFile, "existing product identity") ||
             !expectHardLink(productAlias, productFile)) {
             logFailure("Asset product publication could not prepare existing hard-link aliases.");
             return false;
@@ -1554,7 +1632,7 @@ namespace {
         }
         const std::filesystem::path manifestProduct = root / "textures" / "manifest-source.product";
         const std::filesystem::path manifestAlias = root / "product-manifest.json";
-        if (!writeProbeFile(manifestProduct, "existing manifest identity") ||
+        if (!writeWindowsIdentityProbe(manifestProduct, "existing manifest identity") ||
             !expectHardLink(manifestAlias, manifestProduct)) {
             logFailure("Asset product publication could not prepare a manifest hard-link alias.");
             return false;
@@ -1577,44 +1655,7 @@ namespace {
             rejectedAliases = false;
         }
 
-        if (!prepareWorkspace(root) || !createProbeDirectories(root / "textures")) {
-            return false;
-        }
-        const std::filesystem::path longPath =
-            root / "textures" / "LongPublicationEndpointIdentity.product";
-        if (!writeProbeFile(longPath, "short-name identity probe")) {
-            return false;
-        }
-        const DWORD shortLength = GetShortPathNameW(longPath.c_str(), nullptr, 0U);
-        std::filesystem::path shortPath;
-        if (shortLength != 0U) {
-            std::vector<wchar_t> shortBuffer(shortLength);
-            const DWORD written =
-                GetShortPathNameW(longPath.c_str(), shortBuffer.data(), shortLength);
-            if (written != 0U && written < shortLength) {
-                shortPath = std::filesystem::path{shortBuffer.data()};
-            }
-        }
-        if (shortPath.empty() || shortPath == longPath) {
-            std::cout << "Win32 8.3 alias probe: disabled\n";
-        } else {
-            std::cout << "Win32 8.3 alias probe: enabled\n";
-            PublicationFixture shortAliasFixture;
-            shortAliasFixture.outputRoot = root;
-            shortAliasFixture.manifestPath.clear();
-            shortAliasFixture.products[0].finalPath = longPath;
-            shortAliasFixture.products[1].finalPath = shortPath;
-            asharia::asset::detail::AssetProductPublicationResult shortAliasOutcome;
-            const auto shortAliasResult = asharia::asset::detail::publishAssetProducts(
-                shortAliasFixture.request(),
-                asharia::asset::detail::assetProductPublicationOperations(), shortAliasOutcome);
-            if (shortAliasResult || !shortAliasOutcome.failingProductIndex ||
-                *shortAliasOutcome.failingProductIndex != 1U ||
-                !messageHasFinalPath(shortAliasResult.error().message, shortPath)) {
-                logFailure("Asset product publication accepted an enabled 8.3 endpoint alias.");
-                rejectedAliases = false;
-            }
-        }
+        rejectedAliases &= smokeWindowsShortPathIdentity(root);
 
         if (!prepareWorkspace(root)) {
             return false;
@@ -1894,6 +1935,8 @@ namespace {
             asharia::asset::scanAssetSourceTree(asharia::asset::AssetSourceScanRequest{
                 .sourceRoot = contentRoot,
                 .sourcePathPrefix = "Content",
+                .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
+                .ignoredDirectoryNames = {},
             });
         return result.entries.empty() &&
                expectScanDiagnostic(result,
@@ -1923,6 +1966,8 @@ namespace {
             asharia::asset::scanAssetSourceTree(asharia::asset::AssetSourceScanRequest{
                 .sourceRoot = contentRoot,
                 .sourcePathPrefix = "Content",
+                .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
+                .ignoredDirectoryNames = {},
             });
         return result.entries.empty() &&
                expectScanDiagnostic(result,
@@ -1941,6 +1986,8 @@ namespace {
             asharia::asset::scanAssetSourceTree(asharia::asset::AssetSourceScanRequest{
                 .sourceRoot = root / "MissingContent",
                 .sourcePathPrefix = "Content",
+                .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
+                .ignoredDirectoryNames = {},
             });
         return result.entries.empty() &&
                expectScanDiagnostic(result,
@@ -1964,6 +2011,8 @@ namespace {
             asharia::asset::scanAssetSourceTree(asharia::asset::AssetSourceScanRequest{
                 .sourceRoot = contentRoot,
                 .sourcePathPrefix = "Content\\Bad",
+                .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
+                .ignoredDirectoryNames = {},
             });
         return result.entries.empty() &&
                expectScanDiagnostic(result,
@@ -1972,12 +2021,12 @@ namespace {
     }
 
     [[nodiscard]] asharia::asset::AssetProductRecord
-    makeProductRecord(std::string_view guidText, std::string_view productPath,
+    makeProductRecord(AssetGuidText guidText, std::string_view productPath,
                       std::uint64_t sourceHash, std::string_view targetProfile) {
         constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture2D";
         constexpr std::string_view kTextureImporterName = "com.asharia.importer.texture";
 
-        auto guid = asharia::asset::parseAssetGuid(guidText);
+        auto guid = asharia::asset::parseAssetGuid(guidText.value);
         const auto settings = defaultSettings();
         const asharia::asset::SourceAssetRecord source{
             .guid = guid ? *guid : asharia::asset::AssetGuid{},
@@ -2012,16 +2061,27 @@ namespace {
         };
     }
 
-    [[nodiscard]] bool expectInvalidProductManifestRead(std::string_view text,
-                                                        std::string_view expectedToken) {
-        auto document = asharia::asset::readAssetProductManifestText(text);
+    [[nodiscard]] asharia::asset::AssetProductRecord
+    makeProductRecord(const char* guidText, std::string_view productPath, std::uint64_t sourceHash,
+                      std::string_view targetProfile) {
+        return makeProductRecord(assetGuidText(guidText), productPath, sourceHash, targetProfile);
+    }
+
+    struct InvalidManifestExpectation {
+        std::string_view text;
+        std::string_view token;
+    };
+
+    [[nodiscard]] bool
+    expectInvalidProductManifestRead(const InvalidManifestExpectation& expectation) {
+        auto document = asharia::asset::readAssetProductManifestText(expectation.text);
         if (document) {
             logFailure("Asset product manifest smoke accepted invalid manifest text.");
             return false;
         }
 
         if (document.error().domain != asharia::ErrorDomain::Asset ||
-            !messageContains(document.error().message, expectedToken)) {
+            !messageContains(document.error().message, expectation.token)) {
             logFailure("Asset product manifest smoke produced an incomplete read diagnostic.");
             return false;
         }
@@ -2048,7 +2108,7 @@ namespace {
     }
 
     [[nodiscard]] bool corruptFirstProductKeyHash(std::string& text) {
-        constexpr std::string_view kKey = "\"productKeyHash\": \"";
+        constexpr std::string_view kKey = R"("productKeyHash": ")";
         const std::size_t keyOffset = text.find(kKey);
         if (keyOffset == std::string::npos) {
             logFailure("Asset product manifest smoke could not find productKeyHash.");
@@ -2151,7 +2211,8 @@ namespace {
             first.requests.front().source.sourcePath != decal.source.sourcePath ||
             first.requests.front().reason !=
                 asharia::asset::AssetImportRequestReason::MissingProduct ||
-            first.requests.front().relativeProductPath.find("windows-msvc-debug/products/") != 0) {
+            !first.requests.front().relativeProductPath.starts_with(
+                "windows-msvc-debug/products/")) {
             logFailure("Asset import planning smoke failed cache hit/miss planning.");
             return false;
         }
@@ -2825,7 +2886,8 @@ namespace {
     }
 
     [[nodiscard]] bool smokeProductManifestMalformedInput() {
-        return expectInvalidProductManifestRead("{", "Failed to read asset product manifest");
+        return expectInvalidProductManifestRead(
+            {.text = "{", .token = "Failed to read asset product manifest"});
     }
 
     [[nodiscard]] bool smokeProductManifestDuplicateField() {
@@ -2836,7 +2898,8 @@ namespace {
   "products": []
 }
 )json";
-        return expectInvalidProductManifestRead(duplicateSchema, "duplicate key");
+        return expectInvalidProductManifestRead(
+            {.text = duplicateSchema, .token = "duplicate key"});
     }
 
     [[nodiscard]] bool smokeProductManifestMissingField() {
@@ -2860,7 +2923,7 @@ namespace {
   ]
 }
 )json";
-        return expectInvalidProductManifestRead(missingGuid, "guid");
+        return expectInvalidProductManifestRead({.text = missingGuid, .token = "guid"});
     }
 
     [[nodiscard]] bool smokeProductManifestUnknownField() {
@@ -2881,7 +2944,7 @@ namespace {
         }
         text->replace(fieldOffset, std::string_view{"\"productPath\""}.size(),
                       "\"runtimePointer\"");
-        return expectInvalidProductManifestRead(*text, "unknown member");
+        return expectInvalidProductManifestRead({.text = *text, .token = "unknown member"});
     }
 
     [[nodiscard]] bool smokeProductManifestDuplicateProductKey() {
@@ -2930,7 +2993,8 @@ namespace {
         if (!corruptFirstProductKeyHash(*text)) {
             return false;
         }
-        return expectInvalidProductManifestRead(*text, "product key hash mismatch");
+        return expectInvalidProductManifestRead(
+            {.text = *text, .token = "product key hash mismatch"});
     }
 
     [[nodiscard]] bool
@@ -2973,20 +3037,26 @@ namespace {
         return true;
     }
 
+    struct ScannedPlanningSource {
+        std::string_view relativePath;
+        std::string_view bytes;
+        AssetGuidText guid;
+        std::uint64_t sourceHash;
+    };
+
     [[nodiscard]] bool writeScannedPlanningSource(const std::filesystem::path& contentRoot,
-                                                  std::string_view relativePath,
-                                                  std::string_view bytes, std::string_view guidText,
-                                                  std::uint64_t sourceHash) {
+                                                  const ScannedPlanningSource& source) {
         const std::filesystem::path sourceFile =
-            contentRoot / std::filesystem::path{std::string{relativePath}};
-        if (!createDirectories(sourceFile.parent_path()) || !writeTextFile(sourceFile, bytes)) {
+            contentRoot / std::filesystem::path{std::string{source.relativePath}};
+        if (!createDirectories(sourceFile.parent_path()) ||
+            !writeTextFile(sourceFile, source.bytes)) {
             return false;
         }
 
         const std::string sourcePath =
-            "Content/" + std::filesystem::path{std::string{relativePath}}.generic_string();
+            "Content/" + std::filesystem::path{std::string{source.relativePath}}.generic_string();
         const asharia::asset::AssetMetadataDocument document =
-            makeDocument(guidText, sourcePath, sourceHash);
+            makeDocument(source.guid, sourcePath, source.sourceHash);
         return writeDocument(metadataSidecarPath(sourceFile), document);
     }
 
@@ -3000,9 +3070,11 @@ namespace {
                     .sourceRoot = contentRoot,
                     .sourcePathPrefix = "Content",
                     .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
+                    .ignoredDirectoryNames = {},
                 },
             .productManifest = std::move(productManifest),
             .targetProfile = std::string{targetProfile},
+            .toolVersions = {},
         };
     }
 
@@ -3014,12 +3086,16 @@ namespace {
         }
 
         const std::filesystem::path contentRoot = root / "Content";
-        if (!writeScannedPlanningSource(contentRoot, "Textures/Decal.png", "decal bytes",
-                                        "785e2474-65c4-4f28-a8fb-ff8a21449a61",
-                                        0x2000F00D1234CAFEULL) ||
-            !writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
-                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
-                                        0x1000F00D1234CAFEULL)) {
+        if (!writeScannedPlanningSource(
+                contentRoot, {.relativePath = "Textures/Decal.png",
+                              .bytes = "decal bytes",
+                              .guid = assetGuidText("785e2474-65c4-4f28-a8fb-ff8a21449a61"),
+                              .sourceHash = 0x2000F00D1234CAFEULL}) ||
+            !writeScannedPlanningSource(
+                contentRoot, {.relativePath = "Textures/Crate.png",
+                              .bytes = "crate bytes",
+                              .guid = assetGuidText("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21"),
+                              .sourceHash = 0x1000F00D1234CAFEULL})) {
             return false;
         }
 
@@ -3115,9 +3191,11 @@ namespace {
         }
 
         const std::filesystem::path contentRoot = root / "Content";
-        if (!writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
-                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
-                                        0x1000F00D1234CAFEULL)) {
+        if (!writeScannedPlanningSource(
+                contentRoot, {.relativePath = "Textures/Crate.png",
+                              .bytes = "crate bytes",
+                              .guid = assetGuidText("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21"),
+                              .sourceHash = 0x1000F00D1234CAFEULL})) {
             return false;
         }
 
@@ -3187,12 +3265,16 @@ namespace {
         }
 
         const std::filesystem::path contentRoot = root / "Content";
-        if (!writeScannedPlanningSource(contentRoot, "Textures/Decal.png", "decal bytes",
-                                        "785e2474-65c4-4f28-a8fb-ff8a21449a61",
-                                        0x2000F00D1234CAFEULL) ||
-            !writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
-                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
-                                        0x1000F00D1234CAFEULL)) {
+        if (!writeScannedPlanningSource(
+                contentRoot, {.relativePath = "Textures/Decal.png",
+                              .bytes = "decal bytes",
+                              .guid = assetGuidText("785e2474-65c4-4f28-a8fb-ff8a21449a61"),
+                              .sourceHash = 0x2000F00D1234CAFEULL}) ||
+            !writeScannedPlanningSource(
+                contentRoot, {.relativePath = "Textures/Crate.png",
+                              .bytes = "crate bytes",
+                              .guid = assetGuidText("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21"),
+                              .sourceHash = 0x1000F00D1234CAFEULL})) {
             return false;
         }
 
@@ -5579,9 +5661,11 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::filesystem::path contentRoot = root / "Content";
-        if (!writeScannedPlanningSource(contentRoot, "Textures/Crate.png", "crate bytes",
-                                        "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
-                                        0x1000F00D1234CAFEULL)) {
+        if (!writeScannedPlanningSource(
+                contentRoot, {.relativePath = "Textures/Crate.png",
+                              .bytes = "crate bytes",
+                              .guid = assetGuidText("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21"),
+                              .sourceHash = 0x1000F00D1234CAFEULL})) {
             return false;
         }
 
@@ -6199,64 +6283,79 @@ shader "asharia.material.compile_reflection" {
 
 } // namespace
 
-int main() {
-    const bool passed =
-        smokeSourceScanValidAndDeterministic() && smokeSourceScanMissingMetadata() &&
-        smokeSourceScanOrphanMetadata() && smokeSourceScanInvalidRoot() &&
-        smokeSourceScanInvalidPrefix() && smokeScannedImportPlanningRequestsAndCacheHits() &&
-        smokeScannedImportPlanningStopsOnScanDiagnostics() &&
-        smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
-        smokeScannedImportPlanningPlanDiagnostics() &&
-        smokeProductPublicationCommitsManifestLast() &&
-        smokeProductPublicationFakeEnforcesReadLimits() && smokeEmptyProductPublicationIsNoOp() &&
-        smokeProductPublicationPreservesManifestOnHandledFailures() &&
-        smokeProductPublicationRejectsStagedMutation() &&
-        smokeProductPublicationReportsCleanupAfterManifestCommit() &&
-        smokeProductPublicationPreservesPartialOutcome() &&
-        smokeProductPublicationPreflightsEndpoints() && smokeWindowsPublicationFileIdentity() &&
-        smokeWindowsPublicationEndpointSemantics() &&
-        smokeProductExecutionScopesPublicationDiagnostics() &&
-        smokeProductPublicationRejectsUnownedStagingPath() &&
-        smokeNativeProductPublicationRejectsRedirectedStagingRoot() &&
-        smokeProductExecutionWritesDeterministicProducts() && smokeProductBlobPrivateValidation() &&
-        smokeProductBlobReadLimits() && smokeProductBlobReadDiagnostics() &&
-        smokeProductCleanupFailurePreservesDiagnosticIdentity() &&
-        smokeProductExecutionPreservesPublicationOutcome() &&
-        smokeProductExecutionWritesPngTextureProduct() &&
-        smokeProductExecutionPngTextureDiagnostics() &&
-        smokeProductExecutionWritesAmatMaterialProduct() &&
-        smokeProductExecutionAmatDiagnostics() &&
-        smokeProductExecutionWritesAshaderShaderProduct() &&
-        smokeProductExecutionAshaderDiagnostics() &&
-        smokeProductExecutionWritesShaderCompileReflectionProduct() &&
-        smokeProductExecutionShaderCompileReflectionDiagnostics() &&
-        smokeProductExecutionShaderCompileReflectionCompilerDiagnostics() &&
-        smokeProductExecutionShaderCompileReflectionInvalidEntryDiagnostics() &&
-        smokeProductExecutionSourceBytesHashMismatch() &&
-        smokeProductExecutionDependencyProductBytesDiagnostics() &&
-        smokeProductExecutionAcceptsDependencyProductBytes() &&
-        smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
-        smokeImportPlanningMetadataSourceHashDriftWarning() &&
-        smokeImportPlanningSettingsChanged() && smokeAssetToolFingerprintDeterminism() &&
-        smokeAssetToolFingerprintStreamLimits() && smokeImportPlanningToolFingerprintBatchCache() &&
-        smokeImportPlanningToolFingerprintFailureBatchCache() &&
-        smokeAssetToolFingerprintStreamFailureContext() &&
-        smokeImportPlanningToolFingerprintFailure() &&
-        smokeImportPlanningShaderToolVersionChanged() && smokeImportPlanningMissingSnapshot() &&
-        smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
-        smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&
-        smokeTextureImportContractPng() && smokeTextureImportContractDiagnostics() &&
-        smokeTextureImportProfiles() && smokeProductManifestRoundTrip() &&
-        smokeProductManifestMalformedInput() && smokeProductManifestDuplicateField() &&
-        smokeProductManifestMissingField() && smokeProductManifestUnknownField() &&
-        smokeProductManifestDuplicateProductKey() && smokeProductManifestDuplicateProductPath() &&
-        smokeProductManifestInvalidProductPath() && smokeProductManifestProductKeyHashMismatch() &&
-        smokeSourceSnapshotValidAndDeterministic() && smokeSourceSnapshotContentChange() &&
-        smokeSourceSnapshotMissingFile() && smokeSourceSnapshotDirectory() &&
-        smokeSourceSnapshotInvalidSourcePath() && smokeSourceSnapshotDuplicateSourcePath() &&
-        smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
-        smokeMalformedMetadata() && smokeSourcePathMismatch() && smokeDuplicateGuid() &&
-        smokeDuplicateSourcePath() && smokeInvalidEntry() && smokeInvalidEntrySourcePath() &&
-        smokeInvalidMetadataSourcePath();
-    return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
+    try {
+        const bool passed =
+            smokeSourceScanValidAndDeterministic() && smokeSourceScanMissingMetadata() &&
+            smokeSourceScanOrphanMetadata() && smokeSourceScanInvalidRoot() &&
+            smokeSourceScanInvalidPrefix() && smokeScannedImportPlanningRequestsAndCacheHits() &&
+            smokeScannedImportPlanningStopsOnScanDiagnostics() &&
+            smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
+            smokeScannedImportPlanningPlanDiagnostics() &&
+            smokeProductPublicationCommitsManifestLast() &&
+            smokeProductPublicationFakeEnforcesReadLimits() &&
+            smokeEmptyProductPublicationIsNoOp() &&
+            smokeProductPublicationPreservesManifestOnHandledFailures() &&
+            smokeProductPublicationRejectsStagedMutation() &&
+            smokeProductPublicationReportsCleanupAfterManifestCommit() &&
+            smokeProductPublicationPreservesPartialOutcome() &&
+            smokeProductPublicationPreflightsEndpoints() && smokeWindowsPublicationFileIdentity() &&
+            smokeWindowsPublicationEndpointSemantics() &&
+            smokeProductExecutionScopesPublicationDiagnostics() &&
+            smokeProductPublicationRejectsUnownedStagingPath() &&
+            smokeNativeProductPublicationRejectsRedirectedStagingRoot() &&
+            smokeProductExecutionWritesDeterministicProducts() &&
+            smokeProductBlobPrivateValidation() && smokeProductBlobReadLimits() &&
+            smokeProductBlobReadDiagnostics() &&
+            smokeProductCleanupFailurePreservesDiagnosticIdentity() &&
+            smokeProductExecutionPreservesPublicationOutcome() &&
+            smokeProductExecutionWritesPngTextureProduct() &&
+            smokeProductExecutionPngTextureDiagnostics() &&
+            smokeProductExecutionWritesAmatMaterialProduct() &&
+            smokeProductExecutionAmatDiagnostics() &&
+            smokeProductExecutionWritesAshaderShaderProduct() &&
+            smokeProductExecutionAshaderDiagnostics() &&
+            smokeProductExecutionWritesShaderCompileReflectionProduct() &&
+            smokeProductExecutionShaderCompileReflectionDiagnostics() &&
+            smokeProductExecutionShaderCompileReflectionCompilerDiagnostics() &&
+            smokeProductExecutionShaderCompileReflectionInvalidEntryDiagnostics() &&
+            smokeProductExecutionSourceBytesHashMismatch() &&
+            smokeProductExecutionDependencyProductBytesDiagnostics() &&
+            smokeProductExecutionAcceptsDependencyProductBytes() &&
+            smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
+            smokeImportPlanningMetadataSourceHashDriftWarning() &&
+            smokeImportPlanningSettingsChanged() && smokeAssetToolFingerprintDeterminism() &&
+            smokeAssetToolFingerprintStreamLimits() &&
+            smokeImportPlanningToolFingerprintBatchCache() &&
+            smokeImportPlanningToolFingerprintFailureBatchCache() &&
+            smokeAssetToolFingerprintStreamFailureContext() &&
+            smokeImportPlanningToolFingerprintFailure() &&
+            smokeImportPlanningShaderToolVersionChanged() && smokeImportPlanningMissingSnapshot() &&
+            smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
+            smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&
+            smokeTextureImportContractPng() && smokeTextureImportContractDiagnostics() &&
+            smokeTextureImportProfiles() && smokeProductManifestRoundTrip() &&
+            smokeProductManifestMalformedInput() && smokeProductManifestDuplicateField() &&
+            smokeProductManifestMissingField() && smokeProductManifestUnknownField() &&
+            smokeProductManifestDuplicateProductKey() &&
+            smokeProductManifestDuplicateProductPath() &&
+            smokeProductManifestInvalidProductPath() &&
+            smokeProductManifestProductKeyHashMismatch() &&
+            smokeSourceSnapshotValidAndDeterministic() && smokeSourceSnapshotContentChange() &&
+            smokeSourceSnapshotMissingFile() && smokeSourceSnapshotDirectory() &&
+            smokeSourceSnapshotInvalidSourcePath() && smokeSourceSnapshotDuplicateSourcePath() &&
+            smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
+            smokeMalformedMetadata() && smokeSourcePathMismatch() && smokeDuplicateGuid() &&
+            smokeDuplicateSourcePath() && smokeInvalidEntry() && smokeInvalidEntrySourcePath() &&
+            smokeInvalidMetadataSourcePath();
+        return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    } catch (const std::exception& exception) {
+        logFailure(exception.what());
+        return EXIT_FAILURE;
+    } catch (...) {
+        logFailure("Asset pipeline smoke caught an unknown exception.");
+        return EXIT_FAILURE;
+    }
 }

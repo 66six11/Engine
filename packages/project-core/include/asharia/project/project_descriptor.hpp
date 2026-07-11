@@ -58,8 +58,12 @@ namespace asharia::project {
     [[nodiscard]] Result<ProjectId> parseProjectId(std::string_view text);
     [[nodiscard]] std::string formatProjectId(ProjectId projectId);
 
-    [[nodiscard]] VoidResult validateProjectRelativePath(std::string_view path,
-                                                         std::string_view context);
+    struct ProjectRelativePathValidation {
+        std::string_view path;
+        std::string_view context;
+    };
+
+    [[nodiscard]] VoidResult validateProjectRelativePath(ProjectRelativePathValidation validation);
     [[nodiscard]] VoidResult
     validateAshariaProjectDescriptor(const AshariaProjectDescriptor& descriptor);
 

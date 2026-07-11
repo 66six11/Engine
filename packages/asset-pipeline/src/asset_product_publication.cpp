@@ -401,6 +401,121 @@ namespace asharia::asset::detail {
             std::filesystem::path stagingRoot;
         };
 
+        [[nodiscard]] Result<std::vector<std::filesystem::path>>
+        preflightProductEndpoints(const AssetProductPublicationRequest& request,
+                                  AssetProductPublicationResult& outcome,
+                                  AssetProductPublicationOperations& operations,
+                                  const PublicationBoundaries& boundaries) {
+            const std::filesystem::path stagingRoot =
+                request.outputRoot / ".asharia-product-staging";
+            std::vector<std::filesystem::path> canonicalProducts;
+            canonicalProducts.reserve(request.products.size());
+            for (std::size_t productIndex = 0; productIndex < request.products.size();
+                 ++productIndex) {
+                const AssetProductPublicationItem& item = request.products[productIndex];
+                auto canonicalProduct = canonicalEndpoint(item.finalPath, "product final");
+                if (!canonicalProduct) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-endpoint", stagingRoot, item,
+                        canonicalProduct.error().message)};
+                }
+                auto productContained =
+                    isStrictDescendant(*canonicalProduct, boundaries.outputRoot);
+                if (!productContained) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-comparison", stagingRoot, item,
+                        productContained.error().message)};
+                }
+                if (!*productContained) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-containment", stagingRoot, item,
+                        "product final endpoint is not a descendant of the output root")};
+                }
+                auto productReserved =
+                    isEqualOrDescendant(*canonicalProduct, boundaries.stagingRoot);
+                if (!productReserved) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-comparison", stagingRoot, item,
+                        productReserved.error().message)};
+                }
+                if (*productReserved) {
+                    return std::unexpected{productPublicationError(
+                        outcome, productIndex, "preflight-product-staging-namespace", stagingRoot,
+                        item, "product final endpoint overlaps the reserved staging namespace")};
+                }
+                for (std::size_t priorIndex = 0; priorIndex < canonicalProducts.size();
+                     ++priorIndex) {
+                    auto duplicate = endpointEquals(*canonicalProduct,
+                                                    canonicalProducts[priorIndex], operations);
+                    if (!duplicate) {
+                        return std::unexpected{productPublicationError(
+                            outcome, productIndex, "preflight-product-comparison", stagingRoot,
+                            item, duplicate.error().message)};
+                    }
+                    if (*duplicate) {
+                        return std::unexpected{productPublicationError(
+                            outcome, productIndex, "preflight-product-alias", stagingRoot, item,
+                            "product final endpoint aliases product index " +
+                                std::to_string(priorIndex))};
+                    }
+                }
+                canonicalProducts.push_back(std::move(*canonicalProduct));
+            }
+            return canonicalProducts;
+        }
+
+        [[nodiscard]] VoidResult
+        preflightManifestEndpoint(const AssetProductPublicationRequest& request,
+                                  AssetProductPublicationOperations& operations,
+                                  const PublicationBoundaries& boundaries,
+                                  std::span<const std::filesystem::path> canonicalProducts) {
+            if (request.manifestPath.empty()) {
+                return {};
+            }
+
+            const std::filesystem::path stagingRoot =
+                request.outputRoot / ".asharia-product-staging";
+            // A caller-owned manifest endpoint may intentionally live outside outputRoot. It is
+            // still resolved under platform filesystem semantics and must not alias a product.
+            auto canonicalManifest = canonicalEndpoint(request.manifestPath, "manifest final");
+            if (!canonicalManifest) {
+                return std::unexpected{
+                    publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                     "preflight-manifest-endpoint", stagingRoot,
+                                     request.manifestPath, canonicalManifest.error().message)};
+            }
+            auto manifestReserved = isEqualOrDescendant(*canonicalManifest, boundaries.stagingRoot);
+            if (!manifestReserved) {
+                return std::unexpected{
+                    publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                     "preflight-manifest-comparison", stagingRoot,
+                                     request.manifestPath, manifestReserved.error().message)};
+            }
+            if (*manifestReserved) {
+                return std::unexpected{publicationError(
+                    AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                    "preflight-manifest-staging-namespace", stagingRoot, request.manifestPath,
+                    "manifest final endpoint overlaps the reserved staging namespace")};
+            }
+            for (const std::filesystem::path& canonicalProduct : canonicalProducts) {
+                auto aliasesProduct =
+                    endpointEquals(*canonicalManifest, canonicalProduct, operations);
+                if (!aliasesProduct) {
+                    return std::unexpected{
+                        publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                                         "preflight-manifest-comparison", stagingRoot,
+                                         request.manifestPath, aliasesProduct.error().message)};
+                }
+                if (*aliasesProduct) {
+                    return std::unexpected{publicationError(
+                        AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
+                        "preflight-manifest-product-alias", stagingRoot, request.manifestPath,
+                        "manifest final endpoint aliases a product final endpoint")};
+                }
+            }
+            return {};
+        }
+
         [[nodiscard]] Result<PublicationBoundaries>
         preflightPublicationEndpoints(const AssetProductPublicationRequest& request,
                                       AssetProductPublicationResult& outcome,
@@ -436,115 +551,19 @@ namespace asharia::asset::detail {
                     "reserved staging root is not a descendant of the output root")};
             }
 
-            std::vector<std::filesystem::path> canonicalProducts;
-            canonicalProducts.reserve(request.products.size());
-            for (std::size_t productIndex = 0; productIndex < request.products.size();
-                 ++productIndex) {
-                const AssetProductPublicationItem& item = request.products[productIndex];
-                auto canonicalProduct = canonicalEndpoint(item.finalPath, "product final");
-                if (!canonicalProduct) {
-                    return std::unexpected{
-                        productPublicationError(outcome, productIndex, "preflight-product-endpoint",
-                                                request.outputRoot / ".asharia-product-staging",
-                                                item, canonicalProduct.error().message)};
-                }
-                auto productContained = isStrictDescendant(*canonicalProduct, *canonicalRoot);
-                if (!productContained) {
-                    return std::unexpected{productPublicationError(
-                        outcome, productIndex, "preflight-product-comparison",
-                        request.outputRoot / ".asharia-product-staging", item,
-                        productContained.error().message)};
-                }
-                if (!*productContained) {
-                    return std::unexpected{productPublicationError(
-                        outcome, productIndex, "preflight-product-containment",
-                        request.outputRoot / ".asharia-product-staging", item,
-                        "product final endpoint is not a descendant of the output root")};
-                }
-                auto productReserved =
-                    isEqualOrDescendant(*canonicalProduct, *canonicalStagingRoot);
-                if (!productReserved) {
-                    return std::unexpected{productPublicationError(
-                        outcome, productIndex, "preflight-product-comparison",
-                        request.outputRoot / ".asharia-product-staging", item,
-                        productReserved.error().message)};
-                }
-                if (*productReserved) {
-                    return std::unexpected{productPublicationError(
-                        outcome, productIndex, "preflight-product-staging-namespace",
-                        request.outputRoot / ".asharia-product-staging", item,
-                        "product final endpoint overlaps the reserved staging namespace")};
-                }
-                for (std::size_t priorIndex = 0; priorIndex < canonicalProducts.size();
-                     ++priorIndex) {
-                    auto duplicate = endpointEquals(*canonicalProduct,
-                                                    canonicalProducts[priorIndex], operations);
-                    if (!duplicate) {
-                        return std::unexpected{productPublicationError(
-                            outcome, productIndex, "preflight-product-comparison",
-                            request.outputRoot / ".asharia-product-staging", item,
-                            duplicate.error().message)};
-                    }
-                    if (*duplicate) {
-                        return std::unexpected{productPublicationError(
-                            outcome, productIndex, "preflight-product-alias",
-                            request.outputRoot / ".asharia-product-staging", item,
-                            "product final endpoint aliases product index " +
-                                std::to_string(priorIndex))};
-                    }
-                }
-                canonicalProducts.push_back(std::move(*canonicalProduct));
-            }
-
-            if (request.manifestPath.empty()) {
-                return PublicationBoundaries{.outputRoot = std::move(*canonicalRoot),
+            PublicationBoundaries boundaries{.outputRoot = std::move(*canonicalRoot),
                                              .stagingRoot = std::move(*canonicalStagingRoot)};
+            auto canonicalProducts =
+                preflightProductEndpoints(request, outcome, operations, boundaries);
+            if (!canonicalProducts) {
+                return std::unexpected{std::move(canonicalProducts.error())};
             }
-
-            // A caller-owned manifest endpoint may intentionally live outside outputRoot. It is
-            // still resolved under platform filesystem semantics and must not alias a product.
-            auto canonicalManifest = canonicalEndpoint(request.manifestPath, "manifest final");
-            if (!canonicalManifest) {
-                return std::unexpected{publicationError(
-                    AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                    "preflight-manifest-endpoint", request.outputRoot / ".asharia-product-staging",
-                    request.manifestPath, canonicalManifest.error().message)};
+            if (auto manifestValid =
+                    preflightManifestEndpoint(request, operations, boundaries, *canonicalProducts);
+                !manifestValid) {
+                return std::unexpected{std::move(manifestValid.error())};
             }
-            auto manifestReserved = isEqualOrDescendant(*canonicalManifest, *canonicalStagingRoot);
-            if (!manifestReserved) {
-                return std::unexpected{
-                    publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                                     "preflight-manifest-comparison",
-                                     request.outputRoot / ".asharia-product-staging",
-                                     request.manifestPath, manifestReserved.error().message)};
-            }
-            if (*manifestReserved) {
-                return std::unexpected{publicationError(
-                    AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                    "preflight-manifest-staging-namespace",
-                    request.outputRoot / ".asharia-product-staging", request.manifestPath,
-                    "manifest final endpoint overlaps the reserved staging namespace")};
-            }
-            for (const std::filesystem::path& canonicalProduct : canonicalProducts) {
-                auto aliasesProduct =
-                    endpointEquals(*canonicalManifest, canonicalProduct, operations);
-                if (!aliasesProduct) {
-                    return std::unexpected{
-                        publicationError(AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                                         "preflight-manifest-comparison",
-                                         request.outputRoot / ".asharia-product-staging",
-                                         request.manifestPath, aliasesProduct.error().message)};
-                }
-                if (*aliasesProduct) {
-                    return std::unexpected{publicationError(
-                        AssetProductExecutionDiagnosticCode::ManifestWriteFailed,
-                        "preflight-manifest-product-alias",
-                        request.outputRoot / ".asharia-product-staging", request.manifestPath,
-                        "manifest final endpoint aliases a product final endpoint")};
-                }
-            }
-            return PublicationBoundaries{.outputRoot = std::move(*canonicalRoot),
-                                         .stagingRoot = std::move(*canonicalStagingRoot)};
+            return boundaries;
         }
 
         class NativeAssetProductPublicationOperations final

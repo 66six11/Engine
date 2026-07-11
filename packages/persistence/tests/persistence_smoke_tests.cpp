@@ -1,5 +1,6 @@
 ﻿#include <algorithm>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -122,23 +123,29 @@ namespace {
         return text.find(needle) != std::string_view::npos;
     }
 
-    [[nodiscard]] asharia::schema::FieldSchema storedFloat(std::uint32_t id, std::string_view key) {
+    [[nodiscard]] asharia::schema::FieldSchema storedFloat(std::uint32_t fieldId,
+                                                           std::string_view key) {
         return asharia::schema::FieldSchema{
-            .id = asharia::schema::makeFieldId(id),
+            .id = asharia::schema::makeFieldId(fieldId),
             .key = std::string{key},
             .valueType = asharia::schema::builtin::floatTypeId(),
             .valueKind = asharia::schema::ValueKind::Float,
             .aliases = {},
-            .metadata = {.persistence = {.stored = true, .required = true}},
+            .metadata =
+                {
+                    .persistence = {.stored = true, .required = true},
+                    .editor = {},
+                    .script = {},
+                    .numeric = {},
+                },
         };
     }
 
-    [[nodiscard]] asharia::schema::FieldSchema storedField(std::uint32_t id, std::string_view key,
-                                                           std::string_view typeName,
-                                                           asharia::schema::ValueKind kind,
-                                                           bool hasDefault = false) {
+    [[nodiscard]] asharia::schema::FieldSchema
+    storedField(std::uint32_t fieldId, std::string_view key, std::string_view typeName,
+                asharia::schema::ValueKind kind, bool hasDefault = false) {
         return asharia::schema::FieldSchema{
-            .id = asharia::schema::makeFieldId(id),
+            .id = asharia::schema::makeFieldId(fieldId),
             .key = std::string{key},
             .valueType = asharia::schema::makeTypeId(typeName),
             .valueKind = kind,
@@ -146,21 +153,38 @@ namespace {
             .metadata =
                 {
                     .persistence = {.stored = true, .required = true, .hasDefault = hasDefault},
-                    .editor = {.visible = true},
-                    .script = {.visible = true, .read = true, .write = true},
+                    .editor = {.visible = true,
+                               .readOnly = false,
+                               .displayName = {},
+                               .category = {},
+                               .tooltip = {},
+                               .readOnlyReason = {}},
+                    .script = {.visible = true,
+                               .read = true,
+                               .write = true,
+                               .context = {},
+                               .threadAffinity = {},
+                               .lifetime = {}},
+                    .numeric = {},
                 },
         };
     }
 
-    [[nodiscard]] asharia::schema::FieldSchema storedString(std::uint32_t id,
+    [[nodiscard]] asharia::schema::FieldSchema storedString(std::uint32_t fieldId,
                                                             std::string_view key) {
         return asharia::schema::FieldSchema{
-            .id = asharia::schema::makeFieldId(id),
+            .id = asharia::schema::makeFieldId(fieldId),
             .key = std::string{key},
             .valueType = asharia::schema::builtin::stringTypeId(),
             .valueKind = asharia::schema::ValueKind::String,
             .aliases = {},
-            .metadata = {.persistence = {.stored = true, .required = false}},
+            .metadata =
+                {
+                    .persistence = {.stored = true, .required = false},
+                    .editor = {},
+                    .script = {},
+                    .numeric = {},
+                },
         };
     }
 
@@ -171,6 +195,8 @@ namespace {
             .version = 1,
             .kind = asharia::schema::ValueKind::InlineStruct,
             .fields = {storedFloat(1, "x"), storedFloat(2, "y"), storedFloat(3, "z")},
+            .reservedFieldIds = {},
+            .metadata = {},
         };
     }
 
@@ -182,6 +208,8 @@ namespace {
             .kind = asharia::schema::ValueKind::InlineStruct,
             .fields = {storedFloat(1, "x"), storedFloat(2, "y"), storedFloat(3, "z"),
                        storedFloat(4, "w")},
+            .reservedFieldIds = {},
+            .metadata = {},
         };
     }
 
@@ -205,18 +233,42 @@ namespace {
                         .key = "cachedMagnitude",
                         .valueType = asharia::schema::builtin::floatTypeId(),
                         .valueKind = asharia::schema::ValueKind::Float,
-                        .metadata = {.persistence = {.stored = false},
-                                     .editor = {.visible = true, .readOnly = true}},
+                        .aliases = {},
+                        .metadata =
+                            {
+                                .persistence = {.stored = false},
+                                .editor = {.visible = true,
+                                           .readOnly = true,
+                                           .displayName = {},
+                                           .category = {},
+                                           .tooltip = {},
+                                           .readOnlyReason = {}},
+                                .script = {},
+                                .numeric = {},
+                            },
                     },
                     asharia::schema::FieldSchema{
                         .id = asharia::schema::makeFieldId(6),
                         .key = "scriptCounter",
                         .valueType = asharia::schema::builtin::int32TypeId(),
                         .valueKind = asharia::schema::ValueKind::Integer,
-                        .metadata = {.persistence = {.stored = false},
-                                     .script = {.visible = true, .read = true}},
+                        .aliases = {},
+                        .metadata =
+                            {
+                                .persistence = {.stored = false},
+                                .editor = {},
+                                .script = {.visible = true,
+                                           .read = true,
+                                           .write = false,
+                                           .context = {},
+                                           .threadAffinity = {},
+                                           .lifetime = {}},
+                                .numeric = {},
+                            },
                     },
                 },
+            .reservedFieldIds = {},
+            .metadata = {},
         };
     }
 
@@ -227,6 +279,8 @@ namespace {
             .version = 1,
             .kind = asharia::schema::ValueKind::Object,
             .fields = {storedFloat(1, "exposure")},
+            .reservedFieldIds = {},
+            .metadata = {},
         };
     }
 
@@ -237,6 +291,8 @@ namespace {
             .version = 1,
             .kind = asharia::schema::ValueKind::Object,
             .fields = {storedFloat(1, "value")},
+            .reservedFieldIds = {},
+            .metadata = {},
         };
     }
 
@@ -251,6 +307,8 @@ namespace {
                     storedField(1, "child", kNestedObjectTypeName,
                                 asharia::schema::ValueKind::Object),
                 },
+            .reservedFieldIds = {},
+            .metadata = {},
         };
     }
 
@@ -267,11 +325,20 @@ namespace {
                     asharia::schema::FieldSchema{
                         .id = asharia::schema::makeFieldId(1),
                         .key = std::string{key},
-                        .valueType = valueType,
+                        .valueType = std::move(valueType),
                         .valueKind = kind,
-                        .metadata = {.persistence = {.stored = true}},
+                        .aliases = {},
+                        .metadata =
+                            {
+                                .persistence = {.stored = true},
+                                .editor = {},
+                                .script = {},
+                                .numeric = {},
+                            },
                     },
                 },
+            .reservedFieldIds = {},
+            .metadata = {},
         };
     }
 
@@ -281,7 +348,7 @@ namespace {
         schema.canonicalName = std::string{kMigratedTransformTypeName};
         schema.version = 2;
         schema.fields.resize(4);
-        schema.fields[1].aliases.push_back("eulerRotation");
+        schema.fields[1].aliases.emplace_back("eulerRotation");
         return schema;
     }
 
@@ -440,14 +507,15 @@ namespace {
         return bindings;
     }
 
-    [[nodiscard]] asharia::archive::ArchiveValue makeVec3Archive(float x, float y, float z) {
+    [[nodiscard]] asharia::archive::ArchiveValue makeVec3Archive(float xValue, float yValue,
+                                                                 float zValue) {
         return asharia::archive::ArchiveValue::object({
-            asharia::archive::ArchiveMember{.key = "x",
-                                            .value = asharia::archive::ArchiveValue::floating(x)},
-            asharia::archive::ArchiveMember{.key = "y",
-                                            .value = asharia::archive::ArchiveValue::floating(y)},
-            asharia::archive::ArchiveMember{.key = "z",
-                                            .value = asharia::archive::ArchiveValue::floating(z)},
+            asharia::archive::ArchiveMember{
+                .key = "x", .value = asharia::archive::ArchiveValue::floating(xValue)},
+            asharia::archive::ArchiveMember{
+                .key = "y", .value = asharia::archive::ArchiveValue::floating(yValue)},
+            asharia::archive::ArchiveMember{
+                .key = "z", .value = asharia::archive::ArchiveValue::floating(zValue)},
         });
     }
 
@@ -562,258 +630,334 @@ namespace {
         });
     }
 
+    struct UnsupportedTypeName {
+        UnsupportedTypeName(const char* value) : text{value} {}
+        UnsupportedTypeName(std::string_view value) : text{value} {}
+        std::string_view text;
+    };
+
+    struct UnsupportedFieldKey {
+        UnsupportedFieldKey(const char* value) : text{value} {}
+        UnsupportedFieldKey(std::string_view value) : text{value} {}
+        std::string_view text;
+    };
+
+    struct UnsupportedKindName {
+        UnsupportedKindName(const char* value) : text{value} {}
+        UnsupportedKindName(std::string_view value) : text{value} {}
+        std::string_view text;
+    };
+
     template <typename ObjectT>
     [[nodiscard]] bool
     expectUnsupportedKindRejected(const asharia::schema::SchemaRegistry& schemas,
                                   const asharia::cpp_binding::BindingRegistry& bindings,
-                                  std::string_view typeName, std::string_view fieldKey,
-                                  std::string_view kindName, const ObjectT& source,
+                                  UnsupportedTypeName typeName, UnsupportedFieldKey fieldKey,
+                                  UnsupportedKindName kindName, const ObjectT& source,
                                   const asharia::archive::ArchiveValue& fieldValue) {
         auto saved = asharia::persistence::saveObject(
-            schemas, bindings, asharia::schema::makeTypeId(typeName), &source);
+            schemas, bindings, asharia::schema::makeTypeId(typeName.text), &source);
         if (saved || !contains(saved.error().message, "not supported") ||
-            !contains(saved.error().message, kindName)) {
-            std::cerr << "Persistence accepted unsupported " << kindName << " during save.\n";
+            !contains(saved.error().message, kindName.text)) {
+            std::cerr << "Persistence accepted unsupported " << kindName.text << " during save.\n";
             return false;
         }
 
         ObjectT loaded{};
         const asharia::archive::ArchiveValue archive =
-            makeUnsupportedOwnerArchive(typeName, fieldKey, fieldValue);
+            makeUnsupportedOwnerArchive(typeName.text, fieldKey.text, fieldValue);
         auto loadedResult = asharia::persistence::loadObject(
-            schemas, bindings, asharia::schema::makeTypeId(typeName), archive, &loaded);
+            schemas, bindings, asharia::schema::makeTypeId(typeName.text), archive, &loaded);
         if (loadedResult || !contains(loadedResult.error().message, "not supported") ||
-            !contains(loadedResult.error().message, kindName)) {
-            std::cerr << "Persistence accepted unsupported " << kindName << " during load.\n";
+            !contains(loadedResult.error().message, kindName.text)) {
+            std::cerr << "Persistence accepted unsupported " << kindName.text << " during load.\n";
             return false;
         }
         return true;
     }
 
+    [[nodiscard]] bool
+    verifyUnsupportedKindsAndProperty(const asharia::schema::SchemaRegistry& schemas,
+                                      const asharia::cpp_binding::BindingRegistry& bindings) {
+        const UnsupportedStringOwner unsupportedStringOwner{.value = "token"};
+        if (!expectUnsupportedKindRejected(schemas, bindings, kUnsupportedEnumOwnerTypeName,
+                                           "value", "enum", unsupportedStringOwner,
+                                           asharia::archive::ArchiveValue::string("Token"))) {
+            return false;
+        }
+        const UnsupportedArrayOwner unsupportedArrayOwner{.values = 1.0F};
+        if (!expectUnsupportedKindRejected(schemas, bindings, kUnsupportedArrayOwnerTypeName,
+                                           "values", "array", unsupportedArrayOwner,
+                                           asharia::archive::ArchiveValue::array(
+                                               {asharia::archive::ArchiveValue::floating(1.0)}))) {
+            return false;
+        }
+        if (!expectUnsupportedKindRejected(schemas, bindings,
+                                           kUnsupportedAssetReferenceOwnerTypeName, "value",
+                                           "asset reference", unsupportedStringOwner,
+                                           asharia::archive::ArchiveValue::string("asset-guid")) ||
+            !expectUnsupportedKindRejected(schemas, bindings,
+                                           kUnsupportedEntityReferenceOwnerTypeName, "value",
+                                           "entity reference", unsupportedStringOwner,
+                                           asharia::archive::ArchiveValue::string("entity:1"))) {
+            return false;
+        }
+
+        PropertyComponent propertySource;
+        if (auto set = propertySource.setExposure(2.75F); !set) {
+            std::cerr << set.error().message << '\n';
+            return false;
+        }
+        auto propertyArchive = asharia::persistence::saveObject(
+            schemas, bindings, asharia::schema::makeTypeId(kPropertyTypeName), &propertySource);
+        if (!propertyArchive) {
+            std::cerr << propertyArchive.error().message << '\n';
+            return false;
+        }
+        PropertyComponent propertyLoaded;
+        if (auto result = asharia::persistence::loadObject(
+                schemas, bindings, asharia::schema::makeTypeId(kPropertyTypeName), *propertyArchive,
+                &propertyLoaded);
+            !result || propertyLoaded.exposure() != 2.75F || !propertyLoaded.dirty()) {
+            std::cerr << "Persistence property roundtrip failed.\n";
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool
+    verifyUnknownAndMissingFields(const asharia::schema::SchemaRegistry& schemas,
+                                  const asharia::cpp_binding::BindingRegistry& bindings,
+                                  const asharia::archive::ArchiveValue& archive,
+                                  const Transform& source) {
+        asharia::archive::ArchiveValue unknownArchive = archive;
+        asharia::archive::ArchiveValue* unknownFields = unknownArchive.findMemberValue("fields");
+        unknownFields->objectValue.push_back(asharia::archive::ArchiveMember{
+            .key = "unknownFutureField",
+            .value = asharia::archive::ArchiveValue::integer(7),
+        });
+        Transform rejectedUnknownObject{};
+        auto rejectedUnknown = asharia::persistence::loadObject(
+            schemas, bindings, asharia::schema::makeTypeId(kTransformTypeName), unknownArchive,
+            &rejectedUnknownObject);
+        if (rejectedUnknown || !contains(rejectedUnknown.error().message, "unknown field")) {
+            std::cerr << "Persistence accepted an unknown field.\n";
+            return false;
+        }
+
+        Transform droppedUnknown{};
+        const asharia::persistence::PersistencePolicy dropUnknownPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::persistence::UnknownFieldPolicy::Drop,
+            .missingFields = asharia::persistence::MissingFieldPolicy::UseDefault,
+            .migrations = nullptr,
+            .archivePath = {},
+            .migrationScenario = asharia::persistence::MigrationScenario::Unspecified,
+        };
+        if (auto result = asharia::persistence::loadObject(
+                schemas, bindings, asharia::schema::makeTypeId(kTransformTypeName), unknownArchive,
+                &droppedUnknown, dropUnknownPolicy);
+            !result || droppedUnknown.position.x != source.position.x) {
+            std::cerr << "Persistence did not drop an unknown field.\n";
+            return false;
+        }
+
+        asharia::archive::ArchiveValue missingScaleArchive = archive;
+        asharia::archive::ArchiveValue* missingScaleFields =
+            missingScaleArchive.findMemberValue("fields");
+        std::erase_if(
+            missingScaleFields->objectValue,
+            [](const asharia::archive::ArchiveMember& member) { return member.key == "scale"; });
+        Transform defaultedScale{
+            .position = {},
+            .rotation = {},
+            .scale = {.x = 8.0F, .y = 8.0F, .z = 8.0F},
+            .debugName = {},
+            .cachedMagnitude = 0.0F,
+            .scriptCounter = 0,
+        };
+        if (auto result = asharia::persistence::loadObject(
+                schemas, bindings, asharia::schema::makeTypeId(kTransformTypeName),
+                missingScaleArchive, &defaultedScale);
+            !result || defaultedScale.scale.x != 1.0F || defaultedScale.scale.y != 1.0F ||
+            defaultedScale.scale.z != 1.0F) {
+            std::cerr << "Persistence did not apply a missing field default.\n";
+            return false;
+        }
+
+        asharia::archive::ArchiveValue missingPositionArchive = archive;
+        asharia::archive::ArchiveValue* missingPositionFields =
+            missingPositionArchive.findMemberValue("fields");
+        std::erase_if(
+            missingPositionFields->objectValue,
+            [](const asharia::archive::ArchiveMember& member) { return member.key == "position"; });
+        Transform missingPosition{};
+        auto missingPositionResult = asharia::persistence::loadObject(
+            schemas, bindings, asharia::schema::makeTypeId(kTransformTypeName),
+            missingPositionArchive, &missingPosition);
+        if (missingPositionResult || !contains(missingPositionResult.error().message, "default")) {
+            std::cerr << "Persistence accepted a missing field without a default.\n";
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool verifyMigration(const asharia::schema::SchemaRegistry& schemas,
+                                       const asharia::cpp_binding::BindingRegistry& bindings) {
+        asharia::persistence::MigrationRegistry migrations;
+        if (auto registered = migrations.registerMigration(
+                asharia::schema::makeTypeId(kMigratedTransformTypeName), 1, 2,
+                migrateTransformV1ToV2);
+            !registered) {
+            std::cerr << registered.error().message << '\n';
+            return false;
+        }
+        auto duplicateMigration = migrations.registerMigration(
+            asharia::schema::makeTypeId(kMigratedTransformTypeName), 1, 2, migrateTransformV1ToV2);
+        if (duplicateMigration || !contains(duplicateMigration.error().message, "duplicate")) {
+            std::cerr << "Persistence accepted a duplicate migration.\n";
+            return false;
+        }
+
+        const asharia::archive::ArchiveValue oldArchive = makeMigratedTransformV1Archive();
+        MigratedTransform rejectedMigration{};
+        auto missingMigrationResult = asharia::persistence::loadObject(
+            schemas, bindings, asharia::schema::makeTypeId(kMigratedTransformTypeName), oldArchive,
+            &rejectedMigration);
+        if (missingMigrationResult ||
+            !contains(missingMigrationResult.error().message, "requires migration")) {
+            std::cerr << "Persistence did not require a migration policy.\n";
+            return false;
+        }
+
+        const asharia::persistence::PersistencePolicy migrationPolicy{
+            .includeTypeHeader = true,
+            .unknownFields = asharia::persistence::UnknownFieldPolicy::Error,
+            .missingFields = asharia::persistence::MissingFieldPolicy::UseDefault,
+            .migrations = &migrations,
+            .archivePath = {},
+            .migrationScenario = asharia::persistence::MigrationScenario::Unspecified,
+        };
+        MigratedTransform migrated{};
+        if (auto result = asharia::persistence::loadObject(
+                schemas, bindings, asharia::schema::makeTypeId(kMigratedTransformTypeName),
+                oldArchive, &migrated, migrationPolicy);
+            !result || migrated.position.x != 1.0F || migrated.position.y != 2.0F ||
+            migrated.position.z != 3.0F || migrated.rotation.z != 0.25F ||
+            migrated.rotation.w != 1.0F || migrated.scale.x != 1.0F ||
+            migrated.debugName != "migrated") {
+            std::cerr << "Persistence migration did not load expected values.\n";
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] int runPersistenceSmokeTests() {
+        auto schemas = makeSchemas();
+        if (!schemas) {
+            return EXIT_FAILURE;
+        }
+        auto bindings = makeBindings(*schemas);
+        if (!bindings) {
+            return EXIT_FAILURE;
+        }
+
+        const Transform source{
+            .position = {.x = 1.0F, .y = 2.0F, .z = 3.0F},
+            .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
+            .scale = {.x = 2.0F, .y = 2.0F, .z = 2.0F},
+            .debugName = "roundtrip",
+            .cachedMagnitude = 99.0F,
+            .scriptCounter = 12,
+        };
+
+        auto archive = asharia::persistence::saveObject(
+            *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName), &source);
+        if (!archive) {
+            std::cerr << archive.error().message << '\n';
+            return EXIT_FAILURE;
+        }
+
+        const asharia::archive::ArchiveValue* fields = archive->findMemberValue("fields");
+        const asharia::archive::ArchiveValue* position =
+            fields == nullptr ? nullptr : fields->findMemberValue("position");
+        if (position == nullptr || position->findMemberValue("type") != nullptr) {
+            std::cerr << "Persistence added an envelope to an inline Vec3 field.\n";
+            return EXIT_FAILURE;
+        }
+
+        Transform loaded{};
+        if (auto result = asharia::persistence::loadObject(
+                *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName), *archive,
+                &loaded);
+            !result) {
+            std::cerr << result.error().message << '\n';
+            return EXIT_FAILURE;
+        }
+        if (loaded.position.x != source.position.x || loaded.position.y != source.position.y ||
+            loaded.position.z != source.position.z || loaded.scale.x != source.scale.x ||
+            loaded.debugName != source.debugName || loaded.cachedMagnitude != 0.0F ||
+            loaded.scriptCounter != 0) {
+            std::cerr << "Persistence roundtrip loaded unexpected transform values.\n";
+            return EXIT_FAILURE;
+        }
+
+        const ObjectOwner objectOwner{
+            .child = {.value = 42.0F},
+        };
+        auto objectOwnerArchive = asharia::persistence::saveObject(
+            *schemas, *bindings, asharia::schema::makeTypeId(kObjectOwnerTypeName), &objectOwner);
+        if (!objectOwnerArchive) {
+            std::cerr << objectOwnerArchive.error().message << '\n';
+            return EXIT_FAILURE;
+        }
+        const asharia::archive::ArchiveValue* objectOwnerFields =
+            objectOwnerArchive->findMemberValue("fields");
+        const asharia::archive::ArchiveValue* childArchive =
+            objectOwnerFields == nullptr ? nullptr : objectOwnerFields->findMemberValue("child");
+        if (childArchive == nullptr || childArchive->findMemberValue("type") == nullptr ||
+            childArchive->findMemberValue("version") == nullptr ||
+            childArchive->findMemberValue("fields") == nullptr) {
+            std::cerr << "Persistence did not add an envelope to an object-valued field.\n";
+            return EXIT_FAILURE;
+        }
+
+        ObjectOwner loadedObjectOwner{};
+        if (auto result = asharia::persistence::loadObject(
+                *schemas, *bindings, asharia::schema::makeTypeId(kObjectOwnerTypeName),
+                *objectOwnerArchive, &loadedObjectOwner);
+            !result || loadedObjectOwner.child.value != objectOwner.child.value) {
+            std::cerr << "Persistence object-valued field roundtrip failed.\n";
+            return EXIT_FAILURE;
+        }
+
+        if (!verifyUnsupportedKindsAndProperty(*schemas, *bindings)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!verifyUnknownAndMissingFields(*schemas, *bindings, *archive, source)) {
+            return EXIT_FAILURE;
+        }
+
+        if (!verifyMigration(*schemas, *bindings)) {
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Persistence roundtrip fields: " << fields->objectValue.size() << '\n';
+        return EXIT_SUCCESS;
+    }
+
 } // namespace
 
-int main() {
-    auto schemas = makeSchemas();
-    if (!schemas) {
-        return EXIT_FAILURE;
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
+    try {
+        return runPersistenceSmokeTests();
+    } catch (const std::exception& error) {
+        std::cerr << "Persistence smoke test threw: " << error.what() << '\n';
+    } catch (...) {
+        std::cerr << "Persistence smoke test threw an unknown exception.\n";
     }
-    auto bindings = makeBindings(*schemas);
-    if (!bindings) {
-        return EXIT_FAILURE;
-    }
-
-    const Transform source{
-        .position = {.x = 1.0F, .y = 2.0F, .z = 3.0F},
-        .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
-        .scale = {.x = 2.0F, .y = 2.0F, .z = 2.0F},
-        .debugName = "roundtrip",
-        .cachedMagnitude = 99.0F,
-        .scriptCounter = 12,
-    };
-
-    auto archive = asharia::persistence::saveObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName), &source);
-    if (!archive) {
-        std::cerr << archive.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-
-    const asharia::archive::ArchiveValue* fields = archive->findMemberValue("fields");
-    const asharia::archive::ArchiveValue* position =
-        fields == nullptr ? nullptr : fields->findMemberValue("position");
-    if (position == nullptr || position->findMemberValue("type") != nullptr) {
-        std::cerr << "Persistence added an envelope to an inline Vec3 field.\n";
-        return EXIT_FAILURE;
-    }
-
-    Transform loaded{};
-    if (auto result = asharia::persistence::loadObject(
-            *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName), *archive,
-            &loaded);
-        !result) {
-        std::cerr << result.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-    if (loaded.position.x != source.position.x || loaded.position.y != source.position.y ||
-        loaded.position.z != source.position.z || loaded.scale.x != source.scale.x ||
-        loaded.debugName != source.debugName || loaded.cachedMagnitude != 0.0F ||
-        loaded.scriptCounter != 0) {
-        std::cerr << "Persistence roundtrip loaded unexpected transform values.\n";
-        return EXIT_FAILURE;
-    }
-
-    const ObjectOwner objectOwner{
-        .child = {.value = 42.0F},
-    };
-    auto objectOwnerArchive = asharia::persistence::saveObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kObjectOwnerTypeName), &objectOwner);
-    if (!objectOwnerArchive) {
-        std::cerr << objectOwnerArchive.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-    const asharia::archive::ArchiveValue* objectOwnerFields =
-        objectOwnerArchive->findMemberValue("fields");
-    const asharia::archive::ArchiveValue* childArchive =
-        objectOwnerFields == nullptr ? nullptr : objectOwnerFields->findMemberValue("child");
-    if (childArchive == nullptr || childArchive->findMemberValue("type") == nullptr ||
-        childArchive->findMemberValue("version") == nullptr ||
-        childArchive->findMemberValue("fields") == nullptr) {
-        std::cerr << "Persistence did not add an envelope to an object-valued field.\n";
-        return EXIT_FAILURE;
-    }
-
-    ObjectOwner loadedObjectOwner{};
-    if (auto result = asharia::persistence::loadObject(
-            *schemas, *bindings, asharia::schema::makeTypeId(kObjectOwnerTypeName),
-            *objectOwnerArchive, &loadedObjectOwner);
-        !result || loadedObjectOwner.child.value != objectOwner.child.value) {
-        std::cerr << "Persistence object-valued field roundtrip failed.\n";
-        return EXIT_FAILURE;
-    }
-
-    const UnsupportedStringOwner unsupportedStringOwner{.value = "token"};
-    if (!expectUnsupportedKindRejected(*schemas, *bindings, kUnsupportedEnumOwnerTypeName, "value",
-                                       "enum", unsupportedStringOwner,
-                                       asharia::archive::ArchiveValue::string("Token"))) {
-        return EXIT_FAILURE;
-    }
-    const UnsupportedArrayOwner unsupportedArrayOwner{.values = 1.0F};
-    if (!expectUnsupportedKindRejected(*schemas, *bindings, kUnsupportedArrayOwnerTypeName,
-                                       "values", "array", unsupportedArrayOwner,
-                                       asharia::archive::ArchiveValue::array(
-                                           {asharia::archive::ArchiveValue::floating(1.0)}))) {
-        return EXIT_FAILURE;
-    }
-    if (!expectUnsupportedKindRejected(*schemas, *bindings, kUnsupportedAssetReferenceOwnerTypeName,
-                                       "value", "asset reference", unsupportedStringOwner,
-                                       asharia::archive::ArchiveValue::string("asset-guid"))) {
-        return EXIT_FAILURE;
-    }
-    if (!expectUnsupportedKindRejected(*schemas, *bindings,
-                                       kUnsupportedEntityReferenceOwnerTypeName, "value",
-                                       "entity reference", unsupportedStringOwner,
-                                       asharia::archive::ArchiveValue::string("entity:1"))) {
-        return EXIT_FAILURE;
-    }
-
-    PropertyComponent propertySource;
-    if (auto set = propertySource.setExposure(2.75F); !set) {
-        std::cerr << set.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-    auto propertyArchive = asharia::persistence::saveObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kPropertyTypeName), &propertySource);
-    if (!propertyArchive) {
-        std::cerr << propertyArchive.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-    PropertyComponent propertyLoaded;
-    if (auto result = asharia::persistence::loadObject(
-            *schemas, *bindings, asharia::schema::makeTypeId(kPropertyTypeName), *propertyArchive,
-            &propertyLoaded);
-        !result || propertyLoaded.exposure() != 2.75F || !propertyLoaded.dirty()) {
-        std::cerr << "Persistence property roundtrip failed.\n";
-        return EXIT_FAILURE;
-    }
-
-    asharia::archive::ArchiveValue unknownArchive = *archive;
-    asharia::archive::ArchiveValue* unknownFields = unknownArchive.findMemberValue("fields");
-    unknownFields->objectValue.push_back(asharia::archive::ArchiveMember{
-        .key = "unknownFutureField",
-        .value = asharia::archive::ArchiveValue::integer(7),
-    });
-    Transform rejectedUnknownObject{};
-    auto rejectedUnknown = asharia::persistence::loadObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName), unknownArchive,
-        &rejectedUnknownObject);
-    if (rejectedUnknown || !contains(rejectedUnknown.error().message, "unknown field")) {
-        std::cerr << "Persistence accepted an unknown field.\n";
-        return EXIT_FAILURE;
-    }
-
-    Transform droppedUnknown{};
-    const asharia::persistence::PersistencePolicy dropUnknownPolicy{
-        .unknownFields = asharia::persistence::UnknownFieldPolicy::Drop,
-    };
-    if (auto result = asharia::persistence::loadObject(
-            *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName), unknownArchive,
-            &droppedUnknown, dropUnknownPolicy);
-        !result || droppedUnknown.position.x != source.position.x) {
-        std::cerr << "Persistence did not drop an unknown field.\n";
-        return EXIT_FAILURE;
-    }
-
-    asharia::archive::ArchiveValue missingScaleArchive = *archive;
-    asharia::archive::ArchiveValue* missingScaleFields =
-        missingScaleArchive.findMemberValue("fields");
-    std::erase_if(
-        missingScaleFields->objectValue,
-        [](const asharia::archive::ArchiveMember& member) { return member.key == "scale"; });
-    Transform defaultedScale{.scale = {.x = 8.0F, .y = 8.0F, .z = 8.0F}};
-    if (auto result = asharia::persistence::loadObject(
-            *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName),
-            missingScaleArchive, &defaultedScale);
-        !result || defaultedScale.scale.x != 1.0F || defaultedScale.scale.y != 1.0F ||
-        defaultedScale.scale.z != 1.0F) {
-        std::cerr << "Persistence did not apply a missing field default.\n";
-        return EXIT_FAILURE;
-    }
-
-    asharia::archive::ArchiveValue missingPositionArchive = *archive;
-    asharia::archive::ArchiveValue* missingPositionFields =
-        missingPositionArchive.findMemberValue("fields");
-    std::erase_if(
-        missingPositionFields->objectValue,
-        [](const asharia::archive::ArchiveMember& member) { return member.key == "position"; });
-    Transform missingPosition{};
-    auto missingPositionResult = asharia::persistence::loadObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kTransformTypeName),
-        missingPositionArchive, &missingPosition);
-    if (missingPositionResult || !contains(missingPositionResult.error().message, "default")) {
-        std::cerr << "Persistence accepted a missing field without a default.\n";
-        return EXIT_FAILURE;
-    }
-
-    asharia::persistence::MigrationRegistry migrations;
-    if (auto registered = migrations.registerMigration(
-            asharia::schema::makeTypeId(kMigratedTransformTypeName), 1, 2, migrateTransformV1ToV2);
-        !registered) {
-        std::cerr << registered.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-    auto duplicateMigration = migrations.registerMigration(
-        asharia::schema::makeTypeId(kMigratedTransformTypeName), 1, 2, migrateTransformV1ToV2);
-    if (duplicateMigration || !contains(duplicateMigration.error().message, "duplicate")) {
-        std::cerr << "Persistence accepted a duplicate migration.\n";
-        return EXIT_FAILURE;
-    }
-
-    const asharia::archive::ArchiveValue oldArchive = makeMigratedTransformV1Archive();
-    MigratedTransform rejectedMigration{};
-    auto missingMigrationResult = asharia::persistence::loadObject(
-        *schemas, *bindings, asharia::schema::makeTypeId(kMigratedTransformTypeName), oldArchive,
-        &rejectedMigration);
-    if (missingMigrationResult ||
-        !contains(missingMigrationResult.error().message, "requires migration")) {
-        std::cerr << "Persistence did not require a migration policy.\n";
-        return EXIT_FAILURE;
-    }
-
-    const asharia::persistence::PersistencePolicy migrationPolicy{
-        .migrations = &migrations,
-    };
-    MigratedTransform migrated{};
-    if (auto result = asharia::persistence::loadObject(
-            *schemas, *bindings, asharia::schema::makeTypeId(kMigratedTransformTypeName),
-            oldArchive, &migrated, migrationPolicy);
-        !result || migrated.position.x != 1.0F || migrated.position.y != 2.0F ||
-        migrated.position.z != 3.0F || migrated.rotation.z != 0.25F ||
-        migrated.rotation.w != 1.0F || migrated.scale.x != 1.0F ||
-        migrated.debugName != "migrated") {
-        std::cerr << "Persistence migration did not load expected values.\n";
-        return EXIT_FAILURE;
-    }
-
-    std::cout << "Persistence roundtrip fields: " << fields->objectValue.size() << '\n';
-    return EXIT_SUCCESS;
+    return EXIT_FAILURE;
 }

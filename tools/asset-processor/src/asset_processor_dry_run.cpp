@@ -110,6 +110,8 @@ namespace asharia::asset_processor {
                 return "InvalidProductManifest";
             case Code::MetadataSourceHashDrift:
                 return "MetadataSourceHashDrift";
+            case Code::ToolFingerprintFailed:
+                return "ToolFingerprintFailed";
             }
             return "Unknown";
         }

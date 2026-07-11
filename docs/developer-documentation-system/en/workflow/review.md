@@ -12,6 +12,20 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
 
+For the complete native test gate, bootstrap Conan first and run both isolated test trees:
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+The ClangCL test gate promotes every clang-tidy diagnostic to an error for production and test
+translation units. `.github/workflows/native-code-quality.yml` runs these CTests plus encoding,
+whitespace, and asset boundary checks on Windows for pull requests, pushes to `main`, and manual
+dispatches. Hosted CI does not run GPU/window smoke commands; all applicable smoke commands below
+remain local pre-commit gates and must be run with both standard debug presets when the scope table
+requires them.
+
 Use `tools\pre-pr.ps1 -IncludeUntracked` to print candidate gates for the changed file set.
 The `clangcl-debug` preset enables `ASHARIA_ENABLE_CLANG_TIDY=ON`; the repository does not track a separate Vulkan review script.
 

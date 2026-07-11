@@ -46,6 +46,18 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
 
+完整 native test gate 必须先 bootstrap Conan，然后运行两个独立 test tree：
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
+`.github/workflows/native-code-quality.yml` 在 Windows hosted runner 上运行 encoding、diff whitespace、
+asset boundary、两编译器 build 和 CTest。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
+仍是 local pre-commit gate，并且需要使用两个 standard debug presets 运行。
+
 开发中可先运行本地 pre-PR 提示脚本，让它按当前 diff 提示固定门禁、包级 CTest、smoke 范围和需要检查的文档：
 
 ```powershell

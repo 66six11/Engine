@@ -12,6 +12,18 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
 
+完整 native test gate 必须先 bootstrap Conan，然后运行两个独立 test tree：
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
+`.github/workflows/native-code-quality.yml` 在 Windows 运行 encoding、whitespace、asset boundary、两编译器
+build 和 CTest。Hosted CI 不运行 GPU/window smokes；下方 scope table 命中的 smoke 仍是 local
+pre-commit gates，并需要使用两个 standard debug presets 运行。
+
 `tools\pre-pr.ps1 -IncludeUntracked` 会按 changed files 打印候选 gates。
 `clangcl-debug` preset 开启 `ASHARIA_ENABLE_CLANG_TIDY=ON`；仓库当前没有单独提交的 Vulkan review 脚本。
 

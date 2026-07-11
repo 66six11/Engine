@@ -77,19 +77,59 @@ namespace asharia::project {
                 return std::unexpected{std::move(validName.error())};
             }
 
+            const std::string directoryContext =
+                "assetSourceRoots[" + std::to_string(index) + "].directory";
             if (auto validDirectory = validateProjectRelativePath(
-                    root.directory, "assetSourceRoots[" + std::to_string(index) + "].directory");
+                    {.path = root.directory, .context = directoryContext});
                 !validDirectory) {
                 return std::unexpected{std::move(validDirectory.error())};
             }
 
+            const std::string prefixContext =
+                "assetSourceRoots[" + std::to_string(index) + "].sourcePathPrefix";
             if (auto validPrefix = validateProjectRelativePath(
-                    root.sourcePathPrefix,
-                    "assetSourceRoots[" + std::to_string(index) + "].sourcePathPrefix");
+                    {.path = root.sourcePathPrefix, .context = prefixContext});
                 !validPrefix) {
                 return std::unexpected{std::move(validPrefix.error())};
             }
 
+            return {};
+        }
+
+        [[nodiscard]] VoidResult
+        validateUniqueAssetSourceRoot(const AssetSourceRootDesc& root,
+                                      const std::vector<AssetSourceRootDesc>& roots,
+                                      std::size_t index) {
+            for (std::size_t otherIndex = index + 1; otherIndex < roots.size(); ++otherIndex) {
+                const AssetSourceRootDesc& other = roots[otherIndex];
+                if (root.rootName == other.rootName) {
+                    return std::unexpected{
+                        projectError("Asharia project assetSourceRoots duplicate rootName \"" +
+                                     root.rootName + "\".")};
+                }
+                if (root.directory == other.directory) {
+                    return std::unexpected{
+                        projectError("Asharia project assetSourceRoots duplicate directory \"" +
+                                     root.directory + "\".")};
+                }
+                if (root.sourcePathPrefix == other.sourcePathPrefix) {
+                    return std::unexpected{projectError(
+                        "Asharia project assetSourceRoots duplicate sourcePathPrefix \"" +
+                        root.sourcePathPrefix + "\".")};
+                }
+            }
+            return {};
+        }
+
+        [[nodiscard]] VoidResult validateUniqueIgnoredDirectoryName(
+            std::string_view name, const std::vector<std::string>& names, std::size_t index) {
+            for (std::size_t otherIndex = index + 1; otherIndex < names.size(); ++otherIndex) {
+                if (name == names[otherIndex]) {
+                    return std::unexpected{projectError(
+                        "Asharia project assetDiscovery.ignoredDirectories duplicate name \"" +
+                        std::string{name} + "\".")};
+                }
+            }
             return {};
         }
 
@@ -156,7 +196,9 @@ namespace asharia::project {
         return text;
     }
 
-    VoidResult validateProjectRelativePath(std::string_view path, std::string_view context) {
+    VoidResult validateProjectRelativePath(ProjectRelativePathValidation validation) {
+        const std::string_view path = validation.path;
+        const std::string_view context = validation.context;
         if (path.empty()) {
             return std::unexpected{
                 projectError("Asharia project " + std::string{context} + " is missing.")};
@@ -222,30 +264,15 @@ namespace asharia::project {
             if (auto validRoot = validateAssetSourceRoot(root, index); !validRoot) {
                 return std::unexpected{std::move(validRoot.error())};
             }
-
-            for (std::size_t otherIndex = index + 1;
-                 otherIndex < descriptor.assetSourceRoots.size(); ++otherIndex) {
-                const AssetSourceRootDesc& other = descriptor.assetSourceRoots[otherIndex];
-                if (root.rootName == other.rootName) {
-                    return std::unexpected{
-                        projectError("Asharia project assetSourceRoots duplicate rootName \"" +
-                                     root.rootName + "\".")};
-                }
-                if (root.directory == other.directory) {
-                    return std::unexpected{
-                        projectError("Asharia project assetSourceRoots duplicate directory \"" +
-                                     root.directory + "\".")};
-                }
-                if (root.sourcePathPrefix == other.sourcePathPrefix) {
-                    return std::unexpected{projectError(
-                        "Asharia project assetSourceRoots duplicate sourcePathPrefix \"" +
-                        root.sourcePathPrefix + "\".")};
-                }
+            if (auto uniqueRoot =
+                    validateUniqueAssetSourceRoot(root, descriptor.assetSourceRoots, index);
+                !uniqueRoot) {
+                return std::unexpected{std::move(uniqueRoot.error())};
             }
         }
 
-        if (auto validCacheRoot =
-                validateProjectRelativePath(descriptor.assetCacheRoot, "assetCacheRoot");
+        if (auto validCacheRoot = validateProjectRelativePath(
+                {.path = descriptor.assetCacheRoot, .context = "assetCacheRoot"});
             !validCacheRoot) {
             return std::unexpected{std::move(validCacheRoot.error())};
         }
@@ -256,15 +283,10 @@ namespace asharia::project {
             if (auto validName = validateIgnoredDirectoryName(name, index); !validName) {
                 return std::unexpected{std::move(validName.error())};
             }
-
-            for (std::size_t otherIndex = index + 1;
-                 otherIndex < descriptor.assetDiscovery.ignoredDirectoryNames.size();
-                 ++otherIndex) {
-                if (name == descriptor.assetDiscovery.ignoredDirectoryNames[otherIndex]) {
-                    return std::unexpected{projectError(
-                        "Asharia project assetDiscovery.ignoredDirectories duplicate name \"" +
-                        name + "\".")};
-                }
+            if (auto uniqueName = validateUniqueIgnoredDirectoryName(
+                    name, descriptor.assetDiscovery.ignoredDirectoryNames, index);
+                !uniqueName) {
+                return std::unexpected{std::move(uniqueName.error())};
             }
         }
 

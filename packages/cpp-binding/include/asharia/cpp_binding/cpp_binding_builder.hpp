@@ -180,6 +180,13 @@ namespace asharia::cpp_binding {
                 .defaultValueType = {},
                 .size = sizeof(ValueT),
                 .alignment = alignof(ValueT),
+                .readAddress = {},
+                .writeAddress = {},
+                .constructValue = {},
+                .destroyValue = {},
+                .readValue = {},
+                .writeValue = {},
+                .writeDefaultValue = {},
             };
         }
 

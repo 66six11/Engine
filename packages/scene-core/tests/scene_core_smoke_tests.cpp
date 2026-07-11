@@ -1,4 +1,5 @@
 ﻿#include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string_view>
 
@@ -105,11 +106,20 @@ namespace {
 
 } // namespace
 
-int main() {
-    if (!smokeEntityLifetime() || !smokeTransformIdentity()) {
-        return EXIT_FAILURE;
-    }
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
+    try {
+        if (!smokeEntityLifetime() || !smokeTransformIdentity()) {
+            return EXIT_FAILURE;
+        }
 
-    std::cout << "Scene core smoke tests passed.\n";
-    return EXIT_SUCCESS;
+        std::cout << "Scene core smoke tests passed.\n";
+        return EXIT_SUCCESS;
+    } catch (const std::exception& error) {
+        std::cerr << "Scene core smoke test threw: " << error.what() << '\n';
+    } catch (...) {
+        std::cerr << "Scene core smoke test threw an unknown exception.\n";
+    }
+    return EXIT_FAILURE;
 }

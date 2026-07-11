@@ -347,8 +347,13 @@ namespace {
         return true;
     }
 
-    bool expectInvalidMetadataRead(std::string_view text, std::string_view expectedReason) {
-        auto document = asharia::asset::readAssetMetadataText(text);
+    struct InvalidMetadataTextCase {
+        std::string_view text;
+        std::string_view expectedReason;
+    };
+
+    bool expectInvalidMetadataRead(InvalidMetadataTextCase testCase) {
+        auto document = asharia::asset::readAssetMetadataText(testCase.text);
         if (document) {
             logFailure("Asset metadata IO smoke accepted invalid .ameta text.");
             return false;
@@ -356,7 +361,7 @@ namespace {
 
         const std::string& message = document.error().message;
         if (document.error().domain != asharia::ErrorDomain::Asset ||
-            !messageContains(message, expectedReason)) {
+            !messageContains(message, testCase.expectedReason)) {
             logFailure("Asset metadata IO smoke produced an incomplete diagnostic.");
             return false;
         }
@@ -510,13 +515,17 @@ namespace {
 }
 )json";
 
-        if (!expectInvalidMetadataRead("{", "byte") ||
-            !expectInvalidMetadataRead(missingGuid, "guid") ||
-            !expectInvalidMetadataRead(boolSetting, "string value") ||
-            !expectInvalidMetadataRead(duplicateGuid, "duplicate key") ||
-            !expectInvalidMetadataRead(uppercaseHash, "lowercase hex") ||
-            !expectInvalidMetadataRead(unknownMember, "unknown member") ||
-            !expectInvalidMetadataRead(invalidSourcePath, "'/' separators")) {
+        if (!expectInvalidMetadataRead({.text = "{", .expectedReason = "byte"}) ||
+            !expectInvalidMetadataRead({.text = missingGuid, .expectedReason = "guid"}) ||
+            !expectInvalidMetadataRead({.text = boolSetting, .expectedReason = "string value"}) ||
+            !expectInvalidMetadataRead(
+                {.text = duplicateGuid, .expectedReason = "duplicate key"}) ||
+            !expectInvalidMetadataRead(
+                {.text = uppercaseHash, .expectedReason = "lowercase hex"}) ||
+            !expectInvalidMetadataRead(
+                {.text = unknownMember, .expectedReason = "unknown member"}) ||
+            !expectInvalidMetadataRead(
+                {.text = invalidSourcePath, .expectedReason = "'/' separators"})) {
             return false;
         }
 
@@ -982,9 +991,13 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetSourcePath() &&
-                        smokeAssetHandleAndReference() && smokeAssetMetadata() &&
-                        smokeAssetMetadataIo() && smokeAssetProductKeyAndDependency() &&
-                        smokeAssetCatalog() && smokeAssetCatalogView();
-    return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    try {
+        const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetSourcePath() &&
+                            smokeAssetHandleAndReference() && smokeAssetMetadata() &&
+                            smokeAssetMetadataIo() && smokeAssetProductKeyAndDependency() &&
+                            smokeAssetCatalog() && smokeAssetCatalogView();
+        return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    } catch (...) {
+        return EXIT_FAILURE;
+    }
 }

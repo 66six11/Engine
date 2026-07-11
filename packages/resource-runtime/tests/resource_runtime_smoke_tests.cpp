@@ -104,14 +104,10 @@ namespace {
         auto emptyFailure = registry.markFailed(
             asharia::resource::RuntimeResourceTicket{.key = key, .generation = 1},
             asharia::resource::RuntimeResourceFailure{});
-        if (emptyFailure ||
-            !expectErrorCode(emptyFailure.error(),
-                             asharia::resource::RuntimeResourceDiagnosticCode::InvalidFailure,
-                             "empty failure message")) {
-            return false;
-        }
-
-        return true;
+        return !emptyFailure &&
+               expectErrorCode(emptyFailure.error(),
+                               asharia::resource::RuntimeResourceDiagnosticCode::InvalidFailure,
+                               "empty failure message");
     }
 
     bool smokeRuntimeResourceReadyAndFailed() {
@@ -367,8 +363,12 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeRuntimeResourceInvalids() && smokeRuntimeResourceReadyAndFailed() &&
-                        smokeRuntimeResourceProductMismatch() &&
-                        smokeRuntimeResourceProductResolution();
-    return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    try {
+        const bool passed =
+            smokeRuntimeResourceInvalids() && smokeRuntimeResourceReadyAndFailed() &&
+            smokeRuntimeResourceProductMismatch() && smokeRuntimeResourceProductResolution();
+        return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    } catch (...) {
+        return EXIT_FAILURE;
+    }
 }

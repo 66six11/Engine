@@ -4,7 +4,14 @@ namespace asharia::rendergraph_header_tests {
 
     void touchExecutionHeader() {
         RenderGraphSchemaRegistry schemas;
-        schemas.registerSchema(RenderGraphPassSchema{.type = "HeaderExecutionPass"});
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = "HeaderExecutionPass",
+            .paramsType = {},
+            .resourceSlots = {},
+            .allowedCommands = {},
+            .allowCulling = false,
+            .hasSideEffects = false,
+        });
         (void)schemas.find("HeaderExecutionPass");
 
         RenderGraphExecutorRegistry executors;

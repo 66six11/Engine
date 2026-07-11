@@ -51,6 +51,8 @@ Top-level presets currently define:
 | `msvc-release` | MSVC release build | `ASHARIA_BUILD_TESTS=OFF` |
 | `clangcl-debug` | Pre-commit debug build with clang-tidy integration enabled | `ASHARIA_BUILD_TESTS=OFF` |
 | `clangcl-release` | ClangCL release check | `ASHARIA_BUILD_TESTS=OFF` |
+| `msvc-debug-tests` | Complete native debug build and CTest gate | `ASHARIA_BUILD_TESTS=ON` |
+| `clangcl-debug-tests` | Complete native debug build and CTest gate with clang-tidy | `ASHARIA_BUILD_TESTS=ON` |
 
 Build and test presets use `jobs: 20`. Package-local test builds explicitly pass `-DASHARIA_BUILD_TESTS=ON`.
 
@@ -82,6 +84,31 @@ Release examples:
 cmd /c "build\conan\msvc-release\Release\generators\conanbuild.bat && cmake --preset msvc-release && cmake --build --preset msvc-release"
 cmd /c "build\conan\clangcl-release\Release\generators\conanbuild.bat && cmake --preset clangcl-release && cmake --build --preset clangcl-release"
 ```
+
+## Top-Level Native Test Build
+
+Bootstrap Conan first, then use the test-specific configure, build, and test presets. They use
+`build/cmake/msvc-debug-tests` and `build/cmake/clangcl-debug-tests`, so enabling tests does not
+mutate the normal application build trees.
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+The ClangCL test preset enables clang-tidy for production and test translation units. Repository
+clang-tidy diagnostics are warnings-as-errors; a reported diagnostic fails that build.
+
+## Native Code Quality CI
+
+`.github/workflows/native-code-quality.yml` runs on pull requests, pushes to `main`, and manual
+dispatches. The Windows job installs the pinned Conan and Vulkan SDK toolchain, bootstraps Conan,
+checks encoding, whitespace, and asset package boundaries, then builds and runs all registered
+native CTests with both test presets.
+
+Hosted CI intentionally does not run GPU/window smoke commands because the runner is not the
+repository's supported Vulkan presentation environment. The runtime smoke matrix in
+`workflow/review.md` remains a local pre-commit requirement for changes in its scope.
 
 ## Package-Local Test Build
 

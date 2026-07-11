@@ -57,7 +57,7 @@ namespace {
         };
     }
 
-    bool expectInvalidSignature(asharia::material::MaterialResourceSignature signature,
+    bool expectInvalidSignature(const asharia::material::MaterialResourceSignature& signature,
                                 std::string_view expected) {
         auto validated = asharia::material::validateMaterialResourceSignature(signature);
         if (validated) {
@@ -95,45 +95,50 @@ namespace {
         auto duplicateCoordinate = basicSignature();
         duplicateCoordinate.bindings[2].binding = duplicateCoordinate.bindings[1].binding;
         if (!expectInvalidSignature({}, "must not be empty") ||
-            !expectInvalidSignature(asharia::material::MaterialResourceSignature{
-                                        .bindings = {asharia::material::MaterialResourceBinding{}},
-                                    },
-                                    "name is missing") ||
-            !expectInvalidSignature(asharia::material::MaterialResourceSignature{
-                                        .bindings = {asharia::material::MaterialResourceBinding{
-                                            .set = asharia::material::kMaxMaterialDescriptorSets,
-                                            .binding = 0,
-                                            .name = "tooHighSet",
-                                            .kind = asharia::material::MaterialResourceKind::
-                                                UniformBuffer,
-                                            .visibility = asharia::material::
-                                                MaterialShaderVisibility::Vertex,
-                                            .arrayCount = 1,
-                                        }},
-                                    },
-                                    "descriptor set range") ||
-            !expectInvalidSignature(std::move(duplicateCoordinate),
-                                    "duplicate binding coordinate")) {
+            !expectInvalidSignature(
+                asharia::material::MaterialResourceSignature{
+                    .bindings = {asharia::material::MaterialResourceBinding{}},
+                },
+                "name is missing") ||
+            !expectInvalidSignature(
+                asharia::material::MaterialResourceSignature{
+                    .bindings = {asharia::material::MaterialResourceBinding{
+                        .set = asharia::material::kMaxMaterialDescriptorSets,
+                        .binding = 0,
+                        .name = "tooHighSet",
+                        .kind = asharia::material::MaterialResourceKind::UniformBuffer,
+                        .visibility = asharia::material::MaterialShaderVisibility::Vertex,
+                        .arrayCount = 1,
+                    }},
+                },
+                "descriptor set range") ||
+            !expectInvalidSignature(duplicateCoordinate, "duplicate binding coordinate")) {
             return false;
         }
 
         auto duplicateName = basicSignature();
         duplicateName.bindings[2].name = duplicateName.bindings[1].name;
-        if (!expectInvalidSignature(std::move(duplicateName), "duplicate resource name")) {
+        if (!expectInvalidSignature(duplicateName, "duplicate resource name")) {
             return false;
         }
 
         auto invalidKind = basicSignature();
+        // The analyzer flags out-of-range enum casts; this test deliberately crosses that
+        // boundary to exercise the public validator's unknown-kind diagnostic.
         invalidKind.bindings[0].kind =
+            // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
             static_cast<asharia::material::MaterialResourceKind>(999U);
         auto invalidVisibility = basicSignature();
+        // The analyzer flags out-of-range enum casts; this test deliberately constructs an
+        // invalid visibility bit so the validator's rejection path remains covered.
         invalidVisibility.bindings[0].visibility =
+            // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
             static_cast<asharia::material::MaterialShaderVisibility>(1U << 8U);
         auto invalidCount = basicSignature();
         invalidCount.bindings[0].arrayCount = 0;
-        if (!expectInvalidSignature(std::move(invalidKind), "unknown resource kind") ||
-            !expectInvalidSignature(std::move(invalidVisibility), "invalid shader visibility") ||
-            !expectInvalidSignature(std::move(invalidCount), "invalid array count")) {
+        if (!expectInvalidSignature(invalidKind, "unknown resource kind") ||
+            !expectInvalidSignature(invalidVisibility, "invalid shader visibility") ||
+            !expectInvalidSignature(invalidCount, "invalid array count")) {
             return false;
         }
 
@@ -141,8 +146,8 @@ namespace {
         return true;
     }
 
-    bool expectIncompatible(asharia::material::MaterialResourceSignature materialSignature,
-                            asharia::material::MaterialResourceSignature shaderSignature,
+    bool expectIncompatible(const asharia::material::MaterialResourceSignature& materialSignature,
+                            const asharia::material::MaterialResourceSignature& shaderSignature,
                             std::string_view expected) {
         auto compatible = asharia::material::validateMaterialSignatureCompatibility(
             materialSignature, shaderSignature);
@@ -153,9 +158,9 @@ namespace {
 
         if (compatible.error().domain != asharia::ErrorDomain::Material ||
             !messageContains(compatible.error().message, expected)) {
-            logFailure(std::string{
-                           "Material compatibility smoke produced an incomplete diagnostic: "} +
-                       compatible.error().message);
+            logFailure(
+                std::string{"Material compatibility smoke produced an incomplete diagnostic: "} +
+                compatible.error().message);
             return false;
         }
 
@@ -193,13 +198,11 @@ namespace {
             .arrayCount = 1,
         });
 
-        if (!expectIncompatible(std::move(missing), basicSignature(), "missing this binding") ||
-            !expectIncompatible(std::move(kindMismatch), basicSignature(), "expected sampled") ||
-            !expectIncompatible(std::move(nameMismatch), basicSignature(),
-                                "expected name") ||
-            !expectIncompatible(std::move(visibilityMismatch), basicSignature(),
-                                "expected visibility") ||
-            !expectIncompatible(std::move(extra), basicSignature(), "extra resource")) {
+        if (!expectIncompatible(missing, basicSignature(), "missing this binding") ||
+            !expectIncompatible(kindMismatch, basicSignature(), "expected sampled") ||
+            !expectIncompatible(nameMismatch, basicSignature(), "expected name") ||
+            !expectIncompatible(visibilityMismatch, basicSignature(), "expected visibility") ||
+            !expectIncompatible(extra, basicSignature(), "extra resource")) {
             return false;
         }
 
@@ -232,7 +235,7 @@ namespace {
         };
     }
 
-    bool expectInvalidPipeline(asharia::material::MaterialPipelineKey key,
+    bool expectInvalidPipeline(const asharia::material::MaterialPipelineKey& key,
                                std::string_view expected) {
         auto hash = asharia::material::makeMaterialPipelineKeyHash(key);
         if (hash) {
@@ -252,8 +255,7 @@ namespace {
     }
 
     bool smokePipelineKey() {
-        auto signatureHash =
-            asharia::material::makeMaterialResourceSignatureHash(basicSignature());
+        auto signatureHash = asharia::material::makeMaterialResourceSignatureHash(basicSignature());
         if (!signatureHash) {
             logFailure(signatureHash.error().message);
             return false;
@@ -287,22 +289,21 @@ namespace {
         auto missingSignature = key;
         missingSignature.resourceSignatureHash = 0;
         auto invalidTopology = key;
+        // The analyzer flags out-of-range enum casts; this test deliberately constructs an
+        // unknown topology to verify fail-early validation.
         invalidTopology.renderState.topology =
+            // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
             static_cast<asharia::material::MaterialPrimitiveTopology>(999U);
         auto missingDepthFormat = key;
         missingDepthFormat.renderState.depthFormatHash = 0;
         auto missingColorFormat = key;
         missingColorFormat.renderState.colorFormatHash = 0;
 
-        if (!expectInvalidPipeline(std::move(missingShader), "shader program is missing") ||
-            !expectInvalidPipeline(std::move(missingSignature),
-                                   "resource signature hash is invalid") ||
-            !expectInvalidPipeline(std::move(invalidTopology),
-                                   "unknown primitive topology") ||
-            !expectInvalidPipeline(std::move(missingDepthFormat),
-                                   "depth format hash is required") ||
-            !expectInvalidPipeline(std::move(missingColorFormat),
-                                   "color format hash is invalid")) {
+        if (!expectInvalidPipeline(missingShader, "shader program is missing") ||
+            !expectInvalidPipeline(missingSignature, "resource signature hash is invalid") ||
+            !expectInvalidPipeline(invalidTopology, "unknown primitive topology") ||
+            !expectInvalidPipeline(missingDepthFormat, "depth format hash is required") ||
+            !expectInvalidPipeline(missingColorFormat, "color format hash is invalid")) {
             return false;
         }
 
@@ -313,10 +314,14 @@ namespace {
 } // namespace
 
 int main() {
-    if (!smokeResourceSignatureValidationAndHash() || !smokeSignatureCompatibility() ||
-        !smokePipelineKey()) {
+    try {
+        if (!smokeResourceSignatureValidationAndHash() || !smokeSignatureCompatibility() ||
+            !smokePipelineKey()) {
+            return EXIT_FAILURE;
+        }
+
+        return EXIT_SUCCESS;
+    } catch (...) {
         return EXIT_FAILURE;
     }
-
-    return EXIT_SUCCESS;
 }

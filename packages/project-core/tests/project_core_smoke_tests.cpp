@@ -1,6 +1,6 @@
-﻿#include <filesystem>
-#include <chrono>
+﻿#include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -22,17 +22,21 @@ namespace {
         return message.find(token) != std::string_view::npos;
     }
 
-    [[nodiscard]] bool expectInvalidProjectRead(std::string_view text,
-                                                std::string_view expectedToken) {
-        auto parsed = asharia::project::readAshariaProjectDescriptorText(text);
+    struct InvalidProjectTextCase {
+        std::string_view text;
+        std::string_view expectedToken;
+    };
+
+    [[nodiscard]] bool expectInvalidProjectRead(InvalidProjectTextCase testCase) {
+        auto parsed = asharia::project::readAshariaProjectDescriptorText(testCase.text);
         if (parsed) {
             logFailure("Asharia project descriptor smoke accepted invalid input.");
             return false;
         }
 
-        if (!messageContains(parsed.error().message, expectedToken)) {
+        if (!messageContains(parsed.error().message, testCase.expectedToken)) {
             std::cerr << "Asharia project descriptor diagnostic did not contain token \""
-                      << expectedToken << "\": " << parsed.error().message << '\n';
+                      << testCase.expectedToken << "\": " << parsed.error().message << '\n';
             return false;
         }
 
@@ -285,13 +289,17 @@ namespace {
   }
 })json";
 
-        return expectInvalidProjectRead(malformed, "JSON") &&
-               expectInvalidProjectRead(wrongSchema, "unsupported schema") &&
-               expectInvalidProjectRead(missingProjectId, "projectId") &&
-               expectInvalidProjectRead(missingRootName, "rootName") &&
-               expectInvalidProjectRead(missingIgnoredDirectories, "ignoredDirectories") &&
-               expectInvalidProjectRead(duplicateProjectName, "duplicate key") &&
-               expectInvalidProjectRead(invalidRootDirectory, "directory");
+        return expectInvalidProjectRead({.text = malformed, .expectedToken = "JSON"}) &&
+               expectInvalidProjectRead(
+                   {.text = wrongSchema, .expectedToken = "unsupported schema"}) &&
+               expectInvalidProjectRead({.text = missingProjectId, .expectedToken = "projectId"}) &&
+               expectInvalidProjectRead({.text = missingRootName, .expectedToken = "rootName"}) &&
+               expectInvalidProjectRead(
+                   {.text = missingIgnoredDirectories, .expectedToken = "ignoredDirectories"}) &&
+               expectInvalidProjectRead(
+                   {.text = duplicateProjectName, .expectedToken = "duplicate key"}) &&
+               expectInvalidProjectRead(
+                   {.text = invalidRootDirectory, .expectedToken = "directory"});
     }
 
     [[nodiscard]] bool smokeProjectDescriptorValidation() {
@@ -309,10 +317,10 @@ namespace {
         duplicateRoots.assetSourceRoots.push_back(duplicateRoots.assetSourceRoots.front());
 
         asharia::project::AshariaProjectDescriptor invalidIgnored = descriptor;
-        invalidIgnored.assetDiscovery.ignoredDirectoryNames.push_back("Bad/Name");
+        invalidIgnored.assetDiscovery.ignoredDirectoryNames.emplace_back("Bad/Name");
 
         asharia::project::AshariaProjectDescriptor duplicateIgnored = descriptor;
-        duplicateIgnored.assetDiscovery.ignoredDirectoryNames.push_back(".git");
+        duplicateIgnored.assetDiscovery.ignoredDirectoryNames.emplace_back(".git");
 
         return expectInvalidProject(invalidProjectId, "project id") &&
                expectInvalidProject(invalidRootName, "rootName") &&
@@ -325,12 +333,17 @@ namespace {
 } // namespace
 
 int main() {
-    const bool passed = smokeProjectId() && smokeProjectDescriptorRoundTrip() &&
-                        smokeProjectDescriptorInvalidText() && smokeProjectDescriptorValidation();
-    if (!passed) {
+    try {
+        const bool passed = smokeProjectId() && smokeProjectDescriptorRoundTrip() &&
+                            smokeProjectDescriptorInvalidText() &&
+                            smokeProjectDescriptorValidation();
+        if (!passed) {
+            return 1;
+        }
+
+        std::cout << "Asharia project descriptor smoke passed\n";
+        return 0;
+    } catch (...) {
         return 1;
     }
-
-    std::cout << "Asharia project descriptor smoke passed\n";
-    return 0;
 }

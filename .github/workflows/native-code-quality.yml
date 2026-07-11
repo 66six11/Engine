@@ -1,0 +1,91 @@
+name: Native Code Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-code-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test native code
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Conan
+        shell: pwsh
+        run: python -m pip install "conan==2.26.2"
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'vulkan_sdk.exe'
+          Invoke-WebRequest 'https://sdk.lunarg.com/sdk/download/1.4.313.0/windows/vulkan_sdk.exe' -OutFile $installer
+
+          $expectedHash = 'B643CA8AB4AEA5C47B9C4E021A0B33B3A13871BF1D8131E162A9E48C257C4694'
+          $actualHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "Vulkan SDK installer hash mismatch: expected $expectedHash, got $actualHash"
+          }
+
+          $install = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install'
+          if ($install.ExitCode -ne 0) {
+            throw "Vulkan SDK installer failed with exit code $($install.ExitCode)"
+          }
+
+          $sdkRoot = 'C:\VulkanSDK\1.4.313.0'
+          if (-not (Test-Path -LiteralPath (Join-Path $sdkRoot 'Bin\spirv-val.exe'))) {
+            throw "Vulkan SDK installation is incomplete at $sdkRoot"
+          }
+          "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $sdkRoot 'Bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Bootstrap Conan
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\bootstrap-conan.ps1
+
+      - name: Check text encoding
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
+
+      - name: Check whitespace
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            git fetch origin $env:GITHUB_BASE_REF --depth=1
+            git diff --check "origin/$env:GITHUB_BASE_REF...HEAD"
+          } elseif ('${{ github.event.before }}' -and '${{ github.event.before }}' -notmatch '^0+$') {
+            git diff --check '${{ github.event.before }}..${{ github.sha }}'
+          } else {
+            git diff --check HEAD
+          }
+
+      - name: Check asset package boundaries
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
+
+      - name: Build and test with MSVC
+        shell: cmd
+        run: build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure
+
+      - name: Build and test with ClangCL
+        shell: cmd
+        run: build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure

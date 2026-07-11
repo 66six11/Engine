@@ -11,11 +11,15 @@ namespace asharia::rendergraph_header_tests {
             .toDeclarationIndex = 0,
             .resourceKind = RenderGraphResourceKind::Image,
             .image = RenderGraphImageHandle{.index = 0},
+            .buffer = {},
+            .imageName = {},
+            .bufferName = {},
             .reason = "header test",
         });
         result.culledPasses.push_back(RenderGraphCulledPass{
             .declarationIndex = 0,
             .name = "CulledHeaderPass",
+            .type = {},
             .reason = "header test",
         });
     }

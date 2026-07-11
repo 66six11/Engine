@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -15,16 +16,13 @@ namespace {
     }
 
     bool messageContains(std::string_view message, std::string_view token) {
-        return message.find(token) != std::string_view::npos;
+        return message.contains(token);
     }
 
-    asharia::ShaderDescriptorBindingReflection descriptor(
-        std::string name,
-        std::uint32_t set,
-        std::uint32_t binding,
-        std::string kind,
-        std::uint32_t count,
-        std::string stageVisibility) {
+    asharia::ShaderDescriptorBindingReflection descriptor(std::string name, std::uint32_t set,
+                                                          std::uint32_t binding, std::string kind,
+                                                          std::uint32_t count,
+                                                          std::string stageVisibility) {
         return asharia::ShaderDescriptorBindingReflection{
             .name = std::move(name),
             .set = set,
@@ -40,13 +38,15 @@ namespace {
         asharia::ShaderResourceSignature signature{
             .descriptorBindings =
                 {
-                    descriptor("materialParams", 0, 0, "constantBuffer", 1,
-                               "vertex|fragment"),
+                    descriptor("materialParams", 0, 0, "constantBuffer", 1, "vertex|fragment"),
                     descriptor("baseColorTexture", 0, 1, "texture", 1, "fragment"),
                     descriptor("baseColorSampler", 0, 2, "sampler", 1, "fragment"),
                     descriptor("computePayload", 1, 0, "typedBuffer", 4, "compute"),
                 },
             .pushConstants = {},
+            .descriptorBindingCount = 0,
+            .pushConstantCount = 0,
+            .error = std::nullopt,
         };
         signature.descriptorBindingCount =
             static_cast<std::uint32_t>(signature.descriptorBindings.size());
@@ -111,26 +111,22 @@ namespace {
             descriptor("albedo", 0, 0, "combinedTextureSampler", 1, "fragment"),
         };
         combined.descriptorBindingCount = 1;
-        auto combinedAdapted =
-            asharia::shader_material::makeReflectionMaterialSignature(combined);
-        if (!combinedAdapted ||
-            combinedAdapted->signature.bindings.front().kind !=
-                asharia::material::MaterialResourceKind::CombinedImageSampler) {
+        auto combinedAdapted = asharia::shader_material::makeReflectionMaterialSignature(combined);
+        if (!combinedAdapted || combinedAdapted->signature.bindings.front().kind !=
+                                    asharia::material::MaterialResourceKind::CombinedImageSampler) {
             logFailure("Reflection adapter smoke failed combined texture/sampler mapping.");
             return false;
         }
 
         auto allStages = basicShaderSignature();
         allStages.descriptorBindings = {
-            descriptor("globalParams", 0, 0, "constantBuffer", 1,
-                       "vertex|fragment|compute"),
+            descriptor("globalParams", 0, 0, "constantBuffer", 1, "vertex|fragment|compute"),
         };
         allStages.descriptorBindingCount = 1;
         auto allStagesAdapted =
             asharia::shader_material::makeReflectionMaterialSignature(allStages);
-        if (!allStagesAdapted ||
-            allStagesAdapted->signature.bindings.front().visibility !=
-                asharia::material::MaterialShaderVisibility::All) {
+        if (!allStagesAdapted || allStagesAdapted->signature.bindings.front().visibility !=
+                                     asharia::material::MaterialShaderVisibility::All) {
             logFailure("Reflection adapter smoke failed all-stage visibility mapping.");
             return false;
         }
@@ -150,8 +146,7 @@ namespace {
         missingVisibility.descriptorBindings[0].stageVisibility.clear();
 
         auto partialGraphicsComputeVisibility = basicShaderSignature();
-        partialGraphicsComputeVisibility.descriptorBindings[0].stageVisibility =
-            "vertex|compute";
+        partialGraphicsComputeVisibility.descriptorBindings[0].stageVisibility = "vertex|compute";
 
         auto zeroCount = basicShaderSignature();
         zeroCount.descriptorBindings[0].count = 0;
@@ -181,13 +176,13 @@ namespace {
                 },
             .descriptorBindingCount = 0,
             .pushConstantCount = 1,
+            .error = std::nullopt,
         };
 
         return expectInvalid(unsupportedKind, "unsupported descriptor kind") &&
                expectInvalid(invalidVisibility, "unsupported stage visibility") &&
                expectInvalid(missingVisibility, "requires stage visibility") &&
-               expectInvalid(partialGraphicsComputeVisibility,
-                             "partial graphics/compute mixed") &&
+               expectInvalid(partialGraphicsComputeVisibility, "partial graphics/compute mixed") &&
                expectInvalid(zeroCount, "invalid array count") &&
                expectInvalid(duplicateCoordinate, "duplicate binding coordinate") &&
                expectInvalid(duplicateName, "duplicate resource name") &&
@@ -198,8 +193,9 @@ namespace {
 
 } // namespace
 
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
 // NOLINTNEXTLINE(bugprone-exception-escape)
-int main() {
+int main() noexcept {
     try {
         if (!smokePositiveMapping() || !smokeNegativeDiagnostics()) {
             return EXIT_FAILURE;

@@ -29,7 +29,7 @@ namespace asharia::rendergraph_header_tests {
         RenderGraph moveConstructed{std::move(copyAssigned)};
         RenderGraph moveAssigned;
         moveAssigned = std::move(moveConstructed);
-        (void)moveAssigned.compile();
+        [[maybe_unused]] const Result<RenderGraphCompileResult> compiled = moveAssigned.compile();
     }
 
 } // namespace asharia::rendergraph_header_tests

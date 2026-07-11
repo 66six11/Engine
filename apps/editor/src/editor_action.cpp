@@ -49,6 +49,7 @@ namespace asharia::editor {
         actions_.push_back(ActionEntry{
             .desc = std::move(desc),
             .callback = std::move(callback),
+            .invokeCount = 0U,
         });
         return {};
     }
@@ -63,6 +64,7 @@ namespace asharia::editor {
         context.eventQueue.push(EditorEvent{
             .kind = EditorEventKind::ActionInvoked,
             .sourceId = EditorId{.value = entry->desc.id.value},
+            .metadata = {},
         });
         entry->callback(context.actions);
         ++entry->invokeCount;
