@@ -1,4 +1,4 @@
-﻿using Editor.Core.CodeFirstUI.Models;
+using Asharia.Editor.UI.CodeFirst.Models;
 
 namespace Editor.Shell.CodeFirstUI.Adapters;
 

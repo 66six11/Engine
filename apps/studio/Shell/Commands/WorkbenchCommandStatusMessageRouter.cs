@@ -1,16 +1,16 @@
 using System;
-using Editor.Core.Models.Workbench;
+using Asharia.Editor.Commands;
 
 namespace Editor.Shell.Commands;
 
 internal sealed class WorkbenchCommandStatusMessageRouter : IWorkbenchCommandRouter
 {
     private readonly IWorkbenchCommandRouter inner_;
-    private readonly Action<WorkbenchCommandExecutionResult> publishResult_;
+    private readonly Action<EditorCommandExecutionResult> publishResult_;
 
     public WorkbenchCommandStatusMessageRouter(
         IWorkbenchCommandRouter inner,
-        Action<WorkbenchCommandExecutionResult> publishResult)
+        Action<EditorCommandExecutionResult> publishResult)
     {
         ArgumentNullException.ThrowIfNull(inner);
         ArgumentNullException.ThrowIfNull(publishResult);
@@ -19,7 +19,7 @@ internal sealed class WorkbenchCommandStatusMessageRouter : IWorkbenchCommandRou
         publishResult_ = publishResult;
     }
 
-    public WorkbenchCommandExecutionResult Execute(string commandId)
+    public EditorCommandExecutionResult Execute(string commandId)
     {
         var result = inner_.Execute(commandId);
         publishResult_(result);

@@ -1,4 +1,4 @@
-﻿using Editor.Core.Models.Panels;
+using Asharia.Editor.Panels;
 
 namespace Editor.Core.Abstractions;
 

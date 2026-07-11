@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using Asharia.Editor.Commands;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Core.Models.Workbench;
 using Editor.UI.ViewModels;
@@ -7,11 +8,11 @@ namespace Editor.Shell.ViewModels.Menus;
 
 public sealed class WorkbenchMenuItemViewModel : ViewModelBase
 {
-    private readonly Func<string, WorkbenchCommandExecutionResult> executeCommand_;
+    private readonly Func<string, EditorCommandExecutionResult> executeCommand_;
 
     public WorkbenchMenuItemViewModel(
         WorkbenchActionDescriptor action,
-        Func<string, WorkbenchCommandExecutionResult> executeCommand)
+        Func<string, EditorCommandExecutionResult> executeCommand)
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(executeCommand);

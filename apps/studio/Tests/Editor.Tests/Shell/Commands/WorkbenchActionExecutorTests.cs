@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;
@@ -218,7 +219,7 @@ public sealed class WorkbenchActionExecutorTests
             "panel",
             "Panel",
             PanelKind.Tool,
-            DockArea.Center,
+            EditorDockArea.Center,
             "Window/Panels/Panel",
             DockContentCachePolicy.KeepAlive,
             () => new object()));

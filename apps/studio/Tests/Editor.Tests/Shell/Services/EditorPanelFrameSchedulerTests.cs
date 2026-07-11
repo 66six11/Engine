@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Services;
@@ -116,7 +117,7 @@ public sealed class EditorPanelFrameSchedulerTests
         return new EditorPanelLifecycleContext(
             panelId,
             "Panel",
-            DockArea.Center,
+            EditorDockArea.Center,
             IsFloatingWorkspace: false);
     }
 

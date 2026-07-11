@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using Asharia.Editor.Commands;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;
 using Xunit;
@@ -18,7 +19,7 @@ public sealed class WorkbenchCommandRouterTests
         var result = router.Execute("workbench.panel.console");
 
         Assert.True(result.Succeeded);
-        Assert.Equal(WorkbenchCommandExecutionStatus.Succeeded, result.Status);
+        Assert.Equal(EditorCommandExecutionStatus.Succeeded, result.Status);
         Assert.Equal("workbench.panel.console", result.CommandId);
         Assert.Equal("workbench.panel.console", executor.ExecutedActionId);
     }
@@ -30,7 +31,7 @@ public sealed class WorkbenchCommandRouterTests
 
         var result = router.Execute("missing.command");
 
-        Assert.Equal(WorkbenchCommandExecutionStatus.NotFound, result.Status);
+        Assert.Equal(EditorCommandExecutionStatus.NotFound, result.Status);
         Assert.Equal("missing.command", result.CommandId);
         Assert.Contains("not registered", result.Message);
     }
@@ -48,7 +49,7 @@ public sealed class WorkbenchCommandRouterTests
 
         var result = router.Execute("workbench.panel.disabled");
 
-        Assert.Equal(WorkbenchCommandExecutionStatus.Disabled, result.Status);
+        Assert.Equal(EditorCommandExecutionStatus.Disabled, result.Status);
         Assert.Equal("Disabled by test", result.Message);
         Assert.Null(executor.ExecutedActionId);
     }
@@ -62,7 +63,7 @@ public sealed class WorkbenchCommandRouterTests
 
         var result = router.Execute("workbench.panel.console");
 
-        Assert.Equal(WorkbenchCommandExecutionStatus.Failed, result.Status);
+        Assert.Equal(EditorCommandExecutionStatus.Failed, result.Status);
         Assert.Contains("did not complete", result.Message);
     }
 
@@ -75,7 +76,7 @@ public sealed class WorkbenchCommandRouterTests
 
         var result = router.Execute("workbench.panel.console");
 
-        Assert.Equal(WorkbenchCommandExecutionStatus.Failed, result.Status);
+        Assert.Equal(EditorCommandExecutionStatus.Failed, result.Status);
         Assert.Equal("boom", result.Message);
     }
 

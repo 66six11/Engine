@@ -1,6 +1,8 @@
 using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Commands;
+using Asharia.Editor.Diagnostics;
 using Avalonia;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
@@ -267,7 +269,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         DockWorkspace.Dispose();
     }
 
-    internal WorkbenchCommandExecutionResult? ExecuteShortcut(
+    internal EditorCommandExecutionResult? ExecuteShortcut(
         Key key,
         KeyModifiers keyModifiers,
         bool isTextInputFocused)
@@ -366,7 +368,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         LastStatusMessage = snapshot;
     }
 
-    private void PublishCommandStatusMessage(WorkbenchCommandExecutionResult result)
+    private void PublishCommandStatusMessage(EditorCommandExecutionResult result)
     {
         var statusMessage = EditorStatusMessageSnapshot.FromCommandResult(result);
         LastStatusMessage = statusMessage;

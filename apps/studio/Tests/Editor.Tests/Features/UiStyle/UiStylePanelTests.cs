@@ -1,6 +1,7 @@
-﻿using Editor.Core.CodeFirstUI.Models;
+using Asharia.Editor.Panels;
+using Asharia.Editor.UI.CodeFirst.Models;
 using Editor.Core.Models.Panels;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 using Editor.Features.UiStyle;
 using Editor.Shell.CodeFirstUI.Hosting;
 using Xunit;
@@ -183,7 +184,7 @@ public sealed class UiStylePanelTests
         host.OnPanelAttached(new EditorPanelLifecycleContext(
             "ui-style",
             "UI Style",
-            DockArea.Center,
+            EditorDockArea.Center,
             IsFloatingWorkspace: false));
         return host;
     }

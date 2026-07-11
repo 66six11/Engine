@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
@@ -74,7 +75,7 @@ public sealed class PanelRegistryTests
             id,
             id,
             PanelKind.Tool,
-            DockArea.Left,
+            EditorDockArea.Left,
             $"Window/Panels/{id}",
             DockContentCachePolicy.KeepAlive,
             static () => new object());

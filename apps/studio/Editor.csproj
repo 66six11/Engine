@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
@@ -21,6 +21,10 @@
         <Compile Remove="Tests\**\*.cs" />
         <Compile Remove="src\**\*.cs" />
         <AvaloniaResource Remove="src\**\*.axaml" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="src\Asharia.Editor\Asharia.Editor.csproj" />
     </ItemGroup>
 
     <ItemGroup>

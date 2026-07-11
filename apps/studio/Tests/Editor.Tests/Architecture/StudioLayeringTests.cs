@@ -44,26 +44,11 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Core_code_first_ui_does_not_reference_avalonia_or_shell()
+    public void Legacy_core_code_first_ui_source_no_longer_exists()
     {
         var root = FindRepositoryRoot();
-        var files = Directory.EnumerateFiles(
-            Path.Combine(root, "Core", "CodeFirstUI"),
-            "*.cs",
-            SearchOption.AllDirectories);
 
-        var offenders = files
-            .Where(path =>
-            {
-                var text = File.ReadAllText(path);
-                return text.Contains("Avalonia", StringComparison.Ordinal)
-                    || text.Contains("Editor.Shell", StringComparison.Ordinal);
-            })
-            .Select(path => Path.GetRelativePath(root, path))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Empty(offenders);
+        Assert.False(Directory.Exists(Path.Combine(root, "Core", "CodeFirstUI")));
     }
 
     [Fact]
@@ -586,7 +571,6 @@ public sealed class StudioLayeringTests
         {
             "EditorDiagnosticChannel.cs",
             "EditorDiagnosticRecord.cs",
-            "EditorDiagnosticSeverity.cs",
             "EditorDiagnosticSourceDescriptor.cs",
         };
 
@@ -677,8 +661,6 @@ public sealed class StudioLayeringTests
             "WorkbenchActionDescriptor.cs",
             "WorkbenchActionKind.cs",
             "WorkbenchActionScope.cs",
-            "WorkbenchCommandExecutionResult.cs",
-            "WorkbenchCommandExecutionStatus.cs",
         };
 
         foreach (var fileName in workbenchFiles)
@@ -700,16 +682,11 @@ public sealed class StudioLayeringTests
 
         var panelFiles = new[]
         {
-            "DockArea.cs",
             "DockContentCachePolicy.cs",
             "EditorPanelContentModelKind.cs",
             "EditorPanelContentModelReference.cs",
             "EditorPanelContributionDescriptor.cs",
-            "EditorPanelFrameContext.cs",
             "EditorPanelFrameUpdateDescriptor.cs",
-            "EditorPanelFrameUpdateMode.cs",
-            "EditorPanelFrameUpdateRequest.cs",
-            "EditorPanelLifecycleContext.cs",
             "EditorPanelLifecycleDescriptor.cs",
             "EditorPanelLifecycleMode.cs",
             "PanelDescriptor.cs",
@@ -725,6 +702,37 @@ public sealed class StudioLayeringTests
             Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
             Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
         }
+    }
+
+    [Fact]
+    public void Panel_lifecycle_contracts_live_in_public_editor_api()
+    {
+        var root = FindRepositoryRoot();
+        var expectedNamespace = "namespace Asharia.Editor.Panels;";
+
+        var panelFiles = new[]
+        {
+            "EditorDockArea.cs",
+            "EditorPanelFrameContext.cs",
+            "EditorPanelFrameUpdateMode.cs",
+            "EditorPanelFrameUpdateRequest.cs",
+            "EditorPanelLifecycleContext.cs",
+        };
+
+        foreach (var fileName in panelFiles)
+        {
+            var path = Path.Combine(root, "src", "Asharia.Editor", "Panels", fileName);
+            Assert.True(
+                File.Exists(path),
+                $"{fileName} is a public panel lifecycle contract and should live under src/Asharia.Editor/Panels.");
+            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
+        }
+
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "Dock" + "Area.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelFrameContext.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelFrameUpdateMode.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelFrameUpdateRequest.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelLifecycleContext.cs")));
     }
 
     [Fact]

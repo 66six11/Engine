@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Contributions;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Panels;
@@ -261,7 +262,7 @@ public sealed class EditorContributionDescriptorValidatorTests
                 CreatePanel(
                     "project.invalid-panel",
                     kind: (PanelKind)42,
-                    defaultDockArea: (DockArea)43,
+                    defaultDockArea: (EditorDockArea)43,
                     cachePolicy: (DockContentCachePolicy)44,
                     lifecycleMode: (EditorPanelLifecycleMode)45,
                     frameUpdateMode: (EditorPanelFrameUpdateMode)46),
@@ -346,7 +347,7 @@ public sealed class EditorContributionDescriptorValidatorTests
                     "project.null-nested",
                     "Inspector",
                     PanelKind.Tool,
-                    DockArea.Right,
+                    EditorDockArea.Right,
                     "Window/Panels/Inspector",
                     DockContentCachePolicy.KeepAlive,
                     ContentModel: null!,
@@ -427,7 +428,7 @@ public sealed class EditorContributionDescriptorValidatorTests
     private static EditorPanelContributionDescriptor CreatePanel(
         string id,
         PanelKind kind = PanelKind.Tool,
-        DockArea defaultDockArea = DockArea.Right,
+        EditorDockArea defaultDockArea = EditorDockArea.Right,
         DockContentCachePolicy cachePolicy = DockContentCachePolicy.KeepAlive,
         string menuPath = "Window/Panels/Inspector",
         EditorPanelContentModelKind contentModelKind = EditorPanelContentModelKind.ViewModelTypeReference,

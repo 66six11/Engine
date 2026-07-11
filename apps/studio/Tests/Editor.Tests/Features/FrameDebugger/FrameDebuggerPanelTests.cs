@@ -1,6 +1,8 @@
-﻿using System;
+using System;
 using System.Linq;
-using Editor.Core.CodeFirstUI.Models;
+using Asharia.Editor.Panels;
+using Asharia.Editor.Diagnostics;
+using Asharia.Editor.UI.CodeFirst.Models;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.FrameDebug;
 using Editor.Core.Models.Panels;
@@ -16,7 +18,7 @@ public sealed class FrameDebuggerPanelTests
     private static readonly EditorPanelLifecycleContext PanelContext = new(
         "frame-debugger",
         "Frame Debugger",
-        DockArea.Right,
+        EditorDockArea.Right,
         IsFloatingWorkspace: false);
 
     [Fact]

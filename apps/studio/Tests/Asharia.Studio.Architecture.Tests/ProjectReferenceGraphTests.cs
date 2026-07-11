@@ -44,6 +44,22 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Legacy_editor_references_only_the_public_editor_project()
+    {
+        var projectPath = Path.Combine(FindStudioRoot(), "Editor.csproj");
+        var project = XDocument.Load(projectPath);
+
+        var references = project
+            .Descendants("ProjectReference")
+            .Select(element => element.Attribute("Include")?.Value.Replace('\\', '/'))
+            .OfType<string>()
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["src/Asharia.Editor/Asharia.Editor.csproj"], references);
+    }
+
+    [Fact]
     public void Target_solution_contains_only_the_declared_boundary_projects()
     {
         var solutionPath = Path.Combine(FindStudioRoot(), "Asharia.Studio.sln");
@@ -79,6 +95,7 @@ public sealed class ProjectReferenceGraphTests
             "LibraryImport",
             "DllImport",
             "System.Runtime.InteropServices",
+            "Editor.Core",
             "Editor.Shell",
             "Editor.Features",
             "Asharia.Studio.",
@@ -99,6 +116,31 @@ public sealed class ProjectReferenceGraphTests
             .ToArray();
 
         Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void Code_first_source_is_owned_only_by_public_editor()
+    {
+        var studioRoot = FindStudioRoot();
+        var legacyRoot = Path.Combine(studioRoot, "Core", "CodeFirstUI");
+        var publicRoot = Path.Combine(studioRoot, "src", "Asharia.Editor", "UI", "CodeFirst");
+
+        Assert.False(Directory.Exists(legacyRoot), $"Legacy Code-first source remains at {legacyRoot}.");
+        Assert.True(Directory.Exists(publicRoot), $"Public Code-first source is missing at {publicRoot}.");
+
+        var publicFiles = Directory
+            .EnumerateFiles(publicRoot, "*.cs", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.NotEmpty(publicFiles);
+
+        var publicSource = string.Join(
+            Environment.NewLine,
+            publicFiles.Select(File.ReadAllText));
+
+        Assert.DoesNotContain("Editor.Core", publicSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Avalonia", publicSource, StringComparison.Ordinal);
     }
 
     private static string RequiredProperty(XDocument project, string propertyName)

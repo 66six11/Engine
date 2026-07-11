@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.IO;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Lifecycle;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
@@ -93,7 +94,7 @@ public sealed class EditorLifecycleViewHookTests
             "panel",
             "Panel",
             PanelKind.Tool,
-            DockArea.Center,
+            EditorDockArea.Center,
             "Window/Panels/Panel",
             DockContentCachePolicy.KeepAlive,
             () => disposable));

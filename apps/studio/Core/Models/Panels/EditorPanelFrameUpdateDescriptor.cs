@@ -1,3 +1,4 @@
+using Asharia.Editor.Panels;
 namespace Editor.Core.Models.Panels;
 
 public sealed record EditorPanelFrameUpdateDescriptor

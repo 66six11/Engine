@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Services;
@@ -10,7 +11,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
 {
     private bool isActive_;
     private bool isDragSource_;
-    private DockArea area_;
+    private EditorDockArea area_;
     private IDisposable? panelInstanceRelease_;
     private EditorPanelFrameScheduler? panelFrameScheduler_;
     private bool isPanelAttached_;
@@ -24,7 +25,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
         string titleDetail,
         string statusText,
         PanelKind kind,
-        DockArea area,
+        EditorDockArea area,
         object content,
         string? iconKey = null,
         IDisposable? panelInstanceRelease = null,
@@ -61,7 +62,7 @@ public sealed class EditorDockTabViewModel : ViewModelBase
 
     public object Content { get; }
 
-    public DockArea Area
+    public EditorDockArea Area
     {
         get => area_;
         set

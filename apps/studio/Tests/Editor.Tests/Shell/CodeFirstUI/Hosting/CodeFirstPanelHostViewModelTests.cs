@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
-using Editor.Core.CodeFirstUI.Abstractions;
-using Editor.Core.CodeFirstUI.Authoring;
-using Editor.Core.CodeFirstUI.Models;
-using Editor.Core.CodeFirstUI.Validation;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
+using Asharia.Editor.UI.CodeFirst.Authoring;
+using Asharia.Editor.UI.CodeFirst.Models;
+using Asharia.Editor.UI.CodeFirst.Validation;
 using Editor.Core.Models.Panels;
 using Editor.Shell.CodeFirstUI.Hosting;
 using Xunit;
@@ -671,7 +672,7 @@ public sealed class CodeFirstPanelHostViewModelTests
         return new EditorPanelLifecycleContext(
             panelId,
             "Frame Debugger",
-            DockArea.Right,
+            EditorDockArea.Right,
             IsFloatingWorkspace: false);
     }
 

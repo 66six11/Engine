@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
@@ -131,7 +132,7 @@ public sealed class PanelInstanceManagerTests
         Assert.Equal("Window/Panels/panel", tab.TitleDetail);
         Assert.Equal("tool", tab.StatusText);
         Assert.Equal(PanelKind.Tool, tab.Kind);
-        Assert.Equal(DockArea.Left, tab.Area);
+        Assert.Equal(EditorDockArea.Left, tab.Area);
     }
 
     private static PanelDescriptor CreateDescriptor(
@@ -143,7 +144,7 @@ public sealed class PanelInstanceManagerTests
             id,
             id,
             PanelKind.Tool,
-            DockArea.Left,
+            EditorDockArea.Left,
             $"Window/Panels/{id}",
             cachePolicy,
             createContent);

@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using Asharia.Editor.Commands;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Core.Models.Workbench;
 using Editor.UI.ViewModels;
@@ -11,7 +12,7 @@ public sealed class PanelMenuItemViewModel : ViewModelBase
 
     public PanelMenuItemViewModel(
         WorkbenchActionDescriptor action,
-        Func<string, WorkbenchCommandExecutionResult> executeCommand)
+        Func<string, EditorCommandExecutionResult> executeCommand)
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(executeCommand);

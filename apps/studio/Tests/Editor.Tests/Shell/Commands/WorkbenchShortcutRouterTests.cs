@@ -1,5 +1,6 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Commands;
 using Avalonia.Input;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;
@@ -129,10 +130,10 @@ public sealed class WorkbenchShortcutRouterTests
 
         public IReadOnlyList<string> ExecutedCommandIds => executedCommandIds_;
 
-        public WorkbenchCommandExecutionResult Execute(string commandId)
+        public EditorCommandExecutionResult Execute(string commandId)
         {
             executedCommandIds_.Add(commandId);
-            return WorkbenchCommandExecutionResult.Success(commandId);
+            return EditorCommandExecutionResult.Success(commandId);
         }
     }
 }

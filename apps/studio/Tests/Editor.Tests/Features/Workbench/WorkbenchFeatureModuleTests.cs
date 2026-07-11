@@ -1,5 +1,7 @@
 using System.Linq;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Scene;
 using Editor.Core.Models.Viewports;
@@ -34,7 +36,7 @@ public sealed class WorkbenchFeatureModuleTests
                     "scene-view",
                     "Scene View",
                     PanelKind.Document,
-                    DockArea.Center,
+                    EditorDockArea.Center,
                     "Window/Panels/Scene View",
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelSceneView,
@@ -45,7 +47,7 @@ public sealed class WorkbenchFeatureModuleTests
                     "hierarchy",
                     "Hierarchy",
                     PanelKind.Tool,
-                    DockArea.Left,
+                    EditorDockArea.Left,
                     "Window/Panels/Hierarchy",
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelHierarchy,
@@ -56,7 +58,7 @@ public sealed class WorkbenchFeatureModuleTests
                     "inspector",
                     "Inspector",
                     PanelKind.Tool,
-                    DockArea.Right,
+                    EditorDockArea.Right,
                     "Window/Panels/Inspector",
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelInspector,
@@ -67,7 +69,7 @@ public sealed class WorkbenchFeatureModuleTests
                     "console",
                     "Console",
                     PanelKind.Tool,
-                    DockArea.Bottom,
+                    EditorDockArea.Bottom,
                     "Window/Panels/Console",
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelConsole,
@@ -78,7 +80,7 @@ public sealed class WorkbenchFeatureModuleTests
                     "problems",
                     "Problems",
                     PanelKind.Tool,
-                    DockArea.Bottom,
+                    EditorDockArea.Bottom,
                     "Window/Panels/Problems",
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelProblems,
@@ -89,7 +91,7 @@ public sealed class WorkbenchFeatureModuleTests
                     "frame-debugger",
                     "Frame Debugger",
                     PanelKind.Tool,
-                    DockArea.Right,
+                    EditorDockArea.Right,
                     "Window/Panels/Frame Debugger",
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelFrameDebugger,
@@ -100,7 +102,7 @@ public sealed class WorkbenchFeatureModuleTests
                     "ui-style",
                     "UI Style",
                     PanelKind.Tool,
-                    DockArea.Center,
+                    EditorDockArea.Center,
                     "Window/Panels/UI Style",
                     DockContentCachePolicy.KeepAlive,
                     EditorIconKey.PanelUiStyle,
@@ -341,7 +343,7 @@ public sealed class WorkbenchFeatureModuleTests
         string Id,
         string Title,
         PanelKind Kind,
-        DockArea Area,
+        EditorDockArea Area,
         string MenuPath,
         DockContentCachePolicy CachePolicy,
         string? IconKey,
