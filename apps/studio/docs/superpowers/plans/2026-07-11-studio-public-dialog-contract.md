@@ -1,6 +1,6 @@
 # Studio Public Dialog Contract Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Establish validated, immutable, UI-neutral Dialog request/result contracts in `Asharia.Editor`, migrate the compatibility Dialog Host to consume them, and retire the legacy Dialog model family.
 
@@ -46,7 +46,7 @@
 - Consumes: existing dependency-free `Asharia.Editor` and internal identity validation patterns.
 - Produces: stable severity/role enums, `EditorDialogActionId`, and validated `EditorDialogActionDescriptor` for Task 2.
 
-- [ ] **Step 1: Write the failing action primitive tests**
+- [x] **Step 1: Write the failing action primitive tests**
 
 Create `EditorDialogActionTests.cs`:
 
@@ -136,7 +136,7 @@ public sealed class EditorDialogActionTests
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify compile RED**
+- [x] **Step 2: Run the focused test and verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~EditorDialogActionTests
@@ -144,7 +144,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because `Asharia.Editor.Dialogs` and all four public action primitive types do not exist.
 
-- [ ] **Step 3: Extract shared lowercase-kebab validation**
+- [x] **Step 3: Extract shared lowercase-kebab validation**
 
 Add to internal `EditorIdentityValidation` before its private helpers:
 
@@ -186,7 +186,7 @@ if (EditorIdentityValidation.IsLowercaseKebabId(value))
 
 Add `using Asharia.Editor.Extensions;` and remove the now-duplicate private `IsLowercaseKebabId` method from `UiBackendId`.
 
-- [ ] **Step 4: Implement the stable enums and action ID**
+- [x] **Step 4: Implement the stable enums and action ID**
 
 Create `EditorDialogSeverity.cs`:
 
@@ -263,7 +263,7 @@ public readonly record struct EditorDialogActionId
 }
 ```
 
-- [ ] **Step 5: Implement the validated action descriptor**
+- [x] **Step 5: Implement the validated action descriptor**
 
 Create `EditorDialogActionDescriptor.cs`:
 
@@ -315,7 +315,7 @@ public sealed record EditorDialogActionDescriptor
 }
 ```
 
-- [ ] **Step 6: Verify GREEN and the existing backend identity regression**
+- [x] **Step 6: Verify GREEN and the existing backend identity regression**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~EditorDialogActionTests|FullyQualifiedName~EditorContributionIdentityTests"
@@ -324,7 +324,7 @@ dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --n
 
 Expected: Dialog action tests and existing `UiBackendId` cases PASS; public build has 0 warnings/errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Dialogs apps/studio/src/Asharia.Editor/Extensions/EditorIdentityValidation.cs apps/studio/src/Asharia.Editor/Contributions/UiBackendId.cs apps/studio/Tests/Asharia.Editor.Tests/Dialogs
@@ -348,7 +348,7 @@ git commit -m "feat(studio): add dialog action contracts"
 - Consumes: Task 1 action primitives.
 - Produces: fully validated `EditorDialogRequest` and invariant-safe `EditorDialogResult` for the compatibility Host in Task 3.
 
-- [ ] **Step 1: Write failing request tests**
+- [x] **Step 1: Write failing request tests**
 
 Create `EditorDialogRequestTests.cs`:
 
@@ -523,7 +523,7 @@ public sealed class EditorDialogRequestTests
 
 Add `using System.Linq;` because the defensive snapshot assertion uses `Select`.
 
-- [ ] **Step 2: Write failing result tests**
+- [x] **Step 2: Write failing result tests**
 
 Create `EditorDialogResultTests.cs`:
 
@@ -576,7 +576,7 @@ public sealed class EditorDialogResultTests
 }
 ```
 
-- [ ] **Step 3: Run and verify compile RED**
+- [x] **Step 3: Run and verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~EditorDialogRequestTests|FullyQualifiedName~EditorDialogResultTests"
@@ -584,7 +584,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because `EditorDialogRequest`, `EditorDialogCompletionKind`, and `EditorDialogResult` do not exist.
 
-- [ ] **Step 4: Implement completion kind and invariant-safe result**
+- [x] **Step 4: Implement completion kind and invariant-safe result**
 
 Create `EditorDialogCompletionKind.cs`:
 
@@ -636,7 +636,7 @@ public sealed record EditorDialogResult
 }
 ```
 
-- [ ] **Step 5: Implement validated request with a defensive snapshot**
+- [x] **Step 5: Implement validated request with a defensive snapshot**
 
 Create `EditorDialogRequest.cs`:
 
@@ -743,7 +743,7 @@ public sealed class EditorDialogRequest
 }
 ```
 
-- [ ] **Step 6: Verify GREEN and the full public contract suite**
+- [x] **Step 6: Verify GREEN and the full public contract suite**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~EditorDialog
@@ -753,7 +753,7 @@ dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --n
 
 Expected: all Dialog and existing public tests PASS; public build has 0 warnings/errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Dialogs apps/studio/Tests/Asharia.Editor.Tests/Dialogs
@@ -781,7 +781,7 @@ git commit -m "feat(studio): add dialog request contracts"
 - Consumes: Task 2 public request/result contract.
 - Produces: compatibility Presentation that uses only `Asharia.Editor.Dialogs`; legacy model files remain temporarily for Task 4 removal.
 
-- [ ] **Step 1: Replace compatibility Host tests with the new semantics**
+- [x] **Step 1: Replace compatibility Host tests with the new semantics**
 
 Replace `EditorDialogHostViewModelTests.cs` with:
 
@@ -972,7 +972,7 @@ public sealed class EditorDialogHostViewTests
 }
 ```
 
-- [ ] **Step 2: Run and verify compatibility compile RED**
+- [x] **Step 2: Run and verify compatibility compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Editor.Tests/Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~EditorDialogHostViewModelTests|FullyQualifiedName~EditorDialogHostViewTests"
@@ -980,7 +980,7 @@ dotnet test apps/studio/Tests/Editor.Tests/Editor.Tests.csproj -c Release --no-r
 
 Expected: compile FAIL because `EditorDialogHostViewModel` still accepts the legacy request/result types and does not expose `TrySystemDismiss` or new action properties.
 
-- [ ] **Step 3: Add one internal About request factory**
+- [x] **Step 3: Add one internal About request factory**
 
 Create `StudioDialogRequests.cs`:
 
@@ -1009,7 +1009,7 @@ internal static class StudioDialogRequests
 }
 ```
 
-- [ ] **Step 4: Migrate the button projection**
+- [x] **Step 4: Migrate the button projection**
 
 Replace `EditorDialogButtonViewModel.cs` with:
 
@@ -1045,7 +1045,7 @@ public sealed class EditorDialogButtonViewModel
 }
 ```
 
-- [ ] **Step 5: Migrate the Host state and completion mapping**
+- [x] **Step 5: Migrate the Host state and completion mapping**
 
 In `EditorDialogHostViewModel.cs`:
 
@@ -1085,7 +1085,7 @@ Buttons = request.Actions
 
 Keep `TaskCreationOptions.RunContinuationsAsynchronously` and the existing clear-before-`TrySetResult` order.
 
-- [ ] **Step 6: Migrate Presentation callers and Escape bridge**
+- [x] **Step 6: Migrate Presentation callers and Escape bridge**
 
 Replace all of `EditorDialogHostDesignViewModel.cs` so no legacy namespace import remains:
 
@@ -1125,7 +1125,7 @@ internal static bool TrySystemDismissDialog(object? dataContext)
 
 Update `OnDialogHostKeyDown` to call `TrySystemDismissDialog(DataContext)`.
 
-- [ ] **Step 7: Verify GREEN and all compatibility regressions**
+- [x] **Step 7: Verify GREEN and all compatibility regressions**
 
 ```powershell
 dotnet test apps/studio/Tests/Editor.Tests/Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~Dialog|FullyQualifiedName~MainWindowViewModelTests"
@@ -1134,7 +1134,7 @@ dotnet test apps/studio/Editor.sln -c Release --no-restore
 
 Expected: focused Dialog/MainWindow tests and all 600 legacy tests PASS. The old legacy Dialog models still compile but have no production callers outside their own files and the soon-to-change architecture assertion.
 
-- [ ] **Step 8: Prove no compatibility production caller uses the legacy namespace**
+- [x] **Step 8: Prove no compatibility production caller uses the legacy namespace**
 
 ```powershell
 rg -n "using Editor\.Core\.Models\.Dialogs|Editor\.Core\.Models\.Dialogs\." apps/studio --glob "*.cs"
@@ -1142,7 +1142,7 @@ rg -n "using Editor\.Core\.Models\.Dialogs|Editor\.Core\.Models\.Dialogs\." apps
 
 Expected: matches only in `Core/Models/Dialogs/**` declarations, legacy architecture tests, or files intentionally deferred to Task 4. No `Shell/**`, `Features/**`, `UI/**`, or production test behavior file may remain.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```powershell
 git add apps/studio/Shell/ViewModels/Dialogs apps/studio/Shell/ViewModels/Windowing/MainWindowViewModel.cs apps/studio/Shell/Views/Dialogs/EditorDialogHostView.axaml.cs apps/studio/Tests/Editor.Tests/Shell/ViewModels/Dialogs apps/studio/Tests/Editor.Tests/Shell/Views/Dialogs apps/studio/Tests/Editor.Tests/Shell/ViewModels/Windowing
@@ -1169,7 +1169,7 @@ git commit -m "refactor(studio): consume public dialog contracts"
 - Consumes: Tasks 1–3 completed public contract and migrated callers.
 - Produces: one source of truth, public assembly ownership, and enforceable UI/native-neutral gates.
 
-- [ ] **Step 1: Write the failing public ownership/API-shape gate**
+- [x] **Step 1: Write the failing public ownership/API-shape gate**
 
 Add `using Asharia.Editor.Dialogs;` to `ProjectReferenceGraphTests.cs`, then add:
 
@@ -1233,7 +1233,7 @@ public void Public_dialog_contracts_replace_legacy_dialog_models()
 }
 ```
 
-- [ ] **Step 2: Run and verify assertion RED**
+- [x] **Step 2: Run and verify assertion RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~Public_dialog_contracts_replace_legacy_dialog_models
@@ -1241,15 +1241,15 @@ dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.A
 
 Expected: test FAIL because `apps/studio/Core/Models/Dialogs` still exists. All public type/API-shape assertions compile.
 
-- [ ] **Step 3: Remove the obsolete legacy physical-folder test**
+- [x] **Step 3: Remove the obsolete legacy physical-folder test**
 
 Delete the entire `Dialog_core_models_live_in_dialog_model_folder` fact from `StudioLayeringTests.cs`. Do not replace it with another legacy directory assertion; the target architecture test owns the new boundary.
 
-- [ ] **Step 4: Delete all six legacy Dialog model files**
+- [x] **Step 4: Delete all six legacy Dialog model files**
 
 Delete only the exact six files listed in this task. Confirm the folder is empty/absent and do not delete sibling `Core/Models` families.
 
-- [ ] **Step 5: Verify GREEN, one source of truth, and both Solutions**
+- [x] **Step 5: Verify GREEN, one source of truth, and both Solutions**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~Public_dialog_contracts_replace_legacy_dialog_models
@@ -1261,7 +1261,7 @@ rg -n "Editor\.Core\.Models\.Dialogs|EditorDialogButtonDescriptor|EditorDialogBu
 
 Expected: architecture and both Solutions PASS. The final `rg` has no production/source matches; if historical docs mention old types, leave them for Task 5 documentation classification rather than modifying source outside scope.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/studio/Core/Models/Dialogs apps/studio/Tests/Asharia.Studio.Architecture.Tests/ProjectReferenceGraphTests.cs apps/studio/Tests/Editor.Tests/Architecture/StudioLayeringTests.cs
@@ -1285,7 +1285,7 @@ git commit -m "refactor(studio): retire legacy dialog models"
 - Consumes: Tasks 1–4 complete implementation.
 - Produces: implemented architecture facts, final evidence, completed plan checkboxes, and Draft PR handoff for #237.
 
-- [ ] **Step 1: Update current architecture facts**
+- [x] **Step 1: Update current architecture facts**
 
 Document these exact facts:
 
@@ -1300,7 +1300,7 @@ Document these exact facts:
 
 Insert completed Task 4b in the master refactor plan after Task 4a and before the remaining L-sized Task 4 model-family extraction.
 
-- [ ] **Step 2: Run public and architecture warning-as-error gates**
+- [x] **Step 2: Run public and architecture warning-as-error gates**
 
 ```powershell
 dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --no-restore -warnaserror
@@ -1311,7 +1311,7 @@ dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.A
 
 Expected: both builds have 0 warnings/errors; all public and architecture tests PASS.
 
-- [ ] **Step 3: Run focused compatibility and both Solution gates**
+- [x] **Step 3: Run focused compatibility and both Solution gates**
 
 ```powershell
 dotnet test apps/studio/Tests/Editor.Tests/Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~Dialog|FullyQualifiedName~MainWindowViewModelTests"
@@ -1321,7 +1321,7 @@ dotnet test apps/studio/Asharia.Studio.sln -c Release --no-restore
 
 Expected: zero failed tests; current user-visible About/Dialog behavior remains covered.
 
-- [ ] **Step 4: Run format, encoding, docs, and diff gates**
+- [x] **Step 4: Run format, encoding, docs, and diff gates**
 
 ```powershell
 dotnet format apps/studio/src/Asharia.Editor/Asharia.Editor.csproj --verify-no-changes --no-restore
@@ -1336,7 +1336,7 @@ git diff --cached --check
 
 Verify every branch-changed managed/Markdown file with strict `UTF8Encoding(false, true)` and reject a leading `EF BB BF` BOM.
 
-- [ ] **Step 5: Mark the spec and implementation plan complete**
+- [x] **Step 5: Mark the spec and implementation plan complete**
 
 Only after Steps 2–4 pass:
 
@@ -1345,7 +1345,7 @@ Only after Steps 2–4 pass:
 - mark every implementation-plan checkbox complete;
 - record the intentional future order: Application static Host/service resolution, then `IEditorDialogService`, then owner-window routing/per-platform layout tests.
 
-- [ ] **Step 6: Record #237 evidence and commit**
+- [x] **Step 6: Record #237 evidence and commit**
 
 Prepare Issue evidence containing every RED/GREEN result, final test counts, public contract invariants, compatibility migration, architecture gate, deleted legacy model family, documentation, encoding/format/diff results, and explicit future service/Host boundary.
 
@@ -1354,7 +1354,7 @@ git add apps/studio/docs apps/studio/Tests/Asharia.Studio.Architecture.Tests app
 git commit -m "docs(studio): record public dialog contracts"
 ```
 
-- [ ] **Step 7: Prepare the Draft PR handoff**
+- [x] **Step 7: Prepare the Draft PR handoff**
 
 Do not push or create the PR before task reviews and the final whole-branch review. Prepare a Draft PR summary with:
 
@@ -1364,3 +1364,11 @@ Do not push or create the PR before task reviews and the final whole-branch revi
 - public ABI and compatibility impact;
 - explicit Windows/Linux/macOS neutrality;
 - explicit non-goals and future dialog-service dependency order.
+
+## Completion evidence and Draft PR handoff
+
+Issue `#237` evidence：Task 1 action contracts 得到预期 missing-namespace compile RED，随后 focused 33/33 GREEN；Task 2 request/result 得到预期 missing-type compile RED，随后 Dialog public 23/23 与完整 public 174/174 GREEN；Task 3 compatibility Host tests 得到预期 legacy/new contract mismatch compile RED，随后 Host/View 9/9 GREEN；Task 4 architecture test 因 legacy folder 存在得到预期 assertion RED，删除六个 legacy model 后 focused 1/1 与 architecture 8/8 GREEN。最终 public contract 构造验证 enum、ID、text、action count/identity/role、Dismiss/default/destructive 和 result invariant，并冻结防御性只读 action snapshot；compatibility Host、About path 与 legacy `Editor` 已迁移到唯一的 `Asharia.Editor.Dialogs` public ABI，legacy model family 已删除。
+
+Fresh final validation（2026-07-12）：两个 warning-as-error build 均为 0 warning/0 error；public 174/174、architecture 8/8、focused compatibility 46/46、`Editor.sln` 599/599、`Asharia.Studio.sln` 174+8+599，全部 0 failed/0 skipped。四个 format verify、742-file repository encoding、44-file branch strict UTF-8/no-BOM、doc sync、working/staged diff checks 全部通过。
+
+Draft PR handoff：标题可用 `feat(studio): establish public dialog contracts`，正文包含 `Closes #237`。摘要说明 Windows ContentDialog、Apple Alerts、GNOME dialog/button guidance 促成 role/default/destructive 正交设计，Avalonia owner requirement 促成 Host ownership 边界，.NET cancellation 与 record/collection guidance 促成 cancellation/result 分离及 defensive snapshot。ABI impact 是新增七个 dependency-free、UI/native-neutral public types并删除未发布的 legacy namespace；compatibility Host 保持当前 About/Dialog 行为。明确 Windows/Linux/macOS 共用数据 ABI，但本 Slice 不承诺屏幕顺序。非目标包括 service、owner routing、custom content、localization、file picker、progress、notification 与 modal queue；后续严格按 Application static Host/scope resolution → `IEditorDialogService` → owner-window/per-platform layout tests 推进。PR 在最终 whole-branch review 前保持 Draft，不提前 push/create。

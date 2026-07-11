@@ -1,8 +1,8 @@
 # Studio Public Dialog Contract Design
 
-状态：Approved（实施待开始）
+状态：Implemented
 
-更新日期：2026-07-11
+更新日期：2026-07-12
 
 关联 Issue：[#237](https://github.com/66six11/Engine/issues/237)
 
@@ -14,7 +14,18 @@
 
 ## 2. 当前仓库事实
 
-当前 `Editor.Core.Models.Dialogs` 包含：
+实现后的当前事实如下：
+
+- `Asharia.Editor.Dialogs` 拥有本设计的七个 UI-neutral public type；
+- action ID、role、default、destructive 与 completion 语义彼此独立；
+- request 构造验证全部 invariant，并冻结 action 的防御性只读快照；
+- public action 声明顺序保持确定性，但不是跨平台屏幕顺序承诺；
+- compatibility Dialog Host 消费公共合同，Presentation 仍拥有 overlay、focus、action projection 和 second-active-modal rejection；
+- 用户 system-dismiss result 与未来 operation cancellation 仍是不同终止路径；
+- legacy `Editor.Core.Models.Dialogs` 已删除，没有 wrapper、type forwarding 或 duplicate model；
+- dialog service、owner-window routing、custom content、platform ordering、localization、file picker、progress、notification 和 modal queue 均未实现。
+
+以下是实施前基线和本切片要解决的风险记录。实施前 `Editor.Core.Models.Dialogs` 包含：
 
 - `EditorDialogKind`：`Information | Confirmation`；
 - `EditorDialogButtonRole`：`Accept | Reject | Cancel`；
@@ -445,3 +456,18 @@ public Dialog data contract
 ```
 
 File picker、background progress、notification 和 complex form 分别设计，不复用 Dialog request 承载不相关职责。
+
+## 14. 实施与验收证据
+
+实施提交按 RED → GREEN 完成：Task 1 在 `Asharia.Editor.Dialogs` 不存在时得到预期 compile RED，随后 action/identity focused suite 33/33 GREEN；Task 2 在 `EditorDialogRequest`/`EditorDialogResult` 不存在时得到预期 compile RED，随后 Dialog public suite 23/23、完整 public suite 174/174 GREEN；Task 3 在 compatibility Host 仍使用 legacy request/result 时得到预期 compile RED，随后 Host/View 9/9 GREEN，并完成 About、projection、exact action ID、system dismiss 与 single-active-modal migration；Task 4 的 architecture gate 因 legacy physical folder 仍存在得到预期 assertion RED，删除六个 legacy model 后 focused gate 1/1、完整 architecture suite 8/8 GREEN。
+
+2026-07-12 的最终 fresh validation：
+
+- `Asharia.Editor` 与 architecture warning-as-error build 均为 0 warning、0 error；
+- public tests 174/174、architecture tests 8/8、focused Dialog/MainWindow compatibility tests 46/46；
+- `Editor.sln` 为 599/599；`Asharia.Studio.sln` 为 public 174/174、architecture 8/8、legacy 599/599；全部 0 failed、0 skipped；
+- 四个 changed-project `dotnet format --verify-no-changes` 全部通过；
+- repository encoding 检查 742 files，0 missing BOM、0 unexpected BOM、0 invalid UTF-8；44 个 branch-changed C#/Markdown 文件通过 strict UTF-8 decoding 且没有 leading BOM；
+- doc sync、`git diff --check` 和 `git diff --cached --check` 通过。
+
+最终边界保持不变：本 Slice 只发布数据合同并迁移 compatibility Host；后续依赖顺序是 Application static Host/scope service resolution → `IEditorDialogService` async/cancellation contract → Presentation owner-window routing 与 Windows/Linux/macOS per-platform layout tests。
