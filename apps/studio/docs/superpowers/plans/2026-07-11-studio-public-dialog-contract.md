@@ -830,7 +830,7 @@ public sealed class EditorDialogHostViewModelTests
                     EditorDialogActionRole.Primary,
                     isDefault: true,
                     isDestructive: true),
-                DismissAction(),
+                DismissAction(isDefault: false),
             ]);
 
         var resultTask = host.ShowAsync(request);
@@ -916,13 +916,13 @@ public sealed class EditorDialogHostViewModelTests
             actions);
     }
 
-    private static EditorDialogActionDescriptor DismissAction()
+    private static EditorDialogActionDescriptor DismissAction(bool isDefault = true)
     {
         return new EditorDialogActionDescriptor(
             EditorDialogActionId.Create("close"),
             "Close",
             EditorDialogActionRole.Dismiss,
-            isDefault: true);
+            isDefault: isDefault);
     }
 }
 ```
