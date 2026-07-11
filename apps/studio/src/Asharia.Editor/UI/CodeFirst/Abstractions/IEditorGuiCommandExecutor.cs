@@ -1,6 +1,6 @@
 ﻿using Asharia.Editor.Commands;
 
-namespace Editor.Core.CodeFirstUI.Abstractions;
+namespace Asharia.Editor.UI.CodeFirst.Abstractions;
 
 public interface IEditorGuiCommandExecutor
 {

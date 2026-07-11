@@ -1,6 +1,6 @@
 using System;
-using Editor.Core.CodeFirstUI.Abstractions;
-using Editor.Core.CodeFirstUI.Authoring;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
+using Asharia.Editor.UI.CodeFirst.Authoring;
 using Asharia.Editor.UI.CodeFirst.Models;
 using Asharia.Editor.Diagnostics;
 

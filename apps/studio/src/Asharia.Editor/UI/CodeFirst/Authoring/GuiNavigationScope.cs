@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Editor.Core.CodeFirstUI.Authoring;
+namespace Asharia.Editor.UI.CodeFirst.Authoring;
 
 public sealed class GuiNavigationScope : IDisposable
 {

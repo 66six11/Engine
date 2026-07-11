@@ -2,16 +2,15 @@ using System;
 using System.Collections.Generic;
 using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
-using Editor.Core.CodeFirstUI.Abstractions;
-using Editor.Core.CodeFirstUI.Authoring;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
+using Asharia.Editor.UI.CodeFirst.Authoring;
 using Asharia.Editor.UI.CodeFirst.Building;
 using Asharia.Editor.UI.CodeFirst.Events;
 using Asharia.Editor.UI.CodeFirst.Models;
 using Asharia.Editor.UI.CodeFirst.State;
-using Editor.Core.Models.Workbench;
 using Xunit;
 
-namespace Editor.Tests.Core.CodeFirstUI.Authoring;
+namespace Asharia.Editor.Tests.UI.CodeFirst.Authoring;
 
 public sealed class EditorGuiTests
 {

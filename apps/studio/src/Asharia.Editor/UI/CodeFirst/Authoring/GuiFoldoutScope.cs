@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Editor.Core.CodeFirstUI.Authoring;
+namespace Asharia.Editor.UI.CodeFirst.Authoring;
 
 public readonly struct GuiFoldoutScope : IDisposable
 {

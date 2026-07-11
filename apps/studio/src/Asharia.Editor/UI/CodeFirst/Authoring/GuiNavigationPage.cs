@@ -1,7 +1,7 @@
 using System;
 using Asharia.Editor.UI.CodeFirst.Models;
 
-namespace Editor.Core.CodeFirstUI.Authoring;
+namespace Asharia.Editor.UI.CodeFirst.Authoring;
 
 public sealed record GuiNavigationPage
 {

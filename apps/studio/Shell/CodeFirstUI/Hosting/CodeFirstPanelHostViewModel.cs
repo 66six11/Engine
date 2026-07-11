@@ -2,8 +2,8 @@ using System;
 using Asharia.Editor.Panels;
 using Asharia.Editor.Commands;
 using Editor.Core.Abstractions;
-using Editor.Core.CodeFirstUI.Abstractions;
-using Editor.Core.CodeFirstUI.Authoring;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
+using Asharia.Editor.UI.CodeFirst.Authoring;
 using Asharia.Editor.UI.CodeFirst.Building;
 using Asharia.Editor.UI.CodeFirst.Events;
 using Asharia.Editor.UI.CodeFirst.Models;
@@ -25,7 +25,7 @@ internal sealed class CodeFirstPanelHostViewModel :
 {
     private readonly IEditorGuiCommandExecutor commandExecutor_;
     private readonly GuiEventQueue events_ = new();
-    private readonly CodeFirstEditorPanel panel_;
+    private readonly ICodeFirstEditorPanelHost panelHost_;
     private readonly GuiStateStore stateStore_ = new();
     private readonly IEditorUiDispatcher uiDispatcher_;
     private readonly GuiTreeValidator validator_ = new();
@@ -46,7 +46,7 @@ internal sealed class CodeFirstPanelHostViewModel :
     {
         ArgumentNullException.ThrowIfNull(panel);
 
-        panel_ = panel;
+        panelHost_ = (ICodeFirstEditorPanelHost)panel;
         commandExecutor_ = commandExecutor ?? MissingCommandExecutor.Instance;
         uiDispatcher_ = uiDispatcher ?? ImmediateCodeFirstUiDispatcher.Instance;
     }
@@ -85,7 +85,7 @@ internal sealed class CodeFirstPanelHostViewModel :
 
     public bool HasValidationErrors => !lastValidationResult.IsValid;
 
-    public EditorPanelFrameUpdateRequest FrameUpdateRequest => panel_.FrameUpdateRequest;
+    public EditorPanelFrameUpdateRequest FrameUpdateRequest => panelHost_.FrameUpdateRequest;
 
     public GuiEventQueue Events => events_;
 
@@ -332,7 +332,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         lifecycleContext_ = context;
         if (!isCreated_)
         {
-            panel_.DispatchCreate(context);
+            panelHost_.Create(context);
             isCreated_ = true;
         }
 
@@ -372,7 +372,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         ThrowIfDisposed();
 
         lifecycleContext_ = context.Panel;
-        panel_.DispatchFrame(context);
+        panelHost_.Frame(context);
         if (context.IsRepaintRequested)
         {
             RequestRebuild(GuiRebuildReason.FrameTick);
@@ -387,7 +387,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         }
 
         DisablePanel();
-        panel_.DispatchDestroy();
+        panelHost_.Destroy();
         isDisposed_ = true;
     }
 
@@ -434,7 +434,7 @@ internal sealed class CodeFirstPanelHostViewModel :
         {
             var builder = new GuiFrameBuilder(lifecycleContext_.PanelId);
             var gui = new EditorGui(builder, events_, stateStore_, commandExecutor_);
-            panel_.DispatchGui(gui);
+            panelHost_.BuildGui(gui);
             var tree = builder.Build();
             var validation = validator_.Validate(tree);
 
@@ -479,7 +479,7 @@ internal sealed class CodeFirstPanelHostViewModel :
             return;
         }
 
-        panel_.DispatchEnable();
+        panelHost_.Enable();
         isEnabled_ = true;
     }
 
@@ -490,7 +490,7 @@ internal sealed class CodeFirstPanelHostViewModel :
             return;
         }
 
-        panel_.DispatchDisable();
+        panelHost_.Disable();
         isEnabled_ = false;
     }
 

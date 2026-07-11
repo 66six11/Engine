@@ -4,14 +4,13 @@ using System.Linq;
 using System.Text;
 using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
-using Editor.Core.Models.Workbench;
-using Editor.Core.CodeFirstUI.Abstractions;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Asharia.Editor.UI.CodeFirst.Building;
 using Asharia.Editor.UI.CodeFirst.Events;
 using Asharia.Editor.UI.CodeFirst.Models;
 using Asharia.Editor.UI.CodeFirst.State;
 
-namespace Editor.Core.CodeFirstUI.Authoring;
+namespace Asharia.Editor.UI.CodeFirst.Authoring;
 
 public sealed class EditorGui
 {
