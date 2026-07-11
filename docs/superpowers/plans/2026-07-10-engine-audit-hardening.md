@@ -788,7 +788,7 @@ $viewerFlags = @(
   '--smoke-renderer-format-contract','--smoke-deferred-deletion',
   '--smoke-reflection-registry','--smoke-reflection-transform',
   '--smoke-reflection-attributes','--smoke-serialization-roundtrip',
-  '--smoke-json-archive','--smoke-serialization-migration'
+  '--smoke-serialization-json-archive','--smoke-serialization-migration'
 )
 $editorFlags = @(
   '--smoke-editor-shell','--smoke-editor-asset-browser','--smoke-editor-viewport',
