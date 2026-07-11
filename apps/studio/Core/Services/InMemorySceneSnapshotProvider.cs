@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Scene;

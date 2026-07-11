@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Console.Views;

@@ -1,4 +1,4 @@
-﻿using Editor.Core.Models.Workbench;
+using Editor.Core.Models.Workbench;
 
 namespace Editor.Shell.ViewModels.CommandPalette;
 
