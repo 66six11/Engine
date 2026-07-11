@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
 using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Panels;

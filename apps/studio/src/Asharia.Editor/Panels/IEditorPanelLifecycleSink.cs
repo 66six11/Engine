@@ -1,6 +1,4 @@
-using Asharia.Editor.Panels;
-
-namespace Editor.Core.Abstractions;
+namespace Asharia.Editor.Panels;
 
 public interface IEditorPanelLifecycleSink
 {

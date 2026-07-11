@@ -1,8 +1,6 @@
 using System;
 
-using Asharia.Editor.Commands;
-
-namespace Editor.Core.Models.Workbench;
+namespace Asharia.Editor.Commands;
 
 public sealed record EditorStatusMessageSnapshot(
     EditorStatusMessageSeverity Severity,
