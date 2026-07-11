@@ -106,15 +106,21 @@ namespace {
         const auto overBinary = asharia::asset::detail::readShaderToolBinary(
             binaryPath, "SPIR-V", std::filesystem::file_size(binaryPath) - 1U);
 
-        const auto hasLimitContext = [](const asharia::Error& error, std::string_view kind) {
+        const auto hasLimitContext = [](const asharia::Error& error, std::string_view kind,
+                                        std::uint64_t observed, std::uint64_t configured) {
+            const std::string configuredText = "maxBytes=" + std::to_string(configured);
+            const std::size_t configuredOffset = error.message.find(configuredText);
             return messageContains(error.message, kind) &&
-                   messageContains(error.message, "observedBytes=") &&
-                   messageContains(error.message, "maxBytes=");
+                   messageContains(error.message, "observedBytes=" + std::to_string(observed)) &&
+                   configuredOffset != std::string::npos &&
+                   error.message.find(configuredText, configuredOffset + configuredText.size()) ==
+                       std::string::npos &&
+                   !messageContains(error.message, "observedBytes=>");
         };
         return exactDiagnostic && *exactDiagnostic == "diagnostic" && !overDiagnostic &&
-               hasLimitContext(overDiagnostic.error(), "diagnostic") && exactBinary &&
+               hasLimitContext(overDiagnostic.error(), "diagnostic", 10U, 9U) && exactBinary &&
                exactBinary->size() == 4U && !overBinary &&
-               hasLimitContext(overBinary.error(), "SPIR-V");
+               hasLimitContext(overBinary.error(), "SPIR-V", 4U, 3U);
     }
 
     [[nodiscard]] std::filesystem::path smokeRoot(std::string_view name) {

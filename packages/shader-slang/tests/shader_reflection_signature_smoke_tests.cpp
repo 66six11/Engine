@@ -38,9 +38,16 @@ namespace {
             logFailure("Shader reflection exact-limit read failed: " + exact.error().message);
             return false;
         }
+        const std::string observed = "observedBytes=" + std::to_string(json.size());
+        const std::string configured = "maxBytes=" + std::to_string(json.size() - 1U);
+        const std::size_t configuredOffset =
+            over ? std::string::npos : over.error().message.find(configured);
         if (over || over.error().message.find("shader reflection JSON") == std::string::npos ||
-            over.error().message.find("observedBytes=") == std::string::npos ||
-            over.error().message.find("maxBytes=") == std::string::npos) {
+            over.error().message.find(observed) == std::string::npos ||
+            configuredOffset == std::string::npos ||
+            over.error().message.find(configured, configuredOffset + configured.size()) !=
+                std::string::npos ||
+            over.error().message.find("observedBytes=>") != std::string::npos) {
             logFailure(
                 "Shader reflection one-byte-over limit did not preserve domain/Core context.");
             return false;

@@ -50,14 +50,6 @@ namespace asharia::asset::detail {
             return std::string{text.begin(), text.end()};
         }
 
-        [[nodiscard]] std::string readLimitContext(std::string_view coreMessage,
-                                                   std::uint64_t maxBytes) {
-            std::string configured = " maxBytes=" + std::to_string(maxBytes);
-            if (coreMessage.find("exceeds configured byte limit") != std::string_view::npos) {
-                return " observedBytes=>maxBytes(" + std::to_string(maxBytes) + ")" + configured;
-            }
-            return configured;
-        }
     } // namespace
 
     Result<std::string> readShaderToolDiagnostic(const std::filesystem::path& path,
@@ -65,8 +57,7 @@ namespace asharia::asset::detail {
         auto text = core::readFileText(path, core::FileReadLimits{.maxBytes = maxBytes});
         if (!text) {
             return std::unexpected{toolIoError("Could not read tool diagnostic output file '" +
-                                               toolPathText(path) + "': " + text.error().message +
-                                               readLimitContext(text.error().message, maxBytes))};
+                                               toolPathText(path) + "': " + text.error().message)};
         }
         return text;
     }
@@ -76,10 +67,9 @@ namespace asharia::asset::detail {
                                                            std::uint64_t maxBytes) {
         auto coreBytes = core::readFileBytes(path, core::FileReadLimits{.maxBytes = maxBytes});
         if (!coreBytes) {
-            return std::unexpected{
-                toolIoError("Could not read " + std::string{outputKind} + " tool output file '" +
-                            toolPathText(path) + "': " + coreBytes.error().message +
-                            readLimitContext(coreBytes.error().message, maxBytes))};
+            return std::unexpected{toolIoError("Could not read " + std::string{outputKind} +
+                                               " tool output file '" + toolPathText(path) +
+                                               "': " + coreBytes.error().message)};
         }
 
         std::vector<std::uint8_t> bytes;

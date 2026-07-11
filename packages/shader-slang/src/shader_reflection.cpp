@@ -15,15 +15,6 @@ namespace asharia {
             return Error{ErrorDomain::Shader, 0, std::move(message)};
         }
 
-        [[nodiscard]] std::string readLimitContext(std::string_view coreMessage,
-                                                   std::uint64_t maxBytes) {
-            std::string configured = " maxBytes=" + std::to_string(maxBytes);
-            if (coreMessage.find("exceeds configured byte limit") != std::string_view::npos) {
-                return " observedBytes=>maxBytes(" + std::to_string(maxBytes) + ")" + configured;
-            }
-            return configured;
-        }
-
         struct JsonPropertyQuery {
             std::string_view json;
             std::string_view name;
@@ -463,9 +454,8 @@ namespace asharia {
                                                   ShaderReflectionFileOptions options) {
         auto text = core::readFileText(path, core::FileReadLimits{.maxBytes = options.maxBytes});
         if (!text) {
-            return std::unexpected{reflectionError(
-                "Failed to read shader reflection JSON '" + path.string() + "': " +
-                text.error().message + readLimitContext(text.error().message, options.maxBytes))};
+            return std::unexpected{reflectionError("Failed to read shader reflection JSON '" +
+                                                   path.string() + "': " + text.error().message)};
         }
 
         auto source = parseStringProperty(*text, "source");
