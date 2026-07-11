@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Editor.Core.Models.Scene;
 
 namespace Editor.Core.Abstractions;

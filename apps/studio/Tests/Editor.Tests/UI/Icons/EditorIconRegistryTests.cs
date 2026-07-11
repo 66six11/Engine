@@ -1,4 +1,4 @@
-﻿using Editor.UI.Icons;
+using Editor.UI.Icons;
 using Lucide.Avalonia;
 using Xunit;
 

@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Editor.Dialogs;
 using CommunityToolkit.Mvvm.Input;
-using Editor.Core.Models.Dialogs;
 using Editor.UI.ViewModels;
 
 namespace Editor.Shell.ViewModels.Dialogs;
@@ -52,31 +53,42 @@ public class EditorDialogHostViewModel : ViewModelBase
             TaskCreationOptions.RunContinuationsAsynchronously);
         completion_ = completion;
         ActiveRequest = request;
-        Buttons = request.Buttons
-            .Select(button => new EditorDialogButtonViewModel(
-                button,
-                new RelayCommand(() => Complete(EditorDialogResult.FromButton(button)))))
+        Buttons = request.Actions
+            .Select(action => new EditorDialogButtonViewModel(
+                action,
+                new RelayCommand(() => Complete(
+                    completion,
+                    EditorDialogResult.ActionInvoked(action.Id)))))
             .ToArray();
         return completion.Task;
     }
 
-    public bool TryCancel()
+    public bool TrySystemDismiss()
     {
-        if (ActiveRequest is null || !ActiveRequest.IsCancelable)
+        var completion = completion_;
+        if (completion is null
+            || ActiveRequest is null
+            || !ActiveRequest.AllowSystemDismiss)
         {
             return false;
         }
 
-        Complete(EditorDialogResult.Canceled());
-        return true;
+        return Complete(completion, EditorDialogResult.SystemDismissed());
     }
 
-    private void Complete(EditorDialogResult result)
+    private bool Complete(
+        TaskCompletionSource<EditorDialogResult> expectedCompletion,
+        EditorDialogResult result)
     {
-        var completion = completion_;
-        completion_ = null;
+        if (!ReferenceEquals(
+                Interlocked.CompareExchange(ref completion_, null, expectedCompletion),
+                expectedCompletion))
+        {
+            return false;
+        }
+
         Buttons = [];
         ActiveRequest = null;
-        completion?.TrySetResult(result);
+        return expectedCompletion.TrySetResult(result);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Features.Hierarchy.Models;
 using Editor.UI.Icons;

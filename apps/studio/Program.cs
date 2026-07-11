@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using System;
 namespace Editor;
 
@@ -25,9 +25,9 @@ sealed class Program
                              Win32RenderingMode.Software,
                          ],
                      })
-                     #if DEBUG
+#if DEBUG
                      .WithDeveloperTools()
-                     #endif
+#endif
                      .WithInterFont()
                      .LogToTrace();
 }

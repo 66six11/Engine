@@ -1,7 +1,9 @@
+using Asharia.Editor.Dialogs;
 using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml.Linq;
 using Xunit;
 
@@ -9,6 +11,79 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Public_dialog_contracts_replace_legacy_dialog_models()
+    {
+        var studioRoot = FindStudioRoot();
+        var legacyRoot = Path.Combine(studioRoot, "Core", "Models", "Dialogs");
+        Assert.False(Directory.Exists(legacyRoot), $"Legacy Dialog models remain at {legacyRoot}.");
+
+        var dialogTypes = typeof(EditorDialogRequest).Assembly
+            .GetExportedTypes()
+            .Where(type => type.Namespace == "Asharia.Editor.Dialogs")
+            .OrderBy(type => type.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            [
+                "EditorDialogActionDescriptor",
+                "EditorDialogActionId",
+                "EditorDialogActionRole",
+                "EditorDialogCompletionKind",
+                "EditorDialogRequest",
+                "EditorDialogResult",
+                "EditorDialogSeverity",
+            ],
+            dialogTypes.Select(type => type.Name));
+        Assert.All(
+            dialogTypes,
+            type => Assert.Equal("Asharia.Editor", type.Assembly.GetName().Name));
+
+        var properties = dialogTypes.SelectMany(type => type.GetProperties()).ToArray();
+        Assert.DoesNotContain(properties, property => property.PropertyType == typeof(Type));
+        Assert.DoesNotContain(properties, property => property.PropertyType == typeof(object));
+        Assert.DoesNotContain(
+            properties,
+            property => typeof(Delegate).IsAssignableFrom(property.PropertyType));
+
+        var apiParameterTypes = dialogTypes
+            .SelectMany(type => type.GetConstructors().SelectMany(constructor => constructor.GetParameters())
+                .Concat(type.GetMethods()
+                    .Where(method => method.IsStatic && method.DeclaringType == type)
+                    .SelectMany(method => method.GetParameters())))
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+        Assert.DoesNotContain(apiParameterTypes, type => type == typeof(Type));
+        Assert.DoesNotContain(apiParameterTypes, type => type == typeof(object));
+        Assert.DoesNotContain(apiParameterTypes, type => type == typeof(CancellationToken));
+        Assert.DoesNotContain(
+            apiParameterTypes,
+            type => typeof(Delegate).IsAssignableFrom(type));
+
+        var sourceRoot = Path.Combine(studioRoot, "src", "Asharia.Editor", "Dialogs");
+        var source = string.Join(
+            Environment.NewLine,
+            Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+                .Select(File.ReadAllText));
+        foreach (var forbidden in new[]
+        {
+            "Avalonia",
+            "Window",
+            "Control",
+            "ViewModel",
+            "Func<object>",
+            "LibraryImport",
+            "DllImport",
+            "Vulkan",
+            "Asharia.Studio.",
+            "Editor.Core",
+            "CancellationToken",
+        })
+        {
+            Assert.DoesNotContain(forbidden, source, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void Public_editor_project_is_a_dependency_free_net10_library()
     {

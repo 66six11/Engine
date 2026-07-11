@@ -502,6 +502,20 @@ See [the approved design](../specs/2026-07-11-studio-declaration-only-panel-cont
 
 ---
 
+### Task 4b: Add public Dialog data contract and migrate the compatibility Host — Complete
+
+**Slice size:** M
+
+**Implemented result:** `Asharia.Editor.Dialogs` owns seven validated UI-neutral public types. Action identity, role, default, destructive styling and completion remain orthogonal; request construction freezes a defensive read-only action snapshot. The compatibility Dialog Host and About path consume the public contract, while Presentation retains overlay, focus, action projection and single-active-modal policy. The legacy `Editor.Core.Models.Dialogs` family was deleted without wrappers or duplicate DTOs.
+
+**Evidence:** Public contract tests cover stable enums and IDs, descriptor/request/result invariants and collection immutability. Compatibility tests cover About, projection, exact action result, system-dismiss policy, second-request rejection, and generation-scoped single completion: retained or repeated terminal signals from an earlier request cannot complete a later request. Architecture gates enforce the seven-type public surface, dependency/UI/native neutrality (including no `CancellationToken` in Dialog source or authored constructor/static-method inputs), legacy project consumption and deletion of the legacy source family. Both legacy and target Solutions remain green.
+
+**Explicit non-goals:** No dialog service, static Host/service resolution, owner-window routing, custom content, platform ordering, localization, file picker, progress, notification or modal queue was added. User system-dismiss remains distinct from future operation cancellation.
+
+See [the implemented design](../specs/2026-07-11-studio-public-dialog-contract-design.md) and [the completed implementation plan](2026-07-11-studio-public-dialog-contract.md).
+
+---
+
 ### Task 4: Extract UI-neutral Editor services and immutable state
 
 **Slice size:** L
@@ -510,7 +524,6 @@ See [the approved design](../specs/2026-07-11-studio-declaration-only-panel-cont
 
 - Move: `Core/Models/BackgroundTasks/**` to `src/Asharia.Editor/Tasks/**`
 - Move: `Core/Models/Diagnostics/**` to `src/Asharia.Editor/Diagnostics/**`
-- Move: `Core/Models/Dialogs/**` to `src/Asharia.Editor/Dialogs/**`
 - Move: `Core/Models/Editing/**` to `src/Asharia.Editor/Editing/**`
 - Move: `Core/Models/FrameDebug/**` to `src/Asharia.Editor/Diagnostics/FrameDebug/**`
 - Move: `Core/Models/Lifecycle/**` to `src/Asharia.Editor/Lifecycle/**`

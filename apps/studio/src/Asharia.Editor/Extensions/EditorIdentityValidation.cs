@@ -4,6 +4,34 @@ namespace Asharia.Editor.Extensions;
 
 internal static class EditorIdentityValidation
 {
+    public static bool IsLowercaseKebabId(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        var atSegmentStart = true;
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (IsLowercaseAsciiLetter(character) || char.IsAsciiDigit(character))
+            {
+                atSegmentStart = false;
+                continue;
+            }
+
+            if (character != '-' || atSegmentStart)
+            {
+                return false;
+            }
+
+            atSegmentStart = true;
+        }
+
+        return !atSegmentStart;
+    }
+
     public static bool IsLowercaseNamespacedId(string? value, bool allowColon)
     {
         if (string.IsNullOrEmpty(value))

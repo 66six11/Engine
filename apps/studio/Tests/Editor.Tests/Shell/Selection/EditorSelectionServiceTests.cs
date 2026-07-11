@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Editor.Core.Models.Selection;
 using Editor.Shell.Selection;
 using Xunit;

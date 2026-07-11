@@ -474,33 +474,6 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Dialog_core_models_live_in_dialog_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.Dialogs;";
-
-        var dialogFiles = new[]
-        {
-            "EditorDialogButtonDescriptor.cs",
-            "EditorDialogButtonRole.cs",
-            "EditorDialogKind.cs",
-            "EditorDialogRequest.cs",
-            "EditorDialogResult.cs",
-            "EditorDialogResultKind.cs",
-        };
-
-        foreach (var fileName in dialogFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "Dialogs", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is dialog request/result contract data and should live under Core/Models/Dialogs.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
-    }
-
-    [Fact]
     public void Viewport_core_models_live_in_viewport_model_folder()
     {
         var root = FindRepositoryRoot();

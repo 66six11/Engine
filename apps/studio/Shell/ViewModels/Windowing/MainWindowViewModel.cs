@@ -6,7 +6,6 @@ using Asharia.Editor.Diagnostics;
 using Avalonia;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Dialogs;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Workbench;
 using Editor.Core.Services;
@@ -309,9 +308,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private bool OpenAboutDialogFromCommand()
     {
-        _ = DialogHost.ShowAsync(EditorDialogRequest.Information(
-            "About Studio",
-            "Studio editor shell for VkEngine."));
+        _ = DialogHost.ShowAsync(StudioDialogRequests.About());
         return true;
     }
 
