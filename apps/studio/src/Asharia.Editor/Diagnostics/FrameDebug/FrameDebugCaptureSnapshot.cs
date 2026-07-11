@@ -1,6 +1,6 @@
 using System;
 
-namespace Editor.Core.Models.FrameDebug;
+namespace Asharia.Editor.Diagnostics.FrameDebug;
 
 public sealed record FrameDebugCaptureSnapshot(
     string CaptureId,

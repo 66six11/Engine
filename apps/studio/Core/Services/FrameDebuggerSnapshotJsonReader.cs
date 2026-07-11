@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using Asharia.Editor.Diagnostics.FrameDebug;
 using Editor.Core.Models.FrameDebug;
 
 namespace Editor.Core.Services;

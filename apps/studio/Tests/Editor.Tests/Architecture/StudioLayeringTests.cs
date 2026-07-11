@@ -511,33 +511,23 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Frame_debug_core_models_live_in_frame_debug_model_folder()
+    public void Native_frame_debug_transport_models_remain_in_compatibility_layer()
     {
         var root = FindRepositoryRoot();
         var expectedNamespace = "namespace Editor.Core.Models.FrameDebug;";
 
-        var frameDebugFiles = new[]
+        var nativeTransportFiles = new[]
         {
-            "FrameDebugAccessEdgeSnapshot.cs",
-            "FrameDebugCaptureSnapshot.cs",
-            "FrameDebugCommandSnapshot.cs",
-            "FrameDebugDependencyEdgeSnapshot.cs",
-            "FrameDebugExecutionEventSnapshot.cs",
-            "FrameDebuggerSnapshot.cs",
-            "FrameDebuggerState.cs",
-            "FrameDebugModelGuard.cs",
-            "FrameDebugPassSnapshot.cs",
-            "FrameDebugPreviewSnapshot.cs",
-            "FrameDebugResourceSnapshot.cs",
-            "FrameDebugTransitionSnapshot.cs",
+            "NativeFrameDebuggerSnapshotFormat.cs",
+            "NativeFrameDebuggerSnapshotPayload.cs",
         };
 
-        foreach (var fileName in frameDebugFiles)
+        foreach (var fileName in nativeTransportFiles)
         {
             var path = Path.Combine(root, "Core", "Models", "FrameDebug", fileName);
             Assert.True(
                 File.Exists(path),
-                $"{fileName} is frame debugger snapshot contract data and should live under Core/Models/FrameDebug.");
+                $"{fileName} is native transport data and must remain in the compatibility layer.");
             Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
             Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
         }

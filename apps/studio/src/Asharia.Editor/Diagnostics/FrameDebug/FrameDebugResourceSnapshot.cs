@@ -1,4 +1,4 @@
-namespace Editor.Core.Models.FrameDebug;
+namespace Asharia.Editor.Diagnostics.FrameDebug;
 
 public sealed record FrameDebugResourceSnapshot(
     string Id,

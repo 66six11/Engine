@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Editor.Core.Models.FrameDebug;
+namespace Asharia.Editor.Diagnostics.FrameDebug;
 
 internal static class FrameDebugModelGuard
 {

@@ -520,7 +520,7 @@ See [the implemented design](../specs/2026-07-11-studio-public-dialog-contract-d
 
 **Slice size:** L
 
-**Current checkpoint (#239):** Background tasks, diagnostic record/service, editing commands, lifecycle events, selection, transactions, and scene/world snapshots plus their matching service interfaces now compile from `Asharia.Editor`. Legacy implementations and Presentation consumers use the public contracts. `EditorDiagnosticSourceDescriptor`, `SceneProviderDescriptor(Func<ISceneSnapshotProvider>)`, provider registration/status, and fixture provider implementation remain compatibility-only because their current dependencies or factories are not stable public API. Frame Debug, Viewport, and remaining Panels/Commands families are still pending.
+**Current checkpoint (#239):** Background tasks, diagnostic record/service, Frame Debug snapshots/provider, editing commands, lifecycle events, selection, transactions, and scene/world snapshots plus their matching service interfaces now compile from `Asharia.Editor`. Legacy implementations and Presentation consumers use the public contracts. Native Frame Debug payload/bridge, `EditorDiagnosticSourceDescriptor`, `SceneProviderDescriptor(Func<ISceneSnapshotProvider>)`, provider registration/status, and fixture provider implementation remain compatibility-only because their current dependencies, transport vocabulary, or factories are not stable public API. Viewport and remaining Panels/Commands families are still pending.
 
 **Files:**
 

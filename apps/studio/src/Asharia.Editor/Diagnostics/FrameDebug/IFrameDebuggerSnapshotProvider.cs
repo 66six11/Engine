@@ -1,7 +1,6 @@
 using System;
-using Editor.Core.Models.FrameDebug;
 
-namespace Editor.Core.Abstractions;
+namespace Asharia.Editor.Diagnostics.FrameDebug;
 
 public interface IFrameDebuggerSnapshotProvider
 {
