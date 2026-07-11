@@ -59,3 +59,25 @@ target_include_directories(asharia-rhi-vulkan-rendergraph
 
 asharia_configure_target(asharia-rhi-vulkan)
 asharia_configure_target(asharia-rhi-vulkan-rendergraph)
+
+if(ASHARIA_BUILD_TESTS)
+  enable_testing()
+
+  add_executable(asharia-rhi-vulkan-enumeration-tests
+      tests/vulkan_enumeration_tests.cpp
+  )
+
+  target_include_directories(asharia-rhi-vulkan-enumeration-tests
+      PRIVATE
+          "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+
+  target_link_libraries(asharia-rhi-vulkan-enumeration-tests
+      PRIVATE
+          asharia::rhi_vulkan
+  )
+
+  asharia_configure_target(asharia-rhi-vulkan-enumeration-tests)
+  add_test(NAME asharia-rhi-vulkan-enumeration-tests
+           COMMAND asharia-rhi-vulkan-enumeration-tests)
+endif()

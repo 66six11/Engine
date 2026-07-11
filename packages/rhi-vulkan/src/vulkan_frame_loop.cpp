@@ -13,6 +13,8 @@
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
+#include "vulkan_enumeration.hpp"
+
 namespace asharia {
     namespace {
 
@@ -31,48 +33,22 @@ namespace asharia {
 
         Result<std::vector<VkSurfaceFormatKHR>> querySurfaceFormats(VkPhysicalDevice physicalDevice,
                                                                     VkSurfaceKHR surface) {
-            std::uint32_t count = 0;
-            VkResult result =
-                vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &count, nullptr);
-            if (result != VK_SUCCESS) {
-                return std::unexpected{
-                    vulkanError("Failed to query Vulkan surface formats", result)};
-            }
-
-            std::vector<VkSurfaceFormatKHR> formats(count);
-            if (count > 0) {
-                result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &count,
-                                                              formats.data());
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan surface formats", result)};
-                }
-            }
-
-            return formats;
+            return detail::enumerateVulkanVector<VkSurfaceFormatKHR>(
+                [physicalDevice, surface](std::uint32_t* count, VkSurfaceFormatKHR* formats) {
+                    return vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, count,
+                                                                formats);
+                },
+                "Failed to query Vulkan surface formats");
         }
 
         Result<std::vector<VkPresentModeKHR>> queryPresentModes(VkPhysicalDevice physicalDevice,
                                                                 VkSurfaceKHR surface) {
-            std::uint32_t count = 0;
-            VkResult result =
-                vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &count, nullptr);
-            if (result != VK_SUCCESS) {
-                return std::unexpected{
-                    vulkanError("Failed to query Vulkan surface present modes", result)};
-            }
-
-            std::vector<VkPresentModeKHR> presentModes(count);
-            if (count > 0) {
-                result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &count,
-                                                                   presentModes.data());
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan surface present modes", result)};
-                }
-            }
-
-            return presentModes;
+            return detail::enumerateVulkanVector<VkPresentModeKHR>(
+                [physicalDevice, surface](std::uint32_t* count, VkPresentModeKHR* presentModes) {
+                    return vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, count,
+                                                                     presentModes);
+                },
+                "Failed to query Vulkan surface present modes");
         }
 
         VkSurfaceFormatKHR chooseSurfaceFormat(std::span<const VkSurfaceFormatKHR> formats) {
@@ -138,30 +114,11 @@ namespace asharia {
         }
 
         Result<std::vector<VkImage>> getSwapchainImages(VkDevice device, VkSwapchainKHR swapchain) {
-            while (true) {
-                std::uint32_t count = 0;
-                VkResult result = vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr);
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan swapchain images", result)};
-                }
-
-                std::vector<VkImage> images(count);
-                if (count == 0) {
-                    return images;
-                }
-
-                result = vkGetSwapchainImagesKHR(device, swapchain, &count, images.data());
-                if (result == VK_SUCCESS) {
-                    images.resize(count);
-                    return images;
-                }
-
-                if (result != VK_INCOMPLETE) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan swapchain images", result)};
-                }
-            }
+            return detail::enumerateVulkanVector<VkImage>(
+                [device, swapchain](std::uint32_t* count, VkImage* images) {
+                    return vkGetSwapchainImagesKHR(device, swapchain, count, images);
+                },
+                "Failed to query Vulkan swapchain images");
         }
 
         Result<VkImageView> createImageView(VkDevice device, VkImage image, VkFormat format) {

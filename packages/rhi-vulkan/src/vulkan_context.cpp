@@ -22,6 +22,8 @@
 #include "asharia/core/version.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
+#include "vulkan_enumeration.hpp"
+
 namespace asharia {
     namespace {
 
@@ -35,80 +37,28 @@ namespace asharia {
             "VK_KHR_external_semaphore_win32";
 
         Result<std::vector<VkLayerProperties>> enumerateInstanceLayers() {
-            while (true) {
-                std::uint32_t count = 0;
-                VkResult result = vkEnumerateInstanceLayerProperties(&count, nullptr);
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to enumerate Vulkan instance layers", result)};
-                }
-
-                std::vector<VkLayerProperties> layers(count);
-                if (count == 0) {
-                    return layers;
-                }
-
-                result = vkEnumerateInstanceLayerProperties(&count, layers.data());
-                if (result == VK_SUCCESS) {
-                    layers.resize(count);
-                    return layers;
-                }
-
-                if (result != VK_INCOMPLETE) {
-                    return std::unexpected{
-                        vulkanError("Failed to enumerate Vulkan instance layers", result)};
-                }
-            }
+            return detail::enumerateVulkanVector<VkLayerProperties>(
+                [](std::uint32_t* count, VkLayerProperties* layers) {
+                    return vkEnumerateInstanceLayerProperties(count, layers);
+                },
+                "Failed to enumerate Vulkan instance layers");
         }
 
         Result<std::vector<VkExtensionProperties>> enumerateInstanceExtensions() {
-            while (true) {
-                std::uint32_t count = 0;
-                VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to enumerate Vulkan instance extensions", result)};
-                }
-
-                std::vector<VkExtensionProperties> extensions(count);
-                if (count == 0) {
-                    return extensions;
-                }
-
-                result = vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
-                if (result == VK_SUCCESS) {
-                    extensions.resize(count);
-                    return extensions;
-                }
-
-                if (result != VK_INCOMPLETE) {
-                    return std::unexpected{
-                        vulkanError("Failed to enumerate Vulkan instance extensions", result)};
-                }
-            }
+            return detail::enumerateVulkanVector<VkExtensionProperties>(
+                [](std::uint32_t* count, VkExtensionProperties* extensions) {
+                    return vkEnumerateInstanceExtensionProperties(nullptr, count, extensions);
+                },
+                "Failed to enumerate Vulkan instance extensions");
         }
 
         Result<std::vector<VkExtensionProperties>>
         enumerateDeviceExtensions(VkPhysicalDevice device) {
-            std::uint32_t count = 0;
-            VkResult result =
-                vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
-            if (result != VK_SUCCESS) {
-                return std::unexpected{
-                    vulkanError("Failed to enumerate Vulkan device extensions", result)};
-            }
-
-            std::vector<VkExtensionProperties> extensions(count);
-            if (count > 0) {
-                result = vkEnumerateDeviceExtensionProperties(device, nullptr, &count,
-                                                              extensions.data());
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to enumerate Vulkan device extensions", result)};
-                }
-            }
-
-            return extensions;
+            return detail::enumerateVulkanVector<VkExtensionProperties>(
+                [device](std::uint32_t* count, VkExtensionProperties* extensions) {
+                    return vkEnumerateDeviceExtensionProperties(device, nullptr, count, extensions);
+                },
+                "Failed to enumerate Vulkan device extensions");
         }
 
         bool hasLayer(std::span<const VkLayerProperties> layers, std::string_view name) {
@@ -399,25 +349,18 @@ namespace asharia {
         Result<std::optional<PhysicalDeviceCandidate>>
         choosePhysicalDevice(VkInstance instance, VkSurfaceKHR surface, bool requireVulkan14,
                              VulkanExternalInteropOptions externalInterop) {
-            std::uint32_t count = 0;
-            VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
-            if (result != VK_SUCCESS) {
-                return std::unexpected{
-                    vulkanError("Failed to enumerate Vulkan physical devices", result)};
-            }
-
-            std::vector<VkPhysicalDevice> devices(count);
-            if (count > 0) {
-                result = vkEnumeratePhysicalDevices(instance, &count, devices.data());
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to enumerate Vulkan physical devices", result)};
-                }
+            auto devices = detail::enumerateVulkanVector<VkPhysicalDevice>(
+                [instance](std::uint32_t* count, VkPhysicalDevice* physicalDevices) {
+                    return vkEnumeratePhysicalDevices(instance, count, physicalDevices);
+                },
+                "Failed to enumerate Vulkan physical devices");
+            if (!devices) {
+                return std::unexpected{std::move(devices.error())};
             }
 
             std::optional<PhysicalDeviceCandidate> best;
 
-            for (VkPhysicalDevice device : devices) {
+            for (VkPhysicalDevice device : *devices) {
                 VkPhysicalDeviceIDProperties idProperties{};
                 idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
 
