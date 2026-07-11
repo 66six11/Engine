@@ -582,9 +582,11 @@ git commit -m "refactor(studio): extract editor service contracts"
 
 ---
 
-### Task 5: Create the Application kernel and static module host
+### Task 5: Create the Application kernel and static module host — In progress
 
 **Slice size:** L
+
+**Current checkpoint (#243):** `Asharia.Studio.Application` and its test project now exist in the target Solution and reference only `Asharia.Editor`. `StaticPackageGenerationHost.Create` validates duplicate registrations before invoking factories, creates each definition object once, calls `Configure` once, freezes its declaration, and publishes a read-only definition map only after the complete static set succeeds. Scope activation, atomic partitions, capability waiting, failure propagation, reverse-order disposal, compatibility adapters, and service moves remain pending.
 
 **Files:**
 
@@ -622,7 +624,7 @@ Add fake modules proving:
 6. disposal is dependents-first and reverse registration order;
 7. activation failure faults only the instance and required dependent chain.
 
-- [ ] **Step 2: Create the Application project**
+- [x] **Step 2: Create the Application project**
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -636,7 +638,7 @@ Add fake modules proving:
 </Project>
 ```
 
-- [ ] **Step 3: Implement configure-once static definitions**
+- [x] **Step 3: Implement configure-once static definitions**
 
 `StaticPackageGenerationHost` receives explicit generated-style registrations, not reflection scanning:
 
