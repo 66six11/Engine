@@ -1,13 +1,12 @@
 ﻿#include "imgui_runtime.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,12 +14,16 @@
 #include <system_error>
 #include <vector>
 
+#include "asharia/core/file_io.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 #include "editor_ui.hpp"
 
 namespace {
+
+    constexpr std::uint64_t kMaxEditorImGuiShaderBytes = 16ULL * 1024ULL * 1024ULL;
+    constexpr std::uint64_t kMaxEditorCjkFontBytes = 128ULL * 1024ULL * 1024ULL;
 
     void checkImguiVkResult(VkResult result) {
         if (result != VK_SUCCESS) {
@@ -133,27 +136,22 @@ namespace {
         return std::nullopt;
     }
 
-    [[nodiscard]] bool readBinaryFile(const std::filesystem::path& path, std::vector<char>& bytes) {
-        std::ifstream file{path, std::ios::binary | std::ios::ate};
-        if (!file) {
+    [[nodiscard]] bool readBinaryFile(const std::filesystem::path& path, std::uint64_t maxBytes,
+                                      std::vector<char>& bytes) {
+        auto coreBytes =
+            asharia::core::readFileBytes(path, asharia::core::FileReadLimits{.maxBytes = maxBytes});
+        if (!coreBytes || coreBytes->empty()) {
             return false;
         }
-
-        const std::streamoff fileSize = file.tellg();
-        if (fileSize <= 0 || fileSize > std::numeric_limits<int>::max()) {
-            return false;
-        }
-
-        bytes.assign(static_cast<std::size_t>(fileSize), '\0');
-        file.seekg(0, std::ios::beg);
-        file.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-        return file.good();
+        bytes.resize(coreBytes->size());
+        std::memcpy(bytes.data(), coreBytes->data(), coreBytes->size());
+        return true;
     }
 
     [[nodiscard]] asharia::VoidResult readSpirvFile(const std::filesystem::path& path,
                                                     std::vector<std::uint32_t>& words) {
         std::vector<char> bytes;
-        if (!readBinaryFile(path, bytes)) {
+        if (!readBinaryFile(path, kMaxEditorImGuiShaderBytes, bytes)) {
             return std::unexpected{asharia::vulkanError(
                 "Failed to read editor ImGui fragment shader: " + pathToUtf8String(path),
                 VK_ERROR_INITIALIZATION_FAILED)};
@@ -196,7 +194,7 @@ namespace {
 
         status.cjkCandidateFound = true;
         status.cjkFontPath = *fontPath;
-        if (!readBinaryFile(*fontPath, fontData)) {
+        if (!readBinaryFile(*fontPath, kMaxEditorCjkFontBytes, fontData)) {
             asharia::logError("Failed to read editor CJK font: " + pathToUtf8String(*fontPath));
             return;
         }

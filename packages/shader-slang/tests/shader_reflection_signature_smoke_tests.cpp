@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -15,18 +17,44 @@ namespace {
         std::cerr << message << '\n';
     }
 
+    [[nodiscard]] bool smokeReflectionReadLimit() {
+        const std::string json =
+            R"({"source":"limit.slang","entry":"main","stage":"vertex","profile":"glsl_450","target":"spirv","vertexInputs":[],"descriptorBindings":[],"pushConstants":[]})";
+        const std::filesystem::path path =
+            std::filesystem::temp_directory_path() / "asharia-shader-reflection-limit.json";
+        {
+            std::ofstream file{path, std::ios::binary | std::ios::trunc};
+            file.write(json.data(), static_cast<std::streamsize>(json.size()));
+        }
+
+        const auto exact = asharia::readShaderReflection(
+            path, asharia::ShaderReflectionFileOptions{.maxBytes = json.size()});
+        const auto over = asharia::readShaderReflection(
+            path, asharia::ShaderReflectionFileOptions{.maxBytes = json.size() - 1U});
+        std::error_code removeError;
+        std::filesystem::remove(path, removeError);
+
+        if (!exact) {
+            logFailure("Shader reflection exact-limit read failed: " + exact.error().message);
+            return false;
+        }
+        if (over || over.error().message.find("shader reflection JSON") == std::string::npos ||
+            over.error().message.find("observedBytes=") == std::string::npos ||
+            over.error().message.find("maxBytes=") == std::string::npos) {
+            logFailure(
+                "Shader reflection one-byte-over limit did not preserve domain/Core context.");
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool messageContains(std::string_view message, std::string_view token) {
         return message.find(token) != std::string_view::npos;
     }
 
-    [[nodiscard]] asharia::ShaderDescriptorBindingReflection descriptor(
-        std::string name,
-        std::uint32_t set,
-        std::uint32_t binding,
-        std::string kind,
-        std::uint32_t count,
-        std::string category,
-        std::string stageVisibility) {
+    [[nodiscard]] asharia::ShaderDescriptorBindingReflection
+    descriptor(std::string name, std::uint32_t set, std::uint32_t binding, std::string kind,
+               std::uint32_t count, std::string category, std::string stageVisibility) {
         return asharia::ShaderDescriptorBindingReflection{
             .name = std::move(name),
             .set = set,
@@ -38,11 +66,10 @@ namespace {
         };
     }
 
-    [[nodiscard]] asharia::ShaderPushConstantReflection pushConstant(
-        std::string name,
-        std::uint32_t offset,
-        std::uint32_t size,
-        std::string stageVisibility) {
+    [[nodiscard]] asharia::ShaderPushConstantReflection pushConstant(std::string name,
+                                                                     std::uint32_t offset,
+                                                                     std::uint32_t size,
+                                                                     std::string stageVisibility) {
         return asharia::ShaderPushConstantReflection{
             .name = std::move(name),
             .offset = offset,
@@ -51,10 +78,9 @@ namespace {
         };
     }
 
-    [[nodiscard]] asharia::ShaderReflection shader(
-        std::string stage,
-        std::vector<asharia::ShaderDescriptorBindingReflection> descriptors,
-        std::vector<asharia::ShaderPushConstantReflection> pushConstants = {}) {
+    [[nodiscard]] asharia::ShaderReflection
+    shader(std::string stage, std::vector<asharia::ShaderDescriptorBindingReflection> descriptors,
+           std::vector<asharia::ShaderPushConstantReflection> pushConstants = {}) {
         asharia::ShaderReflection reflection{
             .source = "ReflectionMergeTest.slang",
             .entry = stage + "Main",
@@ -67,14 +93,13 @@ namespace {
         };
         reflection.descriptorBindingCount =
             static_cast<std::uint32_t>(reflection.descriptorBindings.size());
-        reflection.pushConstantCount =
-            static_cast<std::uint32_t>(reflection.pushConstants.size());
+        reflection.pushConstantCount = static_cast<std::uint32_t>(reflection.pushConstants.size());
         return reflection;
     }
 
-    [[nodiscard]] bool expectMergeError(
-        const asharia::Result<asharia::ShaderResourceSignature>& signature,
-        std::string_view expectedToken) {
+    [[nodiscard]] bool
+    expectMergeError(const asharia::Result<asharia::ShaderResourceSignature>& signature,
+                     std::string_view expectedToken) {
         if (signature) {
             logFailure("Shader reflection merge accepted a conflicting resource contract.");
             return false;
@@ -88,9 +113,9 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] bool expectCompatibilityMergeError(
-        const asharia::ShaderResourceSignature& signature,
-        std::string_view expectedToken) {
+    [[nodiscard]] bool
+    expectCompatibilityMergeError(const asharia::ShaderResourceSignature& signature,
+                                  std::string_view expectedToken) {
         if (!signature.error) {
             logFailure("Shader reflection merge accepted a conflicting resource contract.");
             return false;
@@ -107,11 +132,9 @@ namespace {
     [[nodiscard]] bool smokeCompatibleDescriptorsMergeVisibility() {
         const std::array shaders{
             shader("vertex",
-                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor",
-                               "vertex")}),
-            shader("fragment",
-                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor",
-                               "fragment")}),
+                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor", "vertex")}),
+            shader("fragment", {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor",
+                                           "fragment")}),
         };
 
         const asharia::Result<asharia::ShaderResourceSignature> signature =
@@ -121,8 +144,7 @@ namespace {
             logFailure(signature.error().message);
             return false;
         }
-        if (signature->descriptorBindings.size() != 1 ||
-            signature->descriptorBindingCount != 1 ||
+        if (signature->descriptorBindings.size() != 1 || signature->descriptorBindingCount != 1 ||
             signature->descriptorBindings.front().stageVisibility != "vertex|fragment") {
             logFailure("Shader reflection merge did not combine compatible descriptor stages.");
             return false;
@@ -133,43 +155,34 @@ namespace {
     [[nodiscard]] bool smokeDescriptorConflictsFail() {
         const std::array kindMismatch{
             shader("vertex",
-                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor",
-                               "vertex")}),
+                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor", "vertex")}),
             shader("fragment",
-                   {descriptor("sceneParams", 0, 0, "texture", 1, "descriptor",
-                               "fragment")}),
+                   {descriptor("sceneParams", 0, 0, "texture", 1, "descriptor", "fragment")}),
         };
 
         const std::array countMismatch{
             shader("vertex",
-                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor",
-                               "vertex")}),
-            shader("fragment",
-                   {descriptor("sceneParams", 0, 0, "constantBuffer", 2, "descriptor",
-                               "fragment")}),
+                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor", "vertex")}),
+            shader("fragment", {descriptor("sceneParams", 0, 0, "constantBuffer", 2, "descriptor",
+                                           "fragment")}),
         };
 
         const std::array nameMismatch{
             shader("vertex",
-                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor",
-                               "vertex")}),
-            shader("fragment",
-                   {descriptor("materialParams", 0, 0, "constantBuffer", 1, "descriptor",
-                               "fragment")}),
+                   {descriptor("sceneParams", 0, 0, "constantBuffer", 1, "descriptor", "vertex")}),
+            shader("fragment", {descriptor("materialParams", 0, 0, "constantBuffer", 1,
+                                           "descriptor", "fragment")}),
         };
 
-        return expectMergeError(
-                   asharia::mergeShaderResourceSignature(
-                       std::span<const asharia::ShaderReflection>{kindMismatch}),
-                   "descriptor binding conflict") &&
-               expectMergeError(
-                   asharia::mergeShaderResourceSignature(
-                       std::span<const asharia::ShaderReflection>{countMismatch}),
-                   "descriptor binding conflict") &&
-               expectMergeError(
-                   asharia::mergeShaderResourceSignature(
-                       std::span<const asharia::ShaderReflection>{nameMismatch}),
-                   "descriptor binding conflict") &&
+        return expectMergeError(asharia::mergeShaderResourceSignature(
+                                    std::span<const asharia::ShaderReflection>{kindMismatch}),
+                                "descriptor binding conflict") &&
+               expectMergeError(asharia::mergeShaderResourceSignature(
+                                    std::span<const asharia::ShaderReflection>{countMismatch}),
+                                "descriptor binding conflict") &&
+               expectMergeError(asharia::mergeShaderResourceSignature(
+                                    std::span<const asharia::ShaderReflection>{nameMismatch}),
+                                "descriptor binding conflict") &&
                expectCompatibilityMergeError(
                    asharia::shaderResourceSignature(
                        std::span<const asharia::ShaderReflection>{nameMismatch}),
@@ -202,14 +215,12 @@ namespace {
             shader("fragment", {}, {pushConstant("MaterialParams", 8, 16, "fragment")}),
         };
 
-        return expectMergeError(
-                   asharia::mergeShaderResourceSignature(
-                       std::span<const asharia::ShaderReflection>{nameMismatch}),
-                   "push constant conflict") &&
-               expectMergeError(
-                   asharia::mergeShaderResourceSignature(
-                       std::span<const asharia::ShaderReflection>{overlappingRange}),
-                   "push constant conflict");
+        return expectMergeError(asharia::mergeShaderResourceSignature(
+                                    std::span<const asharia::ShaderReflection>{nameMismatch}),
+                                "push constant conflict") &&
+               expectMergeError(asharia::mergeShaderResourceSignature(
+                                    std::span<const asharia::ShaderReflection>{overlappingRange}),
+                                "push constant conflict");
     }
 
 } // namespace
@@ -217,8 +228,8 @@ namespace {
 // NOLINTNEXTLINE(bugprone-exception-escape)
 int main() {
     try {
-        if (!smokeCompatibleDescriptorsMergeVisibility() || !smokeDescriptorConflictsFail() ||
-            !smokePushConstantConflictsFail()) {
+        if (!smokeReflectionReadLimit() || !smokeCompatibleDescriptorsMergeVisibility() ||
+            !smokeDescriptorConflictsFail() || !smokePushConstantConflictsFail()) {
             return EXIT_FAILURE;
         }
     } catch (const std::exception& exception) {

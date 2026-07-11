@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
-#include <ios>
 #include <optional>
 #include <span>
 #include <string>
@@ -29,11 +27,79 @@
 #include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 #include "asharia/material_instance/amat_io.hpp"
 #include "asharia/shader_authoring/ashader_generated_slang.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
 
+#include "asset_product_execution_io.hpp"
 #include "asset_product_publication.hpp"
+
+namespace asharia::asset::detail {
+    namespace {
+        [[nodiscard]] Error toolIoError(std::string message) {
+            return Error{
+                ErrorDomain::Asset,
+                static_cast<int>(
+                    AssetProductExecutionDiagnosticCode::ShaderCompileReflectionImportFailed),
+                std::move(message)};
+        }
+
+        [[nodiscard]] std::string toolPathText(const std::filesystem::path& path) {
+            const std::u8string text = path.generic_u8string();
+            return std::string{text.begin(), text.end()};
+        }
+
+        [[nodiscard]] std::string readLimitContext(std::string_view coreMessage,
+                                                   std::uint64_t maxBytes) {
+            std::string configured = " maxBytes=" + std::to_string(maxBytes);
+            if (coreMessage.find("exceeds configured byte limit") != std::string_view::npos) {
+                return " observedBytes=>maxBytes(" + std::to_string(maxBytes) + ")" + configured;
+            }
+            return configured;
+        }
+    } // namespace
+
+    Result<std::string> readShaderToolDiagnostic(const std::filesystem::path& path,
+                                                 std::uint64_t maxBytes) {
+        auto text = core::readFileText(path, core::FileReadLimits{.maxBytes = maxBytes});
+        if (!text) {
+            return std::unexpected{toolIoError("Could not read tool diagnostic output file '" +
+                                               toolPathText(path) + "': " + text.error().message +
+                                               readLimitContext(text.error().message, maxBytes))};
+        }
+        return text;
+    }
+
+    Result<std::vector<std::uint8_t>> readShaderToolBinary(const std::filesystem::path& path,
+                                                           std::string_view outputKind,
+                                                           std::uint64_t maxBytes) {
+        auto coreBytes = core::readFileBytes(path, core::FileReadLimits{.maxBytes = maxBytes});
+        if (!coreBytes) {
+            return std::unexpected{
+                toolIoError("Could not read " + std::string{outputKind} + " tool output file '" +
+                            toolPathText(path) + "': " + coreBytes.error().message +
+                            readLimitContext(coreBytes.error().message, maxBytes))};
+        }
+
+        std::vector<std::uint8_t> bytes;
+        bytes.reserve(coreBytes->size());
+        for (const std::byte byte : *coreBytes) {
+            bytes.push_back(std::to_integer<std::uint8_t>(byte));
+        }
+        return bytes;
+    }
+
+    VoidResult writeGeneratedSlangSource(const std::filesystem::path& path, std::string_view text) {
+        auto written = core::writeFileTextAtomically(path, text);
+        if (!written) {
+            return std::unexpected{toolIoError("Could not write generated Slang source '" +
+                                               toolPathText(path) +
+                                               "': " + written.error().message)};
+        }
+        return {};
+    }
+} // namespace asharia::asset::detail
 
 namespace asharia::asset {
     namespace {
@@ -207,58 +273,6 @@ namespace asharia::asset {
             return bytes;
         }
 
-        [[nodiscard]] bool writeTextFile(const std::filesystem::path& path, std::string_view text) {
-            const std::filesystem::path parent = path.parent_path();
-            if (!parent.empty()) {
-                std::error_code createError;
-                std::filesystem::create_directories(parent, createError);
-                if (createError) {
-                    return false;
-                }
-            }
-
-            std::ofstream file(path, std::ios::binary);
-            if (!file) {
-                return false;
-            }
-            file.write(text.data(), static_cast<std::streamsize>(text.size()));
-            return static_cast<bool>(file);
-        }
-
-        [[nodiscard]] Result<std::vector<std::uint8_t>>
-        readBinaryFile(const std::filesystem::path& path) {
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                return std::unexpected{shaderCompileReflectionImportError(
-                    "Could not open tool output file '" + pathText(path) + "'.")};
-            }
-
-            std::vector<std::uint8_t> bytes;
-            char byte{};
-            while (file.get(byte)) {
-                bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(byte)));
-            }
-            if (!file.eof()) {
-                return std::unexpected{shaderCompileReflectionImportError(
-                    "Could not read tool output file '" + pathText(path) + "'.")};
-            }
-            return bytes;
-        }
-
-        [[nodiscard]] Result<std::string> readToolTextFile(const std::filesystem::path& path) {
-            auto bytes = readBinaryFile(path);
-            if (!bytes) {
-                return std::unexpected{std::move(bytes.error())};
-            }
-
-            std::string text;
-            text.reserve(bytes->size());
-            for (const std::uint8_t byte : *bytes) {
-                text.push_back(static_cast<char>(byte));
-            }
-            return text;
-        }
-
         [[nodiscard]] std::optional<std::string> environmentVariable(std::string_view name) {
             const std::string nameText{name};
 #if defined(_WIN32)
@@ -413,11 +427,11 @@ namespace asharia::asset {
             const std::string shellCommand = redirectedCommand;
 #endif
             const int exitCode = std::system(shellCommand.c_str());
-            auto stdoutText = readToolTextFile(stdoutPath);
+            auto stdoutText = detail::readShaderToolDiagnostic(stdoutPath);
             if (!stdoutText) {
                 return std::unexpected{std::move(stdoutText.error())};
             }
-            auto stderrText = readToolTextFile(stderrPath);
+            auto stderrText = detail::readShaderToolDiagnostic(stderrPath);
             if (!stderrText) {
                 return std::unexpected{std::move(stderrText.error())};
             }
@@ -936,11 +950,11 @@ namespace asharia::asset {
                 return std::unexpected{std::move(validated.error())};
             }
 
-            auto spirvBytes = readBinaryFile(spirvPath);
+            auto spirvBytes = detail::readShaderToolBinary(spirvPath, "SPIR-V");
             if (!spirvBytes) {
                 return std::unexpected{std::move(spirvBytes.error())};
             }
-            auto reflectionBytes = readBinaryFile(reflectionPath);
+            auto reflectionBytes = detail::readShaderToolBinary(reflectionPath, "reflection JSON");
             if (!reflectionBytes) {
                 return std::unexpected{std::move(reflectionBytes.error())};
             }
@@ -1009,10 +1023,10 @@ namespace asharia::asset {
             }
 
             const std::filesystem::path generatedSourcePath = workDir / "generated-authoring.slang";
-            if (!writeTextFile(generatedSourcePath, authoringPayload.generatedSlangText)) {
-                return std::unexpected{
-                    shaderCompileReflectionImportError("Could not write generated Slang source '" +
-                                                       pathText(generatedSourcePath) + "'.")};
+            auto generatedSource = detail::writeGeneratedSlangSource(
+                generatedSourcePath, authoringPayload.generatedSlangText);
+            if (!generatedSource) {
+                return std::unexpected{std::move(generatedSource.error())};
             }
 
             std::vector<AssetShaderCompileReflectionProductEntry> compiledEntries;

@@ -44,10 +44,15 @@
 #include "asharia/asset_pipeline/asset_tool_fingerprint.hpp"
 
 #include "asset_product_blob_limits.hpp"
+#include "asset_product_execution_io.hpp"
 #include "asset_product_publication.hpp"
 #include "asset_tool_fingerprint_internal.hpp"
 
 namespace {
+
+    [[nodiscard]] std::filesystem::path smokeRoot(std::string_view name);
+    [[nodiscard]] bool writeTextFile(const std::filesystem::path& path, std::string_view text);
+    [[nodiscard]] std::vector<std::uint8_t> bytesFromText(std::string_view text);
 
     void logFailure(std::string_view message) {
         std::cerr << message << '\n';
@@ -77,6 +82,39 @@ namespace {
         }
 
         return true;
+    }
+
+    [[nodiscard]] bool smokeShaderToolOutputReadLimits() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-tool-output-limits");
+        if (!prepareWorkspace(root)) {
+            return false;
+        }
+        const std::filesystem::path diagnosticPath = root / "slangc.stderr";
+        const std::filesystem::path binaryPath = root / "shader.spv";
+        if (!writeTextFile(diagnosticPath, "diagnostic") ||
+            !writeTextFile(binaryPath, std::string_view{"\x01\x02\x03\x04", 4U})) {
+            return false;
+        }
+
+        const auto exactDiagnostic = asharia::asset::detail::readShaderToolDiagnostic(
+            diagnosticPath, std::filesystem::file_size(diagnosticPath));
+        const auto overDiagnostic = asharia::asset::detail::readShaderToolDiagnostic(
+            diagnosticPath, std::filesystem::file_size(diagnosticPath) - 1U);
+        const auto exactBinary = asharia::asset::detail::readShaderToolBinary(
+            binaryPath, "SPIR-V", std::filesystem::file_size(binaryPath));
+        const auto overBinary = asharia::asset::detail::readShaderToolBinary(
+            binaryPath, "SPIR-V", std::filesystem::file_size(binaryPath) - 1U);
+
+        const auto hasLimitContext = [](const asharia::Error& error, std::string_view kind) {
+            return messageContains(error.message, kind) &&
+                   messageContains(error.message, "observedBytes=") &&
+                   messageContains(error.message, "maxBytes=");
+        };
+        return exactDiagnostic && *exactDiagnostic == "diagnostic" && !overDiagnostic &&
+               hasLimitContext(overDiagnostic.error(), "diagnostic") && exactBinary &&
+               exactBinary->size() == 4U && !overBinary &&
+               hasLimitContext(overBinary.error(), "SPIR-V");
     }
 
     [[nodiscard]] std::filesystem::path smokeRoot(std::string_view name) {
@@ -637,6 +675,60 @@ namespace {
             bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(byte)));
         }
         return bytes;
+    }
+
+    [[nodiscard]] bool smokeGeneratedSlangAtomicOverwrite() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-generated-source-atomic");
+        if (!prepareWorkspace(root)) {
+            return false;
+        }
+        const std::filesystem::path path = root / "generated.slang";
+        if (!writeTextFile(path, "old-source")) {
+            return false;
+        }
+
+#if defined(_WIN32)
+        const HANDLE locked = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (locked == INVALID_HANDLE_VALUE) {
+            logFailure("Asset pipeline smoke could not lock generated Slang source.");
+            return false;
+        }
+        auto written = asharia::asset::detail::writeGeneratedSlangSource(path, "new-source");
+        CloseHandle(locked);
+        if (written) {
+            logFailure("Generated Slang source replacement unexpectedly bypassed file lock.");
+            return false;
+        }
+#else
+        auto written = asharia::asset::detail::writeGeneratedSlangSource(path, "new-source");
+        if (!written) {
+            logFailure(written.error().message);
+            return false;
+        }
+#endif
+
+        const std::vector<std::uint8_t> expected =
+#if defined(_WIN32)
+            bytesFromText("old-source");
+#else
+            bytesFromText("new-source");
+#endif
+        if (readFileBytes(path) != expected) {
+            logFailure("Generated Slang source atomic overwrite changed unexpected bytes.");
+            return false;
+        }
+
+        const std::string temporaryPrefix = path.filename().string() + ".tmp.";
+        const auto entries = std::filesystem::directory_iterator(root);
+        if (std::ranges::any_of(entries, [&temporaryPrefix](const auto& entry) {
+                return entry.path().filename().string().starts_with(temporaryPrefix);
+            })) {
+            logFailure("Generated Slang source atomic overwrite leaked a temp file.");
+            return false;
+        }
+        return true;
     }
 
     [[nodiscard]] std::vector<std::uint8_t> bytesFromText(std::string_view text) {
@@ -6288,9 +6380,10 @@ shader "asharia.material.compile_reflection" {
 int main() noexcept {
     try {
         const bool passed =
-            smokeSourceScanValidAndDeterministic() && smokeSourceScanMissingMetadata() &&
-            smokeSourceScanOrphanMetadata() && smokeSourceScanInvalidRoot() &&
-            smokeSourceScanInvalidPrefix() && smokeScannedImportPlanningRequestsAndCacheHits() &&
+            smokeShaderToolOutputReadLimits() && smokeGeneratedSlangAtomicOverwrite() &&
+            smokeSourceScanValidAndDeterministic() && smokeSourceScanOrphanMetadata() &&
+            smokeSourceScanInvalidRoot() && smokeSourceScanInvalidPrefix() &&
+            smokeScannedImportPlanningRequestsAndCacheHits() &&
             smokeScannedImportPlanningStopsOnScanDiagnostics() &&
             smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
             smokeScannedImportPlanningPlanDiagnostics() &&
