@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Asharia.Editor.Commands;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Core.Models.Workbench;

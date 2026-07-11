@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;

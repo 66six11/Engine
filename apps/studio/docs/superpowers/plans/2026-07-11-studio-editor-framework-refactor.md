@@ -405,7 +405,7 @@ dotnet format apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj
 
 ---
 
-### Task 3: Move Code-first UI into `Asharia.Editor`
+### Task 3: Move Code-first UI into `Asharia.Editor` — Complete
 
 **Slice size:** M
 
@@ -418,7 +418,7 @@ dotnet format apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj
 - Move: `apps/studio/Core/CodeFirstUI/Models/**` to `apps/studio/src/Asharia.Editor/UI/CodeFirst/Models/**`
 - Move: `apps/studio/Core/CodeFirstUI/State/**` to `apps/studio/src/Asharia.Editor/UI/CodeFirst/State/**`
 - Move: `apps/studio/Core/CodeFirstUI/Validation/**` to `apps/studio/src/Asharia.Editor/UI/CodeFirst/Validation/**`
-- Move: `apps/studio/Tests/Editor.Tests/Core/CodeFirstUI/**` to `apps/studio/tests/Asharia.Editor.Tests/UI/CodeFirst/**`
+- Move: `apps/studio/Tests/Editor.Tests/Core/CodeFirstUI/**` to `apps/studio/Tests/Asharia.Editor.Tests/UI/CodeFirst/**`
 - Modify: `apps/studio/Editor.csproj`
 - Modify: `apps/studio/Features/FrameDebugger/FrameDebuggerPanel.cs`
 - Modify: `apps/studio/Features/UiStyle/UiStylePanel.cs`
@@ -427,10 +427,12 @@ dotnet format apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj
 
 **Interfaces:**
 
-- Consumes: `Asharia.Editor` from Task 2.
+- Consumes: `Asharia.Editor` from Task 2 plus the minimal UI-neutral prerequisite closure promoted before the move: `Asharia.Editor.Diagnostics`, `Asharia.Editor.Commands`, and `Asharia.Editor.Panels`.
 - Produces: `Asharia.Editor.UI.CodeFirst` with no Avalonia reference; the compatibility executable consumes it through a ProjectReference.
 
-- [ ] **Step 1: Add a failing assembly-boundary test**
+**Implemented result:** The prerequisite contracts were promoted first, the Code-first kernel and authoring surface were then moved into `Asharia.Editor`, and `ICodeFirstEditorPanelHost` now provides the explicit cross-assembly lifecycle boundary. Legacy Avalonia, Dock, Shell host, and dispatcher implementations remain in `Editor`; contribution descriptors and Host/resolver behavior remain deferred.
+
+- [x] **Step 1: Add a failing assembly-boundary test**
 
 ```csharp
 [Fact]
@@ -441,15 +443,15 @@ public void Code_first_authoring_types_are_owned_by_editor_api()
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify it fails**
+- [x] **Step 2: Run the focused test and verify it fails**
 
 ```powershell
-dotnet test apps/studio/tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --filter FullyQualifiedName~CodeFirst
+dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --filter FullyQualifiedName~CodeFirst
 ```
 
 Expected: FAIL because the types are still compiled into `Editor`.
 
-- [ ] **Step 3: Move files and normalize namespaces**
+- [x] **Step 3: Move files and normalize namespaces**
 
 Apply this exact namespace mapping:
 
@@ -459,7 +461,7 @@ Editor.Core.CodeFirstUI.* -> Asharia.Editor.UI.CodeFirst.*
 
 Do not introduce compatibility type-forwarders. Update all callers in the same commit so there is one source of truth.
 
-- [ ] **Step 4: Reference the public project from the compatibility executable**
+- [x] **Step 4: Reference the public project from the compatibility executable**
 
 Add:
 
@@ -469,18 +471,18 @@ Add:
 
 The legacy project already excludes `src/**`, so types compile once.
 
-- [ ] **Step 5: Run Code-first and full Studio tests**
+- [x] **Step 5: Run Code-first and full Studio tests**
 
 ```powershell
-dotnet test apps/studio/tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release
+dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release
 dotnet test apps/studio/Editor.sln -c Release
 dotnet test apps/studio/Asharia.Studio.sln -c Release
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
-git add apps/studio/Core/CodeFirstUI apps/studio/src/Asharia.Editor apps/studio/tests/Asharia.Editor.Tests apps/studio/Editor.csproj apps/studio/Features apps/studio/Shell/CodeFirstUI apps/studio/Tests/Editor.Tests
+git add apps/studio/Core/CodeFirstUI apps/studio/src/Asharia.Editor apps/studio/Tests/Asharia.Editor.Tests apps/studio/Editor.csproj apps/studio/Features apps/studio/Shell/CodeFirstUI apps/studio/Tests/Editor.Tests
 git commit -m "refactor(studio): extract code first editor api"
 ```
 

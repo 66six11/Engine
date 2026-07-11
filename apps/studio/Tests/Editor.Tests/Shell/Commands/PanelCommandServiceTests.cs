@@ -1,4 +1,4 @@
-﻿using Asharia.Editor.Panels;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking.Panels;

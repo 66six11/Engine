@@ -1,4 +1,4 @@
-﻿using Asharia.Editor.Commands;
+using Asharia.Editor.Commands;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.ViewModels.Menus;
 using Editor.UI.Icons;

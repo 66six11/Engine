@@ -44,26 +44,11 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Core_code_first_ui_does_not_reference_avalonia_or_shell()
+    public void Legacy_core_code_first_ui_source_no_longer_exists()
     {
         var root = FindRepositoryRoot();
-        var files = Directory.EnumerateFiles(
-            Path.Combine(root, "Core", "CodeFirstUI"),
-            "*.cs",
-            SearchOption.AllDirectories);
 
-        var offenders = files
-            .Where(path =>
-            {
-                var text = File.ReadAllText(path);
-                return text.Contains("Avalonia", StringComparison.Ordinal)
-                    || text.Contains("Editor.Shell", StringComparison.Ordinal);
-            })
-            .Select(path => Path.GetRelativePath(root, path))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Empty(offenders);
+        Assert.False(Directory.Exists(Path.Combine(root, "Core", "CodeFirstUI")));
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿using Asharia.Editor.Panels;
+using Asharia.Editor.Panels;
 using Avalonia;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Asharia.Editor.Panels;
 using Editor.Core.Models.Lifecycle;

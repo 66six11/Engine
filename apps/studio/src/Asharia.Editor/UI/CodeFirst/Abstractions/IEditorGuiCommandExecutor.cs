@@ -1,4 +1,4 @@
-﻿using Asharia.Editor.Commands;
+using Asharia.Editor.Commands;
 
 namespace Asharia.Editor.UI.CodeFirst.Abstractions;
 

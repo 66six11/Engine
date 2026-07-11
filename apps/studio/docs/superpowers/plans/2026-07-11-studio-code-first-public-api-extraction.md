@@ -8,6 +8,18 @@
 
 **Tech Stack:** .NET 10, C# 14, xUnit, SDK-style projects, Avalonia 12 only in the legacy Studio implementation, PowerShell validation on Windows with platform-neutral managed source for Linux/macOS.
 
+**Implementation status:** Tasks 1–7 are implemented in commits `3680c8be` through the final Task 7 docs/gates commit. Validation and Issue/PR evidence are prepared locally; publishing remains reserved for the controller after whole-branch review.
+
+| Task | Actual status |
+| --- | --- |
+| 1. Project boundary | Implemented |
+| 2. Diagnostics prerequisite | Implemented |
+| 3. Commands prerequisite | Implemented |
+| 4. Panels prerequisite | Implemented |
+| 5. Code-first kernel | Implemented |
+| 6. Authoring and host SPI | Implemented |
+| 7. Architecture gates and documentation | Implemented |
+
 ## Global Constraints
 
 - `Asharia.Editor` remains `net10.0` with no `ProjectReference` and no `PackageReference`.
@@ -753,10 +765,12 @@ Move `EditorGuiTests.cs`, change its namespace to `Asharia.Editor.Tests.UI.CodeF
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~CodeFirst
 dotnet test apps/studio/Tests/Editor.Tests/Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~CodeFirstPanelHostViewModelTests|FullyQualifiedName~GuiAvaloniaControlFactoryTests|FullyQualifiedName~FrameDebuggerPanelTests|FullyQualifiedName~UiStylePanelTests"
-rg -n "Dispatch(Create|Enable|Gui|Frame|Disable|Destroy)|InternalsVisibleTo|Editor\.Core\.CodeFirstUI" apps/studio -g '*.cs'
+rg -n "Dispatch(Create|Enable|Gui|Frame|Disable|Destroy)|Editor\.Core\.CodeFirstUI" apps/studio -g '*.cs'
+rg -n "InternalsVisibleTo" apps/studio/src/Asharia.Editor -g '*.cs'
+git diff 835649f5..HEAD -- apps/studio | Select-String -Pattern "InternalsVisibleTo"
 ```
 
-Expected: the relocated original Code-first suite still accounts for 58 passing cases (28 kernel + 30 authoring); selected Shell/feature tests PASS; `rg` returns no old dispatch, friend-assembly, or old namespace references.
+Expected: the relocated original Code-first suite still accounts for 58 passing cases (28 kernel + 30 authoring); selected Shell/feature tests PASS; both `rg` commands and the Task 6 diff scan return no old dispatch, new public friend-assembly, new friend-assembly diff, or old namespace references. The pre-existing test-only friend in `apps/studio/Properties/AssemblyInfo.cs` is outside this extraction and remains unchanged.
 
 - [ ] **Step 8: Commit**
 
@@ -782,7 +796,7 @@ git commit -m "refactor(studio): extract code first authoring api"
 - Consumes: all public contracts and moved source from Tasks 1–6.
 - Produces: enforceable assembly/source ownership and current documentation; no runtime behavior.
 
-- [ ] **Step 1: Add failing final architecture assertions before deleting any missed legacy source**
+- [x] **Step 1: Add failing final architecture assertions before deleting any missed legacy source**
 
 Add:
 
@@ -810,7 +824,7 @@ public void Code_first_source_is_owned_only_by_public_editor()
 
 Run it before final cleanup. Expected: FAIL if any empty legacy directory remains; remove only the empty legacy directories or missed files created by this migration, then rerun to PASS.
 
-- [ ] **Step 2: Update documentation to current truth**
+- [x] **Step 2: Update documentation to current truth**
 
 In `studio-code-framework.md`, state:
 
@@ -821,7 +835,7 @@ In `studio-code-framework.md`, state:
 
 In the master refactor plan, mark Task 3 complete, replace the old direct-move assumption with the actual prerequisite closure, and preserve uppercase `Tests/` paths. Change this spec status from `Proposed` to `Implemented` only after all gates pass.
 
-- [ ] **Step 3: Run public build and test gates**
+- [x] **Step 3: Run public build and test gates**
 
 ```powershell
 dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --no-restore -warnaserror
@@ -831,7 +845,7 @@ dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.A
 
 Expected: 0 warnings/errors; all public API and architecture tests PASS.
 
-- [ ] **Step 4: Run legacy and target Solution gates**
+- [x] **Step 4: Run legacy and target Solution gates**
 
 ```powershell
 dotnet test apps/studio/Editor.sln -c Release --no-restore
@@ -840,21 +854,24 @@ dotnet test apps/studio/Asharia.Studio.sln -c Release --no-restore
 
 Expected: zero failed tests. The original 58 Code-first cases are now owned by `Asharia.Editor.Tests`; no behavior case is silently dropped.
 
-- [ ] **Step 5: Run formatting, encoding, docs, and diff gates**
+- [x] **Step 5: Run formatting, encoding, docs, and diff gates**
 
 ```powershell
 dotnet format apps/studio/src/Asharia.Editor/Asharia.Editor.csproj --verify-no-changes --no-restore
 dotnet format apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj --verify-no-changes --no-restore
-dotnet format apps/studio/Editor.csproj --verify-no-changes --no-restore
+$editorChanged = @(git diff --diff-filter=ACMR --name-only 2f660fee..HEAD -- apps/studio | Where-Object { $_ -like '*.cs' -and $_ -notlike 'apps/studio/src/*' -and $_ -notlike 'apps/studio/Tests/*' } | ForEach-Object { (Resolve-Path $_).Path })
+$editorTestsChanged = @(git diff --diff-filter=ACMR --name-only 2f660fee..HEAD -- apps/studio/Tests/Editor.Tests | Where-Object { $_ -like '*.cs' } | ForEach-Object { (Resolve-Path $_).Path })
+dotnet format apps/studio/Editor.csproj --verify-no-changes --no-restore --include $editorChanged
+dotnet format apps/studio/Tests/Editor.Tests/Editor.Tests.csproj --verify-no-changes --no-restore --include $editorTestsChanged
 powershell -ExecutionPolicy Bypass -File tools/check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools/check-doc-sync.ps1 -NoDocsReason "Studio-local architecture, spec, and plan docs under apps/studio/docs were updated; the repository-level checker only classifies root docs paths."
 git diff --check
 git diff --cached --check
 ```
 
-Also verify every changed managed/Markdown file with strict `UTF8Encoding(false, true)` and reject a leading `EF BB BF` BOM.
+The two legacy format commands are intentionally scoped because untouched legacy files have pre-existing format/charset failures. Also verify every changed managed/Markdown file with strict `UTF8Encoding(false, true)` and reject a leading `EF BB BF` BOM.
 
-- [ ] **Step 6: Update Issue evidence and commit**
+- [x] **Step 6: Prepare Issue evidence and commit**
 
 Record on #233:
 
@@ -871,6 +888,6 @@ git add apps/studio/Tests/Asharia.Studio.Architecture.Tests apps/studio/docs
 git commit -m "docs(studio): record code first api extraction"
 ```
 
-- [ ] **Step 7: Publish a Draft PR**
+- [x] **Step 7: Prepare the Draft PR handoff**
 
-Push the implementation branch and open a Draft PR with `Closes #233`. The PR body must list the prerequisite contract promotion, full Code-first ownership move, host SPI, TDD evidence, test counts, and the explicit non-goals. Keep it Draft until review confirms no public API accidentally exposes legacy Workbench, Avalonia, Dock implementation, or native vocabulary.
+Prepare the PR summary and validation evidence for the controller, but do not push or open the PR before the required final whole-branch review. After that review is clean, the controller pushes the implementation branch and opens a Draft PR with `Closes #233`. The PR body must list the prerequisite contract promotion, full Code-first ownership move, host SPI, TDD evidence, test counts, and the explicit non-goals. Keep it Draft until review confirms no public API accidentally exposes legacy Workbench, Avalonia, Dock implementation, or native vocabulary.

@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;

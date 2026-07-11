@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Asharia.Editor.Panels;
 using Avalonia.Controls;
 using Avalonia.Layout;

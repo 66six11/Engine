@@ -1,6 +1,6 @@
 # Studio Code-first 公共 API 迁移设计
 
-状态：Approved（实施待开始）
+状态：Implemented
 
 更新日期：2026-07-11
 

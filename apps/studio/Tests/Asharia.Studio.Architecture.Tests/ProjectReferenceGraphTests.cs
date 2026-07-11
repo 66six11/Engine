@@ -117,6 +117,26 @@ public sealed class ProjectReferenceGraphTests
         Assert.Empty(offenders);
     }
 
+    [Fact]
+    public void Code_first_source_is_owned_only_by_public_editor()
+    {
+        var studioRoot = FindStudioRoot();
+        var legacyRoot = Path.Combine(studioRoot, "Core", "CodeFirstUI");
+        var publicRoot = Path.Combine(studioRoot, "src", "Asharia.Editor", "UI", "CodeFirst");
+
+        Assert.False(Directory.Exists(legacyRoot), $"Legacy Code-first source remains at {legacyRoot}.");
+        Assert.True(Directory.Exists(publicRoot), $"Public Code-first source is missing at {publicRoot}.");
+
+        var publicSource = string.Join(
+            Environment.NewLine,
+            Directory.EnumerateFiles(publicRoot, "*.cs", SearchOption.AllDirectories)
+                .Order(StringComparer.Ordinal)
+                .Select(File.ReadAllText));
+
+        Assert.DoesNotContain("Editor.Core", publicSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Avalonia", publicSource, StringComparison.Ordinal);
+    }
+
     private static string RequiredProperty(XDocument project, string propertyName)
     {
         return project

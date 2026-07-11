@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
