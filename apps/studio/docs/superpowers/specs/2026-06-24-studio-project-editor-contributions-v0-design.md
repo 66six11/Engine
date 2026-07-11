@@ -1,5 +1,7 @@
 # Studio Project Editor Contributions v0 Design
 
+状态：Historical / Superseded by `docs/architecture/editor-extension-authoring.md`, `studio-extension-model.md`, ADR-0004 and ADR-0005
+
 ## Intent
 
 建立项目 `Editor/` 扩展的第一层编辑器框架合同，让未来用户项目、packaged plugin 和当前内置 Feature 都能走同一套 contribution 语义。v0 只定义 data-only descriptor、验证规则和映射边界，不加载外部程序集、不执行用户代码、不 runtime-load XAML、不接 native renderer 或脚本 VM。
@@ -362,4 +364,4 @@ rg -n "AssemblyLoadContext|NativeEditorBridge|C\\+\\+ ABI|script VM|ScriptExecut
 - Avalonia `AvaloniaRuntimeXamlLoader`: https://api-docs.avaloniaui.net/docs/T_Avalonia_Markup_Xaml_AvaloniaRuntimeXamlLoader
 - Microsoft XAML Hot Reload: https://learn.microsoft.com/en-us/visualstudio/xaml-tools/xaml-hot-reload
 - Asharia Studio extension lifecycle design: 2026-06-23-studio-extension-lifecycle-v0-design.md
-- Asharia managed extension ADR: ../../../docs/architecture/managed-extension-model.md
+- Current replacement: ../../architecture/studio-extension-model.md and ../../adr/0004-unified-editor-extension-framework.md

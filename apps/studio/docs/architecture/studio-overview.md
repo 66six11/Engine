@@ -6,68 +6,81 @@
 
 ## 1. 目的
 
-Studio 是 Asharia 游戏引擎的编辑器应用。它同时承担：
+Studio 是 Asharia 游戏引擎的跨平台编辑器应用。它承担：
 
 - 项目、文档、选择、命令、事务和工具工作流；
 - Edit World、Play World 和 Preview World 的编辑器编排；
 - 多窗口、多 Viewport、Dock 和 Avalonia presentation；
+- 项目 `Editor/`、Package 和 built-in extension 的开发与宿主；
 - native engine/runtime/renderer 的受控宿主与诊断入口。
 
-Studio 不是 engine truth 的拥有者。World、simulation、renderer、Vulkan device、GPU resource 和 native thread 由 native engine 拥有；Studio 通过稳定合同组织 authoring 行为并投影状态。
+Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、GPU resource 和 native thread 由 C++ Engine 拥有；Studio 通过稳定 contract 发送 authoring intent 并投影 revisioned snapshot。
 
-## 2. 当前实现状态
+## 2. 当前实现
 
-当前 `apps/studio` 是一个 `Editor.csproj` Avalonia 应用，目录分为 `Core`、`Shell`、`UI`、`Features` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、extension host、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
+当前 `apps/studio` 是一个 `Editor.csproj` Avalonia 应用，目录分为 `Core`、`Shell`、`UI`、`Features` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
 
-当前实现仍是 Partial：
+当前仍为 Partial：
 
-- `Core` 同时放置 UI-neutral model、service、P/Invoke 和 native adapter；
-- `App`、View、Shell 和静态 native API 分散拥有启动与关闭；
-- `WorkbenchFeatureModule` 聚合大多数内置 Feature 和 fixture provider；
-- `ViewportScheduler` 未接入生产 frame loop；
+- `Core` 混合 UI-neutral model、service、P/Invoke、native adapter 和部分 Avalonia vocabulary；
+- App、View、Shell 和静态 native API 分散拥有启动与关闭；
+- `WorkbenchFeatureModule` 聚合大多数 Feature 和 fixture provider；
+- 尚无公共 `Asharia.Editor` assembly、项目 `Editor/` build 或 Package loader；
+- `ViewportScheduler` 未接入 production frame loop；
 - Scene View bridge 固定使用 Windows NT handle；
-- 尚无正式 `ProjectSession`、`EditWorldSession`、`PlaySession`、Game View 和跨平台 backend。
+- 尚无正式 Project/Edit/Play/Preview session、Game View 和 Linux/macOS backend。
 
-这些事实用于约束迁移顺序，不代表目标架构应继续保留这些边界。
+这些事实只约束迁移顺序，不是目标边界。
 
 ## 3. 核心原则
 
-### 3.1 编辑器拥有 authoring，Engine 拥有 runtime truth
+### 3.1 一套 Editor API，多种来源
+
+Built-in Feature、项目根 `Editor/`、Package `Editor/` 和 installed plugin 使用相同 `Asharia.Editor.EditorModule`。来源只影响发现、启用、缓存和 reload policy，不影响 contribution 能力。
+
+Shell、Dock、Window、EngineHost 和 platform backend 是 Host infrastructure，不伪装成拥有特权的插件。Built-in Feature 只引用公共 Editor API，持续验证项目开发者得到的能力。
+
+Module scope 与来源正交：Application scope 每 Studio process 一个 instance，Project scope 每 `ProjectSession` 一个 instance。内置 Scene/Hierarchy/Inspector 是 BuiltIn source + Project scope；不能从 BuiltIn source 推导全局 lifetime。
+
+### 3.2 Editor 拥有 authoring，Engine 拥有 runtime truth
 
 ```text
-Studio intent
+UI/extension intent
+  -> public Editor command/service
   -> Application command/transaction
   -> EngineHost port
   -> native world mutation
   -> immutable revisioned snapshot
-  -> Studio ViewModel projection
+  -> Editor UI projection
 ```
 
-ViewModel 不保存 native pointer、Vulkan object 或可变 engine object。Snapshot 是 UI 投影，不是写入入口。
+ViewModel 和 extension 不保存 native pointer、Vulkan object 或可变 Engine object。Snapshot 是读取投影，不是写入入口。
 
-### 3.2 同进程不等于无边界
+### 3.3 同进程不等于无边界
 
-近期 `EngineHost` 与 Avalonia 运行在同一进程，以保持低延迟和 GPU 资源共享。上层合同不依赖 P/Invoke 或同进程假设，未来可以增加 IPC transport。
+近期 EngineHost、extension 和 Avalonia 运行在同一进程，以保持低延迟和 GPU resource sharing。上层 contract 不依赖 P/Invoke 或同进程假设；不可信 extension 仍需要未来独立进程，`AssemblyLoadContext` 不是安全沙箱。
 
-### 3.3 Viewport 是会话资源，不是控件
+### 3.4 Viewport 是会话资源，不是控件
 
-逻辑 `ViewportSession` 独立于 Dock tab、Window 和 `CompositionDrawingSurface`。Dock/float/resize 只改变 presentation binding，不转移或隐式销毁 renderer ownership。
+逻辑 `ViewportSession` 独立于 Dock tab、Window、Avalonia Control 和 composition surface。Dock/float/resize 只改变 presentation binding，不转移 renderer ownership。
 
-### 3.4 生命周期必须有唯一 owner
+### 3.5 生命周期必须有唯一 owner
 
-每个长期对象都必须回答：谁创建、谁停止接收工作、谁等待进行中任务、谁释放、超时如何报告。禁止用静态 shutdown 或 View 析构隐式承担 engine/GPU 生命周期。
+每个长期对象必须回答：谁创建、谁停止接收工作、谁取消/等待任务、谁释放、超时如何报告。禁止用 static shutdown、View 析构、GC/finalizer 或插件 unload 隐式承担 Engine/GPU 生命周期。
 
-### 3.5 当前事实和目标合同分开记录
+### 3.6 当前事实与目标合同分开
 
-目标文档使用 Target；实现落地后才改为 Current。过时 spec 不得继续充当架构总纲。
+Architecture/ADR 定义目标；源码和测试定义当前实现。历史 spec/plan 不覆盖正式架构。未实现目标必须标记 Target/Partial。
 
-## 4. 目标上下文
+## 4. 系统上下文
 
 ```mermaid
 flowchart LR
     User["Editor user"] --> Studio["Asharia Studio"]
-    Studio --> Project["Project and documents"]
-    Studio --> Engine["EngineHost"]
+    Project["Game project Editor/"] --> Studio
+    Packages["Editor Packages"] --> Studio
+    Studio --> Documents["Project and documents"]
+    Studio --> Engine["C++ EngineHost"]
     Engine --> Runtime["World and simulation"]
     Engine --> Renderer["Renderer and Vulkan"]
     Studio --> Avalonia["Avalonia presentation"]
@@ -78,125 +91,155 @@ flowchart LR
 
 ## 5. 目标项目边界
 
-迁移完成后使用六个项目建立编译期约束：
-
 ```mermaid
 flowchart LR
-    App["Asharia.Studio.App"]
-    Presentation["Asharia.Studio.Presentation.Avalonia"]
-    Application["Asharia.Studio.Application"]
-    Contracts["Asharia.Studio.Contracts"]
-    Interop["Asharia.Studio.EngineInterop"]
-    Bridge["Asharia.Studio.EngineBridge"]
+    Editor["Asharia.Editor"]
+    EditorAvalonia["Asharia.Editor.Avalonia"]
+    Application["Studio.Application"]
+    Interop["Studio.EngineInterop"]
+    Bridge["Studio.EngineBridge"]
+    Presentation["Studio.Presentation.Avalonia"]
+    BuiltIn["Studio.BuiltInExtensions"]
+    App["Studio.App"]
 
-    App --> Presentation
+    EditorAvalonia --> Editor
+    Application --> Editor
+    Interop --> Editor
+    Bridge --> Editor
+    Bridge --> Application
+    Bridge --> Interop
+    Presentation --> Editor
+    Presentation --> EditorAvalonia
+    Presentation --> Application
+    Presentation --> Interop
+    BuiltIn --> Editor
+    BuiltIn --> EditorAvalonia
     App --> Application
     App --> Bridge
-    Presentation --> Application
-    Presentation --> Contracts
-    Presentation --> Interop
-    Application --> Contracts
-    Bridge --> Application
-    Bridge --> Contracts
-    Bridge --> Interop
-    Interop --> Contracts
+    App --> Presentation
+    App --> BuiltIn
 ```
 
-### `Asharia.Studio.Contracts`
+### Public Editor Framework
 
-拥有 stable ID、immutable snapshot、command/result、贡献元数据和 UI-neutral model。禁止依赖 Avalonia、P/Invoke、文件系统和具体 engine 实现。
+- `Asharia.Editor`：stable ID、snapshot、command、transaction、selection、module/contribution、service port 和 Code-first UI-neutral API；
+- `Asharia.Editor.Avalonia`：可选复杂 UI bridge，允许 panel content Control/XAML，但不暴露 Window/Dock/native ownership。
 
-### `Asharia.Studio.Application`
+### Studio Host
 
-拥有 `StudioSession`、`ProjectSession`、documents、transactions、selection、diagnostics、调度策略和 engine/world/asset/viewport ports。禁止创建 Control 或调用 P/Invoke。
+- `Asharia.Studio.Application`：session、document、extension build/load/host、command、transaction 和 scheduling；
+- `Asharia.Studio.EngineInterop`：GPU frame lease、external resource descriptor 与 ownership narrow waist；
+- `Asharia.Studio.EngineBridge`：native loading、ABI、Engine/World/Viewport adapter；
+- `Asharia.Studio.Presentation.Avalonia`：Window、Dock、Code-first reconciler、Avalonia extension host 和 GPU import；
+- `Asharia.Studio.App`：唯一 composition root 和 platform startup。
 
-### `Asharia.Studio.EngineInterop`
+### Built-in dogfooding
 
-拥有 native/IPC adapter 与 presentation adapter 共享的窄协议：`ViewportFrameLease`、外部 GPU resource descriptor、ownership/transference、capability 和 completion result。它可以表达 opaque native-sized handle，但不导入 handle、不调用 P/Invoke、不引用 Avalonia。
+- `Asharia.Studio.BuiltInExtensions`：Hierarchy、Inspector、Scene/Game View、Console、Problems、Frame Debugger 等 Feature；
+- 只引用 `Asharia.Editor`/`Asharia.Editor.Avalonia`；
+- 不引用 Application、EngineBridge 或 Presentation implementation。
 
-### `Asharia.Studio.EngineBridge`
-
-拥有 native library loading、ABI negotiation、C ABI packet、opaque native session handle，以及 Application port 的 native 实现。它把 ABI packet 转换成 `EngineInterop` lease，不引用 Avalonia。
-
-### `Asharia.Studio.Presentation.Avalonia`
-
-拥有 Window、Dock、View、ViewModel、DataTemplate、dispatcher、input adapter、composition surface 和 GPU resource import。它不拥有 engine/world/GPU allocation。
-
-### `Asharia.Studio.App`
-
-拥有唯一 composition root、平台启动、模块装配、native runtime 定位和异步应用生命周期。它不承载 Feature 业务。
+详细 project、目录和迁移规则见 [Studio 代码框架设计](studio-code-framework.md)。
 
 ## 6. 所有权矩阵
 
-| 资源 | Owner | 观察者/消费者 | 禁止拥有者 |
+| 资源 | Owner | 消费者 | 禁止拥有者 |
 | --- | --- | --- | --- |
-| Application lifetime | `StudioSession` | App/Shell | Feature View |
-| Project lifetime | `ProjectSession` | documents/features | Window |
-| Native runtime/device | `EngineHost` | Application ports | App static、ViewModel、Control |
-| Edit World | `SceneDocument` 对应的 engine session | Scene View/Hierarchy/Inspector | Dock tab |
+| Application lifetime | `StudioSession` | App/Shell | Feature View/extension |
+| Project lifetime | `ProjectSession` | documents/extensions | Window |
+| Package/module generation | `PackageGenerationHost`（由 `EditorExtensionHost` catalog/编排） | contribution hosts | Panel instance |
+| Build artifact/cache | extension build service | loader/diagnostics | Extension code |
+| Contribution registration | extension host | typed registries | Extension runtime instance |
+| Panel instance | panel instance host | Dock/Window host | Registry |
+| Window/Dock layout | Presentation host | Panel content | Extension |
+| Native runtime/device | `EngineHost` | Application ports | App static/ViewModel/Control |
+| Edit World | engine world session | Scene View/Hierarchy/Inspector | Dock tab |
 | Play World | `PlaySession` | Game View/debug tools | Edit document |
-| Preview World | preview service/session | asset preview viewport | Asset View |
-| Viewport logical state | `ViewportService` | Scene/Game/Preview panels | Window |
-| Avalonia surface | presentation host | compositor adapter | native renderer |
-| Frame GPU resources | native frame lease protocol | Avalonia importer | GC/finalizer |
-| Panel instance | panel instance host | Dock | extension registry |
-| Contribution registration | extension host | typed registries | panel instance |
+| Preview World | preview session | Asset preview | Asset View |
+| Viewport logical state | Viewport service | Scene/Game/Preview panel | Window |
+| Avalonia surface | presentation host | compositor adapter | Native renderer/extension |
+| Frame GPU resource | native frame lease | Avalonia importer | GC/finalizer/extension |
 
 ## 7. 依赖红线
 
-- Contracts 不依赖 Avalonia、Shell、Feature、native implementation 或文件系统。
-- Application 不依赖 Avalonia、P/Invoke、renderer backend 或具体 Feature View。
-- EngineBridge 不依赖 Avalonia、Dock 或 Feature。
-- Presentation 不调用 P/Invoke，不创建 engine/world，不记录 Vulkan command。
-- Feature 不创建顶层 Window，不修改 Dock tree，不持有 native pointer。
-- Engine/runtime 不依赖 editor panel、Avalonia 或 authoring-only ViewModel。
-- Scene/Inspector mutation 必须经过 command/transaction/revision 合同。
-- Platform GPU handle 只能通过 EngineInterop lease 跨边界。
+- `Asharia.Editor` 不依赖 Avalonia、Studio Host、P/Invoke、filesystem implementation 或 native handle；
+- BuiltInExtensions 不依赖 Application/Bridge/Presentation internal implementation；
+- Application 不依赖 Avalonia、P/Invoke、renderer backend 或 Feature View；
+- EngineBridge 不依赖 Avalonia、Dock 或 Feature；
+- Presentation 不调用 P/Invoke、不创建 Engine/World、不记录 Vulkan command；
+- Extension 不创建 top-level Window、不修改 Dock tree、不注入全局 style、不持有 native pointer；
+- Scene/Inspector/Asset mutation 必须经过 command/transaction/revision contract；
+- Platform GPU handle 只能通过 EngineInterop lease 跨边界；
+- Code-first extension 不访问 Avalonia；Avalonia extension只提供 Host content。
 
-## 8. 运行数据流
+## 8. 核心数据流
 
-读取路径：
+读取：
 
 ```text
 native engine state
   -> EngineBridge adapter
   -> immutable revisioned snapshot
   -> Application provider/projection
-  -> Feature ViewModel
-  -> Avalonia View
+  -> public Editor service
+  -> extension panel/ViewModel
+  -> Code-first or Avalonia View
 ```
 
-写入路径：
+写入：
 
 ```text
 UI intent
   -> EditorCommandService
-  -> SceneDocument transaction
-  -> EditWorldSession mutation(expected revision)
-  -> mutation result/change set
-  -> commit undo and dirty state
+  -> document transaction
+  -> EditWorld mutation(expected revision)
+  -> typed result/change set
+  -> undo + dirty state commit
   -> publish new snapshot
 ```
 
-渲染路径见 [Viewport 渲染架构](viewport-rendering.md)，世界和 Play Mode 见 [编辑世界与 Play Mode](editor-worlds-and-play-mode.md)。
+Extension 构建/加载：
 
-## 9. 迁移策略
+```text
+Editor/ or Package
+  -> optional asmdef + package metadata
+  -> fingerprint + dotnet build
+  -> staged AssemblyLoadContext
+  -> module configure/validate/activate
+  -> registry generation
+  -> last-known-good rollback on failure
+```
 
-不执行一次性重写。迁移顺序为：
+## 9. 跨平台基线
 
-1. 建立本文档和 ADR 的权威性。
-2. 拆出 Contracts、Application、EngineInterop。
-3. 建立异步 `StudioSession` 和唯一 `EngineHost` owner。
-4. 统一 panel/viewport frame scheduling 与 presentation lifecycle。
-5. 重做生产 native viewport contract 和三平台 backend。
-6. 建立 Project/Edit/Play/Preview domain 和 transaction write path。
-7. 拆分内置 Feature module，完成 Dock、多窗口和 accessibility。
+Studio 架构同时支持 Windows、Linux 和 macOS：
 
-每一步必须保持应用可构建、可测试，并提供兼容 adapter 迁移旧代码。
+- managed extension 统一使用 `.asmdef`、Package schema、SDK project 和 `dotnet build`；
+- 路径使用 `Path` API，不序列化平台 separator；
+- filesystem watcher 只作触发，fingerprint 是 build truth；
+- native library 和 GPU interop 通过 platform backend/capability negotiation；
+- RID 至少覆盖 `win-x64`、`linux-x64`、`osx-x64`、`osx-arm64`；
+- extension 不直接选择 Win32/X11/Wayland/Cocoa handle；
+- Play/Game View 的嵌入式/独立窗口策略由 session/presentation contract 控制。
 
-## 10. 验证
+## 10. 迁移顺序
 
-从仓库根目录执行，架构变化至少验证：
+不执行一次性重写：
+
+1. 建立本文档、统一扩展 ADR 和 authoring contract；
+2. 提取最小 `Asharia.Editor` 与现有 adapter，保持行为不变；
+3. 提取 `Asharia.Editor.Avalonia` 和 Code-first/Avalonia backend boundary；
+4. 建立 BuiltInExtensions project reference gate，逐个迁移 Feature module；
+5. 拆 Application、EngineInterop、EngineBridge、Presentation 和唯一 App root；
+6. 实现项目 `Editor/`、`.asmdef`、Package resolver、build diagnostics 和 last-known-good；
+7. 完成 panel/provider/task release tracking 后启用 collectible ALC reload；
+8. 完成 Project/Edit/Play/Preview domain、Game View 和三平台 Viewport backend。
+
+每一步必须保持可构建、可测试，并为旧 API 提供短期 compatibility adapter；不得让过渡 adapter 成为新的 public contract。
+
+## 11. 验证
+
+当前阶段：
 
 ```powershell
 dotnet test apps\studio\Editor.sln -c Release
@@ -204,15 +247,36 @@ powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1 -Root app
 git diff --check
 ```
 
-项目拆分后增加 project-reference 约束测试。Viewport、Play Mode 和 native bridge 的平台验证见各专题文档。
+项目拆分后增加：
 
-## 11. 已知迁移缺口
+- project reference matrix；
+- public API compatibility baseline；
+- BuiltInExtensions public-only dependency test；
+- project/Package extension build/load/reload integration fixture；
+- Windows/Linux/macOS RID and path matrix；
+- viewport/play native platform smoke。
 
-- 六项目边界尚未落地。
-- 当前 `Core/Interop` 仍混合 native/Avalonia vocabulary。
-- App 启动和关闭仍有 sync-over-async。
-- Game View、PlaySession 和 standalone orchestration 尚未实现。
-- Linux/macOS GPU presentation 尚未验证。
-- 当前 architecture tests 中仍有按源码路径和字符串断言的规则。
+## 12. 已知缺口
 
-这些缺口是迁移输入，不应通过放宽目标边界来消除。
+- 八项目边界尚未落地；
+- 现有 Code-first contract 仍在 `Core`，built-in Feature 仍可访问 Shell implementation；
+- 项目 `Editor/`、`.asmdef`、Package 和 ALC pipeline 未实现；
+- App shutdown 仍有 sync-over-async；
+- Game View、PlaySession 和 standalone orchestration 未完成；
+- Linux/macOS GPU presentation 尚未验证；
+- 部分 architecture test 仍按源码路径/字符串断言。
+
+已知缺口是迁移输入，不能通过放宽目标边界消除。
+
+## 13. 相关文档
+
+- [Studio 代码框架设计](studio-code-framework.md)
+- [Editor 扩展开发模型](editor-extension-authoring.md)
+- [Editor 扩展构建、装载与重载](editor-extension-build-and-reload.md)
+- [Avalonia/XAML Editor 扩展规范](editor-extension-avalonia.md)
+- [Studio 统一扩展模型](studio-extension-model.md)
+- [Studio 生命周期](studio-lifecycle.md)
+- [编辑世界与 Play Mode](editor-worlds-and-play-mode.md)
+- [Viewport 渲染架构](viewport-rendering.md)
+- [ADR-0004：统一 Editor Extension Framework](../adr/0004-unified-editor-extension-framework.md)
+- [ADR-0005：managed Editor module 构建与重载](../adr/0005-managed-editor-module-build-and-reload.md)

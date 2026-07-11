@@ -1,10 +1,12 @@
 # ADR-0003：用六个项目建立 Studio 编译期边界
 
-状态：Accepted
+状态：Superseded by [ADR-0004](0004-unified-editor-extension-framework.md)
 
 日期：2026-07-11
 
 ## Context
+
+> 本 ADR 保留“使用编译期 project reference 强制边界”的理由。六项目目标清单已被 ADR-0004 的公共 Editor Framework 与 built-in dogfooding 边界取代。
 
 当前 Studio 是单一 `Editor.csproj`。Core/Shell/UI/Features 边界主要由目录、命名空间、文档和源码字符串测试维护。当前 `Core` 已同时包含 UI-neutral contract、service、P/Invoke、native adapter 和 Avalonia vocabulary，说明目录规则不足以阻止反向依赖。
 

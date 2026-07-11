@@ -1,35 +1,41 @@
 # Code-first UI 设计
 
-> 本文档描述 Studio 内部受信任扩展的 Code-first UI 方案。目标是让工具作者获得类似 IMGUI 的快速开发体验，同时让 Shell 继续掌握 Dock、生命周期、主题、命令、状态、诊断和 Avalonia 控件创建。
+状态：Partial（当前 v1 已实现；公共 Editor API 迁移未完成）
+
+更新日期：2026-07-11
+
+> 本文定义统一 Editor Extension Framework 的 Code-first UI authoring。Studio 内置功能、项目 `Editor/`、Package 和已安装插件使用同一合同。目标是让工具作者获得类似 IMGUI 的开发体验，同时让 Host 继续掌握 Dock、生命周期、主题、命令、状态、诊断和 Avalonia 控件创建。
+
+扩展来源、`.asmdef`、Package 和 ALC 见 [Editor 扩展开发模型](architecture/editor-extension-authoring.md)；复杂 XAML 的 content lease、资源和 reload tier 见 [Avalonia/XAML Editor 扩展规范](architecture/editor-extension-avalonia.md)。本文只定义 Code-first backend。
 
 ## 1. 目标
 
-Code-first UI 解决的是内部工具面板、调试面板和自定义 Inspector 的快速开发问题。典型目标包括：
+Code-first UI 解决的是工具面板、调试面板和自定义 Inspector 的快速开发问题。典型目标包括：
 
 - Frame Debugger 面板。
 - RenderGraph pass 列表和 pass 详情。
 - 资源、纹理、shader、material 调试检查器。
-- 临时内部工具窗口。
+- 项目内临时或长期工具面板。
 - 小型属性编辑器和验证面板。
 
 设计目标：
 
 - 写法接近 IMGUI：工具作者在 `OnGui(EditorGui gui)` 中顺序描述 UI。
 - 底层保持 retained UI：Shell 将 UI 描述树 diff/reconcile 到 Avalonia 控件。
-- 扩展不能直接创建窗口、Dock 控件或全局状态。
+- 扩展不能直接创建顶层窗口、Dock 控件或全局状态。
 - UI 状态、文档状态、Dock 布局状态严格分离。
 - 持久化修改必须走命令、事务、Undo/Redo、Dirty State 和验证。
 - 第一版只覆盖小工具需要的控件，不做完整 UI Toolkit。
 
 ## 2. 非目标
 
-第一阶段不做：
+本文不负责：
 
-- 任意第三方插件 ABI/API。
-- 外部程序集热加载。
-- 运行时加载任意 XAML 作为安全边界。
+- extension discovery、`.asmdef`、Package 或 ALC load/reload；
+- Avalonia/XAML backend 的 content factory 和 compatibility；
+- 把任意 XAML 当作安全边界；
 - 真正 immediate-mode renderer。
-- 允许扩展直接 `new Window`、直接操作 Dock、直接持有 Avalonia 控件。
+- 允许 Code-first 扩展直接 `new Window`、操作 Dock 或持有 Avalonia 控件。
 - 完整 Inspector 反射系统。
 - 完整 node graph、timeline、viewport gizmo UI。
 - 自动把 `OnGui` 字段修改写入项目文件。
@@ -82,12 +88,12 @@ flowchart LR
 | --- | --- | --- |
 | CFUI-D-001 | `EditorGui` facade 每次 rebuild 临时创建，本身不保存业务状态。 | 避免 facade 变成隐式 ViewModel；状态归属必须可追踪。 |
 | CFUI-D-002 | 交互节点必须使用显式 key；自动 key 只允许用于无交互、无状态的静态占位节点，MVP 可以直接禁止自动 key。 | 焦点、输入、列表选择、滚动和错误定位都依赖稳定 identity。 |
-| CFUI-D-003 | Avalonia 控件只由 Shell adapter 创建和持有，扩展永远拿不到控件实例。 | 保持主题、焦点、可访问性、生命周期和未来 ABI 边界可控。 |
+| CFUI-D-003 | Code-first backend 的 Avalonia 控件只由 Host adapter 创建和持有；Code-first panel 拿不到控件实例。 | 保持主题、焦点、可访问性、生命周期和 UI-neutral API 边界可控；使用 `Asharia.Editor.Avalonia` 的另一种 backend 不受此条误伤。 |
 | CFUI-D-004 | 用户输入先进入 `GuiEventQueue` / `GuiStateStore`，再在下一次 `OnGui` 中消费。 | 避免控件事件直接执行面板逻辑，保证 UI 构建路径单一且可测试。 |
 | CFUI-D-005 | rebuild 是显式失效驱动，不等于每帧刷新；多次失效在 UI dispatcher 上合并。 | 防止调试面板因为高频后端数据拖慢 Shell。 |
 | CFUI-D-006 | 布局只暴露少量 production editor primitives：vertical、horizontal、toolbar、split、scroll、list、property group。 | 限制 API 面，避免第一版复制 Avalonia Grid/Flex/Canvas。 |
 | CFUI-D-007 | 持久数据修改只能走 command 或后续 `EditorPropertyHandle`。 | 保证 Undo/Redo、Dirty State、验证、保存失败处理一致。 |
-| CFUI-D-008 | 样式、主题、字体、间距、错误颜色和 focus visual 全由 Shell 样式层提供。 | 内部工具也必须看起来像同一个编辑器，且可支持暗色/高 DPI/可访问性。 |
+| CFUI-D-008 | 样式、主题、字体、间距、错误颜色和 focus visual 全由 Host 样式层提供。 | 所有来源的工具都必须看起来像同一个编辑器，且可支持暗色/高 DPI/可访问性。 |
 | CFUI-D-009 | 后端数据只以 immutable snapshot 或查询服务进入面板；`OnGui` 不等待 GPU、IO 或编译。 | 避免 UI 线程和 render loop 互相阻塞。 |
 
 ## 4. 架构分层
@@ -130,9 +136,9 @@ Features
 
 原则：
 
-- `Core` 定义 UI-neutral 合同，不引用 Avalonia 控件。
-- `Shell` 拥有 Avalonia 适配、Dock 接入、生命周期调度和诊断。
-- `Features` 写内部工具逻辑，不直接控制 Dock。
+- 当前 `Core` 定义 UI-neutral 合同，不引用 Avalonia 控件；目标迁移到 `Asharia.Editor/UI/CodeFirst`。
+- 当前 `Shell` 拥有 Avalonia 适配、Dock 接入、生命周期调度和诊断；目标迁移到 `Asharia.Studio.Presentation.Avalonia`。
+- 当前 `Features` 写 built-in 工具逻辑；目标 `BuiltInExtensions` 与项目/Package extension 使用相同 API，均不直接控制 Dock。
 - `UI` 只提供可复用视觉控件和样式。
 
 ## 5. 与现有 Studio 架构接入
@@ -1094,7 +1100,7 @@ validation error count
 
 ## 19. 安全和边界
 
-内部受信任不等于无边界。
+进程内受信任不等于无边界。
 
 Code-first panel 禁止：
 
@@ -1271,15 +1277,15 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 
 ### v1 implementation status
 
-The current v1 path is an internal Studio-only vertical slice. It covers the UI-neutral node contract, state store, event queue, validation, Shell-owned Avalonia control creation, lifecycle host, and the `Features/UiStyle` sample panel.
+The current v1 implementation is still a built-in Studio-only vertical slice. It covers the UI-neutral node contract, state store, event queue, validation, Shell-owned Avalonia control creation, lifecycle host, and the `Features/UiStyle` sample panel. The target contract is no longer built-in-only: the same API moves to `Asharia.Editor` and is used by project and Package extensions.
 
 Backend/native/runtime integration is intentionally outside v1. Runtime data must first enter Studio as Core snapshots, diagnostics, provider status, or command results before a Code-first panel consumes it.
 
 ## 23. 验收标准
 
-第一阶段完成的最低标准：
+当前 v1 和公共 API 迁移完成后的最低标准：
 
-- 内部模块可注册一个 Code-first panel。
+- built-in、project 和 Package module 可通过同一 API 注册 Code-first panel。
 - 面板可停靠、关闭、重开、浮动。
 - 生命周期顺序可测试。
 - `OnGui` 可声明 Label、Button、TextField、Toggle、Toolbar、List。
@@ -1298,36 +1304,37 @@ Backend/native/runtime integration is intentionally outside v1. Runtime data mus
 
 ## 24. 与 XAML UI 的关系
 
-Code-first UI 和 XAML UI 是两种 authoring 方式，不是两套生命周期。
+Code-first UI 和 Avalonia/XAML 是同一 Editor Extension Framework 的两种 authoring backend，不是两套 module、contribution 或 panel lifecycle。
 
 ```text
 XAML + ViewModel
-    -> PanelDescriptor
-    -> Shell lifecycle
-    -> Avalonia view
+    -> Asharia.Editor.Avalonia contribution
+    -> host-owned panel lifecycle/container
+    -> extension Avalonia content
 
 Code-first UI
-    -> PanelDescriptor
+    -> Asharia.Editor contribution
     -> CodeFirstPanelHostViewModel
-    -> Shell lifecycle
+    -> host-owned panel lifecycle/container
     -> GuiNode tree
     -> Avalonia controls
 ```
 
 建议分工：
 
-- 复杂长期面板：XAML + ViewModel。
-- 调试工具和小型 Inspector：Code-first UI。
-- 未来声明式扩展：XAML UI adapter。
+- 复杂长期面板：`Asharia.Editor.Avalonia` + compiled XAML/ViewModel。
+- 调试工具、小型 Inspector 和标准表单：Code-first UI。
+- 同一 extension 可以贡献不同 backend 的不同 panel；单个 panel 选择一个 backend。
 
 选择准则：
 
 | 场景 | 首选方式 |
 | --- | --- |
 | 需要复杂视觉层级、模板、动画、深度数据绑定 | XAML + ViewModel |
-| 需要快速内部调试面板、过滤、列表、按钮、只读详情 | Code-first UI |
+| 需要快速调试/项目工具面板、过滤、列表、按钮、只读详情 | Code-first UI |
 | 需要通用 Inspector 属性编辑 | 先实现 property handle，再由 XAML 或 Code-first 调用 |
-| 需要第三方/外部包声明 UI | 暂缓，先验证内部贡献模型和诊断边界 |
+| 项目或 Package 需要标准工具 UI | Code-first，与 built-in 使用同一 API |
+| 项目或 Package 需要复杂 XAML/custom control | `Asharia.Editor.Avalonia`，受更严格 UI backend version band 约束 |
 | 需要 viewport overlay、graph、timeline | 单独专用控件，不放进 MVP Code-first primitive |
 
 ## 25. 主要风险
@@ -1338,16 +1345,17 @@ Code-first UI
 | key 不稳定 | 焦点、滚动、选择丢失 | 强制交互控件显式 key，验证 duplicate key。 |
 | OnGui 做重活 | UI 卡顿 | 文档和测试要求 OnGui 只读 snapshot，不做 IO/GPU/query。 |
 | 持久数据绕过命令 | Undo/Dirty State 失效 | 第一版不提供直接文档写入 API，后续用 property handle。 |
-| 控件适配泄漏 Avalonia | 扩展 ABI 被 Avalonia 绑死 | Core 合同 UI-neutral，Avalonia 只在 Shell adapters。 |
+| Code-first 控件适配泄漏 Avalonia | UI-neutral API 被 Avalonia 绑死 | Code-first contract 保留在 `Asharia.Editor`；复杂 UI 明确选择独立的 `Asharia.Editor.Avalonia` compatibility band。 |
 | 大列表性能差 | 调试面板卡顿 | List 预留虚拟化，限制普通 children 数量。 |
 
 ## 26. 已拒绝方案
 
 | 方案 | 拒绝原因 |
 | --- | --- |
-| 扩展直接返回 Avalonia `Control` | 最快，但 Shell 无法统一验证、诊断、样式、生命周期和未来扩展边界。 |
+| Code-first panel 直接返回 Avalonia `Control` | 会破坏 UI-neutral node/reconcile contract；复杂 UI 应显式使用 `Asharia.Editor.Avalonia` backend。 |
+| Avalonia extension 自行创建顶层 `Window` 或修改 Dock | 会夺走 Host 的 layout、focus、lifecycle、restore 和 platform ownership。 |
 | 直接嵌入 Dear ImGui 作为编辑器 UI 层 | 会形成第二套输入、字体、Dock、主题、可访问性和渲染管线，不适合当前 Avalonia Shell。 |
-| 第一版实现完整 XAML 运行时加载和沙箱 | 安全、资源解析、binding context、错误回滚和版本兼容成本过高，应先做内部可信路径。 |
+| 把 compiled XAML/ALC 当作安全沙箱 | 进程内 extension 仍是受信任代码；不可信扩展需要 OS process boundary。 |
 | 链式 builder DSL 作为主 API | 难表达真实编辑器布局和生命周期，复杂后会退化成不可读 fluent 配置。 |
 | 让 `OnGui` 直接修改项目模型 | 会绕过命令、Undo/Redo、Dirty State 和验证。 |
 | 每帧无条件 rebuild 所有 Code-first 面板 | 简单但性能不可控，尤其会影响渲染调试和大列表。 |
@@ -1356,12 +1364,12 @@ Code-first UI
 
 | ID | 问题 | 建议默认值 |
 | --- | --- | --- |
-| CFUI-Q-001 | UI-neutral contract 放在现有 `Core`，还是拆独立命名空间/程序集？ | 先放 `Core/Abstractions` 和 `Core/Models`，出现跨层压力后再拆。 |
+| CFUI-Q-001 | UI-neutral contract 放在哪里？ | 已决策：目标为公共 `Asharia.Editor/UI/CodeFirst`；当前 `Core` 只是迁移位置。 |
 | CFUI-Q-002 | panel local UI state 是否跨会话保存？ | MVP 只保存在实例生命周期内；split ratio 和 filter 可后续接用户设置。 |
 | CFUI-Q-003 | 第一个试点面板是谁？ | Frame Debugger，因为它最能验证后端 snapshot、列表、详情、命令和诊断。 |
 | CFUI-Q-004 | 是否第一版支持自定义 Inspector？ | 只支持只读/调试型 Inspector；可写属性等 property handle 成熟后再开。 |
 | CFUI-Q-005 | 是否暴露 icon、menu、shortcut API？ | command contribution 已有后再由 `CommandButton` 读取，不让 panel 自己定义全局快捷键。 |
-| CFUI-Q-006 | 是否允许内部扩展使用 XAML 和 Code-first 混合？ | 允许同一扩展贡献不同面板，但单个面板首版只选择一种 authoring 方式。 |
+| CFUI-Q-006 | 是否允许扩展使用 XAML 和 Code-first 混合？ | 已决策：所有来源均允许；同一扩展可贡献不同 backend 的 panel，单个 panel 选择一种 backend。 |
 
 ## 28. 参考资料
 
@@ -1377,16 +1385,16 @@ Code-first UI
 
 ## 29. 设计结论
 
-Code-first UI 应接受，但要缩小为：
+Code-first UI 是统一 Editor Framework 的默认、UI-neutral authoring backend：
 
 ```text
 IMGUI-like authoring API
 retained UI implementation
-Shell-owned lifecycle
+Host-owned lifecycle
 command-owned mutations
-UI-neutral Core contract
-Avalonia-only Shell adapter
+public Asharia.Editor contract
+Avalonia Presentation adapter
 Frame Debugger first MVP
 ```
 
-它不是 XAML 的替代品。它是内部工具和调试面板的快速 authoring 层。复杂产品级 UI 仍然优先使用 Avalonia XAML + ViewModel。
+它不是 XAML 的替代品，也不再限定为内部工具。Built-in、项目 `Editor/` 和 Package extension 都可以使用。复杂产品级 UI 通过同一 module/contribution/lifecycle 使用 `Asharia.Editor.Avalonia` + compiled XAML/ViewModel。

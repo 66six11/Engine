@@ -1,6 +1,6 @@
 # Studio Framework vNext Design
 
-Status: Approved design baseline
+Status: Historical / Superseded as governing baseline
 
 Date: 2026-07-11
 
@@ -10,7 +10,7 @@ Scope: `apps/studio` only
 
 Define the production architecture for Asharia Studio as a cross-platform game-engine editor. The design corrects framework ownership, lifecycle, rendering, Play Mode, extension, and project-boundary problems found in the current implementation and documentation.
 
-This specification is the governing design for the migration. It distinguishes current repository facts from the target architecture. It does not claim that the target is already implemented.
+This specification records the first framework-correction decision. It is no longer the governing design because ADR-0004 and ADR-0005 subsequently approved the unified public Editor Framework, project `Editor/`, `.asmdef`, Avalonia extension bridge, and managed module build/reload model. Current target authority starts at `docs/architecture/README.md`; this dated specification remains historical evidence and does not claim that its target is implemented.
 
 ## User Requirements
 

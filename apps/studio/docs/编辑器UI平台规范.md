@@ -20,7 +20,8 @@
 - [项目规范.md](项目规范.md)：目录、命名空间、MVVM、性能和合入规则。
 - [控件开发指南.md](控件开发指南.md)：Avalonia 控件、样式、`Design.PreviewWith` 和主题覆盖规则。
 - [Dock系统指南.md](Dock系统指南.md)：Dock、panel、workbench action 和当前实现事实。
-- [../../docs/architecture/managed-extension-model.md](../../../docs/architecture/managed-extension-model.md)：长期 managed/plugin/native bridge ADR。
+- [architecture/studio-extension-model.md](architecture/studio-extension-model.md)：统一 managed EditorModule、contribution 和生命周期目标。
+- [architecture/editor-extension-authoring.md](architecture/editor-extension-authoring.md)：项目 `Editor/`、`.asmdef`、Avalonia/XAML、Package 和 build/reload 目标。
 
 状态词：
 
@@ -619,7 +620,8 @@ UI-sensitive 改动还需要手工或截图确认：
 - [superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md](superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md)
 - [superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md](superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md)
 - [superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md](superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md)
-- [../../../docs/architecture/managed-extension-model.md](../../../docs/architecture/managed-extension-model.md)
+- [architecture/studio-extension-model.md](architecture/studio-extension-model.md)
+- [architecture/editor-extension-authoring.md](architecture/editor-extension-authoring.md)
 
 官方资料与优秀案例：
 

@@ -404,4 +404,4 @@ Slice-specific evidence:
 - Avalonia Threading model: https://docs.avaloniaui.net/docs/app-development/threading
 - .NET Assembly unloadability: https://learn.microsoft.com/en-us/dotnet/standard/assembly/unloadability
 - .NET `AssemblyLoadContext`: https://learn.microsoft.com/en-us/dotnet/api/system.runtime.loader.assemblyloadcontext
-- Asharia managed extension ADR: ../../../docs/architecture/managed-extension-model.md
+- Current replacement: ../../architecture/studio-extension-model.md and ../../adr/0004-unified-editor-extension-framework.md
