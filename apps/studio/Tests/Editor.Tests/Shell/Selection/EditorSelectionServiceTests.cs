@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Editor.Core.Models.Selection;
+using Asharia.Editor.Selection;
 using Editor.Shell.Selection;
 using Xunit;
 

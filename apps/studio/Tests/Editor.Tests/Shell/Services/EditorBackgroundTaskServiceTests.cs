@@ -1,5 +1,5 @@
 using System;
-using Editor.Core.Models.BackgroundTasks;
+using Asharia.Editor.Tasks;
 using Editor.Shell.Services;
 using Xunit;
 

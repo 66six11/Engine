@@ -2,9 +2,8 @@ using System;
 using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Asharia.Editor.Diagnostics;
-using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Panels;
-using Editor.Core.Models.Selection;
+using Asharia.Editor.Selection;
 using Editor.Core.Models.Viewports;
 using Editor.UI.ViewModels;
 

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Selection;
+using Asharia.Editor.Selection;
 
 namespace Editor.Shell.Selection;
 

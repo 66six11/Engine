@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Editing;
+using Asharia.Editor.Transactions;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Transactions;
 
 namespace Editor.Shell.Services;
 

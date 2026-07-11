@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-using Editor.Core.Models.Lifecycle;
+using Asharia.Editor.Lifecycle;
 using Editor.Shell.Services;
 using Xunit;
 

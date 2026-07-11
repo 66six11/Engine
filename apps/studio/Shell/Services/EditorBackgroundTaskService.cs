@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Editor.Core.Abstractions;
-using Editor.Core.Models.BackgroundTasks;
+using Asharia.Editor.Tasks;
 
 namespace Editor.Shell.Services;
 

@@ -1,4 +1,5 @@
 using Editor.Core.Models.Contributions;
+using Asharia.Editor.Diagnostics;
 
 namespace Editor.Core.Models.Diagnostics;
 

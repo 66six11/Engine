@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Editing;
-using Editor.Core.Models.Transactions;
+using Asharia.Editor.Editing;
+using Asharia.Editor.Transactions;
 using Editor.Shell.Services;
 using Xunit;
 

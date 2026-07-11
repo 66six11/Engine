@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Models.Scene;

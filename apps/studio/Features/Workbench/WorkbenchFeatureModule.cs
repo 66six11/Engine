@@ -1,5 +1,8 @@
 using System;
+using Asharia.Editor.Diagnostics;
 using Asharia.Editor.Panels;
+using Asharia.Editor.Selection;
+using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Models.FrameDebug;

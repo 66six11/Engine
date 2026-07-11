@@ -5,7 +5,7 @@ using Asharia.Editor.Panels;
 using Avalonia;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
-using Editor.Core.Models.Scene;
+using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
 using Editor.Features.Hierarchy.ViewModels;

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Lifecycle;
+using Asharia.Editor.Lifecycle;
 
 namespace Editor.Shell.Services;
 

@@ -511,83 +511,6 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Selection_core_models_live_in_selection_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.Selection;";
-
-        var selectionFiles = new[]
-        {
-            "EditorSelectionChangedEventArgs.cs",
-            "EditorSelectionItem.cs",
-            "EditorSelectionSnapshot.cs",
-        };
-
-        foreach (var fileName in selectionFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "Selection", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is selection contract data and should live under Core/Models/Selection.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
-    }
-
-    [Fact]
-    public void Diagnostic_core_models_live_in_diagnostic_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.Diagnostics;";
-
-        var diagnosticFiles = new[]
-        {
-            "EditorDiagnosticChannel.cs",
-            "EditorDiagnosticRecord.cs",
-            "EditorDiagnosticSourceDescriptor.cs",
-        };
-
-        foreach (var fileName in diagnosticFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "Diagnostics", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is diagnostics contract data and should live under Core/Models/Diagnostics.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
-    }
-
-    [Fact]
-    public void Scene_core_models_live_in_scene_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.Scene;";
-
-        var sceneFiles = new[]
-        {
-            "EditorProviderRoles.cs",
-            "EditorProviderState.cs",
-            "EditorProviderStatusSnapshot.cs",
-            "SceneObjectPropertySnapshot.cs",
-            "SceneObjectPropertyValueKind.cs",
-            "SceneObjectSnapshot.cs",
-            "SceneProviderDescriptor.cs",
-            "SceneSnapshot.cs",
-        };
-
-        foreach (var fileName in sceneFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "Scene", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is scene snapshot/provider contract data and should live under Core/Models/Scene.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
-    }
-
-    [Fact]
     public void Frame_debug_core_models_live_in_frame_debug_model_folder()
     {
         var root = FindRepositoryRoot();
@@ -737,53 +660,6 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Background_task_core_models_live_in_background_task_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.BackgroundTasks;";
-
-        var backgroundTaskFiles = new[]
-        {
-            "EditorBackgroundTaskId.cs",
-            "EditorBackgroundTaskSnapshot.cs",
-            "EditorBackgroundTaskState.cs",
-        };
-
-        foreach (var fileName in backgroundTaskFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "BackgroundTasks", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is background task contract data and should live under Core/Models/BackgroundTasks.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
-    }
-
-    [Fact]
-    public void Lifecycle_core_models_live_in_lifecycle_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.Lifecycle;";
-
-        var lifecycleFiles = new[]
-        {
-            "EditorLifecycleEventKind.cs",
-            "EditorLifecycleEventSnapshot.cs",
-        };
-
-        foreach (var fileName in lifecycleFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "Lifecycle", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is lifecycle event contract data and should live under Core/Models/Lifecycle.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
-    }
-
-    [Fact]
     public void Extension_core_models_live_in_extension_model_folder()
     {
         var root = FindRepositoryRoot();
@@ -796,53 +672,6 @@ public sealed class StudioLayeringTests
             $"{fileName} is extension identity contract data and should live under Core/Models/Extensions.");
         Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-    }
-
-    [Fact]
-    public void Editing_core_models_live_in_editing_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.Editing;";
-
-        var editingFiles = new[]
-        {
-            "EditorEditCommandDescriptor.cs",
-            "EditorEditMergePolicy.cs",
-            "EditorEditValidationResult.cs",
-        };
-
-        foreach (var fileName in editingFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "Editing", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is editing command contract data and should live under Core/Models/Editing.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
-    }
-
-    [Fact]
-    public void Transaction_core_models_live_in_transaction_model_folder()
-    {
-        var root = FindRepositoryRoot();
-        var expectedNamespace = "namespace Editor.Core.Models.Transactions;";
-
-        var transactionFiles = new[]
-        {
-            "EditorTransactionId.cs",
-            "EditorTransactionServiceSnapshot.cs",
-        };
-
-        foreach (var fileName in transactionFiles)
-        {
-            var path = Path.Combine(root, "Core", "Models", "Transactions", fileName);
-            Assert.True(
-                File.Exists(path),
-                $"{fileName} is transaction service contract data and should live under Core/Models/Transactions.");
-            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
-        }
     }
 
     [Fact]

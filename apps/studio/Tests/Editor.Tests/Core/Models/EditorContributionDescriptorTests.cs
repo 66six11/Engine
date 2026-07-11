@@ -1,5 +1,6 @@
 using Asharia.Editor.Panels;
 using Editor.Core.Models.Contributions;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Workbench;

@@ -7,7 +7,6 @@ using Editor.Core.Abstractions;
 using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Asharia.Editor.UI.CodeFirst.Authoring;
 using Asharia.Editor.UI.CodeFirst.Models;
-using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.FrameDebug;
 using Editor.Core.Models.Panels;
 
