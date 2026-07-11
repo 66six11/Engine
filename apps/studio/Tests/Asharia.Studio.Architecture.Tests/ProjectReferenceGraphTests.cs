@@ -1,0 +1,116 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using Xunit;
+
+namespace Asharia.Studio.Architecture.Tests;
+
+public sealed class ProjectReferenceGraphTests
+{
+    [Fact]
+    public void Public_editor_project_is_a_dependency_free_net10_library()
+    {
+        var projectPath = Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Editor",
+            "Asharia.Editor.csproj");
+
+        Assert.True(File.Exists(projectPath), $"Expected public Editor project at {projectPath}.");
+
+        var project = XDocument.Load(projectPath);
+        Assert.Empty(project.Descendants("ProjectReference"));
+        Assert.Empty(project.Descendants("PackageReference"));
+        Assert.Equal("net10.0", RequiredProperty(project, "TargetFramework"));
+        Assert.Equal("Asharia.Editor", RequiredProperty(project, "AssemblyName"));
+        Assert.Equal("Asharia.Editor", RequiredProperty(project, "RootNamespace"));
+        Assert.Equal("enable", RequiredProperty(project, "Nullable"));
+    }
+
+    [Fact]
+    public void Legacy_editor_project_excludes_the_target_source_and_test_trees()
+    {
+        var projectPath = Path.Combine(FindStudioRoot(), "Editor.csproj");
+        var project = XDocument.Load(projectPath);
+
+        var compileRemoves = RemovePatterns(project, "Compile");
+        Assert.Contains("src/**/*.cs", compileRemoves);
+        Assert.Contains("Tests/**/*.cs", compileRemoves);
+
+        var resourceRemoves = RemovePatterns(project, "AvaloniaResource");
+        Assert.Contains("src/**/*.axaml", resourceRemoves);
+    }
+
+    [Fact]
+    public void Target_solution_contains_only_the_declared_boundary_projects()
+    {
+        var solutionPath = Path.Combine(FindStudioRoot(), "Asharia.Studio.sln");
+        Assert.True(File.Exists(solutionPath), $"Expected target Studio solution at {solutionPath}.");
+
+        var projectPaths = Regex
+            .Matches(
+                File.ReadAllText(solutionPath),
+                "^Project\\([^\\r\\n]+\\) = \\\"[^\\\"]+\\\", \\\"(?<path>[^\\\"]+\\.csproj)\\\"",
+                RegexOptions.Multiline | RegexOptions.CultureInvariant)
+            .Select(match => match.Groups["path"].Value.Replace('\\', '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            [
+                "Editor.csproj",
+                "Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj",
+                "Tests/Editor.Tests/Editor.Tests.csproj",
+                "src/Asharia.Editor/Asharia.Editor.csproj",
+            ],
+            projectPaths);
+    }
+
+    private static string RequiredProperty(XDocument project, string propertyName)
+    {
+        return project
+            .Descendants(propertyName)
+            .Select(element => element.Value.Trim())
+            .Single();
+    }
+
+    private static string[] RemovePatterns(XDocument project, string itemName)
+    {
+        return project
+            .Descendants(itemName)
+            .Attributes("Remove")
+            .Select(attribute => attribute.Value.Replace('\\', '/'))
+            .ToArray();
+    }
+
+    private static string FindStudioRoot()
+    {
+        var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Editor.sln"))
+                && File.Exists(Path.Combine(directory.FullName, "Editor.csproj")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Editor.sln"))
+                && File.Exists(Path.Combine(directory.FullName, "Editor.csproj")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate apps/studio from Editor.sln.");
+    }
+}

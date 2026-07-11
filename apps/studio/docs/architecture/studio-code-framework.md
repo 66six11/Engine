@@ -15,7 +15,7 @@
 
 ## 2. 当前事实
 
-当前 `Editor.sln` 只有：
+当前生产 executable 和完整测试仍由 `Editor.sln` 承载：
 
 ```text
 Editor.csproj
@@ -23,6 +23,8 @@ Tests/Editor.Tests/Editor.Tests.csproj
 ```
 
 单一项目同时包含 Avalonia、Shell、Feature、Code-first、UI-neutral model/service、P/Invoke/native adapter 和 Windows DLL copy target。当前主要命名空间为 `Editor.Core.*`、`Editor.Shell.*`、`Editor.UI.*` 和 `Editor.Features.*`。
+
+迁移脚手架已经建立 `Asharia.Studio.sln`，当前只额外包含空的 UI-neutral `src/Asharia.Editor/Asharia.Editor.csproj` 和不引用 Studio runtime 的 `Tests/Asharia.Studio.Architecture.Tests`。迁移期沿用现有大写 `Tests/`，避免 Windows 无法同时容纳 `Tests/` 与 `tests/`、而 Linux 又区分大小写；删除旧测试树时再执行显式两步 rename。`Asharia.Editor` 尚未提供公共合同；这一阶段只用编译和架构测试固定 project boundary，现有业务源码没有迁移。
 
 现有目录和测试只能提供部分约束，无法阻止 built-in Feature 使用内部 host API，也无法形成可供项目 `Editor/` 编译引用的稳定 assembly。目标项目边界必须由编译器执行。
 
@@ -561,15 +563,10 @@ powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1 -Root app
 git diff --check
 ```
 
-当前代码继续使用：
+迁移期间必须同时验证旧 executable solution 和目标 solution：
 
 ```powershell
 dotnet test apps\studio\Editor.sln -c Release
-```
-
-项目拆分后再切换为：
-
-```powershell
 dotnet test apps\studio\Asharia.Studio.sln -c Release
 ```
 
