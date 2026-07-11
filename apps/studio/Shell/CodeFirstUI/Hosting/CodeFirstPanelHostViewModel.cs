@@ -1,4 +1,5 @@
 ﻿using System;
+using Asharia.Editor.Commands;
 using Editor.Core.Abstractions;
 using Editor.Core.CodeFirstUI.Abstractions;
 using Editor.Core.CodeFirstUI.Authoring;
@@ -589,9 +590,9 @@ internal sealed class CodeFirstPanelHostViewModel :
     {
         public static MissingCommandExecutor Instance { get; } = new();
 
-        public WorkbenchCommandExecutionResult Execute(string commandId)
+        public EditorCommandExecutionResult Execute(string commandId)
         {
-            return WorkbenchCommandExecutionResult.NotFound(commandId);
+            return EditorCommandExecutionResult.NotFound(commandId);
         }
     }
 }

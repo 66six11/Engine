@@ -1,6 +1,7 @@
-﻿using Editor.UI.Icons;
+﻿using Asharia.Editor.Commands;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.ViewModels.Menus;
+using Editor.UI.Icons;
 using Xunit;
 
 namespace Editor.Tests.Shell.ViewModels.Menus;
@@ -21,7 +22,7 @@ public sealed class WorkbenchMenuItemViewModelTests
 
         var item = new WorkbenchMenuItemViewModel(
             action,
-            commandId => WorkbenchCommandExecutionResult.Success(commandId));
+            commandId => EditorCommandExecutionResult.Success(commandId));
 
         Assert.Equal("workbench.commandPalette.open", item.CommandId);
         Assert.Equal("Command Palette", item.Header);
@@ -44,7 +45,7 @@ public sealed class WorkbenchMenuItemViewModelTests
             commandId =>
             {
                 executedCommandId = commandId;
-                return WorkbenchCommandExecutionResult.Success(commandId);
+                return EditorCommandExecutionResult.Success(commandId);
             });
 
         item.OpenCommand.Execute(null);
@@ -66,7 +67,7 @@ public sealed class WorkbenchMenuItemViewModelTests
             commandId =>
             {
                 dispatched = true;
-                return WorkbenchCommandExecutionResult.Success(commandId);
+                return EditorCommandExecutionResult.Success(commandId);
             });
 
         item.OpenCommand.Execute(null);

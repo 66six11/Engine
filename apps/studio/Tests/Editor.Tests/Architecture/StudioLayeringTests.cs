@@ -676,8 +676,6 @@ public sealed class StudioLayeringTests
             "WorkbenchActionDescriptor.cs",
             "WorkbenchActionKind.cs",
             "WorkbenchActionScope.cs",
-            "WorkbenchCommandExecutionResult.cs",
-            "WorkbenchCommandExecutionStatus.cs",
         };
 
         foreach (var fileName in workbenchFiles)

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Commands;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.ViewModels.CommandPalette;
 using Xunit;
@@ -115,7 +116,7 @@ public sealed class CommandPaletteViewModelTests
         var viewModel = CreatePalette(commandId =>
         {
             executedCommandId = commandId;
-            return WorkbenchCommandExecutionResult.Success(commandId);
+            return EditorCommandExecutionResult.Success(commandId);
         });
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "console";
@@ -161,7 +162,7 @@ public sealed class CommandPaletteViewModelTests
     [Fact]
     public void Failed_execution_keeps_palette_open_and_publishes_result_message()
     {
-        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "Failed by test"));
+        var viewModel = CreatePalette(commandId => EditorCommandExecutionResult.Failed(commandId, "Failed by test"));
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "console";
 
@@ -176,7 +177,7 @@ public sealed class CommandPaletteViewModelTests
     [Fact]
     public void Failed_execution_with_blank_message_uses_fallback_result_message()
     {
-        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "   "));
+        var viewModel = CreatePalette(commandId => EditorCommandExecutionResult.Failed(commandId, "   "));
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "console";
 
@@ -191,7 +192,7 @@ public sealed class CommandPaletteViewModelTests
     public void Failed_execution_publishes_result_message_property_notifications()
     {
         var changedProperties = new List<string>();
-        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "Failed by test"));
+        var viewModel = CreatePalette(commandId => EditorCommandExecutionResult.Failed(commandId, "Failed by test"));
         viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName ?? string.Empty);
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "console";
@@ -237,7 +238,7 @@ public sealed class CommandPaletteViewModelTests
     [Fact]
     public void Not_found_execution_keeps_palette_open_and_publishes_result_message()
     {
-        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.NotFound(commandId));
+        var viewModel = CreatePalette(commandId => EditorCommandExecutionResult.NotFound(commandId));
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "console";
 
@@ -251,7 +252,7 @@ public sealed class CommandPaletteViewModelTests
     [Fact]
     public void ExecuteSelected_keeps_palette_open_when_command_fails()
     {
-        var viewModel = CreatePalette(commandId => WorkbenchCommandExecutionResult.Failed(commandId, "Failed by test"));
+        var viewModel = CreatePalette(commandId => EditorCommandExecutionResult.Failed(commandId, "Failed by test"));
         viewModel.OpenCommand.Execute(null);
 
         viewModel.ExecuteSelectedCommand.Execute(null);
@@ -266,7 +267,7 @@ public sealed class CommandPaletteViewModelTests
         var viewModel = CreatePalette(commandId =>
         {
             executedCommandId = commandId;
-            return WorkbenchCommandExecutionResult.Success(commandId);
+            return EditorCommandExecutionResult.Success(commandId);
         });
         viewModel.OpenCommand.Execute(null);
         viewModel.Query = "disabled";
@@ -284,7 +285,7 @@ public sealed class CommandPaletteViewModelTests
         var viewModel = CreatePalette(commandId =>
         {
             executedCommandId = commandId;
-            return WorkbenchCommandExecutionResult.Success(commandId);
+            return EditorCommandExecutionResult.Success(commandId);
         });
         viewModel.OpenCommand.Execute(null);
         viewModel.SelectedItem = viewModel.FilteredItems.First(item => item.IsHeader);
@@ -321,7 +322,7 @@ public sealed class CommandPaletteViewModelTests
                     TargetId: "console",
                     Category: "Window"),
             ],
-            commandId => WorkbenchCommandExecutionResult.Success(commandId));
+            commandId => EditorCommandExecutionResult.Success(commandId));
         viewModel.OpenCommand.Execute(null);
 
         Assert.Equal(
@@ -357,7 +358,7 @@ public sealed class CommandPaletteViewModelTests
                     Category: "Window",
                     SearchText: "palette-filter"),
             ],
-            commandId => WorkbenchCommandExecutionResult.Success(commandId));
+            commandId => EditorCommandExecutionResult.Success(commandId));
         viewModel.OpenCommand.Execute(null);
 
         viewModel.Query = "palette-filter";
@@ -390,11 +391,11 @@ public sealed class CommandPaletteViewModelTests
                     $"Tools/Command {index}",
                     Category: "Tools"))
                 .ToArray(),
-            commandId => WorkbenchCommandExecutionResult.Success(commandId));
+            commandId => EditorCommandExecutionResult.Success(commandId));
     }
 
     private static CommandPaletteViewModel CreatePalette(
-        Func<string, WorkbenchCommandExecutionResult>? execute = null)
+        Func<string, EditorCommandExecutionResult>? execute = null)
     {
         return new CommandPaletteViewModel(
             [
@@ -432,6 +433,6 @@ public sealed class CommandPaletteViewModelTests
                     DefaultShortcut: "Ctrl+Shift+P",
                     SearchText: "quick command launcher"),
             ],
-            execute ?? (commandId => WorkbenchCommandExecutionResult.Success(commandId)));
+            execute ?? (commandId => EditorCommandExecutionResult.Success(commandId)));
     }
 }

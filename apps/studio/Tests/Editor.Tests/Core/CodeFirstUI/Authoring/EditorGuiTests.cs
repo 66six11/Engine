@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using Asharia.Editor.Commands;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.CodeFirstUI.Abstractions;
 using Editor.Core.CodeFirstUI.Authoring;
 using Editor.Core.CodeFirstUI.Building;
 using Editor.Core.CodeFirstUI.Events;
 using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.CodeFirstUI.State;
-using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Workbench;
 using Xunit;
 
@@ -846,10 +847,10 @@ public sealed class EditorGuiTests
 
         public IReadOnlyList<string> CommandIds => commandIds_;
 
-        public WorkbenchCommandExecutionResult Execute(string commandId)
+        public EditorCommandExecutionResult Execute(string commandId)
         {
             commandIds_.Add(commandId);
-            return WorkbenchCommandExecutionResult.Success(commandId);
+            return EditorCommandExecutionResult.Success(commandId);
         }
     }
 

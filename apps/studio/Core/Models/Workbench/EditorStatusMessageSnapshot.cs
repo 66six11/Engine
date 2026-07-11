@@ -1,5 +1,7 @@
 using System;
 
+using Asharia.Editor.Commands;
+
 namespace Editor.Core.Models.Workbench;
 
 public sealed record EditorStatusMessageSnapshot(
@@ -8,7 +10,7 @@ public sealed record EditorStatusMessageSnapshot(
     string Message,
     string? TargetPanelId = null)
 {
-    public static EditorStatusMessageSnapshot FromCommandResult(WorkbenchCommandExecutionResult result)
+    public static EditorStatusMessageSnapshot FromCommandResult(EditorCommandExecutionResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
@@ -18,19 +20,19 @@ public sealed record EditorStatusMessageSnapshot(
             CreateMessage(result));
     }
 
-    private static EditorStatusMessageSeverity MapSeverity(WorkbenchCommandExecutionStatus status)
+    private static EditorStatusMessageSeverity MapSeverity(EditorCommandExecutionStatus status)
     {
         return status switch
         {
-            WorkbenchCommandExecutionStatus.Succeeded => EditorStatusMessageSeverity.Success,
-            WorkbenchCommandExecutionStatus.Disabled => EditorStatusMessageSeverity.Warning,
-            WorkbenchCommandExecutionStatus.NotFound => EditorStatusMessageSeverity.Error,
-            WorkbenchCommandExecutionStatus.Failed => EditorStatusMessageSeverity.Error,
+            EditorCommandExecutionStatus.Succeeded => EditorStatusMessageSeverity.Success,
+            EditorCommandExecutionStatus.Disabled => EditorStatusMessageSeverity.Warning,
+            EditorCommandExecutionStatus.NotFound => EditorStatusMessageSeverity.Error,
+            EditorCommandExecutionStatus.Failed => EditorStatusMessageSeverity.Error,
             _ => EditorStatusMessageSeverity.Info,
         };
     }
 
-    private static string CreateMessage(WorkbenchCommandExecutionResult result)
+    private static string CreateMessage(EditorCommandExecutionResult result)
     {
         if (!string.IsNullOrWhiteSpace(result.Message))
         {
@@ -39,10 +41,10 @@ public sealed record EditorStatusMessageSnapshot(
 
         return result.Status switch
         {
-            WorkbenchCommandExecutionStatus.Succeeded => $"Command '{result.CommandId}' completed.",
-            WorkbenchCommandExecutionStatus.Disabled => $"Command '{result.CommandId}' is disabled.",
-            WorkbenchCommandExecutionStatus.NotFound => $"Command '{result.CommandId}' is not registered.",
-            WorkbenchCommandExecutionStatus.Failed => $"Command '{result.CommandId}' did not complete.",
+            EditorCommandExecutionStatus.Succeeded => $"Command '{result.CommandId}' completed.",
+            EditorCommandExecutionStatus.Disabled => $"Command '{result.CommandId}' is disabled.",
+            EditorCommandExecutionStatus.NotFound => $"Command '{result.CommandId}' is not registered.",
+            EditorCommandExecutionStatus.Failed => $"Command '{result.CommandId}' did not complete.",
             _ => $"Command '{result.CommandId}' finished with status {result.Status}.",
         };
     }

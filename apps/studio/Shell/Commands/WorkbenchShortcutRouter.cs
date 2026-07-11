@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Asharia.Editor.Commands;
 using Avalonia.Input;
 using Editor.Core.Models.Workbench;
 
@@ -37,7 +38,7 @@ internal sealed class WorkbenchShortcutRouter
         return new WorkbenchShortcutRouter(bindings, commandRouter);
     }
 
-    public WorkbenchCommandExecutionResult? TryExecute(
+    public EditorCommandExecutionResult? TryExecute(
         Key key,
         KeyModifiers modifiers,
         bool isTextInputFocused)

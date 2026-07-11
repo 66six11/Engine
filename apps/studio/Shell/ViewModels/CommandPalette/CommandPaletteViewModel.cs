@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Commands;
 using CommunityToolkit.Mvvm.Input;
 using Editor.Core.Models.Workbench;
 using Editor.UI.ViewModels;
@@ -12,7 +13,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
     private const int MaxRecentCommands = 5;
 
     private readonly IReadOnlyList<CommandPaletteItemViewModel> allCommandItems_;
-    private readonly Func<string, WorkbenchCommandExecutionResult> executeCommand_;
+    private readonly Func<string, EditorCommandExecutionResult> executeCommand_;
     private readonly List<string> recentCommandIds_ = [];
     private bool isOpen_;
     private string query_ = string.Empty;
@@ -23,7 +24,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
     public CommandPaletteViewModel(
         IReadOnlyList<WorkbenchActionDescriptor> actions,
-        Func<string, WorkbenchCommandExecutionResult> executeCommand)
+        Func<string, EditorCommandExecutionResult> executeCommand)
     {
         ArgumentNullException.ThrowIfNull(actions);
         ArgumentNullException.ThrowIfNull(executeCommand);

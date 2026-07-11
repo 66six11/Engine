@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Workbench;
 using Editor.Core.CodeFirstUI.Abstractions;
@@ -421,7 +422,7 @@ public sealed class EditorGui
             pages);
     }
 
-    public WorkbenchCommandExecutionResult? CommandButton(
+    public EditorCommandExecutionResult? CommandButton(
         string key,
         string label,
         string commandId)
@@ -431,7 +432,7 @@ public sealed class EditorGui
             : null;
     }
 
-    public WorkbenchCommandExecutionResult ExecuteCommand(string commandId)
+    public EditorCommandExecutionResult ExecuteCommand(string commandId)
     {
         return commandExecutor_.Execute(commandId);
     }

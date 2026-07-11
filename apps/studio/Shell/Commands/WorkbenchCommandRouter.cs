@@ -1,4 +1,5 @@
 ﻿using System;
+using Asharia.Editor.Commands;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Workbench;
 
@@ -6,7 +7,7 @@ namespace Editor.Shell.Commands;
 
 internal interface IWorkbenchCommandRouter
 {
-    WorkbenchCommandExecutionResult Execute(string commandId);
+    EditorCommandExecutionResult Execute(string commandId);
 }
 
 internal sealed class WorkbenchCommandRouter : IWorkbenchCommandRouter
@@ -25,19 +26,19 @@ internal sealed class WorkbenchCommandRouter : IWorkbenchCommandRouter
         actionExecutor_ = actionExecutor;
     }
 
-    public WorkbenchCommandExecutionResult Execute(string commandId)
+    public EditorCommandExecutionResult Execute(string commandId)
     {
         ArgumentNullException.ThrowIfNull(commandId);
 
         var action = actionRegistry_.FindById(commandId);
         if (action is null)
         {
-            return WorkbenchCommandExecutionResult.NotFound(commandId);
+            return EditorCommandExecutionResult.NotFound(commandId);
         }
 
         if (!action.IsEnabled)
         {
-            return WorkbenchCommandExecutionResult.Disabled(
+            return EditorCommandExecutionResult.Disabled(
                 commandId,
                 action.DisabledReason ?? "Command is disabled.");
         }
@@ -45,12 +46,12 @@ internal sealed class WorkbenchCommandRouter : IWorkbenchCommandRouter
         try
         {
             return actionExecutor_.Execute(action)
-                ? WorkbenchCommandExecutionResult.Success(commandId)
-                : WorkbenchCommandExecutionResult.Failed(commandId, $"Command '{commandId}' did not complete.");
+                ? EditorCommandExecutionResult.Success(commandId)
+                : EditorCommandExecutionResult.Failed(commandId, $"Command '{commandId}' did not complete.");
         }
         catch (Exception exception)
         {
-            return WorkbenchCommandExecutionResult.Failed(commandId, exception.Message);
+            return EditorCommandExecutionResult.Failed(commandId, exception.Message);
         }
     }
 }

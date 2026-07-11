@@ -1,8 +1,8 @@
-﻿using Editor.Core.Models.Workbench;
+﻿using Asharia.Editor.Commands;
 
 namespace Editor.Core.CodeFirstUI.Abstractions;
 
 public interface IEditorGuiCommandExecutor
 {
-    WorkbenchCommandExecutionResult Execute(string commandId);
+    EditorCommandExecutionResult Execute(string commandId);
 }

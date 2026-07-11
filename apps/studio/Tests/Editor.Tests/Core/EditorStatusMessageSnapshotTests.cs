@@ -1,4 +1,5 @@
 using System;
+using Asharia.Editor.Commands;
 using Editor.Core.Models.Workbench;
 using Xunit;
 
@@ -10,7 +11,7 @@ public sealed class EditorStatusMessageSnapshotTests
     public void FromCommandResult_maps_success_to_success_command_message()
     {
         var snapshot = EditorStatusMessageSnapshot.FromCommandResult(
-            WorkbenchCommandExecutionResult.Success("workbench.panel.console"));
+            EditorCommandExecutionResult.Success("workbench.panel.console"));
 
         Assert.Equal(EditorStatusMessageSeverity.Success, snapshot.Severity);
         Assert.Equal(EditorStatusMessageSource.Command, snapshot.Source);
@@ -22,7 +23,7 @@ public sealed class EditorStatusMessageSnapshotTests
     public void FromCommandResult_maps_disabled_to_warning_command_message()
     {
         var snapshot = EditorStatusMessageSnapshot.FromCommandResult(
-            WorkbenchCommandExecutionResult.Disabled("workbench.panel.console", "Disabled by test"));
+            EditorCommandExecutionResult.Disabled("workbench.panel.console", "Disabled by test"));
 
         Assert.Equal(EditorStatusMessageSeverity.Warning, snapshot.Severity);
         Assert.Equal(EditorStatusMessageSource.Command, snapshot.Source);
@@ -34,7 +35,7 @@ public sealed class EditorStatusMessageSnapshotTests
     public void FromCommandResult_maps_not_found_to_error_command_message()
     {
         var snapshot = EditorStatusMessageSnapshot.FromCommandResult(
-            WorkbenchCommandExecutionResult.NotFound("missing.command"));
+            EditorCommandExecutionResult.NotFound("missing.command"));
 
         Assert.Equal(EditorStatusMessageSeverity.Error, snapshot.Severity);
         Assert.Equal(EditorStatusMessageSource.Command, snapshot.Source);
@@ -46,7 +47,7 @@ public sealed class EditorStatusMessageSnapshotTests
     public void FromCommandResult_maps_failed_to_error_command_message()
     {
         var snapshot = EditorStatusMessageSnapshot.FromCommandResult(
-            WorkbenchCommandExecutionResult.Failed("workbench.panel.console", "Failed by test"));
+            EditorCommandExecutionResult.Failed("workbench.panel.console", "Failed by test"));
 
         Assert.Equal(EditorStatusMessageSeverity.Error, snapshot.Severity);
         Assert.Equal(EditorStatusMessageSource.Command, snapshot.Source);
@@ -58,7 +59,7 @@ public sealed class EditorStatusMessageSnapshotTests
     public void FromCommandResult_uses_fallback_message_for_blank_failure()
     {
         var snapshot = EditorStatusMessageSnapshot.FromCommandResult(
-            WorkbenchCommandExecutionResult.Failed("workbench.panel.console", "   "));
+            EditorCommandExecutionResult.Failed("workbench.panel.console", "   "));
 
         Assert.Equal("Command 'workbench.panel.console' did not complete.", snapshot.Message);
         Assert.Null(snapshot.TargetPanelId);
