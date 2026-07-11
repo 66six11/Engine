@@ -364,6 +364,47 @@ git commit -m "feat(studio): add public editor module contract"
 
 ---
 
+### Task 2b: Add immutable module dependency and capability declarations
+
+**Slice size:** M
+
+**Files:**
+
+- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleDeclaration.cs`
+- Create: `apps/studio/Tests/Asharia.Editor.Tests/Extensions/EditorModuleDeclarationTests.cs`
+- Modify: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleBuilder.cs`
+- Modify: `apps/studio/docs/architecture/studio-code-framework.md`
+
+**Interfaces:**
+
+- Consumes: identity, scope, builder, and capability ID contracts from Task 2.
+- Produces: ordered required/optional module dependencies, required/optional capability dependencies, provided capabilities, and an immutable `EditorModuleDeclaration` snapshot.
+- Defers: contribution descriptors, Host graph resolution, capability provider selection, activation topology, Package/assembly resolution, and scope-instance binding.
+
+- [x] **Step 1: Write declaration contract tests and verify RED**
+
+The first targeted run fails at compile time because `EditorModuleBuilder` has no dependency/capability builders or `Build()` method. Tests cover ordered output, repeated-build identity, read-only collections, freeze, duplicates, required/optional conflicts, self-dependency, invalid identities, and scope direction.
+
+- [x] **Step 2: Implement isolated declaration builders and immutable freeze**
+
+`EditorModuleBuilder.Dependencies` declares required/optional module and capability edges. `EditorModuleBuilder.Capabilities` declares provided capability IDs. `Build()` copies all ordered declarations into read-only collections, caches the declaration, and makes every later mutation fail explicitly.
+
+- [x] **Step 3: Enforce declaration-time structural rules**
+
+Reject duplicate module/capability declarations, required/optional overlap, module self-dependency, invalid default identities, and Application→Project module edges. Project→Application and same-scope edges remain valid. Cross-Package dependency legality, provider ambiguity, cycles, and runtime capability availability remain Host responsibilities.
+
+- [ ] **Step 4: Run full gates, commit, and open the Slice PR**
+
+```powershell
+dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --no-restore -warnaserror
+dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore
+dotnet test apps/studio/Editor.sln -c Release --no-restore
+dotnet test apps/studio/Asharia.Studio.sln -c Release --no-restore
+dotnet format apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj --verify-no-changes --no-restore
+```
+
+---
+
 ### Task 3: Move Code-first UI into `Asharia.Editor`
 
 **Slice size:** M
