@@ -1,4 +1,4 @@
-namespace Editor.Core.Models.Viewports;
+namespace Asharia.Editor.Viewports;
 
 public enum ViewportClockMode
 {

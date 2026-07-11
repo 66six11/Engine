@@ -1,6 +1,6 @@
 using System;
 
-namespace Editor.Core.Models.Viewports;
+namespace Asharia.Editor.Viewports;
 
 [Flags]
 public enum ViewportRenderReason

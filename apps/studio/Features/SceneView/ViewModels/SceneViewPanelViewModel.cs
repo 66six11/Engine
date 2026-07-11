@@ -4,6 +4,7 @@ using Editor.Core.Abstractions;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Panels;
 using Asharia.Editor.Selection;
+using Asharia.Editor.Viewports;
 using Editor.Core.Models.Viewports;
 using Editor.UI.ViewModels;
 

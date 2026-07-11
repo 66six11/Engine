@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
+using Asharia.Editor.Viewports;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
