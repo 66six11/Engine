@@ -44,6 +44,22 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Legacy_editor_references_only_the_public_editor_project()
+    {
+        var projectPath = Path.Combine(FindStudioRoot(), "Editor.csproj");
+        var project = XDocument.Load(projectPath);
+
+        var references = project
+            .Descendants("ProjectReference")
+            .Select(element => element.Attribute("Include")?.Value.Replace('\\', '/'))
+            .Where(value => value is not null)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["src/Asharia.Editor/Asharia.Editor.csproj"], references);
+    }
+
+    [Fact]
     public void Target_solution_contains_only_the_declared_boundary_projects()
     {
         var solutionPath = Path.Combine(FindStudioRoot(), "Asharia.Studio.sln");
