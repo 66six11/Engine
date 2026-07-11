@@ -58,6 +58,8 @@ Studio 文档分为四类，不能混用：
 
 [Studio Framework vNext Design](../superpowers/specs/2026-07-11-studio-framework-vnext-design.md) 记录第一轮框架校正的需求、备选方案和迁移阶段。后续统一 Editor Extension Framework 决策以 ADR-0004、本目录的代码框架、扩展模型和 authoring 文档为准。
 
+[Studio Editor Framework Structural Refactor Implementation Plan](../superpowers/plans/2026-07-11-studio-editor-framework-refactor.md) 把上述目标拆为保持可构建、测试优先的 Wave 1 结构重构，并列出 Package build/load/reload、ProjectSession/Play Mode 与三平台 Viewport 的后续独立 Slice。
+
 ## 旧文档关系
 
 - `docs/Studio框架设计.md`：Superseded；描述 2026-07-01 以前的 v0 总纲。
