@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Workbench;
 using Editor.Core.CodeFirstUI.Abstractions;
 using Editor.Core.CodeFirstUI.Building;

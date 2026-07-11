@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 
 namespace Editor.Core.CodeFirstUI.Models;
 

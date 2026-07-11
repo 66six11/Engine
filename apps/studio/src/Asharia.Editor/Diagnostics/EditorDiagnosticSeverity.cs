@@ -1,4 +1,4 @@
-namespace Editor.Core.Models.Diagnostics;
+namespace Asharia.Editor.Diagnostics;
 
 public enum EditorDiagnosticSeverity
 {

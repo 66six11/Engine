@@ -9,7 +9,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Editor.Core.CodeFirstUI.Models;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 using Editor.UI.Icons;
 using Editor.UI.Controls.Base;
 using Editor.UI.Controls.Tree;

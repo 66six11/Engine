@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Diagnostics;
 
 namespace Editor.Core.Abstractions;

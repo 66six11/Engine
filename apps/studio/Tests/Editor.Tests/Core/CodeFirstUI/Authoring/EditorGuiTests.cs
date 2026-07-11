@@ -6,7 +6,7 @@ using Editor.Core.CodeFirstUI.Building;
 using Editor.Core.CodeFirstUI.Events;
 using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.CodeFirstUI.State;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Workbench;
 using Xunit;
 

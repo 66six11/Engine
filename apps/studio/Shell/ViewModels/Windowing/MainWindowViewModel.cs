@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Diagnostics;
 using Avalonia;
 using Avalonia.Input;
 using Editor.Core.Abstractions;

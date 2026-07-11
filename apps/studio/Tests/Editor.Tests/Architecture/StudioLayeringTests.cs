@@ -586,7 +586,6 @@ public sealed class StudioLayeringTests
         {
             "EditorDiagnosticChannel.cs",
             "EditorDiagnosticRecord.cs",
-            "EditorDiagnosticSeverity.cs",
             "EditorDiagnosticSourceDescriptor.cs",
         };
 

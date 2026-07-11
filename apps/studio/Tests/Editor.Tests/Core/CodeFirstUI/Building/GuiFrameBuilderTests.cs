@@ -2,7 +2,7 @@
 using System.Linq;
 using Editor.Core.CodeFirstUI.Building;
 using Editor.Core.CodeFirstUI.Models;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 using Xunit;
 
 namespace Editor.Tests.Core.CodeFirstUI.Building;

@@ -1,3 +1,5 @@
+using Asharia.Editor.Diagnostics;
+
 namespace Editor.Core.Models.Diagnostics;
 
 public sealed record EditorDiagnosticRecord(

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Diagnostics;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;

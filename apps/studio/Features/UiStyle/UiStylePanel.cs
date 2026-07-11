@@ -2,7 +2,7 @@
 using Editor.Core.CodeFirstUI.Abstractions;
 using Editor.Core.CodeFirstUI.Authoring;
 using Editor.Core.CodeFirstUI.Models;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 
 namespace Editor.Features.UiStyle;
 

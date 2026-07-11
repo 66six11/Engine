@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.CodeFirstUI.Models;
 
 namespace Editor.Core.CodeFirstUI.Building;

@@ -1,5 +1,6 @@
 using System.Linq;
 using Editor.Core.Models.Panels;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Scene;
 using Editor.Core.Models.Viewports;

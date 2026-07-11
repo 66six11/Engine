@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.CodeFirstUI.Models;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.FrameDebug;
