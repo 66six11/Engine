@@ -47,7 +47,7 @@
 - Consumes: existing `apps/studio/src/Asharia.Editor/Asharia.Editor.csproj`.
 - Produces: a compile-time `Editor.csproj` → `Asharia.Editor.csproj` reference used by all later type moves.
 
-- [ ] **Step 1: Write the failing exact-reference test**
+- [x] **Step 1: Write the failing exact-reference test**
 
 Add this test to `ProjectReferenceGraphTests`:
 
@@ -69,7 +69,7 @@ public void Legacy_editor_references_only_the_public_editor_project()
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -79,7 +79,7 @@ dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.A
 
 Expected: FAIL because `references` is empty.
 
-- [ ] **Step 3: Add the ProjectReference**
+- [x] **Step 3: Add the ProjectReference**
 
 Add this item group to `Editor.csproj` after the source exclusions:
 
@@ -91,7 +91,7 @@ Add this item group to `Editor.csproj` after the source exclusions:
 
 Do not add a reverse reference to `Asharia.Editor.csproj`.
 
-- [ ] **Step 4: Verify GREEN and the baseline build**
+- [x] **Step 4: Verify GREEN and the baseline build**
 
 Run:
 
@@ -102,7 +102,7 @@ dotnet build apps/studio/Editor.csproj -c Release --no-restore
 
 Expected: focused test PASS; both `Asharia.Editor.dll` and `Editor.dll` build with 0 errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/studio/Editor.csproj apps/studio/Tests/Asharia.Studio.Architecture.Tests/ProjectReferenceGraphTests.cs
@@ -136,7 +136,7 @@ git commit -m "build(studio): reference public editor api"
 - Consumes: the Task 1 ProjectReference.
 - Produces: `Asharia.Editor.Diagnostics.EditorDiagnosticSeverity` with numeric order `Debug=0`, `Info=1`, `Warning=2`, `Error=3`.
 
-- [ ] **Step 1: Write the failing public ownership test**
+- [x] **Step 1: Write the failing public ownership test**
 
 Create `PublicPrerequisiteContractTests.cs`:
 
@@ -160,7 +160,7 @@ public sealed class PublicPrerequisiteContractTests
 }
 ```
 
-- [ ] **Step 2: Run and verify compile RED**
+- [x] **Step 2: Run and verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~Diagnostic_severity_is_owned_by_public_editor_api
@@ -168,7 +168,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because `Asharia.Editor.Diagnostics` does not exist.
 
-- [ ] **Step 3: Move the enum and update all consumers**
+- [x] **Step 3: Move the enum and update all consumers**
 
 Create the public file with this exact content:
 
@@ -194,7 +194,7 @@ rg -n "enum EditorDiagnosticSeverity|Editor\.Core\.Models\.Diagnostics\.EditorDi
 
 Expected: exactly one enum definition under `src/Asharia.Editor`; no fully qualified legacy reference.
 
-- [ ] **Step 4: Verify GREEN and diagnostics regressions**
+- [x] **Step 4: Verify GREEN and diagnostics regressions**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~Diagnostic_severity_is_owned_by_public_editor_api
@@ -204,7 +204,7 @@ dotnet build apps/studio/Editor.csproj -c Release --no-restore
 
 Expected: all selected tests PASS; build has 0 errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Diagnostics apps/studio/Tests/Asharia.Editor.Tests/PublicApi apps/studio/Core apps/studio/Features apps/studio/Shell apps/studio/Tests/Editor.Tests
@@ -240,7 +240,7 @@ git commit -m "refactor(studio): promote diagnostic severity"
 - Consumes: public `Asharia.Editor` reference from Task 1.
 - Produces: `EditorCommandExecutionStatus` and immutable `EditorCommandExecutionResult` in `Asharia.Editor.Commands`.
 
-- [ ] **Step 1: Add failing command contract tests**
+- [x] **Step 1: Add failing command contract tests**
 
 Append to `PublicPrerequisiteContractTests`:
 
@@ -278,7 +278,7 @@ public void Command_result_factories_preserve_messages()
 
 Add `using Asharia.Editor.Commands;`.
 
-- [ ] **Step 2: Verify compile RED**
+- [x] **Step 2: Verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~Command_result
@@ -286,7 +286,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because the public command types do not exist.
 
-- [ ] **Step 3: Implement the renamed public contract**
+- [x] **Step 3: Implement the renamed public contract**
 
 Create the enum:
 
@@ -333,7 +333,7 @@ public sealed record EditorCommandExecutionResult(
 
 Delete the two legacy files. Mechanically replace `WorkbenchCommandExecutionResult` with `EditorCommandExecutionResult`, `WorkbenchCommandExecutionStatus` with `EditorCommandExecutionStatus`, and add `using Asharia.Editor.Commands;` where required. Do not create adapters or aliases.
 
-- [ ] **Step 4: Verify GREEN and command regressions**
+- [x] **Step 4: Verify GREEN and command regressions**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~Command_result
@@ -343,7 +343,7 @@ rg -n "WorkbenchCommandExecution(Result|Status)" apps/studio -g '*.cs'
 
 Expected: tests PASS; `rg` returns no matches.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Commands apps/studio/Tests apps/studio/Core apps/studio/Shell
@@ -374,7 +374,7 @@ git commit -m "refactor(studio): promote command execution contract"
 - Consumes: public API project reference from Task 1.
 - Produces: `EditorDockArea`, `EditorPanelLifecycleContext`, `EditorPanelFrameUpdateMode`, `EditorPanelFrameUpdateRequest`, and `EditorPanelFrameContext` in `Asharia.Editor.Panels`.
 
-- [ ] **Step 1: Add failing panel contract tests**
+- [x] **Step 1: Add failing panel contract tests**
 
 Append to `PublicPrerequisiteContractTests` and add `using Asharia.Editor.Panels;`:
 
@@ -412,7 +412,7 @@ public void Panel_frame_context_preserves_host_state_and_repaint_request()
 }
 ```
 
-- [ ] **Step 2: Verify compile RED**
+- [x] **Step 2: Verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~Panel_frame_request|FullyQualifiedName~Panel_frame_context"
@@ -420,7 +420,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because `Asharia.Editor.Panels` does not exist.
 
-- [ ] **Step 3: Move and rename the five public contracts**
+- [x] **Step 3: Move and rename the five public contracts**
 
 Copy the existing lifecycle/frame validation and behavior exactly, changing only namespace and `DockArea` → `EditorDockArea`. The enum is:
 
@@ -438,7 +438,7 @@ public enum EditorDockArea
 
 Delete the five legacy definitions. Replace type references throughout production/tests and add `using Asharia.Editor.Panels;`. `EditorPanelContributionDescriptor`, `PanelDescriptor`, layout snapshots, Dock ViewModels, scheduler, and validation code all consume the public enum/contracts after this task; do not retain a second `DockArea` enum.
 
-- [ ] **Step 4: Verify GREEN and panel regressions**
+- [x] **Step 4: Verify GREEN and panel regressions**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~Panel_frame_request|FullyQualifiedName~Panel_frame_context"
@@ -448,7 +448,7 @@ rg -n "\bDockArea\b|namespace Editor\.Core\.Models\.Panels;[\s\S]*EditorPanel(Fr
 
 Expected: tests PASS; no standalone legacy `DockArea` symbol remains. Other legacy panel model files may retain `namespace Editor.Core.Models.Panels` but import the public contracts.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Panels apps/studio/Tests apps/studio/Core apps/studio/Features apps/studio/Shell
@@ -499,7 +499,7 @@ git commit -m "refactor(studio): promote panel lifecycle contracts"
 - Consumes: public Diagnostics from Task 2.
 - Produces: `Asharia.Editor.UI.CodeFirst.Building`, `.Events`, `.Models`, `.State`, and `.Validation` with unchanged behavior.
 
-- [ ] **Step 1: Write the failing kernel ownership test**
+- [x] **Step 1: Write the failing kernel ownership test**
 
 Create:
 
@@ -529,7 +529,7 @@ public sealed class CodeFirstAssemblyOwnershipTests
 }
 ```
 
-- [ ] **Step 2: Verify compile RED**
+- [x] **Step 2: Verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~Kernel_type_is_owned_by_public_editor_api
@@ -537,7 +537,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because `Asharia.Editor.UI.CodeFirst` does not exist.
 
-- [ ] **Step 3: Move kernel sources with one namespace mapping**
+- [x] **Step 3: Move kernel sources with one namespace mapping**
 
 For every moved source, replace:
 
@@ -552,13 +552,13 @@ Editor.Core.Models.Diagnostics     -> Asharia.Editor.Diagnostics
 
 Do not change public member names or validation behavior. Update the still-legacy Authoring/Abstractions files and Shell adapters to import the new public kernel namespaces.
 
-- [ ] **Step 4: Move the four kernel test files**
+- [x] **Step 4: Move the four kernel test files**
 
 Apply the same namespace mapping and change test namespaces from `Editor.Tests.Core.CodeFirstUI.*` to `Asharia.Editor.Tests.UI.CodeFirst.*`. Do not copy tests; delete their old files in the same patch.
 
 Before moving, these four files contain exactly 28 cases: 20 builder, 2 event queue, 2 state store, and 4 validator. Record the exact pre/post filtered counts in the Issue update; Task 6 moves the remaining 30 authoring cases, preserving the 58-case total.
 
-- [ ] **Step 5: Verify GREEN across public kernel and Shell adapters**
+- [x] **Step 5: Verify GREEN across public kernel and Shell adapters**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~CodeFirst
@@ -568,7 +568,7 @@ dotnet build apps/studio/Editor.csproj -c Release --no-restore
 
 Expected: all moved kernel tests and selected Shell adapter tests PASS; build has 0 errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/studio/Core/CodeFirstUI apps/studio/src/Asharia.Editor/UI/CodeFirst apps/studio/Tests apps/studio/Shell/CodeFirstUI
@@ -602,7 +602,7 @@ git commit -m "refactor(studio): extract code first kernel"
 - Consumes: public Commands from Task 3, Panels from Task 4, and Code-first kernel from Task 5.
 - Produces: complete `Asharia.Editor.UI.CodeFirst` authoring API and explicit `ICodeFirstEditorPanelHost` SPI.
 
-- [ ] **Step 1: Extend the ownership test and verify compile RED**
+- [x] **Step 1: Extend the ownership test and verify compile RED**
 
 Add these inline data rows to `Kernel_type_is_owned_by_public_editor_api`:
 
@@ -673,7 +673,7 @@ private sealed class RecordingPanel : CodeFirstEditorPanel
 
 Add `using System.Collections.Generic;`, `using Asharia.Editor.Panels;`, and the public Code-first Abstractions/Authoring namespaces.
 
-- [ ] **Step 2: Verify compile RED**
+- [x] **Step 2: Verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~Kernel_type_is_owned_by_public_editor_api|FullyQualifiedName~Panel_host_spi_dispatches"
@@ -681,7 +681,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because public Authoring/Abstractions/SPI types do not exist.
 
-- [ ] **Step 3: Create the exact public host SPI**
+- [x] **Step 3: Create the exact public host SPI**
 
 Create `ICodeFirstEditorPanelHost.cs`:
 
@@ -727,7 +727,7 @@ public abstract class CodeFirstEditorPanel : ICodeFirstEditorPanelHost
 
 Remove all `internal Dispatch*` methods. Do not add `InternalsVisibleTo`.
 
-- [ ] **Step 4: Move Authoring and command executor**
+- [x] **Step 4: Move Authoring and command executor**
 
 Apply:
 
@@ -740,7 +740,7 @@ Editor.Core.Models.Panels            -> Asharia.Editor.Panels
 
 `IEditorGuiCommandExecutor.Execute(string commandId)` returns `EditorCommandExecutionResult`. `EditorGui.CommandButton` and `ExecuteCommand` return the same public result type.
 
-- [ ] **Step 5: Update the Shell host to use only the SPI**
+- [x] **Step 5: Update the Shell host to use only the SPI**
 
 Keep the constructor parameter `CodeFirstEditorPanel panel`, remove the old concrete `panel_` field, then store only:
 
@@ -756,11 +756,11 @@ panelHost_ = (ICodeFirstEditorPanelHost)panel;
 
 Replace every `panel_.Dispatch*` call with the corresponding `panelHost_` method and read `FrameUpdateRequest` through `panelHost_`. Lifecycle ordering remains create → enable → build/frame → disable → destroy.
 
-- [ ] **Step 6: Move the authoring test and update all callers**
+- [x] **Step 6: Move the authoring test and update all callers**
 
 Move `EditorGuiTests.cs`, change its namespace to `Asharia.Editor.Tests.UI.CodeFirst.Authoring`, and update usings to public Commands/CodeFirst namespaces. Update FrameDebugger, UiStyle, Shell host, ViewLocator tests, feature tests, and Shell Code-first tests mechanically. Delete the old Authoring/Abstractions files.
 
-- [ ] **Step 7: Verify GREEN and preserve all 58 Code-first cases**
+- [x] **Step 7: Verify GREEN and preserve all 58 Code-first cases**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~CodeFirst
@@ -772,7 +772,7 @@ git diff 835649f5..HEAD -- apps/studio | Select-String -Pattern "InternalsVisibl
 
 Expected: the relocated original Code-first suite still accounts for 58 passing cases (28 kernel + 30 authoring); selected Shell/feature tests PASS; both `rg` commands and the Task 6 diff scan return no old dispatch, new public friend-assembly, new friend-assembly diff, or old namespace references. The pre-existing test-only friend in `apps/studio/Properties/AssemblyInfo.cs` is outside this extraction and remains unchanged.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add apps/studio/Core/CodeFirstUI apps/studio/src/Asharia.Editor/UI/CodeFirst apps/studio/Tests apps/studio/Features apps/studio/Shell/CodeFirstUI

@@ -95,6 +95,7 @@ public sealed class ProjectReferenceGraphTests
             "LibraryImport",
             "DllImport",
             "System.Runtime.InteropServices",
+            "Editor.Core",
             "Editor.Shell",
             "Editor.Features",
             "Asharia.Studio.",

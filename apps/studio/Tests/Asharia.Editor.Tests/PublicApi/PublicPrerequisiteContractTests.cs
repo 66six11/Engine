@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
 using Asharia.Editor.Panels;
@@ -15,6 +16,7 @@ public sealed class PublicPrerequisiteContractTests
         Assert.Equal(
             ["Debug", "Info", "Warning", "Error"],
             Enum.GetNames<EditorDiagnosticSeverity>());
+        Assert.Equal([0, 1, 2, 3], Enum.GetValues<EditorDiagnosticSeverity>().Select(value => Convert.ToInt32(value)));
     }
 
     [Theory]
@@ -74,8 +76,20 @@ public sealed class PublicPrerequisiteContractTests
 
         context.RequestRepaint();
 
+        Assert.Equal(EditorDockArea.Bottom, panel.DockArea);
+        Assert.Equal(
+            typeof(EditorDockArea),
+            typeof(EditorPanelLifecycleContext).GetProperty(nameof(EditorPanelLifecycleContext.DockArea))?.PropertyType);
         Assert.True(panel.IsMainWorkspace);
         Assert.True(context.IsRepaintRequested);
         Assert.Equal(7, context.Sequence);
+    }
+
+    [Fact]
+    public void Public_contract_enum_values_are_stable()
+    {
+        Assert.Equal([0, 1, 2, 3], Enum.GetValues<EditorDockArea>().Select(value => Convert.ToInt32(value)));
+        Assert.Equal([0, 1, 2, 3], Enum.GetValues<EditorCommandExecutionStatus>().Select(value => Convert.ToInt32(value)));
+        Assert.Equal([0, 1, 2], Enum.GetValues<EditorPanelFrameUpdateMode>().Select(value => Convert.ToInt32(value)));
     }
 }

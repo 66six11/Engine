@@ -547,22 +547,22 @@ public sealed class EditorDockWorkspaceViewModelTests
     {
         public void OnPanelAttached(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Attached:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Attached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelActivated(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Activated:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Activated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelDeactivated(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Deactivated:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Deactivated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelDetached(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Detached:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Detached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
         }
 
         public void Dispose()
