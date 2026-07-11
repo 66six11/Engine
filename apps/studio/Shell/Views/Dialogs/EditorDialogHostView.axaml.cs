@@ -17,10 +17,10 @@ public partial class EditorDialogHostView : UserControl
         DataContextChanged += OnDataContextChanged;
     }
 
-    internal static bool TryCancelDialog(object? dataContext)
+    internal static bool TrySystemDismissDialog(object? dataContext)
     {
         return dataContext is EditorDialogHostViewModel viewModel
-            && viewModel.TryCancel();
+            && viewModel.TrySystemDismiss();
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -50,7 +50,7 @@ public partial class EditorDialogHostView : UserControl
 
     private void OnDialogHostKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && TryCancelDialog(DataContext))
+        if (e.Key == Key.Escape && TrySystemDismissDialog(DataContext))
         {
             e.Handled = true;
         }

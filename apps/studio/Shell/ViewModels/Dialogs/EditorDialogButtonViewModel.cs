@@ -1,25 +1,29 @@
+using Asharia.Editor.Dialogs;
 using CommunityToolkit.Mvvm.Input;
-using Editor.Core.Models.Dialogs;
 
 namespace Editor.Shell.ViewModels.Dialogs;
 
 public sealed class EditorDialogButtonViewModel
 {
     internal EditorDialogButtonViewModel(
-        EditorDialogButtonDescriptor descriptor,
+        EditorDialogActionDescriptor descriptor,
         IRelayCommand command)
     {
         Descriptor = descriptor;
         Command = command;
     }
 
-    internal EditorDialogButtonDescriptor Descriptor { get; }
+    internal EditorDialogActionDescriptor Descriptor { get; }
 
-    public string Id => Descriptor.Id;
+    public string Id => Descriptor.Id.Value;
 
     public string Text => Descriptor.Text;
 
+    public EditorDialogActionRole Role => Descriptor.Role;
+
     public bool IsDefault => Descriptor.IsDefault;
+
+    public bool IsDestructive => Descriptor.IsDestructive;
 
     public IRelayCommand Command { get; }
 }

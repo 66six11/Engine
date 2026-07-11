@@ -1,7 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Editor.Core.Models.Dialogs;
+using Asharia.Editor.Dialogs;
 using Editor.Shell.ViewModels.Dialogs;
 using Xunit;
 
@@ -30,71 +30,78 @@ public sealed class EditorDialogHostViewModelTests
     }
 
     [Fact]
-    public void ShowAsync_opens_request_and_projects_buttons()
+    public void ShowAsync_projects_action_semantics()
     {
         var host = new EditorDialogHostViewModel();
+        var request = CreateRequest(
+            allowSystemDismiss: true,
+            [
+                new EditorDialogActionDescriptor(
+                    EditorDialogActionId.Create("delete"),
+                    "Delete",
+                    EditorDialogActionRole.Primary,
+                    isDefault: true,
+                    isDestructive: true),
+                DismissAction(isDefault: false),
+            ]);
 
-        var resultTask = host.ShowAsync(EditorDialogRequest.Information("About", "Studio editor shell"));
+        var resultTask = host.ShowAsync(request);
 
         Assert.True(host.IsOpen);
-        Assert.Equal("About", host.Title);
-        Assert.Equal("Studio editor shell", host.Message);
-        var button = Assert.Single(host.Buttons);
-        Assert.Equal("ok", button.Id);
-        Assert.Equal("OK", button.Text);
+        Assert.Equal("Title", host.Title);
+        Assert.Equal("Message", host.Message);
+        var button = host.Buttons.First();
+        Assert.Equal("delete", button.Id);
+        Assert.Equal("Delete", button.Text);
+        Assert.Equal(EditorDialogActionRole.Primary, button.Role);
         Assert.True(button.IsDefault);
+        Assert.True(button.IsDestructive);
         Assert.False(resultTask.IsCompleted);
     }
 
     [Fact]
-    public async Task Button_command_completes_result_and_closes_host()
+    public async Task Action_command_returns_exact_identity_and_closes_host()
     {
         var host = new EditorDialogHostViewModel();
-        var resultTask = host.ShowAsync(EditorDialogRequest.Information("About", "Studio editor shell"));
+        var resultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [DismissAction()]));
 
         host.Buttons.Single().Command.Execute(null);
 
         var result = await resultTask;
-        Assert.Equal(EditorDialogResultKind.Accepted, result.Kind);
-        Assert.Equal("ok", result.ButtonId);
+        Assert.Equal(EditorDialogCompletionKind.ActionInvoked, result.Completion);
+        Assert.Equal(EditorDialogActionId.Create("close"), result.ActionId);
         Assert.False(host.IsOpen);
         Assert.Null(host.ActiveRequest);
         Assert.Empty(host.Buttons);
     }
 
     [Fact]
-    public async Task TryCancel_completes_cancelable_dialog()
+    public async Task TrySystemDismiss_completes_allowed_dialog()
     {
         var host = new EditorDialogHostViewModel();
-        var resultTask = host.ShowAsync(EditorDialogRequest.Confirmation(
-            "Close Tab",
-            "Close the active tab?",
-            acceptText: "Close",
-            rejectText: "Keep Open"));
+        var resultTask = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: true,
+            [DismissAction()]));
 
-        Assert.True(host.TryCancel());
+        Assert.True(host.TrySystemDismiss());
 
         var result = await resultTask;
-        Assert.Equal(EditorDialogResultKind.Canceled, result.Kind);
-        Assert.Null(result.ButtonId);
+        Assert.Equal(EditorDialogCompletionKind.SystemDismissed, result.Completion);
+        Assert.Null(result.ActionId);
         Assert.False(host.IsOpen);
     }
 
     [Fact]
-    public void TryCancel_ignores_non_cancelable_dialog()
+    public void TrySystemDismiss_ignores_non_dismissible_dialog()
     {
         var host = new EditorDialogHostViewModel();
-        _ = host.ShowAsync(new EditorDialogRequest(
-            EditorDialogKind.Information,
-            "Blocking",
-            "This dialog must be acknowledged.",
-            isCancelable: false,
-            Buttons:
-            [
-                new EditorDialogButtonDescriptor("ok", "OK", EditorDialogButtonRole.Accept, IsDefault: true),
-            ]));
+        _ = host.ShowAsync(CreateRequest(
+            allowSystemDismiss: false,
+            [DismissAction()]));
 
-        Assert.False(host.TryCancel());
+        Assert.False(host.TrySystemDismiss());
         Assert.True(host.IsOpen);
     }
 
@@ -102,10 +109,31 @@ public sealed class EditorDialogHostViewModelTests
     public void ShowAsync_rejects_second_active_dialog()
     {
         var host = new EditorDialogHostViewModel();
-        _ = host.ShowAsync(EditorDialogRequest.Information("First", "Already open"));
+        _ = host.ShowAsync(CreateRequest(true, [DismissAction()]));
 
         var exception = Assert.Throws<InvalidOperationException>(
-            () => { _ = host.ShowAsync(EditorDialogRequest.Information("Second", "Should fail")); });
+            () => { _ = host.ShowAsync(CreateRequest(true, [DismissAction()])); });
         Assert.Contains("already active", exception.Message);
+    }
+
+    private static EditorDialogRequest CreateRequest(
+        bool allowSystemDismiss,
+        EditorDialogActionDescriptor[] actions)
+    {
+        return new EditorDialogRequest(
+            EditorDialogSeverity.Information,
+            "Title",
+            "Message",
+            allowSystemDismiss,
+            actions);
+    }
+
+    private static EditorDialogActionDescriptor DismissAction(bool isDefault = true)
+    {
+        return new EditorDialogActionDescriptor(
+            EditorDialogActionId.Create("close"),
+            "Close",
+            EditorDialogActionRole.Dismiss,
+            isDefault);
     }
 }

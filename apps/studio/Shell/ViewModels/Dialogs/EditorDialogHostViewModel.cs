@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Asharia.Editor.Dialogs;
 using CommunityToolkit.Mvvm.Input;
-using Editor.Core.Models.Dialogs;
 using Editor.UI.ViewModels;
 
 namespace Editor.Shell.ViewModels.Dialogs;
@@ -52,22 +52,22 @@ public class EditorDialogHostViewModel : ViewModelBase
             TaskCreationOptions.RunContinuationsAsynchronously);
         completion_ = completion;
         ActiveRequest = request;
-        Buttons = request.Buttons
-            .Select(button => new EditorDialogButtonViewModel(
-                button,
-                new RelayCommand(() => Complete(EditorDialogResult.FromButton(button)))))
+        Buttons = request.Actions
+            .Select(action => new EditorDialogButtonViewModel(
+                action,
+                new RelayCommand(() => Complete(EditorDialogResult.ActionInvoked(action.Id)))))
             .ToArray();
         return completion.Task;
     }
 
-    public bool TryCancel()
+    public bool TrySystemDismiss()
     {
-        if (ActiveRequest is null || !ActiveRequest.IsCancelable)
+        if (ActiveRequest is null || !ActiveRequest.AllowSystemDismiss)
         {
             return false;
         }
 
-        Complete(EditorDialogResult.Canceled());
+        Complete(EditorDialogResult.SystemDismissed());
         return true;
     }
 
