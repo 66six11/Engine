@@ -586,7 +586,7 @@ git commit -m "refactor(studio): extract editor service contracts"
 
 **Slice size:** L
 
-**Current checkpoint (#243):** `Asharia.Studio.Application` and its test project now exist in the target Solution and reference only `Asharia.Editor`. `StaticPackageGenerationHost.Create` validates duplicate registrations before invoking factories, creates each definition object once, calls `Configure` once, freezes its declaration, and publishes a read-only definition map only after the complete static set succeeds. Scope activation, atomic partitions, capability waiting, failure propagation, reverse-order disposal, compatibility adapters, and service moves remain pending.
+**Current checkpoint (#243):** `Asharia.Studio.Application` and its test project exist in the target Solution and reference only `Asharia.Editor`. `StaticPackageGenerationHost.Create` validates duplicate registrations before invoking factories, creates each definition object once, calls `Configure` once, freezes its declaration, and publishes a read-only definition map only after the complete static set succeeds. `EditorScopeTransaction.Prepare` now builds an invisible immutable candidate, validates scope/required dependency/cycle/Panel contribution/capability-provider structure against its captured registry snapshot, and `Commit` performs one stale-checked registry swap. Scope activation, capability runtime waiting, failure propagation, reverse-order disposal, compatibility adapters, and service moves remain pending.
 
 **Files:**
 
@@ -651,7 +651,7 @@ public sealed record StaticEditorModuleRegistration(
 
 It creates each definition once, calls `Configure` once into a staging builder, freezes descriptors/dependencies, and retains the default-ALC generation until process exit.
 
-- [ ] **Step 4: Implement atomic scope partitions**
+- [x] **Step 4: Implement atomic scope partitions**
 
 `EditorScopeTransaction.Prepare` validates identity, contribution, role, scope direction, required dependency, and capability-provider graphs without mutating visible registries. `Commit` swaps one immutable partition reference. A structural error returns diagnostics and leaves the old partition untouched.
 
