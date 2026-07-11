@@ -1,5 +1,5 @@
-﻿using Asharia.Editor.Panels;
-using Editor.Core.CodeFirstUI.Models;
+using Asharia.Editor.Panels;
+using Asharia.Editor.UI.CodeFirst.Models;
 using Editor.Core.Models.Panels;
 using Asharia.Editor.Diagnostics;
 using Editor.Features.UiStyle;

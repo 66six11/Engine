@@ -1,5 +1,5 @@
-﻿using System;
-using Editor.Core.CodeFirstUI.Models;
+using System;
+using Asharia.Editor.UI.CodeFirst.Models;
 
 namespace Editor.Core.CodeFirstUI.Authoring;
 

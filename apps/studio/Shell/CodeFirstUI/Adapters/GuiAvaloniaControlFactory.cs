@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -8,7 +8,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Editor.Core.CodeFirstUI.Models;
+using Asharia.Editor.UI.CodeFirst.Models;
 using Asharia.Editor.Diagnostics;
 using Editor.UI.Icons;
 using Editor.UI.Controls.Base;

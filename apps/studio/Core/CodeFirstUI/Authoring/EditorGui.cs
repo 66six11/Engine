@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6,10 +6,10 @@ using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Workbench;
 using Editor.Core.CodeFirstUI.Abstractions;
-using Editor.Core.CodeFirstUI.Building;
-using Editor.Core.CodeFirstUI.Events;
-using Editor.Core.CodeFirstUI.Models;
-using Editor.Core.CodeFirstUI.State;
+using Asharia.Editor.UI.CodeFirst.Building;
+using Asharia.Editor.UI.CodeFirst.Events;
+using Asharia.Editor.UI.CodeFirst.Models;
+using Asharia.Editor.UI.CodeFirst.State;
 
 namespace Editor.Core.CodeFirstUI.Authoring;
 

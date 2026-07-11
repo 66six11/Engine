@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using Editor.Core.CodeFirstUI.Abstractions;
 using Editor.Core.CodeFirstUI.Authoring;
-using Editor.Core.CodeFirstUI.Models;
+using Asharia.Editor.UI.CodeFirst.Models;
 using Asharia.Editor.Diagnostics;
 
 namespace Editor.Features.UiStyle;
