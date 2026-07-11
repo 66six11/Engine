@@ -42,6 +42,7 @@
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
 git diff --check
+python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
@@ -55,7 +56,8 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
 `.github/workflows/native-code-quality.yml` 在 Windows hosted runner 上运行 encoding、diff whitespace、
-asset boundary、两编译器 build 和 CTest。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
+asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Vulkan review
+脚本只产生需要人工确认的保守提示；CI 以 `--fail-on warning` 阻止 warning/error，info 不阻塞。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
 仍是 local pre-commit gate，并且需要使用两个 standard debug presets 运行。
 
 开发中可先运行本地 pre-PR 提示脚本，让它按当前 diff 提示固定门禁、包级 CTest、smoke 范围和需要检查的文档：

@@ -94,6 +94,10 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 
+      - name: Review Vulkan package boundaries and safety prompts
+        shell: pwsh
+        run: python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic --fail-on warning
+
       - name: Build and test with MSVC
         shell: cmd
         run: build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure

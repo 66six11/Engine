@@ -8,6 +8,7 @@ Run before committing changes that affect code, build, workflow, or docs:
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1 -IncludeUntracked
+python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
@@ -21,13 +22,15 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 The ClangCL test gate promotes every clang-tidy diagnostic to an error for production and test
 translation units. `.github/workflows/native-code-quality.yml` runs these CTests plus encoding,
-whitespace, and asset boundary checks on Windows for pull requests, pushes to `main`, and manual
+whitespace, asset boundary, and Vulkan package boundary/safety heuristic checks on Windows for pull requests, pushes to `main`, and manual
 dispatches. Hosted CI does not run GPU/window smoke commands; all applicable smoke commands below
 remain local pre-commit gates and must be run with both standard debug presets when the scope table
 requires them.
 
 Use `tools\pre-pr.ps1 -IncludeUntracked` to print candidate gates for the changed file set.
-The `clangcl-debug` preset enables `ASHARIA_ENABLE_CLANG_TIDY=ON`; the repository does not track a separate Vulkan review script.
+The `clangcl-debug` preset enables `ASHARIA_ENABLE_CLANG_TIDY=ON`. `tools\review-vulkan-cpp.py`
+reports conservative prompts for human review; CI uses `--fail-on warning`, so warnings and errors
+block the gate while informational prompts remain visible.
 
 Useful review helper options:
 

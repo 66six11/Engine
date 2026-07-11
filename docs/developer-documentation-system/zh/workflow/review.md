@@ -8,6 +8,7 @@
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1 -IncludeUntracked
+python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
@@ -20,12 +21,13 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 ```
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
-`.github/workflows/native-code-quality.yml` 在 Windows 运行 encoding、whitespace、asset boundary、两编译器
+`.github/workflows/native-code-quality.yml` 在 Windows 运行 encoding、whitespace、asset boundary、Vulkan package boundary/safety heuristic、两编译器
 build 和 CTest。Hosted CI 不运行 GPU/window smokes；下方 scope table 命中的 smoke 仍是 local
 pre-commit gates，并需要使用两个 standard debug presets 运行。
 
 `tools\pre-pr.ps1 -IncludeUntracked` 会按 changed files 打印候选 gates。
-`clangcl-debug` preset 开启 `ASHARIA_ENABLE_CLANG_TIDY=ON`；仓库当前没有单独提交的 Vulkan review 脚本。
+`clangcl-debug` preset 开启 `ASHARIA_ENABLE_CLANG_TIDY=ON`。`tools\review-vulkan-cpp.py`
+输出供人工确认的保守提示；CI 使用 `--fail-on warning`，warning/error 会阻塞，info 仅展示。
 
 常用 review helper 参数：
 
