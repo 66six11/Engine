@@ -10,6 +10,7 @@
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_source_discovery.hpp"
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
+#include "asharia/asset_pipeline/asset_tool_fingerprint.hpp"
 
 namespace asharia::asset {
 
@@ -38,6 +39,7 @@ namespace asharia::asset {
         DuplicateSourceSnapshot,
         InvalidProductManifest,
         MetadataSourceHashDrift,
+        ToolFingerprintFailed,
     };
 
     struct AssetImportToolVersionDependency {
@@ -49,8 +51,12 @@ namespace asharia::asset {
                                              const AssetImportToolVersionDependency&) = default;
     };
 
+    using AssetToolFingerprintResolver =
+        Result<AssetToolFingerprint> (*)(std::string_view logicalToolName);
+
     struct AssetImportPlanOptions {
         std::vector<AssetImportToolVersionDependency> toolVersions;
+        AssetToolFingerprintResolver toolFingerprintResolver{};
 
         [[nodiscard]] friend bool operator==(const AssetImportPlanOptions&,
                                              const AssetImportPlanOptions&) = default;
@@ -111,7 +117,6 @@ namespace asharia::asset {
     planAssetImports(std::span<const DiscoveredSourceAsset> sources,
                      std::span<const AssetSourceSnapshot> snapshots,
                      const AssetProductManifestDocument& productManifest,
-                     std::string_view targetProfile,
-                     const AssetImportPlanOptions& options = {});
+                     std::string_view targetProfile, const AssetImportPlanOptions& options = {});
 
 } // namespace asharia::asset

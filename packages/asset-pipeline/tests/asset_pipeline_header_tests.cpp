@@ -12,6 +12,7 @@ namespace asharia::asset_pipeline_header_tests {
     void touchSourceSnapshotHeader();
     void touchTextureImportHeader();
     void touchTextureImportProfileHeader();
+    void touchToolFingerprintHeader();
 
 } // namespace asharia::asset_pipeline_header_tests
 
@@ -26,5 +27,6 @@ int main() {
     asharia::asset_pipeline_header_tests::touchSourceSnapshotHeader();
     asharia::asset_pipeline_header_tests::touchTextureImportHeader();
     asharia::asset_pipeline_header_tests::touchTextureImportProfileHeader();
+    asharia::asset_pipeline_header_tests::touchToolFingerprintHeader();
     return EXIT_SUCCESS;
 }

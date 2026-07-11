@@ -19,6 +19,7 @@ asharia_require_package_target(asharia::shader_authoring packages/shader-authori
 
 add_library(asharia-asset-pipeline STATIC
     src/asset_import_planning.cpp
+    src/asset_tool_fingerprint.cpp
     src/asset_product_blob.cpp
     src/asset_product_blob_limits.cpp
     src/asset_product_execution.cpp
@@ -72,6 +73,7 @@ if(ASHARIA_BUILD_TESTS)
       tests/asset_source_snapshot_header_test.cpp
       tests/asset_texture_import_header_test.cpp
       tests/asset_texture_import_profile_header_test.cpp
+      tests/asset_tool_fingerprint_header_test.cpp
   )
 
   target_link_libraries(asharia-asset-pipeline-smoke-tests

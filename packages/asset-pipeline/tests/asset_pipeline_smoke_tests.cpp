@@ -1,6 +1,7 @@
 ﻿#include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <limits>
 #include <map>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -37,9 +39,11 @@
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
+#include "asharia/asset_pipeline/asset_tool_fingerprint.hpp"
 
 #include "asset_product_blob_limits.hpp"
 #include "asset_product_publication.hpp"
+#include "asset_tool_fingerprint_internal.hpp"
 
 namespace {
 
@@ -2260,6 +2264,129 @@ namespace {
                        dependency.kind == asharia::asset::AssetDependencyKind::ToolVersion &&
                        dependency.path == toolName;
             });
+    }
+
+    [[nodiscard]] bool smokeAssetToolFingerprintDeterminism() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-tool-fingerprint");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+        const std::filesystem::path firstDirectory = root / "first";
+        const std::filesystem::path secondDirectory = root / "second";
+        std::error_code directoryError;
+        std::filesystem::create_directories(firstDirectory, directoryError);
+        std::filesystem::create_directories(secondDirectory, directoryError);
+        if (directoryError) {
+            return false;
+        }
+        const std::filesystem::path firstPath = firstDirectory / "SLANGC.BIN";
+        const std::filesystem::path secondPath = secondDirectory / "slangc.bin";
+        if (!writeTextFile(firstPath, "deterministic tool bytes") ||
+            !writeTextFile(secondPath, "deterministic tool bytes")) {
+            return false;
+        }
+        std::error_code timestampError;
+        const auto timestamp = std::filesystem::last_write_time(firstPath, timestampError);
+        if (timestampError) {
+            return false;
+        }
+        std::filesystem::last_write_time(secondPath, timestamp - std::chrono::hours{24},
+                                         timestampError);
+        if (timestampError) {
+            return false;
+        }
+
+        const auto first = asharia::asset::fingerprintAssetTool(firstPath, "SLANGC");
+        const auto second = asharia::asset::fingerprintAssetTool(secondPath, "slangc");
+        if (!first || !second || *first != *second) {
+            logFailure("Asset tool fingerprint depends on path, timestamp, or ASCII case.");
+            return false;
+        }
+
+        if (!writeTextFile(secondPath, "deterministic tool byteS")) {
+            return false;
+        }
+        const auto changed = asharia::asset::fingerprintAssetTool(secondPath, "slangc");
+        if (!changed || changed->fileSize != first->fileSize ||
+            changed->contentHash == first->contentHash ||
+            changed->versionHash == first->versionHash) {
+            logFailure("Asset tool fingerprint missed a one-byte content change.");
+            return false;
+        }
+
+        const auto missing = asharia::asset::fingerprintAssetTool(root / "missing.bin", "slangc");
+        const auto unreadable = asharia::asset::fingerprintAssetTool(firstDirectory, "slangc");
+        if (missing || missing.error().domain != asharia::ErrorDomain::Asset || unreadable ||
+            unreadable.error().domain != asharia::ErrorDomain::Asset) {
+            logFailure("Asset tool fingerprint did not return Asset errors for unreadable inputs.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool smokeAssetToolFingerprintStreamLimits() {
+        constexpr asharia::asset::detail::AssetToolFingerprintStreamLimits kLimits{
+            .maxBytes = 4U,
+            .bufferBytes = 4U,
+        };
+        std::istringstream emptyStream{std::string{}, std::ios::binary};
+        const auto empty = asharia::asset::detail::fingerprintAssetToolStreamForTesting(
+            emptyStream, 0U, "tool.bin", "tool", kLimits);
+        std::istringstream exactStream{"abcd", std::ios::binary};
+        const auto exact = asharia::asset::detail::fingerprintAssetToolStreamForTesting(
+            exactStream, 4U, "TOOL.BIN", "TOOL", kLimits);
+        std::istringstream grownStream{"abcde", std::ios::binary};
+        const auto grown = asharia::asset::detail::fingerprintAssetToolStreamForTesting(
+            grownStream, 4U, "tool.bin", "tool", kLimits);
+        std::istringstream oversizedMeasuredStream{"", std::ios::binary};
+        const auto oversizedMeasured = asharia::asset::detail::fingerprintAssetToolStreamForTesting(
+            oversizedMeasuredStream, 5U, "tool.bin", "tool", kLimits);
+        std::istringstream invalidNameStream{"a", std::ios::binary};
+        const auto invalidName = asharia::asset::detail::fingerprintAssetToolStreamForTesting(
+            invalidNameStream, 1U, "tool.bin", "", kLimits);
+        if (!empty || empty->fileSize != 0U || !exact || exact->fileSize != 4U || grown ||
+            grown.error().domain != asharia::ErrorDomain::Asset || oversizedMeasured ||
+            oversizedMeasured.error().domain != asharia::ErrorDomain::Asset || invalidName ||
+            invalidName.error().domain != asharia::ErrorDomain::Asset) {
+            logFailure("Asset tool fingerprint stream limits lost an edge-case contract.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] asharia::Result<asharia::asset::AssetToolFingerprint>
+    failToolFingerprint(std::string_view logicalToolName) {
+        return std::unexpected{
+            asharia::Error{asharia::ErrorDomain::Asset, 77,
+                           "injected fingerprint failure for " + std::string{logicalToolName}}};
+    }
+
+    [[nodiscard]] bool smokeImportPlanningToolFingerprintFailure() {
+        constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
+        constexpr std::string_view kImporterName = "com.asharia.importer.shader-compile-reflection";
+        auto source = makeDiscoveredSource("69bc6326-c04a-49d8-a4d2-653445a0e423",
+                                           "Content/Shaders/Unlit.ashader", 0x1000F00D1234CAFEULL);
+        source.source.assetType = asharia::asset::makeAssetTypeId(kShaderTypeName);
+        source.source.assetTypeName = kShaderTypeName;
+        source.source.importerId = asharia::asset::makeImporterId(kImporterName);
+        source.source.importerName = kImporterName;
+        const std::array sources{source};
+        const std::array snapshots{
+            makeSourceSnapshot(source.source.sourcePath, source.source.sourceHash),
+        };
+        const asharia::asset::AssetImportPlanOptions options{
+            .toolVersions = {},
+            .toolFingerprintResolver = &failToolFingerprint,
+        };
+        const auto plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug", options);
+        return plan.requests.empty() && plan.cacheHits.empty() &&
+               expectPlanDiagnosticSeverity(
+                   plan, asharia::asset::AssetImportPlanDiagnosticCode::ToolFingerprintFailed,
+                   asharia::asset::AssetImportPlanDiagnosticSeverity::Error,
+                   "injected fingerprint failure");
     }
 
     [[nodiscard]] bool smokeImportPlanningShaderToolVersionChanged() {
@@ -5907,16 +6034,17 @@ int main() {
         smokeProductExecutionAcceptsDependencyProductBytes() &&
         smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
         smokeImportPlanningMetadataSourceHashDriftWarning() &&
-        smokeImportPlanningSettingsChanged() && smokeImportPlanningShaderToolVersionChanged() &&
-        smokeImportPlanningMissingSnapshot() && smokeImportPlanningDuplicateSource() &&
-        smokeImportPlanningDuplicateSnapshot() && smokeImportPlanningInvalidTargetProfile() &&
-        smokeTextureImportContractRawRgba8() && smokeTextureImportContractPng() &&
-        smokeTextureImportContractDiagnostics() && smokeTextureImportProfiles() &&
-        smokeProductManifestRoundTrip() && smokeProductManifestMalformedInput() &&
-        smokeProductManifestDuplicateField() && smokeProductManifestMissingField() &&
-        smokeProductManifestUnknownField() && smokeProductManifestDuplicateProductKey() &&
-        smokeProductManifestDuplicateProductPath() && smokeProductManifestInvalidProductPath() &&
-        smokeProductManifestProductKeyHashMismatch() &&
+        smokeImportPlanningSettingsChanged() && smokeAssetToolFingerprintDeterminism() &&
+        smokeAssetToolFingerprintStreamLimits() && smokeImportPlanningToolFingerprintFailure() &&
+        smokeImportPlanningShaderToolVersionChanged() && smokeImportPlanningMissingSnapshot() &&
+        smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
+        smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&
+        smokeTextureImportContractPng() && smokeTextureImportContractDiagnostics() &&
+        smokeTextureImportProfiles() && smokeProductManifestRoundTrip() &&
+        smokeProductManifestMalformedInput() && smokeProductManifestDuplicateField() &&
+        smokeProductManifestMissingField() && smokeProductManifestUnknownField() &&
+        smokeProductManifestDuplicateProductKey() && smokeProductManifestDuplicateProductPath() &&
+        smokeProductManifestInvalidProductPath() && smokeProductManifestProductKeyHashMismatch() &&
         smokeSourceSnapshotValidAndDeterministic() && smokeSourceSnapshotContentChange() &&
         smokeSourceSnapshotMissingFile() && smokeSourceSnapshotDirectory() &&
         smokeSourceSnapshotInvalidSourcePath() && smokeSourceSnapshotDuplicateSourcePath() &&
