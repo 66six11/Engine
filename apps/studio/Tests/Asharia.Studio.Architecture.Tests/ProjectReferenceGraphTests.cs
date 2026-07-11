@@ -127,11 +127,16 @@ public sealed class ProjectReferenceGraphTests
         Assert.False(Directory.Exists(legacyRoot), $"Legacy Code-first source remains at {legacyRoot}.");
         Assert.True(Directory.Exists(publicRoot), $"Public Code-first source is missing at {publicRoot}.");
 
+        var publicFiles = Directory
+            .EnumerateFiles(publicRoot, "*.cs", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.NotEmpty(publicFiles);
+
         var publicSource = string.Join(
             Environment.NewLine,
-            Directory.EnumerateFiles(publicRoot, "*.cs", SearchOption.AllDirectories)
-                .Order(StringComparer.Ordinal)
-                .Select(File.ReadAllText));
+            publicFiles.Select(File.ReadAllText));
 
         Assert.DoesNotContain("Editor.Core", publicSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Avalonia", publicSource, StringComparison.Ordinal);
