@@ -113,6 +113,7 @@ namespace {
     struct FakeAtomicTemporaryConfig {
         std::size_t maximumWriteBytes;
         std::size_t failWriteCall;
+        bool overReportWrite;
         bool failFlush;
         bool failClose;
     };
@@ -139,6 +140,10 @@ namespace {
             if (state_->writeCalls == config_.failWriteCall) {
                 return std::unexpected{
                     asharia::Error{asharia::ErrorDomain::Core, 12, "temporary write failed"}};
+            }
+
+            if (config_.overReportWrite) {
+                return bytes.size() + 1U;
             }
 
             const auto written = std::min(bytes.size(), config_.maximumWriteBytes);
@@ -194,6 +199,7 @@ namespace {
             return std::make_unique<FakeAtomicTemporaryFile>(
                 &state, FakeAtomicTemporaryConfig{.maximumWriteBytes = maximumWriteBytes,
                                                   .failWriteCall = failWriteCall,
+                                                  .overReportWrite = overReportWrite,
                                                   .failFlush = failFlush,
                                                   .failClose = failClose});
         }
@@ -217,6 +223,7 @@ namespace {
         bool failCreate{};
         std::size_t maximumWriteBytes{std::numeric_limits<std::size_t>::max()};
         std::size_t failWriteCall{std::numeric_limits<std::size_t>::max()};
+        bool overReportWrite{};
         bool failFlush{};
         bool failClose{};
         bool failReplace{};
@@ -298,6 +305,21 @@ namespace {
                backend.state.targetBytes == replacement;
     }
 
+    [[nodiscard]] bool overReportedWritePreservesOriginalAndCleansTemporary() {
+        FakeAtomicFileBackend backend;
+        backend.overReportWrite = true;
+        const std::filesystem::path target{"save/over-report.bin"};
+        const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
+            target, bytesOf("new"), {}, backend);
+
+        return !result && result.error().domain == asharia::ErrorDomain::Core &&
+               contains(result.error().message, target.string()) &&
+               contains(result.error().message, "reportedBytes=4") &&
+               contains(result.error().message, "remainingBytes=3") &&
+               backend.state.replaceCalls == 0U && !backend.state.temporaryExists &&
+               backend.state.targetBytes == bytesOf("old");
+    }
+
     [[nodiscard]] bool disabledFlushSkipsFlushStage() {
         FakeAtomicFileBackend backend;
         const auto result = asharia::core::detail::writeFileBytesAtomicallyWithBackend(
@@ -371,7 +393,8 @@ namespace {
 
         auto result = asharia::core::readFileBytes(file.path(), {.maxBytes = 0U});
         return !result && result.error().domain == asharia::ErrorDomain::Core &&
-               contains(result.error().message, "maximum byte count is zero");
+               contains(result.error().message, "maxBytes=0") &&
+               contains(result.error().message, "must be greater than zero");
     }
 
     [[nodiscard]] bool readsAtExactByteLimit() {
@@ -394,7 +417,8 @@ namespace {
 
         auto result = asharia::core::readFileBytes(file.path(), {.maxBytes = 3U});
         return !result && result.error().domain == asharia::ErrorDomain::Core &&
-               contains(result.error().message, "file exceeds configured byte limit");
+               contains(result.error().message, "observedBytes=4") &&
+               contains(result.error().message, "maxBytes=3");
     }
 
     [[nodiscard]] bool readsEmptyFile() {
@@ -413,7 +437,9 @@ namespace {
         auto result =
             asharia::core::detail::readBoundedStream(stream, 3U, {.maxBytes = 4U}, "growing.bin");
         return !result && result.error().domain == asharia::ErrorDomain::Core &&
-               contains(result.error().message, "grew while it was being read");
+               contains(result.error().message, "measuredBytes=3") &&
+               contains(result.error().message, "observedBytesAtLeast=4") &&
+               contains(result.error().message, "maxBytes=4");
     }
 
 } // namespace
@@ -444,6 +470,9 @@ int main() {
                                               replaceFailurePreservesOriginalAndCleansTemporary},
             std::pair<std::string_view, Test>{"partialWritesCompleteReplacementAndReleaseTemporary",
                                               partialWritesCompleteReplacementAndReleaseTemporary},
+            std::pair<std::string_view, Test>{
+                "overReportedWritePreservesOriginalAndCleansTemporary",
+                overReportedWritePreservesOriginalAndCleansTemporary},
             std::pair<std::string_view, Test>{"disabledFlushSkipsFlushStage",
                                               disabledFlushSkipsFlushStage},
             std::pair<std::string_view, Test>{"rejectsMissingAtomicWriteParent",

@@ -33,14 +33,31 @@ namespace asharia::core {
                                                          FileReadLimits limits,
                                                          const std::filesystem::path& path) {
             if (limits.maxBytes == 0U) {
-                return std::unexpected{fileIoError("read", path, "maximum byte count is zero")};
+                return std::unexpected{fileIoError("read", path,
+                                                   "invalid configured read limit maxBytes=0; "
+                                                   "maxBytes must be greater than zero")};
             }
-            if (measuredBytes > limits.maxBytes ||
-                measuredBytes > static_cast<std::uint64_t>(SIZE_MAX) ||
-                measuredBytes >
-                    static_cast<std::uint64_t>(std::numeric_limits<std::streamsize>::max())) {
+            if (measuredBytes > limits.maxBytes) {
+                return std::unexpected{fileIoError(
+                    "read", path,
+                    "observedBytes=" + std::to_string(measuredBytes) +
+                        " exceeds configured maxBytes=" + std::to_string(limits.maxBytes))};
+            }
+            if (measuredBytes > static_cast<std::uint64_t>(SIZE_MAX)) {
                 return std::unexpected{
-                    fileIoError("read", path, "file exceeds configured byte limit")};
+                    fileIoError("read", path,
+                                "observedBytes=" + std::to_string(measuredBytes) +
+                                    " exceeds addressableBytes=" + std::to_string(SIZE_MAX) +
+                                    " with maxBytes=" + std::to_string(limits.maxBytes))};
+            }
+            if (measuredBytes >
+                static_cast<std::uint64_t>(std::numeric_limits<std::streamsize>::max())) {
+                return std::unexpected{
+                    fileIoError("read", path,
+                                "observedBytes=" + std::to_string(measuredBytes) +
+                                    " exceeds streamReadableBytes=" +
+                                    std::to_string(std::numeric_limits<std::streamsize>::max()) +
+                                    " with maxBytes=" + std::to_string(limits.maxBytes))};
             }
 
             const auto measuredSize = static_cast<std::size_t>(measuredBytes);
@@ -60,7 +77,11 @@ namespace asharia::core {
             stream.read(&extraByte, 1);
             if (stream.gcount() != 0) {
                 return std::unexpected{
-                    fileIoError("read", path, "file grew while it was being read")};
+                    fileIoError("read", path,
+                                "file grew while it was being read: measuredBytes=" +
+                                    std::to_string(measuredBytes) +
+                                    " observedBytesAtLeast=" + std::to_string(measuredBytes + 1U) +
+                                    " maxBytes=" + std::to_string(limits.maxBytes))};
             }
             if (stream.bad()) {
                 return std::unexpected{
@@ -81,13 +102,21 @@ namespace asharia::core {
 
             std::size_t offset = 0U;
             while (offset < bytes.size()) {
-                auto written = (*temporary)->write(bytes.subspan(offset));
+                const std::size_t remainingBytes = bytes.size() - offset;
+                auto written = (*temporary)->write(bytes.subspan(offset, remainingBytes));
                 if (!written) {
                     return std::unexpected{std::move(written.error())};
                 }
                 if (*written == 0U) {
                     return std::unexpected{
                         fileIoError("write", target, "temporary write made no progress")};
+                }
+                if (*written > remainingBytes) {
+                    return std::unexpected{
+                        fileIoError("write", target,
+                                    "backend returned invalid progress reportedBytes=" +
+                                        std::to_string(*written) +
+                                        " remainingBytes=" + std::to_string(remainingBytes))};
                 }
                 offset += *written;
             }
@@ -118,7 +147,9 @@ namespace asharia::core {
     Result<std::vector<std::byte>> readFileBytes(const std::filesystem::path& path,
                                                  FileReadLimits limits) {
         if (limits.maxBytes == 0U) {
-            return std::unexpected{fileIoError("read", path, "maximum byte count is zero")};
+            return std::unexpected{fileIoError(
+                "read", path,
+                "invalid configured read limit maxBytes=0; maxBytes must be greater than zero")};
         }
 
         std::ifstream stream{path, std::ios::binary | std::ios::ate};
