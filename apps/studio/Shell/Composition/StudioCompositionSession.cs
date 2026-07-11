@@ -1,21 +1,22 @@
 using System;
 using System.Threading.Tasks;
+using Editor.Shell.Compatibility;
 using Editor.Shell.ViewModels.Windowing;
 
 namespace Editor.Shell.Composition;
 
 internal sealed class StudioCompositionSession : IAsyncDisposable
 {
-    private readonly EditorExtensionHost extensionHost_;
+    private readonly LegacyEditorModuleCompatibilityAdapter compatibilityAdapter_;
 
     public StudioCompositionSession(
         MainWindowViewModel mainWindowViewModel,
         EditorExtensionComposition composition,
-        EditorExtensionHost extensionHost)
+        LegacyEditorModuleCompatibilityAdapter compatibilityAdapter)
     {
         MainWindowViewModel = mainWindowViewModel;
         Composition = composition;
-        extensionHost_ = extensionHost;
+        compatibilityAdapter_ = compatibilityAdapter;
     }
 
     public MainWindowViewModel MainWindowViewModel { get; }
@@ -25,6 +26,6 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         MainWindowViewModel.Dispose();
-        await extensionHost_.DisposeAsync();
+        await compatibilityAdapter_.DisposeAsync();
     }
 }

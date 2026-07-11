@@ -119,7 +119,7 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void Legacy_editor_references_only_the_public_editor_project()
+    public void Legacy_editor_references_only_the_public_editor_and_application_projects()
     {
         var projectPath = Path.Combine(FindStudioRoot(), "Editor.csproj");
         var project = XDocument.Load(projectPath);
@@ -131,7 +131,37 @@ public sealed class ProjectReferenceGraphTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(["src/Asharia.Editor/Asharia.Editor.csproj"], references);
+        Assert.Equal(
+            [
+                "src/Asharia.Editor/Asharia.Editor.csproj",
+                "src/Asharia.Studio.Application/Asharia.Studio.Application.csproj",
+            ],
+            references);
+    }
+
+    [Fact]
+    public void Legacy_module_contract_is_consumed_only_by_the_compatibility_adapter()
+    {
+        var studioRoot = FindStudioRoot();
+        var allowedFiles = new[]
+        {
+            "Core/Abstractions/IEditorExtensionModule.cs",
+            "Core/Abstractions/IEditorFeatureModule.cs",
+            "Shell/Compatibility/LegacyEditorModuleCompatibilityAdapter.cs",
+        };
+        var consumers = Directory
+            .EnumerateFiles(studioRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(studioRoot, path).Replace('\\', '/'))
+            .Where(path => !path.StartsWith("Tests/", StringComparison.Ordinal)
+                && !path.StartsWith("src/", StringComparison.Ordinal)
+                && !path.Contains("/bin/", StringComparison.Ordinal)
+                && !path.Contains("/obj/", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(Path.Combine(studioRoot, path))
+                .Contains("IEditorExtensionModule", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(allowedFiles, consumers);
     }
 
     [Fact]

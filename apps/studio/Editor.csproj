@@ -25,6 +25,7 @@
 
     <ItemGroup>
       <ProjectReference Include="src\Asharia.Editor\Asharia.Editor.csproj" />
+      <ProjectReference Include="src\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
     </ItemGroup>
 
     <ItemGroup>
