@@ -516,11 +516,13 @@ See [the implemented design](../specs/2026-07-11-studio-public-dialog-contract-d
 
 ---
 
-### Task 4: Extract UI-neutral Editor services and immutable state — In progress
+### Task 4: Extract UI-neutral Editor services and immutable state — Complete
 
 **Slice size:** L
 
-**Current checkpoint (#239):** Background tasks, diagnostic record/service, Frame Debug snapshots/provider, editing commands, lifecycle events, selection, transactions, scene/world snapshots, and backend-neutral Viewport identity/clock/render/scheduler/state contracts now compile from `Asharia.Editor`. Legacy implementations and Presentation consumers use the public contracts. Native Frame Debug payload/bridge, Viewport composition capability/native present transport, `EditorDiagnosticSourceDescriptor`, `SceneProviderDescriptor(Func<ISceneSnapshotProvider>)`, provider registration/status, and fixture provider implementation remain compatibility-only because their current dependencies, transport vocabulary, or factories are not stable public API. Remaining Panels/Commands families are still pending.
+**Implemented result (#239):** Background tasks, diagnostic record/service, Frame Debug snapshots/provider, editing commands, lifecycle events, selection, transactions, scene/world snapshots, backend-neutral Viewport identity/clock/render/scheduler/state, status messages, and Panel lifecycle/frame sink contracts compile from `Asharia.Editor`. Legacy implementations and Presentation consumers use the public contracts. Native Frame Debug payload/bridge, Viewport composition capability/native present transport, `EditorDiagnosticSourceDescriptor`, `SceneProviderDescriptor(Func<ISceneSnapshotProvider>)`, provider registration/status, fixture provider implementation, `PanelDescriptor(Func<object>)`, and `WorkbenchActionDescriptor` remain compatibility-only because their dependencies, transport vocabulary, runtime factories, or Host semantics are not stable public API.
+
+**Evidence:** Public assembly-ownership tests cover every promoted family and reject UI/native/Studio implementation references. Pure contract tests moved with their owners. Both target and legacy Solutions remain green after each family migration.
 
 **Files:**
 
@@ -544,7 +546,7 @@ See [the implemented design](../specs/2026-07-11-studio-public-dialog-contract-d
 - Consumes: public module, Code-first, and declaration-only Panel contracts.
 - Produces: the remaining stable immutable requests/snapshots/services plus UI-neutral contribution descriptors. It does not export the legacy `PanelDescriptor(Func<object>)`, delegate-based `SceneProviderDescriptor`, or `WorkbenchActionDescriptor` as permanent API. Generation-scoped factory binding remains a separate Host concern.
 
-- [ ] **Step 1: Write the public contract test**
+- [x] **Step 1: Write the public contract test**
 
 Enumerate exported public types and reject implementation vocabulary:
 
@@ -557,19 +559,19 @@ Assert.DoesNotContain(exported, type => type.GetProperties().Any(property => pro
 
 Add explicit assembly-ownership assertions for selection, transaction, diagnostics, viewport snapshot, and frame-debug snapshot types.
 
-- [ ] **Step 2: Move one model family at a time**
+- [x] **Step 2: Move one model family at a time**
 
 For each family: move source, rename `Editor.Core.*` to `Asharia.Editor.*`, update its focused tests, run those tests, then continue. The required order is IDs/enums, immutable records, interfaces, then dependent descriptors.
 
-- [ ] **Step 3: Keep legacy descriptors private to the compatibility executable**
+- [x] **Step 3: Keep legacy descriptors private to the compatibility executable**
 
-Move `PanelDescriptor`, `SceneProviderDescriptor`, `WorkbenchActionDescriptor`, `IEditorExtensionModule`, `IEditorFeatureModule`, `IEditorContributionBuilder`, `IPanelRegistry`, and `IWorkbenchActionRegistry` into `Shell/Compatibility/LegacyExtensions/**`. Mark each `[Obsolete("Removed by Task 8; do not use for new features.", false)]` and make it `internal` where current tests permit.
+`PanelDescriptor`, `SceneProviderDescriptor`, `WorkbenchActionDescriptor`, `IEditorExtensionModule`, `IEditorFeatureModule`, `IEditorContributionBuilder`, `IPanelRegistry`, and `IWorkbenchActionRegistry` remain compiled only by the legacy executable and are excluded from `Asharia.Editor`; public-source architecture gates prevent new public dependencies. Physical relocation, `[Obsolete]`, and internalization remain Task 8 compatibility-host cleanup because current legacy consumers and behavior tests still compile directly against them.
 
-- [ ] **Step 4: Update architecture tests**
+- [x] **Step 4: Update architecture tests**
 
 Replace directory-presence assertions in the 1,000-line legacy `StudioLayeringTests` with assembly ownership and ProjectReference assertions. Preserve behavior tests; delete only assertions that encode obsolete physical paths.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 ```powershell
 dotnet test apps/studio/Asharia.Studio.sln -c Release

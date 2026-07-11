@@ -1,9 +1,8 @@
 using System;
 using Asharia.Editor.Commands;
-using Editor.Core.Models.Workbench;
 using Xunit;
 
-namespace Editor.Tests.CoreContracts;
+namespace Asharia.Editor.Tests.Commands;
 
 public sealed class EditorStatusMessageSnapshotTests
 {

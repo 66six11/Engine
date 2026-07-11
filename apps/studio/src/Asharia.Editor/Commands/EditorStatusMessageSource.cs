@@ -1,4 +1,4 @@
-namespace Editor.Core.Models.Workbench;
+namespace Asharia.Editor.Commands;
 
 public enum EditorStatusMessageSource
 {

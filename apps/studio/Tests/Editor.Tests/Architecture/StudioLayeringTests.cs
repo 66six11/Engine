@@ -522,27 +522,24 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Workbench_core_models_live_in_workbench_model_folder()
+    public void Legacy_workbench_action_models_remain_in_compatibility_layer()
     {
         var root = FindRepositoryRoot();
         var expectedNamespace = "namespace Editor.Core.Models.Workbench;";
 
-        var workbenchFiles = new[]
+        var legacyActionFiles = new[]
         {
-            "EditorStatusMessageSeverity.cs",
-            "EditorStatusMessageSnapshot.cs",
-            "EditorStatusMessageSource.cs",
             "WorkbenchActionDescriptor.cs",
             "WorkbenchActionKind.cs",
             "WorkbenchActionScope.cs",
         };
 
-        foreach (var fileName in workbenchFiles)
+        foreach (var fileName in legacyActionFiles)
         {
             var path = Path.Combine(root, "Core", "Models", "Workbench", fileName);
             Assert.True(
                 File.Exists(path),
-                $"{fileName} is workbench command/action contract data and should live under Core/Models/Workbench.");
+                $"{fileName} is a legacy workbench action contract and must remain in the compatibility layer.");
             Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
             Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
         }
