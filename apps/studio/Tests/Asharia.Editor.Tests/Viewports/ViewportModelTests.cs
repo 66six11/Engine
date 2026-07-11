@@ -1,8 +1,8 @@
 using System;
-using Editor.Core.Models.Viewports;
+using Asharia.Editor.Viewports;
 using Xunit;
 
-namespace Editor.Tests.Core.Models.Viewports;
+namespace Asharia.Editor.Tests.Viewports;
 
 public sealed class ViewportModelTests
 {

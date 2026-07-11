@@ -2,6 +2,7 @@ using System.Linq;
 using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
 using Asharia.Editor.Diagnostics;
+using Asharia.Editor.Viewports;
 using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Models.Scene;
 using Editor.Core.Models.Viewports;

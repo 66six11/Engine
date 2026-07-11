@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Asharia.Editor.Panels;
+using Asharia.Editor.Viewports;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
