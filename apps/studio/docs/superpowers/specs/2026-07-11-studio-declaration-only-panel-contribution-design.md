@@ -1,6 +1,6 @@
 # Studio Declaration-only Panel Contribution Contract Design
 
-状态：Approved（实施待开始）
+状态：Implemented
 
 更新日期：2026-07-11
 
@@ -320,3 +320,12 @@ declaration-only Panel contribution
 ```
 
 Panel declaration contract 通过后，不能直接把 local factory ID 当作可调用 handle；下一 Slice 必须先定义 generation ownership 和 factory registration lifetime。
+
+## 13. 实施证据
+
+- identity、descriptor、builder/freeze 公共测试均按 RED→GREEN 实施；
+- `Asharia.Editor.Tests` 151/151、architecture tests 7/7、legacy `Editor.Tests` 600/600；
+- public 与 architecture project 的 `-warnaserror` build 均为 0 warning/error；
+- `Editor.sln` 与 `Asharia.Studio.sln` 全部通过，现有 Studio runtime behavior 未改变；
+- format、740-file encoding、doc sync 与 diff gates 全部通过；
+- public API-shape gate 证明 descriptor 不含 CLR factory、generation handle 或重复 scope。

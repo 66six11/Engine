@@ -40,7 +40,7 @@
 - Consumes: internal `Asharia.Editor.Extensions.EditorIdentityValidation.IsLowercaseNamespacedId` for dot-separated identities.
 - Produces: `EditorContributionId`, `EditorFactoryLocalId`, and `UiBackendId` value types for Tasks 2–3.
 
-- [ ] **Step 1: Write the failing identity tests**
+- [x] **Step 1: Write the failing identity tests**
 
 Create `EditorContributionIdentityTests.cs`:
 
@@ -109,7 +109,7 @@ public sealed class EditorContributionIdentityTests
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify compile RED**
+- [x] **Step 2: Run the focused test and verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~EditorContributionIdentityTests
@@ -117,7 +117,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because `Asharia.Editor.Contributions` and all three identities do not exist.
 
-- [ ] **Step 3: Implement `EditorContributionId`**
+- [x] **Step 3: Implement `EditorContributionId`**
 
 Create:
 
@@ -168,7 +168,7 @@ public readonly record struct EditorContributionId
 }
 ```
 
-- [ ] **Step 4: Implement `EditorFactoryLocalId`**
+- [x] **Step 4: Implement `EditorFactoryLocalId`**
 
 Create:
 
@@ -219,7 +219,7 @@ public readonly record struct EditorFactoryLocalId
 }
 ```
 
-- [ ] **Step 5: Implement `UiBackendId`**
+- [x] **Step 5: Implement `UiBackendId`**
 
 Create:
 
@@ -299,7 +299,7 @@ public readonly record struct UiBackendId
 }
 ```
 
-- [ ] **Step 6: Verify GREEN and public assembly neutrality**
+- [x] **Step 6: Verify GREEN and public assembly neutrality**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~EditorContributionIdentityTests
@@ -308,7 +308,7 @@ dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --n
 
 Expected: all identity cases PASS; public build has 0 warnings/errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Contributions apps/studio/Tests/Asharia.Editor.Tests/Contributions
@@ -332,7 +332,7 @@ git commit -m "feat(studio): add contribution identities"
 - Consumes: Task 1 identities.
 - Produces: validated immutable `EditorPanelDescriptor` for Task 3.
 
-- [ ] **Step 1: Write failing enum and descriptor tests**
+- [x] **Step 1: Write failing enum and descriptor tests**
 
 Create `EditorPanelDescriptorTests.cs`:
 
@@ -463,7 +463,7 @@ public sealed class EditorPanelDescriptorTests
 
 Add `using System.Linq;` because enum value assertions use `Select`.
 
-- [ ] **Step 2: Run and verify compile RED**
+- [x] **Step 2: Run and verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~EditorPanelDescriptorTests
@@ -471,7 +471,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because the public Panel enums/descriptor do not exist.
 
-- [ ] **Step 3: Implement the enums**
+- [x] **Step 3: Implement the enums**
 
 Create the three files with these exact declarations:
 
@@ -507,7 +507,7 @@ public enum EditorPanelCachePolicy
 }
 ```
 
-- [ ] **Step 4: Implement the validated descriptor**
+- [x] **Step 4: Implement the validated descriptor**
 
 Create:
 
@@ -590,7 +590,7 @@ public sealed record EditorPanelDescriptor
 }
 ```
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~EditorPanelDescriptorTests
@@ -599,7 +599,7 @@ dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --n
 
 Expected: descriptor tests PASS; public build has 0 warnings/errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Panels apps/studio/Tests/Asharia.Editor.Tests/Panels
@@ -622,7 +622,7 @@ git commit -m "feat(studio): add panel descriptor contract"
 - Consumes: Task 2 `EditorPanelDescriptor`.
 - Produces: `EditorModuleBuilder.Panels`, ordered immutable `EditorModuleDeclaration.Panels`, same-module duplicate validation, and shared freeze behavior.
 
-- [ ] **Step 1: Write failing builder/declaration tests**
+- [x] **Step 1: Write failing builder/declaration tests**
 
 Create a test class that uses the existing module identity helper shape from `EditorModuleDeclarationTests` and includes these exact behaviors:
 
@@ -720,7 +720,7 @@ private static EditorPanelDescriptor CreatePanel(
 }
 ```
 
-- [ ] **Step 2: Run and verify compile RED**
+- [x] **Step 2: Run and verify compile RED**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~EditorPanelContributionBuilderTests
@@ -728,7 +728,7 @@ dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -
 
 Expected: compile FAIL because `EditorModuleBuilder.Panels` and `EditorModuleDeclaration.Panels` do not exist.
 
-- [ ] **Step 3: Add `EditorPanelContributionBuilder`**
+- [x] **Step 3: Add `EditorPanelContributionBuilder`**
 
 Create:
 
@@ -755,7 +755,7 @@ public sealed class EditorPanelContributionBuilder
 }
 ```
 
-- [ ] **Step 4: Extend `EditorModuleBuilder`**
+- [x] **Step 4: Extend `EditorModuleBuilder`**
 
 Add imports for `Asharia.Editor.Contributions` and `Asharia.Editor.Panels`, then add:
 
@@ -800,7 +800,7 @@ internal void AddPanel(EditorPanelDescriptor descriptor)
 
 Add `using System.Linq;`. `EditorPanelContributionBuilder.Add` already rejects null before this internal method.
 
-- [ ] **Step 5: Extend the immutable declaration**
+- [x] **Step 5: Extend the immutable declaration**
 
 Add `using Asharia.Editor.Panels;`. Extend the constructor with:
 
@@ -822,7 +822,7 @@ public IReadOnlyList<EditorPanelDescriptor> Panels { get; }
 
 Keep `Copy<T>` as the only collection freeze path.
 
-- [ ] **Step 6: Verify GREEN and existing builder regressions**
+- [x] **Step 6: Verify GREEN and existing builder regressions**
 
 ```powershell
 dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~EditorPanelContributionBuilderTests|FullyQualifiedName~EditorModuleDeclarationTests"
@@ -831,7 +831,7 @@ dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --n
 
 Expected: Panel tests and all existing dependency/capability declaration tests PASS; build has 0 warnings/errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add apps/studio/src/Asharia.Editor/Extensions apps/studio/src/Asharia.Editor/Panels/EditorPanelContributionBuilder.cs apps/studio/Tests/Asharia.Editor.Tests/Panels
@@ -856,7 +856,7 @@ git commit -m "feat(studio): add panel module declarations"
 - Consumes: Tasks 1–3 complete public contract.
 - Produces: enforceable forbidden-vocabulary/API-shape gates, current documentation, final evidence, and Draft PR handoff.
 
-- [ ] **Step 1: Write the failing public Panel API-shape gate**
+- [x] **Step 1: Write the failing public Panel API-shape gate**
 
 Add to `ProjectReferenceGraphTests`:
 
@@ -886,7 +886,7 @@ public void Public_panel_descriptor_exposes_only_declaration_time_contracts()
 
 Before Tasks 1–3 this test would not compile. At Task 4, temporarily add a negative assertion for a forbidden property name that exists nowhere, confirm the test fails for the assertion itself, remove that temporary assertion, then run the real gate to GREEN. Do not commit the temporary assertion.
 
-- [ ] **Step 2: Strengthen source vocabulary checks**
+- [x] **Step 2: Strengthen source vocabulary checks**
 
 For `Public_editor_sources_do_not_reference_ui_native_or_studio_implementation`, keep all existing forbidden tokens and add these exact tokens if absent:
 
@@ -898,7 +898,7 @@ For `Public_editor_sources_do_not_reference_ui_native_or_studio_implementation`,
 
 This Slice intentionally forbids those types from public source. Do not forbid the word `factory`; `EditorFactoryLocalId` is required.
 
-- [ ] **Step 3: Update current architecture facts**
+- [x] **Step 3: Update current architecture facts**
 
 Document these exact facts:
 
@@ -910,7 +910,7 @@ Document these exact facts:
 
 Insert a completed Task 4a in the master refactor plan before the remaining L-sized Task 4 model-family extraction. Mark this spec `Implemented` only after all validation passes.
 
-- [ ] **Step 4: Run public and architecture gates**
+- [x] **Step 4: Run public and architecture gates**
 
 ```powershell
 dotnet build apps/studio/src/Asharia.Editor/Asharia.Editor.csproj -c Release --no-restore -warnaserror
@@ -921,7 +921,7 @@ dotnet test apps/studio/Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.A
 
 Expected: both builds have 0 warnings/errors; all public and architecture tests PASS.
 
-- [ ] **Step 5: Run both Solution gates**
+- [x] **Step 5: Run both Solution gates**
 
 ```powershell
 dotnet test apps/studio/Editor.sln -c Release --no-restore
@@ -930,7 +930,7 @@ dotnet test apps/studio/Asharia.Studio.sln -c Release --no-restore
 
 Expected: zero failed tests; legacy Studio runtime behavior is unchanged.
 
-- [ ] **Step 6: Run format, encoding, docs, and diff gates**
+- [x] **Step 6: Run format, encoding, docs, and diff gates**
 
 ```powershell
 dotnet format apps/studio/src/Asharia.Editor/Asharia.Editor.csproj --verify-no-changes --no-restore
@@ -944,7 +944,7 @@ git diff --cached --check
 
 Verify every branch-changed managed/Markdown file with strict `UTF8Encoding(false, true)` and reject a leading `EF BB BF` BOM.
 
-- [ ] **Step 7: Record #235 evidence and commit**
+- [x] **Step 7: Record #235 evidence and commit**
 
 Prepare Issue evidence containing each RED/GREEN result, final test counts, identity/descriptor/builder/freeze behavior, architecture vocabulary checks, encoding/format/diff results, and explicit future Host/factory-binding follow-up.
 
@@ -955,6 +955,6 @@ git add apps/studio/Tests/Asharia.Studio.Architecture.Tests apps/studio/docs
 git commit -m "docs(studio): record panel contribution contract"
 ```
 
-- [ ] **Step 8: Prepare the Draft PR handoff**
+- [x] **Step 8: Prepare the Draft PR handoff**
 
 Do not push or create the PR before task reviews and the final whole-branch review. Prepare a Draft PR summary with `Closes #235`, TDD evidence, validation counts, declaration-only impact, two-stage factory identity, and explicit non-goals. The controller publishes only after the final review verdict is clean.

@@ -14,4 +14,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Asharia.Editor\Asharia.Editor.csproj" />
+  </ItemGroup>
 </Project>
