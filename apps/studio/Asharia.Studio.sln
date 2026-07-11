@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -12,6 +12,14 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Asharia.Studio.Architecture.Tests", "Tests\Asharia.Studio.Architecture.Tests\Asharia.Studio.Architecture.Tests.csproj", "{7192ADAF-1157-4E83-B94F-074A9441162E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Asharia.Editor.Tests", "Tests\Asharia.Editor.Tests\Asharia.Editor.Tests.csproj", "{E8A1571A-E176-48E7-85AE-F65D83734D6A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Asharia.Studio.Application", "src\Asharia.Studio.Application\Asharia.Studio.Application.csproj", "{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Asharia.Studio.Application.Tests", "Tests\Asharia.Studio.Application.Tests\Asharia.Studio.Application.Tests.csproj", "{92155A6A-D243-429B-B9C8-A0215286468F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -83,8 +91,36 @@ Global
 		{E8A1571A-E176-48E7-85AE-F65D83734D6A}.Release|x64.Build.0 = Release|Any CPU
 		{E8A1571A-E176-48E7-85AE-F65D83734D6A}.Release|x86.ActiveCfg = Release|Any CPU
 		{E8A1571A-E176-48E7-85AE-F65D83734D6A}.Release|x86.Build.0 = Release|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Debug|x64.Build.0 = Debug|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Debug|x86.Build.0 = Debug|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Release|x64.ActiveCfg = Release|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Release|x64.Build.0 = Release|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Release|x86.ActiveCfg = Release|Any CPU
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8}.Release|x86.Build.0 = Release|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Debug|x64.Build.0 = Debug|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Debug|x86.Build.0 = Debug|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Release|x64.ActiveCfg = Release|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Release|x64.Build.0 = Release|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Release|x86.ActiveCfg = Release|Any CPU
+		{92155A6A-D243-429B-B9C8-A0215286468F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D48BA86B-7307-46F7-A107-C1EE56BAB4A8} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{92155A6A-D243-429B-B9C8-A0215286468F} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

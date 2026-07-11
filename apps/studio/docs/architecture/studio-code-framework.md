@@ -32,7 +32,9 @@ Task 4 的 service/state 迁移已完成：background task、diagnostic record/s
 
 Panel declaration 的 `ContentFactory` 是 `EditorFactoryLocalId`，不是 CLR factory 或 generation handle。未来 Host 必须在 staging 时把 Package generation、owner module definition 与 local ID 绑定为 generation-scoped runtime handle；当前仍没有 Panel registry、factory binding、Dock integration、Host resolver 或 runtime display。legacy `PanelDescriptor(Func<object>)` 只留在 `Editor` compatibility implementation，不是公共 ABI。
 
-legacy `Editor` 通过 `ProjectReference` 消费这些公共合同，并继续拥有 Avalonia adapter、Dock、Shell host 和 UI dispatcher implementation。纯 Code-first 行为测试由 `Tests/Asharia.Editor.Tests` 承载，架构门禁由 `Tests/Asharia.Studio.Architecture.Tests` 承载；迁移期继续沿用现有大写 `Tests/`。其他 contribution descriptors、registry、静态 Host/resolver、Package generation 和 activation topology 仍未实现，留给后续切片。
+legacy `Editor` 通过 `ProjectReference` 消费这些公共合同，并继续拥有 Avalonia adapter、Dock、Shell host 和 UI dispatcher implementation。纯 Code-first 行为测试由 `Tests/Asharia.Editor.Tests` 承载，架构门禁由 `Tests/Asharia.Studio.Architecture.Tests` 承载；迁移期继续沿用现有大写 `Tests/`。
+
+`Asharia.Studio.Application` 已建立只依赖 `Asharia.Editor` 的 kernel project boundary。首个 static generation Host 接收显式 registration，先拒绝 duplicate definition，再一次性创建 module definition object、执行一次 `Configure` 并冻结 declaration；只有全部成功时才返回可见 Host。它不做 reflection scan、file/assembly load、ALC、scope activation、partition commit、service resolution 或 Presentation/native ownership。matching Application tests 与 architecture gates 执行 configure-once、metadata identity、null factory、failure atomicity 和 dependency/source vocabulary 边界。
 
 `Asharia.Editor.Dialogs` 现拥有七个 UI-neutral public type：severity、action role、稳定 action ID、action descriptor、request、completion kind 和 result。Action ID、role、default、destructive 与 completion 是相互独立的语义；request 构造会验证全部结构 invariant，并冻结输入 action 的防御性只读快照。公开的 action 声明顺序是确定的 diagnostics/test 顺序，不承诺 Windows、Linux 或 macOS 上的屏幕排列。
 

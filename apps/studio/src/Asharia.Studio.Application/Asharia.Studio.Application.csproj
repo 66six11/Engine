@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Asharia.Studio.Application</AssemblyName>
+    <RootNamespace>Asharia.Studio.Application</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asharia.Editor\Asharia.Editor.csproj" />
+  </ItemGroup>
+</Project>
