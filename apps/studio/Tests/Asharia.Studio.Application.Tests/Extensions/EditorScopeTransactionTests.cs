@@ -90,6 +90,40 @@ public sealed class EditorScopeTransactionTests
     }
 
     [Fact]
+    public void Prepare_rejects_required_capability_cycles_before_commit()
+    {
+        var firstCapability = EditorCapabilityId.Create("asharia.project.first.v1");
+        var secondCapability = EditorCapabilityId.Create("asharia.project.second.v1");
+        var first = CreateDefinition(
+            "studio.first",
+            EditorModuleScopeKind.Project,
+            editor =>
+            {
+                editor.Capabilities.Provide(firstCapability);
+                editor.Dependencies.RequireCapability(secondCapability);
+            });
+        var second = CreateDefinition(
+            "studio.second",
+            EditorModuleScopeKind.Project,
+            editor =>
+            {
+                editor.Capabilities.Provide(secondCapability);
+                editor.Dependencies.RequireCapability(firstCapability);
+            });
+        var registry = new EditorModuleRegistry();
+        var scope = ScopeInstanceId.ForProject(
+            Guid.Parse("66666666-6666-6666-6666-666666666666"));
+
+        var error = Assert.Throws<EditorScopeValidationException>(
+            () => EditorScopeTransaction.Prepare(registry, scope, [first, second]));
+
+        Assert.Contains(
+            error.Diagnostics,
+            diagnostic => diagnostic.Contains("cycle", StringComparison.OrdinalIgnoreCase));
+        Assert.False(registry.TryGetPartition(scope, out _));
+    }
+
+    [Fact]
     public void Project_partition_can_require_a_visible_application_definition()
     {
         var applicationDefinition = CreateDefinition(

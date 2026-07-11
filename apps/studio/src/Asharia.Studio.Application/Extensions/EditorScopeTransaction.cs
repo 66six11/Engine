@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Frozen;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Asharia.Editor.Contributions;
@@ -29,7 +30,8 @@ public sealed class EditorScopeTransaction
     public static EditorScopeTransaction Prepare(
         EditorModuleRegistry registry,
         ScopeInstanceId scopeInstanceId,
-        IEnumerable<EditorModuleDefinition> definitions)
+        IEnumerable<EditorModuleDefinition> definitions,
+        IEnumerable<EditorCapabilityId>? hostCapabilities = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         if (!scopeInstanceId.IsValid)
@@ -41,8 +43,13 @@ public sealed class EditorScopeTransaction
 
         ArgumentNullException.ThrowIfNull(definitions);
         var definitionArray = definitions.ToArray();
+        var hostCapabilityArray = hostCapabilities?.ToArray() ?? [];
         var expectedSnapshot = registry.CaptureSnapshot();
-        var candidate = BuildCandidate(expectedSnapshot, scopeInstanceId, definitionArray);
+        var candidate = BuildCandidate(
+            expectedSnapshot,
+            scopeInstanceId,
+            definitionArray,
+            hostCapabilityArray);
         return new EditorScopeTransaction(registry, expectedSnapshot, candidate);
     }
 
@@ -60,10 +67,12 @@ public sealed class EditorScopeTransaction
     private static EditorScopePartition BuildCandidate(
         EditorModuleRegistrySnapshot snapshot,
         ScopeInstanceId scopeInstanceId,
-        IReadOnlyList<EditorModuleDefinition> definitions)
+        IReadOnlyList<EditorModuleDefinition> definitions,
+        IReadOnlyList<EditorCapabilityId> hostCapabilities)
     {
         var diagnostics = new List<string>();
         var definitionMap = new Dictionary<EditorModuleDefinitionId, EditorModuleDefinition>();
+        var hostCapabilitySet = new HashSet<EditorCapabilityId>();
         var expectedScope = scopeInstanceId == ScopeInstanceId.Application
             ? EditorModuleScopeKind.Application
             : EditorModuleScopeKind.Project;
@@ -90,9 +99,23 @@ public sealed class EditorScopeTransaction
             }
         }
 
+        for (var index = 0; index < hostCapabilities.Count; index++)
+        {
+            var capability = hostCapabilities[index];
+            if (!capability.IsValid)
+            {
+                diagnostics.Add($"Host capability at index {index} is invalid.");
+                continue;
+            }
+
+            if (!hostCapabilitySet.Add(capability))
+            {
+                diagnostics.Add($"Host capability '{capability}' is duplicated.");
+            }
+        }
+
         var visibleApplication = GetVisibleApplicationPartition(snapshot, scopeInstanceId);
         ValidateRequiredModules(definitionMap, visibleApplication, diagnostics);
-        ValidateRequiredCycles(definitionMap, diagnostics);
 
         var instances = definitionMap.ToDictionary(
             pair => pair.Key,
@@ -101,11 +124,14 @@ public sealed class EditorScopeTransaction
         var capabilityProviders = BuildCapabilityProviderMap(
             instances,
             visibleApplication,
+            hostCapabilitySet,
             diagnostics);
+        ValidateRequiredCycles(definitionMap, capabilityProviders, diagnostics);
         ValidateRequiredCapabilities(
             definitionMap,
             visibleApplication,
             capabilityProviders,
+            hostCapabilitySet,
             diagnostics);
 
         if (diagnostics.Count > 0)
@@ -116,8 +142,10 @@ public sealed class EditorScopeTransaction
         return new EditorScopePartition(
             scopeInstanceId,
             ReadOnly(instances),
+            Array.AsReadOnly(instances.Values.ToArray()),
             ReadOnly(panels),
-            ReadOnly(capabilityProviders));
+            ReadOnly(capabilityProviders),
+            hostCapabilitySet.ToFrozenSet());
     }
 
     private static EditorScopePartition? GetVisibleApplicationPartition(
@@ -156,12 +184,13 @@ public sealed class EditorScopeTransaction
 
     private static void ValidateRequiredCycles(
         IReadOnlyDictionary<EditorModuleDefinitionId, EditorModuleDefinition> definitions,
+        IReadOnlyDictionary<EditorCapabilityId, EditorModuleInstanceId> capabilityProviders,
         ICollection<string> diagnostics)
     {
         var states = new Dictionary<EditorModuleDefinitionId, int>();
         foreach (var definitionId in definitions.Keys)
         {
-            if (Visit(definitionId, definitions, states))
+            if (Visit(definitionId, definitions, capabilityProviders, states))
             {
                 diagnostics.Add(
                     $"Required module dependency cycle includes '{definitionId}'.");
@@ -173,6 +202,7 @@ public sealed class EditorScopeTransaction
     private static bool Visit(
         EditorModuleDefinitionId definitionId,
         IReadOnlyDictionary<EditorModuleDefinitionId, EditorModuleDefinition> definitions,
+        IReadOnlyDictionary<EditorCapabilityId, EditorModuleInstanceId> capabilityProviders,
         IDictionary<EditorModuleDefinitionId, int> states)
     {
         if (states.TryGetValue(definitionId, out var state))
@@ -184,7 +214,17 @@ public sealed class EditorScopeTransaction
         foreach (var dependency in definitions[definitionId].Declaration.RequiredModules)
         {
             if (definitions.ContainsKey(dependency)
-                && Visit(dependency, definitions, states))
+                && Visit(dependency, definitions, capabilityProviders, states))
+            {
+                return true;
+            }
+        }
+
+        foreach (var capability in definitions[definitionId].Declaration.RequiredCapabilities)
+        {
+            if (capabilityProviders.TryGetValue(capability, out var provider)
+                && definitions.ContainsKey(provider.Definition)
+                && Visit(provider.Definition, definitions, capabilityProviders, states))
             {
                 return true;
             }
@@ -223,6 +263,7 @@ public sealed class EditorScopeTransaction
         BuildCapabilityProviderMap(
             IReadOnlyDictionary<EditorModuleDefinitionId, EditorModuleInstance> instances,
             EditorScopePartition? visibleApplication,
+            IReadOnlySet<EditorCapabilityId> hostCapabilities,
             ICollection<string> diagnostics)
     {
         var occupied = new Dictionary<EditorCapabilityId, EditorModuleInstanceId>();
@@ -231,6 +272,15 @@ public sealed class EditorScopeTransaction
             foreach (var pair in visibleApplication.CapabilityProviders)
             {
                 occupied.Add(pair.Key, pair.Value);
+            }
+        }
+
+        foreach (var capability in hostCapabilities)
+        {
+            if (!occupied.TryAdd(capability, default))
+            {
+                diagnostics.Add(
+                    $"Capability provider for '{capability}' is ambiguous across the scope.");
             }
         }
 
@@ -258,6 +308,7 @@ public sealed class EditorScopeTransaction
         IReadOnlyDictionary<EditorModuleDefinitionId, EditorModuleDefinition> definitions,
         EditorScopePartition? visibleApplication,
         IReadOnlyDictionary<EditorCapabilityId, EditorModuleInstanceId> candidateProviders,
+        IReadOnlySet<EditorCapabilityId> hostCapabilities,
         ICollection<string> diagnostics)
     {
         foreach (var definition in definitions.Values)
@@ -265,6 +316,7 @@ public sealed class EditorScopeTransaction
             foreach (var capability in definition.Declaration.RequiredCapabilities)
             {
                 var available = candidateProviders.ContainsKey(capability)
+                    || hostCapabilities.Contains(capability)
                     || (visibleApplication?.CapabilityProviders.ContainsKey(capability) ?? false);
                 if (!available)
                 {
