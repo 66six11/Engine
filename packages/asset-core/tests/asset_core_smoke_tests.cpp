@@ -1,6 +1,7 @@
 ﻿#include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <span>
@@ -990,14 +991,20 @@ namespace {
 
 } // namespace
 
-int main() {
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
     try {
         const bool passed = smokeAssetGuid() && smokeAssetType() && smokeAssetSourcePath() &&
                             smokeAssetHandleAndReference() && smokeAssetMetadata() &&
                             smokeAssetMetadataIo() && smokeAssetProductKeyAndDependency() &&
                             smokeAssetCatalog() && smokeAssetCatalogView();
         return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    } catch (const std::exception& exception) {
+        logFailure(std::string{"Asset core smoke threw: "} + exception.what());
+        return EXIT_FAILURE;
     } catch (...) {
+        logFailure("Asset core smoke caught an unknown exception.");
         return EXIT_FAILURE;
     }
 }

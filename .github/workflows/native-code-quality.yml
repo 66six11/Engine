@@ -71,11 +71,23 @@ jobs:
         run: |
           if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
             git fetch origin $env:GITHUB_BASE_REF --depth=1
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
             git diff --check "origin/$env:GITHUB_BASE_REF...HEAD"
           } elseif ('${{ github.event.before }}' -and '${{ github.event.before }}' -notmatch '^0+$') {
             git diff --check '${{ github.event.before }}..${{ github.sha }}'
           } else {
-            git diff --check HEAD
+            git rev-parse --verify 'HEAD^' *> $null
+            if ($LASTEXITCODE -eq 0) {
+              git diff --check 'HEAD^..HEAD'
+            } else {
+              git diff-tree --check --root --no-commit-id -r HEAD
+            }
+          }
+          $whitespaceExitCode = $LASTEXITCODE
+          if ($whitespaceExitCode -ne 0) {
+            exit $whitespaceExitCode
           }
 
       - name: Check asset package boundaries

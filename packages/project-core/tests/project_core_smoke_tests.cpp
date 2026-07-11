@@ -1,5 +1,6 @@
 ﻿#include <chrono>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -332,7 +333,9 @@ namespace {
 
 } // namespace
 
-int main() {
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
     try {
         const bool passed = smokeProjectId() && smokeProjectDescriptorRoundTrip() &&
                             smokeProjectDescriptorInvalidText() &&
@@ -343,7 +346,11 @@ int main() {
 
         std::cout << "Asharia project descriptor smoke passed\n";
         return 0;
+    } catch (const std::exception& exception) {
+        logFailure(std::string{"Asharia project descriptor smoke threw: "} + exception.what());
+        return 1;
     } catch (...) {
+        logFailure("Asharia project descriptor smoke caught an unknown exception.");
         return 1;
     }
 }

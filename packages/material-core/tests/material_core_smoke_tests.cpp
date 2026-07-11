@@ -1,5 +1,6 @@
 ﻿#include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -313,7 +314,9 @@ namespace {
 
 } // namespace
 
-int main() {
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
     try {
         if (!smokeResourceSignatureValidationAndHash() || !smokeSignatureCompatibility() ||
             !smokePipelineKey()) {
@@ -321,7 +324,11 @@ int main() {
         }
 
         return EXIT_SUCCESS;
+    } catch (const std::exception& exception) {
+        logFailure(std::string{"Material core smoke threw: "} + exception.what());
+        return EXIT_FAILURE;
     } catch (...) {
+        logFailure("Material core smoke caught an unknown exception.");
         return EXIT_FAILURE;
     }
 }
