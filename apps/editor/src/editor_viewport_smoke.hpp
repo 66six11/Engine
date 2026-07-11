@@ -2,11 +2,18 @@
 
 #include "editor_app.hpp"
 
+namespace asharia {
+    struct VulkanSwapchainRetirementStats;
+}
+
 namespace asharia::editor {
     class EditorViewportCoordinator;
     struct EditorSmokeRunResult;
     struct EditorViewportCoordinatorStats;
     struct ImGuiTextureRegistryStats;
+
+    [[nodiscard]] bool validateSwapchainRetirementAfterRecreate(
+        const VulkanSwapchainRetirementStats& stats);
 
     [[nodiscard]] bool
     validateViewportSmokePresentation(EditorRunMode mode, const EditorSmokeRunResult& runResult,

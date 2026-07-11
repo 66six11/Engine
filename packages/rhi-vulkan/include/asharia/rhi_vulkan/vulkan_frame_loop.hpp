@@ -55,6 +55,12 @@ namespace asharia {
         bool available{};
     };
 
+    struct VulkanSwapchainRetirementStats {
+        std::uint64_t retired{};
+        std::uint64_t destroyed{};
+        std::uint64_t pending{};
+    };
+
     class VulkanDebugLabelScope {
     public:
         VulkanDebugLabelScope() = default;
@@ -138,6 +144,7 @@ namespace asharia {
         [[nodiscard]] VkExtent2D extent() const;
         [[nodiscard]] std::uint32_t swapchainImageCount() const;
         [[nodiscard]] VulkanDeferredDeletionStats deferredDeletionStats() const;
+        [[nodiscard]] VulkanSwapchainRetirementStats swapchainRetirementStats() const;
         [[nodiscard]] VulkanDebugLabelStats debugLabelStats() const;
         [[nodiscard]] VulkanTimestampQueryStats timestampStats() const;
         [[nodiscard]] std::span<const VulkanTimestampRegionTiming> latestTimestampTimings() const;
@@ -166,15 +173,7 @@ namespace asharia {
             AcquiredImage image{};
         };
 
-        struct RetiredSwapchainResources {
-            VkSwapchainKHR swapchain{VK_NULL_HANDLE};
-            std::vector<VkImageView> imageViews;
-            std::vector<VkSemaphore> renderFinished;
-        };
-
         void destroy();
-        void destroyRetiredSwapchainResources();
-        void retireCurrentSwapchainResources();
         [[nodiscard]] Result<VulkanFrameStatus> recreateSwapchain();
         [[nodiscard]] Result<void> recoverAcquiredImageSemaphore();
         [[nodiscard]] Result<FrameAcquireResult> acquireNextImage();
@@ -218,7 +217,7 @@ namespace asharia {
         VkCommandBuffer commandBuffer_{VK_NULL_HANDLE};
         VkSemaphore imageAvailable_{VK_NULL_HANDLE};
         std::vector<VkSemaphore> renderFinished_;
-        std::vector<RetiredSwapchainResources> retiredSwapchainResources_;
+        VulkanSwapchainRetirementStats swapchainRetirementStats_{};
         VkFence inFlight_{VK_NULL_HANDLE};
         VulkanDeferredDeletionQueue deferredDeletionQueue_;
         VulkanDebugLabelFunctions debugLabelFunctions_{};

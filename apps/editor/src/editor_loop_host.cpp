@@ -33,6 +33,7 @@
 #include "editor_tool_manager.hpp"
 #include "editor_viewport_coordinator.hpp"
 #include "editor_viewport_overlay_provider.hpp"
+#include "editor_viewport_smoke.hpp"
 #include "editor_vulkan_host.hpp"
 #include "editor_workspace.hpp"
 
@@ -66,6 +67,17 @@ namespace asharia::editor {
                 }
             }
             return rows;
+        }
+
+        [[nodiscard]] VoidResult validateResizeSmokeSwapchainRetirement(
+            EditorRunMode mode, const VulkanFrameLoop& frameLoop) {
+            if (!isEditorViewportResizeSmokeMode(mode) ||
+                validateSwapchainRetirementAfterRecreate(
+                    frameLoop.swapchainRetirementStats())) {
+                return {};
+            }
+            return std::unexpected{
+                vulkanError("Editor swapchain recreation retained retired resources")};
         }
 
     } // namespace
@@ -104,6 +116,11 @@ namespace asharia::editor {
             }
             if (!*extentReady) {
                 continue;
+            }
+            auto retirementInvariant =
+                validateResizeSmokeSwapchainRetirement(mode, frameLoop);
+            if (!retirementInvariant) {
+                return std::unexpected{std::move(retirementInvariant.error())};
             }
 
             if (isEditorFrameDebuggerSmokeMode(mode)) {

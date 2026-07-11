@@ -11,6 +11,7 @@
 #include "asharia/core/log.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/render_view.hpp"
+#include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 
 #include "editor_smoke.hpp"
 #include "editor_viewport.hpp"
@@ -485,6 +486,15 @@ namespace asharia::editor {
         }
 
     } // namespace
+
+    bool validateSwapchainRetirementAfterRecreate(
+        const VulkanSwapchainRetirementStats& stats) {
+        if (stats.pending != 0 || stats.retired != stats.destroyed) {
+            asharia::logError("Editor resize left swapchain resources pending retirement.");
+            return false;
+        }
+        return true;
+    }
 
     bool validateViewportSmokePresentation(EditorRunMode mode,
                                            const EditorSmokeRunResult& runResult,
