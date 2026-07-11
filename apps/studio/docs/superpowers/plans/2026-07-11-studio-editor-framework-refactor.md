@@ -488,6 +488,20 @@ git commit -m "refactor(studio): extract code first editor api"
 
 ---
 
+### Task 4a: Add declaration-only Panel contribution contract — Complete
+
+**Slice size:** M
+
+**Implemented result:** `Asharia.Editor` now owns stable contribution/backend/factory-local identities, immutable UI-neutral `EditorPanelDescriptor`, `EditorModuleBuilder.Panels`, module-local duplicate validation, and an ordered defensive snapshot frozen by `Build()`. Panel scope comes only from the module definition. The declaration stores `EditorFactoryLocalId`; generation ownership and runtime factory binding remain a future Host Slice.
+
+**Evidence:** Public contract tests cover identity syntax, descriptor validation, enum stability, ordering, immutability, duplicate rejection, shared freeze behavior, and scope ownership. Architecture tests reject CLR factories, implementation/native/UI vocabulary, generation handles, and duplicate scope fields from the public contract. Both legacy and target Solutions remain green.
+
+**Explicit non-goals:** No Panel registry, factory registration/binding, Dock integration, Host resolver, runtime content creation, `PackageGenerationId`, or `GenerationScopedFactoryHandle` was added. Legacy `PanelDescriptor(Func<object>)` remains compatibility-only in `Editor`.
+
+See [the approved design](../specs/2026-07-11-studio-declaration-only-panel-contribution-design.md) and [the completed implementation plan](2026-07-11-studio-declaration-only-panel-contribution.md).
+
+---
+
 ### Task 4: Extract UI-neutral Editor services and immutable state
 
 **Slice size:** L
@@ -507,16 +521,13 @@ git commit -m "refactor(studio): extract code first editor api"
 - Move: UI-neutral files from `Core/Models/Viewports/**` to `src/Asharia.Editor/Viewports/**`
 - Move: UI-neutral files from `Core/Models/Workbench/**` to `src/Asharia.Editor/Commands/**`
 - Move: matching extension-facing interfaces from `Core/Abstractions/**` to the owning public folders
-- Create: `apps/studio/src/Asharia.Editor/Contributions/GenerationScopedFactoryHandle.cs`
-- Create: `apps/studio/src/Asharia.Editor/Contributions/UiBackendId.cs`
-- Create: `apps/studio/src/Asharia.Editor/Panels/EditorPanelDescriptor.cs`
 - Create: `apps/studio/tests/Asharia.Editor.Tests/PublicApi/PublicContractTests.cs`
 - Modify: all current consumers and tests of moved namespaces
 
 **Interfaces:**
 
-- Consumes: public module and Code-first contracts.
-- Produces: stable immutable requests/snapshots/services plus UI-neutral contribution descriptors. It does not export the legacy `PanelDescriptor(Func<object>)`, delegate-based `SceneProviderDescriptor`, or `WorkbenchActionDescriptor` as permanent API.
+- Consumes: public module, Code-first, and declaration-only Panel contracts.
+- Produces: the remaining stable immutable requests/snapshots/services plus UI-neutral contribution descriptors. It does not export the legacy `PanelDescriptor(Func<object>)`, delegate-based `SceneProviderDescriptor`, or `WorkbenchActionDescriptor` as permanent API. Generation-scoped factory binding remains a separate Host concern.
 
 - [ ] **Step 1: Write the public contract test**
 
@@ -531,40 +542,19 @@ Assert.DoesNotContain(exported, type => type.GetProperties().Any(property => pro
 
 Add explicit assembly-ownership assertions for selection, transaction, diagnostics, viewport snapshot, and frame-debug snapshot types.
 
-- [ ] **Step 2: Introduce opaque UI factory identity before moving panel contracts**
-
-```csharp
-public readonly record struct UiBackendId(string Value);
-
-public readonly record struct GenerationScopedFactoryHandle(
-    PackageGenerationId Generation,
-    string LocalId);
-
-public sealed record EditorPanelDescriptor(
-    EditorContributionId Id,
-    string Title,
-    EditorPanelKind Kind,
-    EditorDockPreference DefaultDock,
-    EditorPanelCachePolicy CachePolicy,
-    UiBackendId Backend,
-    GenerationScopedFactoryHandle ContentFactory);
-```
-
-Validate all string IDs at construction. Do not expose `Func<object>`, Avalonia `Control`, Dock nodes, or a native handle.
-
-- [ ] **Step 3: Move one model family at a time**
+- [ ] **Step 2: Move one model family at a time**
 
 For each family: move source, rename `Editor.Core.*` to `Asharia.Editor.*`, update its focused tests, run those tests, then continue. The required order is IDs/enums, immutable records, interfaces, then dependent descriptors.
 
-- [ ] **Step 4: Keep legacy descriptors private to the compatibility executable**
+- [ ] **Step 3: Keep legacy descriptors private to the compatibility executable**
 
 Move `PanelDescriptor`, `SceneProviderDescriptor`, `WorkbenchActionDescriptor`, `IEditorExtensionModule`, `IEditorFeatureModule`, `IEditorContributionBuilder`, `IPanelRegistry`, and `IWorkbenchActionRegistry` into `Shell/Compatibility/LegacyExtensions/**`. Mark each `[Obsolete("Removed by Task 8; do not use for new features.", false)]` and make it `internal` where current tests permit.
 
-- [ ] **Step 5: Update architecture tests**
+- [ ] **Step 4: Update architecture tests**
 
 Replace directory-presence assertions in the 1,000-line legacy `StudioLayeringTests` with assembly ownership and ProjectReference assertions. Preserve behavior tests; delete only assertions that encode obsolete physical paths.
 
-- [ ] **Step 6: Run and commit**
+- [ ] **Step 5: Run and commit**
 
 ```powershell
 dotnet test apps/studio/Asharia.Studio.sln -c Release

@@ -100,6 +100,9 @@ public sealed class ProjectReferenceGraphTests
             "Editor.Features",
             "Asharia.Studio.",
             "Vulkan",
+            "Func<object>",
+            "GenerationScopedFactoryHandle",
+            "PackageGenerationId",
         };
 
         var offenders = Directory
@@ -116,6 +119,28 @@ public sealed class ProjectReferenceGraphTests
             .ToArray();
 
         Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void Public_panel_descriptor_exposes_only_declaration_time_contracts()
+    {
+        var descriptorType = typeof(Asharia.Editor.Panels.EditorPanelDescriptor);
+        var properties = descriptorType.GetProperties();
+
+        Assert.Equal("Asharia.Editor", descriptorType.Assembly.GetName().Name);
+        Assert.DoesNotContain(properties, property => property.PropertyType == typeof(Type));
+        Assert.DoesNotContain(properties, property => property.PropertyType == typeof(object));
+        Assert.DoesNotContain(
+            properties,
+            property => typeof(Delegate).IsAssignableFrom(property.PropertyType));
+        Assert.DoesNotContain(
+            properties,
+            property => property.PropertyType.Name.Contains(
+                "GenerationScopedFactoryHandle",
+                StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            properties,
+            property => property.Name.Contains("Scope", StringComparison.Ordinal));
     }
 
     [Fact]
