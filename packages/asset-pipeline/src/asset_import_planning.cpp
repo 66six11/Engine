@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -30,6 +31,10 @@ namespace asharia::asset {
 
         constexpr std::string_view kShaderCompileReflectionImporterName =
             "com.asharia.importer.shader-compile-reflection";
+
+        using ToolFingerprintCacheKey = std::pair<std::uint64_t, std::string>;
+        using ToolFingerprintCache =
+            std::map<ToolFingerprintCacheKey, Result<AssetToolFingerprint>>;
 
         [[nodiscard]] std::string formatHash64(std::uint64_t value) {
             constexpr std::string_view kHexDigits = "0123456789abcdef";
@@ -204,12 +209,21 @@ namespace asharia::asset {
 
         [[nodiscard]] VoidResult appendDefaultShaderToolVersionDependency(
             std::vector<AssetImportToolVersionDependency>& toolVersions, ImporterId importerId,
-            std::string_view toolName, AssetToolFingerprintResolver resolver) {
+            std::string_view toolName, AssetToolFingerprintResolver resolver,
+            ToolFingerprintCache& fingerprintCache) {
             if (hasToolVersionFor(toolVersions, importerId, toolName)) {
                 return {};
             }
-            const Result<AssetToolFingerprint> fingerprint =
-                resolver != nullptr ? resolver(toolName) : resolveDefaultToolFingerprint(toolName);
+
+            ToolFingerprintCacheKey cacheKey{importerId.value, std::string{toolName}};
+            auto cached = fingerprintCache.find(cacheKey);
+            if (cached == fingerprintCache.end()) {
+                Result<AssetToolFingerprint> resolved =
+                    resolver != nullptr ? resolver(toolName)
+                                        : resolveDefaultToolFingerprint(toolName);
+                cached = fingerprintCache.emplace(std::move(cacheKey), std::move(resolved)).first;
+            }
+            const Result<AssetToolFingerprint>& fingerprint = cached->second;
             if (!fingerprint) {
                 return std::unexpected{fingerprint.error()};
             }
@@ -289,7 +303,8 @@ namespace asharia::asset {
         [[nodiscard]] Result<std::vector<AssetDependency>>
         makeImportDependencies(const SourceAssetRecord& source,
                                std::span<const AssetImportToolVersionDependency> toolVersions,
-                               AssetToolFingerprintResolver resolver) {
+                               AssetToolFingerprintResolver resolver,
+                               ToolFingerprintCache& fingerprintCache) {
             std::vector<AssetDependency> dependencies{
                 AssetDependency{
                     .owner = source.guid,
@@ -313,12 +328,14 @@ namespace asharia::asset {
             }
             if (isShaderCompileReflectionSource(source)) {
                 if (auto appended = appendDefaultShaderToolVersionDependency(
-                        matchingToolVersions, source.importerId, "slangc", resolver);
+                        matchingToolVersions, source.importerId, "slangc", resolver,
+                        fingerprintCache);
                     !appended) {
                     return std::unexpected{appended.error()};
                 }
                 if (auto appended = appendDefaultShaderToolVersionDependency(
-                        matchingToolVersions, source.importerId, "spirv-val", resolver);
+                        matchingToolVersions, source.importerId, "spirv-val", resolver,
+                        fingerprintCache);
                     !appended) {
                     return std::unexpected{appended.error()};
                 }
@@ -491,6 +508,8 @@ namespace asharia::asset {
                               return sourceIndexOrdersBefore(sources, leftIndex, rightIndex);
                           });
 
+        ToolFingerprintCache fingerprintCache;
+
         for (std::size_t sourceIndex : orderedSourceIndices) {
             const DiscoveredSourceAsset& discovered = sources[sourceIndex];
             const std::optional<std::size_t> snapshotIndex =
@@ -519,8 +538,9 @@ namespace asharia::asset {
                               AssetImportPlanDiagnosticSeverity::Warning);
             }
 
-            Result<std::vector<AssetDependency>> dependencyResult = makeImportDependencies(
-                plannedSource, options.toolVersions, options.toolFingerprintResolver);
+            Result<std::vector<AssetDependency>> dependencyResult =
+                makeImportDependencies(plannedSource, options.toolVersions,
+                                       options.toolFingerprintResolver, fingerprintCache);
             if (!dependencyResult) {
                 addDiagnostic(result, AssetImportPlanDiagnosticCode::ToolFingerprintFailed,
                               plannedSource.sourcePath,

@@ -7,10 +7,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <span>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -2350,6 +2352,207 @@ namespace {
             oversizedMeasured.error().domain != asharia::ErrorDomain::Asset || invalidName ||
             invalidName.error().domain != asharia::ErrorDomain::Asset) {
             logFailure("Asset tool fingerprint stream limits lost an edge-case contract.");
+            return false;
+        }
+        return true;
+    }
+
+    class MidReadStateBuffer final : public std::streambuf {
+    public:
+        MidReadStateBuffer(std::string bytes, std::ios::iostate injectedState)
+            : bytes_{std::move(bytes)}, injectedState_{injectedState} {}
+
+        void attach(std::istream& stream) noexcept {
+            stream_ = &stream;
+        }
+
+    protected:
+        std::streamsize xsgetn(char* destination, std::streamsize count) override {
+            const auto requested = static_cast<std::size_t>(count);
+            const std::size_t copied = (std::min)(requested, bytes_.size() - offset_);
+            std::copy_n(std::next(bytes_.begin(), static_cast<std::ptrdiff_t>(offset_)), copied,
+                        destination);
+            offset_ += copied;
+            ++readCount_;
+            if (readCount_ == 2U && stream_ != nullptr) {
+                stream_->setstate(injectedState_);
+            }
+            return static_cast<std::streamsize>(copied);
+        }
+
+    private:
+        std::string bytes_;
+        std::size_t offset_{};
+        std::size_t readCount_{};
+        std::ios::iostate injectedState_{};
+        std::istream* stream_{};
+    };
+
+    [[nodiscard]] bool smokeAssetToolFingerprintStreamFailureContext() {
+        constexpr asharia::asset::detail::AssetToolFingerprintStreamLimits kLimits{
+            .maxBytes = 8U,
+            .bufferBytes = 2U,
+        };
+        constexpr std::string_view kDisplayPath = "C:/tools/slangc.exe";
+        constexpr std::string_view kLogicalToolName = "slangc";
+
+        MidReadStateBuffer badBuffer{"abcd", std::ios::badbit};
+        std::istream badStream{&badBuffer};
+        badBuffer.attach(badStream);
+        const auto bad = asharia::asset::detail::fingerprintAssetToolStreamForTesting(
+            badStream, 4U, kDisplayPath, kLogicalToolName, kLimits);
+
+        MidReadStateBuffer failBuffer{"abcd", std::ios::failbit};
+        std::istream failStream{&failBuffer};
+        failBuffer.attach(failStream);
+        const auto failed = asharia::asset::detail::fingerprintAssetToolStreamForTesting(
+            failStream, 4U, kDisplayPath, kLogicalToolName, kLimits);
+
+        if (bad || failed || bad.error().domain != asharia::ErrorDomain::Asset ||
+            failed.error().domain != asharia::ErrorDomain::Asset || bad.error().code == 0 ||
+            failed.error().code == 0 || !messageContains(bad.error().message, kDisplayPath) ||
+            !messageContains(bad.error().message, kLogicalToolName) ||
+            !messageContains(bad.error().message, "Failed while reading") ||
+            !messageContains(failed.error().message, kDisplayPath) ||
+            !messageContains(failed.error().message, kLogicalToolName) ||
+            !messageContains(failed.error().message, "stopped before end")) {
+            logFailure("Asset tool fingerprint stream failures lost tool/path context.");
+            return false;
+        }
+        return true;
+    }
+
+    struct FingerprintResolverState {
+        std::map<std::string, std::size_t> calls;
+        bool failsSpirvVal{};
+    };
+
+    [[nodiscard]] FingerprintResolverState& fingerprintResolverState() {
+        static FingerprintResolverState state;
+        return state;
+    }
+
+    [[nodiscard]] asharia::Result<asharia::asset::AssetToolFingerprint>
+    changingToolFingerprint(std::string_view logicalToolName) {
+        FingerprintResolverState& state = fingerprintResolverState();
+        const std::size_t call = ++state.calls[std::string{logicalToolName}];
+        if (state.failsSpirvVal && logicalToolName == "spirv-val") {
+            return std::unexpected{asharia::Error{asharia::ErrorDomain::Asset, 91,
+                                                  "cached injected fingerprint failure for " +
+                                                      std::string{logicalToolName}}};
+        }
+        const std::uint64_t logicalBase = logicalToolName == "slangc" ? 0xA000U : 0xB000U;
+        return asharia::asset::AssetToolFingerprint{
+            .fileSize = 4U,
+            .contentHash = logicalBase,
+            .versionHash = logicalBase + call,
+        };
+    }
+
+    [[nodiscard]] asharia::asset::DiscoveredSourceAsset
+    makeShaderSource(std::string_view guidText, std::string_view sourcePath,
+                     std::uint64_t sourceHash) {
+        constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
+        constexpr std::string_view kImporterName = "com.asharia.importer.shader-compile-reflection";
+        auto source = makeDiscoveredSource(guidText, sourcePath, sourceHash);
+        source.source.assetType = asharia::asset::makeAssetTypeId(kShaderTypeName);
+        source.source.assetTypeName = kShaderTypeName;
+        source.source.importerId = asharia::asset::makeImporterId(kImporterName);
+        source.source.importerName = kImporterName;
+        return source;
+    }
+
+    [[nodiscard]] bool smokeImportPlanningToolFingerprintBatchCache() {
+        const auto firstSource =
+            makeShaderSource("69bc6326-c04a-49d8-a4d2-653445a0e423",
+                             "Content/Shaders/First.ashader", 0x1000F00D1234CAFEULL);
+        const auto secondSource =
+            makeShaderSource("79bc6326-c04a-49d8-a4d2-653445a0e424",
+                             "Content/Shaders/Second.ashader", 0x2000F00D1234CAFEULL);
+        const std::array sources{firstSource, secondSource};
+        const std::array snapshots{
+            makeSourceSnapshot(firstSource.source.sourcePath, firstSource.source.sourceHash),
+            makeSourceSnapshot(secondSource.source.sourcePath, secondSource.source.sourceHash),
+        };
+        const asharia::asset::AssetImportPlanOptions options{
+            .toolVersions = {},
+            .toolFingerprintResolver = &changingToolFingerprint,
+        };
+
+        FingerprintResolverState& resolverState = fingerprintResolverState();
+        resolverState.calls.clear();
+        resolverState.failsSpirvVal = false;
+        const auto firstPlan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug", options);
+        if (!firstPlan.succeeded() || firstPlan.requests.size() != 2U ||
+            resolverState.calls["slangc"] != 1U || resolverState.calls["spirv-val"] != 1U) {
+            logFailure(
+                "Asset import planning did not cache successful tool fingerprints per batch.");
+            return false;
+        }
+        for (const auto& request : firstPlan.requests) {
+            if (!hasToolVersionDependency(request.dependencies, request.source.guid, "slangc",
+                                          0xA001U) ||
+                !hasToolVersionDependency(request.dependencies, request.source.guid, "spirv-val",
+                                          0xB001U)) {
+                logFailure("Asset import planning used inconsistent cached tool fingerprints.");
+                return false;
+            }
+        }
+
+        const auto secondPlan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug", options);
+        if (!secondPlan.succeeded() || secondPlan.requests.size() != 2U ||
+            resolverState.calls["slangc"] != 2U || resolverState.calls["spirv-val"] != 2U ||
+            !hasToolVersionDependency(secondPlan.requests.front().dependencies,
+                                      secondPlan.requests.front().source.guid, "slangc", 0xA002U) ||
+            !hasToolVersionDependency(secondPlan.requests.front().dependencies,
+                                      secondPlan.requests.front().source.guid, "spirv-val",
+                                      0xB002U)) {
+            logFailure("Asset import planning leaked the tool fingerprint cache across plans.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool smokeImportPlanningToolFingerprintFailureBatchCache() {
+        const auto firstSource =
+            makeShaderSource("89bc6326-c04a-49d8-a4d2-653445a0e425",
+                             "Content/Shaders/FailFirst.ashader", 0x3000F00D1234CAFEULL);
+        const auto secondSource =
+            makeShaderSource("99bc6326-c04a-49d8-a4d2-653445a0e426",
+                             "Content/Shaders/FailSecond.ashader", 0x4000F00D1234CAFEULL);
+        const std::array sources{firstSource, secondSource};
+        const std::array snapshots{
+            makeSourceSnapshot(firstSource.source.sourcePath, firstSource.source.sourceHash),
+            makeSourceSnapshot(secondSource.source.sourcePath, secondSource.source.sourceHash),
+        };
+        const asharia::asset::AssetImportPlanOptions options{
+            .toolVersions = {},
+            .toolFingerprintResolver = &changingToolFingerprint,
+        };
+
+        FingerprintResolverState& resolverState = fingerprintResolverState();
+        resolverState.calls.clear();
+        resolverState.failsSpirvVal = true;
+        const auto plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug", options);
+        resolverState.failsSpirvVal = false;
+        const auto failureDiagnostics = static_cast<std::size_t>(std::ranges::count_if(
+            plan.diagnostics, [](const asharia::asset::AssetImportPlanDiagnostic& diagnostic) {
+                return diagnostic.code ==
+                           asharia::asset::AssetImportPlanDiagnosticCode::ToolFingerprintFailed &&
+                       diagnostic.severity ==
+                           asharia::asset::AssetImportPlanDiagnosticSeverity::Error &&
+                       messageContains(diagnostic.message,
+                                       "cached injected fingerprint failure for spirv-val");
+            }));
+        if (!plan.requests.empty() || !plan.cacheHits.empty() || failureDiagnostics != 2U ||
+            resolverState.calls["slangc"] != 1U || resolverState.calls["spirv-val"] != 1U) {
+            logFailure("Asset import planning did not cache failed tool fingerprints per batch.");
             return false;
         }
         return true;
@@ -6035,7 +6238,10 @@ int main() {
         smokeImportPlanningCacheHitAndMiss() && smokeImportPlanningSourceChanged() &&
         smokeImportPlanningMetadataSourceHashDriftWarning() &&
         smokeImportPlanningSettingsChanged() && smokeAssetToolFingerprintDeterminism() &&
-        smokeAssetToolFingerprintStreamLimits() && smokeImportPlanningToolFingerprintFailure() &&
+        smokeAssetToolFingerprintStreamLimits() && smokeImportPlanningToolFingerprintBatchCache() &&
+        smokeImportPlanningToolFingerprintFailureBatchCache() &&
+        smokeAssetToolFingerprintStreamFailureContext() &&
+        smokeImportPlanningToolFingerprintFailure() &&
         smokeImportPlanningShaderToolVersionChanged() && smokeImportPlanningMissingSnapshot() &&
         smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
         smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&

@@ -42,6 +42,13 @@ namespace asharia::asset {
             return Error{ErrorDomain::Asset, static_cast<int>(code), std::move(message)};
         }
 
+        [[nodiscard]] Error withFingerprintContext(Error error, std::string_view logicalToolName,
+                                                   std::string_view executablePath) {
+            error.message = "Could not fingerprint asset tool '" + std::string{logicalToolName} +
+                            "' at '" + std::string{executablePath} + "': " + error.message;
+            return error;
+        }
+
         [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
                                                        std::uint8_t byte) noexcept {
             hash ^= byte;
@@ -78,14 +85,21 @@ namespace asharia::asset {
         [[nodiscard]] Result<AssetToolFingerprint>
         fingerprintStream(std::istream& stream, std::uint64_t measuredSize,
                           std::string_view filename, std::string_view logicalToolName,
+                          std::string_view executablePath,
                           const detail::AssetToolFingerprintStreamLimits& limits) {
+            const auto contextualError = [logicalToolName,
+                                          executablePath](AssetToolFingerprintErrorCode code,
+                                                          std::string message) {
+                return withFingerprintContext(makeFingerprintError(code, std::move(message)),
+                                              logicalToolName, executablePath);
+            };
             if (logicalToolName.empty()) {
-                return std::unexpected{makeFingerprintError(
+                return std::unexpected{contextualError(
                     AssetToolFingerprintErrorCode::InvalidInput,
                     "Asset tool fingerprint requires a non-empty logical tool name.")};
             }
             if (filename.empty()) {
-                return std::unexpected{makeFingerprintError(
+                return std::unexpected{contextualError(
                     AssetToolFingerprintErrorCode::InvalidInput,
                     "Asset tool fingerprint requires a non-empty executable filename.")};
             }
@@ -93,13 +107,13 @@ namespace asharia::asset {
                 limits.bufferBytes >
                     static_cast<std::size_t>((std::numeric_limits<std::streamsize>::max)())) {
                 return std::unexpected{
-                    makeFingerprintError(AssetToolFingerprintErrorCode::InvalidInput,
-                                         "Asset tool fingerprint stream limits are invalid.")};
+                    contextualError(AssetToolFingerprintErrorCode::InvalidInput,
+                                    "Asset tool fingerprint stream limits are invalid.")};
             }
             if (measuredSize > limits.maxBytes) {
-                return std::unexpected{makeFingerprintError(
-                    AssetToolFingerprintErrorCode::FileTooLarge,
-                    "Asset tool executable exceeds the fingerprint byte limit.")};
+                return std::unexpected{
+                    contextualError(AssetToolFingerprintErrorCode::FileTooLarge,
+                                    "Asset tool executable exceeds the fingerprint byte limit.")};
             }
 
             std::vector<char> buffer(limits.bufferBytes);
@@ -115,16 +129,16 @@ namespace asharia::asset {
                 stream.read(buffer.data(), static_cast<std::streamsize>(requestBytes));
                 const std::streamsize extracted = stream.gcount();
                 if (extracted < 0) {
-                    return std::unexpected{makeFingerprintError(
-                        AssetToolFingerprintErrorCode::FileReadFailed,
-                        "Asset tool executable returned an invalid read count.")};
+                    return std::unexpected{
+                        contextualError(AssetToolFingerprintErrorCode::FileReadFailed,
+                                        "Asset tool executable returned an invalid read count.")};
                 }
                 const auto extractedBytes = static_cast<std::uint64_t>(extracted);
                 if (extractedBytes > remaining) {
-                    return std::unexpected{
-                        makeFingerprintError(AssetToolFingerprintErrorCode::FileTooLarge,
-                                             "Asset tool executable grew beyond the fingerprint "
-                                             "byte limit while being read.")};
+                    return std::unexpected{contextualError(
+                        AssetToolFingerprintErrorCode::FileTooLarge,
+                        "Asset tool executable grew beyond the fingerprint byte limit while "
+                        "being read.")};
                 }
                 for (std::streamsize index = 0; index < extracted; ++index) {
                     contentHash = hashByte(
@@ -135,16 +149,16 @@ namespace asharia::asset {
 
                 if (stream.bad()) {
                     return std::unexpected{
-                        makeFingerprintError(AssetToolFingerprintErrorCode::FileReadFailed,
-                                             "Failed while reading asset tool executable bytes.")};
+                        contextualError(AssetToolFingerprintErrorCode::FileReadFailed,
+                                        "Failed while reading asset tool executable bytes.")};
                 }
                 if (stream.eof()) {
                     break;
                 }
                 if (stream.fail() || extracted == 0) {
-                    return std::unexpected{makeFingerprintError(
-                        AssetToolFingerprintErrorCode::FileReadFailed,
-                        "Asset tool executable read stopped before end of file.")};
+                    return std::unexpected{
+                        contextualError(AssetToolFingerprintErrorCode::FileReadFailed,
+                                        "Asset tool executable read stopped before end of file.")};
                 }
             }
 
@@ -166,44 +180,47 @@ namespace asharia::asset {
 
     Result<AssetToolFingerprint> fingerprintAssetTool(const std::filesystem::path& executable,
                                                       std::string_view logicalToolName) {
+        const std::string executablePath = pathText(executable);
+        const auto contextualError = [logicalToolName, &executablePath](
+                                         AssetToolFingerprintErrorCode code, std::string message) {
+            return withFingerprintContext(makeFingerprintError(code, std::move(message)),
+                                          logicalToolName, executablePath);
+        };
         std::error_code regularFileError;
         // MSVC's filesystem bitmask enum intentionally represents flag combinations that the
         // optional analyzer models as out-of-range enum values.
         // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
         if (!std::filesystem::is_regular_file(executable, regularFileError)) {
-            return std::unexpected{makeFingerprintError(
+            return std::unexpected{contextualError(
                 AssetToolFingerprintErrorCode::FileInspectionFailed,
-                "Asset tool executable is not a readable regular file: '" + pathText(executable) +
-                    "'." + (regularFileError ? " " + regularFileError.message() : ""))};
+                "Executable is not a readable regular file" +
+                    (regularFileError ? ": " + regularFileError.message() : std::string{}))};
         }
         std::error_code sizeError;
         // The same MSVC STL analyzer false positive applies to the file-size query.
         // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
         const std::uintmax_t measuredSize = std::filesystem::file_size(executable, sizeError);
         if (sizeError || measuredSize > (std::numeric_limits<std::uint64_t>::max)()) {
-            return std::unexpected{makeFingerprintError(
-                AssetToolFingerprintErrorCode::FileInspectionFailed,
-                "Could not measure asset tool executable '" + pathText(executable) + "'." +
-                    (sizeError ? " " + sizeError.message() : ""))};
+            return std::unexpected{
+                contextualError(AssetToolFingerprintErrorCode::FileInspectionFailed,
+                                "Could not measure executable" +
+                                    (sizeError ? ": " + sizeError.message() : std::string{}))};
         }
         if (measuredSize > kMaximumToolBytes) {
-            return std::unexpected{makeFingerprintError(
-                AssetToolFingerprintErrorCode::FileTooLarge,
-                "Asset tool executable exceeds the 2 GiB fingerprint byte limit: '" +
-                    pathText(executable) + "'.")};
+            return std::unexpected{
+                contextualError(AssetToolFingerprintErrorCode::FileTooLarge,
+                                "Executable exceeds the 2 GiB fingerprint byte limit.")};
         }
 
         std::ifstream stream{executable, std::ios::binary};
         if (!stream.is_open()) {
-            return std::unexpected{
-                makeFingerprintError(AssetToolFingerprintErrorCode::FileOpenFailed,
-                                     "Could not open asset tool executable for fingerprinting: '" +
-                                         pathText(executable) + "'.")};
+            return std::unexpected{contextualError(AssetToolFingerprintErrorCode::FileOpenFailed,
+                                                   "Could not open executable for reading.")};
         }
         const std::u8string filenameUtf8 = executable.filename().generic_u8string();
         const std::string filename{filenameUtf8.begin(), filenameUtf8.end()};
         return fingerprintStream(stream, static_cast<std::uint64_t>(measuredSize), filename,
-                                 logicalToolName,
+                                 logicalToolName, executablePath,
                                  detail::AssetToolFingerprintStreamLimits{
                                      .maxBytes = kMaximumToolBytes,
                                      .bufferBytes = kToolReadBufferBytes,
@@ -215,7 +232,8 @@ namespace asharia::asset {
         Result<AssetToolFingerprint> fingerprintAssetToolStreamForTesting(
             std::istream& stream, std::uint64_t measuredSize, std::string_view filename,
             std::string_view logicalToolName, const AssetToolFingerprintStreamLimits& limits) {
-            return fingerprintStream(stream, measuredSize, filename, logicalToolName, limits);
+            return fingerprintStream(stream, measuredSize, filename, logicalToolName, filename,
+                                     limits);
         }
 
     } // namespace detail

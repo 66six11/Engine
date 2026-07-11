@@ -43,8 +43,8 @@ target_include_directories(asharia-asset-pipeline
 target_link_libraries(asharia-asset-pipeline
     PUBLIC
         asharia::asset_core
-    PRIVATE
         asharia::core
+    PRIVATE
         asharia::archive
         asharia::asset_core_io
         asharia::material_instance
