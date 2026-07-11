@@ -1,4 +1,5 @@
 using System;
+using Asharia.Editor.Panels;
 
 namespace Editor.Core.Models.Panels;
 
@@ -6,7 +7,7 @@ public sealed record PanelDescriptor(
     string Id,
     string Title,
     PanelKind Kind,
-    DockArea DefaultArea,
+    EditorDockArea DefaultArea,
     string MenuPath,
     DockContentCachePolicy CachePolicy,
     Func<object> CreateContent,

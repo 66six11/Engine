@@ -1,4 +1,5 @@
-﻿using Editor.Core.Models.Panels;
+﻿using Asharia.Editor.Panels;
+using Editor.Core.Models.Panels;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking.Panels;
 using Editor.Shell.ViewModels.Docking;
@@ -113,7 +114,7 @@ public sealed class PanelCommandServiceTests
             "panel",
             "Panel",
             PanelKind.Tool,
-            DockArea.Center,
+            EditorDockArea.Center,
             "Window/Panels/Panel",
             DockContentCachePolicy.KeepAlive,
             () => new object()));

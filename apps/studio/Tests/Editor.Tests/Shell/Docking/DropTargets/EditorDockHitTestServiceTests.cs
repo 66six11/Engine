@@ -1,4 +1,5 @@
-﻿using Avalonia;
+﻿using Asharia.Editor.Panels;
+using Avalonia;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.TabStrips;
@@ -54,7 +55,7 @@ public sealed class EditorDockHitTestServiceTests
     {
         var window = new EditorDockWindowBounds(
             "window",
-            DockArea.Center,
+            EditorDockArea.Center,
             new Rect(0, 0, 300, 200),
             new Rect(0, 0, 120, 24),
             4,
@@ -144,7 +145,7 @@ public sealed class EditorDockHitTestServiceTests
             [
                 new EditorDockWindowBounds(
                     WindowId: "window",
-                    Area: DockArea.Center,
+                    Area: EditorDockArea.Center,
                     Bounds: new Rect(100, 80, 300, 160),
                     TabWellBounds: new Rect(100, 80, 300, 32),
                     TabCount: 1,
@@ -178,7 +179,7 @@ public sealed class EditorDockHitTestServiceTests
 
         return new EditorDockWindowBounds(
             WindowId: "window",
-            Area: DockArea.Center,
+            Area: EditorDockArea.Center,
             Bounds: new Rect(0, 0, 400, 200),
             TabWellBounds: new Rect(0, 0, 320, 32),
             TabCount: tabs.Length,

@@ -1,3 +1,4 @@
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Contributions;
 using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Panels;
@@ -94,7 +95,7 @@ public sealed class EditorContributionDescriptorTests
             id,
             "Inspector",
             PanelKind.Tool,
-            DockArea.Right,
+            EditorDockArea.Right,
             "Window/Panels/Inspector",
             DockContentCachePolicy.KeepAlive,
             new EditorPanelContentModelReference(

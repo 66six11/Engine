@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
 using Editor.UI.ViewModels;
 
@@ -17,7 +18,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
     public EditorDockWindowViewModel(
         string id,
         string title,
-        DockArea area,
+        EditorDockArea area,
         string role)
     {
         Id = id;
@@ -30,7 +31,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
     public string Title { get; }
 
-    public DockArea Area { get; }
+    public EditorDockArea Area { get; }
 
     public string Role { get; }
 

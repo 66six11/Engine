@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Editor.Core.Models.Panels;
@@ -41,7 +42,7 @@ public sealed class EditorDockLayoutNodeSnapshot
 
     public string? WindowTitle { get; set; }
 
-    public DockArea WindowArea { get; set; }
+    public EditorDockArea WindowArea { get; set; }
 
     public string? WindowRole { get; set; }
 

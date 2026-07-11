@@ -1,4 +1,5 @@
 ﻿using System;
+using Asharia.Editor.Panels;
 using Asharia.Editor.Commands;
 using Editor.Core.Abstractions;
 using Editor.Core.CodeFirstUI.Abstractions;

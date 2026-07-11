@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
@@ -131,7 +132,7 @@ public sealed class PanelInstanceManagerTests
         Assert.Equal("Window/Panels/panel", tab.TitleDetail);
         Assert.Equal("tool", tab.StatusText);
         Assert.Equal(PanelKind.Tool, tab.Kind);
-        Assert.Equal(DockArea.Left, tab.Area);
+        Assert.Equal(EditorDockArea.Left, tab.Area);
     }
 
     private static PanelDescriptor CreateDescriptor(
@@ -143,7 +144,7 @@ public sealed class PanelInstanceManagerTests
             id,
             id,
             PanelKind.Tool,
-            DockArea.Left,
+            EditorDockArea.Left,
             $"Window/Panels/{id}",
             cachePolicy,
             createContent);
@@ -166,22 +167,22 @@ public sealed class PanelInstanceManagerTests
     {
         public void OnPanelAttached(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Attached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Attached:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelActivated(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Activated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Activated:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelDeactivated(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Deactivated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Deactivated:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelDetached(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Detached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Detached:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void Dispose()

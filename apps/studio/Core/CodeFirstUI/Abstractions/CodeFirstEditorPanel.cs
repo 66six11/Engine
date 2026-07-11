@@ -1,4 +1,5 @@
-﻿using Editor.Core.Models.Panels;
+﻿using Asharia.Editor.Panels;
+using Editor.Core.Models.Panels;
 using Editor.Core.CodeFirstUI.Authoring;
 
 namespace Editor.Core.CodeFirstUI.Abstractions;

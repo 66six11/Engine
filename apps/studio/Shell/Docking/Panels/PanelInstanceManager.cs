@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Services;
 using Editor.Shell.ViewModels.Docking;
@@ -20,7 +21,7 @@ internal sealed class PanelInstanceManager : IDisposable
     public EditorDockTabViewModel CreateTab(
         PanelDescriptor descriptor,
         bool isFloatingWorkspace = false,
-        DockArea? initialArea = null)
+        EditorDockArea? initialArea = null)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
 

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
@@ -67,7 +68,7 @@ public sealed class MainWindowViewModelTests
             "panel",
             "Panel",
             PanelKind.Tool,
-            DockArea.Center,
+            EditorDockArea.Center,
             "Window/Panels/Panel",
             DockContentCachePolicy.KeepAlive,
             () => disposable));
@@ -92,7 +93,7 @@ public sealed class MainWindowViewModelTests
             "panel",
             "Panel",
             PanelKind.Tool,
-            DockArea.Center,
+            EditorDockArea.Center,
             "Window/Panels/Panel",
             DockContentCachePolicy.KeepAlive,
             () => disposable));
@@ -121,7 +122,7 @@ public sealed class MainWindowViewModelTests
             "panel",
             "Panel",
             PanelKind.Tool,
-            DockArea.Center,
+            EditorDockArea.Center,
             "Window/Panels/Panel",
             DockContentCachePolicy.KeepAlive,
             () => disposable));
@@ -144,7 +145,7 @@ public sealed class MainWindowViewModelTests
                         Id = "node-floating-panel",
                         WindowId = "floating-panel",
                         WindowTitle = "Panel",
-                        WindowArea = DockArea.Center,
+                        WindowArea = EditorDockArea.Center,
                         WindowRole = "Panel",
                         TabIds = ["panel"],
                         ActiveTabId = "panel",
@@ -343,7 +344,7 @@ public sealed class MainWindowViewModelTests
                         Id = "node-floating-inspector",
                         WindowId = "floating-inspector",
                         WindowTitle = "Inspector",
-                        WindowArea = DockArea.Right,
+                        WindowArea = EditorDockArea.Right,
                         WindowRole = "Selection context",
                         TabIds = ["inspector"],
                         ActiveTabId = "inspector",
@@ -687,7 +688,7 @@ public sealed class MainWindowViewModelTests
                 Id = "restored-node",
                 WindowId = "restored-inspector",
                 WindowTitle = "Inspector",
-                WindowArea = DockArea.Right,
+                WindowArea = EditorDockArea.Right,
                 WindowRole = "Selection context",
                 TabIds = ["inspector"],
                 ActiveTabId = "inspector",

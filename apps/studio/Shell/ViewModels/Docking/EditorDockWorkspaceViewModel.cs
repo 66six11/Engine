@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Editor.Core.Abstractions;
@@ -20,7 +21,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private const string LayoutNodeKindWindow = "Window";
     private readonly IPanelRegistry? panelRegistry_;
     private readonly PanelInstanceManager panelInstanceManager_;
-    private readonly Dictionary<DockArea, EditorDockWindowViewModel> windowsByArea_;
+    private readonly Dictionary<EditorDockArea, EditorDockWindowViewModel> windowsByArea_;
     private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
     private EditorDockNodeViewModel? rootNode_;
     private EditorDockWindowViewModel? activeWindow_;
@@ -46,18 +47,18 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         PanelFrameScheduler = panelFrameScheduler ?? new EditorPanelFrameScheduler();
         panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
         WorkspaceKind = EditorDockWorkspaceKind.MainWindow;
-        LeftWindow = new EditorDockWindowViewModel("owned-dock-left", "Hierarchy", DockArea.Left, "Scene tree");
-        CenterWindow = new EditorDockWindowViewModel("owned-dock-center", "Viewport", DockArea.Center, "Primary work area");
-        BottomWindow = new EditorDockWindowViewModel("owned-dock-bottom", "Diagnostics", DockArea.Bottom, "Output and validation");
-        RightWindow = new EditorDockWindowViewModel("owned-dock-right", "Inspector", DockArea.Right, "Selection context");
+        LeftWindow = new EditorDockWindowViewModel("owned-dock-left", "Hierarchy", EditorDockArea.Left, "Scene tree");
+        CenterWindow = new EditorDockWindowViewModel("owned-dock-center", "Viewport", EditorDockArea.Center, "Primary work area");
+        BottomWindow = new EditorDockWindowViewModel("owned-dock-bottom", "Diagnostics", EditorDockArea.Bottom, "Output and validation");
+        RightWindow = new EditorDockWindowViewModel("owned-dock-right", "Inspector", EditorDockArea.Right, "Selection context");
         rootNode_ = CreateDefaultLayout();
 
-        windowsByArea_ = new Dictionary<DockArea, EditorDockWindowViewModel>
+        windowsByArea_ = new Dictionary<EditorDockArea, EditorDockWindowViewModel>
         {
-            [DockArea.Left] = LeftWindow,
-            [DockArea.Center] = CenterWindow,
-            [DockArea.Bottom] = BottomWindow,
-            [DockArea.Right] = RightWindow,
+            [EditorDockArea.Left] = LeftWindow,
+            [EditorDockArea.Center] = CenterWindow,
+            [EditorDockArea.Bottom] = BottomWindow,
+            [EditorDockArea.Right] = RightWindow,
         };
         windowsById_ = new Dictionary<string, EditorDockWindowViewModel>
         {
@@ -115,7 +116,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         var fallbackWindow = new EditorDockWindowViewModel(
             "owned-dock-floating-restore",
             "Floating",
-            DockArea.Center,
+            EditorDockArea.Center,
             "Floating workspace");
         LeftWindow = fallbackWindow;
         CenterWindow = fallbackWindow;
@@ -993,7 +994,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         return null;
     }
 
-    private EditorDockWindowViewModel? GetPanelOpenTargetWindow(DockArea defaultArea)
+    private EditorDockWindowViewModel? GetPanelOpenTargetWindow(EditorDockArea defaultArea)
     {
         if (!windowsByArea_.TryGetValue(defaultArea, out var defaultWindow))
         {
@@ -1023,7 +1024,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             GetPrimaryWindowNodeId(window.Area),
             window);
 
-        if (window.Area == DockArea.Center && TryRestoreCenterWindow(insertedNode))
+        if (window.Area == EditorDockArea.Center && TryRestoreCenterWindow(insertedNode))
         {
             return;
         }
@@ -1033,13 +1034,13 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     private bool TryRestoreCenterWindow(EditorDockWindowNodeViewModel insertedNode)
     {
-        return TryInsertPrimaryWindowAdjacentTo(DockArea.Bottom, EditorDockDropOperation.InsertTop, insertedNode)
-            || TryInsertPrimaryWindowAdjacentTo(DockArea.Right, EditorDockDropOperation.InsertLeft, insertedNode)
-            || TryInsertPrimaryWindowAdjacentTo(DockArea.Left, EditorDockDropOperation.InsertRight, insertedNode);
+        return TryInsertPrimaryWindowAdjacentTo(EditorDockArea.Bottom, EditorDockDropOperation.InsertTop, insertedNode)
+            || TryInsertPrimaryWindowAdjacentTo(EditorDockArea.Right, EditorDockDropOperation.InsertLeft, insertedNode)
+            || TryInsertPrimaryWindowAdjacentTo(EditorDockArea.Left, EditorDockDropOperation.InsertRight, insertedNode);
     }
 
     private bool TryInsertPrimaryWindowAdjacentTo(
-        DockArea targetArea,
+        EditorDockArea targetArea,
         EditorDockDropOperation operation,
         EditorDockWindowNodeViewModel insertedNode)
     {
@@ -1071,25 +1072,25 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             out _);
     }
 
-    private static string GetPrimaryWindowNodeId(DockArea area)
+    private static string GetPrimaryWindowNodeId(EditorDockArea area)
     {
         return area switch
         {
-            DockArea.Left => "node-left",
-            DockArea.Center => "node-center",
-            DockArea.Bottom => "node-bottom",
-            DockArea.Right => "node-right",
+            EditorDockArea.Left => "node-left",
+            EditorDockArea.Center => "node-center",
+            EditorDockArea.Bottom => "node-bottom",
+            EditorDockArea.Right => "node-right",
             _ => $"node-{area.ToString().ToLowerInvariant()}",
         };
     }
 
-    private static EditorDockDropOperation GetWorkspaceEdgeOperation(DockArea area)
+    private static EditorDockDropOperation GetWorkspaceEdgeOperation(EditorDockArea area)
     {
         return area switch
         {
-            DockArea.Left => EditorDockDropOperation.InsertWorkspaceLeft,
-            DockArea.Right => EditorDockDropOperation.InsertWorkspaceRight,
-            DockArea.Bottom => EditorDockDropOperation.InsertWorkspaceBottom,
+            EditorDockArea.Left => EditorDockDropOperation.InsertWorkspaceLeft,
+            EditorDockArea.Right => EditorDockDropOperation.InsertWorkspaceRight,
+            EditorDockArea.Bottom => EditorDockDropOperation.InsertWorkspaceBottom,
             _ => EditorDockDropOperation.InsertWorkspaceTop,
         };
     }
@@ -1350,7 +1351,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private void InsertDetachedTab(
         EditorDockTabViewModel tab,
         EditorDockDropTarget target,
-        DockArea fallbackArea)
+        EditorDockArea fallbackArea)
     {
         tab.SetPanelFrameScheduler(PanelFrameScheduler);
         tab.SetPanelLifecycleHostKind(IsFloatingWindow);
@@ -1417,13 +1418,13 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private void InsertDetachedTabAtWorkspaceEdge(
         EditorDockTabViewModel tab,
         EditorDockDropTarget target,
-        DockArea fallbackArea)
+        EditorDockArea fallbackArea)
     {
         var insertedNode = CreateDetachedWindowNode(tab, fallbackArea);
         InsertWindowNodeAtWorkspaceEdge(target.Operation, insertedNode);
     }
 
-    private EditorDockWindowNodeViewModel CreateDetachedWindowNode(EditorDockTabViewModel tab, DockArea fallbackArea)
+    private EditorDockWindowNodeViewModel CreateDetachedWindowNode(EditorDockTabViewModel tab, EditorDockArea fallbackArea)
     {
         var insertedWindow = CreateDynamicWindow(tab, fallbackArea);
         insertedWindow.Add(tab);
@@ -1436,7 +1437,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     private EditorDockWindowViewModel CreateDynamicWindow(
         EditorDockTabViewModel tab,
-        DockArea area)
+        EditorDockArea area)
     {
         var index = nextDynamicWindowIndex_++;
         var window = new EditorDockWindowViewModel(
@@ -2190,7 +2191,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     private EditorDockTabViewModel CreateTab(
         PanelDescriptor descriptor,
-        DockArea? initialArea = null)
+        EditorDockArea? initialArea = null)
     {
         return panelInstanceManager_.CreateTab(descriptor, IsFloatingWindow, initialArea);
     }

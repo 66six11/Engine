@@ -1,4 +1,5 @@
 ﻿using System;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Models.FrameDebug;
@@ -143,7 +144,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "scene-view",
                 "Scene View",
                 PanelKind.Document,
-                DockArea.Center,
+                EditorDockArea.Center,
                 "Window/Panels/Scene View",
                 DockContentCachePolicy.KeepAlive,
                 () => new SceneViewPanelViewModel(selectionService_, diagnostics_),
@@ -155,7 +156,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "hierarchy",
                 "Hierarchy",
                 PanelKind.Tool,
-                DockArea.Left,
+                EditorDockArea.Left,
                 "Window/Panels/Hierarchy",
                 DockContentCachePolicy.KeepAlive,
                 () => new HierarchyPanelViewModel(selectionService_, sceneSnapshotProvider_, uiDispatcher_),
@@ -168,7 +169,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "inspector",
                 "Inspector",
                 PanelKind.Tool,
-                DockArea.Right,
+                EditorDockArea.Right,
                 "Window/Panels/Inspector",
                 DockContentCachePolicy.KeepAlive,
                 () => new InspectorPanelViewModel(selectionService_, sceneSnapshotProvider_, uiDispatcher_),
@@ -181,7 +182,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "console",
                 "Console",
                 PanelKind.Tool,
-                DockArea.Bottom,
+                EditorDockArea.Bottom,
                 "Window/Panels/Console",
                 DockContentCachePolicy.KeepAlive,
                 () => new ConsolePanelViewModel(diagnostics_, uiDispatcher_),
@@ -194,7 +195,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "problems",
                 "Problems",
                 PanelKind.Tool,
-                DockArea.Bottom,
+                EditorDockArea.Bottom,
                 "Window/Panels/Problems",
                 DockContentCachePolicy.KeepAlive,
                 () => new ProblemsPanelViewModel(diagnostics_, uiDispatcher_),
@@ -207,7 +208,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "frame-debugger",
                 "Frame Debugger",
                 PanelKind.Tool,
-                DockArea.Right,
+                EditorDockArea.Right,
                 "Window/Panels/Frame Debugger",
                 DockContentCachePolicy.KeepAlive,
                 () => new CodeFirstPanelHostViewModel(
@@ -221,7 +222,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "ui-style",
                 "UI Style",
                 PanelKind.Tool,
-                DockArea.Center,
+                EditorDockArea.Center,
                 "Window/Panels/UI Style",
                 DockContentCachePolicy.KeepAlive,
                 () => new CodeFirstPanelHostViewModel(new UiStylePanel()),

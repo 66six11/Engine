@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Models.Panels;
@@ -446,7 +447,7 @@ public sealed class EditorExtensionHostTests
             id,
             id,
             PanelKind.Tool,
-            DockArea.Left,
+            EditorDockArea.Left,
             $"Window/Panels/{id}",
             DockContentCachePolicy.KeepAlive,
             static () => new object());

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Asharia.Editor.Panels;
 using Avalonia;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
@@ -189,7 +190,7 @@ public sealed class EditorDockWorkspaceViewModelTests
             "left",
             DockContentCachePolicy.KeepAlive,
             () => new object(),
-            DockArea.Left));
+            EditorDockArea.Left));
         registry.Register(CreateDescriptor(
             "center",
             DockContentCachePolicy.KeepAlive,
@@ -311,7 +312,7 @@ public sealed class EditorDockWorkspaceViewModelTests
         var target = new EditorDockDropTarget(
             EditorDockDropOperation.TabInto,
             EditorDockDropGuideKind.Merge,
-            TargetArea: DockArea.Center,
+            TargetArea: EditorDockArea.Center,
             TargetId: targetWorkspace.CenterWindow.Id,
             PreviewBounds: new Rect(0, 0, 320, 220),
             Label: "Target tab strip");
@@ -341,7 +342,7 @@ public sealed class EditorDockWorkspaceViewModelTests
             "panel",
             DockContentCachePolicy.RecreateOnOpen,
             () => content,
-            DockArea.Left);
+            EditorDockArea.Left);
         var workspace = new EditorDockWorkspaceViewModel(registry);
         events.Clear();
 
@@ -355,7 +356,7 @@ public sealed class EditorDockWorkspaceViewModelTests
                 Id = "restored-node",
                 WindowId = "restored-window",
                 WindowTitle = "Restored",
-                WindowArea = DockArea.Right,
+                WindowArea = EditorDockArea.Right,
                 WindowRole = "Test",
                 TabIds = ["panel"],
                 ActiveTabId = "panel",
@@ -403,7 +404,7 @@ public sealed class EditorDockWorkspaceViewModelTests
         var target = new EditorDockDropTarget(
             EditorDockDropOperation.TabInto,
             EditorDockDropGuideKind.Merge,
-            TargetArea: DockArea.Center,
+            TargetArea: EditorDockArea.Center,
             TargetId: targetWorkspace.CenterWindow.Id,
             PreviewBounds: new Rect(0, 0, 320, 220),
             Label: "Target tab strip");
@@ -472,7 +473,7 @@ public sealed class EditorDockWorkspaceViewModelTests
                 Id = "restored-node",
                 WindowId = "restored-window",
                 WindowTitle = "Restored",
-                WindowArea = DockArea.Center,
+                WindowArea = EditorDockArea.Center,
                 WindowRole = "Test",
                 TabIds = ["included"],
                 ActiveTabId = "included",
@@ -491,7 +492,7 @@ public sealed class EditorDockWorkspaceViewModelTests
         string id,
         DockContentCachePolicy cachePolicy,
         Func<object> createContent,
-        DockArea area = DockArea.Center)
+        EditorDockArea area = EditorDockArea.Center)
     {
         var registry = new PanelRegistry();
         registry.Register(CreateDescriptor(id, cachePolicy, createContent, area));
@@ -502,7 +503,7 @@ public sealed class EditorDockWorkspaceViewModelTests
         string id,
         DockContentCachePolicy cachePolicy,
         Func<object> createContent,
-        DockArea area = DockArea.Center)
+        EditorDockArea area = EditorDockArea.Center)
     {
         return new PanelDescriptor(
             id,
@@ -546,22 +547,22 @@ public sealed class EditorDockWorkspaceViewModelTests
     {
         public void OnPanelAttached(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Attached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Attached:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelActivated(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Activated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Activated:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelDeactivated(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Deactivated:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Deactivated:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void OnPanelDetached(EditorPanelLifecycleContext context)
         {
-            events.Add($"{name}:Detached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+            events.Add($"{name}:Detached:{context.PanelId}:{context.EditorDockArea}:{GetHostKind(context)}");
         }
 
         public void Dispose()

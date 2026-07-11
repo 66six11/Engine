@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Avalonia;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.TabStrips;
@@ -7,7 +8,7 @@ namespace Editor.Shell.Docking.DropTargets;
 
 public readonly record struct EditorDockWindowBounds(
     string WindowId,
-    DockArea Area,
+    EditorDockArea Area,
     Rect Bounds,
     Rect TabWellBounds,
     int TabCount,

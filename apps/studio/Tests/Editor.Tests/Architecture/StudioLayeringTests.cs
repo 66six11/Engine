@@ -697,16 +697,11 @@ public sealed class StudioLayeringTests
 
         var panelFiles = new[]
         {
-            "DockArea.cs",
             "DockContentCachePolicy.cs",
             "EditorPanelContentModelKind.cs",
             "EditorPanelContentModelReference.cs",
             "EditorPanelContributionDescriptor.cs",
-            "EditorPanelFrameContext.cs",
             "EditorPanelFrameUpdateDescriptor.cs",
-            "EditorPanelFrameUpdateMode.cs",
-            "EditorPanelFrameUpdateRequest.cs",
-            "EditorPanelLifecycleContext.cs",
             "EditorPanelLifecycleDescriptor.cs",
             "EditorPanelLifecycleMode.cs",
             "PanelDescriptor.cs",
@@ -722,6 +717,37 @@ public sealed class StudioLayeringTests
             Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
             Assert.False(File.Exists(Path.Combine(root, "Core", "Models", fileName)));
         }
+    }
+
+    [Fact]
+    public void Panel_lifecycle_contracts_live_in_public_editor_api()
+    {
+        var root = FindRepositoryRoot();
+        var expectedNamespace = "namespace Asharia.Editor.Panels;";
+
+        var panelFiles = new[]
+        {
+            "EditorDockArea.cs",
+            "EditorPanelFrameContext.cs",
+            "EditorPanelFrameUpdateMode.cs",
+            "EditorPanelFrameUpdateRequest.cs",
+            "EditorPanelLifecycleContext.cs",
+        };
+
+        foreach (var fileName in panelFiles)
+        {
+            var path = Path.Combine(root, "src", "Asharia.Editor", "Panels", fileName);
+            Assert.True(
+                File.Exists(path),
+                $"{fileName} is a public panel lifecycle contract and should live under src/Asharia.Editor/Panels.");
+            Assert.Contains(expectedNamespace, File.ReadAllText(path), StringComparison.Ordinal);
+        }
+
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "Dock" + "Area.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelFrameContext.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelFrameUpdateMode.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelFrameUpdateRequest.cs")));
+        Assert.False(File.Exists(Path.Combine(root, "Core", "Models", "Panels", "EditorPanelLifecycleContext.cs")));
     }
 
     [Fact]

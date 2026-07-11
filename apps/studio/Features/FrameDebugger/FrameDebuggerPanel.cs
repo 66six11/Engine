@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Threading;
+using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Abstractions;
 using Editor.Core.CodeFirstUI.Abstractions;

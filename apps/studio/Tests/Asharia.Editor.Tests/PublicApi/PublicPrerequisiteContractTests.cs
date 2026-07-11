@@ -1,6 +1,7 @@
 using System;
 using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
+using Asharia.Editor.Panels;
 using Xunit;
 
 namespace Asharia.Editor.Tests.PublicApi;
@@ -44,5 +45,37 @@ public sealed class PublicPrerequisiteContractTests
         Assert.Equal(
             "Failed by test",
             EditorCommandExecutionResult.Failed("workbench.test", "Failed by test").Message);
+    }
+
+    [Fact]
+    public void Panel_frame_request_validates_rate_and_mode()
+    {
+        Assert.Same(EditorPanelFrameUpdateRequest.Manual, EditorPanelFrameUpdateRequest.Manual);
+        Assert.Equal(30d, EditorPanelFrameUpdateRequest.Active(30d).TargetFramesPerSecond);
+        Assert.Equal(10d, EditorPanelFrameUpdateRequest.Visible(10d).TargetFramesPerSecond);
+        Assert.Throws<ArgumentOutOfRangeException>(() => EditorPanelFrameUpdateRequest.Visible(0d));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new EditorPanelFrameUpdateRequest((EditorPanelFrameUpdateMode)42));
+    }
+
+    [Fact]
+    public void Panel_frame_context_preserves_host_state_and_repaint_request()
+    {
+        var panel = new EditorPanelLifecycleContext(
+            "render.frame-debugger",
+            "Frame Debugger",
+            EditorDockArea.Bottom,
+            IsFloatingWorkspace: false);
+        var context = new EditorPanelFrameContext(
+            panel,
+            DateTimeOffset.UnixEpoch,
+            TimeSpan.FromMilliseconds(16),
+            sequence: 7);
+
+        context.RequestRepaint();
+
+        Assert.True(panel.IsMainWorkspace);
+        Assert.True(context.IsRepaintRequested);
+        Assert.Equal(7, context.Sequence);
     }
 }

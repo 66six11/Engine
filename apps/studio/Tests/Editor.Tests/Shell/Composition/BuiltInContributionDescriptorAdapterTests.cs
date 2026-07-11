@@ -1,4 +1,5 @@
 ﻿using System;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Contributions;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Models.Panels;
@@ -18,7 +19,7 @@ public sealed class BuiltInContributionDescriptorAdapterTests
             "project.inspector",
             "Inspector",
             PanelKind.Tool,
-            DockArea.Right,
+            EditorDockArea.Right,
             "Window/Panels/Inspector",
             DockContentCachePolicy.KeepAlive,
             () =>

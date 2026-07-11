@@ -1,4 +1,5 @@
-﻿using Avalonia;
+﻿using Asharia.Editor.Panels;
+using Avalonia;
 using Editor.Core.Models.Panels;
 
 namespace Editor.Shell.Docking.DropTargets;
@@ -6,7 +7,7 @@ namespace Editor.Shell.Docking.DropTargets;
 public sealed record EditorDockDropTarget(
     EditorDockDropOperation Operation,
     EditorDockDropGuideKind GuideKind,
-    DockArea? TargetArea,
+    EditorDockArea? TargetArea,
     string? TargetId,
     Rect PreviewBounds,
     string Label,

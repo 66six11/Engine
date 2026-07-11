@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Diagnostics;
@@ -234,7 +235,7 @@ public sealed class SceneViewPanelViewModelTests
             new EditorPanelLifecycleContext(
                 "scene-view",
                 "Scene View",
-                DockArea.Center,
+                EditorDockArea.Center,
                 IsFloatingWorkspace: false),
             DateTimeOffset.UnixEpoch,
             TimeSpan.FromMilliseconds(16),

@@ -1,6 +1,6 @@
 using System;
 
-namespace Editor.Core.Models.Panels;
+namespace Asharia.Editor.Panels;
 
 public sealed record EditorPanelFrameUpdateRequest
 {

@@ -1,4 +1,5 @@
 using System;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Diagnostics;

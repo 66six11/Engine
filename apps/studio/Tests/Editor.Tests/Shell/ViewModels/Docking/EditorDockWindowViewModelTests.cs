@@ -1,4 +1,5 @@
-﻿using Editor.Core.Models.Panels;
+﻿using Asharia.Editor.Panels;
+using Editor.Core.Models.Panels;
 using Editor.Shell.ViewModels.Docking;
 using Xunit;
 
@@ -9,7 +10,7 @@ public sealed class EditorDockWindowViewModelTests
     [Fact]
     public void Remove_clears_removed_active_tab_state()
     {
-        var window = new EditorDockWindowViewModel("window", "Window", DockArea.Center, "Test");
+        var window = new EditorDockWindowViewModel("window", "Window", EditorDockArea.Center, "Test");
         var first = CreateTab("first");
         var second = CreateTab("second");
         window.Add(first);
@@ -26,7 +27,7 @@ public sealed class EditorDockWindowViewModelTests
     [Fact]
     public void Host_focus_controls_active_tab_focus_indicator()
     {
-        var window = new EditorDockWindowViewModel("window", "Window", DockArea.Center, "Test");
+        var window = new EditorDockWindowViewModel("window", "Window", EditorDockArea.Center, "Test");
         var tab = CreateTab("tab");
         window.Add(tab);
         window.SetActiveWindowState(true);
@@ -49,7 +50,7 @@ public sealed class EditorDockWindowViewModelTests
     [Fact]
     public void HideDragSourceTab_collapses_source_tab_until_cleared()
     {
-        var window = new EditorDockWindowViewModel("window", "Window", DockArea.Center, "Test");
+        var window = new EditorDockWindowViewModel("window", "Window", EditorDockArea.Center, "Test");
         var first = CreateTab("first");
         var second = CreateTab("second");
         window.Add(first);
@@ -72,7 +73,7 @@ public sealed class EditorDockWindowViewModelTests
     [Fact]
     public void ShowLocalTabReorderPreview_collapses_source_tab_and_inserts_placeholder()
     {
-        var window = new EditorDockWindowViewModel("window", "Window", DockArea.Center, "Test");
+        var window = new EditorDockWindowViewModel("window", "Window", EditorDockArea.Center, "Test");
         var first = CreateTab("first");
         var second = CreateTab("second");
         var third = CreateTab("third");
@@ -107,7 +108,7 @@ public sealed class EditorDockWindowViewModelTests
             id,
             "idle",
             PanelKind.Tool,
-            DockArea.Center,
+            EditorDockArea.Center,
             new object());
     }
 }

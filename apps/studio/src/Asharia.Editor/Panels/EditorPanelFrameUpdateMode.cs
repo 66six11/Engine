@@ -1,4 +1,4 @@
-namespace Editor.Core.Models.Panels;
+namespace Asharia.Editor.Panels;
 
 public enum EditorPanelFrameUpdateMode
 {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.CodeFirstUI.Abstractions;
 using Editor.Core.CodeFirstUI.Authoring;
@@ -671,7 +672,7 @@ public sealed class CodeFirstPanelHostViewModelTests
         return new EditorPanelLifecycleContext(
             panelId,
             "Frame Debugger",
-            DockArea.Right,
+            EditorDockArea.Right,
             IsFloatingWorkspace: false);
     }
 

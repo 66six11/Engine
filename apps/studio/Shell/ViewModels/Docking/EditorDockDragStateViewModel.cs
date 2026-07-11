@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.UI.ViewModels;
@@ -10,7 +11,7 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
     private bool isActive_;
     private string dropLabel_ = string.Empty;
     private EditorDockTabViewModel? draggedTab_;
-    private DockArea? dropArea_;
+    private EditorDockArea? dropArea_;
     private EditorDockDropOperation dropOperation_ = EditorDockDropOperation.Reject;
     private EditorDockDropGuideKind guideKind_ = EditorDockDropGuideKind.None;
     private string guideTitle_ = string.Empty;
@@ -49,7 +50,7 @@ public sealed class EditorDockDragStateViewModel : ViewModelBase
         private set => SetProperty(ref draggedTab_, value);
     }
 
-    public DockArea? DropArea
+    public EditorDockArea? DropArea
     {
         get => dropArea_;
         private set => SetProperty(ref dropArea_, value);
