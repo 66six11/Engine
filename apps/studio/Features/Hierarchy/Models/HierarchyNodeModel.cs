@@ -1,5 +1,5 @@
-using Editor.Core.Models.Scene;
-using Editor.Core.Models.Selection;
+using Asharia.Editor.Worlds.Snapshots;
+using Asharia.Editor.Selection;
 
 namespace Editor.Features.Hierarchy.Models;
 

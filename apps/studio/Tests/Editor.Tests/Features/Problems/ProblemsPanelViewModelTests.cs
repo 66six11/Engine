@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Diagnostics;
 using Editor.Core.Services;
 using Editor.Features.Problems.ViewModels;
 using Xunit;

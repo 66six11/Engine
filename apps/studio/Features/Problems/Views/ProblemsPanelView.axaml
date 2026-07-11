@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:models="using:Editor.Core.Models.Diagnostics"
+             xmlns:models="using:Asharia.Editor.Diagnostics"
              xmlns:vm="using:Editor.Features.Problems.ViewModels"
              x:Class="Editor.Features.Problems.Views.ProblemsPanelView"
              x:DataType="vm:ProblemsPanelViewModel">

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Panels;
 using Avalonia.Controls;
 using Avalonia.Layout;

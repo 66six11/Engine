@@ -1,5 +1,5 @@
 using System;
-using Editor.Core.Abstractions;
+using Asharia.Editor.Worlds.Snapshots;
 
 namespace Editor.Core.Models.Scene;
 

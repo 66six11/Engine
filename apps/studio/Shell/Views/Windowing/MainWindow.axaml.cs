@@ -7,7 +7,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Threading;
 using Editor.Core.Interop.Viewports.Adapters;
-using Editor.Core.Models.Lifecycle;
+using Asharia.Editor.Lifecycle;
 using Editor.UI.Icons;
 using Editor.Shell.ViewModels.Windowing;
 using Editor.Shell.ViewModels.Docking;

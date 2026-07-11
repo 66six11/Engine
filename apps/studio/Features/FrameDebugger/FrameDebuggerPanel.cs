@@ -1,14 +1,12 @@
 using System;
 using System.Linq;
 using System.Threading;
+using Asharia.Editor.Diagnostics.FrameDebug;
 using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
-using Editor.Core.Abstractions;
 using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Asharia.Editor.UI.CodeFirst.Authoring;
 using Asharia.Editor.UI.CodeFirst.Models;
-using Editor.Core.Models.Diagnostics;
-using Editor.Core.Models.FrameDebug;
 using Editor.Core.Models.Panels;
 
 namespace Editor.Features.FrameDebugger;

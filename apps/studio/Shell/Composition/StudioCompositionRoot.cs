@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Diagnostics;
+using Asharia.Editor.Selection;
 using Editor.Core.Abstractions;
 using Editor.Core.Services;
 using Editor.Shell.Docking.Layout;

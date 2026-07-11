@@ -1,6 +1,6 @@
 using System;
 using Avalonia.Controls;
-using Editor.Core.Models.Lifecycle;
+using Asharia.Editor.Lifecycle;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.Views.Windowing;
 

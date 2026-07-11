@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Diagnostics;
+using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Extensions;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;

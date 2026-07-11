@@ -22,11 +22,13 @@ Editor.csproj
 Tests/Editor.Tests/Editor.Tests.csproj
 ```
 
-legacy `Editor.csproj` 仍包含 Avalonia、Shell、Dock、Feature、尚未提升的 UI-neutral model/service、P/Invoke/native adapter 和 Windows DLL copy target；它不再拥有 Code-first production source。当前 legacy 主要命名空间为 `Editor.Core.*`、`Editor.Shell.*`、`Editor.UI.*` 和 `Editor.Features.*`。
+legacy `Editor.csproj` 仍包含 Avalonia、Shell、Dock、Feature、尚未提升的 UI-neutral model/service、P/Invoke/native adapter 和 Windows DLL copy target；它不再拥有 Code-first production source，也不再拥有已提升的 service contract source。当前 legacy 主要命名空间为 `Editor.Core.*`、`Editor.Shell.*`、`Editor.UI.*` 和 `Editor.Features.*`。
 
 迁移脚手架已经建立 `Asharia.Studio.sln`。UI-neutral `src/Asharia.Editor/Asharia.Editor.csproj` 已提供第一批 public module identity、scope/policy、definition metadata、activation/quiesce/resume、capability Epoch snapshot，以及 code-first required/optional module/capability 与 provided capability 声明合同。`EditorModuleBuilder.Build()` 把声明顺序冻结为防御性只读快照；重复、自依赖、required/optional 冲突和 Application→Project module edge 在声明期 fail-fast，跨 Package/provider graph 仍由未来 Host 验证。
 
 完整的 Code-first authoring、tree、state、events 和 validation 现已编译进 dependency-free `Asharia.Editor`；其所需的 Diagnostics、Commands 和 Panels UI-neutral 前置合同也已成为公共 API。`Asharia.Editor` 还提供 declaration-only Panel contribution contract：稳定的 contribution/backend/factory-local ID、不可变 `EditorPanelDescriptor`、`EditorModuleBuilder.Panels`、module-local duplicate validation，以及随 `Build()` 一起冻结的有序只读快照。Panel scope 只来自 `EditorModuleDefinitionContext.DefinitionId.Scope`，descriptor 不重复保存 scope。
+
+Task 4 的 service/state 迁移已开始：background task、diagnostic record/service、Frame Debug snapshot/provider、editing command、lifecycle event、selection、transaction，以及 scene/world snapshot/provider interface 已由 `Asharia.Editor` 唯一拥有；legacy service、Feature、ViewModel 和 Avalonia View 只消费这些公共合同。native Frame Debug payload/bridge、delegate-based `SceneProviderDescriptor`、provider registration/status 与 fixture provider implementation 仍在 compatibility Host；Viewport 与剩余 Panels/Commands family 尚未提升。
 
 Panel declaration 的 `ContentFactory` 是 `EditorFactoryLocalId`，不是 CLR factory 或 generation handle。未来 Host 必须在 staging 时把 Package generation、owner module definition 与 local ID 绑定为 generation-scoped runtime handle；当前仍没有 Panel registry、factory binding、Dock integration、Host resolver 或 runtime display。legacy `PanelDescriptor(Func<object>)` 只留在 `Editor` compatibility implementation，不是公共 ABI。
 

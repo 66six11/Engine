@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using Asharia.Editor.Panels;
-using Editor.Core.Models.Lifecycle;
+using Asharia.Editor.Lifecycle;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
 using Editor.Shell.Services;

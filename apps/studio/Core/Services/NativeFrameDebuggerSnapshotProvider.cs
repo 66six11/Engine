@@ -1,6 +1,6 @@
 using System;
+using Asharia.Editor.Diagnostics.FrameDebug;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.FrameDebug;
 
 namespace Editor.Core.Services;
 

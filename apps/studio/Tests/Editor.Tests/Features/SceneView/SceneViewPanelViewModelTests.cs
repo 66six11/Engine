@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Diagnostics;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
 using Editor.Core.Services;
