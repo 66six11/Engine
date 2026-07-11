@@ -24,7 +24,7 @@ Tests/Editor.Tests/Editor.Tests.csproj
 
 单一项目同时包含 Avalonia、Shell、Feature、Code-first、UI-neutral model/service、P/Invoke/native adapter 和 Windows DLL copy target。当前主要命名空间为 `Editor.Core.*`、`Editor.Shell.*`、`Editor.UI.*` 和 `Editor.Features.*`。
 
-迁移脚手架已经建立 `Asharia.Studio.sln`，当前只额外包含空的 UI-neutral `src/Asharia.Editor/Asharia.Editor.csproj` 和不引用 Studio runtime 的 `Tests/Asharia.Studio.Architecture.Tests`。迁移期沿用现有大写 `Tests/`，避免 Windows 无法同时容纳 `Tests/` 与 `tests/`、而 Linux 又区分大小写；删除旧测试树时再执行显式两步 rename。`Asharia.Editor` 尚未提供公共合同；这一阶段只用编译和架构测试固定 project boundary，现有业务源码没有迁移。
+迁移脚手架已经建立 `Asharia.Studio.sln`。UI-neutral `src/Asharia.Editor/Asharia.Editor.csproj` 已提供第一批 public module identity、scope/policy、definition metadata、activation/quiesce/resume 与 capability Epoch snapshot 合同；`Tests/Asharia.Editor.Tests` 验证这些值对象和生命周期，`Tests/Asharia.Studio.Architecture.Tests` 禁止其引用 Avalonia、native interop 或 Studio implementation。迁移期沿用现有大写 `Tests/`，避免 Windows 无法同时容纳 `Tests/` 与 `tests/`、而 Linux 又区分大小写；删除旧测试树时再执行显式两步 rename。现有业务源码仍未迁移，legacy `Editor.csproj` 也尚未引用 `Asharia.Editor`。
 
 现有目录和测试只能提供部分约束，无法阻止 built-in Feature 使用内部 host API，也无法形成可供项目 `Editor/` 编译引用的稳定 assembly。目标项目边界必须由编译器执行。
 

@@ -215,26 +215,35 @@ git commit -m "build(studio): establish target solution graph"
 
 **Files:**
 
+- Create: `apps/studio/src/Asharia.Editor/Extensions/PackageName.cs`
+- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorAssemblyName.cs`
+- Create: `apps/studio/src/Asharia.Editor/Extensions/ModuleLocalId.cs`
+- Create: `apps/studio/src/Asharia.Editor/Extensions/ScopeInstanceId.cs`
+- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorIdentityValidation.cs`
+- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleIdentity.cs`
 - Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleAttribute.cs`
 - Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModule.cs`
 - Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleActivation.cs`
 - Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleBuilder.cs`
 - Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleContext.cs`
-- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleIdentity.cs`
 - Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModuleMetadata.cs`
 - Create: `apps/studio/src/Asharia.Editor/Extensions/EditorModulePolicies.cs`
-- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorCapability.cs`
-- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorDependencyBuilder.cs`
-- Create: `apps/studio/tests/Asharia.Editor.Tests/Extensions/EditorModuleIdentityTests.cs`
-- Create: `apps/studio/tests/Asharia.Editor.Tests/Extensions/EditorModuleActivationTests.cs`
-- Create: `apps/studio/tests/Asharia.Editor.Tests/Extensions/EditorModuleBuilderTests.cs`
+- Create: `apps/studio/src/Asharia.Editor/Extensions/EditorCapabilitySnapshot.cs`
+- Create: `apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj`
+- Create: `apps/studio/Tests/Asharia.Editor.Tests/Extensions/EditorModuleIdentityTests.cs`
+- Create: `apps/studio/Tests/Asharia.Editor.Tests/Extensions/EditorModuleMetadataTests.cs`
+- Create: `apps/studio/Tests/Asharia.Editor.Tests/Extensions/EditorModuleActivationTests.cs`
+- Create: `apps/studio/Tests/Asharia.Editor.Tests/Extensions/EditorModuleContextTests.cs`
+- Modify: `apps/studio/Tests/Asharia.Studio.Architecture.Tests/ProjectReferenceGraphTests.cs`
+- Modify: `apps/studio/Asharia.Studio.sln`
+- Modify: `apps/studio/docs/architecture/studio-code-framework.md`
 
 **Interfaces:**
 
 - Consumes: no Studio implementation project.
-- Produces: `EditorModule`, stable definition/instance identities, scope and activation policies, capability Epoch snapshots, dependency declarations, and no-op activation.
+- Produces: `EditorModule`, stable definition/instance identities, scope and activation policies, read-only capability Epoch snapshots, and no-op recoverable activation. Contribution and dependency declarations remain out of scope.
 
-- [ ] **Step 1: Write identity validation tests**
+- [x] **Step 1: Write identity validation tests and verify RED**
 
 Cover these exact cases:
 
@@ -250,19 +259,17 @@ public void Module_local_id_uses_lowercase_namespaced_ids(string value, bool val
 }
 ```
 
-Also prove that changing a CLR type name does not change `EditorModuleDefinitionId`, and that two ProjectSession IDs produce distinct `EditorModuleInstanceId` values.
+Also prove that Package names use lowercase canonical namespace syntax, assembly names reject path/qualified-name characters, default values are invalid, Project scope IDs use lowercase canonical UUIDs, and two scope IDs produce distinct `EditorModuleInstanceId` values.
 
-- [ ] **Step 2: Run the tests and verify missing-type failures**
+- [x] **Step 2: Implement and verify stable identity value types**
 
 ```powershell
-dotnet test apps/studio/tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --filter FullyQualifiedName~Extensions
+dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release --filter FullyQualifiedName~EditorModuleIdentityTests
 ```
 
-Expected: FAIL because the identity and lifetime types do not exist.
+The first run fails at compile time because the public identity namespace does not exist. Implement the following composite identities only after that RED result:
 
-- [ ] **Step 3: Implement stable value types**
-
-Use readonly record structs with validating `Create`/`TryCreate` methods for `PackageName`, `EditorAssemblyName`, `PackageGenerationId`, `ModuleLocalId`, `ScopeInstanceId`, and `ProjectSessionId`. The composite identity must be explicit:
+Use readonly record structs with validated `Create`/`TryCreate`, deterministic invalid defaults, and empty `ToString()` for `PackageName`, `EditorAssemblyName`, `ModuleLocalId`, and `ScopeInstanceId`. Do not freeze `PackageGenerationId` or a separate `ProjectSessionId` format in this Slice. The composite identity is:
 
 ```csharp
 public readonly record struct EditorAssemblyId(PackageName Package, EditorAssemblyName Assembly);
@@ -279,7 +286,7 @@ public readonly record struct EditorModuleInstanceId(
 
 Do not accept `Type`, `Assembly`, a CLR full name, or an ambient current Project in these identities.
 
-- [ ] **Step 4: Implement module metadata and policies**
+- [x] **Step 3: Write metadata/policy tests, verify RED, then implement**
 
 ```csharp
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
@@ -294,9 +301,13 @@ public sealed class EditorModuleAttribute(string id) : Attribute
 
 The enums contain exactly `Application/Project`, `OnScopeReady/OnDemand`, and `Coexist/QuiesceThenActivate/RestartRequired`.
 
-`EditorModuleMetadata` stores the stable definition ID, entry type name for diagnostics only, activation policy, handover policy, and declared on-demand triggers. Tests must prove that equality and old-to-candidate matching use `EditorModuleDefinitionId`, never `EntryTypeName`.
+`EditorModuleMetadata` stores the stable definition ID, entry type name for diagnostics only, activation policy, and handover policy. `CanReplace` uses `EditorModuleDefinitionId`, never `EntryTypeName`; triggers remain with future contribution/dependency declarations.
 
-- [ ] **Step 5: Implement the activation contract**
+- [x] **Step 4: Write lifecycle/context tests and verify RED**
+
+Tests require the shared Empty activation, synchronous/idempotent quiesce-resume-dispose, invalid stop-reason rejection, immutable copied capability snapshots, positive contract-major capability IDs, non-negative Epoch, and resume reason/scope/Epoch preservation. The first run fails because `EditorModule`, builder, contexts, and activation types do not exist.
+
+- [x] **Step 5: Implement the minimal activation contract**
 
 ```csharp
 public abstract class EditorModule
@@ -323,11 +334,15 @@ public interface IEditorModuleActivation : IAsyncDisposable
 
 `EditorModuleActivation.Empty` must be a process-wide immutable no-op object whose quiesce result is `Ready` and whose resume/dispose methods complete synchronously.
 
-- [ ] **Step 6: Implement dependency and capability declarations**
+- [x] **Step 6: Implement minimal builder/context and capability snapshots**
 
-`EditorModuleBuilder` owns immutable-output builders named `Dependencies` and `Capabilities`. Required module edges, required capabilities, optional capabilities, and provided capabilities must reject duplicates. A capability snapshot is `(EditorCapabilityId Id, long Epoch, EditorCapabilityState State)` and rejects negative Epoch values.
+`EditorModuleBuilder` exposes only immutable `EditorModuleDefinitionContext`. `EditorModuleContext` exposes instance identity and a defensive read-only copy of capability snapshots. `EditorModuleResumeContext` exposes `ReloadRollback | CapabilityRecovered`, scope ID, and a defensive read-only copy of capability ID/Epoch/state snapshots. No dependency/provide/require API is added.
 
-- [ ] **Step 7: Prove the public assembly is UI/native neutral**
+- [x] **Step 7: Add the test project to the Solution with RED/GREEN membership proof**
+
+Update the exact Solution membership test first and observe it fail because `Asharia.Editor.Tests` is absent; then add `Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj` to `Asharia.Studio.sln` with `--in-root`.
+
+- [x] **Step 8: Prove the public assembly is UI/native neutral**
 
 Extend `ProjectReferenceGraphTests` and scan `Asharia.Editor` source text for forbidden tokens:
 
@@ -338,11 +353,12 @@ Assert.DoesNotContain("DllImport", source, StringComparison.Ordinal);
 Assert.DoesNotContain("Editor.Shell", source, StringComparison.Ordinal);
 ```
 
-- [ ] **Step 8: Run and commit**
+- [x] **Step 9: Run and commit**
 
 ```powershell
+dotnet test apps/studio/Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj -c Release
 dotnet test apps/studio/Asharia.Studio.sln -c Release
-git add apps/studio/src/Asharia.Editor apps/studio/tests/Asharia.Editor.Tests apps/studio/tests/Asharia.Studio.Architecture.Tests
+git add apps/studio/src/Asharia.Editor apps/studio/Tests/Asharia.Editor.Tests apps/studio/Tests/Asharia.Studio.Architecture.Tests apps/studio/Asharia.Studio.sln apps/studio/docs
 git commit -m "feat(studio): add public editor module contract"
 ```
 
