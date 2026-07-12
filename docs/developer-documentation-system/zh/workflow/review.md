@@ -8,10 +8,14 @@
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1 -IncludeUntracked
-python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic apps\editor apps\sample-viewer --fail-on warning
+python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
+
+仓库根目录 Vulkan 扫描覆盖除 `apps/studio`、`apps/editor/src/native_bridge` 和
+`apps/editor/src/editor_shared_viewport*` 外的全部原生源码根；这些路径属于本审查轨道
+明确排除的 Studio native bridge。排除 glob 未匹配任何文件时 scanner 会失败，使范围漂移可见。
 
 完整 native test gate 必须先 bootstrap Conan，然后运行两个独立 test tree：
 

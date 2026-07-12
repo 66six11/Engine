@@ -56,9 +56,6 @@ PACKAGE_SRC_INCLUDE_RE = re.compile(
     r'#\s*include\s+[<"][^"<>]*(?:packages[\\/][^"<>\\/]+[\\/]|\.\.[\\/][^"<>]*?)src[\\/]',
     re.IGNORECASE,
 )
-TARGET_LINK_COMMAND_RE = re.compile(
-    r"\btarget_link_libraries\s*\(", re.IGNORECASE
-)
 TARGET_REFERENCE_RE = re.compile(
     r"(?<![A-Za-z0-9_-])(?:asharia::[A-Za-z0-9_-]+|"
     r"asharia-[A-Za-z0-9_-]+|Vulkan::[A-Za-z0-9_-]+)(?![A-Za-z0-9_-])"
@@ -220,6 +217,18 @@ def iter_files(paths: Iterable[Path]) -> Iterable[Path]:
                 yield resolved
 
 
+def path_is_excluded(path: Path, excluded_roots: Iterable[Path]) -> bool:
+    return any(path == excluded or path.is_relative_to(excluded) for excluded in excluded_roots)
+
+
+def path_matches_exclusion_glob(path: Path, pattern: str, base: Path) -> bool:
+    try:
+        relative = path.relative_to(base)
+    except ValueError:
+        relative = path
+    return relative.match(pattern)
+
+
 def add(
     findings: list[Finding],
     severity: str,
@@ -374,8 +383,9 @@ def find_matching_parenthesis(text: str, opening: int) -> int | None:
     return None
 
 
-def iter_target_link_blocks(text: str) -> Iterable[tuple[int, str]]:
+def iter_cmake_command_blocks(text: str, command_name: str) -> Iterable[tuple[int, str]]:
     sanitized = mask_cmake_comments(text)
+    command_re = re.compile(rf"\b{re.escape(command_name)}\s*\(", re.IGNORECASE)
     index = 0
     in_quote = False
     escaped = False
@@ -402,7 +412,7 @@ def iter_target_link_blocks(text: str) -> Iterable[tuple[int, str]]:
             in_quote = True
             index += 1
             continue
-        match = TARGET_LINK_COMMAND_RE.match(sanitized, index)
+        match = command_re.match(sanitized, index)
         if not match:
             index += 1
             continue
@@ -412,6 +422,10 @@ def iter_target_link_blocks(text: str) -> Iterable[tuple[int, str]]:
             return
         yield match.start(), sanitized[opening + 1 : closing]
         index = closing + 1
+
+
+def iter_target_link_blocks(text: str) -> Iterable[tuple[int, str]]:
+    return iter_cmake_command_blocks(text, "target_link_libraries")
 
 
 def first_cmake_argument(block: str) -> tuple[str, str] | None:
@@ -425,23 +439,73 @@ def first_cmake_argument(block: str) -> tuple[str, str] | None:
     return value, block[match.end() :]
 
 
+def split_cmake_arguments(block: str) -> list[str]:
+    arguments: list[str] = []
+    index = 0
+    while index < len(block):
+        while index < len(block) and block[index].isspace():
+            index += 1
+        if index >= len(block):
+            break
+        if block[index] == '"':
+            cursor = index + 1
+            value: list[str] = []
+            while cursor < len(block):
+                if block[cursor] == "\\" and cursor + 1 < len(block):
+                    value.append(block[cursor + 1])
+                    cursor += 2
+                    continue
+                if block[cursor] == '"':
+                    cursor += 1
+                    break
+                value.append(block[cursor])
+                cursor += 1
+            arguments.append("".join(value))
+            index = cursor
+            continue
+        bracket_match = re.match(r"\[(=*)\[", block[index:])
+        if bracket_match:
+            terminator = "]" + bracket_match.group(1) + "]"
+            content_start = index + bracket_match.end()
+            closing = block.find(terminator, content_start)
+            if closing < 0:
+                arguments.append(block[content_start:])
+                break
+            arguments.append(block[content_start:closing])
+            index = closing + len(terminator)
+            continue
+        cursor = index
+        while cursor < len(block) and not block[cursor].isspace():
+            cursor += 1
+        arguments.append(block[index:cursor])
+        index = cursor
+    return arguments
+
+
 def simple_cmake_variables(text: str) -> dict[str, str]:
-    sanitized = mask_cmake_comments(text)
     variables: dict[str, str] = {}
-    pattern = re.compile(
-        r'\bset\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+'
-        r'(?:"((?:\\.|[^"\\])*)"|([^\s)]+))\s*\)',
-        re.IGNORECASE,
+    commands = [
+        (offset, "set", block) for offset, block in iter_cmake_command_blocks(text, "set")
+    ]
+    commands.extend(
+        (offset, "list", block) for offset, block in iter_cmake_command_blocks(text, "list")
     )
-    for match in pattern.finditer(sanitized):
-        value = match.group(2) if match.group(2) is not None else match.group(3)
-        variables[match.group(1)] = value
-    bracket_pattern = re.compile(
-        r"\bset\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+\[(=*)\[(.*?)\]\2\]\s*\)",
-        re.IGNORECASE | re.DOTALL,
-    )
-    for match in bracket_pattern.finditer(sanitized):
-        variables[match.group(1)] = match.group(3)
+    for _, command, block in sorted(commands):
+        arguments = split_cmake_arguments(block)
+        if command == "set" and arguments:
+            name, *values = arguments
+            variables[name] = ";".join(values)
+        elif (
+            command == "list"
+            and len(arguments) >= 2
+            and arguments[0].upper() == "APPEND"
+        ):
+            name = arguments[1]
+            appended = ";".join(arguments[2:])
+            if name in variables and variables[name] and appended:
+                variables[name] += ";" + appended
+            elif appended:
+                variables[name] = appended
     return variables
 
 
@@ -483,6 +547,12 @@ def assigned_result_name(prefix: str) -> str | None:
     return match.group(1) if match else None
 
 
+def assigned_expression_name(prefix: str) -> str | None:
+    prefix = prefix.rstrip(";\r\n ")
+    matches = list(re.finditer(r"\b([A-Za-z_]\w*)\s*=(?!=)[^;{}]*$", prefix))
+    return matches[-1].group(1) if matches else None
+
+
 def result_is_consumed(text: str, statement_ending: int, variable: str) -> bool:
     line_limit = statement_ending
     for _ in range(12):
@@ -497,15 +567,28 @@ def result_is_consumed(text: str, statement_ending: int, variable: str) -> bool:
         window = window[: reassignment.start()]
 
     escaped = re.escape(variable)
-    comparison = rf"(?:\b{escaped}\b\s*(?:==|!=|<=|>=|<|>)|(?:==|!=|<=|>=|<|>)\s*\b{escaped}\b)"
-    if re.search(comparison, window):
+    comparison = (
+        rf"(?:\b{escaped}\b\s*(?:==|!=|<=|>=|<|>)|"
+        rf"(?:==|!=|<=|>=|<|>)\s*\b{escaped}\b)"
+    )
+    if re.search(rf"\b(?:if|while)\s*\([^;{{}}]*{comparison}", window):
         return True
-    if re.search(rf"\b(?:return|co_return)\s+\b{escaped}\b", window):
+    if re.search(rf"\b(?:return|co_return)\b[^;{{}}]*\b{escaped}\b", window):
         return True
     if re.search(rf"\bswitch\s*\(\s*{escaped}\s*\)", window):
         return True
     if re.search(rf"\b(?:if|while)\s*\(\s*!?\s*{escaped}\s*\)", window):
         return True
+    comparison_statement = re.search(
+        rf"([^;{{}}]*{comparison}[^;{{}}]*;)", window,
+    )
+    if comparison_statement:
+        statement = comparison_statement.group(1)
+        assigned = assigned_expression_name(statement)
+        if assigned and assigned != variable:
+            statement_end_offset = statement_ending + comparison_statement.end()
+            if result_is_consumed(text, statement_end_offset, assigned):
+                return True
     terminal_helpers = "|".join(re.escape(name) for name in TERMINAL_VK_RESULT_HELPERS)
     if re.search(rf"\b(?:{terminal_helpers})\s*\([^;{{}}]*\b{escaped}\b", window):
         return True
@@ -557,14 +640,15 @@ def vk_result_is_handled(text: str, match: re.Match[str]) -> bool:
         return True
 
     suffix = text[closing + 1 :]
-    if re.match(r"\s*(?:==|!=|<=|>=|<|>)", suffix):
+    is_control_condition = bool(re.search(r"\b(?:if|while)\s*\([^;{}]*$", prefix))
+    comparison_before = bool(re.search(r"(?:==|!=|<=|>=|<|>)\s*$", prefix))
+    comparison_after = bool(re.match(r"\s*(?:==|!=|<=|>=|<|>)", suffix))
+    if is_control_condition and (comparison_before or comparison_after):
         return True
-    if re.search(r"\b(?:if|while)\s*\(\s*!?\s*$", prefix) and re.match(
-        r"\s*\)", suffix
-    ):
+    if re.search(r"\b(?:if|while)\s*\(\s*!?\s*$", prefix) and re.match(r"\s*\)", suffix):
         return True
 
-    variable = assigned_result_name(prefix)
+    variable = assigned_result_name(prefix) or assigned_expression_name(prefix)
     if variable is None:
         return False
     ending = statement_end(text, closing)
@@ -909,6 +993,20 @@ def main() -> int:
         "paths", nargs="*", default=["."], help="Files or directories to scan"
     )
     parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Explicit file or directory subtree to exclude (repeatable)",
+    )
+    parser.add_argument(
+        "--exclude-glob",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Explicit repository-relative Path.match pattern to exclude (repeatable)",
+    )
+    parser.add_argument(
         "--format", choices=("text", "json"), default="text", help="Output format"
     )
     parser.add_argument(
@@ -920,6 +1018,9 @@ def main() -> int:
     args = parser.parse_args()
 
     roots = [Path(item).resolve() for item in args.paths]
+    excluded_roots = [Path(item).resolve() for item in args.exclude]
+    exclusion_base = Path.cwd().resolve()
+    matched_exclusion_globs = {pattern: 0 for pattern in args.exclude_glob}
     findings: list[Finding] = []
     if VULKAN_REGISTRY_PATH is None:
         findings.append(
@@ -932,6 +1033,18 @@ def main() -> int:
                 "Set VULKAN_SDK or install the platform Vulkan registry package.",
             )
         )
+    for excluded in excluded_roots:
+        if not excluded.exists():
+            findings.append(
+                Finding(
+                    "error",
+                    "scanner.exclude-missing",
+                    str(excluded),
+                    1,
+                    "Excluded path does not exist.",
+                    "Correct the exclusion path so intended source is not scanned accidentally.",
+                )
+            )
     candidates: list[Path] = []
     seen_candidates: set[Path] = set()
     for root in roots:
@@ -961,9 +1074,33 @@ def main() -> int:
             )
             continue
         for candidate in root_candidates:
+            if path_is_excluded(candidate, excluded_roots):
+                continue
+            matching_globs = [
+                pattern
+                for pattern in args.exclude_glob
+                if path_matches_exclusion_glob(candidate, pattern, exclusion_base)
+            ]
+            if matching_globs:
+                for pattern in matching_globs:
+                    matched_exclusion_globs[pattern] += 1
+                continue
             if candidate not in seen_candidates:
                 seen_candidates.add(candidate)
                 candidates.append(candidate)
+
+    for pattern, match_count in matched_exclusion_globs.items():
+        if match_count == 0:
+            findings.append(
+                Finding(
+                    "error",
+                    "scanner.exclude-glob-unmatched",
+                    pattern,
+                    1,
+                    "Exclusion glob matched no candidate files.",
+                    "Correct or remove the glob so scope exclusions remain auditable.",
+                )
+            )
 
     for path in candidates:
         findings.extend(scan_file(path))

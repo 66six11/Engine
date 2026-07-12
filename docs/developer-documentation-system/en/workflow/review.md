@@ -8,10 +8,15 @@ Run before committing changes that affect code, build, workflow, or docs:
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1 -IncludeUntracked
-python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic apps\editor apps\sample-viewer --fail-on warning
+python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
+
+The repository-root Vulkan scan covers every native source root except `apps/studio` and the
+Studio-only native bridge implemented by `apps/editor/src/native_bridge` plus
+`apps/editor/src/editor_shared_viewport*`. These are explicit design exclusions for this review
+track; unmatched exclusion globs fail the scanner so scope drift remains visible.
 
 For the complete native test gate, bootstrap Conan first and run both isolated test trees:
 

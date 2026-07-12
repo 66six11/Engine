@@ -94,9 +94,9 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 
-      - name: Review Vulkan package boundaries and safety prompts
+      - name: Review non-Studio native Vulkan boundaries and safety prompts
         shell: pwsh
-        run: python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic apps\editor apps\sample-viewer --fail-on warning
+        run: python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
 
       - name: Build and test with MSVC
         shell: cmd
