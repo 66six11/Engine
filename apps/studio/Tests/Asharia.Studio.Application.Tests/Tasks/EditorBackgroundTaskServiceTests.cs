@@ -1,9 +1,9 @@
 using System;
 using Asharia.Editor.Tasks;
-using Editor.Shell.Services;
+using Asharia.Studio.Application.Tasks;
 using Xunit;
 
-namespace Editor.Tests.Shell.Services;
+namespace Asharia.Studio.Application.Tests.Tasks;
 
 public sealed class EditorBackgroundTaskServiceTests
 {
