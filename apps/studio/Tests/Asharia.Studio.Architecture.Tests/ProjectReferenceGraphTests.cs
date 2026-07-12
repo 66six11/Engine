@@ -1,6 +1,8 @@
 using Asharia.Editor.Dialogs;
+using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;
+using Asharia.Studio.Application.Lifecycle;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
 using System;
@@ -15,6 +17,40 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Lifecycle_event_service_implementation_is_owned_only_by_application()
+    {
+        var studioRoot = FindStudioRoot();
+        var applicationRoot = Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Lifecycle");
+
+        Assert.True(
+            File.Exists(Path.Combine(applicationRoot, "EditorLifecycleEventService.cs")),
+            $"Application lifecycle event service is missing from {applicationRoot}.");
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorLifecycleEventService).Assembly.GetName().Name);
+        Assert.Contains(
+            typeof(IEditorLifecycleEventService),
+            typeof(EditorLifecycleEventService).GetInterfaces());
+
+        var legacyOwners = Directory
+            .EnumerateFiles(studioRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(studioRoot, path).Replace('\\', '/'))
+            .Where(path => !path.StartsWith("Tests/", StringComparison.Ordinal)
+                && !path.StartsWith("src/", StringComparison.Ordinal)
+                && !path.Contains("/bin/", StringComparison.Ordinal)
+                && !path.Contains("/obj/", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(Path.Combine(studioRoot, path))
+                .Contains("class EditorLifecycleEventService", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Empty(legacyOwners);
+    }
+
     [Fact]
     public void Background_task_service_implementation_is_owned_only_by_application()
     {

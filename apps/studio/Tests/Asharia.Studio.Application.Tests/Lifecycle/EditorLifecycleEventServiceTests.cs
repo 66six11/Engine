@@ -1,10 +1,10 @@
 using System;
 using System.Linq;
 using Asharia.Editor.Lifecycle;
-using Editor.Shell.Services;
+using Asharia.Studio.Application.Lifecycle;
 using Xunit;
 
-namespace Editor.Tests.Shell.Services;
+namespace Asharia.Studio.Application.Tests.Lifecycle;
 
 public sealed class EditorLifecycleEventServiceTests
 {
@@ -58,7 +58,9 @@ public sealed class EditorLifecycleEventServiceTests
         Assert.Equal("5", events[0].Message);
         Assert.Equal(105, events[^1].Sequence);
         Assert.Equal("104", events[^1].Message);
-        Assert.Equal(Enumerable.Range(6, 100).Select(static value => (long)value), events.Select(static snapshot => snapshot.Sequence));
+        Assert.Equal(
+            Enumerable.Range(6, 100).Select(static value => (long)value),
+            events.Select(static snapshot => snapshot.Sequence));
     }
 
     [Fact]

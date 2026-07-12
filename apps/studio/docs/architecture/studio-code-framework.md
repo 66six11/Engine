@@ -44,6 +44,8 @@ Selection 的合同与状态所有权已经分离：`IEditorSelectionService`、
 
 Background Task 采用相同边界：`IEditorBackgroundTaskService`、task ID/state/snapshot 继续由 `Asharia.Editor.Tasks` 拥有，线程安全的 `EditorBackgroundTaskService` 状态实现和 focused behavior tests 已迁入 `Asharia.Studio.Application.Tasks`。MainWindow 只通过 Application project reference 创建默认实现；任务显示仍属于 Presentation consumer，不进入 Application。
 
+Lifecycle Event 的公共 kind/snapshot/service contract 继续由 `Asharia.Editor.Lifecycle` 拥有；有界 recent-event history、sequence 和 UTC timestamp 的 production 实现已迁入 `Asharia.Studio.Application.Lifecycle`。MainWindow、Dock workspace 和 Window View hook 仍只通过 `IEditorLifecycleEventService` 共享状态，Avalonia lifecycle projection 留在 legacy Presentation 路径。
+
 `Asharia.Editor.Dialogs` 现拥有七个 UI-neutral public type：severity、action role、稳定 action ID、action descriptor、request、completion kind 和 result。Action ID、role、default、destructive 与 completion 是相互独立的语义；request 构造会验证全部结构 invariant，并冻结输入 action 的防御性只读快照。公开的 action 声明顺序是确定的 diagnostics/test 顺序，不承诺 Windows、Linux 或 macOS 上的屏幕排列。
 
 现有 compatibility Dialog Host 已改为消费该公共合同；Presentation 仍拥有 overlay、focus、action projection 和 single-active-modal policy，第二个 active request 会被拒绝。用户触发的 system dismiss 结果仍与未来 operation cancellation 分离。`Editor.Core.Models.Dialogs` 已删除，且没有 wrapper、type forwarding 或重复 model。当前仍没有 dialog service、owner-window routing、custom content、platform ordering、localization、file picker、progress、notification 或 modal queue。

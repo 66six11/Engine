@@ -4,7 +4,7 @@ using Asharia.Editor.Panels;
 using Asharia.Editor.Lifecycle;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
-using Editor.Shell.Services;
+using Asharia.Studio.Application.Lifecycle;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.ViewModels.Windowing;
 using Editor.Shell.Views.Docking;

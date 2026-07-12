@@ -14,6 +14,7 @@ using Editor.Core.Services;
 using Editor.Shell.Commands;
 using Editor.Shell.Composition;
 using Editor.Shell.Docking.Layout;
+using Asharia.Studio.Application.Lifecycle;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
 using Editor.Shell.Services;

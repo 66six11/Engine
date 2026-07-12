@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
-using Editor.Core.Abstractions;
 using Asharia.Editor.Lifecycle;
 
-namespace Editor.Shell.Services;
+namespace Asharia.Studio.Application.Lifecycle;
 
 public sealed class EditorLifecycleEventService : IEditorLifecycleEventService
 {
