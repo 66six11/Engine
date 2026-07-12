@@ -7,6 +7,8 @@ using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
+using Asharia.Studio.Application.Commands;
 using Avalonia;
 using Avalonia.Input;
 using Editor.Core.Abstractions;
@@ -98,7 +100,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             OpenCommandPaletteFromCommand,
             OpenAboutDialogFromCommand);
         var actionExecutor = new WorkbenchActionExecutor(commandHandlers);
-        var commandRouter = new WorkbenchCommandStatusMessageRouter(
+        var commandRouter = new EditorCommandStatusMessageRouter(
             new WorkbenchCommandRouter(actionRegistry, actionExecutor),
             PublishCommandStatusMessage);
         panelCommandService_.PanelStateChanged += OnPanelCommandStateChanged;
@@ -490,7 +492,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
         IReadOnlyList<WorkbenchActionDescriptor> actions,
-        IWorkbenchCommandRouter commandRouter)
+        IEditorGuiCommandExecutor commandRouter)
     {
         var items = new List<PanelMenuItemViewModel>();
         foreach (var action in actions)
@@ -512,7 +514,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private static IReadOnlyList<WorkbenchMenuItemViewModel> CreateCommandMenuItems(
         IReadOnlyList<WorkbenchActionDescriptor> actions,
         string menuPathPrefix,
-        IWorkbenchCommandRouter commandRouter)
+        IEditorGuiCommandExecutor commandRouter)
     {
         var items = new List<WorkbenchMenuItemViewModel>();
         foreach (var action in actions)

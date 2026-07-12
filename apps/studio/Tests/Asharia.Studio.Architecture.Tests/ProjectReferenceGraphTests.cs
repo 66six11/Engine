@@ -5,7 +5,9 @@ using Asharia.Editor.Panels;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;
 using Asharia.Editor.Transactions;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Asharia.Editor.Viewports;
+using Asharia.Studio.Application.Commands;
 using Asharia.Studio.Application.Lifecycle;
 using Asharia.Studio.Application.Panels;
 using Asharia.Studio.Application.Diagnostics;
@@ -25,6 +27,29 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Command_status_router_uses_the_public_command_executor_contract()
+    {
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorCommandStatusMessageRouter).Assembly.GetName().Name);
+        Assert.Contains(
+            typeof(IEditorGuiCommandExecutor),
+            typeof(EditorCommandStatusMessageRouter).GetInterfaces());
+
+        var constructor = Assert.Single(typeof(EditorCommandStatusMessageRouter).GetConstructors());
+        Assert.Equal(
+            typeof(IEditorGuiCommandExecutor),
+            constructor.GetParameters()[0].ParameterType);
+
+        var legacySource = File.ReadAllText(Path.Combine(
+            FindStudioRoot(),
+            "Shell",
+            "Commands",
+            "WorkbenchCommandRouter.cs"));
+        Assert.DoesNotContain("interface IWorkbenchCommandRouter", legacySource, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Panel_frame_scheduler_implementation_is_owned_only_by_application()
     {

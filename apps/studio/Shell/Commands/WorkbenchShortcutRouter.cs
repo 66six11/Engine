@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Asharia.Editor.Commands;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Avalonia.Input;
 using Editor.Core.Models.Workbench;
 
@@ -9,11 +10,11 @@ namespace Editor.Shell.Commands;
 internal sealed class WorkbenchShortcutRouter
 {
     private readonly IReadOnlyList<WorkbenchShortcutBinding> bindings_;
-    private readonly IWorkbenchCommandRouter commandRouter_;
+    private readonly IEditorGuiCommandExecutor commandRouter_;
 
     private WorkbenchShortcutRouter(
         IReadOnlyList<WorkbenchShortcutBinding> bindings,
-        IWorkbenchCommandRouter commandRouter)
+        IEditorGuiCommandExecutor commandRouter)
     {
         bindings_ = bindings;
         commandRouter_ = commandRouter;
@@ -21,7 +22,7 @@ internal sealed class WorkbenchShortcutRouter
 
     public static WorkbenchShortcutRouter FromActions(
         IReadOnlyList<WorkbenchActionDescriptor> actions,
-        IWorkbenchCommandRouter commandRouter)
+        IEditorGuiCommandExecutor commandRouter)
     {
         ArgumentNullException.ThrowIfNull(actions);
         ArgumentNullException.ThrowIfNull(commandRouter);

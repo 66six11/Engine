@@ -1,15 +1,16 @@
 using System;
 using Asharia.Editor.Commands;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
 
-namespace Editor.Shell.Commands;
+namespace Asharia.Studio.Application.Commands;
 
-internal sealed class WorkbenchCommandStatusMessageRouter : IWorkbenchCommandRouter
+public sealed class EditorCommandStatusMessageRouter : IEditorGuiCommandExecutor
 {
-    private readonly IWorkbenchCommandRouter inner_;
+    private readonly IEditorGuiCommandExecutor inner_;
     private readonly Action<EditorCommandExecutionResult> publishResult_;
 
-    public WorkbenchCommandStatusMessageRouter(
-        IWorkbenchCommandRouter inner,
+    public EditorCommandStatusMessageRouter(
+        IEditorGuiCommandExecutor inner,
         Action<EditorCommandExecutionResult> publishResult)
     {
         ArgumentNullException.ThrowIfNull(inner);
