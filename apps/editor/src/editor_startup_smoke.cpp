@@ -112,17 +112,24 @@ namespace asharia::editor {
                 return false;
             }
 
-            const auto exact = detail::readImGuiBinaryFile(path, 4U);
-            const auto over = detail::readImGuiBinaryFile(path, 3U);
+            const auto exactShader = detail::readImGuiSpirvFile(path, 4U);
+            const auto overShader = detail::readImGuiSpirvFile(path, 3U);
+            const auto exactFont = detail::readImGuiFontFile(path, 4U);
+            const auto overFont = detail::readImGuiFontFile(path, 3U);
             std::error_code removeError;
             std::filesystem::remove(path, removeError);
 
-            if (!exact || exact->size() != 4U || over ||
-                over.error().message.find(path.string()) == std::string::npos ||
-                over.error().message.find("observedBytes=4") == std::string::npos ||
-                over.error().message.find("maxBytes=3") == std::string::npos) {
-                asharia::logError(
-                    "Editor ImGui bounded read smoke lost exact Core measurement context.");
+            const auto preservesContext = [&path](const Error& error, std::string_view consumer) {
+                return error.message.find(consumer) != std::string::npos &&
+                       error.message.find(path.string()) != std::string::npos &&
+                       error.message.find("observedBytes=4") != std::string::npos &&
+                       error.message.find("maxBytes=3") != std::string::npos;
+            };
+            if (!exactShader || exactShader->size() != 1U || overShader || !exactFont ||
+                exactFont->size() != 4U || overFont ||
+                !preservesContext(overShader.error(), "fragment shader") ||
+                !preservesContext(overFont.error(), "CJK font")) {
+                asharia::logError("Editor ImGui consumers lost bounded Core read diagnostics.");
                 return false;
             }
             asharia::logInfo("Editor ImGui bounded read smoke: exact=4, observed=4, max=3.");
