@@ -1,16 +1,12 @@
 using System;
 using Asharia.Editor.Commands;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Workbench;
 
 namespace Editor.Shell.Commands;
 
-internal interface IWorkbenchCommandRouter
-{
-    EditorCommandExecutionResult Execute(string commandId);
-}
-
-internal sealed class WorkbenchCommandRouter : IWorkbenchCommandRouter
+internal sealed class WorkbenchCommandRouter : IEditorGuiCommandExecutor
 {
     private readonly IWorkbenchActionRegistry actionRegistry_;
     private readonly IWorkbenchActionExecutor actionExecutor_;

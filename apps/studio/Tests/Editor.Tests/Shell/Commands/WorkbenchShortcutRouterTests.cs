@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Asharia.Editor.Commands;
+using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Avalonia.Input;
 using Editor.Core.Models.Workbench;
 using Editor.Shell.Commands;
@@ -124,7 +125,7 @@ public sealed class WorkbenchShortcutRouterTests
             DefaultShortcut: shortcut);
     }
 
-    private sealed class CapturingCommandRouter : IWorkbenchCommandRouter
+    private sealed class CapturingCommandRouter : IEditorGuiCommandExecutor
     {
         private readonly List<string> executedCommandIds_ = [];
 
