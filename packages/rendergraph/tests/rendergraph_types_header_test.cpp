@@ -17,6 +17,9 @@ namespace asharia::rendergraph_header_tests {
         [[maybe_unused]] const RenderGraphCommand command{
             .kind = RenderGraphCommandKind::FillBuffer,
             .name = "HeaderBuffer",
+            .secondaryName = {},
+            .floatValues = {},
+            .intValue = 0,
             .uintValues = {42, 0, 0},
         };
     }

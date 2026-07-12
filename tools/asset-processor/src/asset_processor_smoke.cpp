@@ -131,6 +131,48 @@ namespace asharia::asset_processor {
             return true;
         }
 
+        [[nodiscard]] bool createDirectories(const std::filesystem::path& path);
+
+        [[nodiscard]] bool hasAtomicTemporaryFile(const std::filesystem::path& root) {
+            std::error_code error;
+            for (const std::filesystem::directory_entry& entry :
+                 std::filesystem::recursive_directory_iterator{root, error}) {
+                if (entry.path().filename().string().find(".tmp.") != std::string::npos) {
+                    return true;
+                }
+            }
+            return static_cast<bool>(error);
+        }
+
+        [[nodiscard]] bool
+        prepareManifestReplacementFixture(const std::filesystem::path& outputRoot) {
+            if (!createDirectories(outputRoot)) {
+                return false;
+            }
+            const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
+            auto written = asharia::asset::writeAssetProductManifestFile(
+                manifestPath, asharia::asset::AssetProductManifestDocument{});
+            if (!written) {
+                std::cerr << written.error().message << '\n';
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool
+        expectReplacedManifestOutput(const std::filesystem::path& outputRoot,
+                                     std::size_t expectedProductCount) {
+            const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
+            auto manifest = asharia::asset::readAssetProductManifestFile(manifestPath);
+            if (!manifest || manifest->products.size() != expectedProductCount ||
+                hasAtomicTemporaryFile(outputRoot)) {
+                std::cerr << "asset-processor product execution smoke could not read output "
+                             "manifest or found a leaked atomic temporary.\n";
+                return false;
+            }
+            return true;
+        }
+
         [[nodiscard]] std::vector<std::uint8_t> validPngTextureBytes() {
             return {
                 0x89U, 0x50U, 0x4EU, 0x47U, 0x0DU, 0x0AU, 0x1AU, 0x0AU, 0x00U, 0x00U, 0x00U, 0x0DU,
@@ -513,6 +555,9 @@ namespace asharia::asset_processor {
 
         const std::filesystem::path outputRoot = workspace->root / "ProductCache";
         const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
+        if (!prepareManifestReplacementFixture(outputRoot)) {
+            return EXIT_FAILURE;
+        }
         const ProductExecution firstExecution = runProductExecution(ProductExecutionOptions{
             .sourceRoot = contentRoot,
             .sourcePathPrefix = "Content",
@@ -539,10 +584,7 @@ namespace asharia::asset_processor {
             return EXIT_FAILURE;
         }
 
-        auto manifest = asharia::asset::readAssetProductManifestFile(manifestPath);
-        if (!manifest || manifest->products.size() != 2) {
-            std::cerr << "asset-processor product execution smoke could not read output "
-                         "manifest.\n";
+        if (!expectReplacedManifestOutput(outputRoot, 2U)) {
             return EXIT_FAILURE;
         }
 

@@ -8,7 +8,7 @@ namespace asharia::rendergraph_header_tests {
         RenderGraphPassCallback callback = [](RenderGraphPassContext) -> Result<void> {
             return {};
         };
-        (void)callback(context);
+        [[maybe_unused]] const Result<void> callbackResult = callback(context);
     }
 
 } // namespace asharia::rendergraph_header_tests

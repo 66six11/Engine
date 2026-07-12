@@ -1,13 +1,12 @@
 ﻿#include "imgui_runtime.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,12 +14,89 @@
 #include <system_error>
 #include <vector>
 
+#include "asharia/core/file_io.hpp"
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 #include "editor_ui.hpp"
+#include "imgui_runtime_io.hpp"
+
+namespace asharia::editor::detail {
+
+    std::string pathToUtf8String(const std::filesystem::path& path) {
+        const std::u8string utf8 = path.u8string();
+        std::string text;
+        text.reserve(utf8.size());
+        for (const char8_t character : utf8) {
+            text.push_back(static_cast<char>(character));
+        }
+        return text;
+    }
+
+    namespace {
+        Result<std::vector<char>> readImGuiBinaryFile(const std::filesystem::path& path,
+                                                      std::uint64_t maxBytes) {
+            auto coreBytes = core::readFileBytes(path, core::FileReadLimits{.maxBytes = maxBytes});
+            if (!coreBytes) {
+                return std::unexpected{std::move(coreBytes.error())};
+            }
+
+            std::vector<char> bytes(coreBytes->size());
+            if (!coreBytes->empty()) {
+                std::memcpy(bytes.data(), coreBytes->data(), coreBytes->size());
+            }
+            return bytes;
+        }
+    } // namespace
+
+    Result<std::vector<std::uint32_t>> readImGuiSpirvFile(const std::filesystem::path& path,
+                                                          std::uint64_t maxBytes) {
+        auto bytes = readImGuiBinaryFile(path, maxBytes);
+        if (!bytes) {
+            return std::unexpected{vulkanError("Failed to read editor ImGui fragment shader '" +
+                                                   pathToUtf8String(path) +
+                                                   "': " + bytes.error().message,
+                                               VK_ERROR_INITIALIZATION_FAILED)};
+        }
+        if (bytes->empty()) {
+            return std::unexpected{
+                vulkanError("Editor ImGui fragment shader is empty: " + pathToUtf8String(path),
+                            VK_ERROR_INITIALIZATION_FAILED)};
+        }
+        if (bytes->size() % sizeof(std::uint32_t) != 0U) {
+            return std::unexpected{
+                vulkanError("Editor ImGui fragment shader has invalid SPIR-V byte size: " +
+                                pathToUtf8String(path),
+                            VK_ERROR_INITIALIZATION_FAILED)};
+        }
+
+        std::vector<std::uint32_t> words(bytes->size() / sizeof(std::uint32_t));
+        std::memcpy(words.data(), bytes->data(), bytes->size());
+        return words;
+    }
+
+    Result<std::vector<char>> readImGuiFontFile(const std::filesystem::path& path,
+                                                std::uint64_t maxBytes) {
+        auto bytes = readImGuiBinaryFile(path, maxBytes);
+        if (!bytes) {
+            auto error = std::move(bytes.error());
+            error.message =
+                "Failed to read editor CJK font '" + pathToUtf8String(path) + "': " + error.message;
+            return std::unexpected{std::move(error)};
+        }
+        if (bytes->empty()) {
+            return std::unexpected{
+                Error{ErrorDomain::Core, 0, "Editor CJK font is empty: " + pathToUtf8String(path)}};
+        }
+        return bytes;
+    }
+
+} // namespace asharia::editor::detail
 
 namespace {
+
+    constexpr std::uint64_t kMaxEditorImGuiShaderBytes = 16ULL * 1024ULL * 1024ULL;
+    constexpr std::uint64_t kMaxEditorCjkFontBytes = 128ULL * 1024ULL * 1024ULL;
 
     void checkImguiVkResult(VkResult result) {
         if (result != VK_SUCCESS) {
@@ -69,16 +145,6 @@ namespace {
         }
 
         return basePath / "Asharia" / "Editor" / "imgui-layout.ini";
-    }
-
-    [[nodiscard]] std::string pathToUtf8String(const std::filesystem::path& path) {
-        const std::u8string utf8 = path.u8string();
-        std::string text;
-        text.reserve(utf8.size());
-        for (const char8_t character : utf8) {
-            text.push_back(static_cast<char>(character));
-        }
-        return text;
     }
 
     [[nodiscard]] std::filesystem::path windowsFontsPath() {
@@ -133,45 +199,13 @@ namespace {
         return std::nullopt;
     }
 
-    [[nodiscard]] bool readBinaryFile(const std::filesystem::path& path, std::vector<char>& bytes) {
-        std::ifstream file{path, std::ios::binary | std::ios::ate};
-        if (!file) {
-            return false;
-        }
-
-        const std::streamoff fileSize = file.tellg();
-        if (fileSize <= 0 || fileSize > std::numeric_limits<int>::max()) {
-            return false;
-        }
-
-        bytes.assign(static_cast<std::size_t>(fileSize), '\0');
-        file.seekg(0, std::ios::beg);
-        file.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-        return file.good();
-    }
-
     [[nodiscard]] asharia::VoidResult readSpirvFile(const std::filesystem::path& path,
                                                     std::vector<std::uint32_t>& words) {
-        std::vector<char> bytes;
-        if (!readBinaryFile(path, bytes)) {
-            return std::unexpected{asharia::vulkanError(
-                "Failed to read editor ImGui fragment shader: " + pathToUtf8String(path),
-                VK_ERROR_INITIALIZATION_FAILED)};
+        auto loaded = asharia::editor::detail::readImGuiSpirvFile(path, kMaxEditorImGuiShaderBytes);
+        if (!loaded) {
+            return std::unexpected{std::move(loaded.error())};
         }
-        if (bytes.empty()) {
-            return std::unexpected{asharia::vulkanError("Editor ImGui fragment shader is empty: " +
-                                                            pathToUtf8String(path),
-                                                        VK_ERROR_INITIALIZATION_FAILED)};
-        }
-        if (bytes.size() % sizeof(std::uint32_t) != 0U) {
-            return std::unexpected{
-                asharia::vulkanError("Editor ImGui fragment shader has invalid SPIR-V byte size: " +
-                                         pathToUtf8String(path),
-                                     VK_ERROR_INITIALIZATION_FAILED)};
-        }
-
-        words.resize(bytes.size() / sizeof(std::uint32_t));
-        std::memcpy(words.data(), bytes.data(), bytes.size());
+        words = std::move(*loaded);
         return {};
     }
 
@@ -196,10 +230,13 @@ namespace {
 
         status.cjkCandidateFound = true;
         status.cjkFontPath = *fontPath;
-        if (!readBinaryFile(*fontPath, fontData)) {
-            asharia::logError("Failed to read editor CJK font: " + pathToUtf8String(*fontPath));
+        auto fontBytes =
+            asharia::editor::detail::readImGuiFontFile(*fontPath, kMaxEditorCjkFontBytes);
+        if (!fontBytes) {
+            asharia::logError(fontBytes.error().message);
             return;
         }
+        fontData = std::move(*fontBytes);
 
         ImGuiIO& imguiIo = ImGui::GetIO();
         const float fontSize = desc.fontPixelSize > 0.0F ? desc.fontPixelSize : 16.0F;
@@ -219,12 +256,14 @@ namespace {
             fontData.data(), static_cast<int>(fontData.size()), fontSize, &fontConfig, glyphRanges);
         if (font == nullptr) {
             fontData.clear();
-            asharia::logError("Failed to register editor CJK font: " + pathToUtf8String(*fontPath));
+            asharia::logError("Failed to register editor CJK font: " +
+                              asharia::editor::detail::pathToUtf8String(*fontPath));
             return;
         }
 
         status.cjkLoaded = true;
-        asharia::logInfo("Loaded editor CJK font: " + pathToUtf8String(*fontPath));
+        asharia::logInfo("Loaded editor CJK font: " +
+                         asharia::editor::detail::pathToUtf8String(*fontPath));
     }
 
 } // namespace
@@ -255,7 +294,7 @@ namespace asharia::editor {
         std::error_code directoryError;
         std::filesystem::create_directories(layoutIniPath_.parent_path(), directoryError);
         if (!directoryError) {
-            layoutIniPathUtf8_ = pathToUtf8String(layoutIniPath_);
+            layoutIniPathUtf8_ = asharia::editor::detail::pathToUtf8String(layoutIniPath_);
             imguiIo.IniFilename = layoutIniPathUtf8_.c_str();
             layoutPersistenceEnabled_ = true;
         } else {

@@ -9,6 +9,7 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
 asharia_require_package_target(asharia::project_core_io packages/project-core)
@@ -24,6 +25,7 @@ add_executable(asharia-asset-processor
 
 target_link_libraries(asharia-asset-processor
     PRIVATE
+        asharia::core
         asharia::asset_core_io
         asharia::asset_pipeline
         asharia::project_core_io

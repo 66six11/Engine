@@ -10,7 +10,10 @@
 #include <string_view>
 #include <utility>
 
+#include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
+
+#include "vulkan_enumeration.hpp"
 
 namespace asharia {
     namespace {
@@ -30,48 +33,22 @@ namespace asharia {
 
         Result<std::vector<VkSurfaceFormatKHR>> querySurfaceFormats(VkPhysicalDevice physicalDevice,
                                                                     VkSurfaceKHR surface) {
-            std::uint32_t count = 0;
-            VkResult result =
-                vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &count, nullptr);
-            if (result != VK_SUCCESS) {
-                return std::unexpected{
-                    vulkanError("Failed to query Vulkan surface formats", result)};
-            }
-
-            std::vector<VkSurfaceFormatKHR> formats(count);
-            if (count > 0) {
-                result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &count,
-                                                              formats.data());
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan surface formats", result)};
-                }
-            }
-
-            return formats;
+            return detail::enumerateVulkanVector<VkSurfaceFormatKHR>(
+                [physicalDevice, surface](std::uint32_t* count, VkSurfaceFormatKHR* formats) {
+                    return vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, count,
+                                                                formats);
+                },
+                "Failed to query Vulkan surface formats");
         }
 
         Result<std::vector<VkPresentModeKHR>> queryPresentModes(VkPhysicalDevice physicalDevice,
                                                                 VkSurfaceKHR surface) {
-            std::uint32_t count = 0;
-            VkResult result =
-                vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &count, nullptr);
-            if (result != VK_SUCCESS) {
-                return std::unexpected{
-                    vulkanError("Failed to query Vulkan surface present modes", result)};
-            }
-
-            std::vector<VkPresentModeKHR> presentModes(count);
-            if (count > 0) {
-                result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &count,
-                                                                   presentModes.data());
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan surface present modes", result)};
-                }
-            }
-
-            return presentModes;
+            return detail::enumerateVulkanVector<VkPresentModeKHR>(
+                [physicalDevice, surface](std::uint32_t* count, VkPresentModeKHR* presentModes) {
+                    return vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, count,
+                                                                     presentModes);
+                },
+                "Failed to query Vulkan surface present modes");
         }
 
         VkSurfaceFormatKHR chooseSurfaceFormat(std::span<const VkSurfaceFormatKHR> formats) {
@@ -137,30 +114,11 @@ namespace asharia {
         }
 
         Result<std::vector<VkImage>> getSwapchainImages(VkDevice device, VkSwapchainKHR swapchain) {
-            while (true) {
-                std::uint32_t count = 0;
-                VkResult result = vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr);
-                if (result != VK_SUCCESS) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan swapchain images", result)};
-                }
-
-                std::vector<VkImage> images(count);
-                if (count == 0) {
-                    return images;
-                }
-
-                result = vkGetSwapchainImagesKHR(device, swapchain, &count, images.data());
-                if (result == VK_SUCCESS) {
-                    images.resize(count);
-                    return images;
-                }
-
-                if (result != VK_INCOMPLETE) {
-                    return std::unexpected{
-                        vulkanError("Failed to query Vulkan swapchain images", result)};
-                }
-            }
+            return detail::enumerateVulkanVector<VkImage>(
+                [device, swapchain](std::uint32_t* count, VkImage* images) {
+                    return vkGetSwapchainImagesKHR(device, swapchain, count, images);
+                },
+                "Failed to query Vulkan swapchain images");
         }
 
         Result<VkImageView> createImageView(VkDevice device, VkImage image, VkFormat format) {
@@ -194,6 +152,85 @@ namespace asharia {
                 vkDestroyImageView(device, imageView, nullptr);
             }
         }
+
+        struct SwapchainResourceSet {
+            explicit SwapchainResourceSet(VkDevice ownerDevice) : device(ownerDevice) {}
+
+            SwapchainResourceSet(const SwapchainResourceSet&) = delete;
+            SwapchainResourceSet& operator=(const SwapchainResourceSet&) = delete;
+
+            SwapchainResourceSet(SwapchainResourceSet&& other) noexcept {
+                *this = std::move(other);
+            }
+
+            SwapchainResourceSet& operator=(SwapchainResourceSet&& other) noexcept {
+                if (this == &other) {
+                    return *this;
+                }
+                reset();
+                device = std::exchange(other.device, VK_NULL_HANDLE);
+                swapchain = std::exchange(other.swapchain, VK_NULL_HANDLE);
+                format = std::exchange(other.format, VK_FORMAT_UNDEFINED);
+                extent = std::exchange(other.extent, VkExtent2D{});
+                images = std::move(other.images);
+                imageViews = std::move(other.imageViews);
+                renderFinished = std::move(other.renderFinished);
+                retirementStats = std::exchange(other.retirementStats, nullptr);
+                trackedRetirement = std::exchange(other.trackedRetirement, false);
+                return *this;
+            }
+
+            ~SwapchainResourceSet() { reset(); }
+
+            [[nodiscard]] bool empty() const {
+                return swapchain == VK_NULL_HANDLE && imageViews.empty() &&
+                       renderFinished.empty();
+            }
+
+            void trackRetirement(VulkanSwapchainRetirementStats& stats) {
+                if (empty()) {
+                    return;
+                }
+                retirementStats = &stats;
+                trackedRetirement = true;
+                ++retirementStats->retired;
+                ++retirementStats->pending;
+            }
+
+            void reset() {
+                if (device != VK_NULL_HANDLE) {
+                    for (VkSemaphore semaphore : renderFinished) {
+                        vkDestroySemaphore(device, semaphore, nullptr);
+                    }
+                    destroyImageViews(device, imageViews);
+                    if (swapchain != VK_NULL_HANDLE) {
+                        vkDestroySwapchainKHR(device, swapchain, nullptr);
+                    }
+                }
+                swapchain = VK_NULL_HANDLE;
+                format = VK_FORMAT_UNDEFINED;
+                extent = {};
+                images.clear();
+                imageViews.clear();
+                renderFinished.clear();
+                if (trackedRetirement && retirementStats != nullptr) {
+                    ++retirementStats->destroyed;
+                    --retirementStats->pending;
+                }
+                retirementStats = nullptr;
+                trackedRetirement = false;
+            }
+
+            VkDevice device{VK_NULL_HANDLE};
+            VkSwapchainKHR swapchain{VK_NULL_HANDLE};
+            VkFormat format{VK_FORMAT_UNDEFINED};
+            VkExtent2D extent{};
+            std::vector<VkImage> images;
+            std::vector<VkImageView> imageViews;
+            std::vector<VkSemaphore> renderFinished;
+            VulkanSwapchainRetirementStats* retirementStats{};
+            bool trackedRetirement{};
+        };
 
         Result<std::vector<VkImageView>>
         createImageViews(VkDevice device, std::span<const VkImage> images, VkFormat format) {
@@ -516,7 +553,7 @@ namespace asharia {
         commandBuffer_ = std::exchange(other.commandBuffer_, VK_NULL_HANDLE);
         imageAvailable_ = std::exchange(other.imageAvailable_, VK_NULL_HANDLE);
         renderFinished_ = std::exchange(other.renderFinished_, {});
-        retiredSwapchainResources_ = std::move(other.retiredSwapchainResources_);
+        swapchainRetirementStats_ = std::exchange(other.swapchainRetirementStats_, {});
         inFlight_ = std::exchange(other.inFlight_, VK_NULL_HANDLE);
         deferredDeletionQueue_ = std::move(other.deferredDeletionQueue_);
         debugLabelFunctions_ = std::exchange(other.debugLabelFunctions_, {});
@@ -543,39 +580,6 @@ namespace asharia {
 
     VulkanFrameLoop::~VulkanFrameLoop() {
         destroy();
-    }
-
-    void VulkanFrameLoop::destroyRetiredSwapchainResources() {
-        for (RetiredSwapchainResources& retired : retiredSwapchainResources_) {
-            for (VkSemaphore semaphore : retired.renderFinished) {
-                vkDestroySemaphore(device_, semaphore, nullptr);
-            }
-            destroyImageViews(device_, retired.imageViews);
-            if (retired.swapchain != VK_NULL_HANDLE) {
-                vkDestroySwapchainKHR(device_, retired.swapchain, nullptr);
-            }
-        }
-        retiredSwapchainResources_.clear();
-    }
-
-    void VulkanFrameLoop::retireCurrentSwapchainResources() {
-        // Presentation waits are not tracked by the frame fence/deferred-deletion epoch.
-        // Keep retired swapchain resources alive until the frame loop is torn down.
-        RetiredSwapchainResources retired{
-            .swapchain = std::exchange(swapchain_, VK_NULL_HANDLE),
-            .imageViews = std::move(imageViews_),
-            .renderFinished = std::move(renderFinished_),
-        };
-        if (retired.swapchain != VK_NULL_HANDLE || !retired.imageViews.empty() ||
-            !retired.renderFinished.empty()) {
-            retiredSwapchainResources_.push_back(std::move(retired));
-        }
-
-        format_ = VK_FORMAT_UNDEFINED;
-        extent_ = {};
-        images_.clear();
-        imageViews_.clear();
-        renderFinished_.clear();
     }
 
     bool VulkanFrameRecordContext::deferDeletion(VulkanDeferredDeletionCallback callback) const {
@@ -688,7 +692,11 @@ namespace asharia {
 
     void VulkanFrameLoop::destroy() {
         if (graphicsQueue_ != VK_NULL_HANDLE) {
-            [[maybe_unused]] const VkResult idleResult = vkQueueWaitIdle(graphicsQueue_);
+            const VkResult idleResult = vkQueueWaitIdle(graphicsQueue_);
+            if (idleResult != VK_SUCCESS) {
+                logError("Failed to wait for Vulkan queue during frame-loop destruction: " +
+                         vkResultName(idleResult));
+            }
         }
         completedFrameEpoch_ = submittedFrameEpoch_;
         static_cast<void>(deferredDeletionQueue_.retireCompleted(completedFrameEpoch_));
@@ -713,7 +721,6 @@ namespace asharia {
         if (swapchain_ != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(device_, swapchain_, nullptr);
         }
-        destroyRetiredSwapchainResources();
 
         device_ = VK_NULL_HANDLE;
         physicalDevice_ = VK_NULL_HANDLE;
@@ -730,7 +737,7 @@ namespace asharia {
         commandBuffer_ = VK_NULL_HANDLE;
         imageAvailable_ = VK_NULL_HANDLE;
         renderFinished_.clear();
-        retiredSwapchainResources_.clear();
+        swapchainRetirementStats_ = {};
         inFlight_ = VK_NULL_HANDLE;
         deferredDeletionQueue_ = {};
         debugLabelFunctions_ = {};
@@ -1065,53 +1072,69 @@ namespace asharia {
         }
         static_cast<void>(retireCompletedFrameWork());
 
-        const VkSwapchainKHR oldSwapchain = swapchain_;
+        // The frame loop currently uses one queue for submit and present. In unextended Vulkan,
+        // queue idle is the practical WSI fallback before synchronously releasing present-wait
+        // semaphores; VK_EXT_swapchain_maintenance1 present fences are not enabled here.
+        SwapchainResourceSet retired{device_};
+        retired.swapchain = std::exchange(swapchain_, VK_NULL_HANDLE);
+        retired.format = std::exchange(format_, VK_FORMAT_UNDEFINED);
+        retired.extent = std::exchange(extent_, VkExtent2D{});
+        retired.images = std::move(images_);
+        retired.imageViews = std::move(imageViews_);
+        retired.renderFinished = std::move(renderFinished_);
+        images_.clear();
+        imageViews_.clear();
+        renderFinished_.clear();
+        retired.trackRetirement(swapchainRetirementStats_);
+
         VulkanFrameLoopDesc desc{
             .width = targetExtent_.width,
             .height = targetExtent_.height,
             .clearColor = clearColor_,
         };
 
-        VkFormat newFormat = VK_FORMAT_UNDEFINED;
-        VkExtent2D newExtent{};
+        SwapchainResourceSet replacement{device_};
+        // Vulkan retires a non-null oldSwapchain as soon as vkCreateSwapchainKHR is called,
+        // including when that call fails. The local owner therefore cleans it on every return.
         auto newSwapchain =
             createSwapchain(physicalDevice_, device_, surface_, graphicsQueueFamily_, desc,
-                            newFormat, newExtent, oldSwapchain);
+                            replacement.format, replacement.extent, retired.swapchain);
         if (!newSwapchain) {
-            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newSwapchain.error())};
         }
+        replacement.swapchain = *newSwapchain;
 
-        auto newImages = getSwapchainImages(device_, *newSwapchain);
+        auto newImages = getSwapchainImages(device_, replacement.swapchain);
         if (!newImages) {
-            vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
-            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newImages.error())};
         }
+        replacement.images = std::move(*newImages);
 
-        auto newImageViews = createImageViews(device_, *newImages, newFormat);
+        auto newImageViews =
+            createImageViews(device_, replacement.images, replacement.format);
         if (!newImageViews) {
-            vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
-            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newImageViews.error())};
         }
+        replacement.imageViews = std::move(*newImageViews);
 
-        auto newRenderFinished = createSemaphores(device_, newImages->size());
+        auto newRenderFinished = createSemaphores(device_, replacement.images.size());
         if (!newRenderFinished) {
-            destroyImageViews(device_, *newImageViews);
-            vkDestroySwapchainKHR(device_, *newSwapchain, nullptr);
-            retireCurrentSwapchainResources();
             return std::unexpected{std::move(newRenderFinished.error())};
         }
+        replacement.renderFinished = std::move(*newRenderFinished);
 
-        retireCurrentSwapchainResources();
+        swapchain_ = std::exchange(replacement.swapchain, VK_NULL_HANDLE);
+        format_ = std::exchange(replacement.format, VK_FORMAT_UNDEFINED);
+        extent_ = std::exchange(replacement.extent, VkExtent2D{});
+        images_ = std::move(replacement.images);
+        imageViews_ = std::move(replacement.imageViews);
+        renderFinished_ = std::move(replacement.renderFinished);
+        replacement.images.clear();
+        replacement.imageViews.clear();
+        replacement.renderFinished.clear();
 
-        swapchain_ = *newSwapchain;
-        format_ = newFormat;
-        extent_ = newExtent;
-        images_ = std::move(*newImages);
-        imageViews_ = std::move(*newImageViews);
-        renderFinished_ = std::move(*newRenderFinished);
+        // Keep the observable post-recreate invariant true before returning to app code.
+        retired.reset();
 
         return VulkanFrameStatus::Recreated;
     }
@@ -1314,17 +1337,29 @@ namespace asharia {
             return record(context);
         }();
         if (!recorded) {
-            [[maybe_unused]] const VkResult resetAfterRecordFailure =
-                vkResetCommandBuffer(commandBuffer_, 0);
+            const VkResult resetAfterRecordFailure = vkResetCommandBuffer(commandBuffer_, 0);
             discardRecordedTimestampQueries();
+            if (resetAfterRecordFailure != VK_SUCCESS) {
+                return std::unexpected{vulkanError(
+                    "Failed to reset Vulkan command buffer after frame recording failed; "
+                    "recording error: " +
+                        recorded.error().message,
+                    resetAfterRecordFailure)};
+            }
             return std::unexpected{std::move(recorded.error())};
         }
 
         result = vkEndCommandBuffer(commandBuffer_);
         if (result != VK_SUCCESS) {
-            [[maybe_unused]] const VkResult resetAfterEndFailure =
-                vkResetCommandBuffer(commandBuffer_, 0);
+            const VkResult resetAfterEndFailure = vkResetCommandBuffer(commandBuffer_, 0);
             discardRecordedTimestampQueries();
+            if (resetAfterEndFailure != VK_SUCCESS) {
+                return std::unexpected{vulkanError(
+                    "Failed to reset Vulkan command buffer after ending command recording failed "
+                    "with " +
+                        vkResultName(result),
+                    resetAfterEndFailure)};
+            }
             return std::unexpected{vulkanError("Failed to end Vulkan command buffer", result)};
         }
 
@@ -1390,6 +1425,10 @@ namespace asharia {
 
     VulkanDeferredDeletionStats VulkanFrameLoop::deferredDeletionStats() const {
         return deferredDeletionQueue_.stats();
+    }
+
+    VulkanSwapchainRetirementStats VulkanFrameLoop::swapchainRetirementStats() const {
+        return swapchainRetirementStats_;
     }
 
     VulkanDebugLabelStats VulkanFrameLoop::debugLabelStats() const {

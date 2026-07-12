@@ -1,12 +1,11 @@
 ﻿#include "asset_processor_execute.hpp"
 
 #include <algorithm>
-#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
-#include <fstream>
-#include <ios>
 #include <optional>
 #include <ostream>
 #include <span>
@@ -21,12 +20,15 @@
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_source_scan.hpp"
+#include "asharia/core/file_io.hpp"
 
 #include "asset_processor_project_input.hpp"
 #include "asset_processor_text.hpp"
 
 namespace asharia::asset_processor {
     namespace {
+
+        constexpr std::uint64_t kMaxAssetProcessorSourceBytes = 1ULL * 1024ULL * 1024ULL * 1024ULL;
 
         struct ManifestLoadResult {
             bool succeeded{};
@@ -123,6 +125,8 @@ namespace asharia::asset_processor {
                 return "InvalidProductManifest";
             case Code::MetadataSourceHashDrift:
                 return "MetadataSourceHashDrift";
+            case Code::ToolFingerprintFailed:
+                return "ToolFingerprintFailed";
             }
             return "Unknown";
         }
@@ -209,26 +213,19 @@ namespace asharia::asset_processor {
             };
         }
 
-        [[nodiscard]] std::vector<std::uint8_t> readFileBytes(const std::filesystem::path& path,
-                                                              bool& succeeded) {
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                succeeded = false;
-                return {};
+        [[nodiscard]] asharia::Result<std::vector<std::uint8_t>>
+        readSourceFileBytes(const std::filesystem::path& path) {
+            auto fileBytes =
+                asharia::core::readFileBytes(path, {.maxBytes = kMaxAssetProcessorSourceBytes});
+            if (!fileBytes) {
+                return std::unexpected{std::move(fileBytes.error())};
             }
 
             std::vector<std::uint8_t> bytes;
-            std::array<char, 4096> buffer{};
-            while (file) {
-                file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-                const std::streamsize bytesRead = file.gcount();
-                const auto end = buffer.begin() + bytesRead;
-                for (auto byte = buffer.begin(); byte != end; ++byte) {
-                    bytes.push_back(static_cast<std::uint8_t>(*byte));
-                }
+            bytes.reserve(fileBytes->size());
+            for (const std::byte byte : *fileBytes) {
+                bytes.push_back(std::to_integer<std::uint8_t>(byte));
             }
-
-            succeeded = !file.bad();
             return bytes;
         }
 
@@ -238,21 +235,19 @@ namespace asharia::asset_processor {
             std::vector<asharia::asset::AssetProductSourceBytes> sources;
             sources.reserve(entries.size());
             for (const asharia::asset::AssetSourceScanEntry& entry : entries) {
-                bool succeeded = false;
-                std::vector<std::uint8_t> bytes = readFileBytes(entry.sourceFilePath, succeeded);
-                if (!succeeded) {
+                auto bytes = readSourceFileBytes(entry.sourceFilePath);
+                if (!bytes) {
                     output << "diagnostic stage=source-bytes"
                            << " code=ReadFailed"
                            << " source=" << quoteText(entry.sourcePath)
                            << " file=" << quotePath(entry.sourceFilePath)
-                           << " message=" << quoteText("Failed to read explicit source bytes.")
-                           << '\n';
+                           << " message=" << quoteText(bytes.error().message) << '\n';
                     continue;
                 }
 
                 sources.push_back(asharia::asset::AssetProductSourceBytes{
                     .sourcePath = entry.sourcePath,
-                    .bytes = std::move(bytes),
+                    .bytes = std::move(*bytes),
                 });
             }
             return sources;

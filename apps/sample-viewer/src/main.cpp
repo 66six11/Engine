@@ -2360,17 +2360,36 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        asharia::GlfwWindow::pollEvents();
-        const auto restoredFramebuffer = window->framebufferExtent();
-        frameLoop->setTargetExtent(restoredFramebuffer.width, restoredFramebuffer.height);
-        auto recreated = frameLoop->recreate();
-        if (!recreated) {
-            asharia::logError(recreated.error().message);
-            return EXIT_FAILURE;
-        }
-        if (*recreated != asharia::VulkanFrameStatus::Recreated) {
-            asharia::logError("Resize smoke did not recreate the swapchain after extent restore.");
-            return EXIT_FAILURE;
+        constexpr std::array resizeExtents{
+            std::array{640, 360},
+            std::array{800, 450},
+            std::array{960, 540},
+            std::array{1024, 576},
+            std::array{1120, 630},
+            std::array{1200, 675},
+            std::array{1280, 720},
+            std::array{720, 405},
+        };
+        for (const std::array<int, 2>& requested : resizeExtents) {
+            window->setSize(requested[0], requested[1]);
+            asharia::GlfwWindow::pollEvents();
+            const auto resizedFramebuffer = window->framebufferExtent();
+            frameLoop->setTargetExtent(resizedFramebuffer.width, resizedFramebuffer.height);
+            auto recreated = frameLoop->recreate();
+            if (!recreated) {
+                asharia::logError(recreated.error().message);
+                return EXIT_FAILURE;
+            }
+            if (*recreated != asharia::VulkanFrameStatus::Recreated) {
+                asharia::logError("Resize smoke did not complete a nonzero swapchain recreate.");
+                return EXIT_FAILURE;
+            }
+            const asharia::VulkanSwapchainRetirementStats retirement =
+                frameLoop->swapchainRetirementStats();
+            if (retirement.pending != 0 || retirement.retired != retirement.destroyed) {
+                asharia::logError("Resize smoke retained retired swapchain resources.");
+                return EXIT_FAILURE;
+            }
         }
 
         for (int frame = 0; frame < 3; ++frame) {
@@ -2393,7 +2412,11 @@ namespace {
         }
 
         const VkExtent2D extent = frameLoop->extent();
-        std::cout << "Resize smoke frames: " << extent.width << 'x' << extent.height << '\n';
+        const asharia::VulkanSwapchainRetirementStats retirement =
+            frameLoop->swapchainRetirementStats();
+        std::cout << "Resize smoke frames: " << extent.width << 'x' << extent.height
+                  << ", retired/destroyed/pending: " << retirement.retired << '/'
+                  << retirement.destroyed << '/' << retirement.pending << '\n';
         window->requestClose();
         return EXIT_SUCCESS;
     }

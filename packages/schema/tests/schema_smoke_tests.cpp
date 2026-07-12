@@ -1,6 +1,9 @@
 ﻿#include <cstdlib>
+#include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -27,10 +30,10 @@ namespace {
         return text.find(needle) != std::string_view::npos;
     }
 
-    [[nodiscard]] asharia::schema::FieldSchema persistentFloat(std::uint32_t id,
+    [[nodiscard]] asharia::schema::FieldSchema persistentFloat(std::uint32_t fieldId,
                                                                std::string_view key) {
         return asharia::schema::FieldSchema{
-            .id = asharia::schema::makeFieldId(id),
+            .id = asharia::schema::makeFieldId(fieldId),
             .key = std::string{key},
             .valueType = asharia::schema::builtin::floatTypeId(),
             .valueKind = asharia::schema::ValueKind::Float,
@@ -38,8 +41,19 @@ namespace {
             .metadata =
                 {
                     .persistence = {.stored = true, .required = true, .hasDefault = false},
-                    .editor = {.visible = true},
-                    .script = {.visible = true, .read = true, .write = true},
+                    .editor = {.visible = true,
+                               .readOnly = false,
+                               .displayName = {},
+                               .category = {},
+                               .tooltip = {},
+                               .readOnlyReason = {}},
+                    .script = {.visible = true,
+                               .read = true,
+                               .write = true,
+                               .context = {},
+                               .threadAffinity = {},
+                               .lifetime = {}},
+                    .numeric = {},
                 },
         };
     }
@@ -71,8 +85,19 @@ namespace {
             .metadata =
                 {
                     .persistence = {.stored = true, .required = true, .hasDefault = false},
-                    .editor = {.visible = true},
-                    .script = {.visible = true, .read = true, .write = true},
+                    .editor = {.visible = true,
+                               .readOnly = false,
+                               .displayName = {},
+                               .category = {},
+                               .tooltip = {},
+                               .readOnlyReason = {}},
+                    .script = {.visible = true,
+                               .read = true,
+                               .write = true,
+                               .context = {},
+                               .threadAffinity = {},
+                               .lifetime = {}},
+                    .numeric = {},
                 },
         };
         asharia::schema::FieldSchema runtimeOnly{
@@ -84,8 +109,19 @@ namespace {
             .metadata =
                 {
                     .persistence = {.stored = false},
-                    .editor = {.visible = true, .readOnly = true},
-                    .script = {.visible = false},
+                    .editor = {.visible = true,
+                               .readOnly = true,
+                               .displayName = {},
+                               .category = {},
+                               .tooltip = {},
+                               .readOnlyReason = {}},
+                    .script = {.visible = false,
+                               .read = false,
+                               .write = false,
+                               .context = {},
+                               .threadAffinity = {},
+                               .lifetime = {}},
+                    .numeric = {},
                 },
         };
 
@@ -111,6 +147,18 @@ namespace {
         return nullptr;
     }
 
+    [[nodiscard]] std::uint64_t fixtureByteCount(const std::filesystem::path& fixturePath) {
+        std::ifstream fixture{fixturePath, std::ios::binary | std::ios::ate};
+        if (!fixture) {
+            throw std::runtime_error{"Could not open the schema document fixture."};
+        }
+        const std::streampos byteCount = fixture.tellg();
+        if (byteCount < 0) {
+            throw std::runtime_error{"Could not measure the schema document fixture."};
+        }
+        return static_cast<std::uint64_t>(byteCount);
+    }
+
     [[nodiscard]] bool expectGoldenSchemaDocument() {
         const std::filesystem::path fixturePath =
             std::filesystem::path{ASHARIA_SCHEMA_TEST_FIXTURE_DIR} / "schema_golden.json";
@@ -121,6 +169,22 @@ namespace {
         }
         if (loaded->size() != 2U) {
             std::cerr << "Schema document loaded an unexpected type count.\n";
+            return false;
+        }
+
+        const std::uint64_t fixtureBytes = fixtureByteCount(fixturePath);
+        auto exactLimit =
+            asharia::schema::readSchemaDocumentFile(fixturePath, {.maxBytes = fixtureBytes});
+        if (!exactLimit) {
+            std::cerr << "Schema document rejected a file at the exact byte limit.\n";
+            return false;
+        }
+        auto oversized =
+            asharia::schema::readSchemaDocumentFile(fixturePath, {.maxBytes = fixtureBytes - 1U});
+        if (oversized ||
+            !contains(oversized.error().message, "observedBytes=" + std::to_string(fixtureBytes)) ||
+            !contains(oversized.error().message, "maxBytes=" + std::to_string(fixtureBytes - 1U))) {
+            std::cerr << "Schema document accepted a file above the byte limit.\n";
             return false;
         }
 
@@ -210,157 +274,192 @@ namespace {
         return true;
     }
 
-} // namespace
+    [[nodiscard]] int runSchemaSmokeTests() {
+        if (!expectGoldenSchemaDocument()) {
+            return EXIT_FAILURE;
+        }
 
-int main() {
-    if (!expectGoldenSchemaDocument()) {
-        return EXIT_FAILURE;
-    }
+        asharia::schema::SchemaRegistry registry;
+        if (auto registered = asharia::schema::registerBuiltinSchemas(registry); !registered) {
+            std::cerr << registered.error().message << '\n';
+            return EXIT_FAILURE;
+        }
 
-    asharia::schema::SchemaRegistry registry;
-    if (auto registered = asharia::schema::registerBuiltinSchemas(registry); !registered) {
-        std::cerr << registered.error().message << '\n';
-        return EXIT_FAILURE;
-    }
+        if (auto registered = registry.registerType(makeVec3Schema()); !registered) {
+            std::cerr << registered.error().message << '\n';
+            return EXIT_FAILURE;
+        }
+        if (auto registered = registry.registerType(makeTransformSchema()); !registered) {
+            std::cerr << registered.error().message << '\n';
+            return EXIT_FAILURE;
+        }
 
-    if (auto registered = registry.registerType(makeVec3Schema()); !registered) {
-        std::cerr << registered.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-    if (auto registered = registry.registerType(makeTransformSchema()); !registered) {
-        std::cerr << registered.error().message << '\n';
-        return EXIT_FAILURE;
-    }
+        if (auto registered = registry.registerType(asharia::schema::TypeSchema{
+                .id = asharia::schema::makeTypeId(kAliasedStableTypeName),
+                .canonicalName = std::string{kAliasedCanonicalTypeName},
+                .version = 1,
+                .kind = asharia::schema::ValueKind::Object,
+                .fields = {},
+                .reservedFieldIds = {},
+                .metadata = {},
+            });
+            !registered) {
+            std::cerr << registered.error().message << '\n';
+            return EXIT_FAILURE;
+        }
 
-    if (auto registered = registry.registerType(asharia::schema::TypeSchema{
-            .id = asharia::schema::makeTypeId(kAliasedStableTypeName),
-            .canonicalName = std::string{kAliasedCanonicalTypeName},
+        auto duplicate = registry.registerType(makeTransformSchema());
+        if (duplicate || !contains(duplicate.error().message, "duplicate")) {
+            std::cerr << "Schema registry accepted a duplicate type.\n";
+            return EXIT_FAILURE;
+        }
+
+        auto stableCanonicalCollision = registry.registerType(asharia::schema::TypeSchema{
+            .id = asharia::schema::makeTypeId(kAliasedCanonicalTypeName),
+            .canonicalName = "com.asharia.schemaSmoke.OtherCanonical",
             .version = 1,
             .kind = asharia::schema::ValueKind::Object,
+            .fields = {},
+            .reservedFieldIds = {},
+            .metadata = {},
         });
-        !registered) {
-        std::cerr << registered.error().message << '\n';
-        return EXIT_FAILURE;
-    }
+        if (stableCanonicalCollision ||
+            !contains(stableCanonicalCollision.error().message, "duplicate")) {
+            std::cerr
+                << "Schema registry accepted a stable id that collides with a canonical name.\n";
+            return EXIT_FAILURE;
+        }
 
-    auto duplicate = registry.registerType(makeTransformSchema());
-    if (duplicate || !contains(duplicate.error().message, "duplicate")) {
-        std::cerr << "Schema registry accepted a duplicate type.\n";
-        return EXIT_FAILURE;
-    }
+        auto canonicalStableCollision = registry.registerType(asharia::schema::TypeSchema{
+            .id = asharia::schema::makeTypeId("com.asharia.schemaSmoke.OtherStable"),
+            .canonicalName = std::string{kAliasedStableTypeName},
+            .version = 1,
+            .kind = asharia::schema::ValueKind::Object,
+            .fields = {},
+            .reservedFieldIds = {},
+            .metadata = {},
+        });
+        if (canonicalStableCollision ||
+            !contains(canonicalStableCollision.error().message, "duplicate")) {
+            std::cerr
+                << "Schema registry accepted a canonical name that collides with a stable id.\n";
+            return EXIT_FAILURE;
+        }
 
-    auto stableCanonicalCollision = registry.registerType(asharia::schema::TypeSchema{
-        .id = asharia::schema::makeTypeId(kAliasedCanonicalTypeName),
-        .canonicalName = "com.asharia.schemaSmoke.OtherCanonical",
-        .version = 1,
-        .kind = asharia::schema::ValueKind::Object,
-    });
-    if (stableCanonicalCollision ||
-        !contains(stableCanonicalCollision.error().message, "duplicate")) {
-        std::cerr << "Schema registry accepted a stable id that collides with a canonical name.\n";
-        return EXIT_FAILURE;
-    }
+        asharia::schema::TypeSchema badReserved = makeTransformSchema();
+        badReserved.id = asharia::schema::makeTypeId("com.asharia.schemaSmoke.BadReserved");
+        badReserved.canonicalName = badReserved.id.stableName;
+        badReserved.fields.front().id = asharia::schema::makeFieldId(99);
+        auto reserved = registry.registerType(std::move(badReserved));
+        if (reserved || !contains(reserved.error().message, "reserved field id")) {
+            std::cerr << "Schema registry accepted reserved field id reuse.\n";
+            return EXIT_FAILURE;
+        }
 
-    auto canonicalStableCollision = registry.registerType(asharia::schema::TypeSchema{
-        .id = asharia::schema::makeTypeId("com.asharia.schemaSmoke.OtherStable"),
-        .canonicalName = std::string{kAliasedStableTypeName},
-        .version = 1,
-        .kind = asharia::schema::ValueKind::Object,
-    });
-    if (canonicalStableCollision ||
-        !contains(canonicalStableCollision.error().message, "duplicate")) {
-        std::cerr << "Schema registry accepted a canonical name that collides with a stable id.\n";
-        return EXIT_FAILURE;
-    }
-
-    asharia::schema::TypeSchema badReserved = makeTransformSchema();
-    badReserved.id = asharia::schema::makeTypeId("com.asharia.schemaSmoke.BadReserved");
-    badReserved.canonicalName = badReserved.id.stableName;
-    badReserved.fields.front().id = asharia::schema::makeFieldId(99);
-    auto reserved = registry.registerType(std::move(badReserved));
-    if (reserved || !contains(reserved.error().message, "reserved field id")) {
-        std::cerr << "Schema registry accepted reserved field id reuse.\n";
-        return EXIT_FAILURE;
-    }
-
-    asharia::schema::TypeSchema deferredOwner{
-        .id = asharia::schema::makeTypeId(kDeferredOwnerTypeName),
-        .canonicalName = std::string{kDeferredOwnerTypeName},
-        .version = 1,
-        .kind = asharia::schema::ValueKind::Object,
-        .fields =
-            {
-                asharia::schema::FieldSchema{
-                    .id = asharia::schema::makeFieldId(1),
-                    .key = "deferred",
-                    .valueType = asharia::schema::makeTypeId(kDeferredValueTypeName),
-                    .valueKind = asharia::schema::ValueKind::InlineStruct,
-                    .aliases = {},
-                    .metadata = {.persistence = {.stored = true}},
+        asharia::schema::TypeSchema deferredOwner{
+            .id = asharia::schema::makeTypeId(kDeferredOwnerTypeName),
+            .canonicalName = std::string{kDeferredOwnerTypeName},
+            .version = 1,
+            .kind = asharia::schema::ValueKind::Object,
+            .fields =
+                {
+                    asharia::schema::FieldSchema{
+                        .id = asharia::schema::makeFieldId(1),
+                        .key = "deferred",
+                        .valueType = asharia::schema::makeTypeId(kDeferredValueTypeName),
+                        .valueKind = asharia::schema::ValueKind::InlineStruct,
+                        .aliases = {},
+                        .metadata =
+                            {
+                                .persistence = {.stored = true},
+                                .editor = {},
+                                .script = {},
+                                .numeric = {},
+                            },
+                    },
                 },
-            },
-        .reservedFieldIds = {},
-        .metadata = {},
-    };
-    if (auto registered = registry.registerType(std::move(deferredOwner)); !registered) {
-        std::cerr << registered.error().message << '\n';
-        return EXIT_FAILURE;
+            .reservedFieldIds = {},
+            .metadata = {},
+        };
+        if (auto registered = registry.registerType(std::move(deferredOwner)); !registered) {
+            std::cerr << registered.error().message << '\n';
+            return EXIT_FAILURE;
+        }
+
+        auto missingReference = registry.freeze();
+        if (missingReference ||
+            !contains(missingReference.error().message, "registered field type")) {
+            std::cerr << "Schema registry accepted a missing field type reference.\n";
+            return EXIT_FAILURE;
+        }
+
+        asharia::schema::TypeSchema deferredValue{
+            .id = asharia::schema::makeTypeId(kDeferredValueTypeName),
+            .canonicalName = std::string{kDeferredValueTypeName},
+            .version = 1,
+            .kind = asharia::schema::ValueKind::InlineStruct,
+            .fields = {persistentFloat(1, "value")},
+            .reservedFieldIds = {},
+            .metadata = {},
+        };
+        if (auto registered = registry.registerType(std::move(deferredValue)); !registered) {
+            std::cerr << registered.error().message << '\n';
+            return EXIT_FAILURE;
+        }
+
+        if (auto frozen = registry.freeze(); !frozen) {
+            std::cerr << frozen.error().message << '\n';
+            return EXIT_FAILURE;
+        }
+
+        auto late = registry.registerType(asharia::schema::TypeSchema{
+            .id = asharia::schema::makeTypeId("com.asharia.schemaSmoke.Late"),
+            .canonicalName = "com.asharia.schemaSmoke.Late",
+            .version = 1,
+            .kind = asharia::schema::ValueKind::Object,
+            .fields = {},
+            .reservedFieldIds = {},
+            .metadata = {},
+        });
+        if (late || !contains(late.error().message, "frozen")) {
+            std::cerr << "Schema registry accepted registration after freeze.\n";
+            return EXIT_FAILURE;
+        }
+
+        const asharia::schema::TypeSchema* transform =
+            registry.findType(asharia::schema::makeTypeId(kTransformTypeName));
+        if (transform == nullptr) {
+            std::cerr << "Schema registry could not find transform schema.\n";
+            return EXIT_FAILURE;
+        }
+
+        const asharia::schema::FieldProjection persistent =
+            asharia::schema::makePersistenceProjection(*transform);
+        const asharia::schema::FieldProjection editor =
+            asharia::schema::makeEditorProjection(*transform);
+        const asharia::schema::FieldProjection script =
+            asharia::schema::makeScriptProjection(*transform);
+        if (persistent.fields.size() != 1 || editor.fields.size() != 2 ||
+            script.fields.size() != 1) {
+            std::cerr << "Schema projections returned unexpected field counts.\n";
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Schema registry types: " << registry.types().size() << '\n';
+        return EXIT_SUCCESS;
     }
 
-    auto missingReference = registry.freeze();
-    if (missingReference || !contains(missingReference.error().message, "registered field type")) {
-        std::cerr << "Schema registry accepted a missing field type reference.\n";
-        return EXIT_FAILURE;
-    }
+} // namespace
 
-    asharia::schema::TypeSchema deferredValue{
-        .id = asharia::schema::makeTypeId(kDeferredValueTypeName),
-        .canonicalName = std::string{kDeferredValueTypeName},
-        .version = 1,
-        .kind = asharia::schema::ValueKind::InlineStruct,
-        .fields = {persistentFloat(1, "value")},
-        .reservedFieldIds = {},
-        .metadata = {},
-    };
-    if (auto registered = registry.registerType(std::move(deferredValue)); !registered) {
-        std::cerr << registered.error().message << '\n';
-        return EXIT_FAILURE;
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
+    try {
+        return runSchemaSmokeTests();
+    } catch (const std::exception& error) {
+        std::cerr << "Schema smoke test threw: " << error.what() << '\n';
+    } catch (...) {
+        std::cerr << "Schema smoke test threw an unknown exception.\n";
     }
-
-    if (auto frozen = registry.freeze(); !frozen) {
-        std::cerr << frozen.error().message << '\n';
-        return EXIT_FAILURE;
-    }
-
-    auto late = registry.registerType(asharia::schema::TypeSchema{
-        .id = asharia::schema::makeTypeId("com.asharia.schemaSmoke.Late"),
-        .canonicalName = "com.asharia.schemaSmoke.Late",
-        .version = 1,
-        .kind = asharia::schema::ValueKind::Object,
-    });
-    if (late || !contains(late.error().message, "frozen")) {
-        std::cerr << "Schema registry accepted registration after freeze.\n";
-        return EXIT_FAILURE;
-    }
-
-    const asharia::schema::TypeSchema* transform =
-        registry.findType(asharia::schema::makeTypeId(kTransformTypeName));
-    if (transform == nullptr) {
-        std::cerr << "Schema registry could not find transform schema.\n";
-        return EXIT_FAILURE;
-    }
-
-    const asharia::schema::FieldProjection persistent =
-        asharia::schema::makePersistenceProjection(*transform);
-    const asharia::schema::FieldProjection editor =
-        asharia::schema::makeEditorProjection(*transform);
-    const asharia::schema::FieldProjection script =
-        asharia::schema::makeScriptProjection(*transform);
-    if (persistent.fields.size() != 1 || editor.fields.size() != 2 || script.fields.size() != 1) {
-        std::cerr << "Schema projections returned unexpected field counts.\n";
-        return EXIT_FAILURE;
-    }
-
-    std::cout << "Schema registry types: " << registry.types().size() << '\n';
-    return EXIT_SUCCESS;
+    return EXIT_FAILURE;
 }

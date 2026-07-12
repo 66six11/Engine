@@ -53,6 +53,24 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 cmd /c "build\conan\clangcl-release\Release\generators\conanbuild.bat && cmake --preset clangcl-release && cmake --build --preset clangcl-release"
 ```
 
+## Native Test Presets
+
+CMake 之前必须先 bootstrap Conan。`msvc-debug-tests` 和 `clangcl-debug-tests` 分别使用
+`build/cmake/msvc-debug-tests` 和 `build/cmake/clangcl-debug-tests`，并设置 `ASHARIA_BUILD_TESTS=ON`。
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+ClangCL test preset 对 production 和 test translation units 启用 clang-tidy，且所有 clang-tidy
+diagnostics 都作为 errors 处理。
+
+`.github/workflows/native-code-quality.yml` 在 pull request、push to `main` 和 manual dispatch 时运行。
+Windows hosted job 先安装锁定版本的 Conan/Vulkan SDK、bootstrap Conan，再运行 encoding、diff
+whitespace、asset boundary、两编译器 build 和 CTest。Hosted CI 不运行 GPU/window smokes；相关本地
+pre-commit smoke gate 以 `docs/workflow/review.md` 为准。
+
 也可以从 “Developer PowerShell for VS 2022” 进入项目目录后运行 `cmake --preset ...` 和 `cmake --build --preset ...`。
 
 ## 日常建议

@@ -8,12 +8,36 @@ Run before committing changes that affect code, build, workflow, or docs:
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1 -IncludeUntracked
+python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
 
+The repository-root Vulkan scan covers every native source root except `apps/studio` and the
+Studio-only native bridge implemented by `apps/editor/src/native_bridge` plus
+`apps/editor/src/editor_shared_viewport*`. These are explicit design exclusions for this review
+track; unmatched exclusion globs fail the scanner so scope drift remains visible.
+CMake boundary review interprets `set` and `list(APPEND)` variables in source order at each
+`target_link_libraries` call, rather than using their final file value.
+
+For the complete native test gate, bootstrap Conan first and run both isolated test trees:
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+The ClangCL test gate promotes every clang-tidy diagnostic to an error for production and test
+translation units. `.github/workflows/native-code-quality.yml` runs these CTests plus encoding,
+whitespace, asset boundary, and Vulkan package boundary/safety heuristic checks on Windows for pull requests, pushes to `main`, and manual
+dispatches. Hosted CI does not run GPU/window smoke commands; all applicable smoke commands below
+remain local pre-commit gates and must be run with both standard debug presets when the scope table
+requires them.
+
 Use `tools\pre-pr.ps1 -IncludeUntracked` to print candidate gates for the changed file set.
-The `clangcl-debug` preset enables `ASHARIA_ENABLE_CLANG_TIDY=ON`; the repository does not track a separate Vulkan review script.
+The `clangcl-debug` preset enables `ASHARIA_ENABLE_CLANG_TIDY=ON`. `tools\review-vulkan-cpp.py`
+reports conservative prompts for human review; CI uses `--fail-on warning`, so warnings and errors
+block the gate while informational prompts remain visible.
 
 Useful review helper options:
 

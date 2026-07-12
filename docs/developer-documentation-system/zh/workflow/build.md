@@ -40,6 +40,8 @@ Bootstrap script 会在 install 前删除 stale `ConanPresets.json`，确保 gen
 | `msvc-release` | MSVC release build | `ASHARIA_BUILD_TESTS=OFF` |
 | `clangcl-debug` | pre-commit debug build，启用 clang-tidy integration | `ASHARIA_BUILD_TESTS=OFF` |
 | `clangcl-release` | ClangCL release check | `ASHARIA_BUILD_TESTS=OFF` |
+| `msvc-debug-tests` | native Debug build + CTest gate | `ASHARIA_BUILD_TESTS=ON` |
+| `clangcl-debug-tests` | native Debug build + CTest + clang-tidy gate | `ASHARIA_BUILD_TESTS=ON` |
 
 Build/test presets 使用 `jobs: 20`。Package-local tests 通过 `-DASHARIA_BUILD_TESTS=ON` 显式打开。
 
@@ -59,6 +61,28 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 cmd /c "build\conan\msvc-release\Release\generators\conanbuild.bat && cmake --preset msvc-release && cmake --build --preset msvc-release"
 cmd /c "build\conan\clangcl-release\Release\generators\conanbuild.bat && cmake --preset clangcl-release && cmake --build --preset clangcl-release"
 ```
+
+## Top-Level Native Test Build
+
+CMake 之前必须先 bootstrap Conan。Test configure/build/test presets 使用独立目录
+`build/cmake/msvc-debug-tests` 和 `build/cmake/clangcl-debug-tests`，不会改写日常 application build tree。
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+ClangCL test preset 对 production 和 test translation units 启用 clang-tidy。仓库把所有 clang-tidy
+diagnostics 作为 errors，任何未处理 diagnostic 都会使构建失败。
+
+## Native Code Quality CI
+
+`.github/workflows/native-code-quality.yml` 在 pull request、push to `main` 和 manual dispatch 时运行。
+Windows job 安装锁定版本的 Conan 和 Vulkan SDK，先 bootstrap Conan，然后检查 encoding、whitespace 和
+asset package boundaries，最后使用两个 test preset 构建并运行所有 native CTests。
+
+Hosted CI 不运行 GPU/window smokes，因为 hosted runner 不是本仓库支持的 Vulkan presentation 环境。
+`workflow/review.md` 中的 runtime smoke matrix 仍是相关改动的本地 pre-commit gate。
 
 ## Package-Local Test Build
 

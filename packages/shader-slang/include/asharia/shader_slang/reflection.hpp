@@ -11,6 +11,11 @@
 
 namespace asharia {
 
+    struct ShaderReflectionFileOptions {
+        static constexpr std::uint64_t kDefaultMaxBytes = 64ULL * 1024ULL * 1024ULL;
+        std::uint64_t maxBytes{kDefaultMaxBytes};
+    };
+
     struct ShaderVertexInputReflection {
         std::string name;
         std::uint32_t location{};
@@ -60,7 +65,9 @@ namespace asharia {
         std::optional<Error> error;
     };
 
-    [[nodiscard]] Result<ShaderReflection> readShaderReflection(const std::filesystem::path& path);
+    [[nodiscard]] Result<ShaderReflection>
+    readShaderReflection(const std::filesystem::path& path,
+                         ShaderReflectionFileOptions options = {});
     [[nodiscard]] Result<ShaderResourceSignature>
     mergeShaderResourceSignature(std::span<const ShaderReflection> shaders);
     [[nodiscard]] ShaderResourceSignature

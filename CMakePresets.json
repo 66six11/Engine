@@ -43,6 +43,15 @@
       }
     },
     {
+      "name": "msvc-debug-tests",
+      "displayName": "MSVC Debug Tests",
+      "inherits": "msvc-debug",
+      "binaryDir": "${sourceDir}/build/cmake/msvc-debug-tests",
+      "cacheVariables": {
+        "ASHARIA_BUILD_TESTS": "ON"
+      }
+    },
+    {
       "name": "clangcl-debug",
       "displayName": "ClangCL Debug Check",
       "generator": "Ninja",
@@ -107,6 +116,15 @@
           "enableClangTidyCodeAnalysis": false
         }
       }
+    },
+    {
+      "name": "clangcl-debug-tests",
+      "displayName": "ClangCL Debug Tests",
+      "inherits": "clangcl-debug",
+      "binaryDir": "${sourceDir}/build/cmake/clangcl-debug-tests",
+      "cacheVariables": {
+        "ASHARIA_BUILD_TESTS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -123,6 +141,12 @@
       "jobs": 20
     },
     {
+      "name": "msvc-debug-tests",
+      "displayName": "MSVC Debug Tests",
+      "configurePreset": "msvc-debug-tests",
+      "jobs": 20
+    },
+    {
       "name": "clangcl-debug",
       "displayName": "ClangCL Debug Check",
       "configurePreset": "clangcl-debug",
@@ -132,6 +156,12 @@
       "name": "clangcl-release",
       "displayName": "ClangCL Release Check",
       "configurePreset": "clangcl-release",
+      "jobs": 20
+    },
+    {
+      "name": "clangcl-debug-tests",
+      "displayName": "ClangCL Debug Tests",
+      "configurePreset": "clangcl-debug-tests",
       "jobs": 20
     }
   ],
@@ -153,6 +183,14 @@
       }
     },
     {
+      "name": "msvc-debug-tests",
+      "displayName": "MSVC Debug Tests",
+      "configurePreset": "msvc-debug-tests",
+      "execution": {
+        "jobs": 20
+      }
+    },
+    {
       "name": "clangcl-debug",
       "displayName": "ClangCL Debug Check Tests",
       "configurePreset": "clangcl-debug",
@@ -164,6 +202,14 @@
       "name": "clangcl-release",
       "displayName": "ClangCL Release Check Tests",
       "configurePreset": "clangcl-release",
+      "execution": {
+        "jobs": 20
+      }
+    },
+    {
+      "name": "clangcl-debug-tests",
+      "displayName": "ClangCL Debug Tests",
+      "configurePreset": "clangcl-debug-tests",
       "execution": {
         "jobs": 20
       }

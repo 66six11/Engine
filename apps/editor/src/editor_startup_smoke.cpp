@@ -9,12 +9,14 @@
 #include <string>
 #include <string_view>
 
+#include "asharia/core/file_io.hpp"
 #include "asharia/core/log.hpp"
 
 #include "editor_i18n.hpp"
 #include "editor_smoke.hpp"
 #include "editor_ui.hpp"
 #include "imgui_runtime.hpp"
+#include "imgui_runtime_io.hpp"
 
 namespace asharia::editor {
 
@@ -93,6 +95,47 @@ namespace asharia::editor {
                 return false;
             }
 
+            return true;
+        }
+
+        [[nodiscard]] bool validateImGuiBoundedReadSmoke(EditorRunMode mode) {
+            if (!isEditorSmokeMode(mode)) {
+                return true;
+            }
+
+            constexpr std::string_view kUtf8FilenameMarker{"\xE6\x96\x87\xE4\xBB\xB6"}; // 文件
+            const std::filesystem::path path =
+                std::filesystem::temp_directory_path() /
+                std::filesystem::path{u8"asharia-editor-文件-read-limit.bin"};
+            auto fixture = asharia::core::writeFileTextAtomically(path, "data");
+            if (!fixture) {
+                asharia::logError("Editor ImGui bounded read smoke could not write fixture: " +
+                                  fixture.error().message);
+                return false;
+            }
+
+            const auto exactShader = detail::readImGuiSpirvFile(path, 4U);
+            const auto overShader = detail::readImGuiSpirvFile(path, 3U);
+            const auto exactFont = detail::readImGuiFontFile(path, 4U);
+            const auto overFont = detail::readImGuiFontFile(path, 3U);
+            std::error_code removeError;
+            std::filesystem::remove(path, removeError);
+
+            const auto preservesContext = [kUtf8FilenameMarker](const Error& error,
+                                                                std::string_view consumer) {
+                return error.message.find(consumer) != std::string::npos &&
+                       error.message.find(kUtf8FilenameMarker) != std::string::npos &&
+                       error.message.find("observedBytes=4") != std::string::npos &&
+                       error.message.find("maxBytes=3") != std::string::npos;
+            };
+            if (!exactShader || exactShader->size() != 1U || overShader || !exactFont ||
+                exactFont->size() != 4U || overFont ||
+                !preservesContext(overShader.error(), "fragment shader") ||
+                !preservesContext(overFont.error(), "CJK font")) {
+                asharia::logError("Editor ImGui consumers lost bounded Core read diagnostics.");
+                return false;
+            }
+            asharia::logInfo("Editor ImGui bounded read smoke: exact=4, observed=4, max=3.");
             return true;
         }
 
@@ -251,7 +294,8 @@ namespace asharia::editor {
 
     bool validateEditorStartupSmoke(EditorRunMode mode, const ImGuiRuntime& imgui,
                                     EditorLocale locale, EditorUiThemeId theme) {
-        return validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode) &&
+        return validateImGuiBoundedReadSmoke(mode) &&
+               validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode) &&
                validateEditorFontSmoke(mode, imgui, locale) &&
                validateEditorThemeSmoke(mode, theme);
     }

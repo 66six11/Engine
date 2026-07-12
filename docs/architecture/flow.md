@@ -485,8 +485,22 @@ flowchart TD
   retirement 顺序、empty callback 拒绝路径和 pending/enqueued/retired/flushed counters。
 - `VulkanFrameLoop` 现在持有 deferred deletion queue，并在 frame fence / swapchain recreate / shutdown
   已确认 GPU 完成的位置推进 completed epoch。
-- Retired swapchain image views and per-image present semaphores are held by `VulkanFrameLoop`
-  until teardown, because presentation waits are not represented by the frame fence epoch.
+- Swapchain recreation is synchronously bounded. After the in-flight fence and the single
+  graphics/present queue are idle, `VulkanFrameLoop` moves the old swapchain, image views and
+  per-image present-wait semaphores into one local RAII set. It passes that old handle to
+  `vkCreateSwapchainKHR`, installs a replacement only after its images, views and semaphores are
+  complete, then destroys the local old set in semaphore -> image-view -> swapchain order before
+  returning. Any partial replacement failure is cleaned locally and leaves the frame loop empty
+  so the next `renderFrame()` can retry creation.
+- `VulkanSwapchainRetirementStats` exposes the recreation invariant: every completed recreation
+  returns with `pending == 0` and `retired == destroyed`. `--smoke-resize` performs eight nonzero
+  recreations and the editor resize path checks the same invariant after each completed recreate.
+- This is the approved unextended Vulkan fallback for the current single submit/present queue.
+  Khronos notes that submit fences do not prove completion of presentation waits, and that even
+  `vkQueueWaitIdle` is only a practical shutdown/recreation assumption without a present fence.
+  A future asynchronous/multi-queue design must enable `VK_EXT_swapchain_maintenance1` present
+  fences (or provide another spec-backed present-completion proof) before relaxing this bounded
+  synchronous path. See https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html .
 
 ## 当前运行调用链
 
@@ -723,13 +737,14 @@ flowchart TD
     AdvanceEpoch["advance submitted<br/>frame epoch"]
     Present["vkQueuePresentKHR"]
     Recreate["recreateSwapchain"]
-    RecreateRetire["wait fence / queue idle<br/>retire completed deletions"]
+    RecreateRetire["wait fence / checked queue idle<br/>retire completed deletions"]
+    RecreateLocal["move old swapchain set to local RAII<br/>create complete replacement or clean partials<br/>destroy old before return"]
 
     Create --> Swapchain --> Images --> Views --> Cmd --> Sync
     Render --> Wait --> Retire --> Acquire
     Acquire -->|success/suboptimal| Record --> GraphClear --> WaitStage --> Submit --> AdvanceEpoch --> Present
     Record --> Triangle --> WaitStage
-    Acquire -->|out of date| Recreate --> RecreateRetire
+    Acquire -->|out of date| Recreate --> RecreateRetire --> RecreateLocal
     Present -->|out of date/suboptimal| Recreate
 ```
 

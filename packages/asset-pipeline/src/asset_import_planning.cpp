@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -28,33 +29,12 @@
 namespace asharia::asset {
     namespace {
 
-        constexpr std::uint64_t kFnv1a64Offset = 14695981039346656037ULL;
-        constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
         constexpr std::string_view kShaderCompileReflectionImporterName =
             "com.asharia.importer.shader-compile-reflection";
 
-        [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
-                                                       std::uint8_t byte) noexcept {
-            hash ^= byte;
-            hash *= kFnv1a64Prime;
-            return hash;
-        }
-
-        [[nodiscard]] constexpr std::uint64_t hashUint64(std::uint64_t hash,
-                                                         std::uint64_t value) noexcept {
-            for (std::size_t index = 0; index < 8U; ++index) {
-                hash = hashByte(hash, static_cast<std::uint8_t>((value >> (index * 8U)) & 0xFFU));
-            }
-            return hash;
-        }
-
-        [[nodiscard]] constexpr std::uint64_t hashText(std::uint64_t hash,
-                                                       std::string_view text) noexcept {
-            for (char character : text) {
-                hash = hashByte(hash, static_cast<std::uint8_t>(character));
-            }
-            return hash;
-        }
+        using ToolFingerprintCacheKey = std::pair<std::uint64_t, std::string>;
+        using ToolFingerprintCache =
+            std::map<ToolFingerprintCacheKey, Result<AssetToolFingerprint>>;
 
         [[nodiscard]] std::string formatHash64(std::uint64_t value) {
             constexpr std::string_view kHexDigits = "0123456789abcdef";
@@ -205,80 +185,54 @@ namespace asharia::asset {
             return std::nullopt;
         }
 
-        [[nodiscard]] std::uint64_t hashToolFileMetadata(std::uint64_t hash,
-                                                         const std::filesystem::path& executable) {
-#if defined(_WIN32)
-            WIN32_FILE_ATTRIBUTE_DATA data{};
-            if (GetFileAttributesExW(executable.c_str(), GetFileExInfoStandard, &data) == 0) {
-                return hash;
-            }
-            ULARGE_INTEGER fileSize{};
-            fileSize.LowPart = data.nFileSizeLow;
-            fileSize.HighPart = data.nFileSizeHigh;
-            hash = hashUint64(hash, fileSize.QuadPart);
-
-            ULARGE_INTEGER writeTime{};
-            writeTime.LowPart = data.ftLastWriteTime.dwLowDateTime;
-            writeTime.HighPart = data.ftLastWriteTime.dwHighDateTime;
-            return hashUint64(hash, writeTime.QuadPart);
-#else
-            std::error_code sizeError;
-            const std::uintmax_t fileSize = std::filesystem::file_size(executable, sizeError);
-            if (!sizeError) {
-                hash = hashUint64(hash, static_cast<std::uint64_t>(fileSize));
-            }
-
-            std::error_code timeError;
-            const std::filesystem::file_time_type writeTime =
-                std::filesystem::last_write_time(executable, timeError);
-            if (!timeError) {
-                hash = hashUint64(
-                    hash,
-                    static_cast<std::uint64_t>(writeTime.time_since_epoch().count()));
-            }
-            return hash;
-#endif
-        }
-
-        [[nodiscard]] std::uint64_t hashToolVersionFingerprint(std::string_view toolName) {
-            std::uint64_t hash = hashText(kFnv1a64Offset, "asset-tool-version");
-            hash = hashText(hash, toolName);
+        [[nodiscard]] Result<AssetToolFingerprint>
+        resolveDefaultToolFingerprint(std::string_view toolName) {
             const std::optional<std::filesystem::path> executable = findToolExecutable(toolName);
             if (!executable) {
-                return hashText(hash, "missing");
+                return std::unexpected{Error{ErrorDomain::Asset, 0,
+                                             "Could not locate required asset tool executable '" +
+                                                 std::string{toolName} +
+                                                 "' in PATH or VULKAN_SDK."}};
             }
-
-            std::error_code canonicalError;
-            const std::filesystem::path canonicalPath =
-                std::filesystem::weakly_canonical(*executable, canonicalError);
-            hash = hashText(hash, canonicalError ? executable->generic_string()
-                                                 : canonicalPath.generic_string());
-
-            return hashToolFileMetadata(hash, *executable);
+            return fingerprintAssetTool(*executable, toolName);
         }
 
-        [[nodiscard]] bool hasToolVersionFor(
-            std::span<const AssetImportToolVersionDependency> toolVersions, ImporterId importerId,
-            std::string_view toolName) {
+        [[nodiscard]] bool
+        hasToolVersionFor(std::span<const AssetImportToolVersionDependency> toolVersions,
+                          ImporterId importerId, std::string_view toolName) {
             return std::ranges::any_of(
-                toolVersions, [importerId, toolName](const AssetImportToolVersionDependency&
-                                                         toolVersion) {
-                    return toolVersion.importerId == importerId &&
-                           toolVersion.toolName == toolName;
+                toolVersions,
+                [importerId, toolName](const AssetImportToolVersionDependency& toolVersion) {
+                    return toolVersion.importerId == importerId && toolVersion.toolName == toolName;
                 });
         }
 
-        void appendDefaultShaderToolVersionDependency(
+        [[nodiscard]] VoidResult appendDefaultShaderToolVersionDependency(
             std::vector<AssetImportToolVersionDependency>& toolVersions, ImporterId importerId,
-            std::string_view toolName) {
+            std::string_view toolName, AssetToolFingerprintResolver resolver,
+            ToolFingerprintCache& fingerprintCache) {
             if (hasToolVersionFor(toolVersions, importerId, toolName)) {
-                return;
+                return {};
+            }
+
+            ToolFingerprintCacheKey cacheKey{importerId.value, std::string{toolName}};
+            auto cached = fingerprintCache.find(cacheKey);
+            if (cached == fingerprintCache.end()) {
+                Result<AssetToolFingerprint> resolved =
+                    resolver != nullptr ? resolver(toolName)
+                                        : resolveDefaultToolFingerprint(toolName);
+                cached = fingerprintCache.emplace(std::move(cacheKey), std::move(resolved)).first;
+            }
+            const Result<AssetToolFingerprint>& fingerprint = cached->second;
+            if (!fingerprint) {
+                return std::unexpected{fingerprint.error()};
             }
             toolVersions.push_back(AssetImportToolVersionDependency{
                 .importerId = importerId,
                 .toolName = std::string{toolName},
-                .versionHash = hashToolVersionFingerprint(toolName),
+                .versionHash = fingerprint->versionHash,
             });
+            return {};
         }
 
         [[nodiscard]] bool isShaderCompileReflectionSource(const SourceAssetRecord& source) {
@@ -346,9 +300,11 @@ namespace asharia::asset {
                                                 : AssetImportRequestReason::MissingProduct;
         }
 
-        [[nodiscard]] std::vector<AssetDependency>
+        [[nodiscard]] Result<std::vector<AssetDependency>>
         makeImportDependencies(const SourceAssetRecord& source,
-                               std::span<const AssetImportToolVersionDependency> toolVersions) {
+                               std::span<const AssetImportToolVersionDependency> toolVersions,
+                               AssetToolFingerprintResolver resolver,
+                               ToolFingerprintCache& fingerprintCache) {
             std::vector<AssetDependency> dependencies{
                 AssetDependency{
                     .owner = source.guid,
@@ -371,19 +327,27 @@ namespace asharia::asset {
                 }
             }
             if (isShaderCompileReflectionSource(source)) {
-                appendDefaultShaderToolVersionDependency(matchingToolVersions, source.importerId,
-                                                         "slangc");
-                appendDefaultShaderToolVersionDependency(matchingToolVersions, source.importerId,
-                                                         "spirv-val");
-            }
-            std::ranges::sort(matchingToolVersions, [](const AssetImportToolVersionDependency& left,
-                                                       const AssetImportToolVersionDependency&
-                                                           right) {
-                if (left.toolName != right.toolName) {
-                    return left.toolName < right.toolName;
+                if (auto appended = appendDefaultShaderToolVersionDependency(
+                        matchingToolVersions, source.importerId, "slangc", resolver,
+                        fingerprintCache);
+                    !appended) {
+                    return std::unexpected{appended.error()};
                 }
-                return left.versionHash < right.versionHash;
-            });
+                if (auto appended = appendDefaultShaderToolVersionDependency(
+                        matchingToolVersions, source.importerId, "spirv-val", resolver,
+                        fingerprintCache);
+                    !appended) {
+                    return std::unexpected{appended.error()};
+                }
+            }
+            std::ranges::sort(matchingToolVersions,
+                              [](const AssetImportToolVersionDependency& left,
+                                 const AssetImportToolVersionDependency& right) {
+                                  if (left.toolName != right.toolName) {
+                                      return left.toolName < right.toolName;
+                                  }
+                                  return left.versionHash < right.versionHash;
+                              });
 
             dependencies.reserve(dependencies.size() + matchingToolVersions.size());
             for (const AssetImportToolVersionDependency& toolVersion : matchingToolVersions) {
@@ -544,6 +508,8 @@ namespace asharia::asset {
                               return sourceIndexOrdersBefore(sources, leftIndex, rightIndex);
                           });
 
+        ToolFingerprintCache fingerprintCache;
+
         for (std::size_t sourceIndex : orderedSourceIndices) {
             const DiscoveredSourceAsset& discovered = sources[sourceIndex];
             const std::optional<std::size_t> snapshotIndex =
@@ -572,8 +538,18 @@ namespace asharia::asset {
                               AssetImportPlanDiagnosticSeverity::Warning);
             }
 
-            std::vector<AssetDependency> dependencies =
-                makeImportDependencies(plannedSource, options.toolVersions);
+            Result<std::vector<AssetDependency>> dependencyResult =
+                makeImportDependencies(plannedSource, options.toolVersions,
+                                       options.toolFingerprintResolver, fingerprintCache);
+            if (!dependencyResult) {
+                addDiagnostic(result, AssetImportPlanDiagnosticCode::ToolFingerprintFailed,
+                              plannedSource.sourcePath,
+                              "Asset import planning could not fingerprint a required tool for " +
+                                  sourceLabel(plannedSource) + ": " +
+                                  dependencyResult.error().message);
+                continue;
+            }
+            std::vector<AssetDependency> dependencies = std::move(*dependencyResult);
             const std::uint64_t dependencyHash = hashAssetDependencies(dependencies);
             AssetProductKey productKey =
                 makeAssetProductKey(plannedSource, dependencyHash, result.targetProfileHash);

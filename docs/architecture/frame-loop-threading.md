@@ -166,6 +166,15 @@ render/resource retirement。
 - worker task 失败返回 structured error；owner 线程决定 fallback resource 或终止 smoke。
 - GPU resource destroy 不在提交帧立即执行，进入 deferred destruction 并等待 frame fence。
 - 任何临时 `vkDeviceWaitIdle` 必须写注释说明是 shutdown、debug probe 还是 MVP 简化路径。
+- Swapchain recreate 是当前单 graphics/present queue 的显式同步例外：先检查 in-flight fence 和
+  `vkQueueWaitIdle`，再把旧 swapchain、views 和 present-wait semaphores 移入局部 RAII owner；新资源
+  全部创建成功后才一次性安装，所有成功/失败返回都先按 semaphore -> view -> swapchain 清理旧集合。
+  该路径不得扩展为普通 render-loop wait，也不得把 retired 集合累积到 shutdown。
+- Vulkan 1.x 未扩展路径没有直接的 present-completion fence。Khronos 明确指出 submit fence 不涵盖
+  presentation wait，`vkQueueWaitIdle` 在这里是 current single-queue 的 practical fallback，而不是可推广
+  到异步或多 present queue 的形式证明。未来放宽同步回收前必须引入
+  `VK_EXT_swapchain_maintenance1` present fences 或等价的 spec-backed completion proof：
+  https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
 - shutdown 顺序：停止接收新任务，drain worker，停止 render thread，等待 GPU idle，销毁 frame resources，销毁 long-lived resources，销毁 device/context。
 
 ## 文档与代码审查门禁

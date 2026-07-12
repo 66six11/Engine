@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <slang/slang-com-ptr.h>
@@ -12,6 +11,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "asharia/core/file_io.hpp"
 
 namespace {
 
@@ -418,13 +419,18 @@ namespace {
             return 1;
         }
 
-        std::filesystem::create_directories(options.output.parent_path());
-        std::ofstream out{options.output, std::ios::binary};
-        if (!out) {
-            std::cerr << "Failed to open reflection output: " << options.output.string() << '\n';
-            return 1;
+        const std::filesystem::path outputDirectory = options.output.parent_path();
+        if (!outputDirectory.empty()) {
+            std::error_code directoryError;
+            std::filesystem::create_directories(outputDirectory, directoryError);
+            if (directoryError) {
+                std::cerr << "Failed to create reflection output directory: "
+                          << outputDirectory.string() << ": " << directoryError.message() << '\n';
+                return 1;
+            }
         }
 
+        std::ostringstream out;
         out << "{\n";
         out << "  \"source\": \"" << jsonEscape(sourcePath.string()) << "\",\n";
         out << "  \"entry\": \"" << jsonEscape(options.entry) << "\",\n";
@@ -445,6 +451,12 @@ namespace {
         out << "    \"parameterCount\": " << reflectedEntryPoint->getParameterCount() << "\n";
         out << "  }\n";
         out << "}\n";
+        auto written = asharia::core::writeFileTextAtomically(options.output, out.str());
+        if (!written) {
+            std::cerr << "Failed to commit reflection output: " << options.output.string() << ": "
+                      << written.error().message << '\n';
+            return 1;
+        }
         return 0;
     }
 
@@ -456,8 +468,9 @@ int main(int argc, char** argv) { // NOLINT(bugprone-exception-escape)
     try {
         const auto options = parseArgs(argc, argv);
         if (!options) {
-            std::cerr << "Usage: asharia-slang-reflect --source <file> --entry <name> --stage <stage> "
-                         "--profile <profile> --target <target> --output <file>\n";
+            std::cerr
+                << "Usage: asharia-slang-reflect --source <file> --entry <name> --stage <stage> "
+                   "--profile <profile> --target <target> --output <file>\n";
             return 1;
         }
 

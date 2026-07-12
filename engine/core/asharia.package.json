@@ -5,7 +5,9 @@
   "description": "Shared low-level utilities for Asharia Engine packages.",
   "dependencies": [],
   "targets": ["asharia-core"],
+  "testTargets": ["asharia-core-file-io-tests"],
   "targetDependencies": {
-    "asharia-core": []
+    "asharia-core": [],
+    "asharia-core-file-io-tests": ["asharia-core"]
   }
 }

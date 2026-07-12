@@ -22,6 +22,8 @@ namespace asharia::material_instance {
         using shader_authoring::AshaderPropertyType;
         using namespace std::string_view_literals;
 
+        inline constexpr std::uint64_t kMaxMaterialInstanceBytes = 16ULL * 1024ULL * 1024ULL;
+
         struct HashTextField {
             std::string_view text;
             std::string_view fieldName;
@@ -842,7 +844,7 @@ namespace asharia::material_instance {
     }
 
     Result<AmatDocument> readAmatFile(const std::filesystem::path& path) {
-        auto archive = archive::readJsonArchiveFile(path);
+        auto archive = archive::readJsonArchiveFile(path, {.maxBytes = kMaxMaterialInstanceBytes});
         if (!archive) {
             return std::unexpected{amatIoError("Failed to parse .amat file '" + path.string() +
                                                "': " + archive.error().message)};

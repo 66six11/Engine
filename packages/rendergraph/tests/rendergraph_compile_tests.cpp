@@ -1,4 +1,5 @@
 ﻿#include <cstdlib>
+#include <exception>
 #include <expected>
 #include <iostream>
 #include <string>
@@ -30,6 +31,16 @@ namespace {
         std::cerr << message << '\n';
     }
 
+    struct ExpectedError {
+        ExpectedError(const char* value) : text{value} {}
+        std::string_view text;
+    };
+
+    struct FailureContext {
+        FailureContext(const char* value) : text{value} {}
+        std::string_view text;
+    };
+
     [[nodiscard]] bool expect(bool condition, std::string_view message) {
         if (!condition) {
             logFailure(message);
@@ -41,14 +52,14 @@ namespace {
 
     [[nodiscard]] bool
     expectCompileFailure(const asharia::Result<asharia::RenderGraphCompileResult>& compiled,
-                         std::string_view expectedMessage, std::string_view context) {
+                         ExpectedError expectedMessage, FailureContext context) {
         if (compiled) {
-            std::cerr << "RenderGraph accepted invalid graph: " << context << '\n';
+            std::cerr << "RenderGraph accepted invalid graph: " << context.text << '\n';
             return false;
         }
 
-        if (!contains(compiled.error().message, expectedMessage)) {
-            std::cerr << "RenderGraph produced unexpected error for " << context << ": "
+        if (!contains(compiled.error().message, expectedMessage.text)) {
+            std::cerr << "RenderGraph produced unexpected error for " << context.text << ": "
                       << compiled.error().message << '\n';
             return false;
         }
@@ -57,16 +68,15 @@ namespace {
     }
 
     [[nodiscard]] bool expectExecuteFailure(const asharia::Result<void>& executed,
-                                            std::string_view expectedMessage,
-                                            std::string_view context) {
+                                            ExpectedError expectedMessage, FailureContext context) {
         if (executed) {
-            std::cerr << "RenderGraph executed invalid graph: " << context << '\n';
+            std::cerr << "RenderGraph executed invalid graph: " << context.text << '\n';
             return false;
         }
 
-        if (!contains(executed.error().message, expectedMessage)) {
-            std::cerr << "RenderGraph produced unexpected execute error for " << context << ": "
-                      << executed.error().message << '\n';
+        if (!contains(executed.error().message, expectedMessage.text)) {
+            std::cerr << "RenderGraph produced unexpected execute error for " << context.text
+                      << ": " << executed.error().message << '\n';
             return false;
         }
 
@@ -811,6 +821,54 @@ namespace {
     }
 
     [[nodiscard]] bool
+    verifyImageBufferTransferDiagnostics(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+        bool foundUploadCommand = false;
+        bool foundReadbackCommand = false;
+        bool foundStagingReadEdge = false;
+        bool foundImageWriteEdge = false;
+        bool foundImageReadEdge = false;
+        bool foundReadbackWriteEdge = false;
+        for (const asharia::RenderGraphDiagnosticsCommandNode& command : snapshot.commands) {
+            if (command.passName == "UploadTexture" &&
+                command.kind == asharia::RenderGraphCommandKind::CopyBufferToImage &&
+                command.detail == "source -> target") {
+                foundUploadCommand = true;
+            }
+            if (command.passName == "ReadbackTexture" &&
+                command.kind == asharia::RenderGraphCommandKind::CopyImageToBuffer &&
+                command.detail == "source -> target") {
+                foundReadbackCommand = true;
+            }
+        }
+        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
+            if (edge.passName == "UploadTexture" && edge.resourceName == "TextureStaging" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::BufferTransferRead) {
+                foundStagingReadEdge = true;
+            }
+            if (edge.passName == "UploadTexture" && edge.resourceName == "TextureImage" &&
+                edge.slotName == "target" &&
+                edge.access == asharia::RenderGraphSlotAccess::TransferWrite) {
+                foundImageWriteEdge = true;
+            }
+            if (edge.passName == "ReadbackTexture" && edge.resourceName == "TextureImage" &&
+                edge.slotName == "source" &&
+                edge.access == asharia::RenderGraphSlotAccess::TransferRead) {
+                foundImageReadEdge = true;
+            }
+            if (edge.passName == "ReadbackTexture" && edge.resourceName == "TextureReadback" &&
+                edge.slotName == "target" &&
+                edge.access == asharia::RenderGraphSlotAccess::BufferTransferWrite) {
+                foundReadbackWriteEdge = true;
+            }
+        }
+        return expect(
+            foundUploadCommand && foundReadbackCommand && foundStagingReadEdge &&
+                foundImageWriteEdge && foundImageReadEdge && foundReadbackWriteEdge,
+            "RenderGraph diagnostics snapshot missed image/buffer copy commands or edges.");
+    }
+
+    [[nodiscard]] bool
     compilesImageBufferTransferCopies(const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph graph;
         const auto source = graph.importBuffer(asharia::RenderGraphBufferDesc{
@@ -879,50 +937,7 @@ namespace {
 
         const asharia::RenderGraphDiagnosticsSnapshot snapshot =
             graph.diagnosticsSnapshot(*compiled);
-        bool foundUploadCommand = false;
-        bool foundReadbackCommand = false;
-        bool foundStagingReadEdge = false;
-        bool foundImageWriteEdge = false;
-        bool foundImageReadEdge = false;
-        bool foundReadbackWriteEdge = false;
-        for (const asharia::RenderGraphDiagnosticsCommandNode& command : snapshot.commands) {
-            if (command.passName == "UploadTexture" &&
-                command.kind == asharia::RenderGraphCommandKind::CopyBufferToImage &&
-                command.detail == "source -> target") {
-                foundUploadCommand = true;
-            }
-            if (command.passName == "ReadbackTexture" &&
-                command.kind == asharia::RenderGraphCommandKind::CopyImageToBuffer &&
-                command.detail == "source -> target") {
-                foundReadbackCommand = true;
-            }
-        }
-        for (const asharia::RenderGraphDiagnosticsAccessEdge& edge : snapshot.accessEdges) {
-            if (edge.passName == "UploadTexture" && edge.resourceName == "TextureStaging" &&
-                edge.slotName == "source" &&
-                edge.access == asharia::RenderGraphSlotAccess::BufferTransferRead) {
-                foundStagingReadEdge = true;
-            }
-            if (edge.passName == "UploadTexture" && edge.resourceName == "TextureImage" &&
-                edge.slotName == "target" &&
-                edge.access == asharia::RenderGraphSlotAccess::TransferWrite) {
-                foundImageWriteEdge = true;
-            }
-            if (edge.passName == "ReadbackTexture" && edge.resourceName == "TextureImage" &&
-                edge.slotName == "source" &&
-                edge.access == asharia::RenderGraphSlotAccess::TransferRead) {
-                foundImageReadEdge = true;
-            }
-            if (edge.passName == "ReadbackTexture" && edge.resourceName == "TextureReadback" &&
-                edge.slotName == "target" &&
-                edge.access == asharia::RenderGraphSlotAccess::BufferTransferWrite) {
-                foundReadbackWriteEdge = true;
-            }
-        }
-        return expect(
-            foundUploadCommand && foundReadbackCommand && foundStagingReadEdge &&
-                foundImageWriteEdge && foundImageReadEdge && foundReadbackWriteEdge,
-            "RenderGraph diagnostics snapshot missed image/buffer copy commands or edges.");
+        return verifyImageBufferTransferDiagnostics(snapshot);
     }
 
     [[nodiscard]] bool rejectsMissingProducers(const asharia::RenderGraphSchemaRegistry& schemas) {
@@ -1031,7 +1046,8 @@ namespace {
 
         static_cast<void>(resourceGraph.importImage(importedColorDesc("AddedAfterCompile")));
         static_cast<void>(resourceGraph.importBuffer(importedStorageDesc("BufferAfterCompile")));
-        return expectExecuteFailure(resourceGraph.execute(*resourceCompiled), "changed since compile",
+        return expectExecuteFailure(resourceGraph.execute(*resourceCompiled),
+                                    "changed since compile",
                                     "compiled pass executed after resource mutation");
     }
 
@@ -1213,9 +1229,10 @@ namespace {
         asharia::RenderGraph bufferToImageGraph;
         const auto uploadSource =
             bufferToImageGraph.importBuffer(importedStorageDesc("UploadSource"));
-        const auto uploadTarget = bufferToImageGraph.importImage(importedSampledDesc("UploadTarget"));
-        bufferToImageGraph.addPass("CopyBufferToImageWithReadTarget",
-                                   "test.invalid-buffer-to-image-copy")
+        const auto uploadTarget =
+            bufferToImageGraph.importImage(importedSampledDesc("UploadTarget"));
+        bufferToImageGraph
+            .addPass("CopyBufferToImageWithReadTarget", "test.invalid-buffer-to-image-copy")
             .readTransferBuffer("source", uploadSource)
             .readTexture("target", uploadTarget, asharia::RenderGraphShaderStage::Fragment)
             .recordCommands([](asharia::RenderGraphCommandList& commands) {
@@ -1232,8 +1249,8 @@ namespace {
             imageToBufferGraph.importImage(importedColorDesc("ReadbackSource"));
         const auto readbackTarget =
             imageToBufferGraph.importBuffer(importedStorageDesc("ReadbackTarget"));
-        imageToBufferGraph.addPass("CopyImageToBufferWithReadTarget",
-                                   "test.invalid-image-to-buffer-copy")
+        imageToBufferGraph
+            .addPass("CopyImageToBufferWithReadTarget", "test.invalid-image-to-buffer-copy")
             .readTransfer("source", readbackSource)
             .readBuffer("target", readbackTarget, asharia::RenderGraphShaderStage::Compute)
             .recordCommands([](asharia::RenderGraphCommandList& commands) {
@@ -1246,19 +1263,17 @@ namespace {
 
     [[nodiscard]] bool rejectsInvalidResourceDeclarations() {
         asharia::RenderGraph undefinedFormatGraph;
-        const auto undefinedFormat =
-            undefinedFormatGraph.importImage(asharia::RenderGraphImageDesc{
-                .name = "UndefinedFormat",
-                .format = asharia::RenderGraphImageFormat::Undefined,
-                .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
-                .initialState = asharia::RenderGraphImageState::Undefined,
-                .finalState = asharia::RenderGraphImageState::Present,
-            });
+        const auto undefinedFormat = undefinedFormatGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "UndefinedFormat",
+            .format = asharia::RenderGraphImageFormat::Undefined,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::Present,
+        });
         undefinedFormatGraph.addPass("WriteUndefinedFormat", std::string{kColorWritePass})
             .writeColor("target", undefinedFormat);
         if (!expectCompileFailure(undefinedFormatGraph.compile(makeCompileTestSchemas()),
-                                  "must declare a defined format",
-                                  "image with undefined format")) {
+                                  "must declare a defined format", "image with undefined format")) {
             return false;
         }
 
@@ -1273,8 +1288,7 @@ namespace {
         zeroExtentGraph.addPass("WriteZeroExtent", std::string{kColorWritePass})
             .writeColor("target", zeroExtent);
         if (!expectCompileFailure(zeroExtentGraph.compile(makeCompileTestSchemas()),
-                                  "must declare a non-zero extent",
-                                  "image with zero extent")) {
+                                  "must declare a non-zero extent", "image with zero extent")) {
             return false;
         }
 
@@ -1323,8 +1337,8 @@ namespace {
                 .finalState = asharia::RenderGraphBufferState::StorageReadWrite,
                 .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
             });
-        bufferShaderStageGraph.addPass("ReadWriteShaderStageNone",
-                                       std::string{kStorageReadWritePass})
+        bufferShaderStageGraph
+            .addPass("ReadWriteShaderStageNone", std::string{kStorageReadWritePass})
             .readWriteStorageBuffer("target", bufferShaderStage,
                                     asharia::RenderGraphShaderStage::Compute);
         return expectCompileFailure(bufferShaderStageGraph.compile(makeCompileTestSchemas()),
@@ -1332,24 +1346,38 @@ namespace {
                                     "buffer StorageReadWrite state with ShaderStage::None");
     }
 
-} // namespace
+    [[nodiscard]] int runRenderGraphCompileTests() {
+        const asharia::RenderGraphSchemaRegistry schemas = makeCompileTestSchemas();
+        const bool passed =
+            cullsUnusedTransientButKeepsImportedWrites(schemas) &&
+            keepsSideEffectPassAndExecutesIt(schemas) &&
+            reordersFutureProducerBeforeConsumer(schemas) &&
+            keepsImportedInitialReadBeforeOverwrite(schemas) &&
+            buildsDiagnosticsSnapshot(schemas) && compilesImageTransferCopy(schemas) &&
+            compilesBufferFillCommand(schemas) && compilesBufferTransferCopy(schemas) &&
+            compilesImageBufferTransferCopies(schemas) && rejectsMissingProducers(schemas) &&
+            rejectsImportedResourcesWithoutFinalState(schemas) &&
+            rejectsExecutingCompiledGraphAfterMutation(schemas) &&
+            rejectsCommandsWithWrongResourceSlots() && rejectsInvalidResourceDeclarations();
 
-int main() {
-    const asharia::RenderGraphSchemaRegistry schemas = makeCompileTestSchemas();
-    const bool passed =
-        cullsUnusedTransientButKeepsImportedWrites(schemas) &&
-        keepsSideEffectPassAndExecutesIt(schemas) &&
-        reordersFutureProducerBeforeConsumer(schemas) &&
-        keepsImportedInitialReadBeforeOverwrite(schemas) && buildsDiagnosticsSnapshot(schemas) &&
-        compilesImageTransferCopy(schemas) && compilesBufferFillCommand(schemas) &&
-        compilesBufferTransferCopy(schemas) && compilesImageBufferTransferCopies(schemas) &&
-        rejectsMissingProducers(schemas) && rejectsImportedResourcesWithoutFinalState(schemas) &&
-        rejectsExecutingCompiledGraphAfterMutation(schemas) &&
-        rejectsCommandsWithWrongResourceSlots() && rejectsInvalidResourceDeclarations();
+        if (passed) {
+            std::cout << "RenderGraph compile tests passed.\n";
+        }
 
-    if (passed) {
-        std::cout << "RenderGraph compile tests passed.\n";
+        return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
-    return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+} // namespace
+
+// The exhaustive catch boundary converts all failures to the compile-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
+    try {
+        return runRenderGraphCompileTests();
+    } catch (const std::exception& error) {
+        std::cerr << "RenderGraph compile test threw: " << error.what() << '\n';
+    } catch (...) {
+        std::cerr << "RenderGraph compile test threw an unknown exception.\n";
+    }
+    return EXIT_FAILURE;
 }

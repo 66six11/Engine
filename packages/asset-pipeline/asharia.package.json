@@ -4,6 +4,7 @@
   "displayName": "Asharia Engine Asset Pipeline",
   "description": "CPU-only asset metadata discovery, planning, and deterministic product execution baseline.",
   "dependencies": [
+    "com.asharia.core",
     "com.asharia.archive",
     "com.asharia.asset-core",
     "com.asharia.material-instance",
@@ -16,6 +17,7 @@
   ],
   "targetDependencies": {
     "asharia-asset-pipeline": [
+      "asharia-core",
       "asharia-archive",
       "asharia-asset-core",
       "asharia-asset-core-io",

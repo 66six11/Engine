@@ -8,12 +8,32 @@
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1 -IncludeUntracked
+python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
 
+仓库根目录 Vulkan 扫描覆盖除 `apps/studio`、`apps/editor/src/native_bridge` 和
+`apps/editor/src/editor_shared_viewport*` 外的全部原生源码根；这些路径属于本审查轨道
+明确排除的 Studio native bridge。排除 glob 未匹配任何文件时 scanner 会失败，使范围漂移可见。
+CMake 边界审查会在每个 `target_link_libraries` 调用位置按源码顺序解释 `set` 和
+`list(APPEND)` 变量，而不是使用文件末尾的最终值。
+
+完整 native test gate 必须先 bootstrap Conan，然后运行两个独立 test tree：
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
+```
+
+ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
+`.github/workflows/native-code-quality.yml` 在 Windows 运行 encoding、whitespace、asset boundary、Vulkan package boundary/safety heuristic、两编译器
+build 和 CTest。Hosted CI 不运行 GPU/window smokes；下方 scope table 命中的 smoke 仍是 local
+pre-commit gates，并需要使用两个 standard debug presets 运行。
+
 `tools\pre-pr.ps1 -IncludeUntracked` 会按 changed files 打印候选 gates。
-`clangcl-debug` preset 开启 `ASHARIA_ENABLE_CLANG_TIDY=ON`；仓库当前没有单独提交的 Vulkan review 脚本。
+`clangcl-debug` preset 开启 `ASHARIA_ENABLE_CLANG_TIDY=ON`。`tools\review-vulkan-cpp.py`
+输出供人工确认的保守提示；CI 使用 `--fail-on warning`，warning/error 会阻塞，info 仅展示。
 
 常用 review helper 参数：
 

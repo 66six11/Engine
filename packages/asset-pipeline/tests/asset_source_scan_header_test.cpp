@@ -1,4 +1,6 @@
-﻿#include "asharia/asset_pipeline/asset_source_scan.hpp"
+﻿#include <string>
+
+#include "asharia/asset_pipeline/asset_source_scan.hpp"
 
 namespace asharia::asset_pipeline_header_tests {
 
@@ -6,6 +8,8 @@ namespace asharia::asset_pipeline_header_tests {
         [[maybe_unused]] const asharia::asset::AssetSourceScanRequest request{
             .sourceRoot = "Content",
             .sourcePathPrefix = "Content",
+            .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
+            .ignoredDirectoryNames = {},
         };
         [[maybe_unused]] asharia::asset::AssetSourceScanResult result{};
         [[maybe_unused]] const asharia::asset::AssetSourceScanDiagnosticCode code =

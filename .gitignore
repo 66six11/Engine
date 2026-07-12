@@ -3,6 +3,7 @@
 /out/
 /.vs/
 /.idea/
+/.worktrees/
 
 # Conan
 /.conan/

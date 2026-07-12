@@ -1,11 +1,11 @@
 ﻿#include <charconv>
 #include <cstddef>
 #include <expected>
-#include <fstream>
 #include <optional>
 #include <string_view>
 
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 #include "asharia/shader_slang/reflection.hpp"
 
 namespace asharia {
@@ -34,28 +34,6 @@ namespace asharia {
             std::string_view json;
             std::string_view fallbackStageVisibility;
         };
-
-        [[nodiscard]] Result<std::string> readTextFile(const std::filesystem::path& path) {
-            std::ifstream file{path, std::ios::binary | std::ios::ate};
-            if (!file) {
-                return std::unexpected{
-                    reflectionError("Failed to open shader reflection JSON: " + path.string())};
-            }
-
-            const std::streamsize size = file.tellg();
-            if (size < 0) {
-                return std::unexpected{
-                    reflectionError("Failed to measure shader reflection JSON: " + path.string())};
-            }
-
-            std::string text(static_cast<std::size_t>(size), '\0');
-            file.seekg(0, std::ios::beg);
-            if (!file.read(text.data(), size)) {
-                return std::unexpected{
-                    reflectionError("Failed to read shader reflection JSON: " + path.string())};
-            }
-            return text;
-        }
 
         [[nodiscard]] std::optional<std::size_t> findPropertyValue(JsonPropertyQuery query) {
             const std::string key = "\"" + std::string{query.name} + "\"";
@@ -388,28 +366,27 @@ namespace asharia {
             merged += stageVisibility;
         }
 
-        [[nodiscard]] std::string descriptorBindingContext(
-            const ShaderDescriptorBindingReflection& binding) {
+        [[nodiscard]] std::string
+        descriptorBindingContext(const ShaderDescriptorBindingReflection& binding) {
             return "set " + std::to_string(binding.set) + ", binding " +
                    std::to_string(binding.binding);
         }
 
-        [[nodiscard]] bool sameDescriptorContract(
-            const ShaderDescriptorBindingReflection& left,
-            const ShaderDescriptorBindingReflection& right) {
-            return left.name == right.name && left.kind == right.kind && left.count == right.count &&
-                   left.category == right.category;
+        [[nodiscard]] bool sameDescriptorContract(const ShaderDescriptorBindingReflection& left,
+                                                  const ShaderDescriptorBindingReflection& right) {
+            return left.name == right.name && left.kind == right.kind &&
+                   left.count == right.count && left.category == right.category;
         }
 
-        [[nodiscard]] std::string descriptorContractSummary(
-            const ShaderDescriptorBindingReflection& binding) {
+        [[nodiscard]] std::string
+        descriptorContractSummary(const ShaderDescriptorBindingReflection& binding) {
             return "\"" + binding.name + "\", kind \"" + binding.kind + "\", category \"" +
                    binding.category + "\", count " + std::to_string(binding.count);
         }
 
-        [[nodiscard]] VoidResult mergeDescriptorBinding(
-            std::vector<ShaderDescriptorBindingReflection>& bindings,
-            const ShaderDescriptorBindingReflection& binding) {
+        [[nodiscard]] VoidResult
+        mergeDescriptorBinding(std::vector<ShaderDescriptorBindingReflection>& bindings,
+                               const ShaderDescriptorBindingReflection& binding) {
             for (ShaderDescriptorBindingReflection& existing : bindings) {
                 if (existing.set == binding.set && existing.binding == binding.binding) {
                     if (!sameDescriptorContract(existing, binding)) {
@@ -428,34 +405,32 @@ namespace asharia {
             return {};
         }
 
-        [[nodiscard]] std::uint64_t pushConstantEnd(
-            const ShaderPushConstantReflection& pushConstant) {
+        [[nodiscard]] std::uint64_t
+        pushConstantEnd(const ShaderPushConstantReflection& pushConstant) {
             return static_cast<std::uint64_t>(pushConstant.offset) + pushConstant.size;
         }
 
-        [[nodiscard]] bool samePushConstantContract(
-            const ShaderPushConstantReflection& left,
-            const ShaderPushConstantReflection& right) {
-            return left.name == right.name && left.offset == right.offset && left.size == right.size;
+        [[nodiscard]] bool samePushConstantContract(const ShaderPushConstantReflection& left,
+                                                    const ShaderPushConstantReflection& right) {
+            return left.name == right.name && left.offset == right.offset &&
+                   left.size == right.size;
         }
 
-        [[nodiscard]] bool pushConstantRangesOverlap(
-            const ShaderPushConstantReflection& left,
-            const ShaderPushConstantReflection& right) {
+        [[nodiscard]] bool pushConstantRangesOverlap(const ShaderPushConstantReflection& left,
+                                                     const ShaderPushConstantReflection& right) {
             return static_cast<std::uint64_t>(left.offset) < pushConstantEnd(right) &&
                    static_cast<std::uint64_t>(right.offset) < pushConstantEnd(left);
         }
 
-        [[nodiscard]] std::string pushConstantContractSummary(
-            const ShaderPushConstantReflection& pushConstant) {
-            return "\"" + pushConstant.name + "\", offset " +
-                   std::to_string(pushConstant.offset) + ", size " +
-                   std::to_string(pushConstant.size);
+        [[nodiscard]] std::string
+        pushConstantContractSummary(const ShaderPushConstantReflection& pushConstant) {
+            return "\"" + pushConstant.name + "\", offset " + std::to_string(pushConstant.offset) +
+                   ", size " + std::to_string(pushConstant.size);
         }
 
-        [[nodiscard]] VoidResult mergePushConstant(
-            std::vector<ShaderPushConstantReflection>& pushConstants,
-            const ShaderPushConstantReflection& pushConstant) {
+        [[nodiscard]] VoidResult
+        mergePushConstant(std::vector<ShaderPushConstantReflection>& pushConstants,
+                          const ShaderPushConstantReflection& pushConstant) {
             for (ShaderPushConstantReflection& existing : pushConstants) {
                 if (samePushConstantContract(existing, pushConstant)) {
                     mergeStageVisibility(existing.stageVisibility, pushConstant.stageVisibility);
@@ -475,10 +450,12 @@ namespace asharia {
 
     } // namespace
 
-    Result<ShaderReflection> readShaderReflection(const std::filesystem::path& path) {
-        auto text = readTextFile(path);
+    Result<ShaderReflection> readShaderReflection(const std::filesystem::path& path,
+                                                  ShaderReflectionFileOptions options) {
+        auto text = core::readFileText(path, core::FileReadLimits{.maxBytes = options.maxBytes});
         if (!text) {
-            return std::unexpected{std::move(text.error())};
+            return std::unexpected{reflectionError("Failed to read shader reflection JSON '" +
+                                                   path.string() + "': " + text.error().message)};
         }
 
         auto source = parseStringProperty(*text, "source");

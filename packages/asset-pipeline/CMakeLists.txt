@@ -10,6 +10,7 @@ endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 find_package(stb CONFIG REQUIRED)
+asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
@@ -18,8 +19,11 @@ asharia_require_package_target(asharia::shader_authoring packages/shader-authori
 
 add_library(asharia-asset-pipeline STATIC
     src/asset_import_planning.cpp
+    src/asset_tool_fingerprint.cpp
     src/asset_product_blob.cpp
+    src/asset_product_blob_limits.cpp
     src/asset_product_execution.cpp
+    src/asset_product_publication.cpp
     src/asset_product_manifest_io.cpp
     src/asset_scanned_import_planning.cpp
     src/asset_source_scan.cpp
@@ -39,6 +43,7 @@ target_include_directories(asharia-asset-pipeline
 target_link_libraries(asharia-asset-pipeline
     PUBLIC
         asharia::asset_core
+        asharia::core
     PRIVATE
         asharia::archive
         asharia::asset_core_io
@@ -68,12 +73,18 @@ if(ASHARIA_BUILD_TESTS)
       tests/asset_source_snapshot_header_test.cpp
       tests/asset_texture_import_header_test.cpp
       tests/asset_texture_import_profile_header_test.cpp
+      tests/asset_tool_fingerprint_header_test.cpp
   )
 
   target_link_libraries(asharia-asset-pipeline-smoke-tests
       PRIVATE
           asharia::asset_pipeline
           asharia::asset_core_io
+  )
+
+  target_include_directories(asharia-asset-pipeline-smoke-tests
+      PRIVATE
+          "${CMAKE_CURRENT_SOURCE_DIR}/src"
   )
 
   target_link_libraries(asharia-asset-pipeline-header-tests

@@ -21,6 +21,8 @@ namespace asharia::project {
         using archive::ArchiveValueKind;
         using namespace std::string_view_literals;
 
+        inline constexpr std::uint64_t kMaxProjectDescriptorBytes = 16ULL * 1024ULL * 1024ULL;
+
         [[nodiscard]] Error projectDescriptorIoError(std::string message) {
             return Error{ErrorDomain::Project, 2, std::move(message)};
         }
@@ -388,7 +390,7 @@ namespace asharia::project {
 
     Result<AshariaProjectDescriptor>
     readAshariaProjectDescriptorFile(const std::filesystem::path& path) {
-        auto archive = archive::readJsonArchiveFile(path);
+        auto archive = archive::readJsonArchiveFile(path, {.maxBytes = kMaxProjectDescriptorBytes});
         if (!archive) {
             return std::unexpected{
                 projectDescriptorIoError("Failed to parse Asharia project descriptor file '" +

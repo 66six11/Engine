@@ -11,7 +11,7 @@ Checks: >
   -cppcoreguidelines-pro-type-union-access,
   -modernize-use-trailing-return-type,
   -readability-magic-numbers
-WarningsAsErrors: ''
+WarningsAsErrors: '*'
 HeaderFilterRegex: '^(include|src)/'
 FormatStyle: file
 CheckOptions:

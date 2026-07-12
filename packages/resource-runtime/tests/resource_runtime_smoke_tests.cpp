@@ -1,6 +1,7 @@
 ﻿#include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -104,14 +105,10 @@ namespace {
         auto emptyFailure = registry.markFailed(
             asharia::resource::RuntimeResourceTicket{.key = key, .generation = 1},
             asharia::resource::RuntimeResourceFailure{});
-        if (emptyFailure ||
-            !expectErrorCode(emptyFailure.error(),
-                             asharia::resource::RuntimeResourceDiagnosticCode::InvalidFailure,
-                             "empty failure message")) {
-            return false;
-        }
-
-        return true;
+        return !emptyFailure &&
+               expectErrorCode(emptyFailure.error(),
+                               asharia::resource::RuntimeResourceDiagnosticCode::InvalidFailure,
+                               "empty failure message");
     }
 
     bool smokeRuntimeResourceReadyAndFailed() {
@@ -366,9 +363,19 @@ namespace {
 
 } // namespace
 
-int main() {
-    const bool passed = smokeRuntimeResourceInvalids() && smokeRuntimeResourceReadyAndFailed() &&
-                        smokeRuntimeResourceProductMismatch() &&
-                        smokeRuntimeResourceProductResolution();
-    return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+// The exhaustive catch boundary converts all failures to the smoke-test exit protocol.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main() noexcept {
+    try {
+        const bool passed =
+            smokeRuntimeResourceInvalids() && smokeRuntimeResourceReadyAndFailed() &&
+            smokeRuntimeResourceProductMismatch() && smokeRuntimeResourceProductResolution();
+        return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    } catch (const std::exception& exception) {
+        logFailure(std::string{"Runtime resource smoke threw: "} + exception.what());
+        return EXIT_FAILURE;
+    } catch (...) {
+        logFailure("Runtime resource smoke caught an unknown exception.");
+        return EXIT_FAILURE;
+    }
 }

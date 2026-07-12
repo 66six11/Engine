@@ -4,6 +4,7 @@
   "displayName": "Asharia Engine Asset Processor",
   "description": "Offline asset dry-run and product execution command-line tool.",
   "dependencies": [
+    "com.asharia.core",
     "com.asharia.asset-core",
     "com.asharia.asset-pipeline",
     "com.asharia.project-core"
@@ -11,6 +12,7 @@
   "targets": ["asharia-asset-processor"],
   "targetDependencies": {
     "asharia-asset-processor": [
+      "asharia-core",
       "asharia-asset-core-io",
       "asharia-asset-pipeline",
       "asharia-project-core-io"
