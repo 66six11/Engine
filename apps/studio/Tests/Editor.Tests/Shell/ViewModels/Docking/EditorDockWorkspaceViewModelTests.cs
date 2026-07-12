@@ -12,7 +12,7 @@ using Editor.Features.Hierarchy.ViewModels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Docking.Panels;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Editor.Shell.ViewModels.Docking;
 using Xunit;
 

@@ -1,4 +1,6 @@
 using Asharia.Editor.Dialogs;
+using Asharia.Editor.Selection;
+using Asharia.Studio.Application.Selection;
 using System;
 using System.IO;
 using System.Linq;
@@ -11,6 +13,40 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Selection_service_implementation_is_owned_only_by_application()
+    {
+        var studioRoot = FindStudioRoot();
+        var applicationRoot = Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Selection");
+
+        Assert.True(
+            File.Exists(Path.Combine(applicationRoot, "EditorSelectionService.cs")),
+            $"Application selection service is missing from {applicationRoot}.");
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorSelectionService).Assembly.GetName().Name);
+        Assert.Contains(
+            typeof(IEditorSelectionService),
+            typeof(EditorSelectionService).GetInterfaces());
+
+        var legacyConsumers = Directory
+            .EnumerateFiles(studioRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(studioRoot, path).Replace('\\', '/'))
+            .Where(path => !path.StartsWith("Tests/", StringComparison.Ordinal)
+                && !path.StartsWith("src/", StringComparison.Ordinal)
+                && !path.Contains("/bin/", StringComparison.Ordinal)
+                && !path.Contains("/obj/", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(Path.Combine(studioRoot, path))
+                .Contains("namespace Editor.Shell.Selection", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Empty(legacyConsumers);
+    }
+
     [Fact]
     public void Public_dialog_contracts_replace_legacy_dialog_models()
     {

@@ -6,7 +6,7 @@ using Editor.Core.Services;
 using Editor.Features.Hierarchy.Models;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.UI.Icons;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Xunit;
 
 namespace Editor.Tests.Features.Hierarchy;

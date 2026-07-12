@@ -17,7 +17,7 @@ using Editor.Features.Workbench;
 using Editor.Shell.CodeFirstUI.Hosting;
 using Editor.Shell.Composition;
 using Editor.UI.Icons;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Xunit;
 using EditorExtensionHost = Editor.Shell.Compatibility.LegacyEditorModuleCompatibilityAdapter;
 
