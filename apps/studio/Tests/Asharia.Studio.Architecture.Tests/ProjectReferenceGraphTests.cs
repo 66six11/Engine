@@ -1,6 +1,8 @@
 using Asharia.Editor.Dialogs;
 using Asharia.Editor.Selection;
+using Asharia.Editor.Tasks;
 using Asharia.Studio.Application.Selection;
+using Asharia.Studio.Application.Tasks;
 using System;
 using System.IO;
 using System.Linq;
@@ -13,6 +15,40 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Background_task_service_implementation_is_owned_only_by_application()
+    {
+        var studioRoot = FindStudioRoot();
+        var applicationRoot = Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Tasks");
+
+        Assert.True(
+            File.Exists(Path.Combine(applicationRoot, "EditorBackgroundTaskService.cs")),
+            $"Application background task service is missing from {applicationRoot}.");
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorBackgroundTaskService).Assembly.GetName().Name);
+        Assert.Contains(
+            typeof(IEditorBackgroundTaskService),
+            typeof(EditorBackgroundTaskService).GetInterfaces());
+
+        var legacyOwners = Directory
+            .EnumerateFiles(studioRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(studioRoot, path).Replace('\\', '/'))
+            .Where(path => !path.StartsWith("Tests/", StringComparison.Ordinal)
+                && !path.StartsWith("src/", StringComparison.Ordinal)
+                && !path.Contains("/bin/", StringComparison.Ordinal)
+                && !path.Contains("/obj/", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(Path.Combine(studioRoot, path))
+                .Contains("class EditorBackgroundTaskService", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Empty(legacyOwners);
+    }
+
     [Fact]
     public void Selection_service_implementation_is_owned_only_by_application()
     {

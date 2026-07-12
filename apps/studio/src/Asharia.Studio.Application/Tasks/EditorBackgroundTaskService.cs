@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Asharia.Editor.Tasks;
 
-namespace Editor.Shell.Services;
+namespace Asharia.Studio.Application.Tasks;
 
 public sealed class EditorBackgroundTaskService : IEditorBackgroundTaskService
 {
