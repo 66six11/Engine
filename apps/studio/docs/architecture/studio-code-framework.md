@@ -48,6 +48,8 @@ Lifecycle Event 的公共 kind/snapshot/service contract 继续由 `Asharia.Edit
 
 Transaction 的 edit-command、ID、snapshot 和 service contract 继续由 `Asharia.Editor.Editing`/`Asharia.Editor.Transactions` 拥有；undo/redo stack、active transaction、rollback 和 failure diagnostics 的实现及完整行为测试已迁入 `Asharia.Studio.Application.Transactions`。本迁移不新增 composition 注册；当前没有 production consumer 的事实保持不变。当前实现使用普通 `List<T>` 保存有序历史，只承诺在串行 editor-command/document context 中调用，不承诺并发 thread safety；未来 production wiring 必须 marshal 到该 owner context，或通过独立设计显式增加同步合同。
 
+Diagnostics 的 severity/channel/record/service contract 继续由 `Asharia.Editor.Diagnostics` 拥有；有界 history、sequence 和过滤查询的 production 实现及 focused tests 已迁入 `Asharia.Studio.Application.Diagnostics`。该实现用私有 gate 同步普通 `List<T>` 的全部读写，在提交 record 并释放锁后才触发 `DiagnosticsChanged`；Console、Problems、Frame Debugger、Scene View、Workbench 和 MainWindow 仍通过公共接口消费，并由 Presentation dispatcher 负责 UI projection。
+
 `Asharia.Editor.Dialogs` 现拥有七个 UI-neutral public type：severity、action role、稳定 action ID、action descriptor、request、completion kind 和 result。Action ID、role、default、destructive 与 completion 是相互独立的语义；request 构造会验证全部结构 invariant，并冻结输入 action 的防御性只读快照。公开的 action 声明顺序是确定的 diagnostics/test 顺序，不承诺 Windows、Linux 或 macOS 上的屏幕排列。
 
 现有 compatibility Dialog Host 已改为消费该公共合同；Presentation 仍拥有 overlay、focus、action projection 和 single-active-modal policy，第二个 active request 会被拒绝。用户触发的 system dismiss 结果仍与未来 operation cancellation 分离。`Editor.Core.Models.Dialogs` 已删除，且没有 wrapper、type forwarding 或重复 model。当前仍没有 dialog service、owner-window routing、custom content、platform ordering、localization、file picker、progress、notification 或 modal queue。

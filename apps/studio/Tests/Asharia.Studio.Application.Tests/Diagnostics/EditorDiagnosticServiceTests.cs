@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Asharia.Editor.Diagnostics;
-using Editor.Core.Services;
+using Asharia.Studio.Application.Diagnostics;
 using Xunit;
 
-namespace Editor.Tests.Core;
+namespace Asharia.Studio.Application.Tests.Diagnostics;
 
 public sealed class EditorDiagnosticServiceTests
 {
