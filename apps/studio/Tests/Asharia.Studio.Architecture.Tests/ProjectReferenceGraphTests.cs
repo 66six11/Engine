@@ -4,11 +4,13 @@ using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;
 using Asharia.Editor.Transactions;
+using Asharia.Editor.Viewports;
 using Asharia.Studio.Application.Lifecycle;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
 using Asharia.Studio.Application.Transactions;
+using Asharia.Studio.Application.Viewports;
 using System;
 using System.IO;
 using System.Linq;
@@ -21,6 +23,40 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Viewport_scheduler_implementation_is_owned_only_by_application()
+    {
+        var studioRoot = FindStudioRoot();
+        var applicationRoot = Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Viewports");
+
+        Assert.True(
+            File.Exists(Path.Combine(applicationRoot, "ViewportScheduler.cs")),
+            $"Application viewport scheduler is missing from {applicationRoot}.");
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(ViewportScheduler).Assembly.GetName().Name);
+        Assert.Equal(
+            "Asharia.Editor",
+            typeof(ViewportSchedulerContext).Assembly.GetName().Name);
+
+        var legacyOwners = Directory
+            .EnumerateFiles(studioRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(studioRoot, path).Replace('\\', '/'))
+            .Where(path => !path.StartsWith("Tests/", StringComparison.Ordinal)
+                && !path.StartsWith("src/", StringComparison.Ordinal)
+                && !path.Contains("/bin/", StringComparison.Ordinal)
+                && !path.Contains("/obj/", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(Path.Combine(studioRoot, path))
+                .Contains("class ViewportScheduler", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Empty(legacyOwners);
+    }
+
     [Fact]
     public void Diagnostic_service_implementation_is_owned_only_by_application()
     {
