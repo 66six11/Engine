@@ -9,6 +9,7 @@ using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Docking.Panels;
+using Asharia.Studio.Application.Lifecycle;
 using Editor.Shell.Services;
 using Editor.UI.ViewModels;
 
