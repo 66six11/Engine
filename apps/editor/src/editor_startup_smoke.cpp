@@ -103,8 +103,10 @@ namespace asharia::editor {
                 return true;
             }
 
+            constexpr std::string_view kUtf8FilenameMarker{"\xE6\x96\x87\xE4\xBB\xB6"}; // 文件
             const std::filesystem::path path =
-                std::filesystem::temp_directory_path() / "asharia-editor-imgui-read-limit.bin";
+                std::filesystem::temp_directory_path() /
+                std::filesystem::path{u8"asharia-editor-文件-read-limit.bin"};
             auto fixture = asharia::core::writeFileTextAtomically(path, "data");
             if (!fixture) {
                 asharia::logError("Editor ImGui bounded read smoke could not write fixture: " +
@@ -119,9 +121,10 @@ namespace asharia::editor {
             std::error_code removeError;
             std::filesystem::remove(path, removeError);
 
-            const auto preservesContext = [&path](const Error& error, std::string_view consumer) {
+            const auto preservesContext = [kUtf8FilenameMarker](const Error& error,
+                                                                std::string_view consumer) {
                 return error.message.find(consumer) != std::string::npos &&
-                       error.message.find(detail::pathToUtf8String(path)) != std::string::npos &&
+                       error.message.find(kUtf8FilenameMarker) != std::string::npos &&
                        error.message.find("observedBytes=4") != std::string::npos &&
                        error.message.find("maxBytes=3") != std::string::npos;
             };
