@@ -482,7 +482,7 @@ def split_cmake_arguments(block: str) -> list[str]:
     return arguments
 
 
-def simple_cmake_variables(text: str) -> dict[str, str]:
+def simple_cmake_variables(text: str, before_offset: int | None = None) -> dict[str, str]:
     variables: dict[str, str] = {}
     commands = [
         (offset, "set", block) for offset, block in iter_cmake_command_blocks(text, "set")
@@ -490,7 +490,9 @@ def simple_cmake_variables(text: str) -> dict[str, str]:
     commands.extend(
         (offset, "list", block) for offset, block in iter_cmake_command_blocks(text, "list")
     )
-    for _, command, block in sorted(commands):
+    for offset, command, block in sorted(commands):
+        if before_offset is not None and offset >= before_offset:
+            break
         arguments = split_cmake_arguments(block)
         if command == "set" and arguments:
             name, *values = arguments
@@ -658,7 +660,6 @@ def vk_result_is_handled(text: str, match: re.Match[str]) -> bool:
 def scan_cmake(path: Path, text: str, lines: list[str], findings: list[Finding]) -> None:
     sanitized = mask_cmake_comments(text)
     sanitized_lines = sanitized.splitlines()
-    variables = simple_cmake_variables(text)
     saw_standard = False
     for line_no, line in enumerate(sanitized_lines, start=1):
         rules = (
@@ -683,6 +684,7 @@ def scan_cmake(path: Path, text: str, lines: list[str], findings: list[Finding])
                 )
 
     for offset, block in iter_target_link_blocks(text):
+        variables = simple_cmake_variables(text, before_offset=offset)
         arguments = first_cmake_argument(block)
         if arguments is None:
             continue

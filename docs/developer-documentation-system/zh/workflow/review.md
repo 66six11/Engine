@@ -16,6 +16,8 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset
 仓库根目录 Vulkan 扫描覆盖除 `apps/studio`、`apps/editor/src/native_bridge` 和
 `apps/editor/src/editor_shared_viewport*` 外的全部原生源码根；这些路径属于本审查轨道
 明确排除的 Studio native bridge。排除 glob 未匹配任何文件时 scanner 会失败，使范围漂移可见。
+CMake 边界审查会在每个 `target_link_libraries` 调用位置按源码顺序解释 `set` 和
+`list(APPEND)` 变量，而不是使用文件末尾的最终值。
 
 完整 native test gate 必须先 bootstrap Conan，然后运行两个独立 test tree：
 

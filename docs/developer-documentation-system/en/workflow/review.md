@@ -17,6 +17,8 @@ The repository-root Vulkan scan covers every native source root except `apps/stu
 Studio-only native bridge implemented by `apps/editor/src/native_bridge` plus
 `apps/editor/src/editor_shared_viewport*`. These are explicit design exclusions for this review
 track; unmatched exclusion globs fail the scanner so scope drift remains visible.
+CMake boundary review interprets `set` and `list(APPEND)` variables in source order at each
+`target_link_libraries` call, rather than using their final file value.
 
 For the complete native test gate, bootstrap Conan first and run both isolated test trees:
 
