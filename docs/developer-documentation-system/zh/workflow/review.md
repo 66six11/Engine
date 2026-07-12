@@ -8,7 +8,7 @@
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1 -IncludeUntracked
-python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic --fail-on warning
+python tools\review-vulkan-cpp.py packages\rhi-vulkan packages\rendergraph packages\renderer-basic apps\editor apps\sample-viewer --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```

@@ -1337,17 +1337,29 @@ namespace asharia {
             return record(context);
         }();
         if (!recorded) {
-            [[maybe_unused]] const VkResult resetAfterRecordFailure =
-                vkResetCommandBuffer(commandBuffer_, 0);
+            const VkResult resetAfterRecordFailure = vkResetCommandBuffer(commandBuffer_, 0);
             discardRecordedTimestampQueries();
+            if (resetAfterRecordFailure != VK_SUCCESS) {
+                return std::unexpected{vulkanError(
+                    "Failed to reset Vulkan command buffer after frame recording failed; "
+                    "recording error: " +
+                        recorded.error().message,
+                    resetAfterRecordFailure)};
+            }
             return std::unexpected{std::move(recorded.error())};
         }
 
         result = vkEndCommandBuffer(commandBuffer_);
         if (result != VK_SUCCESS) {
-            [[maybe_unused]] const VkResult resetAfterEndFailure =
-                vkResetCommandBuffer(commandBuffer_, 0);
+            const VkResult resetAfterEndFailure = vkResetCommandBuffer(commandBuffer_, 0);
             discardRecordedTimestampQueries();
+            if (resetAfterEndFailure != VK_SUCCESS) {
+                return std::unexpected{vulkanError(
+                    "Failed to reset Vulkan command buffer after ending command recording failed "
+                    "with " +
+                        vkResultName(result),
+                    resetAfterEndFailure)};
+            }
             return std::unexpected{vulkanError("Failed to end Vulkan command buffer", result)};
         }
 

@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -43,16 +45,7 @@ EXCLUDED_DIRS = {
 }
 SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
 
-VK_RESULT_CALL_RE = re.compile(
-    r"\b(vk(?:"
-    r"(?:Create|Allocate|Map|Bind|Begin|End|QueuePresent|AcquireNextImage|"
-    r"WaitForFences|ResetFences|QueueSubmit)[A-Za-z0-9_]*|"
-    r"QueueWaitIdle|DeviceWaitIdle|"
-    r"Enumerate(?:InstanceLayerProperties|InstanceExtensionProperties|"
-    r"DeviceExtensionProperties|PhysicalDevices)|"
-    r"GetPhysicalDeviceSurface(?:FormatsKHR|PresentModesKHR)|"
-    r"GetSwapchainImagesKHR))\s*\("
-)
+VK_CALL_RE = re.compile(r"\b(vk[A-Z][A-Za-z0-9_]*)\s*\(")
 STD_RE = re.compile(r"\bCMAKE_CXX_STANDARD\s+([0-9]+)\b")
 FEATURE_RE = re.compile(r"\bcxx_std_([0-9]+)\b")
 VULKAN_TYPE_RE = re.compile(r"\bVk[A-Z][A-Za-z0-9_]*\b|\bVK_[A-Z0-9_]+\b")
@@ -76,19 +69,118 @@ TARGET_ALIASES = {
     "asharia::rendergraph": "rendergraph",
     "asharia-rhi-vulkan": "rhi_vulkan",
     "asharia::rhi_vulkan": "rhi_vulkan",
+    "asharia-rhi-vulkan-rendergraph": "rhi_vulkan_rendergraph",
+    "asharia::rhi_vulkan_rendergraph": "rhi_vulkan_rendergraph",
     "asharia-renderer-basic": "renderer_basic",
     "asharia::renderer_basic": "renderer_basic",
+    "asharia-renderer-basic-vulkan": "renderer_basic_vulkan",
+    "asharia::renderer_basic_vulkan": "renderer_basic_vulkan",
 }
 
-VK_RESULT_HELPERS = (
+TERMINAL_VK_RESULT_HELPERS = (
     "VK_CHECK",
     "VK_ASSERT",
-    "checkVk",
-    "check_vk",
     "throw_if",
-    "vulkanError",
-    "vkResultName",
 )
+CONVERTING_VK_RESULT_HELPERS = ("checkVk", "check_vk", "vulkanError")
+
+# This fallback keeps repository scans useful when a Vulkan SDK registry is not
+# installed. CI and normal engine development load the complete command set for
+# the installed target SDK from vk.xml.
+FALLBACK_VK_RESULT_COMMANDS = frozenset(
+    {
+        "vkAcquireNextImageKHR",
+        "vkAllocateCommandBuffers",
+        "vkAllocateDescriptorSets",
+        "vkBeginCommandBuffer",
+        "vkCreateCommandPool",
+        "vkCreateComputePipelines",
+        "vkCreateDescriptorPool",
+        "vkCreateDescriptorSetLayout",
+        "vkCreateDevice",
+        "vkCreateFence",
+        "vkCreateGraphicsPipelines",
+        "vkCreateImageView",
+        "vkCreateInstance",
+        "vkCreatePipelineCache",
+        "vkCreatePipelineLayout",
+        "vkCreateQueryPool",
+        "vkCreateSampler",
+        "vkCreateSemaphore",
+        "vkCreateShaderModule",
+        "vkCreateSwapchainKHR",
+        "vkDeviceWaitIdle",
+        "vkEndCommandBuffer",
+        "vkEnumerateDeviceExtensionProperties",
+        "vkEnumerateInstanceExtensionProperties",
+        "vkEnumerateInstanceLayerProperties",
+        "vkEnumeratePhysicalDevices",
+        "vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
+        "vkGetPhysicalDeviceSurfaceFormatsKHR",
+        "vkGetPhysicalDeviceSurfacePresentModesKHR",
+        "vkGetPhysicalDeviceSurfaceSupportKHR",
+        "vkGetQueryPoolResults",
+        "vkGetSwapchainImagesKHR",
+        "vkMapMemory",
+        "vkQueuePresentKHR",
+        "vkQueueSubmit2",
+        "vkQueueWaitIdle",
+        "vkResetCommandBuffer",
+        "vkResetFences",
+        "vkWaitForFences",
+    }
+)
+
+
+def vulkan_registry_candidates() -> Iterable[Path]:
+    sdk_root = os.environ.get("VULKAN_SDK")
+    if sdk_root:
+        root = Path(sdk_root)
+        yield root / "share" / "vulkan" / "registry" / "vk.xml"
+        yield root / "Registry" / "vk.xml"
+    yield Path("/usr/share/vulkan/registry/vk.xml")
+    yield Path("/usr/local/share/vulkan/registry/vk.xml")
+
+
+def load_vk_result_commands() -> tuple[frozenset[str], Path | None]:
+    for candidate in vulkan_registry_candidates():
+        if not candidate.is_file():
+            continue
+        try:
+            root = ET.parse(candidate).getroot()
+        except (ET.ParseError, OSError):
+            continue
+
+        return_types: dict[str, str] = {}
+        aliases: dict[str, str] = {}
+        for command in root.findall("./commands/command"):
+            prototype = command.find("proto")
+            if prototype is not None:
+                name = prototype.findtext("name")
+                return_type = prototype.findtext("type")
+                if name and return_type:
+                    return_types[name] = return_type
+                continue
+            name = command.get("name")
+            alias = command.get("alias")
+            if name and alias:
+                aliases[name] = alias
+
+        changed = True
+        while changed:
+            changed = False
+            for name, alias in aliases.items():
+                if name not in return_types and alias in return_types:
+                    return_types[name] = return_types[alias]
+                    changed = True
+        commands = frozenset(
+            name for name, return_type in return_types.items() if return_type == "VkResult"
+        ) | FALLBACK_VK_RESULT_COMMANDS
+        return commands, candidate
+    return FALLBACK_VK_RESULT_COMMANDS, None
+
+
+VK_RESULT_COMMANDS, VULKAN_REGISTRY_PATH = load_vk_result_commands()
 
 
 @dataclass(frozen=True)
@@ -158,6 +250,8 @@ def mask_cpp_non_code(text: str) -> str:
     while index < len(text):
         if text.startswith("//", index):
             end = text.find("\n", index + 2)
+            while end >= 0 and end > 0 and text[end - 1] == "\\":
+                end = text.find("\n", end + 1)
             end = len(text) if end < 0 else end
             mask(index, end)
             index = end
@@ -208,6 +302,17 @@ def mask_cmake_comments(text: str) -> str:
     escaped = False
     index = 0
     while index < len(text):
+        bracket_match = re.match(r"(#?)\[(=*)\[", text[index:])
+        if not in_quote and bracket_match:
+            terminator = "]" + bracket_match.group(2) + "]"
+            closing = text.find(terminator, index + bracket_match.end())
+            end = len(text) if closing < 0 else closing + len(terminator)
+            if bracket_match.group(1):
+                for position in range(index, end):
+                    if output[position] not in "\r\n":
+                        output[position] = " "
+            index = end
+            continue
         character = text[index]
         if in_quote:
             if escaped:
@@ -237,7 +342,16 @@ def find_matching_parenthesis(text: str, opening: int) -> int | None:
     depth = 0
     in_quote = False
     escaped = False
-    for index in range(opening, len(text)):
+    index = opening
+    while index < len(text):
+        bracket_match = re.match(r"\[(=*)\[", text[index:])
+        if not in_quote and bracket_match:
+            terminator = "]" + bracket_match.group(1) + "]"
+            closing = text.find(terminator, index + bracket_match.end())
+            if closing < 0:
+                return None
+            index = closing + len(terminator)
+            continue
         character = text[index]
         if in_quote:
             if escaped:
@@ -246,6 +360,7 @@ def find_matching_parenthesis(text: str, opening: int) -> int | None:
                 escaped = True
             elif character == '"':
                 in_quote = False
+            index += 1
             continue
         if character == '"':
             in_quote = True
@@ -255,16 +370,92 @@ def find_matching_parenthesis(text: str, opening: int) -> int | None:
             depth -= 1
             if depth == 0:
                 return index
+        index += 1
     return None
 
 
 def iter_target_link_blocks(text: str) -> Iterable[tuple[int, str]]:
     sanitized = mask_cmake_comments(text)
-    for match in TARGET_LINK_COMMAND_RE.finditer(sanitized):
+    index = 0
+    in_quote = False
+    escaped = False
+    while index < len(sanitized):
+        bracket_match = re.match(r"\[(=*)\[", sanitized[index:])
+        if not in_quote and bracket_match:
+            terminator = "]" + bracket_match.group(1) + "]"
+            closing = sanitized.find(terminator, index + bracket_match.end())
+            if closing < 0:
+                return
+            index = closing + len(terminator)
+            continue
+        character = sanitized[index]
+        if in_quote:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_quote = False
+            index += 1
+            continue
+        if character == '"':
+            in_quote = True
+            index += 1
+            continue
+        match = TARGET_LINK_COMMAND_RE.match(sanitized, index)
+        if not match:
+            index += 1
+            continue
         opening = sanitized.find("(", match.start())
         closing = find_matching_parenthesis(sanitized, opening)
-        if closing is not None:
-            yield match.start(), sanitized[opening + 1 : closing]
+        if closing is None:
+            return
+        yield match.start(), sanitized[opening + 1 : closing]
+        index = closing + 1
+
+
+def first_cmake_argument(block: str) -> tuple[str, str] | None:
+    bracket_match = re.match(r"\s*\[(=*)\[(.*?)\]\1\]", block, re.DOTALL)
+    if bracket_match:
+        return bracket_match.group(2), block[bracket_match.end() :]
+    match = re.match(r'\s*(?:"((?:\\.|[^"\\])*)"|([^\s)]+))', block)
+    if not match:
+        return None
+    value = match.group(1) if match.group(1) is not None else match.group(2)
+    return value, block[match.end() :]
+
+
+def simple_cmake_variables(text: str) -> dict[str, str]:
+    sanitized = mask_cmake_comments(text)
+    variables: dict[str, str] = {}
+    pattern = re.compile(
+        r'\bset\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+'
+        r'(?:"((?:\\.|[^"\\])*)"|([^\s)]+))\s*\)',
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(sanitized):
+        value = match.group(2) if match.group(2) is not None else match.group(3)
+        variables[match.group(1)] = value
+    bracket_pattern = re.compile(
+        r"\bset\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+\[(=*)\[(.*?)\]\2\]\s*\)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in bracket_pattern.finditer(sanitized):
+        variables[match.group(1)] = match.group(3)
+    return variables
+
+
+def expand_simple_cmake_variables(value: str, variables: dict[str, str]) -> str:
+    for _ in range(8):
+        expanded = re.sub(
+            r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}",
+            lambda match: variables.get(match.group(1), match.group(0)),
+            value,
+        )
+        if expanded == value:
+            return expanded
+        value = expanded
+    return value
 
 
 def is_vulkan_or_rhi_dependency(reference: str) -> bool:
@@ -313,32 +504,64 @@ def result_is_consumed(text: str, statement_ending: int, variable: str) -> bool:
         return True
     if re.search(rf"\bswitch\s*\(\s*{escaped}\s*\)", window):
         return True
-    helper_names = "|".join(re.escape(name) for name in VK_RESULT_HELPERS)
-    return bool(
-        re.search(rf"\b(?:{helper_names})\s*\([^;{{}}]*\b{escaped}\b", window)
+    if re.search(rf"\b(?:if|while)\s*\(\s*!?\s*{escaped}\s*\)", window):
+        return True
+    terminal_helpers = "|".join(re.escape(name) for name in TERMINAL_VK_RESULT_HELPERS)
+    if re.search(rf"\b(?:{terminal_helpers})\s*\([^;{{}}]*\b{escaped}\b", window):
+        return True
+    converting_helpers = "|".join(
+        re.escape(name) for name in CONVERTING_VK_RESULT_HELPERS
     )
+    return bool(
+        re.search(
+            rf"\b(?:return|co_return|throw)\b[^;{{}}]*\b(?:{converting_helpers})"
+            rf"\s*\([^;{{}}]*\b{escaped}\b",
+            window,
+        )
+    )
+
+
+def enclosing_converting_helper(
+    text: str, statement_beginning: int, call_start: int, call_closing: int
+) -> tuple[int, int] | None:
+    prefix = text[statement_beginning:call_start]
+    helper_names = "|".join(re.escape(name) for name in CONVERTING_VK_RESULT_HELPERS)
+    matches = list(re.finditer(rf"\b(?:{helper_names})\s*\(", prefix))
+    for helper_match in reversed(matches):
+        helper_start = statement_beginning + helper_match.start()
+        helper_opening = text.find("(", helper_start, call_start)
+        helper_closing = find_matching_parenthesis(text, helper_opening)
+        if helper_closing is not None and helper_closing >= call_closing:
+            return helper_start, helper_closing
+    return None
 
 
 def vk_result_is_handled(text: str, match: re.Match[str]) -> bool:
     start = statement_start(text, match.start())
-    prefix = text[start : match.start()]
-    if re.search(r"\b(?:return|co_return)\s*$", prefix):
-        return True
-    helper_names = "|".join(re.escape(name) for name in VK_RESULT_HELPERS)
-    if re.search(rf"\b(?:{helper_names})\s*\([^;{{}}]*$", prefix):
-        return True
-
     opening = text.find("(", match.start(), match.end())
     closing = find_matching_parenthesis(text, opening)
     if closing is None:
         return False
-    context_end_candidates = [
-        position
-        for position in (text.find(";", closing), text.find("{", closing))
-        if position >= 0
-    ]
-    context_end = min(context_end_candidates, default=len(text))
-    if re.search(r"(?:==|!=|<=|>=|<|>)", text[closing + 1 : context_end]):
+
+    original_prefix = text[start : match.start()]
+    terminal_helpers = "|".join(re.escape(name) for name in TERMINAL_VK_RESULT_HELPERS)
+    if re.search(rf"\b(?:{terminal_helpers})\s*\([^;{{}}]*$", original_prefix):
+        return True
+
+    effective_start = match.start()
+    helper = enclosing_converting_helper(text, start, match.start(), closing)
+    if helper is not None:
+        effective_start, closing = helper
+    prefix = text[start:effective_start]
+    if re.search(r"\b(?:return|co_return|throw)\b[^;{}]*$", prefix):
+        return True
+
+    suffix = text[closing + 1 :]
+    if re.match(r"\s*(?:==|!=|<=|>=|<|>)", suffix):
+        return True
+    if re.search(r"\b(?:if|while)\s*\(\s*!?\s*$", prefix) and re.match(
+        r"\s*\)", suffix
+    ):
         return True
 
     variable = assigned_result_name(prefix)
@@ -351,6 +574,7 @@ def vk_result_is_handled(text: str, match: re.Match[str]) -> bool:
 def scan_cmake(path: Path, text: str, lines: list[str], findings: list[Finding]) -> None:
     sanitized = mask_cmake_comments(text)
     sanitized_lines = sanitized.splitlines()
+    variables = simple_cmake_variables(text)
     saw_standard = False
     for line_no, line in enumerate(sanitized_lines, start=1):
         rules = (
@@ -375,11 +599,30 @@ def scan_cmake(path: Path, text: str, lines: list[str], findings: list[Finding])
                 )
 
     for offset, block in iter_target_link_blocks(text):
-        references = TARGET_REFERENCE_RE.findall(block)
-        if not references:
+        arguments = first_cmake_argument(block)
+        if arguments is None:
             continue
-        target = TARGET_ALIASES.get(references[0].lower())
-        dependencies = references[1:]
+        target_argument, dependency_block = arguments
+        target_name = expand_simple_cmake_variables(target_argument, variables)
+        expanded_dependencies = expand_simple_cmake_variables(dependency_block, variables)
+        target = TARGET_ALIASES.get(target_name.lower())
+        dependencies = TARGET_REFERENCE_RE.findall(expanded_dependencies)
+        if target is None and "$" in target_name and dependencies and any(
+            TARGET_ALIASES.get(reference.lower()) in {"rendergraph", "rhi_vulkan"}
+            or is_vulkan_or_rhi_dependency(reference)
+            for reference in dependencies
+        ):
+            add(
+                findings,
+                "warning",
+                "vkengine.cmake-target-unresolved",
+                path,
+                line_number(text, offset),
+                f"Could not resolve target_link_libraries target {target_argument!r}.",
+                "Use a literal project target or a simple set() variable so package boundaries "
+                "can be reviewed.",
+            )
+            continue
         if target == "rhi_vulkan" and any(
             TARGET_ALIASES.get(reference.lower()) == "rendergraph"
             for reference in dependencies
@@ -603,8 +846,8 @@ def scan_source(path: Path, text: str, findings: list[Finding]) -> None:
             "Swapchain creation detected.",
             "Review resize, oldSwapchain handoff, failure cleanup, and in-flight lifetime.",
         )
-    for match in VK_RESULT_CALL_RE.finditer(code):
-        if not vk_result_is_handled(code, match):
+    for match in VK_CALL_RE.finditer(code):
+        if match.group(1) in VK_RESULT_COMMANDS and not vk_result_is_handled(code, match):
             add(
                 findings,
                 "warning",
@@ -678,6 +921,17 @@ def main() -> int:
 
     roots = [Path(item).resolve() for item in args.paths]
     findings: list[Finding] = []
+    if VULKAN_REGISTRY_PATH is None:
+        findings.append(
+            Finding(
+                "error",
+                "scanner.vulkan-registry-missing",
+                "<VULKAN_SDK>",
+                1,
+                "Vulkan vk.xml was not found; complete VkResult command coverage is unavailable.",
+                "Set VULKAN_SDK or install the platform Vulkan registry package.",
+            )
+        )
     candidates: list[Path] = []
     seen_candidates: set[Path] = set()
     for root in roots:
