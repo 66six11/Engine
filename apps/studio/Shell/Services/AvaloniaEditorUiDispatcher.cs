@@ -1,6 +1,6 @@
 using System;
+using Asharia.Editor.Threading;
 using Avalonia.Threading;
-using Editor.Core.Abstractions;
 
 namespace Editor.Shell.Services;
 
