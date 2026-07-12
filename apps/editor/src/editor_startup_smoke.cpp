@@ -9,12 +9,14 @@
 #include <string>
 #include <string_view>
 
+#include "asharia/core/file_io.hpp"
 #include "asharia/core/log.hpp"
 
 #include "editor_i18n.hpp"
 #include "editor_smoke.hpp"
 #include "editor_ui.hpp"
 #include "imgui_runtime.hpp"
+#include "imgui_runtime_io.hpp"
 
 namespace asharia::editor {
 
@@ -93,6 +95,37 @@ namespace asharia::editor {
                 return false;
             }
 
+            return true;
+        }
+
+        [[nodiscard]] bool validateImGuiBoundedReadSmoke(EditorRunMode mode) {
+            if (!isEditorSmokeMode(mode)) {
+                return true;
+            }
+
+            const std::filesystem::path path =
+                std::filesystem::temp_directory_path() / "asharia-editor-imgui-read-limit.bin";
+            auto fixture = asharia::core::writeFileTextAtomically(path, "data");
+            if (!fixture) {
+                asharia::logError("Editor ImGui bounded read smoke could not write fixture: " +
+                                  fixture.error().message);
+                return false;
+            }
+
+            const auto exact = detail::readImGuiBinaryFile(path, 4U);
+            const auto over = detail::readImGuiBinaryFile(path, 3U);
+            std::error_code removeError;
+            std::filesystem::remove(path, removeError);
+
+            if (!exact || exact->size() != 4U || over ||
+                over.error().message.find(path.string()) == std::string::npos ||
+                over.error().message.find("observedBytes=4") == std::string::npos ||
+                over.error().message.find("maxBytes=3") == std::string::npos) {
+                asharia::logError(
+                    "Editor ImGui bounded read smoke lost exact Core measurement context.");
+                return false;
+            }
+            asharia::logInfo("Editor ImGui bounded read smoke: exact=4, observed=4, max=3.");
             return true;
         }
 
@@ -251,7 +284,8 @@ namespace asharia::editor {
 
     bool validateEditorStartupSmoke(EditorRunMode mode, const ImGuiRuntime& imgui,
                                     EditorLocale locale, EditorUiThemeId theme) {
-        return validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode) &&
+        return validateImGuiBoundedReadSmoke(mode) &&
+               validateImguiLayoutPersistenceSmoke(mode, imgui) && validateI18nSmoke(mode) &&
                validateEditorFontSmoke(mode, imgui, locale) &&
                validateEditorThemeSmoke(mode, theme);
     }

@@ -74,8 +74,7 @@ namespace asharia::editor {
 
             [[nodiscard]] asharia::Result<void> execute() override {
                 ++executeCount_;
-                if (options_.failExecute ||
-                    (options_.failSecondExecute && executeCount_ > 1)) {
+                if (options_.failExecute || (options_.failSecondExecute && executeCount_ > 1)) {
                     return std::unexpected{commandSmokeError("ControlledInt execute failed.")};
                 }
                 *target_ = newValue_;
@@ -381,11 +380,15 @@ namespace asharia::editor {
             auto afterText = asharia::core::readFileText(
                 context.metadataFile, {.maxBytes = kMaxEditorMetadataBytes + 1ULL});
 
-            const bool passed = fixtureWritten && command && !executed &&
-                                executed.error().message.find("exceeds configured byte limit") !=
-                                    std::string::npos &&
-                                afterText && *afterText == oversizedText &&
-                                context.reimportRequests.requests().empty();
+            const bool passed =
+                fixtureWritten && command && !executed &&
+                executed.error().message.find("observedBytes=" +
+                                              std::to_string(kMaxEditorMetadataBytes + 1ULL)) !=
+                    std::string::npos &&
+                executed.error().message.find(
+                    "maxBytes=" + std::to_string(kMaxEditorMetadataBytes)) != std::string::npos &&
+                afterText && *afterText == oversizedText &&
+                context.reimportRequests.requests().empty();
             if (!passed) {
                 asharia::logError("Editor command smoke: oversized metadata was not rejected "
                                   "without mutation.");
@@ -628,8 +631,7 @@ namespace asharia::editor {
 
             auto executed = transaction.executeAll();
             if (!executed || firstValue != 1 || secondValue != 2) {
-                asharia::logError(
-                    "Editor command smoke: undo failure fixture did not execute.");
+                asharia::logError("Editor command smoke: undo failure fixture did not execute.");
                 return false;
             }
             history.push(std::move(transaction));
@@ -653,8 +655,7 @@ namespace asharia::editor {
 
             auto executed = transaction.executeAll();
             if (!executed || value != 9) {
-                asharia::logError(
-                    "Editor command smoke: redo failure fixture did not execute.");
+                asharia::logError("Editor command smoke: redo failure fixture did not execute.");
                 return false;
             }
             history.push(std::move(transaction));

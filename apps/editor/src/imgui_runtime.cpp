@@ -19,6 +19,25 @@
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 #include "editor_ui.hpp"
+#include "imgui_runtime_io.hpp"
+
+namespace asharia::editor::detail {
+
+    Result<std::vector<char>> readImGuiBinaryFile(const std::filesystem::path& path,
+                                                  std::uint64_t maxBytes) {
+        auto coreBytes = core::readFileBytes(path, core::FileReadLimits{.maxBytes = maxBytes});
+        if (!coreBytes) {
+            return std::unexpected{std::move(coreBytes.error())};
+        }
+
+        std::vector<char> bytes(coreBytes->size());
+        if (!coreBytes->empty()) {
+            std::memcpy(bytes.data(), coreBytes->data(), coreBytes->size());
+        }
+        return bytes;
+    }
+
+} // namespace asharia::editor::detail
 
 namespace {
 
@@ -136,40 +155,29 @@ namespace {
         return std::nullopt;
     }
 
-    [[nodiscard]] bool readBinaryFile(const std::filesystem::path& path, std::uint64_t maxBytes,
-                                      std::vector<char>& bytes) {
-        auto coreBytes =
-            asharia::core::readFileBytes(path, asharia::core::FileReadLimits{.maxBytes = maxBytes});
-        if (!coreBytes || coreBytes->empty()) {
-            return false;
-        }
-        bytes.resize(coreBytes->size());
-        std::memcpy(bytes.data(), coreBytes->data(), coreBytes->size());
-        return true;
-    }
-
     [[nodiscard]] asharia::VoidResult readSpirvFile(const std::filesystem::path& path,
                                                     std::vector<std::uint32_t>& words) {
-        std::vector<char> bytes;
-        if (!readBinaryFile(path, kMaxEditorImGuiShaderBytes, bytes)) {
-            return std::unexpected{asharia::vulkanError(
-                "Failed to read editor ImGui fragment shader: " + pathToUtf8String(path),
-                VK_ERROR_INITIALIZATION_FAILED)};
+        auto bytes = asharia::editor::detail::readImGuiBinaryFile(path, kMaxEditorImGuiShaderBytes);
+        if (!bytes) {
+            return std::unexpected{
+                asharia::vulkanError("Failed to read editor ImGui fragment shader '" +
+                                         pathToUtf8String(path) + "': " + bytes.error().message,
+                                     VK_ERROR_INITIALIZATION_FAILED)};
         }
-        if (bytes.empty()) {
+        if (bytes->empty()) {
             return std::unexpected{asharia::vulkanError("Editor ImGui fragment shader is empty: " +
                                                             pathToUtf8String(path),
                                                         VK_ERROR_INITIALIZATION_FAILED)};
         }
-        if (bytes.size() % sizeof(std::uint32_t) != 0U) {
+        if (bytes->size() % sizeof(std::uint32_t) != 0U) {
             return std::unexpected{
                 asharia::vulkanError("Editor ImGui fragment shader has invalid SPIR-V byte size: " +
                                          pathToUtf8String(path),
                                      VK_ERROR_INITIALIZATION_FAILED)};
         }
 
-        words.resize(bytes.size() / sizeof(std::uint32_t));
-        std::memcpy(words.data(), bytes.data(), bytes.size());
+        words.resize(bytes->size() / sizeof(std::uint32_t));
+        std::memcpy(words.data(), bytes->data(), bytes->size());
         return {};
     }
 
@@ -194,10 +202,18 @@ namespace {
 
         status.cjkCandidateFound = true;
         status.cjkFontPath = *fontPath;
-        if (!readBinaryFile(*fontPath, kMaxEditorCjkFontBytes, fontData)) {
-            asharia::logError("Failed to read editor CJK font: " + pathToUtf8String(*fontPath));
+        auto fontBytes =
+            asharia::editor::detail::readImGuiBinaryFile(*fontPath, kMaxEditorCjkFontBytes);
+        if (!fontBytes) {
+            asharia::logError("Failed to read editor CJK font '" + pathToUtf8String(*fontPath) +
+                              "': " + fontBytes.error().message);
             return;
         }
+        if (fontBytes->empty()) {
+            asharia::logError("Editor CJK font is empty: " + pathToUtf8String(*fontPath));
+            return;
+        }
+        fontData = std::move(*fontBytes);
 
         ImGuiIO& imguiIo = ImGui::GetIO();
         const float fontSize = desc.fontPixelSize > 0.0F ? desc.fontPixelSize : 16.0F;
