@@ -491,12 +491,12 @@ public static class Transform
 回接时的 package 方向：
 
 ```text
-packages/scripting
+packages/systems/scripting-dotnet / scripting-contracts + scripting-runtime
   consumes packages/schema
   consumes future packages/cpp-binding or script binding
   exposes ScriptHost / BindingRegistry / Diagnostics
 
-packages/scripting-dotnet future
+packages/systems/scripting-dotnet / scripting-dotnet provider target (future)
   owns Roslyn/.NET hosting integration
   does not leak managed runtime into rhi-vulkan/rendergraph
 ```

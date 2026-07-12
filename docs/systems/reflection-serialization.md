@@ -103,8 +103,8 @@ flowchart TD
     Persistence["packages/persistence<br/>save / load / migration"]
     Scene["packages/scene-core"]
     Asset["packages/asset-core"]
-    Editor["packages/editor-core"]
-    Scripting["packages/scripting"]
+    Editor["packages/systems/editor<br/>editor_domain target planned"]
+    Scripting["packages/systems/scripting-dotnet<br/>planned"]
 
     Schema --> Core
     Archive --> Core

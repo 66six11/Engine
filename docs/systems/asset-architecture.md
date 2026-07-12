@@ -113,7 +113,7 @@ packages/resource-runtime/
   pending / ready / failed 状态、product-record resolution 和 diagnostics；不依赖 `asset-pipeline`、RenderGraph、
   renderer、RHI、editor 或 ImGui。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
-- `apps/editor`、`packages/scene-core`、`packages/material-core` 和未来 `packages/scripting` 可以消费
+- `apps/editor`、`packages/scene-core`、`packages/material-core` 和未来 `packages/systems/scripting-dotnet` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
 
 建议顶层依赖：

@@ -10,6 +10,10 @@
 后续能力映射和验证门禁。日常执行仍以 `docs/architecture/flow.md` 记录真实流程，以
 `docs/workflow/review.md` 记录提交门禁。
 
+可编程渲染管线的 Editor/runtime/脚本权限、pipeline source/product、pass type/executor 和 Package 交付模型见
+[`programmable-pipeline.md`](programmable-pipeline.md)。该文档定义 RG 作为受控编译目标的长期边界；本文继续约束
+当前 RG/Vulkan 实现顺序，二者不能各自维护冲突的 command recording 或 backend ownership 模型。
+
 ## 资料结论
 
 | 资料 | 关键结论 | Asharia Engine 采用方式 |

@@ -1,19 +1,27 @@
 name: 路线图 Epic
-description: 为 Engine Project 创建阶段级路线图 issue。
-title: "[Epic] 子系统: 阶段目标"
+description: 为 Engine Project 创建有限、可关闭的系统能力里程碑。
+title: "[Epic] 系统: 里程碑结果"
 labels:
   - type:epic
 body:
   - type: markdown
     attributes:
       value: |
-        用于阶段级路线图任务。创建前先查重；创建后加入 Engine Project，并在 Project 中设置 Status、Priority、Size。Estimate、Iteration、Start date、Target date 暂不填写，直到有真实排期。
+        用于需要多个 PR-sized Slices 才能完成的有限里程碑，不用于永久 package、维护域或内部目录。创建前先查重；创建后加入 Engine Project，并设置 Status、Priority、Size。Estimate、Iteration、Start date、Target date 暂不填写，直到有真实排期。
   - type: input
     id: parent-roadmap
     attributes:
       label: 来源文档
       description: 填写来源计划、路线图章节或上级 GitHub issue。
       placeholder: "docs/planning/editor-development-plan.md、docs/rendergraph/roadmap.md 或 #20"
+    validations:
+      required: true
+  - type: input
+    id: primary-system
+    attributes:
+      label: Primary system / package
+      description: 填写唯一交付 owner；可以是目标完整系统 package、engine bootstrap component 或 workflow domain。
+      placeholder: "packages/systems/rendering-vulkan、engine/host-runtime 或 area:workflow"
     validations:
       required: true
   - type: textarea
@@ -119,8 +127,6 @@ body:
       label: Project Size
       description: 加入 Project 后，将 Size 字段设置为这里选择的值。
       options:
-        - XS
-        - S
         - M
         - L
         - XL
@@ -133,7 +139,9 @@ body:
       options:
         - label: 创建这个 Epic 前已经查重。
           required: true
-        - label: 这是阶段级任务；PR 粒度工作会拆成 [Slice] issue。
+        - label: 这是有限、可关闭的系统能力里程碑；PR 粒度工作会拆成 [Slice] issue。
+          required: true
+        - label: 这个 Epic 不是为了映射 package、目录或 target 而创建。
           required: true
         - label: 如果出现前置依赖，会创建 blocking issue，而不是把这个 Epic 扩成无边界任务。
           required: true

@@ -1,5 +1,9 @@
 # 架构设计
 
+本文记录当前已成立的代码事实。目标 Kernel、Host Runtime、Foundation Systems、scope/activation、Settings/Storage/
+Tasks/memory/spatial 基线与实施门禁见 [foundation-framework.md](foundation-framework.md)；目标设计尚未落地前，不得把
+该文档中的 planned targets/API 写成当前事实。
+
 ## 目标
 
 Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，用最少功能证明 RenderGraph

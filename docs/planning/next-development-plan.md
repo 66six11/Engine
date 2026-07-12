@@ -1,8 +1,8 @@
 # 整体路线图
 
-更新日期：2026-06-14
+更新日期：2026-07-13
 
-本文是全项目下一阶段的唯一主路线图。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`，V2 规格见 `docs/specs/ashader-v2.md` 和 `docs/specs/material-runtime-products-v2.md`，近期 MVP 计划见 `docs/planning/shader-material-mvp-plan.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
+本文是全项目下一阶段的唯一**功能交付主路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`，V2 规格见 `docs/specs/ashader-v2.md` 和 `docs/specs/material-runtime-products-v2.md`，近期 MVP 计划见 `docs/planning/shader-material-mvp-plan.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
 
 ## 规划依据
 
@@ -35,11 +35,13 @@
 - Editor 是 authoring host，不是 runtime owner。Selection、transaction、dirty state、Inspector mutation 必须在 editor-owned command/event 路线上发生。
 - Scene/world 是 headless runtime 数据模型；renderer 消费 immutable frame snapshot 或 draw packet，不捕获 `World*` / `Entity*` / editor pointer。
 - 外部案例用于校准边界，不作为一次性照搬目标。
+- Foundation Gate 优先于新的大型纵向系统：package plan、Host scope/activation、Storage、Settings、Tasks baseline、memory/diagnostics 没有闭环前，不继续扩大 app-local glue。
 
 ## 当前基线
 
 | 主线 | 当前状态 | 下一步缺口 |
 | --- | --- | --- |
+| Foundation / Host | `core` 有 error/log/file baseline，`platform` 仍为空 INTERFACE；package/Host/Settings/Storage/Tasks 为目标设计 | inventory + resolver/lock/Host Profiles；Host scope/lease/registry/rollback；Storage/Settings/Tasks/Observability headless smoke |
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
@@ -48,6 +50,30 @@
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
 ## 推荐阶段
+
+### Phase Foundation：可扩展基础框架
+
+目标：先建立所有后续完整 System/Feature Packages 共用的启动、作用域、扩展、配置、IO、任务、内存和诊断框架，
+避免 Content、World、Scripting、Rendering 和 Editor 各自形成第二套生命周期。
+
+范围：
+
+- current target/package/module inventory 与 Kernel allowlist；
+- `package-runtime` manifest/resolve/lock/Host Profile/generated activation plan baseline；
+- 计划中的 `host-runtime` scope tree、factory context、activation lease、typed registries、failure rollback；
+- Platform lifecycle facts；Runtime Storage/VFS/async IO；Settings/Device Profile；Tasks cancel/join baseline；
+- memory domain/budget/pressure 与 bootstrap-to-runtime diagnostics；
+- synthetic Minimal/Runtime/Server/Tool Host composition tests。
+
+验收：
+
+- Editor/CLI/CI 对同一 manifest 生成相同 lock/activation graph；
+- synthetic systems 验证 dependency order、duplicate contribution、activation failure、rollback、cancel/drain 和 reverse disposal；
+- runtime closure 不含 Editor settings/storage/tool modules，不存在 process-wide service locator；
+- shutdown 后 scope-owned instances、jobs、IO requests、subscriptions 和 contribution handles 清零；
+- 完整门禁满足 `docs/architecture/foundation-framework.md` F0-F3。
+
+该阶段是当前最高优先级；它不要求停止已经可验证的 bugfix/收敛工作，但阻止新增依赖 app-local glue 的大型功能面。
 
 ### Phase A：路线图与 Project 收敛
 
@@ -184,9 +210,15 @@
 - 进入/退出 Play 不修改编辑 scene dirty state。
 - Game View 和 Scene View 可使用不同 camera/view/pipeline flags。
 
+Phase G 只建立 Editor 内隔离 Play Session，不把它当作产品启动验证。后续系统架构 Phase 8 将建立独立的 Project Build/Launch control plane：同一 `asharia.build.json` profile 经 Editor、CLI 或 CI 完成 Build、Cook、Stage，并由 Standalone 子进程走真实 runtime bootstrap。详细边界和 vertical slice 见 `docs/architecture/project-build-and-launch.md`。
+
 ### Phase H：Plugin / Script / Advanced GPU
 
 进入条件：Phase B-G 的数据合同和验证稳定。
+
+这里后置的是 ScriptHost/VM、managed plugin execution、hot reload 和高级 GPU 实现；first-party 完整
+System Package 的 `asharia.packages.json`、`asharia.packages.lock.json`、resolver、Host Profile 与 Editor Package Manager 基础由
+`docs/planning/system-architecture-roadmap.md` 单独规划，不需要等到 Phase H 才定义。
 
 候选方向：
 
