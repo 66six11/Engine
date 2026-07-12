@@ -154,7 +154,7 @@ flowchart TD
   `rhi-vulkan`、`renderer_basic_vulkan`、`project_core_io`、`asset_core`、`asset_core_io`、`asset_pipeline`
   和 `scene_core`，因为这些都属于 host integration、只读 project/asset snapshot 组装或 editor-owned
   selection value contracts；未来
-  `packages/editor-core` 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
+  `packages/systems/editor` 内部 `editor_domain` target 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
 - `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Studio viewport contracts
   分层为 `Core/Models/Viewports` 的 UI-neutral snapshot、`Core/Interop/Viewports` 的 ABI bridge 和

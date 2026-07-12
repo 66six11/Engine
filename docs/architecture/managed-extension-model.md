@@ -7,6 +7,12 @@
 它是架构方向 ADR，不是当前实现计划，不替代
 [../planning/next-development-plan.md](../planning/next-development-plan.md)。
 
+`docs/planning/system-architecture-roadmap.md` 已把 Scripting 定义为 first-party bundled 完整 System Package，
+并把通用 package resolver/lockfile 放到较早的架构阶段。本文的 deferred implementation 指
+managed execution、plugin host、ALC、hot reload 和 native bridge，不阻止 Package Manager
+发现并锁定完整 `com.asharia.system.scripting-dotnet`；contracts、runtime、managed provider、Editor 与 import
+能力是该系统包的内部 targets/modules，不作为用户分别安装的条目。
+
 ## Decision Card
 
 接受方向：
@@ -34,8 +40,8 @@ Phase B-G 的 scene/editor transaction、asset/material/resource、Play Session 
 ```text
 - 新增 managed/ 空目录或空 csproj。
 - 新增 apps/studio 空壳。
-- 新增 packages/editor-core 只为搬文件。
-- 新增 packages/editor-native 但没有真实 managed/native consumer。
+- 提取 `packages/systems/editor` 内部 `editor_domain` target 只为搬文件。
+- 新增 `editor_native_bridge` internal target 但没有真实 managed/native consumer。
 - 把 .NET runtime host 接入 C++ editor 主循环。
 - 引入外部 plugin manifest loader。
 - 引入 runtime gameplay ScriptHost。
@@ -57,7 +63,7 @@ C# = 脚本 = 插件 = UI
 ```text
 C# 是 managed 语言候选。
 Avalonia 是未来 editor presentation host。
-Plugin 是扩展包和 contribution 声明单元。
+Plugin 是 `feature` / `integration` catalog package 中可选的代码扩展与 contribution 声明单元；Package Manager 分发包，Facade/API 仍由依赖的 System Package 提供。
 Managed entrypoint 是受控执行代码。
 ScriptExecutionContext 定义代码在哪个 safe point / context 下执行。
 Facade 是插件或脚本能访问的受控 API。
@@ -81,7 +87,7 @@ C++ engine 继续拥有 scene、asset、renderer、RenderGraph、RHI 和 Vulkan 
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph 到 Vulkan 的适配 target。
 - `asharia::renderer_basic` 保持 backend-agnostic；Vulkan command recording 属于
   `asharia::renderer_basic_vulkan`。
-- `packages/editor-core` 未来只能接收 backend-neutral editor state，例如 selection、commands、undo/redo、
+- `packages/systems/editor` 内部 `editor_domain` target 未来只能接收 backend-neutral editor state，例如 selection、commands、undo/redo、
   workspace 和 viewport request/result 合同。
 - `script VM / plugin manifest / hot reload` 是 Phase H 候选方向，进入前必须先有设计 ADR、fallback、
   smoke 和 profiling evidence。
@@ -488,7 +494,7 @@ recovery policy
 
 ## Native Bridge C ABI Checklist
 
-`packages/editor-native` is a valid future direction, but it must not be created without a real managed/native consumer.
+An `editor_native_bridge` internal target is a valid future direction, but it must not be created without a real managed/native consumer.
 
 When implementation starts, the C ABI must be production-shaped from day one:
 
@@ -704,9 +710,9 @@ JsonSchemaMismatch
 
 ## Extraction Gates
 
-### `packages/editor-core`
+### `packages/systems/editor` / `editor_domain` target
 
-Do not extract `packages/editor-core` only to move files.
+Do not extract `editor_domain` only to move files.
 
 Allowed entry conditions:
 
@@ -740,9 +746,9 @@ renderer implementation objects
 native viewport handle
 ```
 
-### `packages/editor-native`
+### `editor_native_bridge` internal target
 
-Do not create `packages/editor-native` without a real managed/native consumer.
+Do not create `editor_native_bridge` without a real managed/native consumer.
 
 Allowed entry conditions:
 

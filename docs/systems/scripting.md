@@ -11,6 +11,12 @@ Managed extension 的长期分层和第一版 ABI 收窄见
 `PreRenderConfig` / renderer scripting 明确后置为 future ADR，并把早期 permission 术语收敛为
 `FacadeCapability`。本文保留较宽的脚本系统背景和未来上下文清单；实现入口以 managed extension ADR 的阶段门槛为准。
 
+在目标系统框架中，脚本是 first-party bundled 完整 System Package。首个 Package Manager 条目是
+`com.asharia.system.scripting-dotnet`：一次导入共同获得 contracts、runtime scheduler、`.NET` implementation、
+binding/build/reload、Editor authoring、import context 和 diagnostics modules，而不是选择一组实现碎片。这只确定
+package 归属和用户体验，不表示 ScriptHost、VM 或 hot reload 已经越过实现门禁。总体组合模型见
+[../planning/system-architecture-roadmap.md](../planning/system-architecture-roadmap.md)。
+
 ## 设计目标
 
 - 脚本语言可替换或可多语言共存，核心引擎不绑定某个 VM 的对象模型。
@@ -55,9 +61,13 @@ Graph C# 子集与蓝图互通的中长期技术验证路线见
 建议新增：
 
 ```text
-packages/scripting
+packages/systems/scripting-dotnet
   include/asharia/scripting/
-  src/
+  src/contracts/
+  src/runtime/
+  src/dotnet/
+  src/editor/
+  src/import/
 ```
 
 依赖方向：
@@ -69,8 +79,8 @@ flowchart TD
     Serialization["packages/persistence<br/>target; serialization spike legacy"]
     Scene["packages/scene-core"]
     Asset["packages/asset-core"]
-    Editor["packages/editor-core"]
-    Scripting["packages/scripting"]
+    Editor["packages/systems/editor<br/>editor_domain target"]
+    Scripting["packages/systems/scripting-dotnet<br/>complete System Package"]
     RuntimeApp["apps/runtime future"]
     EditorApp["apps/editor"]
 
@@ -86,10 +96,10 @@ flowchart TD
 
 约束：
 
-- `scripting` 不依赖 Vulkan、ImGui、renderer implementation 或 `apps/editor`。
-- `editor-core` 可提供 editor scripting facade，但 runtime 不链接 editor facade。
-- 具体 VM integration 可以是子 target，例如 `asharia::scripting_lua` 或 `asharia::scripting_dotnet`。
-- 核心 `scripting` package 只定义 host、context、binding、diagnostic 和 facade interface。
+- Scripting System Package 内部 targets 不依赖 Vulkan、ImGui、renderer implementation 或 `apps/editor`；只有 `scripting_editor` target 可依赖公共 editor-domain API。
+- `packages/systems/editor` 内部 `editor_domain` target 可提供 editor scripting facade，但 runtime Host 不激活或链接 editor facade module。
+- `scripting_contracts`、`scripting_runtime`、`scripting_dotnet`、`scripting_editor` 和 `scripting_import` 是一个 System Package 内的独立 targets/modules，共享版本和安装生命周期。
+- 未来 `scripting_lua` 如果成为产品方向，应作为另一个完整 Scripting System Package，或先经 ADR 证明能作为同包替代 module；不得把裸 provider 暴露成用户必须另装的条目。
 
 ## 总体架构
 
@@ -350,26 +360,33 @@ flowchart TD
 
 ## PreRenderConfig 与 RenderGraph
 
-脚本可以参与高层渲染配置，但不能进入后端执行：
+脚本可以参与高层渲染配置和可编程管线的**描述/组合层**，但不能进入后端执行。完整 pipeline source/product、
+pass type/executor、Editor/runtime 权限和 dynamic generation 设计见
+[`../rendergraph/programmable-pipeline.md`](../rendergraph/programmable-pipeline.md)。
 
 ```mermaid
 flowchart TD
-    Script["PreRenderConfig script"]
-    FeatureState["Feature state / view flags"]
-    RecordGraph["RecordGraph<br/>C++ builder or script-mapped API"]
+    Script["Editor / cook / PreRenderConfig script"]
+    Definition["Pipeline definition / feature state / view flags"]
+    Product["Cooked pipeline product"]
+    RecordGraph["RecordGraph<br/>C++ renderer frontend"]
     Compile["CompileGraph"]
     Prepare["PrepareBackend"]
     Record["RecordCommands"]
 
-    Script --> FeatureState --> RecordGraph --> Compile --> Prepare --> Record
+    Script --> Definition --> Product --> RecordGraph --> Compile --> Prepare --> Record
 ```
 
 允许：
 
 - 开关 debug view。
 - 设置 postprocess 参数。
-- 按 feature state 决定是否 record 某些 pass。
-- 生成受控 command summary。
+- 选择已 cook 的 pipeline/quality variant，在 safe point 请求切换 generation。
+- 按 feature state 决定是否 record 某些已注册 pass。
+- Editor/import/cook script 生成或迁移 pipeline definition、pass template、连接和静态 variant。
+- 使用 Rendering System 提供的 generic fullscreen/compute/copy pass 组合数据驱动效果。
+- 生成受控、可序列化且通过 schema validation 的 graph declaration/command summary；runtime 默认由 C++ frontend
+  从 cooked product 完成逐帧记录，不逐帧回调 VM。
 
 禁止：
 
@@ -377,6 +394,14 @@ flowchart TD
 - RecordCommands 阶段回调 VM。
 - 脚本直接调用 `vkCmd*`。
 - 脚本访问 `VkImage`、`VkImageView`、descriptor set 或 command buffer。
+- 普通项目脚本注册新的 pass executor、barrier policy、transient allocator 或 submission 行为。
+- runtime 中解析 Editor pipeline source，或在 graph compile/execute 过程中修改 topology。
+
+需要全新 GPU 执行语义时，应由一个完整 Rendering Feature/System Package 注册稳定 pass type、typed schema 和
+受信 native executor，并共同交付 Editor authoring、shader/pipeline cook、diagnostics 与兼容测试；不能继续扩大脚本
+escape hatch。未来若允许受信 managed pipeline frontend 在每帧 record safe point 运行，必须通过独立 ADR 证明
+determinism、allocation、exception、reload、threading 和 shipping trust 门禁，且仍不能在 execute/command recording
+阶段回调 VM。
 
 ## 脚本组件状态
 
@@ -527,7 +552,7 @@ flowchart LR
 - 完整 Lua/C# 绑定实现。
 - C# domain reload。
 - Visual scripting。
-- 脚本 package manager。
+- 脚本生态自己的第二套依赖解析器或 package manager；完整 Scripting System Package 统一使用引擎 package control plane。
 - 脚本调试器。
 - 脚本 profiler UI。
 - 多线程脚本调度。

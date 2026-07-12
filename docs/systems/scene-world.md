@@ -16,6 +16,7 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 - 脚本通过受控 API 修改 world，不在 render recording 阶段改 scene。
 - Scene View、Game View 和 Preview View 可以同帧共存，各自拥有 RenderView 和 graph。
 - Edit Mode 与 Play Mode 的数据关系明确，进入/退出 Play 不污染编辑场景。
+- World 提供稳定 entity bounds、region query 和 immutable spatial snapshot，但不泄漏具体 acceleration structure。
 
 ## 非目标
 
@@ -27,6 +28,7 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 - prefab override 全系统。
 - physics、animation 和 audio 集成。
 - streaming world / large world coordinates。
+- 一棵被 Renderer、Physics、Navigation 共用的全局 mutable octree/BVH。
 - renderer 直接遍历 scene graph。
 - editor-only 组件进入 runtime cook。
 
@@ -42,17 +44,14 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 
 ## Package 边界
 
-建议新增：
+当前 `packages/scene-core` 是 World baseline source package；目标发行布局收敛为：
 
 ```text
-packages/scene-core
-  include/asharia/scene/
-  src/
-
-packages/editor-core
-  include/asharia/editor/
-  src/
+packages/systems/world/modules/world-core
+packages/systems/editor/modules/editor-domain
 ```
+
+二者仍是独立 targets；目录收敛前继续使用现有 `packages/scene-core`，不为移动文件提前创建空目录。
 
 依赖方向：
 
@@ -62,8 +61,8 @@ flowchart TD
     Reflection["packages/schema<br/>target; reflection spike legacy"]
     Serialization["packages/persistence<br/>target; serialization spike legacy"]
     Scene["packages/scene-core"]
-    Editor["packages/editor-core"]
-    Script["packages/scripting"]
+    Editor["packages/systems/editor<br/>editor_domain target planned"]
+    Script["packages/systems/scripting-dotnet<br/>planned"]
     Asset["packages/asset-core"]
     Renderer["renderer packages"]
     AppEditor["apps/editor"]
@@ -268,6 +267,55 @@ struct WorldChange {
 - Change journal 是事实事件，不是万能 EventBus。
 - 事件消费者不能通过 journal 隐式拥有 World mutation 权限。
 - Change journal 可以被压缩，例如同一字段连续修改只保留最终 dirty 状态，但 transaction undo 仍需保留 before/after。
+
+## Spatial Bounds & Query
+
+当前 `scene-core` 尚未实现 spatial index；本节是 Foundation F5 的目标 contract，不是当前 API 说明。
+
+World 需要拥有语义级空间身份和 bounds，因为 Editor region tools、render extraction、audio、AI、future streaming 都需要
+知道 entity 位于哪里。它不应拥有 Physics collision broadphase 或 Renderer visibility structure。
+
+计划中的最小数据：
+
+```cpp
+struct SpatialProxyId {
+    std::uint32_t index;
+    std::uint32_t generation;
+};
+
+struct SpatialBounds {
+    EntityId entity;
+    Aabb worldBounds;
+    SpatialLayerMask layers;
+    std::uint64_t revision;
+};
+```
+
+计划中的第一阶段能力：
+
+- register/update/remove entity bounds；
+- AABB/region overlap query，返回稳定 `EntityId`/`SpatialProxyId`，不返回内部 node pointer；
+- transform/bounds change 在 World mutation safe point 合并；
+- 发布带 revision/generation 的 immutable `SpatialSnapshot`；
+- Editor debug draw、query diagnostics 和 invalid/stale handle 统计；
+- render extraction 复制需要的 bounds 到 `RenderWorldSnapshot`，Renderer 再建立自己的 culling projection。
+
+系统分工：
+
+| Owner | 自己维护的数据 | 可消费 World spatial contract 的方式 |
+| --- | --- | --- |
+| World | entity semantic bounds、region membership、spatial revision | canonical register/query/snapshot owner |
+| Renderer | render proxy bounds、view/frustum/occlusion data | 从 render snapshot 构建，不回读 mutable World index |
+| Physics | collision shapes、broadphase、ray/shape queries | 通过 entity/component identity 同步，不复用 World tree |
+| Navigation | nav mesh/volume/tile query | 消费 cooked/world geometry projection |
+| Audio/AI/Editor | listener/agent/selection/region queries | 使用 public query 或 immutable snapshot |
+
+外部脚本可以提交带 capability 和 query budget 的 region/nearest 请求，读取 entity IDs；不能注册任意 index node、锁住
+内部容器或在 worker callback 中修改 World。future World Partition 在此 contract 与 Runtime Storage 之上增加 streaming
+source、cell、Data Layer/HLOD 产品，不反向进入 World core 第一阶段。
+
+最低验证：register/update/remove、generation reuse、empty/overlap queries、transform revision、snapshot immutability、
+deterministic result ordering（需要时显式 sort）和 Renderer/Physics acceleration structure 不共享所有权。
 
 ## Editor Transaction
 

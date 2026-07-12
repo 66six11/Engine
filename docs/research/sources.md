@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-06-04
+最近核对日期：2026-07-13
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -159,7 +159,8 @@
 结论：
 
 - Godot、Unity、O3DE 和 Bevy 都把高层对象/脚本/编辑器体验与底层 renderer/backend 分开；Asharia Engine
-  继续保持 package-first 和 `rhi_vulkan` / `rendergraph` / renderer package 边界是合理方向。
+  应继续保持 `rhi_vulkan` / `rendergraph` / renderer 的硬 target 边界，但这些边界不要求暴露成多个用户安装包；
+  Package Manager 可以用一个完整 Rendering System Package 统一发行它们。
 - Unreal RDG、Unity RenderGraph、O3DE Pass System 和 Bevy RenderGraph 都强调显式 pass/resource
   依赖；脚本或工具前端不应绕过 RenderGraph 的显式 resource access。
 - Godot 和 Unity 的线程资料都支持“高层对象主线程、安全数据并行”的设计；Unreal 说明
@@ -414,6 +415,71 @@
 - Granite 和 vuk 对 Vulkan 工程更贴近：transient/imported resource、access annotation、deferred destruction、upload allocator 都适合作为 Asharia Engine 中期参考。
 - Diligent 的 Render State Notation/Packager 说明 shader、pipeline 和 resource signature 可以逐步转成离线可审查产物；这支持 Asharia Engine 先做 reflection JSON，再做 pipeline layout 契约。
 - 这些案例都不意味着下一步要直接引入大型 renderer、async compute、bindless 或多线程 context；当前阶段仍以小 smoke 闭环验证每个抽象。
+
+## Package Manager、Feature Package 与扩展 API
+
+本次核对日期：2026-07-12
+
+一手资料：
+
+- Unity Package Manager：https://docs.unity3d.com/Manual/upm-ui.html
+- Unity custom packages：https://docs.unity3d.com/es/current/Manual/CustomPackages.html
+- Unity Cinemachine overview：https://docs.unity.cn/Packages/com.unity.cinemachine%403.0/manual/index.html
+- Unity `CinemachineExtension` API：https://docs.unity.cn/Packages/com.unity.cinemachine%403.0/api/Unity.Cinemachine.CinemachineExtension.html
+
+结论：
+
+- Package Manager 是发现、依赖解析、获取、安装、升级、移除和项目 manifest/lock 的 control plane，不是 System API provider。
+- System Package 拥有 public contracts、registries 和 lifecycle；Feature Package 基于这些 API 交付自己的 runtime state/algorithms、Editor tools、assets、cook 和 diagnostics。
+- 一个可安装能力必须在声明范围内完整，但不一定是基础系统；Advanced Camera、Dialogue、Weather 等适合 `feature` catalog type。
+- 跨两个可选包的桥接使用显式 `integration` package/contribution，不依赖未锁定的运行时探测。
+- Cinemachine 证明相机扩展包可以基于已有 Camera/GameObject/Timeline 等能力，同时拥有自己的虚拟相机状态、跟随/构图/混合算法、Editor 菜单和开放 pipeline；因此“扩展包只给出 API”是错误模型。
+
+## 完整 Package、内部 Module 与 Project 治理
+
+本次核对日期：2026-07-13
+
+一手资料：
+
+- Unreal Engine Modules：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules
+- Unreal Engine Plugins：https://dev.epicgames.com/documentation/en-us/unreal-engine/plugins-in-unreal-engine
+- O3DE Gems：https://docs.o3de.org/docs/user-guide/gems/
+- O3DE Code Gem Specifications：https://docs.o3de.org/docs/user-guide/programming/gems/code-gems/
+- O3DE Gem Module System：https://docs.o3de.org/docs/user-guide/programming/gems/overview/
+- GitHub Adding sub-issues：https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues
+- GitHub Creating issue dependencies：https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-issue-dependencies
+- GitHub Projects best practices：https://docs.github.com/en/issues/planning-and-tracking-with-projects/learning-about-projects/best-practices-for-projects
+- GitHub Project automation：https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project
+
+结论：
+
+- 一个用户可选 Plugin/Gem 可以包含多个 Runtime、Editor、Developer、tool 或 static library modules；可安装发行边界不需要与编译 target 一一对应。
+- Asharia 的完整 System/Feature/Integration Package 应拥有唯一 manifest、版本和移除语义，内部 modules/targets 继续保持依赖与 Host Role 隔离。
+- GitHub 原生 Parent issue、Sub-issues progress 和 dependencies 已足够表达 finite Epic、PR-sized Slice 与真实 blocker；当前不需要增加 Initiative 或自建平行关系字段。
+- Project 字段与 Issue labels 应各自只有一个事实 owner：Status/Priority/Size 放 Project，primary system area 放 labels，不重复创建 `System` 字段。
+- Project 自动化适合 auto-add、状态同步和完成后归档，但不应替代验收标准、Done evidence 或人工确认真实 blocker。
+
+## 项目 Build、Cook、Package 与 Launch
+
+本次核对日期：2026-07-12
+
+一手资料：
+
+- Unreal Build Operations：https://dev.epicgames.com/documentation/en-us/unreal-engine/build-operations-cooking-packaging-deploying-and-running-projects-in-unreal-engine
+- Unity command-line Player build：https://docs.unity3d.com/current/Manual/build-command-line.html
+- Unity `BuildPipeline.BuildPlayer`：https://docs.unity3d.com/current/ScriptReference/BuildPipeline.BuildPlayer.html
+- O3DE Project Export：https://docs.o3de.org/docs/user-guide/packaging/project-export/project-export-pc/
+- O3DE Asset Bundler：https://docs.o3de.org/docs/user-guide/packaging/asset-bundler/
+- CMake Presets / Workflow Presets：https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
+
+结论：
+
+- 产品流水线必须区分 Build、Cook、Stage、Package、Deploy 和 Launch；Stage 是可直接运行、可校验的目录树，Package 从 Stage 派生。
+- Editor、CLI 与 CI 应共享 Build Profile、headless orchestration 和结构化 report；Editor 按钮不是第二套事实来源。
+- project package lock、`conan.lock`、Build Profile、cook artifacts 和 stage manifest 有不同 owner，不应合并成巨型 project file。
+- Build & Run 应创建 tracked Standalone session；Play In Editor 不能替代真实 runtime bootstrap、进程退出和 crash 验证。
+- release content 应从 startup roots 与依赖闭包生成，只包含 runtime products；不能把整个 source project 复制进发行目录。
+- Asharia 的完整目标设计与首个 vertical slice 见 `docs/architecture/project-build-and-launch.md`。
 
 ## CMake、Conan、MSVC
 

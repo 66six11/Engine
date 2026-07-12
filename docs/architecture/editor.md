@@ -15,7 +15,7 @@ editor panels 和 renderer sampled output 组合成一个可运行的 editor exe
 `asharia-editor`。
 
 Editor 不是 engine core，也不是 renderer owner。Renderer、RHI 和 RenderGraph 不依赖 editor；
-runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backend-neutral editor state。
+runtime app 不链接 editor UI；未来 `packages/systems/editor` 内部 `editor_domain` target 只承载 backend-neutral editor state。
 
 当前 editor 的目标是：
 
@@ -48,14 +48,14 @@ runtime app 不链接 editor UI；未来 `packages/editor-core` 只承载 backen
 
 这些依赖属于当前 `apps/editor` host executable 的集成边界。Editor app 可以组合 public project/asset/pipeline
 API 来加载项目描述、读取 `.ameta`、构造只读 catalog snapshot、生成 report 和记录 pending reimport facts，并可以消费
-`scene-core` 的 `EntityId` 作为 editor selection value；这不表示存在可复用的 `packages/editor-core`，也不表示 editor
+`scene-core` 的 `EntityId` 作为 editor selection value；这不表示已经存在可复用的 `editor_domain` target，也不表示 editor
 panel 可以拥有 importer execution、product cache writes、runtime asset handles、runtime scene hierarchy 或
 renderer/GPU lifetime。
 
 禁止方向：
 
 - `engine/core`、runtime packages、renderer packages 不依赖 `apps/editor`。
-- 未来 `packages/editor-core` 不 include ImGui、GLFW、Vulkan 或 renderer implementation headers。
+- 未来 `editor_domain` target 不 include ImGui、GLFW、Vulkan 或 renderer implementation headers。
 - Editor panels 不 include 任何 package 的 `src/`，也不访问 Vulkan object ownership。
 
 ## 模块所有权
@@ -155,7 +155,7 @@ fences and completed frame epochs.
 ### Selection state
 
 `EditorAppServices` owns the single active `EditorSelectionSet` for the app. The first slice keeps this owner in
-`apps/editor` rather than extracting `packages/editor-core`; it is still backend-neutral and uses `asharia::EntityId` from
+`apps/editor` rather than extracting `editor_domain`; it is still backend-neutral and uses `asharia::EntityId` from
 `scene-core` plus a scene/document key string, not runtime object pointers.
 
 Selection mutations normalize invalid and duplicate targets, keep one primary item, preserve explicit `Resolved`,
@@ -605,7 +605,7 @@ Game View 不能隐式包含 grid、transform gizmo、wire overlay、selection o
 
 ### 未来 `editor-core`
 
-Do not extract `packages/editor-core` just to move files. Extract only when there is durable backend-neutral state with real
+Do not extract `editor_domain` just to move files. Extract it into the complete Editor System Package only when there is durable backend-neutral state with real
 consumers, such as selection, transaction, inspector data model or editor service facade.
 
 `editor-core` may own:
@@ -708,7 +708,7 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   navigation/content layout, a gray workbench shell behind darker rounded panel content blocks and disabled/pending controls
   for play, search, Console filters, Inspector lock/pin and not-yet-wired authoring affordances. It does not implement
   writable Inspector fields, scene hierarchy mutation, picking, transform gizmos, selection outlines or a new
-  `packages/editor-core`.
+  `editor_domain` target.
 - World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
@@ -752,4 +752,4 @@ records only the debug replay/copy path, and displays the resulting sampled prev
 - `recordEditorImguiFrame()` 位于 `imgui_frame_renderer.cpp`，由 `editor_vulkan_host` 的一帧提交 helper
   调用。作为 host integration 现在可以接受；如果它超出 swapchain ImGui pass recording，应继续移动到
   `imgui_runtime` 或独立的 editor ImGui pass module。
-- There is no `packages/editor-core` yet by design.
+- There is no reusable `editor_domain` target yet by design.

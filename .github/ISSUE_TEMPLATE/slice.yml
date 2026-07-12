@@ -1,19 +1,35 @@
 name: PR Slice
-description: 在一个或多个路线图 Epic 下创建 PR 粒度 issue。
-title: "[Slice] 子系统: PR 目标"
+description: 在一个 primary Epic 下创建单 PR 结果；独立维护工作需说明 standalone 原因。
+title: "[Slice] 系统[/组件]: PR 结果"
 labels:
   - type:slice
 body:
   - type: markdown
     attributes:
       value: |
-        用于可以通过一个 PR 合理关闭的工作。创建前先查重；创建后关联父 Epic，加入 Engine Project，并在 Project 中设置 Status、Priority、Size。
+        用于可以通过一个 PR 合理关闭的工作。路线图工作只能关联一个 primary parent Epic；跨系统影响使用 Related Epics 或原生 dependencies。独立 bug、维护或一次性验证可以填写 standalone 原因。创建前先查重；创建后加入 Engine Project 并设置 Status、Priority、Size。
   - type: input
-    id: parent-epic
+    id: primary-epic
     attributes:
-      label: 关联 Epic
-      description: 链接父路线图 Epic。
-      placeholder: "#20"
+      label: Primary Epic / standalone reason
+      description: 路线图工作链接唯一 parent Epic；独立维护写 `None` 和不需要 Epic 的原因。不要把 #20 当作兜底父级。
+      placeholder: "#123；或 None — 独立 CI 修复，不改变路线图能力"
+    validations:
+      required: true
+  - type: input
+    id: related-epics
+    attributes:
+      label: Related Epics
+      description: 可选。列出受影响但不拥有本 Slice 的其他 Epics；不要把它们设置为多个 parents。
+      placeholder: "#45、#69"
+    validations:
+      required: false
+  - type: input
+    id: primary-system
+    attributes:
+      label: Primary system / package and component
+      description: 填写最终交付结果的唯一 owner；内部 component 只用于定位 target/module。
+      placeholder: "packages/systems/rendering-vulkan / rendergraph"
     validations:
       required: true
   - type: input
@@ -131,7 +147,6 @@ body:
         - S
         - M
         - L
-        - XL
     validations:
       required: true
   - type: checkboxes
@@ -143,5 +158,7 @@ body:
           required: true
         - label: 这个 Slice 足够小，可以通过一个 PR 完成。
           required: true
-        - label: 如果出现前置依赖，会创建 blocking issue，而不是把这个 Slice 扩成无边界任务。
+        - label: 路线图工作只有一个 primary parent Epic；跨系统关系使用 Related Epics 或原生 dependency。
+          required: true
+        - label: 如果出现真实前置依赖，会建立 blocked-by 关系，而不是把这个 Slice 扩成无边界任务。
           required: true

@@ -42,8 +42,8 @@ contract-only 方向，并要求 `PluginHost`、`ScriptExecutionHost`、`Managed
 | --- | --- | --- | --- |
 | `apps/editor` | C++ | ImGui runtime、dockspace、menu、panel adapters、viewport texture registry、input routing、frame order | engine core 抽象、runtime package owner、脚本 VM ABI |
 | `apps/editor` 内部 bridge | C++ | 把脚本 action/contribution 转成 editor command、menu item、panel model | 暴露 ImGui/Vulkan 给脚本 |
-| future `packages/editor-core` | C++ | `EditorId`、action/event/panel metadata、selection、transaction、editor service facade | ImGui headers、Vulkan headers、GLFW headers、renderer implementation |
-| `packages/scripting` | C++ ABI | `ScriptHost`、binding registry、execution context、diagnostics、permission model | editor UI 实现、VM 专属对象模型、GPU backend |
+| future `packages/systems/editor` / `editor_domain` target | C++ | `EditorId`、action/event/panel metadata、selection、transaction、editor service facade | ImGui headers、Vulkan headers、GLFW headers、renderer implementation |
+| `packages/systems/scripting-dotnet` / contracts + runtime targets | C++ ABI | `ScriptHost`、binding registry、execution context、diagnostics、permission model | editor UI 实现、VM 专属对象模型、GPU backend |
 | VM target | Lua/C#/future | 执行脚本 entry point，返回数据、命令请求和 diagnostics | 拥有 editor lifecycle、直接改世界或资产、阻塞 render loop |
 
 ## 依赖方向
@@ -53,8 +53,8 @@ flowchart TD
     RuntimeApp["apps/runtime future"]
     EditorApp["apps/editor"]
     EditorBridge["apps/editor script bridge"]
-    EditorCore["packages/editor-core future"]
-    Scripting["packages/scripting"]
+    EditorCore["packages/systems/editor<br/>editor_domain target future"]
+    Scripting["packages/systems/scripting-dotnet"]
     VM["VM target<br/>lua/dotnet/future"]
     Scene["packages/scene-core"]
     Asset["packages/asset-core"]
@@ -86,11 +86,11 @@ flowchart TD
 
 Rules:
 
-- `packages/scripting` must not depend on `apps/editor`, ImGui, Vulkan, GLFW or renderer implementation.
-- `packages/editor-core` must not depend on ImGui, Vulkan, GLFW or renderer implementation.
-- The first bridge can stay inside `apps/editor`; extract a future `packages/editor-scripting` only if the bridge becomes
+- Scripting System contracts/runtime targets must not depend on `apps/editor`, ImGui, Vulkan, GLFW or renderer implementation.
+- The `editor_domain` target must not depend on ImGui, Vulkan, GLFW or renderer implementation.
+- The first bridge can stay inside `apps/editor`; extract a future `editor_scripting_bridge` internal target only if the bridge becomes
   reusable and can keep the same dependency direction.
-- Runtime apps may link `packages/scripting`, but must not link editor UI, editor bridge or editor-only facade.
+- Runtime apps may link Scripting System runtime targets, but must not link editor UI, editor bridge or editor-only facade.
 
 ## C++ Owned UI
 
@@ -311,7 +311,7 @@ Script reload is a contribution registry operation, not an editor UI restart:
 | --- | --- | --- |
 | 16-17 | Build C++ editor shell, panel registry, action registry, viewport registry and editor smokes | No script-controlled UI |
 | 20 | Add selection and transaction in editor-core | Editor mutations become undoable |
-| Script ABI | Add `packages/scripting` host/context/binding/diagnostics | No editor UI exposure yet |
+| Script ABI | Add Scripting System host/context/binding/diagnostics targets | No editor UI exposure yet |
 | Script action bridge | Register script actions and menu items in `apps/editor` | Permission and transaction smokes |
 | Declarative panel model | Let scripts return validated panel models | C++ still draws ImGui |
 | Inspector/asset hooks | Script contributes validators/context actions | Schema and asset APIs are stable |

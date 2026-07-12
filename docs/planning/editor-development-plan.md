@@ -15,7 +15,7 @@ Editor extension、tool lifecycle、viewport overlay、hot reload 和 renderer b
 让 `apps/editor` 尽早成为 RenderView sampled output 的真实消费者，同时保持 package-first 边界：
 
 - ImGui、GLFW backend、Vulkan backend 和 texture descriptor registration 只属于 editor host/integration。
-- 未来 `packages/editor-core` 只拥有 backend-neutral editor state，例如 action、event、selection、
+- 未来 `packages/systems/editor` 内部 `editor_domain` target 只拥有 backend-neutral editor state，例如 action、event、selection、
   transaction 和 panel metadata。
 - Renderer、RHI、RenderGraph 不依赖 ImGui 或 editor。
 - 不抽象一套通用 UI，不做 `asharia::ui::button()` / `asharia::ui::image()` 这类 ImGui clone。
@@ -166,7 +166,7 @@ Unity-like workbench UI 只改变可见产品语言：Scene Tree 显示为 Hiera
 
 - 不创建 runtime scene hierarchy，不实现 scene object picking，不写 Inspector 可变属性。
 - 不把 Scene Tree/Inspector 状态保存到 runtime scene、asset metadata 或 layout 之外的持久文档。
-- 不引入 `packages/editor-core`，直到 selection / transaction / inspector model 有真实跨面板消费者。
+- 不提取 `editor_domain` target，直到 selection / transaction / inspector model 有真实跨面板消费者。
 - 不让脚本热更新直接拥有 ImGui、RenderGraph execute、Vulkan handle 或 GPU resource lifetime。
 - 不在 Frame Debug 底层合同冻结前推进 Grid、node canvas、timeline matrix 或复杂调试 UI。
 
@@ -201,7 +201,7 @@ apps/editor
   Vulkan sampled target registration
   viewport render coordination
 
-future packages/editor-core
+future packages/systems/editor / editor_domain target
   editor ids and owned metadata strings
   action registry
   event queue
@@ -226,7 +226,7 @@ Rules:
 
 ## First Module Split
 
-第一阶段先把 `apps/editor/src/main.cpp` 拆成 app 内部模块，不新增 `packages/editor-core`：
+第一阶段先把 `apps/editor/src/main.cpp` 拆成 app 内部模块，不提取 `editor_domain` target：
 
 ```text
 apps/editor/src/
@@ -1121,7 +1121,7 @@ Scope:
 
 Validation:
 
-- `packages/editor-core` CMake target does not link ImGui, Vulkan, GLFW or renderer implementation.
+- The `editor_domain` CMake target does not link ImGui, Vulkan, GLFW or renderer implementation.
 
 ### 20.3 Selection Model
 
@@ -1129,7 +1129,7 @@ Status: Current / partial.
 
 Scope:
 
-- Add app-local `EditorSelectionSet` as the first active owner; defer `packages/editor-core`
+- Add app-local `EditorSelectionSet` as the first active owner; defer `editor_domain`
   extraction until the state has more backend-neutral consumers.
 - Store scene/document key plus `EntityId` and editor-only selection metadata.
 - Emit deterministic `SelectionChanged` facts through the editor event queue.
@@ -1167,7 +1167,7 @@ Scope:
 - Preserve read-only empty, single-selection, multi-selection/mixed-value and missing/stale validation shapes for future
   scene/schema-backed details.
 - Keep the model app-local until selection, transaction, dirty state and schema-backed Inspector consumers justify a narrow
-  `packages/editor-core` extraction.
+  `editor_domain` extraction into the complete Editor System Package.
 - Do not build writable component editing UI before schema/scene metadata, dirty state and command/transaction ownership
   exist.
 
@@ -1207,7 +1207,7 @@ Scope:
 - Bind `EditorDirtyState` and `EditorCommandHistory` to the app event queue while preserving no-op behavior and failure
   semantics.
 - Keep validation as a reportable event contract only; writable Inspector validation/fixing UI remains deferred.
-- Do not extract `packages/editor-core`, add autosave, scene picking, gizmo editing, source control or renderer behavior.
+- Do not extract `editor_domain`, add autosave, scene picking, gizmo editing, source control or renderer behavior.
 
 Validation:
 

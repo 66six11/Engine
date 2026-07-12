@@ -2,15 +2,15 @@
 
 ## 目标
 
-Asharia Engine 不采用“一个应用包含所有功能”的组织方式。核心思路接近 Unity package：
-engine core 保持小而稳定，功能以 package 形式引入；不同 host，比如 sample runtime、
-game app、editor、offline tools，通过依赖不同 packages 组合能力。
+Asharia Engine 不采用“一个应用包含所有功能”的组织方式。engine core 保持小而稳定，基础能力以完整
+System Package 引入，附加能力以完整 Feature/Integration Package 引入；不同 host，比如 sample runtime、game app、editor、offline tools，
+从已导入系统包中激活不同 modules。Package Manager 不让用户直接拼装内部 targets。
 
 这能带来三个好处：
 
 - runtime app 不需要被 editor 依赖污染。
-- renderer、render graph、asset pipeline、editor UI 可以独立演进。
-- 后续项目可以只引入需要的 packages，而不是复制或裁剪一个巨型工程。
+- renderer、render graph、asset pipeline、editor UI 可以通过内部 targets/modules 独立演进。
+- 后续项目可以只引入需要的完整 systems/features，而不是复制巨型工程或手工拼装 implementation fragments。
 
 ## 仓库目录
 
@@ -31,6 +31,7 @@ AshariaEngine/
     project-core/
     asset-core/
     asset-pipeline/
+    resource-runtime/
     material-core/
     shader-authoring/
     shader-material-adapter/
@@ -51,25 +52,80 @@ AshariaEngine/
     asset-processor/
 ```
 
-近期规划中的目录仍包括：
+目标系统发行根包括以下方向；不表示应立即搬迁当前目录：
 
 ```text
 AshariaEngine/
   packages/
-    editor-core/
-    input/
+    systems/
+      desktop-platform/
+      runtime-storage/
+      settings/
+      data-model/
+      content/
+      world/
+      tasks/
+      input/
+      scripting-dotnet/
+      rendering-vulkan/
+      editor/
+      project-product/
+      observability/
+    features/
+      advanced-camera/
+    integrations/
+    asset-packs/
+    templates/
+  engine/
+    package-runtime/
+    host-runtime/
   package-registry/
   shaders/
   tests/
 ```
 
+`packages/` 的第一层按可安装能力种类组织，而不是按实现技术组织：
+
+- `systems/`：完整基础或领域系统，必须能作为一个原子安装、升级和移除单元；
+- `features/`：建立在已有系统 public API 和 contribution points 上的附加产品能力；
+- `integrations/`：连接两个已有系统或外部 SDK、DCC 或 service 的完整适配能力；
+- `asset-packs/`：承载 catalog type=`content`、且不含 native runtime implementation 的可分发内容；
+- `templates/`：创建项目时一次性展开的模板，不形成持续依赖。
+
+不要再按 `rendergraph`、`vulkan`、`editor-ui`、`importer` 等内部技术边界建立同级可安装目录。领域归类通过 manifest
+的 `category`、`tags` 和 `hostRoles` 表达，避免为了重新分类反复移动 package identity。
+
+大型系统仍然位于 `packages/systems/<system>/`，内部以独立 modules/targets 保持编译、依赖和 Host Role 边界。例如：
+
+```text
+packages/systems/rendering-vulkan/
+  asharia.package.json
+  CMakeLists.txt
+  modules/
+    renderer-frontend/
+    rendergraph/
+    rhi-vulkan/
+    rhi-vulkan-rendergraph/
+    renderer-vulkan/
+    material/
+    shader-authoring/
+    shader-cook/
+    editor/
+    diagnostics/
+  tests/
+  docs/
+```
+
+这只是发行所有权和源码导航层级，不允许把现有硬 target 合并成巨型库。`asharia::rhi_vulkan` 不依赖
+RenderGraph、`asharia::rhi_vulkan_rendergraph` 单独承担翻译、backend-agnostic renderer 与 Vulkan recording 分离等约束继续成立。
+
 ## Core 与 Package 边界
 
 `engine/core` 只允许包含稳定、低层、跨 package 的基础设施：
 
-- logging。
+- bootstrap logging。
 - error/result。
-- filesystem/path。
+- 启动所需的严格 filesystem/path primitives；完整 VFS/async IO 属于 Runtime Storage System。
 - assertions。
 - small containers 或 utility。
 - build configuration。
@@ -78,6 +134,11 @@ AshariaEngine/
 
 `engine/platform` 当前是预留 platform abstraction boundary target，只传递 `core` 依赖，不导出公共
 header；实际 GLFW window、input polling 和 Vulkan surface glue 仍归 `window-glfw`。
+
+目标架构还新增 `engine/package-runtime` 与 `engine/host-runtime` 两个不同边界：前者解析 manifest/lock 并生成
+build/activation plan；后者拥有 scope、system factory、activation lease、typed contribution registry、application
+lifecycle 和 safe point。二者都不实现领域系统，也不提供全局 service locator。详细设计见
+[foundation-framework.md](foundation-framework.md)。
 
 package 用来承载可选能力：
 
@@ -104,6 +165,8 @@ package 用来承载可选能力：
   source/.ameta 条目，产出 deterministic manifest / catalog 输入、product blob 和诊断；它可以私有复用
   texture importer、`material-instance` 或 `shader-authoring` 等 importer-specific package，但不把这些语义
   推入 `asset-core`，也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
+- `resource-runtime` 当前是 CPU-only product-resolution baseline：按稳定资产 key 和期望 product record 管理
+  request generation 与 Pending/Ready/Failed 状态；它尚不读取 artifact bytes、不拥有 typed CPU payload 或 GPU object。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
   当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
 - `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
@@ -117,11 +180,105 @@ package 用来承载可选能力：
   renderer、RHI 或 editor。
 - `tools/asset-processor` 是 root-built offline CLI，组合 `asset_core_io`、`asset_pipeline` 和
   `project_core_io` 做 dry-run / product execution smoke；它不是 renderer、RHI 或 editor host。
-- `editor-core` 未来提供 editor service、selection、inspector、package browser。
+- 目标 `packages/systems/editor` 内部 `editor_domain` target 提供 backend-neutral editor service、selection、
+  transaction、inspector model 和 package browser contracts；它不是独立安装碎片。
+
+## 目标 Package Manager 体验
+
+状态：Planned Architecture。当前 manifests 仍以文档化和审查边界为主，尚未实现完整 resolver、lockfile 或 Editor Package Manager。
+
+长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
+
+这条体验必须建立在 headless package control plane 上：
+
+```mermaid
+flowchart LR
+    Editor["Editor Package Manager UI"]
+    CLI["CLI / CI"]
+    Manifest["asharia.packages.json<br/>complete Systems + Features + Integrations"]
+    Resolver["Headless Resolver"]
+    Lock["asharia.packages.lock.json"]
+    Build["Conan / CMake / Cook Plan"]
+    Hosts["Editor / Runtime / Server / Tools"]
+
+    Editor -->|"edit dependencies"| Manifest
+    CLI -->|"edit or restore"| Manifest
+    Manifest --> Resolver
+    Resolver --> Lock
+    Lock --> Build
+    Lock --> Hosts
+```
+
+规则：
+
+- Editor UI 不是 package graph 的事实来源；`asharia.packages.json` 和 `asharia.packages.lock.json` 才是。
+- Package Manager 的导入单位是完整 Installable Capability Package，catalog type 至少区分 `system`、`feature`、`integration`、`content` 和 `template`。
+- System Package 共同交付基础领域的 runtime owner、public APIs、Editor、tool/cook、diagnostics 和当前 backend/provider modules；Host Profile 只激活兼容部分。
+- Feature Package 基于一个或多个 System public APIs，完整交付自己的状态/算法、schema/assets、runtime、Editor authoring、cook 和 diagnostics，例如 Advanced Camera Rig。它不需要拥有新的基础系统。
+- Integration Package 显式依赖被桥接的包，交付窄 contribution 和兼容测试，不拥有任一侧状态。
+- CMake target、contract、runtime module、Editor adapter、cook tool、Vulkan bridge 或脚本 VM provider 都不是独立安装条目。它们可以保持硬 target 边界，但共享所属 System Package 的版本、获取和移除生命周期。
+- 完整能力可以自动依赖其他完整 packages；“完整”不代表没有依赖，而是用户不会得到缺少其声明能力所需 implementation 或 authoring/cook 支持的半安装状态。
+- 安装、升级、降级、移除和 lockfile rollback 以完整 installable package 为原子事务。Host Profile 可以不激活 Editor/cook/backend module，但这不是把能力拆成多个安装状态。
+- Editor、CLI、CI、cook 和 runtime 必须共享同一个 resolver 与 host-role filtering 语义。
+- `engine/package-runtime` 是 bootstrap exception：它提供 manifest、resolver、lockfile 和 activation plan 的最小能力，不能依赖由自己管理的 Editor UI 或某个可选系统。
+- `engine/host-runtime` 消费 activation plan，负责 scope/instance/contribution 的创建、撤销和失败回滚；它不重新解析版本，也不取得系统领域状态所有权。
+- `asharia.project.json` 继续由 `project-core` 保存项目身份、资产源和缓存；package-runtime 不解析它。
+- `asharia.packages.json` / lock 使用 package-runtime 自己拥有的窄 schema，不能依赖由它负责解析的可选 Data Model package。
+- “引擎自带”使用 `bundled` / `built-in` 表达；`project-embedded` 专指位于项目内、由项目版本控制并可编辑的 package。
+- `required`、`default` 和 `optional` 表达 Host/Profile 选择策略，不把默认系统塞进 Kernel。
+- 一个 system package 可以包含 runtime、editor、tool、content 和 test modules；Host Profile 只选择兼容 modules。Module 是逻辑 activation unit，可以静态链接、启动时注册、动态加载或由 managed host 加载，不天然支持 hot unload。
+- resolver v0 只使用具名完整 package dependencies，例如 Feature Set 直接依赖 `com.asharia.system.rendering-vulkan`、`com.asharia.system.scripting-dotnet` 或 `com.asharia.feature.advanced-camera`；不得直接依赖裸 `rhi-vulkan`、RenderGraph bridge、`.NET provider` 或 `camera-editor` 片段。等第二个真实完整实现出现并完成 ADR 后，再启用 `provides` / `requires capability` 求解。
+- Package Manager 只生成 build/activation plan，不拥有 World、Renderer、Script VM 或其他系统实例。
+- data-only package 可以即时激活；native code package 可以明确要求 regenerate、build 和 restart。
+- 当前 Editor Profile 自身要求的 Package Runtime、Editor Domain 和 Package Manager UI 显示为 `Required by Profile`，不能由正在运行的 UI 卸载。
+- Asharia Package Manager 管理完整 System/Feature/Integration/Content/Template Packages；它不替代 Conan。`conan.lock` 继续锁定第三方 C/C++ dependencies，Build Plan 连接两张锁定图。
+- 第一阶段只支持 bundled/project-embedded/local sources。远程 registry、签名、商业分发和任意 native hot unload 必须后置。
+
+推荐的默认组合不是硬编码 Host 依赖，而是版本化 Feature Set meta-packages：
+
+- `Asharia.Minimal`：Kernel、Host Runtime 和测试所需最小 contracts/implementations；
+- `com.asharia.features.standard3d`：完整 Runtime Storage & IO、Settings & Console、Data/Content/World/Tasks/Input/Desktop Platform Support/Scripting (.NET)/Rendering (Vulkan)/Physics/Animation/Audio/Observability systems；
+- `com.asharia.features.editor-authoring`：Standard3D 加完整 Editor & Authoring、Project Product Pipeline systems；asset/shader tools 已随所属 Content/Rendering systems 交付；
+- `com.asharia.features.dedicated-server`：Runtime Storage、Settings、Data、Content、World、Tasks、Scripting、Physics、Networking、Observability，排除 renderer/audio/editor；
+- `Asharia.AssetWorker`：asset/shader tool pipeline，排除 runtime world/rendering。
+
+Feature Set 持续存在于 `asharia.packages.json`；成员是间接依赖，不能在仍被 Feature Set 要求时单独删除。Project Template 则只在创建项目时一次性写入 direct dependencies、设置和样例内容，之后不持续约束成员。需要自由增删 Standard3D 成员时，应使用 Project Template 展开，而不是保留 Standard3D Feature Set。
+
+### Feature Package 不是 API 包装器
+
+API 由 System Package 拥有；Package Manager 只负责 capability package 的分发和装配。Feature Package 会通过公共 API 工作，但还必须拥有自己的状态、算法、schema/assets、runtime lifecycle、Editor workflow、cook 和 diagnostics。
+
+例如 `com.asharia.feature.advanced-camera` 可以依赖 World、Input、Physics 和 Rendering public contracts，交付 orbit/follow/damping/collision/blend、camera rig assets、Inspector、gizmo 和 preview；它最终发布 `CameraState` / `CameraIntent` 给公共 camera-view contract，不访问 Renderer、RenderGraph 或 Vulkan 私有对象。Camera 与 Cinematics Timeline 的可选桥接应使用 `com.asharia.integration.camera-cinematics` 或同等显式 manifest contribution，不能靠未锁定的运行时探测改变行为。
+
+完整系统目录、package contract、迁移阶段和验证门禁见 [../planning/system-architecture-roadmap.md](../planning/system-architecture-roadmap.md)。
+
+### Package graph 到可运行产品
+
+Package Manager 的工作到 locked build/activation plan 为止；它不负责执行项目产品构建。Editor 创建的项目由独立、headless 的 Project Build 与 Project Launch services 完成：
+
+```text
+project + asharia.packages.lock.json + conan.lock + asharia.build.json
+  -> generate host composition
+  -> Conan before CMake build
+  -> target cook
+  -> validated stage
+  -> package / deploy
+  -> tracked standalone or device launch session
+```
+
+- `asharia.build.json` 保存可提交的 Build Profiles 和共享 Launch Profiles，不复制 package graph；
+- Editor 的 Build、Build & Run 和 Sessions panels 与 CLI/CI 共用同一 planner、executor、report 和 session state；
+- generated runtime composition root 只选择 lockfile 与 Host Profile 允许的 runtime modules；
+- shipping runtime 消费 stage manifest 与 cooked catalog，不读取 source project；
+- Play In Editor 与 Standalone/Packaged Launch 是不同验证路径；后者运行独立进程并跟踪 ready、log、exit、crash 和 stop；
+- platform packager/deployer 是 Project Product Pipeline 或完整 Platform Support System 内部的具名 adapter modules，不作为用户必须另装的碎片；签名凭据不进入 project、profile 或 lockfile。
+
+完整设计见 [project-build-and-launch.md](project-build-and-launch.md)。
 
 ## Package Manifest
 
-每个已落地的 engine、package、app 和 root-built tool 入口都维护一个 manifest，命名为 `asharia.package.json`：
+当前每个已落地的 engine、source package、app 和 root-built tool 入口都维护一个名为 `asharia.package.json` 的边界清单。
+这是当前仓库事实，不表示它们都能成为 Package Manager 安装项：
 
 ```json
 {
@@ -140,6 +297,11 @@ package 用来承载可选能力：
 
 manifest 的第一阶段用途是文档化边界、shipping target、test target 和 target-level dependency；
 当前 CMake 仍以显式 `CMakeLists.txt` 为准，后续再评估由脚本或 CMake helper 读取 manifest。
+
+当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，汇总其内部 source packages/targets/modules/contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。
+
+`engine/*` 是 bootstrap component，不是用户可选能力。迁移期间如果继续复用同一 manifest schema，必须明确
+`kind: "engine-component"`、`selectable: false` 和 `catalogVisible: false`；Package Manager catalog 不得显示这些条目。
 
 当前 manifest 已包含 `targetDependencies` 字段。审查时需要同时看两层：
 
@@ -211,17 +373,17 @@ runtime/rendering packages 的 editor-only executable：
   frame loop 提交/present；panel 代码不录制 Vulkan commands。
 - 未来 editor 加载 package metadata、读取 asset database，并通过 renderer package 提供的
   public API 预览场景。
-- 未来 editor 的 inspector、importer、scene authoring 放在 editor-only packages 或
+- 未来 editor 的 inspector、importer、scene authoring 放在完整系统包的 editor-only modules，或仍处于提取门禁前的
   `apps/editor` integration 层。
 - ImGui context、ImGui Vulkan backend 和 editor texture registration 属于 editor host/integration
-  层；`editor-core` 不依赖 ImGui、Vulkan 或 renderer implementation。
+  层；目标 `editor_domain` target 不依赖 ImGui、Vulkan 或 renderer implementation。
 - Editor UI 的 C++ / 脚本协作边界以 [editor-ui-scripting.md](editor-ui-scripting.md) 为准；脚本不拥有
   第一版 editor shell、dockspace、viewport 或 backend integration。
 - runtime app 可以完全不链接 editor packages。
 
 ## MVP 取舍
 
-当前仍不实现完整 package manager，但目录和 target 边界已经按 package-first 组织。
+当前仍未实现完整 package manager，但“Editor Package Manager + headless resolver + committed `asharia.packages.lock.json` + Host Profiles”已作为目标架构记录；目录和 target 边界继续按 package-first 组织。
 Host 可以继续扩展 smoke 和 editor integration；新增能力必须先放进正确 package 或
 app integration 层，不能为了方便把 package/private 实现直接并进 app。
 

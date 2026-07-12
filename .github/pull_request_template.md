@@ -2,7 +2,8 @@
 
 - 关联 Issue: #
 - [ ] 关联 Issue 已加入 Engine Project。
-- [ ] PR 粒度工作已有 `[Slice]` issue；或本 PR 说明为什么直接关联父 `[Epic]` 足够。
+- [ ] PR 粒度工作已有一个 primary `[Slice]` issue；独立 XS 维护工作已说明 standalone 原因。
+- [ ] 跨系统影响使用 Related Epics 或原生 dependency，没有把一个 Slice 挂到多个 parents。
 - [ ] Project `Status`、`Priority`、`Size` 已同步。
 - [ ] 验证完成后，本 PR 会关闭或更新关联 Issue。
 

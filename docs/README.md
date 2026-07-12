@@ -9,12 +9,13 @@
 | 构建、门禁和日常 workflow | [workflow/build.md](workflow/build.md)、[workflow/review.md](workflow/review.md)、[workflow/technical-stack.md](workflow/technical-stack.md) |
 | 编码、文档和文本规则 | [standards/coding.md](standards/coding.md)、[standards/documentation.md](standards/documentation.md)、[standards/encoding.md](standards/encoding.md)、[standards/naming.md](standards/naming.md) |
 | 文档站部署 | [workflow/documentation-site.md](workflow/documentation-site.md)、[standards/documentation.md](standards/documentation.md) |
-| 当前架构和真实数据流 | [architecture/overview.md](architecture/overview.md)、[architecture/flow.md](architecture/flow.md)、[architecture/package-first.md](architecture/package-first.md) |
-| RenderGraph / RHI 边界 | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[rendergraph/roadmap.md](rendergraph/roadmap.md) |
+| 当前架构、真实数据流与目标基础框架 | [architecture/overview.md](architecture/overview.md)、[architecture/flow.md](architecture/flow.md)、[architecture/package-first.md](architecture/package-first.md)、[architecture/foundation-framework.md](architecture/foundation-framework.md) |
+| 项目构建、打包与启动目标架构 | [architecture/project-build-and-launch.md](architecture/project-build-and-launch.md) |
+| RenderGraph / RHI / 可编程管线边界 | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[rendergraph/roadmap.md](rendergraph/roadmap.md)、[rendergraph/programmable-pipeline.md](rendergraph/programmable-pipeline.md) |
 | Editor 架构和 UI | [architecture/editor.md](architecture/editor.md)、[architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[architecture/editor-ui-visual-target.md](architecture/editor-ui-visual-target.md)、[planning/editor-development-plan.md](planning/editor-development-plan.md) |
-| 系统设计 | [systems/reflection-serialization.md](systems/reflection-serialization.md)、[systems/asset-architecture.md](systems/asset-architecture.md)、[systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[systems/scene-world.md](systems/scene-world.md)、[systems/scripting.md](systems/scripting.md)、[architecture/managed-extension-model.md](architecture/managed-extension-model.md)、[systems/performance-profiling.md](systems/performance-profiling.md) |
+| 系统设计 | [systems/reflection-serialization.md](systems/reflection-serialization.md)、[systems/asset-architecture.md](systems/asset-architecture.md)、[resource-runtime package 技术设计](../packages/resource-runtime/README.md)、[systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[systems/scene-world.md](systems/scene-world.md)、[systems/scripting.md](systems/scripting.md)、[architecture/managed-extension-model.md](architecture/managed-extension-model.md)、[systems/performance-profiling.md](systems/performance-profiling.md) |
 | 格式规格 | [specs/ashader-v2.md](specs/ashader-v2.md)、[specs/material-runtime-products-v2.md](specs/material-runtime-products-v2.md) |
-| 计划和项目管理 | [planning/next-development-plan.md](planning/next-development-plan.md)、[planning/shader-material-mvp-plan.md](planning/shader-material-mvp-plan.md)、[planning/project-management.md](planning/project-management.md) |
+| 计划和项目管理 | [planning/system-architecture-roadmap.md](planning/system-architecture-roadmap.md)、[planning/next-development-plan.md](planning/next-development-plan.md)、[planning/shader-material-mvp-plan.md](planning/shader-material-mvp-plan.md)、[planning/project-management.md](planning/project-management.md) |
 | 研究资料 | [research/sources.md](research/sources.md) |
 
 ## 阅读顺序
@@ -25,8 +26,11 @@
 4. [architecture/overview.md](architecture/overview.md) - 模块边界、所有权和生命周期。
 5. [architecture/flow.md](architecture/flow.md) - 当前包依赖、启动、frame loop 和 RenderGraph/RHI 数据流。
 6. [rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md) - RenderGraph 与 Vulkan backend 的职责边界。
-7. [architecture/editor.md](architecture/editor.md) - 当前 editor shell、panel、viewport 和验证入口。
-8. [planning/next-development-plan.md](planning/next-development-plan.md) - 下一阶段主路线。
+7. [architecture/foundation-framework.md](architecture/foundation-framework.md) - 目标 Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁。
+8. [architecture/editor.md](architecture/editor.md) - 当前 editor shell、panel、viewport 和验证入口。
+9. [planning/system-architecture-roadmap.md](planning/system-architecture-roadmap.md) - 目标系统框架、package/target 收敛方向和迁移门禁。
+10. [architecture/project-build-and-launch.md](architecture/project-build-and-launch.md) - Editor 项目的 Build/Cook/Stage/Package/Deploy/Launch 目标闭环。
+11. [planning/next-development-plan.md](planning/next-development-plan.md) - 下一阶段功能交付主路线。
 
 专项开发时再读对应目录下的细化文档，不把专项文档当成第二套路线路线图。
 
