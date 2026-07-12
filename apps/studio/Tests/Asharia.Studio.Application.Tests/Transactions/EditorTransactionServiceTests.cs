@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using Editor.Core.Abstractions;
 using Asharia.Editor.Editing;
 using Asharia.Editor.Transactions;
-using Editor.Shell.Services;
+using Asharia.Studio.Application.Transactions;
 using Xunit;
 
-namespace Editor.Tests.Shell.Services;
+namespace Asharia.Studio.Application.Tests.Transactions;
 
 public sealed class EditorTransactionServiceTests
 {

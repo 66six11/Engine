@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Asharia.Editor.Editing;
 using Asharia.Editor.Transactions;
-using Editor.Core.Abstractions;
 
-namespace Editor.Shell.Services;
+namespace Asharia.Studio.Application.Transactions;
 
 public sealed class EditorTransactionService : IEditorTransactionService
 {
