@@ -181,7 +181,9 @@ namespace {
         }
         auto oversized =
             asharia::schema::readSchemaDocumentFile(fixturePath, {.maxBytes = fixtureBytes - 1U});
-        if (oversized || !contains(oversized.error().message, "limit")) {
+        if (oversized ||
+            !contains(oversized.error().message, "observedBytes=" + std::to_string(fixtureBytes)) ||
+            !contains(oversized.error().message, "maxBytes=" + std::to_string(fixtureBytes - 1U))) {
             std::cerr << "Schema document accepted a file above the byte limit.\n";
             return false;
         }

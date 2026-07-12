@@ -942,7 +942,11 @@ namespace {
         }
         auto oversized = asharia::serialization::readTextArchiveFile(
             archivePath, {.maxBytes = static_cast<std::uint64_t>(firstText->size() - 1U)});
-        if (oversized || oversized.error().message.find("limit") == std::string::npos) {
+        if (oversized ||
+            oversized.error().message.find("observedBytes=" + std::to_string(firstText->size())) ==
+                std::string::npos ||
+            oversized.error().message.find("maxBytes=" + std::to_string(firstText->size() - 1U)) ==
+                std::string::npos) {
             logFailure("JSON archive smoke accepted a file above the byte limit.");
             return false;
         }

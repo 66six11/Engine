@@ -135,7 +135,11 @@ int main() {
     }
     auto oversized = asharia::archive::readJsonArchiveFile(
         archivePath, {.maxBytes = static_cast<std::uint64_t>(firstText->size() - 1U)});
-    if (oversized || !contains(oversized.error().message, "limit")) {
+    if (oversized ||
+        !contains(oversized.error().message,
+                  "observedBytes=" + std::to_string(firstText->size())) ||
+        !contains(oversized.error().message,
+                  "maxBytes=" + std::to_string(firstText->size() - 1U))) {
         std::cerr << "Archive JSON accepted a file one byte above the byte limit.\n";
         return EXIT_FAILURE;
     }
