@@ -1,8 +1,8 @@
 using System;
 using Asharia.Editor.Panels;
+using Asharia.Studio.Application.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
-using Editor.Shell.Services;
 using Editor.UI.ViewModels;
 
 namespace Editor.Shell.ViewModels.Docking;

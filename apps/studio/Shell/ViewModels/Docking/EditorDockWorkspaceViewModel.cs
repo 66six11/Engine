@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Panels;
+using Asharia.Studio.Application.Panels;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Editor.Core.Abstractions;
@@ -10,7 +11,6 @@ using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Docking.Panels;
 using Asharia.Studio.Application.Lifecycle;
-using Editor.Shell.Services;
 using Editor.UI.ViewModels;
 
 namespace Editor.Shell.ViewModels.Docking;

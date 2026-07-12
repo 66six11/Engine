@@ -1,11 +1,13 @@
 using Asharia.Editor.Dialogs;
 using Asharia.Editor.Diagnostics;
 using Asharia.Editor.Lifecycle;
+using Asharia.Editor.Panels;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;
 using Asharia.Editor.Transactions;
 using Asharia.Editor.Viewports;
 using Asharia.Studio.Application.Lifecycle;
+using Asharia.Studio.Application.Panels;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
@@ -23,6 +25,40 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Panel_frame_scheduler_implementation_is_owned_only_by_application()
+    {
+        var studioRoot = FindStudioRoot();
+        var applicationRoot = Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Panels");
+
+        Assert.True(
+            File.Exists(Path.Combine(applicationRoot, "EditorPanelFrameScheduler.cs")),
+            $"Application panel frame scheduler is missing from {applicationRoot}.");
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorPanelFrameScheduler).Assembly.GetName().Name);
+        Assert.Equal(
+            "Asharia.Editor",
+            typeof(IEditorPanelFrameUpdateSink).Assembly.GetName().Name);
+
+        var legacyOwners = Directory
+            .EnumerateFiles(studioRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(studioRoot, path).Replace('\\', '/'))
+            .Where(path => !path.StartsWith("Tests/", StringComparison.Ordinal)
+                && !path.StartsWith("src/", StringComparison.Ordinal)
+                && !path.Contains("/bin/", StringComparison.Ordinal)
+                && !path.Contains("/obj/", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(Path.Combine(studioRoot, path))
+                .Contains("class EditorPanelFrameScheduler", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Empty(legacyOwners);
+    }
+
     [Fact]
     public void Viewport_scheduler_implementation_is_owned_only_by_application()
     {
