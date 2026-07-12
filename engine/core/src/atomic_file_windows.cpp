@@ -77,8 +77,7 @@ namespace asharia::core::detail {
 
             [[nodiscard]] std::uint32_t moveFile(const std::filesystem::path& source,
                                                  const std::filesystem::path& target) override {
-                if (MoveFileExW(source.c_str(), target.c_str(),
-                                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE) {
+                if (MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH) == FALSE) {
                     return GetLastError();
                 }
                 return ERROR_SUCCESS;
@@ -92,7 +91,12 @@ namespace asharia::core::detail {
             }
 
             void reportWarning(std::string_view warning) noexcept override {
-                logWarning(warning);
+                try {
+                    logWarning(warning);
+                } catch (...) {
+                    OutputDebugStringA(
+                        "Core atomic replacement warning delivery failed after commit.\n");
+                }
             }
         };
 
