@@ -29,10 +29,13 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 The ClangCL test gate promotes every clang-tidy diagnostic to an error for production and test
 translation units. `.github/workflows/native-code-quality.yml` runs these CTests plus encoding,
-whitespace, asset boundary, and Vulkan package boundary/safety heuristic checks on Windows for pull requests, pushes to `main`, and manual
+whitespace, asset boundary, and Vulkan package boundary/safety heuristic checks on the
+`windows-2022` runner, which provides the Visual Studio 17 toolchain required by the committed
+Conan profiles, for pull requests, pushes to `main`, and manual
 dispatches. Hosted CI does not run GPU/window smoke commands; all applicable smoke commands below
 remain local pre-commit gates and must be run with both standard debug presets when the scope table
-requires them.
+requires them. The hosted ClangCL build uses `--parallel 2` so concurrent clang-tidy processes stay
+within the runner memory budget.
 
 Use `tools\pre-pr.ps1 -IncludeUntracked` to print candidate gates for the changed file set.
 The `clangcl-debug` preset enables `ASHARIA_ENABLE_CLANG_TIDY=ON`. `tools\review-vulkan-cpp.py`
