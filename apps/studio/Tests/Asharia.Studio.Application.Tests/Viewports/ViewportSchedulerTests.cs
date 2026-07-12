@@ -1,10 +1,10 @@
 using System;
 using System.Linq;
 using Asharia.Editor.Viewports;
-using Editor.Core.Services;
+using Asharia.Studio.Application.Viewports;
 using Xunit;
 
-namespace Editor.Tests.Core.Services;
+namespace Asharia.Studio.Application.Tests.Viewports;
 
 public sealed class ViewportSchedulerTests
 {
