@@ -1,4 +1,5 @@
-﻿#include <array>
+﻿#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <span>
 #include <sstream>
@@ -97,6 +99,165 @@ namespace {
         return bytes;
     }
 
+#if defined(_WIN32)
+    class FakeWindowsReplaceOperations final
+        : public asharia::core::detail::WindowsReplaceOperations {
+    public:
+        enum class ReplaceBehavior : std::uint8_t {
+            Success,
+            Partial1177,
+            OrdinaryFailure,
+        };
+
+        // This override must preserve the target/replacement/backup order of the Win32 seam.
+        // NOLINTBEGIN(bugprone-easily-swappable-parameters)
+        [[nodiscard]] std::uint32_t replaceFile(const std::filesystem::path& target,
+                                                const std::filesystem::path& replacement,
+                                                const std::filesystem::path& backup) override {
+            if (replaceBehavior == ReplaceBehavior::OrdinaryFailure) {
+                return 5U;
+            }
+
+            files[backup] = files.at(target);
+            files.erase(target);
+            if (replaceBehavior == ReplaceBehavior::Partial1177) {
+                return ERROR_UNABLE_TO_MOVE_REPLACEMENT_2;
+            }
+
+            files[target] = files.at(replacement);
+            files.erase(replacement);
+            return ERROR_SUCCESS;
+        }
+        // NOLINTEND(bugprone-easily-swappable-parameters)
+
+        [[nodiscard]] std::uint32_t moveFile(const std::filesystem::path& source,
+                                             const std::filesystem::path& target) override {
+            if (moveError != ERROR_SUCCESS) {
+                return moveError;
+            }
+            files[target] = files.at(source);
+            files.erase(source);
+            return ERROR_SUCCESS;
+        }
+
+        [[nodiscard]] std::uint32_t deleteFile(const std::filesystem::path& path) override {
+            ++deleteCalls;
+            if (deleteError != ERROR_SUCCESS) {
+                return deleteError;
+            }
+            files.erase(path);
+            return ERROR_SUCCESS;
+        }
+
+        void reportWarning(std::string_view warning) noexcept override {
+            observedWarningSize = std::min(warning.size(), observedWarning.size());
+            std::memcpy(observedWarning.data(), warning.data(), observedWarningSize);
+        }
+
+        [[nodiscard]] std::string_view warningText() const noexcept {
+            return {observedWarning.data(), observedWarningSize};
+        }
+
+        ReplaceBehavior replaceBehavior{ReplaceBehavior::Success};
+        std::uint32_t moveError{ERROR_SUCCESS};
+        std::uint32_t deleteError{ERROR_SUCCESS};
+        std::size_t deleteCalls{};
+        std::map<std::filesystem::path, std::string> files;
+        std::array<char, 1024> observedWarning{};
+        std::size_t observedWarningSize{};
+    };
+
+    [[nodiscard]] bool restoresOldTargetAfterPartialWindowsReplacement() {
+        FakeWindowsReplaceOperations operations;
+        operations.replaceBehavior = FakeWindowsReplaceOperations::ReplaceBehavior::Partial1177;
+        const std::filesystem::path target{"save/data.bin"};
+        const std::filesystem::path replacement{"save/data.bin.tmp"};
+        const std::filesystem::path backup{"save/data.bin.backup"};
+        operations.files = {{target, "old"}, {replacement, "new"}};
+
+        const auto outcome = asharia::core::detail::replaceExistingWindowsFileWithRecovery(
+            target, replacement, backup, operations);
+
+        return outcome.commitState == asharia::core::detail::AtomicReplaceCommitState::NotReached &&
+               outcome.temporaryDisposition ==
+                   asharia::core::detail::AtomicTemporaryDisposition::Cleanup &&
+               outcome.error.has_value() &&
+               contains(outcome.error->message, "commitPointReached=false") &&
+               contains(outcome.error->message, "recovery=restored") &&
+               contains(outcome.error->message, target.string()) &&
+               contains(outcome.error->message, replacement.string()) &&
+               contains(outcome.error->message, backup.string()) &&
+               operations.files.at(target) == "old" && operations.files.at(replacement) == "new" &&
+               !operations.files.contains(backup);
+    }
+
+    [[nodiscard]] bool preservesRecoveryArtifactsWhenWindowsRestoreFails() {
+        FakeWindowsReplaceOperations operations;
+        operations.replaceBehavior = FakeWindowsReplaceOperations::ReplaceBehavior::Partial1177;
+        operations.moveError = ERROR_ACCESS_DENIED;
+        const std::filesystem::path target{"save/data.bin"};
+        const std::filesystem::path replacement{"save/data.bin.tmp"};
+        const std::filesystem::path backup{"save/data.bin.backup"};
+        operations.files = {{target, "old"}, {replacement, "new"}};
+
+        const auto outcome = asharia::core::detail::replaceExistingWindowsFileWithRecovery(
+            target, replacement, backup, operations);
+
+        return outcome.commitState ==
+                   asharia::core::detail::AtomicReplaceCommitState::Indeterminate &&
+               outcome.temporaryDisposition ==
+                   asharia::core::detail::AtomicTemporaryDisposition::Preserve &&
+               outcome.error.has_value() &&
+               contains(outcome.error->message, "commitPointReached=indeterminate") &&
+               contains(outcome.error->message, "recoveryError=5") &&
+               contains(outcome.error->message, target.string()) &&
+               contains(outcome.error->message, replacement.string()) &&
+               contains(outcome.error->message, backup.string()) &&
+               !operations.files.contains(target) && operations.files.at(replacement) == "new" &&
+               operations.files.at(backup) == "old";
+    }
+
+    [[nodiscard]] bool commitsWindowsReplacementDespiteBackupCleanupFailure() {
+        FakeWindowsReplaceOperations operations;
+        operations.deleteError = ERROR_ACCESS_DENIED;
+        const std::filesystem::path target{"save/data.bin"};
+        const std::filesystem::path replacement{"save/data.bin.tmp"};
+        const std::filesystem::path backup{"save/data.bin.backup"};
+        operations.files = {{target, "old"}, {replacement, "new"}};
+
+        const auto outcome = asharia::core::detail::replaceExistingWindowsFileWithRecovery(
+            target, replacement, backup, operations);
+
+        return outcome.commitState == asharia::core::detail::AtomicReplaceCommitState::Committed &&
+               outcome.temporaryDisposition ==
+                   asharia::core::detail::AtomicTemporaryDisposition::Preserve &&
+               !outcome.error.has_value() && operations.files.at(target) == "new" &&
+               !operations.files.contains(replacement) && operations.files.at(backup) == "old" &&
+               contains(operations.warningText(), "backup cleanup") &&
+               contains(operations.warningText(), backup.string());
+    }
+
+    [[nodiscard]] bool ordinaryWindowsReplaceFailurePreservesOriginalNames() {
+        FakeWindowsReplaceOperations operations;
+        operations.replaceBehavior = FakeWindowsReplaceOperations::ReplaceBehavior::OrdinaryFailure;
+        const std::filesystem::path target{"save/data.bin"};
+        const std::filesystem::path replacement{"save/data.bin.tmp"};
+        const std::filesystem::path backup{"save/data.bin.backup"};
+        operations.files = {{target, "old"}, {replacement, "new"}, {backup, "external"}};
+
+        const auto outcome = asharia::core::detail::replaceExistingWindowsFileWithRecovery(
+            target, replacement, backup, operations);
+
+        return outcome.commitState == asharia::core::detail::AtomicReplaceCommitState::NotReached &&
+               outcome.temporaryDisposition ==
+                   asharia::core::detail::AtomicTemporaryDisposition::Cleanup &&
+               outcome.error.has_value() &&
+               contains(outcome.error->message, "commitPointReached=false") &&
+               operations.files.at(target) == "old" && operations.files.at(replacement) == "new" &&
+               operations.files.at(backup) == "external" && operations.deleteCalls == 0U;
+    }
+#endif
+
     struct FakeAtomicFileState {
         std::vector<std::byte> targetBytes{bytesOf("old")};
         std::vector<std::byte> temporaryBytes;
@@ -174,7 +335,7 @@ namespace {
             return state_->temporaryPath;
         }
 
-        void releaseAfterReplace() noexcept override {
+        void releaseCleanupOwnership() noexcept override {
             state_->released = true;
             state_->temporaryExists = false;
         }
@@ -204,20 +365,30 @@ namespace {
                                                   .failClose = failClose});
         }
 
-        [[nodiscard]] asharia::VoidResult replace(const std::filesystem::path& temporary,
-                                                  const std::filesystem::path& target) override {
+        [[nodiscard]] asharia::core::detail::AtomicReplaceOutcome
+        replace(const std::filesystem::path& temporary,
+                const std::filesystem::path& target) override {
             ++state.replaceCalls;
             if (failReplace) {
-                return std::unexpected{
-                    asharia::Error{asharia::ErrorDomain::Core, 22, "replace failed"}};
+                return {.commitState = asharia::core::detail::AtomicReplaceCommitState::NotReached,
+                        .temporaryDisposition =
+                            asharia::core::detail::AtomicTemporaryDisposition::Cleanup,
+                        .error = asharia::Error{asharia::ErrorDomain::Core, 22,
+                                                "replace failed commitPointReached=false"}};
             }
 
             if (temporary != state.temporaryPath || target != state.targetPath) {
-                return std::unexpected{
-                    asharia::Error{asharia::ErrorDomain::Core, 23, "replace paths mismatched"}};
+                return {.commitState = asharia::core::detail::AtomicReplaceCommitState::NotReached,
+                        .temporaryDisposition =
+                            asharia::core::detail::AtomicTemporaryDisposition::Cleanup,
+                        .error = asharia::Error{asharia::ErrorDomain::Core, 23,
+                                                "replace paths mismatched"}};
             }
             state.targetBytes = state.temporaryBytes;
-            return {};
+            return {.commitState = asharia::core::detail::AtomicReplaceCommitState::Committed,
+                    .temporaryDisposition =
+                        asharia::core::detail::AtomicTemporaryDisposition::Preserve,
+                    .error = std::nullopt};
         }
 
         bool failCreate{};
@@ -457,6 +628,17 @@ int main() {
             std::pair<std::string_view, Test>{"readsEmptyFile", readsEmptyFile},
             std::pair<std::string_view, Test>{"rejectsGrowthAfterMeasuredSize",
                                               rejectsGrowthAfterMeasuredSize},
+#if defined(_WIN32)
+            std::pair<std::string_view, Test>{"restoresOldTargetAfterPartialWindowsReplacement",
+                                              restoresOldTargetAfterPartialWindowsReplacement},
+            std::pair<std::string_view, Test>{"preservesRecoveryArtifactsWhenWindowsRestoreFails",
+                                              preservesRecoveryArtifactsWhenWindowsRestoreFails},
+            std::pair<std::string_view, Test>{
+                "commitsWindowsReplacementDespiteBackupCleanupFailure",
+                commitsWindowsReplacementDespiteBackupCleanupFailure},
+            std::pair<std::string_view, Test>{"ordinaryWindowsReplaceFailurePreservesOriginalNames",
+                                              ordinaryWindowsReplaceFailurePreservesOriginalNames},
+#endif
             std::pair<std::string_view, Test>{"createFailurePreservesOriginal",
                                               createFailurePreservesOriginal},
             std::pair<std::string_view, Test>{

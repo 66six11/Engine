@@ -1,4 +1,6 @@
-﻿#include "file_io_internal.hpp"
+﻿#include "asharia/core/log.hpp"
+
+#include "file_io_internal.hpp"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -34,6 +36,65 @@ namespace asharia::core::detail {
                                                std::to_wstring(uniqueValue);
             return target.parent_path() / temporaryName;
         }
+
+        [[nodiscard]] std::filesystem::path backupPathFor(const std::filesystem::path& replacement,
+                                                          std::uint64_t uniqueValue) {
+            const std::wstring backupName = replacement.filename().wstring() + L".backup." +
+                                            std::to_wstring(GetCurrentProcessId()) + L"." +
+                                            std::to_wstring(uniqueValue);
+            return replacement.parent_path() / backupName;
+        }
+
+        [[nodiscard]] Error windowsReplacementError(DWORD errorCode, std::string_view commitState,
+                                                    std::string_view recovery,
+                                                    const std::filesystem::path& target,
+                                                    const std::filesystem::path& replacement,
+                                                    const std::filesystem::path& backup,
+                                                    DWORD recoveryError = ERROR_SUCCESS) {
+            std::string message = "Core atomic file replacement failed commitPointReached=" +
+                                  std::string{commitState} + " recovery=" + std::string{recovery} +
+                                  " target='" + target.string() + "' replacement='" +
+                                  replacement.string() + "' backup='" + backup.string() +
+                                  "' Windows error " + std::to_string(errorCode);
+            if (recoveryError != ERROR_SUCCESS) {
+                message += " recoveryError=" + std::to_string(recoveryError);
+            }
+            message += ".";
+            return Error{ErrorDomain::Core, static_cast<int>(errorCode), std::move(message)};
+        }
+
+        class SystemWindowsReplaceOperations final : public WindowsReplaceOperations {
+        public:
+            [[nodiscard]] std::uint32_t replaceFile(const std::filesystem::path& target,
+                                                    const std::filesystem::path& replacement,
+                                                    const std::filesystem::path& backup) override {
+                if (ReplaceFileW(target.c_str(), replacement.c_str(), backup.c_str(), 0, nullptr,
+                                 nullptr) == FALSE) {
+                    return GetLastError();
+                }
+                return ERROR_SUCCESS;
+            }
+
+            [[nodiscard]] std::uint32_t moveFile(const std::filesystem::path& source,
+                                                 const std::filesystem::path& target) override {
+                if (MoveFileExW(source.c_str(), target.c_str(),
+                                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE) {
+                    return GetLastError();
+                }
+                return ERROR_SUCCESS;
+            }
+
+            [[nodiscard]] std::uint32_t deleteFile(const std::filesystem::path& path) override {
+                if (DeleteFileW(path.c_str()) == FALSE) {
+                    return GetLastError();
+                }
+                return ERROR_SUCCESS;
+            }
+
+            void reportWarning(std::string_view warning) noexcept override {
+                logWarning(warning);
+            }
+        };
 
         class OpenWindowsTemporary final {
         public:
@@ -124,7 +185,7 @@ namespace asharia::core::detail {
                 return path_;
             }
 
-            void releaseAfterReplace() noexcept override {
+            void releaseCleanupOwnership() noexcept override {
                 released_ = true;
             }
 
@@ -163,37 +224,111 @@ namespace asharia::core::detail {
                     windowsFileError("temporary creation", target, ERROR_FILE_EXISTS)};
             }
 
-            VoidResult replace(const std::filesystem::path& temporary,
-                               const std::filesystem::path& target) override {
+            AtomicReplaceOutcome replace(const std::filesystem::path& temporary,
+                                         const std::filesystem::path& target) override {
                 const DWORD targetAttributes = GetFileAttributesW(target.c_str());
                 if (targetAttributes != INVALID_FILE_ATTRIBUTES) {
-                    if (ReplaceFileW(target.c_str(), temporary.c_str(), nullptr, 0, nullptr,
-                                     nullptr) == FALSE) {
-                        return std::unexpected{
-                            windowsFileError("replacement", target, GetLastError())};
+                    auto backup = createUniqueBackup(temporary);
+                    if (!backup) {
+                        auto error = std::move(backup.error());
+                        error.message += " commitPointReached=false.";
+                        return {.commitState = AtomicReplaceCommitState::NotReached,
+                                .temporaryDisposition = AtomicTemporaryDisposition::Cleanup,
+                                .error = std::move(error)};
                     }
-                    return {};
+                    return replaceExistingWindowsFileWithRecovery(target, temporary, *backup,
+                                                                  replaceOperations_);
                 }
 
                 const DWORD attributeError = GetLastError();
                 if (attributeError != ERROR_FILE_NOT_FOUND &&
                     attributeError != ERROR_PATH_NOT_FOUND) {
-                    return std::unexpected{
-                        windowsFileError("target inspection", target, attributeError)};
+                    auto error = windowsFileError("target inspection", target, attributeError);
+                    error.message += " commitPointReached=false.";
+                    return {.commitState = AtomicReplaceCommitState::NotReached,
+                            .temporaryDisposition = AtomicTemporaryDisposition::Cleanup,
+                            .error = std::move(error)};
                 }
 
                 if (MoveFileExW(temporary.c_str(), target.c_str(),
                                 MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE) {
-                    return std::unexpected{windowsFileError("replacement", target, GetLastError())};
+                    return {.commitState = AtomicReplaceCommitState::NotReached,
+                            .temporaryDisposition = AtomicTemporaryDisposition::Cleanup,
+                            .error = windowsReplacementError(
+                                GetLastError(), "false", "not-required", target, temporary, {})};
                 }
-                return {};
+                return {.commitState = AtomicReplaceCommitState::Committed,
+                        .temporaryDisposition = AtomicTemporaryDisposition::Preserve,
+                        .error = std::nullopt};
             }
 
         private:
+            [[nodiscard]] Result<std::filesystem::path>
+            createUniqueBackup(const std::filesystem::path& replacement) {
+                constexpr std::uint32_t kMaximumCreateAttempts = 128U;
+                for (std::uint32_t attempt = 0U; attempt < kMaximumCreateAttempts; ++attempt) {
+                    auto backup = backupPathFor(replacement, nextTemporaryId_.fetch_add(1U));
+                    const DWORD attributes = GetFileAttributesW(backup.c_str());
+                    if (attributes == INVALID_FILE_ATTRIBUTES) {
+                        const DWORD inspectionError = GetLastError();
+                        if (inspectionError == ERROR_FILE_NOT_FOUND ||
+                            inspectionError == ERROR_PATH_NOT_FOUND) {
+                            return backup;
+                        }
+                        return std::unexpected{
+                            windowsFileError("backup inspection", backup, inspectionError)};
+                    }
+                }
+                return std::unexpected{
+                    windowsFileError("backup allocation", replacement, ERROR_FILE_EXISTS)};
+            }
+
             std::atomic<std::uint64_t> nextTemporaryId_{1U};
+            SystemWindowsReplaceOperations replaceOperations_;
         };
 
     } // namespace
+
+    AtomicReplaceOutcome replaceExistingWindowsFileWithRecovery(
+        const std::filesystem::path& target, const std::filesystem::path& replacement,
+        const std::filesystem::path& backup, WindowsReplaceOperations& operations) {
+        const auto replaceError = operations.replaceFile(target, replacement, backup);
+        if (replaceError == ERROR_SUCCESS) {
+            const auto cleanupError = operations.deleteFile(backup);
+            if (cleanupError != ERROR_SUCCESS) {
+                operations.reportWarning(
+                    "Core atomic replacement backup cleanup failed commitPointReached=true "
+                    "target='" +
+                    target.string() + "' replacement='" + replacement.string() + "' backup='" +
+                    backup.string() + "' Windows error " + std::to_string(cleanupError) + ".");
+            }
+            return {.commitState = AtomicReplaceCommitState::Committed,
+                    .temporaryDisposition = AtomicTemporaryDisposition::Preserve,
+                    .error = std::nullopt};
+        }
+
+        if (replaceError == ERROR_UNABLE_TO_MOVE_REPLACEMENT_2) {
+            const auto recoveryError = operations.moveFile(backup, target);
+            if (recoveryError == ERROR_SUCCESS) {
+                return {.commitState = AtomicReplaceCommitState::NotReached,
+                        .temporaryDisposition = AtomicTemporaryDisposition::Cleanup,
+                        .error = windowsReplacementError(replaceError, "false", "restored", target,
+                                                         replacement, backup)};
+            }
+            return {.commitState = AtomicReplaceCommitState::Indeterminate,
+                    .temporaryDisposition = AtomicTemporaryDisposition::Preserve,
+                    .error = windowsReplacementError(replaceError, "indeterminate", "failed",
+                                                     target, replacement, backup, recoveryError)};
+        }
+
+        // Microsoft documents that ordinary ReplaceFile failures retain the original names and
+        // do not create the requested backup. Do not delete this path here: another process may
+        // have raced our prior absence check and own a file with that name.
+        return {.commitState = AtomicReplaceCommitState::NotReached,
+                .temporaryDisposition = AtomicTemporaryDisposition::Cleanup,
+                .error = windowsReplacementError(replaceError, "false", "not-required", target,
+                                                 replacement, backup)};
+    }
 
     AtomicFileBackend& atomicFileBackend() {
         static WindowsAtomicFileBackend backend;

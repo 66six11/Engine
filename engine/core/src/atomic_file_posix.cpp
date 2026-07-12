@@ -129,7 +129,7 @@ namespace asharia::core::detail {
                 return path_;
             }
 
-            void releaseAfterReplace() noexcept override {
+            void releaseCleanupOwnership() noexcept override {
                 released_ = true;
             }
 
@@ -186,12 +186,18 @@ namespace asharia::core::detail {
                 return result;
             }
 
-            VoidResult replace(const std::filesystem::path& temporary,
-                               const std::filesystem::path& target) override {
+            AtomicReplaceOutcome replace(const std::filesystem::path& temporary,
+                                         const std::filesystem::path& target) override {
                 if (rename(temporary.c_str(), target.c_str()) < 0) {
-                    return std::unexpected{posixFileError("replacement", target, errno)};
+                    auto error = posixFileError("replacement", target, errno);
+                    error.message += " commitPointReached=false.";
+                    return {.commitState = AtomicReplaceCommitState::NotReached,
+                            .temporaryDisposition = AtomicTemporaryDisposition::Cleanup,
+                            .error = std::move(error)};
                 }
-                return {};
+                return {.commitState = AtomicReplaceCommitState::Committed,
+                        .temporaryDisposition = AtomicTemporaryDisposition::Preserve,
+                        .error = std::nullopt};
             }
 
         private:

@@ -133,12 +133,13 @@ namespace asharia::core {
                 return std::unexpected{std::move(closed.error())};
             }
 
-            auto replaced = backend.replace((*temporary)->path(), target);
-            if (!replaced) {
-                return std::unexpected{std::move(replaced.error())};
+            auto replacement = backend.replace((*temporary)->path(), target);
+            if (replacement.temporaryDisposition == AtomicTemporaryDisposition::Preserve) {
+                (*temporary)->releaseCleanupOwnership();
             }
-
-            (*temporary)->releaseAfterReplace();
+            if (replacement.error.has_value()) {
+                return std::unexpected{std::move(*replacement.error)};
+            }
             return {};
         }
 
