@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Asharia.Editor.Panels;
+using Asharia.Studio.Application.Panels;
 using Editor.Core.Models.Panels;
-using Editor.Shell.Services;
 using Editor.Shell.ViewModels.Docking;
 
 namespace Editor.Shell.Docking.Panels;

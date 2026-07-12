@@ -1,12 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Asharia.Editor.Panels;
-using Editor.Core.Abstractions;
-using Editor.Core.Models.Panels;
-using Editor.Shell.Services;
+using Asharia.Studio.Application.Panels;
 using Xunit;
 
-namespace Editor.Tests.Shell.Services;
+namespace Asharia.Studio.Application.Tests.Panels;
 
 public sealed class EditorPanelFrameSchedulerTests
 {

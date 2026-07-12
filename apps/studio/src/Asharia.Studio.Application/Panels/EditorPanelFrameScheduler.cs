@@ -2,10 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Asharia.Editor.Panels;
-using Editor.Core.Abstractions;
-using Editor.Core.Models.Panels;
 
-namespace Editor.Shell.Services;
+namespace Asharia.Studio.Application.Panels;
 
 public sealed class EditorPanelFrameScheduler
 {
