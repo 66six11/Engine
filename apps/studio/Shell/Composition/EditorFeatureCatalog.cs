@@ -4,7 +4,7 @@ using Asharia.Editor.Selection;
 using Editor.Core.Abstractions;
 using Editor.Core.Services;
 using Editor.Features.Workbench;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 
 namespace Editor.Shell.Composition;
 

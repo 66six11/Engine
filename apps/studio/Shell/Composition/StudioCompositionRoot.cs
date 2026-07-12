@@ -4,7 +4,7 @@ using Asharia.Editor.Selection;
 using Editor.Core.Services;
 using Editor.Shell.Compatibility;
 using Editor.Shell.Docking.Layout;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Editor.Shell.ViewModels.Windowing;
 
 namespace Editor.Shell.Composition;

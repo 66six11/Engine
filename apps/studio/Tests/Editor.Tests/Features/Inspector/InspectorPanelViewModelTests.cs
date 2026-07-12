@@ -7,7 +7,7 @@ using Asharia.Editor.Selection;
 using Editor.Core.Services;
 using Editor.Features.Inspector.Models;
 using Editor.Features.Inspector.ViewModels;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Xunit;
 
 namespace Editor.Tests.Features.Inspector;

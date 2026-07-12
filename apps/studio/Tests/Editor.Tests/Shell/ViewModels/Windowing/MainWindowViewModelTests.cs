@@ -18,7 +18,7 @@ using Editor.Shell.Commands;
 using Editor.Shell.Composition;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Docking.Panels;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Editor.Shell.Services;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.ViewModels.Windowing;

@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using Asharia.Editor.Selection;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Xunit;
 
-namespace Editor.Tests.Shell.Selection;
+namespace Asharia.Studio.Application.Tests.Selection;
 
 public sealed class EditorSelectionServiceTests
 {

@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Editor.Core.Abstractions;
 using Asharia.Editor.Selection;
 
-namespace Editor.Shell.Selection;
+namespace Asharia.Studio.Application.Selection;
 
 public sealed class EditorSelectionService : IEditorSelectionService
 {

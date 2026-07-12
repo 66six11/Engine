@@ -8,7 +8,7 @@ using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
 using Editor.Core.Services;
 using Editor.Features.SceneView.ViewModels;
-using Editor.Shell.Selection;
+using Asharia.Studio.Application.Selection;
 using Xunit;
 
 namespace Editor.Tests.Features.SceneView;
