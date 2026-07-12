@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Asharia.Editor.Diagnostics;
-using Editor.Core.Abstractions;
 
-namespace Editor.Core.Services;
+namespace Asharia.Studio.Application.Diagnostics;
 
 public sealed class EditorDiagnosticService : IEditorDiagnosticService
 {

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;

@@ -1,5 +1,6 @@
 using System;
 using Asharia.Editor.Diagnostics;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Selection;
 using Editor.Core.Services;
 using Editor.Shell.Compatibility;

@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Diagnostics.FrameDebug;
 using Asharia.Editor.UI.CodeFirst.Models;
 using Editor.Core.Models.Panels;
