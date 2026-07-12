@@ -20,13 +20,23 @@ namespace asharia::core {
         [[nodiscard]] Error fileIoError(std::string_view action, const std::filesystem::path& path,
                                         std::string_view reason) {
             return Error{ErrorDomain::Core, 0,
-                         "Core file " + std::string{action} + " failed for '" + path.string() +
-                             "': " + std::string{reason} + "."};
+                         "Core file " + std::string{action} + " failed for '" +
+                             detail::filePathToUtf8(path) + "': " + std::string{reason} + "."};
         }
 
     } // namespace
 
     namespace detail {
+
+        std::string filePathToUtf8(const std::filesystem::path& path) {
+            const std::u8string utf8 = path.u8string();
+            std::string text;
+            text.reserve(utf8.size());
+            for (const char8_t character : utf8) {
+                text.push_back(static_cast<char>(character));
+            }
+            return text;
+        }
 
         Result<std::vector<std::byte>> readBoundedStream(std::istream& stream,
                                                          std::uint64_t measuredBytes,

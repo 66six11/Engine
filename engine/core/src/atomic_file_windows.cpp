@@ -25,8 +25,8 @@ namespace asharia::core::detail {
                                              const std::filesystem::path& path, DWORD errorCode) {
             return Error{ErrorDomain::Core, static_cast<int>(errorCode),
                          "Core atomic file " + std::string{action} + " failed for '" +
-                             path.string() + "' (Windows error " + std::to_string(errorCode) +
-                             ")."};
+                             filePathToUtf8(path) + "' (Windows error " +
+                             std::to_string(errorCode) + ")."};
         }
 
         [[nodiscard]] std::filesystem::path temporaryPathFor(const std::filesystem::path& target,
@@ -53,9 +53,10 @@ namespace asharia::core::detail {
                                                     DWORD recoveryError = ERROR_SUCCESS) {
             std::string message = "Core atomic file replacement failed commitPointReached=" +
                                   std::string{commitState} + " recovery=" + std::string{recovery} +
-                                  " target='" + target.string() + "' replacement='" +
-                                  replacement.string() + "' backup='" + backup.string() +
-                                  "' Windows error " + std::to_string(errorCode);
+                                  " target='" + filePathToUtf8(target) + "' replacement='" +
+                                  filePathToUtf8(replacement) + "' backup='" +
+                                  filePathToUtf8(backup) + "' Windows error " +
+                                  std::to_string(errorCode);
             if (recoveryError != ERROR_SUCCESS) {
                 message += " recoveryError=" + std::to_string(recoveryError);
             }
@@ -303,8 +304,9 @@ namespace asharia::core::detail {
                 operations.reportWarning(
                     "Core atomic replacement backup cleanup failed commitPointReached=true "
                     "target='" +
-                    target.string() + "' replacement='" + replacement.string() + "' backup='" +
-                    backup.string() + "' Windows error " + std::to_string(cleanupError) + ".");
+                    filePathToUtf8(target) + "' replacement='" + filePathToUtf8(replacement) +
+                    "' backup='" + filePathToUtf8(backup) + "' Windows error " +
+                    std::to_string(cleanupError) + ".");
             }
             return {.commitState = AtomicReplaceCommitState::Committed,
                     .temporaryDisposition = AtomicTemporaryDisposition::Preserve,

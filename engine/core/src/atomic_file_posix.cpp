@@ -25,7 +25,8 @@ namespace asharia::core::detail {
                                            const std::filesystem::path& path, int errorCode) {
             return Error{ErrorDomain::Core, errorCode,
                          "Core atomic file " + std::string{action} + " failed for '" +
-                             path.string() + "' (POSIX error " + std::to_string(errorCode) + ")."};
+                             filePathToUtf8(path) + "' (POSIX error " + std::to_string(errorCode) +
+                             ")."};
         }
 
         [[nodiscard]] std::filesystem::path temporaryPathFor(const std::filesystem::path& target,

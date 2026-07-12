@@ -91,6 +91,8 @@ namespace {
         return text.find(token) != std::string_view::npos;
     }
 
+    constexpr std::string_view kUtf8FilenameMarker{"\xE6\x96\x87\xE4\xBB\xB6"}; // 文件
+
     [[nodiscard]] std::vector<std::byte> bytesOf(std::string_view text) {
         std::vector<std::byte> bytes(text.size());
         if (!text.empty()) {
@@ -621,6 +623,20 @@ namespace {
                contains(result.error().message, "must be greater than zero");
     }
 
+    [[nodiscard]] bool failureDiagnosticsPreserveUtf8Paths() {
+        const TempFile owner{"owner.bin"};
+        const std::filesystem::path utf8Filename{u8"文件.bin"};
+        const std::filesystem::path missingRead = owner.path().parent_path() / utf8Filename;
+        const std::filesystem::path missingWrite =
+            owner.path().parent_path() / "missing-parent" / utf8Filename;
+
+        const auto read = asharia::core::readFileBytes(missingRead, {.maxBytes = 16U});
+        const auto write = asharia::core::writeFileTextAtomically(missingWrite, "data");
+
+        return !read && !write && contains(read.error().message, kUtf8FilenameMarker) &&
+               contains(write.error().message, kUtf8FilenameMarker);
+    }
+
     [[nodiscard]] bool readsAtExactByteLimit() {
         const TempFile file{"asharia-core-file-io-exact-limit.txt"};
         if (!file.write("abc")) {
@@ -675,6 +691,8 @@ int main() {
         using Test = bool (*)();
         const std::array tests{
             std::pair<std::string_view, Test>{"rejectsZeroReadLimit", rejectsZeroReadLimit},
+            std::pair<std::string_view, Test>{"failureDiagnosticsPreserveUtf8Paths",
+                                              failureDiagnosticsPreserveUtf8Paths},
             std::pair<std::string_view, Test>{"readsAtExactByteLimit", readsAtExactByteLimit},
             std::pair<std::string_view, Test>{"rejectsFileAboveByteLimit",
                                               rejectsFileAboveByteLimit},

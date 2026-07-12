@@ -5,11 +5,14 @@
 #include <istream>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 
 #include "asharia/core/file_io.hpp"
 
 namespace asharia::core::detail {
+
+    [[nodiscard]] std::string filePathToUtf8(const std::filesystem::path& path);
 
     enum class AtomicReplaceCommitState : std::uint8_t {
         NotReached,
