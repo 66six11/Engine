@@ -121,7 +121,7 @@ namespace asharia::editor {
 
             const auto preservesContext = [&path](const Error& error, std::string_view consumer) {
                 return error.message.find(consumer) != std::string::npos &&
-                       error.message.find(path.string()) != std::string::npos &&
+                       error.message.find(detail::pathToUtf8String(path)) != std::string::npos &&
                        error.message.find("observedBytes=4") != std::string::npos &&
                        error.message.find("maxBytes=3") != std::string::npos;
             };
