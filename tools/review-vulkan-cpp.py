@@ -44,18 +44,50 @@ EXCLUDED_DIRS = {
 SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
 
 VK_RESULT_CALL_RE = re.compile(
-    r"\b(vk(?:Create|Allocate|Map|Bind|Begin|End|QueuePresent|AcquireNextImage|"
-    r"WaitForFences|ResetFences|QueueSubmit)[A-Za-z0-9_]*)\s*\("
+    r"\b(vk(?:"
+    r"(?:Create|Allocate|Map|Bind|Begin|End|QueuePresent|AcquireNextImage|"
+    r"WaitForFences|ResetFences|QueueSubmit)[A-Za-z0-9_]*|"
+    r"QueueWaitIdle|DeviceWaitIdle|"
+    r"Enumerate(?:InstanceLayerProperties|InstanceExtensionProperties|"
+    r"DeviceExtensionProperties|PhysicalDevices)|"
+    r"GetPhysicalDeviceSurface(?:FormatsKHR|PresentModesKHR)|"
+    r"GetSwapchainImagesKHR))\s*\("
 )
 STD_RE = re.compile(r"\bCMAKE_CXX_STANDARD\s+([0-9]+)\b")
 FEATURE_RE = re.compile(r"\bcxx_std_([0-9]+)\b")
 VULKAN_TYPE_RE = re.compile(r"\bVk[A-Z][A-Za-z0-9_]*\b|\bVK_[A-Z0-9_]+\b")
+INCLUDE_RE = re.compile(
+    r'^\s*#\s*include\s*[<"]\s*([^>"]+?)\s*[>"]', re.MULTILINE
+)
 PACKAGE_SRC_INCLUDE_RE = re.compile(
     r'#\s*include\s+[<"][^"<>]*(?:packages[\\/][^"<>\\/]+[\\/]|\.\.[\\/][^"<>]*?)src[\\/]',
     re.IGNORECASE,
 )
-TARGET_LINK_RE = re.compile(
-    r"target_link_libraries\s*\((.*?)\)", re.IGNORECASE | re.DOTALL
+TARGET_LINK_COMMAND_RE = re.compile(
+    r"\btarget_link_libraries\s*\(", re.IGNORECASE
+)
+TARGET_REFERENCE_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])(?:asharia::[A-Za-z0-9_-]+|"
+    r"asharia-[A-Za-z0-9_-]+|Vulkan::[A-Za-z0-9_-]+)(?![A-Za-z0-9_-])"
+)
+
+TARGET_ALIASES = {
+    "asharia-rendergraph": "rendergraph",
+    "asharia::rendergraph": "rendergraph",
+    "asharia-rhi-vulkan": "rhi_vulkan",
+    "asharia::rhi_vulkan": "rhi_vulkan",
+    "asharia-renderer-basic": "renderer_basic",
+    "asharia::renderer_basic": "renderer_basic",
+}
+
+VK_RESULT_HELPERS = (
+    "VK_CHECK",
+    "VK_ASSERT",
+    "checkVk",
+    "check_vk",
+    "throw_if",
+    "vulkanError",
+    "vkResultName",
 )
 
 
@@ -81,7 +113,7 @@ def iter_files(paths: Iterable[Path]) -> Iterable[Path]:
     for root in paths:
         if root.is_file():
             candidates = (root,) if is_candidate(root) else ()
-        elif root.exists():
+        else:
             candidates = (
                 path
                 for path in root.rglob("*")
@@ -89,8 +121,6 @@ def iter_files(paths: Iterable[Path]) -> Iterable[Path]:
                 and is_candidate(path)
                 and not ({part.lower() for part in path.parts} & EXCLUDED_DIRS)
             )
-        else:
-            candidates = ()
         for path in candidates:
             resolved = path.resolve()
             if resolved not in seen:
@@ -114,22 +144,215 @@ def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def vk_result_checked(line: str, match: re.Match[str]) -> bool:
-    prefix = line[: match.start()]
-    if re.search(r"(?:^|\W)(?:return|co_return)\s+$", prefix):
+def mask_cpp_non_code(text: str) -> str:
+    """Mask comments and literals while retaining source length and newlines."""
+
+    output = list(text)
+    index = 0
+
+    def mask(start: int, end: int) -> None:
+        for position in range(start, end):
+            if output[position] not in "\r\n":
+                output[position] = " "
+
+    while index < len(text):
+        if text.startswith("//", index):
+            end = text.find("\n", index + 2)
+            end = len(text) if end < 0 else end
+            mask(index, end)
+            index = end
+            continue
+        if text.startswith("/*", index):
+            closing = text.find("*/", index + 2)
+            end = len(text) if closing < 0 else closing + 2
+            mask(index, end)
+            index = end
+            continue
+
+        raw_match = re.match(r'(?:u8|u|U|L)?R"([^ ()\\\t\r\n]{0,16})\(', text[index:])
+        if raw_match:
+            terminator = ")" + raw_match.group(1) + '"'
+            closing = text.find(terminator, index + raw_match.end())
+            end = len(text) if closing < 0 else closing + len(terminator)
+            mask(index, end)
+            index = end
+            continue
+
+        if text[index] in "\"'":
+            quote = text[index]
+            line_start = text.rfind("\n", 0, index) + 1
+            is_quoted_include = quote == '"' and re.fullmatch(
+                r"\s*#\s*include\s*", "".join(output[line_start:index])
+            )
+            cursor = index + 1
+            while cursor < len(text):
+                if text[cursor] == "\\":
+                    cursor = min(cursor + 2, len(text))
+                    continue
+                if text[cursor] == quote:
+                    cursor += 1
+                    break
+                cursor += 1
+            if not is_quoted_include:
+                mask(index, cursor)
+            index = cursor
+            continue
+        index += 1
+
+    return "".join(output)
+
+
+def mask_cmake_comments(text: str) -> str:
+    output = list(text)
+    in_quote = False
+    escaped = False
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if in_quote:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_quote = False
+            index += 1
+            continue
+        if character == '"':
+            in_quote = True
+            index += 1
+            continue
+        if character == "#":
+            end = text.find("\n", index)
+            end = len(text) if end < 0 else end
+            for position in range(index, end):
+                output[position] = " "
+            index = end
+            continue
+        index += 1
+    return "".join(output)
+
+
+def find_matching_parenthesis(text: str, opening: int) -> int | None:
+    depth = 0
+    in_quote = False
+    escaped = False
+    for index in range(opening, len(text)):
+        character = text[index]
+        if in_quote:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_quote = False
+            continue
+        if character == '"':
+            in_quote = True
+        elif character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def iter_target_link_blocks(text: str) -> Iterable[tuple[int, str]]:
+    sanitized = mask_cmake_comments(text)
+    for match in TARGET_LINK_COMMAND_RE.finditer(sanitized):
+        opening = sanitized.find("(", match.start())
+        closing = find_matching_parenthesis(sanitized, opening)
+        if closing is not None:
+            yield match.start(), sanitized[opening + 1 : closing]
+
+
+def is_vulkan_or_rhi_dependency(reference: str) -> bool:
+    lowered = reference.lower()
+    return "vulkan" in lowered or "rhi_vulkan" in lowered or "rhi-vulkan" in lowered
+
+
+def statement_start(text: str, offset: int) -> int:
+    return max(text.rfind(token, 0, offset) for token in ";{}") + 1
+
+
+def statement_end(text: str, offset: int) -> int:
+    ending = text.find(";", offset)
+    return len(text) if ending < 0 else ending + 1
+
+
+def assigned_result_name(prefix: str) -> str | None:
+    match = re.search(
+        r"(?:(?:const|volatile)\s+)*(?:VkResult|auto)\s+([A-Za-z_]\w*)\s*=\s*$",
+        prefix,
+    )
+    if match:
+        return match.group(1)
+    match = re.search(r"\b([A-Za-z_]\w*)\s*=\s*$", prefix)
+    return match.group(1) if match else None
+
+
+def result_is_consumed(text: str, statement_ending: int, variable: str) -> bool:
+    line_limit = statement_ending
+    for _ in range(12):
+        next_line = text.find("\n", line_limit + 1)
+        if next_line < 0:
+            line_limit = len(text)
+            break
+        line_limit = next_line
+    window = text[statement_ending:line_limit]
+    reassignment = re.search(rf"\b{re.escape(variable)}\s*=(?!=)", window)
+    if reassignment:
+        window = window[: reassignment.start()]
+
+    escaped = re.escape(variable)
+    comparison = rf"(?:\b{escaped}\b\s*(?:==|!=|<=|>=|<|>)|(?:==|!=|<=|>=|<|>)\s*\b{escaped}\b)"
+    if re.search(comparison, window):
         return True
-    if re.search(r"(?:^|[;{}])[^;{}]*(?<![=!<>])=(?!=)\s*$", prefix):
+    if re.search(rf"\b(?:return|co_return)\s+\b{escaped}\b", window):
         return True
-    if re.search(r"(?:VK_CHECK|VK_ASSERT|checkVk|check_vk|throw_if)\s*\([^)]*$", prefix):
+    if re.search(rf"\bswitch\s*\(\s*{escaped}\s*\)", window):
         return True
-    if re.search(r"\bif\s*\([^)]*$", prefix):
+    helper_names = "|".join(re.escape(name) for name in VK_RESULT_HELPERS)
+    return bool(
+        re.search(rf"\b(?:{helper_names})\s*\([^;{{}}]*\b{escaped}\b", window)
+    )
+
+
+def vk_result_is_handled(text: str, match: re.Match[str]) -> bool:
+    start = statement_start(text, match.start())
+    prefix = text[start : match.start()]
+    if re.search(r"\b(?:return|co_return)\s*$", prefix):
         return True
-    return False
+    helper_names = "|".join(re.escape(name) for name in VK_RESULT_HELPERS)
+    if re.search(rf"\b(?:{helper_names})\s*\([^;{{}}]*$", prefix):
+        return True
+
+    opening = text.find("(", match.start(), match.end())
+    closing = find_matching_parenthesis(text, opening)
+    if closing is None:
+        return False
+    context_end_candidates = [
+        position
+        for position in (text.find(";", closing), text.find("{", closing))
+        if position >= 0
+    ]
+    context_end = min(context_end_candidates, default=len(text))
+    if re.search(r"(?:==|!=|<=|>=|<|>)", text[closing + 1 : context_end]):
+        return True
+
+    variable = assigned_result_name(prefix)
+    if variable is None:
+        return False
+    ending = statement_end(text, closing)
+    return result_is_consumed(text, ending, variable)
 
 
 def scan_cmake(path: Path, text: str, lines: list[str], findings: list[Finding]) -> None:
+    sanitized = mask_cmake_comments(text)
+    sanitized_lines = sanitized.splitlines()
     saw_standard = False
-    for line_no, line in enumerate(lines, start=1):
+    for line_no, line in enumerate(sanitized_lines, start=1):
         rules = (
             (STD_RE, "cpp23.cmake-standard"),
             (FEATURE_RE, "cpp23.target-feature"),
@@ -151,20 +374,50 @@ def scan_cmake(path: Path, text: str, lines: list[str], findings: list[Finding])
                     "Require C++23 unless the project intentionally pins an older language mode.",
                 )
 
-    for match in TARGET_LINK_RE.finditer(text):
-        tokens = re.findall(r"[A-Za-z0-9_:.-]+", match.group(1))
-        if not tokens or tokens[0] != "asharia-rhi-vulkan":
+    for offset, block in iter_target_link_blocks(text):
+        references = TARGET_REFERENCE_RE.findall(block)
+        if not references:
             continue
-        if "asharia::rendergraph" in tokens or "asharia-rendergraph" in tokens:
+        target = TARGET_ALIASES.get(references[0].lower())
+        dependencies = references[1:]
+        if target == "rhi_vulkan" and any(
+            TARGET_ALIASES.get(reference.lower()) == "rendergraph"
+            for reference in dependencies
+        ):
             add(
                 findings,
                 "warning",
                 "vkengine.rhi-vulkan-rendergraph-dependency",
                 path,
-                line_number(text, match.start()),
+                line_number(text, offset),
                 "The base asharia-rhi-vulkan target appears to link RenderGraph.",
                 "Keep the base RHI independent; link RenderGraph only from "
                 "asharia-rhi-vulkan-rendergraph.",
+            )
+        if target == "rendergraph" and any(
+            is_vulkan_or_rhi_dependency(reference) for reference in dependencies
+        ):
+            add(
+                findings,
+                "warning",
+                "vkengine.rendergraph-vulkan-dependency",
+                path,
+                line_number(text, offset),
+                "The backend-agnostic RenderGraph target appears to link Vulkan or the Vulkan RHI.",
+                "Keep RenderGraph backend-agnostic and link Vulkan only from an adapter target.",
+            )
+        if target == "renderer_basic" and any(
+            is_vulkan_or_rhi_dependency(reference) for reference in dependencies
+        ):
+            add(
+                findings,
+                "warning",
+                "vkengine.renderer-basic-vulkan-dependency",
+                path,
+                line_number(text, offset),
+                "The backend-agnostic renderer_basic target appears to link Vulkan or the "
+                "Vulkan RHI.",
+                "Move the dependency to asharia-renderer-basic-vulkan.",
             )
 
     if path.name == "CMakeLists.txt" and not saw_standard:
@@ -179,7 +432,8 @@ def scan_cmake(path: Path, text: str, lines: list[str], findings: list[Finding])
         )
 
 
-def scan_source(path: Path, lines: list[str], findings: list[Finding]) -> None:
+def scan_source(path: Path, text: str, findings: list[Finding]) -> None:
+    code = mask_cpp_non_code(text)
     normalized_path = "/" + path.as_posix().lower().lstrip("/")
     is_rendergraph = "/packages/rendergraph/" in normalized_path
     is_rhi_vulkan_public = "/packages/rhi-vulkan/include/asharia/rhi_vulkan/" in normalized_path
@@ -190,12 +444,11 @@ def scan_source(path: Path, lines: list[str], findings: list[Finding]) -> None:
         "/packages/renderer-basic/include/asharia/renderer_basic_vulkan/" in normalized_path
     )
 
-    for line_no, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if stripped.startswith("//"):
-            continue
-
-        if PACKAGE_SRC_INCLUDE_RE.search(line):
+    for match in INCLUDE_RE.finditer(code):
+        include_path = match.group(1).strip().replace("\\", "/")
+        line_no = line_number(code, match.start())
+        include_text = match.group(0)
+        if PACKAGE_SRC_INCLUDE_RE.search(include_text):
             add(
                 findings,
                 "warning",
@@ -207,9 +460,8 @@ def scan_source(path: Path, lines: list[str], findings: list[Finding]) -> None:
             )
 
         if is_rendergraph and (
-            "#include <vulkan/" in line
-            or '#include "asharia/rhi_vulkan/' in line
-            or VULKAN_TYPE_RE.search(line)
+            include_path.startswith("vulkan/")
+            or include_path.startswith("asharia/rhi_vulkan/")
         ):
             add(
                 findings,
@@ -221,7 +473,7 @@ def scan_source(path: Path, lines: list[str], findings: list[Finding]) -> None:
                 "Keep RenderGraph backend-agnostic and translate in rhi_vulkan_rendergraph.",
             )
 
-        if is_rhi_vulkan_public and '#include "asharia/rendergraph/' in line:
+        if is_rhi_vulkan_public and include_path.startswith("asharia/rendergraph/"):
             add(
                 findings,
                 "warning",
@@ -236,9 +488,8 @@ def scan_source(path: Path, lines: list[str], findings: list[Finding]) -> None:
             is_renderer_basic_public
             and not is_renderer_basic_vulkan_public
             and (
-                "#include <vulkan/" in line
-                or '#include "asharia/rhi_vulkan/' in line
-                or VULKAN_TYPE_RE.search(line)
+                include_path.startswith("vulkan/")
+                or include_path.startswith("asharia/rhi_vulkan/")
             )
         ):
             add(
@@ -251,7 +502,7 @@ def scan_source(path: Path, lines: list[str], findings: list[Finding]) -> None:
                 "Move Vulkan code to renderer_basic_vulkan.",
             )
 
-        if "#include <vulkan/vulkan.h>" in line:
+        if include_path == "vulkan/vulkan.h":
             add(
                 findings,
                 "info",
@@ -262,101 +513,107 @@ def scan_source(path: Path, lines: list[str], findings: list[Finding]) -> None:
                 "Confirm this matches the repository's raw Vulkan header strategy.",
             )
 
-        if re.search(r"\busing\s+namespace\s+std\s*;", line):
+    boundary_patterns: list[tuple[re.Pattern[str], str, str, str]] = []
+    if is_rendergraph:
+        boundary_patterns.append(
+            (
+                VULKAN_TYPE_RE,
+                "vkengine.rendergraph-vulkan-boundary",
+                "RenderGraph code appears to reference Vulkan symbols.",
+                "Keep RenderGraph backend-agnostic and translate in rhi_vulkan_rendergraph.",
+            )
+        )
+    if is_renderer_basic_public and not is_renderer_basic_vulkan_public:
+        boundary_patterns.append(
+            (
+                VULKAN_TYPE_RE,
+                "vkengine.renderer-basic-backend-boundary",
+                "Backend-agnostic renderer_basic API appears to reference Vulkan symbols.",
+                "Move Vulkan code to renderer_basic_vulkan.",
+            )
+        )
+    for pattern, rule, message, suggestion in boundary_patterns:
+        for match in pattern.finditer(code):
             add(
                 findings,
                 "warning",
-                "cpp.namespace-std",
+                rule,
                 path,
-                line_no,
-                "Global using namespace std detected.",
-                "Use qualified names or narrow declarations.",
+                line_number(code, match.start()),
+                message,
+                suggestion,
             )
 
-        if re.search(r"\bnew\s+[A-Za-z_:]|\bdelete\s+|\bmalloc\s*\(|\bfree\s*\(", line):
+    simple_rules = (
+        (
+            re.compile(r"\busing\s+namespace\s+std\s*;"),
+            "cpp.namespace-std",
+            "Global using namespace std detected.",
+            "Use qualified names or narrow declarations.",
+        ),
+        (
+            re.compile(r"\bnew\s+[A-Za-z_:]|\bdelete\s+|\bmalloc\s*\(|\bfree\s*\("),
+            "cpp.raw-ownership",
+            "Raw allocation/deallocation detected.",
+            "Use RAII, containers, smart pointers, or project allocators.",
+        ),
+        (
+            re.compile(r"\bvkDeviceWaitIdle\s*\("),
+            "vulkan.device-wait-idle",
+            "vkDeviceWaitIdle can hide synchronization bugs and stall the GPU.",
+            "Restrict it to documented shutdown, debug, or recovery paths.",
+        ),
+        (
+            re.compile(r"\b(?:vkCmdPipelineBarrier|VkImageMemoryBarrier|VkBufferMemoryBarrier)\b"),
+            "vulkan.sync2",
+            "Legacy synchronization API detected.",
+            "Prefer synchronization2 and verify producer/consumer stages and access masks.",
+        ),
+        (
+            re.compile(r"\bVK_PIPELINE_STAGE_(?:TOP|BOTTOM)_OF_PIPE_BIT\b"),
+            "vulkan.pipeline-stage-broad",
+            "TOP_OF_PIPE/BOTTOM_OF_PIPE stage detected.",
+            "Use precise synchronization2 stages unless this is justified.",
+        ),
+        (
+            re.compile(r"\bvkAllocateMemory\s*\("),
+            "vulkan.memory-allocation",
+            "Direct vkAllocateMemory call detected.",
+            "Use VMA or the project allocation facade.",
+        ),
+    )
+    for pattern, rule, message, suggestion in simple_rules:
+        for match in pattern.finditer(code):
             add(
                 findings,
                 "warning",
-                "cpp.raw-ownership",
+                rule,
                 path,
-                line_no,
-                "Raw allocation/deallocation detected.",
-                "Use RAII, containers, smart pointers, or project allocators.",
+                line_number(code, match.start()),
+                message,
+                suggestion,
             )
-
-        if "vkDeviceWaitIdle(" in line:
+    for match in re.finditer(r"\bvkCreateSwapchainKHR\s*\(", code):
+        add(
+            findings,
+            "info",
+            "vulkan.swapchain-recreation",
+            path,
+            line_number(code, match.start()),
+            "Swapchain creation detected.",
+            "Review resize, oldSwapchain handoff, failure cleanup, and in-flight lifetime.",
+        )
+    for match in VK_RESULT_CALL_RE.finditer(code):
+        if not vk_result_is_handled(code, match):
             add(
                 findings,
                 "warning",
-                "vulkan.device-wait-idle",
+                "vulkan.vkresult-unchecked",
                 path,
-                line_no,
-                "vkDeviceWaitIdle can hide synchronization bugs and stall the GPU.",
-                "Restrict it to documented shutdown, debug, or recovery paths.",
+                line_number(code, match.start()),
+                f"{match.group(1)} appears to be called without an obvious VkResult check.",
+                "Route the VkResult through explicit project error handling.",
             )
-
-        if (
-            "vkCmdPipelineBarrier(" in line
-            or "VkImageMemoryBarrier " in line
-            or "VkBufferMemoryBarrier " in line
-        ):
-            add(
-                findings,
-                "warning",
-                "vulkan.sync2",
-                path,
-                line_no,
-                "Legacy synchronization API detected.",
-                "Prefer synchronization2 and verify producer/consumer stages and access masks.",
-            )
-
-        if (
-            "VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT" in line
-            or "VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT" in line
-        ):
-            add(
-                findings,
-                "warning",
-                "vulkan.pipeline-stage-broad",
-                path,
-                line_no,
-                "TOP_OF_PIPE/BOTTOM_OF_PIPE stage detected.",
-                "Use precise synchronization2 stages unless this is justified.",
-            )
-
-        if "vkAllocateMemory(" in line:
-            add(
-                findings,
-                "warning",
-                "vulkan.memory-allocation",
-                path,
-                line_no,
-                "Direct vkAllocateMemory call detected.",
-                "Use VMA or the project allocation facade.",
-            )
-
-        if "vkCreateSwapchainKHR(" in line:
-            add(
-                findings,
-                "info",
-                "vulkan.swapchain-recreation",
-                path,
-                line_no,
-                "Swapchain creation detected.",
-                "Review resize, oldSwapchain handoff, failure cleanup, and in-flight lifetime.",
-            )
-
-        for match in VK_RESULT_CALL_RE.finditer(line):
-            if not stripped.startswith("PFN_") and not vk_result_checked(line, match):
-                add(
-                    findings,
-                    "warning",
-                    "vulkan.vkresult-unchecked",
-                    path,
-                    line_no,
-                    f"{match.group(1)} appears to be called without an obvious VkResult check.",
-                    "Route the VkResult through explicit project error handling.",
-                )
 
 
 def scan_file(path: Path) -> list[Finding]:
@@ -379,7 +636,7 @@ def scan_file(path: Path) -> list[Finding]:
     if path.name == "CMakeLists.txt" or path.suffix.lower() in BUILD_EXTENSIONS:
         scan_cmake(path, text, lines, findings)
     if path.suffix.lower() in SOURCE_EXTENSIONS:
-        scan_source(path, lines, findings)
+        scan_source(path, text, findings)
     return findings
 
 
@@ -419,11 +676,43 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    findings = [
-        finding
-        for path in iter_files(Path(item).resolve() for item in args.paths)
-        for finding in scan_file(path)
-    ]
+    roots = [Path(item).resolve() for item in args.paths]
+    findings: list[Finding] = []
+    candidates: list[Path] = []
+    seen_candidates: set[Path] = set()
+    for root in roots:
+        if not root.exists():
+            findings.append(
+                Finding(
+                    "error",
+                    "scanner.path-missing",
+                    str(root),
+                    1,
+                    "Input path does not exist.",
+                    "Pass an existing Vulkan/C++ source, build file, or directory.",
+                )
+            )
+            continue
+        root_candidates = list(iter_files((root,)))
+        if not root_candidates:
+            findings.append(
+                Finding(
+                    "error",
+                    "scanner.no-candidates",
+                    str(root),
+                    1,
+                    "Input path contains no candidate C/C++ or CMake files.",
+                    "Pass a source/build file or a directory containing reviewable files.",
+                )
+            )
+            continue
+        for candidate in root_candidates:
+            if candidate not in seen_candidates:
+                seen_candidates.add(candidate)
+                candidates.append(candidate)
+
+    for path in candidates:
+        findings.extend(scan_file(path))
     findings.sort(
         key=lambda item: (
             -SEVERITY_RANK[item.severity],
