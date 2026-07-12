@@ -38,6 +38,7 @@ This runs `conan install` for:
 
 It uses `conan.lock` when present.
 The bootstrap script removes stale `ConanPresets.json` before install so generated presets reflect the current Conan profiles.
+If any profile's `conan install` fails, bootstrap stops immediately and returns the same nonzero exit code; it does not continue to later profiles or report that toolchains are ready.
 
 Current Conan requirements are `glfw/3.4`, `glm/1.0.1`, `imgui/1.92.7-docking`, `nlohmann_json/3.12.0`, `stb/cci.20240531`, `vulkan-headers/1.4.313.0`, and `vulkan-memory-allocator/3.3.0`.
 
@@ -102,9 +103,12 @@ clang-tidy diagnostics are warnings-as-errors; a reported diagnostic fails that 
 ## Native Code Quality CI
 
 `.github/workflows/native-code-quality.yml` runs on pull requests, pushes to `main`, and manual
-dispatches. The Windows job installs the pinned Conan and Vulkan SDK toolchain, bootstraps Conan,
+dispatches. The job is pinned to the `windows-2022` runner because the committed Conan profiles
+require Visual Studio 17; it must not follow `windows-latest` to a newer Visual Studio major version.
+The Windows job installs the pinned Conan and Vulkan SDK toolchain, bootstraps Conan,
 checks encoding, whitespace, and asset package boundaries, then builds and runs all registered
-native CTests with both test presets.
+native CTests with both test presets. The hosted ClangCL build uses `--parallel 2` to bound the
+combined memory peak of concurrent clang-tidy processes.
 
 Hosted CI intentionally does not run GPU/window smoke commands because the runner is not the
 repository's supported Vulkan presentation environment. The runtime smoke matrix in

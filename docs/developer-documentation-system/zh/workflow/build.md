@@ -29,6 +29,7 @@ CMake 前先运行：
 
 它为 `windows-msvc-debug`、`windows-msvc-release`、`windows-clangcl-debug`、`windows-clangcl-release` 运行 `conan install`，并在存在 `conan.lock` 时使用 lockfile。
 Bootstrap script 会在 install 前删除 stale `ConanPresets.json`，确保 generated presets 与当前 Conan profiles 一致。
+任一 profile 的 `conan install` 失败时，bootstrap 会立即停止并返回同一个非零退出码，不会继续后续 profile 或报告 toolchain 已就绪。
 
 当前 Conan requirements：`glfw/3.4`、`glm/1.0.1`、`imgui/1.92.7-docking`、`nlohmann_json/3.12.0`、`stb/cci.20240531`、`vulkan-headers/1.4.313.0`、`vulkan-memory-allocator/3.3.0`。
 
@@ -78,8 +79,11 @@ diagnostics 作为 errors，任何未处理 diagnostic 都会使构建失败。
 ## Native Code Quality CI
 
 `.github/workflows/native-code-quality.yml` 在 pull request、push to `main` 和 manual dispatch 时运行。
+Job 固定使用包含 Visual Studio 2022 的 `windows-2022` runner，因为 committed Conan profiles 要求
+Visual Studio 17；不能让 `windows-latest` 自动迁移到更新的 Visual Studio major version。
 Windows job 安装锁定版本的 Conan 和 Vulkan SDK，先 bootstrap Conan，然后检查 encoding、whitespace 和
-asset package boundaries，最后使用两个 test preset 构建并运行所有 native CTests。
+asset package boundaries，最后使用两个 test preset 构建并运行所有 native CTests。Hosted ClangCL build
+使用 `--parallel 2`，限制多个 clang-tidy process 的总内存峰值。
 
 Hosted CI 不运行 GPU/window smokes，因为 hosted runner 不是本仓库支持的 Vulkan presentation 环境。
 `workflow/review.md` 中的 runtime smoke matrix 仍是相关改动的本地 pre-commit gate。

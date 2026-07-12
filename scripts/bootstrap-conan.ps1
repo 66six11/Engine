@@ -25,6 +25,12 @@ foreach ($profile in $profiles) {
     $profilePath = "profiles/$profile"
     Write-Host "==> conan install $profile"
     conan install . --profile:host=$profilePath --profile:build=$profilePath @lockfileArgs --build=missing
+    $conanExitCode = $LASTEXITCODE
+    if ($conanExitCode -ne 0) {
+        [Console]::Error.WriteLine(
+            "conan install failed for profile '$profile' with exit code $conanExitCode.")
+        exit $conanExitCode
+    }
 }
 
 Write-Host ""

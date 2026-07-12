@@ -27,8 +27,8 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 ```
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
-`.github/workflows/native-code-quality.yml` 在 Windows 运行 encoding、whitespace、asset boundary、Vulkan package boundary/safety heuristic、两编译器
-build 和 CTest。Hosted CI 不运行 GPU/window smokes；下方 scope table 命中的 smoke 仍是 local
+`.github/workflows/native-code-quality.yml` 固定在提供 Visual Studio 17 toolchain 的 `windows-2022` runner 上运行 encoding、whitespace、asset boundary、Vulkan package boundary/safety heuristic、两编译器
+build 和 CTest。ClangCL hosted build 使用 `--parallel 2`，避免 concurrent clang-tidy 超出 runner memory。Hosted CI 不运行 GPU/window smokes；下方 scope table 命中的 smoke 仍是 local
 pre-commit gates，并需要使用两个 standard debug presets 运行。
 
 `tools\pre-pr.ps1 -IncludeUntracked` 会按 changed files 打印候选 gates。
