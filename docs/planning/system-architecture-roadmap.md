@@ -189,7 +189,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1、五种 Host Profile v1 与 deterministic in-memory resolver 已落地，但尚无 candidate discovery、locked reuse/update、生产 `asharia.packages.json` / lock/profile、Build/Activation Plan 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1、五种 Host Profile v1、explicit-source Candidate Discovery v1 与 deterministic in-memory resolver 已落地，但尚无上游 catalog/index、locked reuse/update、生产 `asharia.packages.json` / lock/profile、Build/Activation Plan 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；

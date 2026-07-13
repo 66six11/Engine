@@ -149,6 +149,15 @@ class Diagnostic:
         return f"{location}: [{self.code}] {self.message}"
 
 
+class PackageTreeIntegrityError(ValueError):
+    """A stable package-tree contract failure with a payload-relative location."""
+
+    def __init__(self, code: str, relative_path: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.relative_path = relative_path
+
+
 @dataclass(frozen=True)
 class SemanticVersion:
     major: int
@@ -988,6 +997,10 @@ def _feature_set_semantic_diagnostics(
 
 def _is_normalized_relative_path(value: str) -> bool:
     if unicodedata.normalize("NFC", value) != value or "\\" in value or ":" in value:
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
         return False
     segments = value.split("/")
     return bool(value) and not value.startswith("/") and all(
@@ -1988,32 +2001,60 @@ def compute_manifest_file_integrity(path: Path) -> dict[str, str]:
 def compute_package_tree_integrity(root: Path) -> dict[str, str]:
     """Hash one package payload using the asharia-package-tree-v1 byte domain."""
 
+    root_is_junction = getattr(root, "is_junction", lambda: False)()
+    if root.is_symlink() or root_is_junction:
+        raise PackageTreeIntegrityError(
+            "link",
+            "",
+            "package payload root cannot be a link or junction",
+        )
     manifest_path = root / PACKAGE_MANIFEST_NAME
     if not manifest_path.is_file() or manifest_path.is_symlink():
-        raise ValueError(f"package payload root must contain regular file '{PACKAGE_MANIFEST_NAME}'")
+        raise PackageTreeIntegrityError(
+            "manifest-missing",
+            PACKAGE_MANIFEST_NAME,
+            f"package payload root must contain regular file '{PACKAGE_MANIFEST_NAME}'",
+        )
 
     entries: list[tuple[bytes, Path]] = []
     case_folded_paths: dict[str, str] = {}
 
     def visit(directory: Path, relative_parts: tuple[str, ...]) -> None:
-        for child in sorted(directory.iterdir(), key=lambda value: value.name.encode("utf-8")):
+        for child in sorted(
+            directory.iterdir(),
+            key=lambda value: value.name.encode("utf-8", errors="surrogatepass"),
+        ):
             if not relative_parts and child.name in PACKAGE_TREE_ROOT_EXCLUDES:
                 continue
-            is_junction = getattr(child, "is_junction", lambda: False)()
-            if child.is_symlink() or is_junction:
-                raise ValueError(f"package payload cannot contain link '{child}'")
-            normalized_name = unicodedata.normalize("NFC", child.name)
-            if normalized_name != child.name:
-                raise ValueError(f"package payload path is not Unicode NFC: '{child}'")
             child_parts = relative_parts + (child.name,)
             relative_path = "/".join(child_parts)
+            is_junction = getattr(child, "is_junction", lambda: False)()
+            if child.is_symlink() or is_junction:
+                raise PackageTreeIntegrityError(
+                    "link",
+                    relative_path,
+                    f"package payload cannot contain link '{relative_path}'",
+                )
+            normalized_name = unicodedata.normalize("NFC", child.name)
+            if normalized_name != child.name:
+                raise PackageTreeIntegrityError(
+                    "path-not-nfc",
+                    relative_path,
+                    f"package payload path is not Unicode NFC: '{relative_path}'",
+                )
             if not _is_normalized_relative_path(relative_path):
-                raise ValueError(f"package payload path is not portable: '{relative_path}'")
+                raise PackageTreeIntegrityError(
+                    "path-not-portable",
+                    relative_path,
+                    f"package payload path is not portable: '{relative_path}'",
+                )
             folded = relative_path.casefold()
             previous = case_folded_paths.get(folded)
             if previous is not None and previous != relative_path:
-                raise ValueError(
-                    f"package payload paths collide by case: '{previous}' and '{relative_path}'"
+                raise PackageTreeIntegrityError(
+                    "case-collision",
+                    relative_path,
+                    f"package payload paths collide by case: '{previous}' and '{relative_path}'",
                 )
             case_folded_paths[folded] = relative_path
             if child.is_dir():
@@ -2021,7 +2062,11 @@ def compute_package_tree_integrity(root: Path) -> dict[str, str]:
             elif child.is_file():
                 entries.append((relative_path.encode("utf-8"), child))
             else:
-                raise ValueError(f"package payload contains non-regular entry '{child}'")
+                raise PackageTreeIntegrityError(
+                    "non-regular",
+                    relative_path,
+                    f"package payload contains non-regular entry '{relative_path}'",
+                )
 
     visit(root, ())
     digest = hashlib.sha256()

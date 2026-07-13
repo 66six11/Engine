@@ -6,7 +6,8 @@ Proposed。本文冻结 future `engine/package-runtime` 使用的 `PackageCandid
 `asharia.packages.lock.json` v1 合同。当前仓库已经实现对应 Draft 2020-12 schema、dispatcher、lock-local/cross-document
 validator、normalized writer、payload tree digest 与 synthetic fixtures；
 [Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md) 也已实现 caller-supplied candidates 到 canonical exact
-lock graph 的求解基线。candidate discovery adapter、locked reuse/update workflow 与生产 lockfile 仍未实现。
+lock graph 的求解基线。[Explicit-source Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md) 也已实现 strict
+candidate loader；上游 catalog/index、locked reuse/update workflow 与生产 lockfile 仍未实现。
 
 本文是 [Project Package Manifest v1](adr-project-package-manifest-v1.md) 的下一层：Project Manifest 保存用户直接意图，
 Candidate 表达 discovery adapter 提供的可选精确 payload，Lockfile 只保存一次成功求解选择出的精确、可验证图。
@@ -42,10 +43,10 @@ package activation。
 ```mermaid
 flowchart LR
     Project["asharia.packages.json\ndirect intent"]
-    Discovery["Discovery adapters\nbundled / embedded / local"]
-    Candidate["PackageCandidate records\nproposal: exact payload evidence"]
-    Resolver["Headless resolver\nfuture"]
-    Lock["asharia.packages.lock.json\nexact selected graph"]
+    Discovery["Strict Candidate Loader\nimplemented #273"]
+    Candidate["PackageCandidate records\nimplemented contract"]
+    Resolver["Deterministic Resolver v1\nimplemented #272"]
+    Lock["asharia.packages.lock.json\nimplemented contract; production file future"]
     Profile["Host Profile v1\nimplemented filtering contract"]
 
     Project -->|"provides constraints"| Resolver
@@ -334,7 +335,8 @@ Host-specific active modules、dependency order、denied capabilities、build ta
 
 ## 非目标
 
-- 不实现 candidate discovery adapter、版本选择、constraint search/backtracking 或 lock reuse algorithm；
+- 不在本文实现 candidate discovery adapter、版本选择、constraint search/backtracking 或 lock reuse algorithm；显式来源 loader
+  的相邻合同与实现由 [Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md) 定义；
 - 不实现下载、registry、git source、credential、signature、publisher trust 或 license policy；
 - 不实现 build descriptor、artifact manifest、Build Plan、Activation Plan 或 Host filtering；
 - 不创建生产 packages、Feature Sets 或项目 lockfile；
