@@ -255,6 +255,12 @@ def _compare_semantic_versions(left: str, right: str) -> int:
     return -1 if len(lhs.prerelease) < len(rhs.prerelease) else 1
 
 
+def compare_semantic_versions(left: str, right: str) -> int:
+    """Compare two schema-valid Semantic Versions using SemVer precedence."""
+
+    return _compare_semantic_versions(left, right)
+
+
 def _load_schema(path: Path) -> dict[str, Any]:
     schema = json.loads(path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
@@ -1294,6 +1300,12 @@ def _version_satisfies_constraint(version: str, constraint: dict[str, Any]) -> b
         _compare_semantic_versions(version, constraint["minimumInclusive"]) >= 0
         and _compare_semantic_versions(version, constraint["maximumExclusive"]) < 0
     )
+
+
+def version_satisfies_constraint(version: str, constraint: dict[str, Any]) -> bool:
+    """Evaluate one schema-valid Semantic Version against a v1 constraint."""
+
+    return _version_satisfies_constraint(version, constraint)
 
 
 def _option_value_is_valid(option: dict[str, Any], value: Any) -> bool:

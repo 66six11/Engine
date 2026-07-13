@@ -23,7 +23,7 @@
 
 | 主题 | 文档 |
 | --- | --- |
-| 架构原则与 package 边界 | [architecture/architecture-principles.md](architecture/architecture-principles.md)、[architecture/package-first.md](architecture/package-first.md)、[Installable Package Manifest v2 ADR](architecture/adr-installable-package-manifest-v2.md)、[Project Package Manifest v1 ADR](architecture/adr-project-package-manifest-v1.md)、[Package Candidate / Lockfile v1 ADR](architecture/adr-package-candidate-lockfile-v1.md)、[Host Profile v1 ADR](architecture/adr-host-profile-v1.md) |
+| 架构原则与 package 边界 | [architecture/architecture-principles.md](architecture/architecture-principles.md)、[architecture/package-first.md](architecture/package-first.md)、[Installable Package Manifest v2 ADR](architecture/adr-installable-package-manifest-v2.md)、[Project Package Manifest v1 ADR](architecture/adr-project-package-manifest-v1.md)、[Package Candidate / Lockfile v1 ADR](architecture/adr-package-candidate-lockfile-v1.md)、[Package Resolver v1 ADR](architecture/adr-package-resolver-v1.md)、[Host Profile v1 ADR](architecture/adr-host-profile-v1.md) |
 | Runtime、线程与 frame loop | [architecture/frame-loop-threading.md](architecture/frame-loop-threading.md)、[architecture/flow.md](architecture/flow.md) |
 | RenderGraph、RHI 与 renderer | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[architecture/render-layer.md](architecture/render-layer.md) |
 | 可编程渲染管线 | [rendergraph/programmable-pipeline.md](rendergraph/programmable-pipeline.md) |
